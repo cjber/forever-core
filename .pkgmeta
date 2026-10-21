@@ -1,0 +1,10 @@
+package-as: ForeverCore
+
+ignore:
+  - AGENTS.md
+  - docs
+  - tools
+  - types
+  - tests
+  - stylua.toml
+  - ruff.toml

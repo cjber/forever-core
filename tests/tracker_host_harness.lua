@@ -1,0 +1,369 @@
+-- Shared stubs for the tracker host specs: one private host over a stubbed native tracker.
+local harness = {}
+
+function harness.new(options)
+	options = options or {}
+	local checks = 0
+	local function check(value, message)
+		assert(value, message)
+		checks = checks + 1
+	end
+	local function noop() end
+	local timers, readyFn, frames, releases = {}, nil, {}, {}
+	local initializationEvents
+	local combat = false
+	local parent
+	local nativeAnchorPoint = options.nativeAnchorPoint or "TOPRIGHT"
+	local function frame()
+		local f = { width = 250, height = 0, scripts = {} }
+		function f:SetPoint(...)
+			self.point = { ... }
+		end
+		function f.GetPoint(self)
+			return unpack(self.point or { nativeAnchorPoint, parent, nativeAnchorPoint, 0, -100 })
+		end
+		function f:SetWidth(value)
+			self.width = value
+		end
+		function f:GetWidth()
+			return self.width
+		end
+		function f:SetHeight(value)
+			self.height = value
+		end
+		function f:GetHeight()
+			return self.height
+		end
+		function f:GetBottom()
+			return (self:GetTop() or 0) - self:GetHeight()
+		end
+		function f:GetEffectiveScale()
+			return self.effectiveScale or (self.scale or 1)
+		end
+		function f:GetScale()
+			return self.scale or 1
+		end
+		function f:SetScale(value)
+			self.scale = value
+		end
+		function f.GetTop(self)
+			return self.top or 640
+		end
+		function f.GetLeft(self)
+			return self.left or 0
+		end
+		function f.GetRight(self)
+			return self.right or self:GetLeft() + self:GetWidth()
+		end
+		function f.GetBottom(self)
+			return self.bottom or self:GetTop() - self:GetHeight()
+		end
+		function f:IsShown()
+			return self.shown ~= false
+		end
+		function f:SetScript(event, fn)
+			self.scripts[event] = fn
+		end
+		function f:HookScript(event, fn)
+			self.scripts[event] = fn
+		end
+		function f:SetParent(owner)
+			self.parent = owner
+		end
+		function f:ClearAllPoints()
+			self.point = nil
+		end
+		f.RegisterEvent = noop
+		f.SetMovable, f.RegisterForDrag = noop, noop
+		f.clamped = true
+		function f:SetClampedToScreen(value)
+			self.clamped = value
+		end
+		function f:IsClampedToScreen()
+			return self.clamped
+		end
+		function f.CreateFontString(_)
+			return { SetPoint = noop, SetText = noop, SetShown = noop }
+		end
+		function f:SetShown(value)
+			self.shown = value
+		end
+		function f:StartMoving()
+			self.moving = true
+		end
+		function f:StopMovingOrSizing()
+			self.moving = false
+		end
+		f.Show = function(self)
+			self.shown = true
+		end
+		f.Hide = function(self)
+			self.shown = false
+		end
+		frames[#frames + 1] = f
+		return f
+	end
+	local native = frame()
+	local minimap = frame()
+	minimap.left, minimap.right, minimap.top, minimap.bottom, minimap.shown = 900, 1100, 700, 500, false
+	parent = frame()
+	parent.width = 1200
+	native.point = { nativeAnchorPoint, parent, nativeAnchorPoint, 0, -100 }
+	native.height = 300
+	parent:SetHeight(1080)
+	native.effectiveScale, parent.effectiveScale = 1.25, 1
+	local nativeHeader = frame()
+	nativeHeader.shown = options.headerShown == true
+	nativeHeader.point = { "TOPLEFT", native, "TOPLEFT", 0, 0 }
+	local minimizeButton = frame()
+	nativeHeader.MinimizeButton = minimizeButton
+	native.Header = nativeHeader
+	-- The native container anchors this to the bottom of its last shown module; scenarios set it to the content bottom.
+	native.NineSlice = {
+		bottom = 0,
+		GetBottom = function(self)
+			return self.bottom
+		end,
+	}
+	-- Blizzard's tracker re-anchors its header at the end of every update.
+	function native.UpdateHeaderPosition()
+		nativeHeader:SetPoint("TOPLEFT", native, "TOPLEFT", 0, 0)
+	end
+	-- The managed-frame layout calls this after it re-anchors the frame to its saved slot.
+	function native.UpdateHeight() end
+	-- A native tracker update re-anchors the frame to its saved slot and finishes at the header.
+	function native.RestoreSavedAnchor()
+		native:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -100)
+		native:UpdateHeaderPosition()
+	end
+	local ns = options.ns or {
+		L = setmetatable({}, {
+			__index = function(_, key)
+				return key
+			end,
+		}),
+	}
+	local hostSettings = options.hostSettings or { attached = true }
+	function ns.TrackerHostSettings()
+		return hostSettings
+	end
+	local forbidden = setmetatable({}, {
+		__index = function(_, key)
+			error("native manager accessed: " .. key)
+		end,
+	})
+	local callbacks = {}
+	local eventRegistry = {
+		RegisterCallback = function(_, event, callback, owner)
+			callbacks[event] = callbacks[event] or {}
+			callbacks[event][#callbacks[event] + 1] = { callback = callback, owner = owner }
+		end,
+		TriggerEvent = function(_, event, ...)
+			for _, entry in ipairs(callbacks[event] or {}) do
+				entry.callback(entry.owner, ...)
+			end
+		end,
+	}
+	local editMode = { active = false, shown = false, scripts = {} }
+	function editMode:IsEditModeActive()
+		return self.active
+	end
+	function editMode:IsShown()
+		return self.shown
+	end
+	function editMode:HookScript(kind, fn)
+		self.scripts[kind] = fn
+	end
+	local env
+	env = setmetatable({
+		ObjectiveTrackerManager = forbidden,
+		InCombatLockdown = function()
+			return combat
+		end,
+		ObjectiveTrackerFrame = native,
+		Minimap = minimap,
+		UIParent = parent,
+		CreateFrame = frame,
+		C_Timer = {
+			After = function(_, fn)
+				timers[#timers + 1] = fn
+			end,
+		},
+		EventUtil = {
+			ContinueAfterAllEvents = function(fn, ...)
+				initializationEvents = { ... }
+				readyFn = fn
+			end,
+		},
+		EventRegistry = eventRegistry,
+		EditModeManagerFrame = editMode,
+		C_XMLUtil = {
+			GetTemplateInfo = function()
+				return { type = "Frame" }
+			end,
+		},
+		Mixin = function(target, mixin)
+			for key, value in pairs(mixin) do
+				target[key] = value
+			end
+		end,
+		hooksecurefunc = function(target, name, callback)
+			assert(target ~= env.ObjectiveTrackerFrame, "native tracker methods must remain secure")
+			local original = target[name]
+			target[name] = function(...)
+				local result = original(...)
+				callback(...)
+				return result
+			end
+		end,
+		CreateFramePoolCollection = function()
+			return {
+				GetOrCreatePool = function(_, _, _, template)
+					return {
+						Acquire = function()
+							local f = frame()
+							if template == "AnimBlock" and env.ObjectiveTrackerAnimBlockMixin then
+								env.Mixin(f, env.ObjectiveTrackerAnimBlockMixin)
+							end
+							if template == "Block" then
+								if env.ObjectiveTrackerBlockMixin then
+									env.Mixin(f, env.ObjectiveTrackerBlockMixin)
+								end
+								f.usedLines = {}
+								f.GetLine = function()
+									error("native GetLine retained")
+								end
+								function f:GetExistingLine(key)
+									return self.usedLines[key]
+								end
+							end
+							return f, true
+						end,
+					},
+						true
+				end,
+				Release = function(_, f)
+					releases[f] = true
+				end,
+			}
+		end,
+	}, { __index = _G })
+	env._G = env
+	local nativeRoot = os.getenv("TRACKER_UI_ROOT")
+	if nativeRoot then
+		env.CreateFromMixins = function(...)
+			local result = {}
+			for _, mixin in ipairs({ ... }) do
+				env.Mixin(result, mixin)
+			end
+			return result
+		end
+		env.ObjectiveTrackerSlidingMixin, env.ObjectiveTrackerLineMixin = {}, {}
+		env.EnumUtil = {
+			MakeEnum = function(...)
+				local result = {}
+				for i, name in ipairs({ ... }) do
+					result[name] = i
+				end
+				return result
+			end,
+		}
+		env.table = setmetatable({
+			wipe = function(t)
+				for k in pairs(t) do
+					t[k] = nil
+				end
+			end,
+		}, { __index = table })
+		for _, name in ipairs({ "Module", "Block", "AnimTemplates" }) do
+			setfenv(assert(loadfile(nativeRoot .. "/Blizzard_ObjectiveTracker" .. name .. ".lua")), env)()
+		end
+	end
+
+	local ctx = {
+		env = env,
+		ns = ns,
+		hostSettings = hostSettings,
+		frames = frames,
+		releases = releases,
+		native = native,
+		parent = parent,
+		minimap = minimap,
+		nativeHeader = nativeHeader,
+		minimizeButton = minimizeButton,
+		eventRegistry = eventRegistry,
+		editMode = editMode,
+		check = check,
+		checks = function()
+			return checks
+		end,
+		ready = function()
+			readyFn()
+		end,
+		initializationEvents = function()
+			return initializationEvents
+		end,
+		pending = function()
+			return #timers
+		end,
+		drain = function()
+			local pending = timers
+			timers = {}
+			for _, fn in ipairs(pending) do
+				fn()
+			end
+		end,
+		setCombat = function(value)
+			combat = value
+		end,
+		inCombat = function()
+			return combat
+		end,
+		setNativeAnchorPoint = function(value)
+			nativeAnchorPoint = value
+		end,
+	}
+	function ctx.loadHost(namespace, path)
+		path = path or "UI/TrackerHost.lua"
+		setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", namespace) -- the grip, before the host
+		setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", namespace) -- the section order
+		setfenv(assert(loadfile(path)), env)("Test", namespace)
+	end
+	function ctx.module(order)
+		local m = frame()
+		m.uiOrder, m.ContentsFrame, m.lineTemplate = order, frame(), "Line"
+		m.contentHeight = 80
+		function m:SetContainer(container)
+			self.parentContainer = container
+		end
+		function m:Update(available)
+			self.available, self.updates = available, (self.updates or 0) + 1
+			self.availableHeight = available
+		end
+		function m.GetContentsHeight(self)
+			return math.min(self.contentHeight, self.availableHeight or self.contentHeight)
+		end
+		function m.IsTruncated(self)
+			return self.contentHeight > (self.availableHeight or math.huge)
+		end
+		ctx.ns.TrackerHost.Attach(m)
+		return m
+	end
+	function ctx.probe()
+		for _, f in ipairs(frames) do
+			if f.point and f.point[2] == native and f.scripts.OnSizeChanged then
+				return f
+			end
+		end
+	end
+	ctx.loadHost(ns)
+	ctx.host, ctx.grip = frames[6], frames[7]
+	ctx.first, ctx.second = ctx.module(1), ctx.module(2)
+	if not options.deferReady then
+		ctx.ready()
+		ctx.drain()
+	end
+	return ctx
+end
+
+return harness

@@ -1,0 +1,18 @@
+## Interface: 16001
+## Title: Forever Core
+## Notes: The shared tracker column, grip, Lock switch and section order every Forever addon is built on.
+## Author: cjber
+## Version: @project-version@
+## Category: Map
+## X-License: GPL-3.0-or-later
+## X-Website: https://github.com/cjber/forever-core
+## SavedVariables: ForeverCoreDB
+## OptionalDeps: AdventureGuideForever, LegacyForever, ShortestPathForever, SkillUpForever, TweaksForever
+
+Core.lua
+Locales\enUS.lua
+UI\TrackerQuestie.lua
+UI\TrackerLock.lua
+UI\TrackerOrder.lua
+UI\TrackerHost.lua
+Expose.lua
