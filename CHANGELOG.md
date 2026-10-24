@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1 - 2026-10-24
+
 - **Unify report and link UI** in Forever Core, fix report text selection, and map vendored files to their consumers.
 
 ## 0.1.0
