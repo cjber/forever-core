@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: SimTooltipReuse
+## SavedVariables: SimTooltipReuseDB
+SimTooltipReuse.lua

@@ -1,0 +1,6 @@
+# The vendored copies are checked by each addon's own ruff configuration; keep these rules the strictest of them.
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]

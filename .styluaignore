@@ -1,2 +1,5 @@
 Nav/
 .claude/
+.agents/
+.docs-unused/
+docs/

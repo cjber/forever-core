@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: Polestar (forever_sim stand-in)
+## Notes: The settings read the Forever addons use to step aside for Polestar, written for the simulator. No Polestar code.
+Polestar.lua

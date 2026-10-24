@@ -24,8 +24,7 @@ tested and released on its own, and so a future addon can adopt the column witho
 ## What it does not do
 
 It draws no sections of its own and knows nothing about quests, routes, professions, challenges or creatures. Sections
-belong to the addon that owns the feature: see the suite's ownership boundaries in cjber/skills,
-`forever-handoff/boundaries.md`.
+belong to the addon that owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`.
 
 ## Install
 

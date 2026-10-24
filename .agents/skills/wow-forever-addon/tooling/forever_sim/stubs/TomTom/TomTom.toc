@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: TomTom (forever_sim stand-in)
+## Notes: TomTom's waypoint API as the Forever addons call it, written for the simulator. No TomTom code.
+TomTom.lua
