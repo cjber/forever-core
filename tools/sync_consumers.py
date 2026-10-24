@@ -11,22 +11,29 @@ import shutil
 import sys
 from pathlib import Path
 
-CONSUMERS = (
+ALL_CONSUMERS = (
     "adventure-guide-forever",
     "legacy-forever",
     "shortest-path-forever",
     "skillup-forever",
+    "tweaks-forever",
 )
 
-VENDORED = (
-    "UI/TrackerHost.lua",
-    "UI/TrackerLock.lua",
-    "UI/TrackerOrder.lua",
-    "UI/TrackerQuestie.lua",
-    "tests/tracker_host_spec.lua",
-    "tests/tracker_questie_spec.lua",
-    "tools/fetch_tracker_ui.py",
-)
+TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
+VENDORED = {
+    "UI/TrackerHost.lua": TRACKER_CONSUMERS,
+    "UI/TrackerLock.lua": TRACKER_CONSUMERS,
+    "UI/TrackerOrder.lua": TRACKER_CONSUMERS,
+    "UI/TrackerQuestie.lua": TRACKER_CONSUMERS,
+    "tests/tracker_host_spec.lua": TRACKER_CONSUMERS,
+    "tests/tracker_host_harness.lua": TRACKER_CONSUMERS,
+    "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
+    "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
+    "UI/Report.lua": ALL_CONSUMERS,
+    "tests/report_spec.lua": ALL_CONSUMERS,
+    "UI/ForeverFamily.lua": ALL_CONSUMERS,
+    "tests/forever_family_spec.lua": ALL_CONSUMERS,
+}
 
 
 def digest(data):
@@ -37,17 +44,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkouts", type=Path, help="the directory holding the consumer checkouts")
     parser.add_argument("--dry-run", action="store_true", help="report what would change and write nothing")
+    parser.add_argument("--only", action="append", choices=VENDORED, help="sync only this shared path; may be repeated")
     arguments = parser.parse_args()
 
     changed = 0
-    for repo in CONSUMERS:
-        root = arguments.checkouts / repo
-        if not root.is_dir():
-            print(f"{repo}: not checked out under {arguments.checkouts}, skipped")
-            continue
-        for path in VENDORED:
-            source = Path(path)
+    selected = arguments.only or VENDORED.keys()
+    for path in selected:
+        consumers = VENDORED[path]
+        source = Path(path)
+        for repo in consumers:
+            root = arguments.checkouts / repo
             target = root / path
+            if not root.is_dir():
+                print(f"{repo}: not checked out under {arguments.checkouts}, skipped")
+                continue
             content = source.read_bytes()
             if target.exists() and digest(target.read_bytes()) == digest(content):
                 continue
@@ -56,8 +66,8 @@ def main():
             if not arguments.dry_run:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
-        if not arguments.dry_run:
-            print(f"{repo}: run its gates (luacheck, stylua, the specs) and open one PR for all shared files")
+    if changed and not arguments.dry_run:
+        print("Run each changed consumer's gates and open one PR per consumer for all shared files.")
     verb = "would change" if arguments.dry_run else "changed"
     print(f"{changed} file(s) {verb}.")
     return 0

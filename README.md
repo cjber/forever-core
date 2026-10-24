@@ -11,6 +11,9 @@ Adventure Guide, Legacy, Shortest Path and SkillUp each draw sections into the s
 tracker. Before this addon, each one carried its own copy of that column, so a layout fix or a Lock toggle meant four
 identical pull requests and four copies that could drift apart between releases.
 
+Forever Core also owns the shared report and issue window and the Forever-family link box. All five addons vendor
+those files so command handling, selection behavior and link copying stay consistent.
+
 Forever Core is the one copy. The four addons vendor these files byte for byte (`docs/adoption.md`), and the first
 Forever addon to load publishes the column as `ForeverTrackerHost`; every later one adopts it. A player with three of
 them installed still gets one column, and a player with one installed gets the same column with no extra dependency.

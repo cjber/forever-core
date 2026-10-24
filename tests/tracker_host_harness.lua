@@ -70,6 +70,20 @@ function harness.new(options)
 		function f:SetParent(owner)
 			self.parent = owner
 		end
+		-- Effective visibility, the way the client reports it: the frame and every ancestor shown.
+		function f:IsVisible()
+			local owner = self
+			while owner do
+				if not owner:IsShown() then
+					return false
+				end
+				owner = owner.GetParent and owner:GetParent() or owner.parent
+			end
+			return true
+		end
+		function f:GetParent()
+			return self.parent
+		end
 		function f:ClearAllPoints()
 			self.point = nil
 		end
@@ -107,6 +121,7 @@ function harness.new(options)
 	local minimap = frame()
 	minimap.left, minimap.right, minimap.top, minimap.bottom, minimap.shown = 900, 1100, 700, 500, false
 	parent = frame()
+	native.parent = parent
 	parent.width = 1200
 	native.point = { nativeAnchorPoint, parent, nativeAnchorPoint, 0, -100 }
 	native.height = 300
@@ -114,10 +129,12 @@ function harness.new(options)
 	native.effectiveScale, parent.effectiveScale = 1.25, 1
 	local nativeHeader = frame()
 	nativeHeader.shown = options.headerShown == true
+	nativeHeader.parent = native
 	nativeHeader.point = { "TOPLEFT", native, "TOPLEFT", 0, 0 }
 	local minimizeButton = frame()
 	nativeHeader.MinimizeButton = minimizeButton
 	native.Header = nativeHeader
+	native.headerWanted = options.headerShown == true
 	-- The native container anchors this to the bottom of its last shown module; scenarios set it to the content bottom.
 	native.NineSlice = {
 		bottom = 0,
@@ -128,6 +145,19 @@ function harness.new(options)
 	-- Blizzard's tracker re-anchors its header at the end of every update.
 	function native.UpdateHeaderPosition()
 		nativeHeader:SetPoint("TOPLEFT", native, "TOPLEFT", 0, 0)
+	end
+	function native:ShouldShowHeader()
+		return self.headerWanted and self:IsShown()
+	end
+	-- Mirrors the client update order: header visibility, objective layout, then unconditional header re-anchor.
+	function native:UpdateOrder()
+		if not self:ShouldShowHeader() then
+			nativeHeader:Hide()
+		else
+			nativeHeader:Show()
+		end
+		self:UpdateHeaderPosition()
+		return self:ShouldShowHeader()
 	end
 	-- The managed-frame layout calls this after it re-anchors the frame to its saved slot.
 	function native.UpdateHeight() end
@@ -290,6 +320,12 @@ function harness.new(options)
 		parent = parent,
 		minimap = minimap,
 		nativeHeader = nativeHeader,
+		updateOrder = function()
+			return native:UpdateOrder()
+		end,
+		headerShown = function()
+			return native:ShouldShowHeader()
+		end,
 		minimizeButton = minimizeButton,
 		eventRegistry = eventRegistry,
 		editMode = editMode,
@@ -334,7 +370,8 @@ function harness.new(options)
 		m.uiOrder, m.ContentsFrame, m.lineTemplate = order, frame(), "Line"
 		m.contentHeight = 80
 		function m:SetContainer(container)
-			self.parentContainer = container
+			-- Blizzard's template method registers modules with the native tracker manager.
+			env.ObjectiveTrackerManager:SetModuleContainer(self, container)
 		end
 		function m:Update(available)
 			self.available, self.updates = available, (self.updates or 0) + 1

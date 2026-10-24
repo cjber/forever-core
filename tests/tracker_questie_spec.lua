@@ -181,6 +181,9 @@ local function scenario(options)
 	local module = frame()
 	module.uiOrder = -1
 	module.SetContainer, module.Update = noop, noop
+	module.SetParent = function(self, parent)
+		self.parent = parent
+	end
 	module.GetContentsHeight = function()
 		return module.empty and 0 or 227
 	end
