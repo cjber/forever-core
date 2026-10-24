@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Unify report and link UI** in Forever Core, fix report text selection, and map vendored files to their consumers.
+
 ## 0.1.0
 
 - **The shared tracker column becomes a repo of its own.** `UI/TrackerHost.lua`, `UI/TrackerLock.lua`,

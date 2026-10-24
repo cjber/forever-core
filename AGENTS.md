@@ -7,12 +7,12 @@ addon, `ForeverCore`.
 
 ## The two rules that matter
 
-1. **The shared files are the source of truth, and nothing here is addon specific.** `UI/TrackerHost.lua`,
-   `UI/TrackerLock.lua`, `UI/TrackerOrder.lua` and `UI/TrackerQuestie.lua` are vendored byte for byte into
-   adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever at the same paths
+1. **The shared files are the source of truth, and nothing here is addon specific.** Tracker files are vendored byte
+   for byte into adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever. Report and
+   Forever-family files are vendored into all five consumer addons at the same paths
    (`docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
    consumer repo and never bend these files toward one addon's needs: they read everything addon specific through the
-   namespace (`ns.TrackerHostSettings`, `ns.L`), by design.
+   namespace (`ns.TrackerHostSettings`, `ns.ReportTitle`, `ns.L`), by design.
 2. **The paths mirror a consumer repo.** Suite convention is flat Lua at the repo root, and this repo is the one
    deliberate exception: keeping `UI/TrackerHost.lua` where the consumers keep it makes the vendored copy a pure
    copy, and lets their specs (`tests/tracker_host_spec.lua`, which loads `UI/TrackerHost.lua` by path) run here
@@ -39,6 +39,8 @@ and run anywhere.
 - `Core.lua`: ForeverCore's own install of the host's settings (`ns.TrackerHostSettings`), in `ForeverCoreDB`.
 - `Expose.lua`: the public `ForeverCore` table and `/fcore`; the last file the TOC loads, because it publishes what
   the shared modules built.
+- `UI/Report.lua` and `UI/ForeverFamily.lua`: shared report, issue and link UI vendored into all five consumers.
+- `tests/report_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
 - `UI/TrackerHost.lua`: the private tracker column, its layout, combat and Edit Mode handling, and the
   `ForeverTrackerHost` global the first-loaded Forever addon publishes and the rest adopt.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which must load before the host.

@@ -239,6 +239,10 @@ local function OnAnimFinished(block)
 end
 
 local Module = {}
+function Module:SetContainer(container)
+	self.parentContainer = container
+	self:SetParent(container)
+end
 function Module:AcquireFrame(template)
 	local frame, isNew = Acquire(self, template)
 	frame:SetParent(self.ContentsFrame)
@@ -366,64 +370,22 @@ local function Editing()
 	return not not (manager and manager:IsEditModeActive() and manager:IsShown())
 end
 
--- Keep the native header above the shared column, reflowed after objective and layout events.
 -- Native methods remain untouched so controller and combat paths retain their secure execution.
-local HEADER_TOP_PADDING = 38
 local nativeHeader = ObjectiveTrackerFrame.Header --[[@as ForeverNativeTrackerHeader?]]
-local headerAdopted = false
----@type { point: string, relativeTo: ScriptRegion, relativePoint: string, x: number, y: number }?
-local nativeHeaderAnchor
-
 local function NativeHeaderShown()
-	return nativeHeader ~= nil and nativeHeader:IsShown() and ObjectiveTrackerFrame:IsShown()
+	if not nativeHeader or not ObjectiveTrackerFrame:IsShown() or not nativeHeader:IsShown() then
+		return false
+	end
+	-- IsVisible also covers an ancestor the client or another addon has hidden, which IsShown on the header alone
+	-- would miss. The harness frames model it the same way.
+	return nativeHeader.IsVisible == nil or nativeHeader:IsVisible()
 end
 
 local function NativeCollapsed()
 	return ObjectiveTrackerFrame.isCollapsed == true
 end
 
-local function CaptureNativeHeaderAnchor()
-	if nativeHeaderAnchor or not nativeHeader then
-		return
-	end
-	local point, relativeTo, relativePoint, x, y = nativeHeader:GetPoint()
-	nativeHeaderAnchor = {
-		point = point or "TOPLEFT",
-		relativeTo = relativeTo or ObjectiveTrackerFrame,
-		relativePoint = relativePoint or "TOPLEFT",
-		x = x or 0,
-		y = y or 0,
-	}
-end
-
-local function AdoptNativeHeader()
-	if not nativeHeader then
-		return
-	end
-	if not headerAdopted then
-		CaptureNativeHeaderAnchor()
-		headerAdopted = true
-	end
-	nativeHeader:ClearAllPoints()
-	local point = StackPoints(nativeAnchor and nativeAnchor.point or "TOPRIGHT")
-	nativeHeader:SetPoint(point, host, point, 0, 0)
-end
-
-local function RestoreNativeHeader()
-	if not headerAdopted or not nativeHeader then
-		return
-	end
-	local anchor = nativeHeaderAnchor
-	if not anchor then
-		return
-	end
-	nativeHeader:ClearAllPoints()
-	nativeHeader:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.x, anchor.y)
-	headerAdopted = false
-end
-
--- Lays every section out from the host's top, leaving `reserve` pixels for the native header. Returns whether any
--- section drew, which decides if the header moves and the native frame leaves its title room.
+-- Lays every section out from the host's top. Returns whether any section drew.
 local function LayoutModules(width, available, reserve)
 	ns.TrackerOrder.Sort(modules)
 	local heights, total = {}, 0
@@ -480,7 +442,6 @@ end
 
 -- Detached: the private column sits wherever the player dragged it, independent of the native tracker.
 local function LayoutDetached(settings)
-	RestoreNativeHeader()
 	host:Show()
 	MatchNativeScale()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
@@ -520,8 +481,7 @@ local function LayoutInCombat()
 		-- Still stacked: the sections follow their content within the height the stack gave them (less the last
 		-- section's 10px gap, which LayoutModules adds back), and the next out-of-combat reflow sizes them again.
 		-- A hidden header leaves no gap; a section that gains content grows the stack instead of waiting.
-		local headerShown = NativeHeaderShown()
-		local reserve = headerShown and (stackedReserve > 0 and stackedReserve or HEADER_TOP_PADDING) or 0
+		local reserve = NativeHeaderShown() and stackedReserve or 0
 		local room = math.max(0, stackedHeight - reserve - 10)
 		local truncated = false
 		local drew = not NativeCollapsed() and LayoutModules(host:GetWidth(), room, reserve)
@@ -535,14 +495,8 @@ local function LayoutInCombat()
 			drew = LayoutModules(host:GetWidth(), math.max(0, stackedHeight - reserve - 10), reserve)
 		end
 		if drew then
-			if headerShown then
-				AdoptNativeHeader()
-			else
-				RestoreNativeHeader()
-			end
 			host:Show()
 		else
-			RestoreNativeHeader()
 			host:Hide()
 		end
 		return
@@ -582,7 +536,6 @@ local function LayoutInCombat()
 		local nativeBottom = ObjectiveTrackerFrame:GetBottom()
 		local contentBottom = nineSlice and ObjectiveTrackerFrame:IsShown() and nineSlice:GetBottom() or nativeBottom
 		local contentGap = (nativeBottom and contentBottom) and (contentBottom - nativeBottom) or 0
-		RestoreNativeHeader()
 		host:SetPoint("TOP", ObjectiveTrackerFrame, "BOTTOM", 0, contentGap * ratio)
 		local layoutScale = host:GetEffectiveScale()
 		local layoutScreenScale = UIParent:GetEffectiveScale()
@@ -630,7 +583,6 @@ local function LayoutAttached()
 	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
 	HookEditMode()
 	if Editing() then
-		RestoreNativeHeader()
 		return
 	end
 	host:Show()
@@ -655,25 +607,15 @@ local function LayoutAttached()
 	local layoutMargin = 40 * layoutScreenScale / layoutScale
 	local available = math.max(0, (host:GetTop() or UIParent:GetHeight()) - layoutMargin)
 	host:SetWidth(width)
-	-- The native "All Objectives" header rides at the top of the shared column whenever both it and a section are
-	-- shown, so its title stays above the Forever rows. A hidden or collapsed header leaves the host as it was,
-	-- with no reserved gap.
+	-- The native header stays in its frame, so the private column reserves no header room.
 	local collapsed = NativeCollapsed()
-	local headerCandidate = not collapsed and NativeHeaderShown()
-	local headerReserve = headerCandidate and HEADER_TOP_PADDING or 0
-	if collapsed or not LayoutModules(width, math.max(0, available - headerReserve), headerReserve) then
-		-- Nothing to stack (All Objectives is collapsed, or no section has content): the native tracker goes back to
-		-- its own slot and is left alone, so an addon with nothing to show never holds the quest tracker in place.
-		RestoreNativeHeader()
+	local headerReserve = 0
+	if collapsed or not LayoutModules(width, available, 0) then
+		-- Nothing to stack: release the native tracker and hide the empty host.
 		ReleaseNative()
 		host:SetHeight(1)
 		host:Hide()
 		return
-	end
-	if headerCandidate then
-		AdoptNativeHeader()
-	else
-		RestoreNativeHeader()
 	end
 	-- If the combined column would run below the screen, move the whole
 	-- column upward from its saved edit-mode slot.  The offset is calculated
@@ -708,9 +650,8 @@ local function LayoutAttached()
 	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
 	local hostScale = host:GetEffectiveScale()
 	local hostLeft = (host:GetLeft() or 0) * hostScale / screenScale
-	-- The header no longer sits inside the native frame's slot, so the frame moves up by exactly the room its
-	-- title used to take; its first module then starts where the private host ends.
-	local nativeY = ((host:GetBottom() or 0) + headerReserve) * hostScale / screenScale - UIParent:GetHeight()
+	-- Keep the native frame directly below the host; its header remains inside the native frame.
+	local nativeY = (host:GetBottom() or 0) * hostScale / screenScale - UIParent:GetHeight()
 	-- The native container owns its height. Screen clamping would pull it up over the
 	-- companion column, so preserve its size and let its scrolling content extend below us.
 	if nativeClamped == nil then
@@ -744,7 +685,6 @@ end
 -- combat) the column holds its place until combat ends.
 ---@param questie Frame?
 local function LayoutBesideQuestie(questie)
-	RestoreNativeHeader()
 	if Editing() then
 		return
 	end
@@ -780,6 +720,9 @@ end
 
 local function Layout()
 	queued = false
+	if Editing() then
+		return
+	end
 	local settings = ApplyAttachment()
 	Grip.Show(not attached)
 	if not attached then
@@ -911,9 +854,22 @@ end)
 -- An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so any move
 -- of the native frame resizes the probe and its OnSizeChanged reflows the column. Our own restack is skipped.
 local probe = CreateFrame("Frame", nil, UIParent)
-probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+local probeEnabled = false
+local function SetProbeEnabled(enabled)
+	if probeEnabled == enabled then
+		return
+	end
+	probeEnabled = enabled
+	probe:ClearAllPoints()
+	if enabled then
+		probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+		probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+	end
+end
 probe:SetScript("OnSizeChanged", function()
+	if not probeEnabled then
+		return
+	end
 	local point, relativeTo, relativePoint, x, y = ObjectiveTrackerFrame:GetPoint()
 	local released = attached and SameAnchor(releasedNativeAnchor, point, relativeTo, relativePoint, x, y)
 	if released and releasedNativeProbe then
@@ -922,6 +878,7 @@ probe:SetScript("OnSizeChanged", function()
 		host:MarkDirty()
 	end
 end)
+SetProbeEnabled(not Editing())
 -- Collapsing "All Objectives" hides the shared sections too. Mark the host dirty on the click that flips it; the
 -- native collapse method itself stays unhooked and untouched, and the native header keeps its parent so its button
 -- resolves the native container normally.
@@ -934,10 +891,17 @@ end
 -- on those events instead of polling the native frame every frame.
 local function OnEditModeChanged()
 	HookEditMode()
-	if Editing() and attached then
-		-- Edit Mode drags the native frame itself, so it needs its own edge-of-screen clamp back.
-		RestoreNativeClamp()
+	local editing = Editing()
+	SetProbeEnabled(not editing)
+	if editing and attached then
+		-- Hand the native anchor and screen clamp back before Edit Mode moves the tracker.
+		if not InCombatLockdown() then
+			ReleaseNative()
+		end
 		host:Hide()
+		-- Hidden frames still participate in anchor dependencies; detach our column too.
+		host:ClearAllPoints()
+		host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
 	else
 		host:Show()
 	end

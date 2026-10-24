@@ -12,22 +12,29 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-CONSUMERS = (
+ALL_CONSUMERS = (
     "adventure-guide-forever",
     "legacy-forever",
     "shortest-path-forever",
     "skillup-forever",
+    "tweaks-forever",
 )
 
-VENDORED = (
-    "UI/TrackerHost.lua",
-    "UI/TrackerLock.lua",
-    "UI/TrackerOrder.lua",
-    "UI/TrackerQuestie.lua",
-    "tests/tracker_host_spec.lua",
-    "tests/tracker_questie_spec.lua",
-    "tools/fetch_tracker_ui.py",
-)
+TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
+VENDORED = {
+    "UI/TrackerHost.lua": TRACKER_CONSUMERS,
+    "UI/TrackerLock.lua": TRACKER_CONSUMERS,
+    "UI/TrackerOrder.lua": TRACKER_CONSUMERS,
+    "UI/TrackerQuestie.lua": TRACKER_CONSUMERS,
+    "tests/tracker_host_spec.lua": TRACKER_CONSUMERS,
+    "tests/tracker_host_harness.lua": TRACKER_CONSUMERS,
+    "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
+    "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
+    "UI/Report.lua": ALL_CONSUMERS,
+    "tests/report_spec.lua": ALL_CONSUMERS,
+    "UI/ForeverFamily.lua": ALL_CONSUMERS,
+    "tests/forever_family_spec.lua": ALL_CONSUMERS,
+}
 
 
 def digest(data):
@@ -47,9 +54,11 @@ def main():
     arguments = parser.parse_args()
 
     failures = []
-    for path in VENDORED:
+    comparisons = 0
+    for path, consumers in VENDORED.items():
         mine = Path(path).read_bytes()
-        for repo in CONSUMERS:
+        for repo in consumers:
+            comparisons += 1
             try:
                 if arguments.local:
                     theirs = (arguments.local / repo / path).read_bytes()
@@ -67,7 +76,7 @@ def main():
             print(f"  {failure}")
         print("Fix with tools/sync_consumers.py, then commit the copies in the consumer repos.")
         return 1
-    print(f"{len(VENDORED)} shared files match in all {len(CONSUMERS)} consumer repos.")
+    print(f"{comparisons} shared file copies match their consumer repos.")
     return 0
 
 
