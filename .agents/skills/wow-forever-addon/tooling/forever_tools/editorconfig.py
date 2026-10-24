@@ -20,7 +20,8 @@ __all__ = ["TEMPLATE", "check", "main", "parse"]
 LUA, PY = "{*.lua,.luacheckrc}", "*.py"
 
 TEMPLATE = """\
-# Editor defaults for the WoW: Forever addons (cjber/forever-core .agents/skills/wow-forever-addon/tooling, forever_tools.editorconfig).
+# Editor defaults for the WoW: Forever addons (cjber/forever-core .agents/skills/wow-forever-addon/tooling,
+# forever_tools.editorconfig).
 # StyLua and ruff still format Lua and Python; tools/check_editorconfig.py keeps these sections in step with them.
 root = true
 
