@@ -20,6 +20,7 @@ the addon they already have.
 | `tests/report_spec.lua` | the report and issue contract |
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
+| `Core/SafeCall.lua` | shared error capture used by the report window |
 
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
@@ -38,7 +39,7 @@ by path, run here unchanged.
 2. Bump `CHANGELOG.md` and the tag when the change is worth a release of its own.
 3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
 4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
-   is the gate. Tracker files go to four addons; report and Forever-family files go to all five. The checker is green once every mapped consumer has the same bytes.
+   is the gate. Tracker files go to four addons; report, Forever-family and SafeCall files go to all five. The checker is green once every mapped consumer has the same bytes.
 
 ## When the addons disagree with the core
 

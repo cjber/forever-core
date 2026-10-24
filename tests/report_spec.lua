@@ -80,20 +80,18 @@ local reportLinesCalls = 0
 local ns = {
 	L = phrases,
 	Art = { Icon = function() end },
-	CutText = function(text, limit)
-		return text:sub(1, limit)
-	end,
-	CaughtErrors = function()
-		return {}
-	end,
-	SafeCall = function(_, callback)
-		return true, callback()
-	end,
 	ReportLines = function()
 		reportLinesCalls = reportLinesCalls + 1
 		return { "addon details" }
 	end,
 }
+_G.strtrim = function(text)
+	return text:match("^%s*(.-)%s*$")
+end
+_G.geterrorhandler = function()
+	return function() end
+end
+assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
 local chunk = assert(loadfile("UI/Report.lua"))
 chunk("ExampleAddon", ns)
 ns.ReportTitle = "ExampleAddon report"

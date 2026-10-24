@@ -11,6 +11,7 @@
 
 Core.lua
 Locales\enUS.lua
+Core\SafeCall.lua
 UI\TrackerQuestie.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua

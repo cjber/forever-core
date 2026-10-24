@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.2 - 2026-10-24
+
+- Move shared error capture into `Core/SafeCall.lua`, vendor it to all five consumers, and add scheduled core-authoritative drift checks.
+
 ## 0.1.1 - 2026-10-24
 
 - **Unify report and link UI** in Forever Core, fix report text selection, and map vendored files to their consumers.
