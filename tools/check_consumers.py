@@ -30,6 +30,7 @@ VENDORED = {
     "tests/tracker_host_harness.lua": TRACKER_CONSUMERS,
     "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
     "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
+    "Core/SafeCall.lua": ALL_CONSUMERS,
     "UI/Report.lua": ALL_CONSUMERS,
     "tests/report_spec.lua": ALL_CONSUMERS,
     "UI/ForeverFamily.lua": ALL_CONSUMERS,

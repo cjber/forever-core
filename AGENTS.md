@@ -8,9 +8,9 @@ addon, `ForeverCore`.
 ## The two rules that matter
 
 1. **The shared files are the source of truth, and nothing here is addon specific.** Tracker files are vendored byte
-   for byte into adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever. Report and
-   Forever-family files are vendored into all five consumer addons at the same paths
-   (`docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
+   for byte into adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever. Error capture,
+   report and Forever-family files are vendored into all five consumer addons at the same paths
+   (`Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`; see `docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
    consumer repo and never bend these files toward one addon's needs: they read everything addon specific through the
    namespace (`ns.TrackerHostSettings`, `ns.ReportTitle`, `ns.L`), by design.
 2. **The paths mirror a consumer repo.** Suite convention is flat Lua at the repo root, and this repo is the one
@@ -39,7 +39,7 @@ and run anywhere.
 - `Core.lua`: ForeverCore's own install of the host's settings (`ns.TrackerHostSettings`), in `ForeverCoreDB`.
 - `Expose.lua`: the public `ForeverCore` table and `/fcore`; the last file the TOC loads, because it publishes what
   the shared modules built.
-- `UI/Report.lua` and `UI/ForeverFamily.lua`: shared report, issue and link UI vendored into all five consumers.
+- `Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`: shared error capture, report, issue and link UI vendored into all five consumers.
 - `tests/report_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
 - `UI/TrackerHost.lua`: the private tracker column, its layout, combat and Edit Mode handling, and the
   `ForeverTrackerHost` global the first-loaded Forever addon publishes and the rest adopt.
@@ -51,7 +51,7 @@ and run anywhere.
 - The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in
   `docs/handoff/` (handoff briefs, audit notes, the ledger). Read `docs/handoff/boundaries.md` before assigning a
   feature or moving code between addons.
-- `tools/check_consumers.py`, `tools/sync_consumers.py`: the vendoring gate and its fix.
+- `tools/check_consumers.py`, `tools/sync_consumers.py`: the vendoring gate and its fix. The scheduled drift workflow runs the checker without blocking core changes on consumer release timing.
 - `types/`: LuaLS declarations for the tracker contract.
 
 ## Agent skills

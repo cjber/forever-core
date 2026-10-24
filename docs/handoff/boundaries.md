@@ -84,6 +84,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Tracker specs | Two specs duplicated across four repos | the contract specs live in Forever Core and are vendored with the code |
 | Report and issue window | Five drifting copies and five inline slash dispatchers | Forever Core owns the shared report UI, spec and command helper; all five addons vendor them |
 | Forever-family link box | Five byte-identical copies, synced by hand | Forever Core owns the UI and spec; all five addons vendor them |
+| Error capture for the report window | Five hand-maintained `Core/SafeCall.lua` copies | Forever Core owns the module; all five addons vendor it byte for byte |
 | Nearest trainer, vendor, service | Four rankings (Shortest Path, Adventure Guide, SkillUp, Tweaks) | Shortest Path ranks; the others keep their own knowledge and call it when present |
 | Dungeon entrances | Four datasets | Tweaks owns pins, Shortest Path owns the door as a travel goal, Legacy owns the challenge badge. Two datasets stay: each addon must work alone |
 | Exploration and zone completion | Legacy shading, Tweaks reveal tint, Adventure Guide hint | Legacy owns it, Tweaks keeps its reveal as a different feature, Adventure Guide reads Legacy targets |
@@ -95,11 +96,11 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 
 Forever Core owns the code that is identical in every addon, not the features those addons draw.
 
-- **Vendored, not linked.** Adventure Guide, Legacy, Shortest Path and SkillUp carry byte-identical copies of
+- **Vendored, not linked.** All five addons carry byte-identical copies of `Core/SafeCall.lua`,
+  `UI/Report.lua`, `tests/report_spec.lua`, `UI/ForeverFamily.lua` and `tests/forever_family_spec.lua`.
+  Adventure Guide, Legacy, Shortest Path and SkillUp also carry byte-identical copies of
   `UI/TrackerHost.lua`, `UI/TrackerLock.lua`, `UI/TrackerOrder.lua`, `UI/TrackerQuestie.lua` and the two tracker specs.
-  All five addons carry byte-identical copies of `UI/Report.lua`, `tests/report_spec.lua`, `UI/ForeverFamily.lua` and
-  `tests/forever_family_spec.lua`. Every addon still works
-  with nothing else installed, and a fix lands once.
+  Every addon still works with nothing else installed, and a fix lands once.
 - **One source of truth.** A shared file changes in Forever Core first. Consumers are updated by running
   `tools/sync_consumers.py`, then one PR per consumer repo. `tools/check_consumers.py` fails on any byte difference.
 - **Nothing addon specific inside core.** The shared files read everything through the namespace: `ns.TrackerHostSettings`
@@ -167,3 +168,4 @@ Rules that keep this file honest:
 | 2026-10-22 | Round 9: Bestiary proposes route spawns and Shortest Path routes them; `Nearest` belongs to Shortest Path; SkillUp gains the shopping export and one buy trip; Adventure Guide may quote a detour cost. All four are marked new and become fact when their round-9 PR lands | maintainer, from the owner's 2026-10-22 ask ("one task per existing enhancement") |
 | 2026-10-22 | Hoard and Atlas added as the eighth and ninth addons, with their ownership rows and non-goals | maintainer, from the owner's 2026-10-22 ask ("one task for hoard forever and one for atlas forever") |
 | 2026-10-24 | Report and issue UI, its contract spec, the Forever-family link box and its spec assigned to Forever Core for vendoring into all five addons | maintainer, from the owner's 2026-10-24 request to unify shared addon logic |
+| 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to Forever Core as the report window's shared dependency, vendored into all five addons | owner request to complete the shared-logic extraction |
