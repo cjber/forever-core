@@ -35,4 +35,6 @@ jobs:
           git push origin "v${VERSION}"
       - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2.6.1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The packager reads GITHUB_OAUTH to create the GitHub release; GITHUB_TOKEN alone left it
+          # without a token (the run packaged the zip but published nothing).
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
