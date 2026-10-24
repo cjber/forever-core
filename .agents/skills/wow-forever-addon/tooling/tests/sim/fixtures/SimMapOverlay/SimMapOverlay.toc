@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: SimMapOverlay
+## SavedVariables: SimMapOverlayDB
+SimMapOverlay.lua

@@ -1,0 +1,33 @@
+{
+  "package": "forever_tools",
+  "source": {
+    "repository": "https://github.com/cjber/forever-core",
+    "path": ".agents/skills/wow-forever-addon/tooling/forever_tools",
+    "revision": "UNPINNED"
+  },
+  "files": {
+    "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
+    "art.py": "d644ab5c898036de7247cd88c5825b7d46f5b5474e5c4f69edbde125d443ff81",
+    "changelog.py": "d5cafddab4710c3632919bf882cde79164624a83688806359e743aadf44b8683",
+    "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
+    "doctor.py": "cb094d2e2c2362cc4c2708266e0dc4a2dac7af806a8520af308ef4560a8dd372",
+    "editorconfig.py": "45e006c7b01070b150ec0f4c1a8d3fe9ae1adac82b14f43bc57b27fb5a4d195c",
+    "family.py": "15ae45b3b5d34cd16eb8e6d2092ec1d996d82251c329fb399484f94d030c493a",
+    "fsio.py": "a6af0c5ce14823f67f00553dde5c3c014be596e2e4e0b12aaa902349c173e41c",
+    "generated.py": "e35f5bc8699bfd9d0773fd52fac826a87283d18d80936ee8907c72d86a6483e1",
+    "latest_build.py": "1aca656fd452494cf26e68dc9b62158dc2df9ef7288d3e53af06b2147728daef",
+    "locales.py": "f7dc8dbacbc5e422f4e3ca20251d6094236e9a604bbcd40e866d8fd5af30343d",
+    "lua.py": "030f1dd8c9dd5fa29bda054b8699570a4d9e17fae8022a48e6d171cea167a7a3",
+    "luadata.py": "d2621f31d1ddfa8c338d3305d3dbfb74020555f512c96b5991484404632c598e",
+    "multivalue.py": "a7078c8ea0c6a8b584f17c56f0e68b572379103a76eab657288e317c40f662bc",
+    "package.py": "04025a94e8cb3bd989726e3127f7b6ec3935519096a51d7f570988477013a512",
+    "readable.py": "5f41e691066830727e3218bd958c07c05a442f3b7e311150c9e2cbffefb567d4",
+    "release_check.py": "d31b8f0db80b6156c2312a8ae2ce506c1324b5ce7954e4404349837a2f7d93d8",
+    "report.py": "2b6e11c9e6dfa856f5bc7bb35822013f02a527225a28820ad745be61565c53ba",
+    "screens.py": "3b8f4ffccf1b89d51bafeeec640fd51076a29ad6fd344c7a2030446c3f33048a",
+    "sync.py": "b895b25c1fe63ab09f040001a6c03f901d9710eafa88a13f18dc7f06bfc2d4d7",
+    "taint.py": "befc9deb1a1fa5df813a51d37664a3510a58792b009ed3e44330ceb20f64bbb9",
+    "toc.py": "5b278c21cba3974ada13cafc64111cea1ab1e337970930b64c791e23645c522f",
+    "wago.py": "8bdf7084192d0081051be90d362251e28e64ff1a80315a81f4160f2640fdbed4"
+  }
+}

@@ -48,10 +48,28 @@ and run anywhere.
 - `UI/TrackerQuestie.lua`: Questie's quest list, so the column steps beside it instead of under it.
 - `Locales/enUS.lua`: the phrases the shared files themselves draw. A consumer keeps its own locale file for its own
   copy; these four phrases are the only ones core owns.
-- `docs/boundaries.md` is NOT here: the suite's ownership boundaries live in cjber/skills,
-  `forever-handoff/boundaries.md`, with the rest of the suite notes.
+- The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in
+  `docs/handoff/` (handoff briefs, audit notes, the ledger). Read `docs/handoff/boundaries.md` before assigning a
+  feature or moving code between addons.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the vendoring gate and its fix.
 - `types/`: LuaLS declarations for the tracker contract.
+
+## Agent skills
+
+The suite-wide skills live here, in the one repo every addon already vendors from, so an addon repo carries only
+what is specific to itself. Repo-specific skills (a repo's `release` checklist, its `sift-project` gate profile) stay
+in that repo's `.agents/skills/`, never in `cjber/skills`; `cjber/skills` holds only skills that build repo-specific
+logic out of a general rule (how `sift` functions, how `wowmock` renders).
+
+| Skill | Load it when |
+|---|---|
+| `.agents/skills/wow-forever-addon/SKILL.md` | the shared standards pack (`WFA-*`), UI look, icon, docs, CI and release baseline |
+| `.agents/skills/wow-addon-publish/SKILL.md` | publishing to CurseForge and Wago, or cutting a release |
+| `.agents/skills/wow-retail-ui-style/SKILL.md` | drawing or auditing addon windows, frames and widgets |
+
+Each addon declares `wow-forever-addon` under `## Standards` in its `AGENTS.md`, pinned to this repo. The pack's
+tooling (`tooling/forever_tools`, `tooling/forever_sim`) is produced here and vendored byte for byte into the
+consumers' `tools/`; edit it here, then run `sync.py update --source <this checkout>` in the consumer.
 
 ## Versions and releases
 

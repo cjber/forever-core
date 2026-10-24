@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: SimTooltipOwnLines
+## SavedVariables: SimTooltipOwnLinesDB
+SimTooltipOwnLines.lua

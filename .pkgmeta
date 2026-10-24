@@ -2,6 +2,8 @@ package-as: ForeverCore
 
 ignore:
   - AGENTS.md
+  - .agents
+  - .claude
   - docs
   - tools
   - types

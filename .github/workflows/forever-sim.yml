@@ -1,0 +1,41 @@
+name: Forever sim
+
+on:
+  push:
+    branches: [main]
+    paths: ['.agents/skills/wow-forever-addon/tooling/forever_sim/**', '.agents/skills/wow-forever-addon/tooling/tests/sim/**', '.github/workflows/forever-sim.yml']
+  pull_request:
+    paths: ['.agents/skills/wow-forever-addon/tooling/forever_sim/**', '.agents/skills/wow-forever-addon/tooling/tests/sim/**', '.github/workflows/forever-sim.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: .agents/skills/wow-forever-addon/tooling
+    env:
+      FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/forever_sim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y luajit lua-check
+      # Blizzard's UI source and the client tables are fetched at test time, never committed; the cache key is the
+      # fetcher, which holds the pinned revision and build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/forever_sim
+          key: forever-sim-${{ hashFiles('.agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py') }}
+      - run: python3 forever_sim/fetch.py --locale deDE
+      - run: luacheck forever_sim tests/sim
+      - run: luajit tests/sim/unit_spec.lua
+      - run: luajit tests/sim/integration_spec.lua
+      - uses: JohnnyMorganz/stylua-action@76fd70c03e6340ceaf673366712db9b20560b402 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 2.5.2
+          args: --check --indent-type Tabs --column-width 120 .agents/skills/wow-forever-addon/tooling/forever_sim .agents/skills/wow-forever-addon/tooling/tests/sim

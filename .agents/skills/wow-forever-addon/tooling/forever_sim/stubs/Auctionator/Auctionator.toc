@@ -1,0 +1,4 @@
+## Interface: 16001
+## Title: Auctionator (forever_sim stand-in)
+## Notes: Auctionator's API v1 as the Forever addons call it, written for the simulator. No Auctionator code.
+Auctionator.lua

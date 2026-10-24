@@ -1,0 +1,40 @@
+{
+  "package": "forever_sim",
+  "source": {
+    "repository": "https://github.com/cjber/forever-core",
+    "path": ".agents/skills/wow-forever-addon/tooling/forever_sim",
+    "revision": "UNPINNED"
+  },
+  "files": {
+    "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "client.lua": "3590334ad4a03fb2bc46b56616c74beb1a7c67f84a631c7effadad74d3b2099b",
+    "clientdata.lua": "e93b0c0d133d2f4384cce58e9b4f119ca2b7be3b9de95817e0351f245b6aa927",
+    "docs.lua": "bd00ca7c37378829a6447c1593652634dcbd673968e1a9eea053a301b260a847",
+    "fetch.py": "8640547529339b0e27d4d0fdb30c2ce853e0ea43d21754251743dc03bc8f8cd6",
+    "instrument.lua": "cc69494dcf1b417e876bcf43a0076b7d1208b129d8c71bb1b100a6d1914df9d6",
+    "layout.lua": "2310ddc299e8fab165249b2378ae4b7f451f008c97078ad7f2dcbccad57b9ae2",
+    "loader.lua": "7ed1315273132b95ad2067329a33061b52a7053904e45a62f2cdf124e9e81909",
+    "natives.lua": "4b1ae6d41e9737fead7aedbf828983e4f1af30c30a34f433bd7d3436d8bcb908",
+    "run.lua": "5a884531bd41c56d04fb4445baa61865e83e9d0deafc19dcbc85e5977d2b166e",
+    "scenario.lua": "0dff1d72624e3887834036a3eb422b10fcfe23242b7d7dc6c465299e1dc66898",
+    "sim.lua": "a118d41df01a40fbea5e2e07254891814c4eec430c3878d84d0c1ae13c1b212e",
+    "stubgen.lua": "eabfd05dc01e37432de48e1427fd3eb8fe1e00b59761f0e009f367289ac79ff0",
+    "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
+    "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
+    "stubs/Polestar/Polestar.lua": "3dbb87a7003637ca11d16d4c5e101ba44a3226129437046a2622a4dfd1de206f",
+    "stubs/Polestar/Polestar.toc": "c29d4f29e0cb0f1f3ceb99ae41cef911aea5ff8bbb73b2d7c004d2d714d29e27",
+    "stubs/Questie/Questie.lua": "d45b556bd48aded08c405dfa2414abc895558cf22d3d8999126a505a14ed086e",
+    "stubs/Questie/Questie.toc": "6779e6d96667e66b8a292e180af69df7d87bbd63f1440948f2a0338fa7a93c56",
+    "stubs/TomTom/TomTom.lua": "c5e0f96b474079ddd2fdb8664048b4b8181742036bea5532b844e1c02601ca00",
+    "stubs/TomTom/TomTom.toc": "45589ad54bd4e945ba7be394fcb3c7fb5e205b700135719a93cf773b3c21f843",
+    "sync.py": "6918dfa8ffc7f5adf1c30b27f5dcd1021460343c0774b5c0928354cdf242c62c",
+    "taint.lua": "e3697a45653f75686f3dccd7de00106245bc79f9dba458f46eebb06a86f111c1",
+    "templates.lua": "b18826c937c8332241102ea93bb6ac475691463a3a01775f38312889a1643d66",
+    "tooltip.lua": "d1d64a3eaf02f6ce9a1f588b68e4d25602625311f8cee76663a54df070f03a07",
+    "veil.lua": "effe7f6556200308a0016bb0d4a139d3c63ee83a25a52dea1a5dfd172ef3da0b",
+    "watch.lua": "24e6e70bd3d5eeb67a2b939edfdd2ca00f820376f88ec98548b0d01427f85e79",
+    "widgets.lua": "5e2af5cddd7c27297f8ef4a55662f31a7857c72d31e543aab5f621717abf0975",
+    "world.lua": "291bccc251826a0ce202d0a0e34776df6e95d4ad7130223b1c68d54bf02370e8",
+    "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
+  }
+}
