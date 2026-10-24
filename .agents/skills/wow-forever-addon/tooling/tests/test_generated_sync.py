@@ -127,7 +127,7 @@ class SyncTest(unittest.TestCase):
     def test_update_copies_a_committed_producer_and_pins_its_head(self):
         with tempfile.TemporaryDirectory() as directory:
             root = repository(directory, {"README": "x"})
-            producer = root / "wow-forever-addon" / "tooling" / "forever_tools"
+            producer = root / ".agents" / "skills" / "wow-forever-addon" / "tooling" / "forever_tools"
             shutil.copytree(PACKAGE, producer, ignore=shutil.ignore_patterns("__pycache__"))
             git(root, "add", "-A")
             git(root, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "producer")
