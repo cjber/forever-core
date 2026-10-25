@@ -109,6 +109,8 @@ Forever Core owns the code that is identical in every addon, not the features th
   Core lists the five addons as `OptionalDeps` so they load first and core adopts rather than starting a second column.
 - **What stays per addon:** a section's own drawing, its blocks, its strings, and its settings page. Core never learns
   what a quest, a route, a recipe or a creature is.
+- The Field Guide Forever consumer list now includes `bestiary-forever` for `Core/MicroButton.lua` and its contract
+  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column.
 
 ## 6. Integration contracts
 
@@ -160,6 +162,8 @@ Rules that keep this file honest:
    no-Shortest-Path fallback? Today: fallback.
 
 ## 10. Change log
+
+| 2026-10-25 | Field Guide Forever (`bestiary-forever`) added to the shared micro-button consumer group with Adventure Guide; it remains outside the tracker consumer list | owner-approved micro-menu button brief |
 
 | Date | Change | Who |
 |---|---|---|

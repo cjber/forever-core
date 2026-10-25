@@ -94,6 +94,11 @@ lines2 = [W.TooltipLine('Adventure Guide'),
           W.TooltipLine('Click to open the levelling guide', W.rgb('808080'))]
 compose('micro-menu-adventure-guide.png', row(ui, 620, 150, btns2, hover2, lines2), 620, 150)
 
+# ---- 2b. Additive mode: keep Blizzard's tome and place ours one slot further left
+btns3 = [('native', n) for n in NATIVE] + [('custom', AG_ICON), ('native', 'GameMenu')]
+hover3 = len(btns3)-2
+compose('micro-menu-adventure-guide-additive.png', row(ui, 620, 150, btns3, hover3, lines2), 620, 150)
+
 def dropdown(canvas, right, top, text, h=18):
     """WowStyle1FilterDropdownTemplate placed by its TOPRIGHT, text vertically centred in the 18-high button."""
     u = canvas.ui
