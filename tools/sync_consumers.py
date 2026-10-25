@@ -20,7 +20,7 @@ ALL_CONSUMERS = (
 )
 
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
-MICRO_CONSUMERS = ("adventure-guide-forever", "bestiary-forever")
+MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
 VENDORED = {
     "Core/MicroButton.lua": MICRO_CONSUMERS,
     "tests/micro_button_spec.lua": MICRO_CONSUMERS,

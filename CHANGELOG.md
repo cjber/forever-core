@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-25
+
 - **Add shared micro-menu buttons** with Blizzard's native button template and placement refresh handling.
+- **The consumer registry names Field Guide Forever's repo as it is now called.** `bestiary-forever` became
+  `field-guide-forever` on 24 October, so the vendored micro button copies are read from the current name.
 
 ## 0.1.2 - 2026-10-24
 
