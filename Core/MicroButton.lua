@@ -57,7 +57,7 @@ function MicroButton.Refresh()
 end
 
 ---@param spec table
----@return Button?
+---@return Frame?
 function MicroButton.Create(spec)
 	if not MicroMenu then
 		if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -65,7 +65,7 @@ function MicroButton.Create(spec)
 		end
 		return nil
 	end
-	local button = CreateFrame("Button", spec.name, MicroMenu, "MainMenuBarMicroButton")
+	local button = CreateFrame("Button", spec.name, MicroMenu, "MainMenuBarMicroButton") --[[@as ForeverMicroButton]]
 	button.microButtonSpec = spec
 	if spec.host then
 		spec.host.microButton = button
