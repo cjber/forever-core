@@ -15,3 +15,4 @@ L["Forever tracker"] = "Forever tracker"
 L["Drag to move"] = "Drag to move"
 L["The tracker is locked. Turn off Lock the tracker to move it."] =
 	"The tracker is locked. Turn off Lock the tracker to move it."
+L.MICRO_MENU_UNAVAILABLE = "Micro menu unavailable; skipping custom button."

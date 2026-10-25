@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Add shared micro-menu buttons** with Blizzard's native button template and placement refresh handling.
+
 ## 0.1.2 - 2026-10-24
 
 - Move shared error capture into `Core/SafeCall.lua`, vendor it to all five consumers, and add scheduled core-authoritative drift checks.

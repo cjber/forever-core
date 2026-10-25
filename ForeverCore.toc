@@ -12,6 +12,7 @@
 Core.lua
 Locales\enUS.lua
 Core\SafeCall.lua
+Core\MicroButton.lua
 UI\TrackerQuestie.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
