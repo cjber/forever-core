@@ -1003,6 +1003,10 @@ def context_menu(ui, entries):
     margin = 12
     canvas = ui.canvas(width + 2 * margin, height + 2 * margin)
     # MenuStyle1Mixin:Generate: common-dropdown-bg from (-10, 3) to (10, -3) at alpha .925.
+    # The atlas centre has transparent pixels. Blizzard's frame tint plus the
+    # 0.925 vertex alpha still leaves row text legible underneath; the menu
+    # surface itself must be opaque in a flattened screenshot.
+    canvas.fill(margin - 10, margin - 3, width + 20, height + 6, rgb("17191d"))
     canvas.draw(ui.atlas("common-dropdown-bg"), margin - 10, margin - 3, width + 20, height + 6, (1, 1, 1, 0.925))
     y = margin + top
     rows = []
