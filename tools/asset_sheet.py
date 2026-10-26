@@ -14,6 +14,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 WOWMOCK = Path(__file__).resolve().parent / "wowmock"
+ROOT = Path(__file__).resolve().parent
 if not WOWMOCK.exists():  # locally: the mock tooling lives in bestiary-forever/tools
     WOWMOCK = Path(__file__).resolve().parents[2] / "bestiary-forever" / "tools" / "wowmock"
 sys.path.insert(0, str(WOWMOCK))
@@ -115,6 +116,47 @@ def sheet(ui, group, prefixes, out, per_sheet=21):
     return out
 
 
+def own_art_sheet(out):
+    """Render the raster addon assets that remain after the texture cleanup."""
+    files = []
+    for repo in (
+        "adventure-guide-forever",
+        "atlas-forever",
+        "bestiary-forever",
+        "hoard-forever",
+        "legacy-forever",
+        "shortest-path-forever",
+        "skillup-forever",
+        "tweaks-forever",
+    ):
+        media = ROOT.parent / repo / "media"
+        if media.is_dir():
+            files.extend(p for p in media.iterdir() if p.suffix.lower() in {".png", ".tga", ".blp"})
+    files.sort(key=lambda p: (p.parent.parent.name, p.name.lower()))
+    cell_w, cell_h, columns, pad, title_h = 208, 170, 5, 10, 42
+    rows = (len(files) + columns - 1) // columns
+    canvas = Image.new("RGB", (columns * cell_w + (columns + 1) * pad, title_h + rows * (cell_h + pad) + pad), BG)
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 11)
+    title_font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 20)
+    draw.text((pad, 10), f"Our shipped raster art: {len(files)} files", font=title_font, fill=ACCENT)
+    for index, path in enumerate(files):
+        x = pad + index % columns * (cell_w + pad)
+        y = title_h + index // columns * (cell_h + pad)
+        draw.rectangle((x, y, x + cell_w, y + cell_h), fill=PANEL)
+        try:
+            art = Image.open(path).convert("RGBA")
+            art.thumbnail((cell_w - 20, cell_h - 42), Image.Resampling.LANCZOS)
+            canvas.paste(art, (x + (cell_w - art.width) // 2, y + (cell_h - 32 - art.height) // 2), art)
+        except Exception as exc:  # noqa: BLE001 - keep the audit sheet complete if one format is unsupported
+            draw.text((x + 8, y + 8), f"{type(exc).__name__}", font=font, fill=(255, 120, 120))
+        label = f"{path.parent.parent.name}/{path.name}"
+        draw.text((x + 5, y + cell_h - 24), label[:32], font=font, fill=INK)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out)
+    print(f"  our-own-art: {len(files)} files, wrote {out.name} ({canvas.width}x{canvas.height})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="docs/asset-audit")
@@ -126,6 +168,8 @@ def main():
         if args.only and group not in args.only:
             continue
         sheet(ui, group, prefixes, out / f"{group}.png")
+    if not args.only or "our-own-art" in args.only:
+        own_art_sheet(out / "our-own-art.png")
 
 
 if __name__ == "__main__":

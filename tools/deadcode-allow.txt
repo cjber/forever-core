@@ -1,0 +1,4 @@
+# Dynamic runtime dispatch and cross-addon reporting API members retained intentionally.
+Core/Core.lua:OnReady # client lifecycle queues call registered readiness callbacks by this name
+Core/SafeCall.lua:GetErrors # Forever Core UI/Report.lua exposes the consumer's error log dynamically
+Core/SafeCall.lua:ClearErrors # Forever Core UI/Report.lua clears the consumer's error log dynamically

@@ -33,7 +33,11 @@ SETTINGS_CONSUMERS = ALL_CONSUMERS
 # fetching them: each one runs its own tools/check_core_shared.py from .github/workflows/core-shared-drift.yml,
 # comparing its vendored copies against public core main. tools/sync_consumers.py still syncs them.
 PRIVATE_CONSUMERS = ("field-guide-forever", "atlas-forever", "hoard-forever")
+ALL_SUITE_CONSUMERS = ALL_CONSUMERS + PRIVATE_CONSUMERS
+CHECKOUT_ALIASES = {"field-guide-forever": "bestiary-forever"}
 VENDORED = {
+    "tools/deadcode.py": ALL_SUITE_CONSUMERS,
+    "tools/deadcode-allow.txt": ALL_SUITE_CONSUMERS,
     "Core/Text.lua": TEXT_CONSUMERS,
     "tests/text_spec.lua": TEXT_CONSUMERS,
     "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
@@ -86,7 +90,7 @@ def main():
             comparisons += 1
             try:
                 if arguments.local:
-                    theirs = (arguments.local / repo / path).read_bytes()
+                    theirs = (arguments.local / CHECKOUT_ALIASES.get(repo, repo) / path).read_bytes()
                 else:
                     theirs = remote(repo, path, arguments.branch)
             except (OSError, urllib.error.URLError, TimeoutError) as error:
