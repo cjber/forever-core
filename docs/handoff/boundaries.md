@@ -110,7 +110,10 @@ Forever Core owns the code that is identical in every addon, not the features th
 - **What stays per addon:** a section's own drawing, its blocks, its strings, and its settings page. Core never learns
   what a quest, a route, a recipe or a creature is.
 - The Field Guide Forever consumer list now includes `bestiary-forever` for `Core/MicroButton.lua` and its contract
-  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column.
+  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column. Field Guide is a
+  private repo, so forever-core cannot read it over unauthenticated raw: it runs its own
+  `tools/check_core_shared.py` from `.github/workflows/core-shared-drift.yml` against public core main, and
+  `tools/check_consumers.py` lists it as a private consumer instead of fetching it.
 
 ## 6. Integration contracts
 
