@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Give offline UI mocks one shared renderer.** `tools/wowmock/` now owns the MIT-licensed BLP decoder, client
+  asset cache, atlas and font lookup, native widget drawing, and frame compositing used by addon screenshots.
+  Addons keep their own scenes and can import this library through `FOREVER_CORE`; Core's asset-sheet tool no longer
+  reaches into Field Guide for the renderer.
+
 ## 0.3.0 - 2026-10-26
 
 - **Put text matching and settings-page chrome in Forever Core, for the addons to vendor.** `Core/Text.lua` folds case

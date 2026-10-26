@@ -11,14 +11,10 @@ import collections
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-WOWMOCK = Path(__file__).resolve().parent / "wowmock"
 ROOT = Path(__file__).resolve().parent
-if not WOWMOCK.exists():  # locally: the mock tooling lives in bestiary-forever/tools
-    WOWMOCK = Path(__file__).resolve().parents[2] / "bestiary-forever" / "tools" / "wowmock"
-sys.path.insert(0, str(WOWMOCK))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT / "wowmock"))
 
 import wowmock  # noqa: E402
 
@@ -60,7 +56,7 @@ def wrap(text, font, width, draw):
     return lines[:3]
 
 
-def sheet(ui, group, prefixes, out, per_sheet=21):
+def sheet(ui, group, prefixes, out, font, title_font, per_sheet=21):
     elements = ui.table("UiTextureAtlasElement", key="Name")
     picked = {}
     members_by_element = collections.defaultdict(list)
@@ -86,8 +82,6 @@ def sheet(ui, group, prefixes, out, per_sheet=21):
     height = HEADER + rows * (CELL_H + LABEL_H) + PAD
     canvas = Image.new("RGB", (width, height), BG)
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 11)
-    title_font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 20)
     draw.text((PAD, 12), f"{group}: {len(picked)} matching elements, {len(names)} shown", font=title_font, fill=ACCENT)
 
     for i, name in enumerate(names):
@@ -116,7 +110,7 @@ def sheet(ui, group, prefixes, out, per_sheet=21):
     return out
 
 
-def own_art_sheet(out):
+def own_art_sheet(out, font, title_font):
     """Render the raster addon assets that remain after the texture cleanup."""
     files = []
     for repo in (
@@ -137,8 +131,6 @@ def own_art_sheet(out):
     rows = (len(files) + columns - 1) // columns
     canvas = Image.new("RGB", (columns * cell_w + (columns + 1) * pad, title_h + rows * (cell_h + pad) + pad), BG)
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 11)
-    title_font = ImageFont.truetype(str(Path.home() / ".cache/wowmock/1.60.1.70124/files/615960"), 20)
     draw.text((pad, 10), f"Our shipped raster art: {len(files)} files", font=title_font, fill=ACCENT)
     for index, path in enumerate(files):
         x = pad + index % columns * (cell_w + pad)
@@ -164,12 +156,14 @@ def main():
     args = ap.parse_args()
     out = Path(args.out)
     ui = wowmock.Ui(scale=2)
+    font = ui.font(wowmock.Font(wowmock.FRIZQT, 11))
+    title_font = ui.font(wowmock.Font(wowmock.FRIZQT, 20))
     for group, prefixes in GROUPS.items():
         if args.only and group not in args.only:
             continue
-        sheet(ui, group, prefixes, out / f"{group}.png")
+        sheet(ui, group, prefixes, out / f"{group}.png", font, title_font)
     if not args.only or "our-own-art" in args.only:
-        own_art_sheet(out / "our-own-art.png")
+        own_art_sheet(out / "our-own-art.png", font, title_font)
 
 
 if __name__ == "__main__":
