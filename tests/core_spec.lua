@@ -33,8 +33,10 @@ for _, path in ipairs(tocFiles()) do
 end
 for _, path in ipairs({
 	"Core.lua",
+	"Core/Text.lua",
 	"Expose.lua",
 	"Locales/enUS.lua",
+	"UI/SettingsPage.lua",
 	"UI/TrackerHost.lua",
 	"UI/TrackerLock.lua",
 	"UI/TrackerOrder.lua",

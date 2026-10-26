@@ -21,7 +21,15 @@ ALL_CONSUMERS = (
 
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
 MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
+# Core/Text.lua goes to the three addons that search by name, and the settings canvas to every addon in the suite --
+# including the three private repos, which is why this list is longer than ALL_CONSUMERS.
+TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
+SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "atlas-forever", "hoard-forever")
 VENDORED = {
+    "Core/Text.lua": TEXT_CONSUMERS,
+    "tests/text_spec.lua": TEXT_CONSUMERS,
+    "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
+    "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
     "Core/MicroButton.lua": MICRO_CONSUMERS,
     "tests/micro_button_spec.lua": MICRO_CONSUMERS,
     "UI/TrackerHost.lua": TRACKER_CONSUMERS,

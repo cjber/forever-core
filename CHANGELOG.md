@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Put text matching and settings-page chrome in Forever Core, for the addons to vendor.** `Core/Text.lua` folds case
+  and Latin accents (`ELEPHANT`, `Sao Tome`, `AEgir`, `Strasse`) and ranks a match as exact, prefix, word start or
+  substring, replacing the four addons' own copies that disagreed; `UI/SettingsPage.lua` is the settings canvas every
+  addon hand-built (`Register` plus `AddCheck`, `AddSlider`, `AddDropdown` and `AddButton`), drawing labels through the
+  addon's own `ns.L`. Neither file holds an addon's options. The consumer registry lists both files, and their specs,
+  before the copies land: nothing changes in game until the addons' own PRs adopt them.
+
 ## 0.2.1 - 2026-10-26
 
 - **The consumer drift check no longer fails on a repo it cannot read.** Field Guide Forever is private, so

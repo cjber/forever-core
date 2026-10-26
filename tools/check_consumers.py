@@ -24,11 +24,20 @@ ALL_CONSUMERS = (
 
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
 MICRO_CONSUMERS = ("adventure-guide-forever",)
+# Core/Text.lua goes to the three addons that search by name (Hoard, Adventure Guide and Shortest Path); the two
+# private ones among them are compared from their own repos.
+TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
+# The settings canvas goes to every addon in the suite, which is the five public consumers plus the three private ones.
+SETTINGS_CONSUMERS = ALL_CONSUMERS
 # Private repos cannot be read over unauthenticated raw.githubusercontent.com, so this gate names them instead of
 # fetching them: each one runs its own tools/check_core_shared.py from .github/workflows/core-shared-drift.yml,
 # comparing its vendored copies against public core main. tools/sync_consumers.py still syncs them.
-PRIVATE_CONSUMERS = ("field-guide-forever",)
+PRIVATE_CONSUMERS = ("field-guide-forever", "atlas-forever", "hoard-forever")
 VENDORED = {
+    "Core/Text.lua": TEXT_CONSUMERS,
+    "tests/text_spec.lua": TEXT_CONSUMERS,
+    "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
+    "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
     "Core/MicroButton.lua": MICRO_CONSUMERS,
     "tests/micro_button_spec.lua": MICRO_CONSUMERS,
     "UI/TrackerHost.lua": TRACKER_CONSUMERS,
@@ -65,9 +74,15 @@ def main():
 
     failures = []
     comparisons = 0
+    skipped = 0
     for path, consumers in VENDORED.items():
         mine = Path(path).read_bytes()
         for repo in consumers:
+            # A private repo's copies are read from a local checkout when one is given, and otherwise left to that
+            # repo's own drift workflow rather than counted as a match this gate cannot see.
+            if not arguments.local and repo in PRIVATE_CONSUMERS:
+                skipped += 1
+                continue
             comparisons += 1
             try:
                 if arguments.local:
@@ -87,6 +102,11 @@ def main():
         print("Fix with tools/sync_consumers.py, then commit the copies in the consumer repos.")
         return 1
     print(f"{comparisons} shared file copies match their consumer repos.")
+    if skipped:
+        print(
+            f"{skipped} copies in private repos were not read from here; "
+            "each of those repos gates them from its own core-shared-drift.yml."
+        )
     for repo in PRIVATE_CONSUMERS:
         print(f"{repo}: private, gated from its own repo by core-shared-drift.yml")
     return 0
