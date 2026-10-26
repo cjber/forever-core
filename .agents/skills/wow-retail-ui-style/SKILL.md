@@ -39,3 +39,26 @@ Apply these rules when making WoW Retail addon UI. Prefer Blizzard's current int
 2. Inspect its current template, mixin, atlas, and API before choosing custom implementation details.
 3. Build the smallest addon-specific layer on top of those conventions and cover the applicable states from the rules above.
 4. Review it in the target client, then fix any visual, input, localization, scaling, or protected-frame issues found.
+
+## Never use (blacklist)
+
+The inventory behind these bans, with the build counts that justify each one, is
+`docs/asset-registry.md`. Do not reach for art outside the client's own current set.
+
+- **Expansion-era chrome.** `Garr*`, `GarrMission_*`, `ClassHall_*`, `orderhall*`, `covenant*`,
+  `soulbinds*`, `warfront*`, `housing*`, `shop-*`, `pvpqueue*`, `pvptalents*`, `dragonriding*`,
+  `plunderstorm*`, `eyeofthejailer*`. None of these have a member in the client's Forever art set;
+  they are WoD-through-11.x art and read as a different game next to clean client frames.
+- **`hud-*` / `UI-HUD-*` as general chrome.** Only inside the HUD system being skinned (action bars,
+  cast bar, cooldown manager) — never as a border, divider, panel edge, or decoration.
+- **A `-c60`-named member that resolves into a set-0 atlas.** Resolve the element to a set-1 atlas or
+  take the plain member; the set-0 c60 members are the trap that made the tooltip centre brown once.
+- **Hand-drawn chrome**: borders, fills, gradients, gems, glow rings, crests, stretched corners, 1px
+  fills. A missing element is styled by an existing template, not by new art.
+- **Loose legacy textures**: `interface/tooltips/ui-tooltip-border.blp` (137057/137056) and any
+  pre-NineSlice Backdrop art. Use `Tooltip-NineSlice-*` or the frame's own template.
+- **Gamepad, cursor and crosshair atlases** — input-device art, never window chrome.
+- **Fonts that are not FRIZQT or ARIALN.** No Cinzel, EB Garamond, Marcellus or any webfont in a
+  window, tooltip, or screenshot; and no hand-picked hex described as "gold".
+- **Art from an unpinned or wrong build.** Only `1.60.1.70124`; the cached `1.15.9.70003` is a
+  Classic-era client whose UI predates the Forever redesign.
