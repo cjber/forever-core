@@ -3,6 +3,8 @@
 The four addons that draw sections into the shared column each carry a byte-identical copy of the files listed in
 VENDORED: that is what lets them work alone, with no dependency to install. This gate is what stops the copies
 drifting: it compares each repo's main branch (or a local checkout) with this repo's copy and names every mismatch.
+The split follows visibility: public consumers are compared from this repo, while the private one cannot be read here
+and instead compares itself against public core from its own core-shared-drift.yml workflow.
 """
 
 import argparse
@@ -21,7 +23,11 @@ ALL_CONSUMERS = (
 )
 
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
-MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
+MICRO_CONSUMERS = ("adventure-guide-forever",)
+# Private repos cannot be read over unauthenticated raw.githubusercontent.com, so this gate names them instead of
+# fetching them: each one runs its own tools/check_core_shared.py from .github/workflows/core-shared-drift.yml,
+# comparing its vendored copies against public core main. tools/sync_consumers.py still syncs them.
+PRIVATE_CONSUMERS = ("field-guide-forever",)
 VENDORED = {
     "Core/MicroButton.lua": MICRO_CONSUMERS,
     "tests/micro_button_spec.lua": MICRO_CONSUMERS,
@@ -81,6 +87,8 @@ def main():
         print("Fix with tools/sync_consumers.py, then commit the copies in the consumer repos.")
         return 1
     print(f"{comparisons} shared file copies match their consumer repos.")
+    for repo in PRIVATE_CONSUMERS:
+        print(f"{repo}: private, gated from its own repo by core-shared-drift.yml")
     return 0
 
 
