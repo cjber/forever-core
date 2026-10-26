@@ -75,13 +75,52 @@ def scan():
     reference_sources = []
     for pattern in ("*.lua", "*.xml", "*.toc"):
         reference_sources.extend(source_files(pattern))
-    references = "\n".join(
-        p.read_text(encoding="utf-8", errors="replace").replace("\\", "/") for p in reference_sources
+    media_dir = ROOT / "media"
+    media_files = (
+        {p.relative_to(media_dir).as_posix().casefold(): p for p in media_dir.rglob("*") if p.is_file()}
+        if media_dir.is_dir()
+        else {}
     )
-    for media in (ROOT / "media").glob("*") if (ROOT / "media").is_dir() else ():
-        stem = media.name.rsplit(".", 1)[0]
-        media_reference = re.compile(rf"media/+{re.escape(stem)}(?:\b|/)", re.IGNORECASE)
-        if media.is_file() and media.suffix.lower() in {".tga", ".blp"} and not media_reference.search(references):
+    referenced_media = {}
+    resolved_media = set()
+    media_pattern = re.compile(r"\bmedia/+([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)", re.IGNORECASE)
+    for source in reference_sources:
+        if ignored(source):
+            continue
+        if ROOT.name == "forever-core" and rel(source) in CORE_SOURCE_ONLY:
+            continue
+        content = source.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
+        if source.suffix == ".lua":
+            content = re.sub(r"--[^\n]*", "", content)
+        elif source.suffix == ".xml":
+            content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+        for match in media_pattern.finditer(content):
+            context = content[max(0, match.start() - 100) : match.start()]
+            dynamic_folder = re.search(r"\.\.\s*([A-Za-z_]\w*)\s*\.\.\s*['\"]/+$", context)
+            if dynamic_folder and dynamic_folder.group(1) != "addonName":
+                # The directory is supplied dynamically (for example, the installed addon's icon).
+                continue
+            reference = match.group(1)
+            # WoW texture paths commonly omit the .tga/.blp extension.
+            candidates = [reference.casefold()]
+            if Path(reference).suffix == "":
+                candidates.append((reference + ".tga").casefold())
+                candidates.append((reference + ".blp").casefold())
+            if any(candidate in media_files for candidate in candidates):
+                resolved_media.update(candidates)
+            else:
+                line = content.count("\n", 0, match.start()) + 1
+                referenced_media.setdefault(reference.casefold(), (rel(source), line, reference))
+
+    for source, line, reference in referenced_media.values():
+        errors.append((source, line, f"media reference does not exist: media/{reference}"))
+
+    for media in media_files.values():
+        if media.suffix.lower() not in {".tga", ".blp"}:
+            continue
+        key = media.relative_to(media_dir).as_posix().casefold()
+        stem = media.with_suffix("").relative_to(media_dir).as_posix().casefold()
+        if key not in resolved_media and stem not in resolved_media:
             errors.append((rel(media), 1, "media file has no Lua, XML or TOC reference"))
 
     py = {p.stem: p for p in source_files("*.py") if p.parent == ROOT / "tools" and not p.stem.endswith("_test")}
