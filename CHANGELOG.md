@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-26
+
+- **Draw the mock context menu's backing surface opaque.** `common-dropdown-bg`'s atlas centre is translucent, so a
+  menu composited straight over a scene let the list underneath show through its rows; the renderer now fills the
+  panel behind the atlas art. `docs/handoff/mock-migration.md` records the migration state for the consumer addons.
+
+
 - **Give offline UI mocks one shared renderer.** `tools/wowmock/` now owns the MIT-licensed BLP decoder, client
   asset cache, atlas and font lookup, native widget drawing, and frame compositing used by addon screenshots.
   Addons keep their own scenes and can import this library through `FOREVER_CORE`; Core's asset-sheet tool no longer
