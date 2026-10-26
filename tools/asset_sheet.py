@@ -5,6 +5,7 @@
 Each group is a list of prefix filters over UiTextureAtlasElement names. One sheet per group, cells sized to the
 art's native pixels (the c60/retail art is authored at 2x), labelled with the element name as SetAtlas takes it.
 """
+
 import argparse
 import collections
 import sys
@@ -26,18 +27,20 @@ INK = (232, 232, 236)
 DIM = (150, 150, 158)
 ACCENT = (255, 209, 0)
 
-GROUPS = collections.OrderedDict([
-    ("native-retail", ["common-", "ui-frame-", "!ui-frame-", "minimal-", "tooltip-", "!tooltip-", "128-redbutton"]),
-    ("garrison-classhall", ["garr", "classhall", "orderhall"]),
-    ("covenant-soulbinds", ["covenant", "soulbind"]),
-    ("warfronts", ["warfront"]),
-    ("housing", ["housing"]),
-    ("pvp-queue", ["pvpqueue", "pvptalents"]),
-    ("shop-store", ["shop"]),
-    ("dragonriding-plunderstorm", ["dragonriding", "plunderstorm"]),
-    ("legacy-old-style", ["legacy"]),
-    ("questlog", ["questlog"]),
-])
+GROUPS = collections.OrderedDict(
+    [
+        ("native-retail", ["common-", "ui-frame-", "!ui-frame-", "minimal-", "tooltip-", "!tooltip-", "128-redbutton"]),
+        ("garrison-classhall", ["garr", "classhall", "orderhall"]),
+        ("covenant-soulbinds", ["covenant", "soulbind"]),
+        ("warfronts", ["warfront"]),
+        ("housing", ["housing"]),
+        ("pvp-queue", ["pvpqueue", "pvptalents"]),
+        ("shop-store", ["shop"]),
+        ("dragonriding-plunderstorm", ["dragonriding", "plunderstorm"]),
+        ("legacy-old-style", ["legacy"]),
+        ("questlog", ["questlog"]),
+    ]
+)
 
 CELL_W, CELL_H, COLS, PAD, LABEL_H, HEADER = 200, 150, 7, 8, 26, 46
 
@@ -59,7 +62,6 @@ def wrap(text, font, width, draw):
 def sheet(ui, group, prefixes, out, per_sheet=21):
     elements = ui.table("UiTextureAtlasElement", key="Name")
     picked = {}
-    atlases = ui.table("UiTextureAtlas")
     members_by_element = collections.defaultdict(list)
     for m in ui.table("UiTextureAtlasMember").values():
         members_by_element[m["UiTextureAtlasElementID"]].append(m)
