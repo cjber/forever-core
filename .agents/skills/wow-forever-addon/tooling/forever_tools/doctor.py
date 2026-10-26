@@ -4,7 +4,8 @@ The pins are read from the repository itself, never retyped here: `.github/workf
 actionlint, zizmor, gitleaks, lua-language-server, the apt packages) and `tools/typecheck.sh` (the LuaLS version
 and the Ketho WoW API annotations checkout). `tools/typecheck.sh` stops at its first problem; this reports them
 all, one line each with its fix, then exits 1 if any tool the gate needs is missing or at the wrong version.
-Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py`, `WOWMOCK`) are reported but never fail it.
+Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py` and the shared renderer in
+`FOREVER_CORE`) are reported but never fail it.
 
     python3 tools/doctor.py
 """
@@ -194,18 +195,19 @@ def check_screenshots(pillow: str) -> list[Finding]:
         findings.append(Finding(False, text, fix, optional=True))
     else:
         findings.append(Finding(True, f"Pillow: {installed}"))
-    wowmock = os.environ.get("WOWMOCK")
-    if not wowmock or not (Path(wowmock) / "wowmock.py").is_file():
+    core = Path(os.environ.get("FOREVER_CORE", Path(__file__).resolve().parents[3] / "forever-core")).expanduser()
+    renderer = core / "tools" / "wowmock" / "wowmock.py"
+    if not renderer.is_file():
         findings.append(
             Finding(
                 False,
-                "WOWMOCK: not set to a wow-mock-screenshots directory (tools/screenshots.py only)",
-                "export WOWMOCK=<cjber/skills checkout>/wow-mock-screenshots",
+                f"FOREVER_CORE: shared renderer not found at {renderer} (tools/screenshots.py only)",
+                "set FOREVER_CORE to the forever-core checkout",
                 optional=True,
             )
         )
     else:
-        findings.append(Finding(True, f"WOWMOCK: {wowmock}"))
+        findings.append(Finding(True, f"FOREVER_CORE: {core}"))
     return findings
 
 
