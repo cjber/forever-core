@@ -43,9 +43,11 @@ Apply these rules when making WoW Retail addon UI. Prefer Blizzard's current int
 ## Never use (blacklist)
 
 The inventory behind these bans, with the build counts that justify each one, is
-`docs/asset-registry.md`. Do not reach for art outside the client's own current set.
+`docs/asset-registry.md`. For addon chrome, use only the vetted modern set shown in
+`docs/asset-audit/native-retail.png` (build `1.60.1.70124`); use Blizzard templates and widgets for controls.
+Blizzard-owned content icons may still identify game content, but expansion skins and hand-made chrome are out.
 
-- **Expansion-era chrome.** `Garr*`, `GarrMission_*`, `ClassHall_*`, `orderhall*`, `covenant*`,
+- **All expansion-era UI art, including scenic backgrounds.** `Garr*`, `GarrMission_*`, `ClassHall_*`, `orderhall*`, `covenant*`,
   `soulbinds*`, `warfront*`, `housing*`, `shop-*`, `pvpqueue*`, `pvptalents*`, `dragonriding*`,
   `plunderstorm*`, `eyeofthejailer*`. None of these have a member in the client's Forever art set;
   they are WoD-through-11.x art and read as a different game next to clean client frames.

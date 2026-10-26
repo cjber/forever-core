@@ -25,7 +25,11 @@ MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
 # including the three private repos, which is why this list is longer than ALL_CONSUMERS.
 TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
 SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "atlas-forever", "hoard-forever")
+ALL_SUITE_CONSUMERS = SETTINGS_CONSUMERS
+CHECKOUT_ALIASES = {"field-guide-forever": "bestiary-forever"}
 VENDORED = {
+    "tools/deadcode.py": ALL_SUITE_CONSUMERS,
+    "tools/deadcode-allow.txt": ALL_SUITE_CONSUMERS,
     "Core/Text.lua": TEXT_CONSUMERS,
     "tests/text_spec.lua": TEXT_CONSUMERS,
     "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
@@ -65,7 +69,7 @@ def main():
         consumers = VENDORED[path]
         source = Path(path)
         for repo in consumers:
-            root = arguments.checkouts / repo
+            root = arguments.checkouts / CHECKOUT_ALIASES.get(repo, repo)
             target = root / path
             if not root.is_dir():
                 print(f"{repo}: not checked out under {arguments.checkouts}, skipped")
