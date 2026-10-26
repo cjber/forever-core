@@ -23,8 +23,11 @@ So do not rebuild those. The gate has to cover what luacheck and ruff structural
 2. **Lua files the TOC never loads.** Every `.lua` in the addon tree that no `.toc` names. Today the only hits
    are `types/` LuaLS annotation stubs, which are not shipped by design: exclude `types/`, `tests/`, `tools/`,
    `docs/`, `.agents/`, `Nav/` and treat everything else as a failure.
-3. **Media nothing references.** Textures under `media/` with no reference in any `.lua`, `.xml` or `.toc`.
-   Known dead today: `legacy-forever/media/Shade.tga`, `shortest-path-forever/media/zeppelin.tga`. Icon.tga is
+3. **Media references and unreferenced files.** Check references in every `.lua`, `.xml` and `.toc` against files
+   under `media/`, accepting both slash styles and WoW's extensionless texture names. Report a missing referenced
+   file as well as a `.tga` or `.blp` with no reference. This specifically prevents a repeat of the legacy-forever
+   #186 incident: `tools/deadcode.py` treated `media\\Shade` in `UI/Completion.xml` as dead, which removed live UI
+   art and broke `check_package`; the matcher must normalize both separators before checking references. Icon.tga is
    referenced only from the TOC, so the TOC has to be part of the search.
 4. **Python modules no entrypoint reaches.** `tools/*.py` that nothing imports and that is not a documented
    entrypoint (a `__main__`, a CI step, or a workflow `run:` line). CI steps are in `.github/workflows/*.yml`,
