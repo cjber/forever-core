@@ -22,6 +22,10 @@ them installed still gets one column, and a player with one installed gets the s
 Installing Forever Core itself is optional. It is there so the shared code has a home, so a fix can be developed,
 tested and released on its own, and so a future addon can adopt the column without copying it.
 
+The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md). It centralizes
+client asset extraction, BLP decoding, font and atlas lookup, native widgets and frame compositing. Addon scene
+scripts remain specific to the feature each repo owns.
+
 ## What it does not do
 
 It draws no sections of its own and knows nothing about quests, routes, professions, challenges or creatures. Sections
