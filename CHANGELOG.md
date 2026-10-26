@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-10-26
+
+- **The consumer drift check no longer fails on a repo it cannot read.** Field Guide Forever is private, so
+  unauthenticated raw reads of its copies returned 404 and the registry reported two files as drifted when they were
+  byte-identical. It moves to a documented private-consumer list that is named in the success output, and Field Guide
+  gates those same copies from its own repo. The boundaries doc records the split.
 ## 0.2.0 - 2026-10-25
 
 - **Add shared micro-menu buttons** with Blizzard's native button template and placement refresh handling.
