@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The suite's newest-build lookup now sees Forever's own product key.** wago.tools publishes Forever under
+  `wowf` as well as the older `wow_classic_beta` list, and `forever_tools.latest_build` read only the latter, so
+  the addons' daily data refresh kept reporting the previous build (1.60.1.70532) after 1.60.1.70630 shipped.
+  It now reads both products and takes the highest 1.6x build. Nothing changes in game.
+
 ## 0.4.0 - 2026-10-26
 
 - **Draw the mock context menu's backing surface opaque.** `common-dropdown-bg`'s atlas centre is translucent, so a
