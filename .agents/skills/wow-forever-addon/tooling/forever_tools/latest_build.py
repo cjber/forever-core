@@ -4,6 +4,10 @@ import json
 import urllib.request
 
 BUILDS_URL = "https://wago.tools/api/builds"
+# Wago publishes Forever under its own product key now (`wowf`); the builds before its creation sit in
+# `wow_classic_beta`, which also carries other Classic betas. Read both and keep the Forever versions (1.6x).
+PRODUCTS = ("wowf", "wow_classic_beta")
+PREFIX = "1.6"
 
 
 def version_key(version: str) -> tuple[int, ...]:
@@ -11,11 +15,16 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 def latest(user_agent: str) -> str:
-    """The highest Forever build; wow_classic_beta carries other Classic betas too, and Forever builds are 1.6x."""
+    """The highest Forever build across every product wago.tools lists it under."""
     request = urllib.request.Request(BUILDS_URL, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=60) as response:
-        builds = json.load(response)["wow_classic_beta"]
-    forever: list[str] = [b["version"] for b in builds if b["version"].startswith("1.6")]
+        builds = json.load(response)
+    forever: list[str] = [
+        build["version"]
+        for product in PRODUCTS
+        for build in builds.get(product, [])
+        if build["version"].startswith(PREFIX)
+    ]
     if not forever:
         raise SystemExit("no Forever build listed on wago.tools")
     return max(forever, key=version_key)
