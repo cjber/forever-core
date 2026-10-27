@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-10-27
+
 - **The suite's newest-build lookup now sees Forever's own product key.** wago.tools publishes Forever under
   `wowf` as well as the older `wow_classic_beta` list, and `forever_tools.latest_build` read only the latter, so
   the addons' daily data refresh kept reporting the previous build (1.60.1.70532) after 1.60.1.70630 shipped.
