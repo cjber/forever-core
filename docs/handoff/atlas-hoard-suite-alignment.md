@@ -40,8 +40,8 @@ Both repos are private and untagged. Do not tag or release them. Open one PR per
 |---|---|
 | legacy-forever | `stylua.toml` carries an extra `syntax = "Lua51"` line the other eight copies lack. |
 | adventure-guide-forever, skillup-forever | Run `ruff check tools` with no `ruff.toml`, so they lint against ruff's defaults instead of the family config. |
-| bestiary-forever, legacy-forever, tweaks-forever, atlas-forever, hoard-forever | No `.gitleaks.toml`; `secrets` therefore runs gitleaks' default rules instead of the family's allowlist. |
-| field-guide-forever (private) | No `docs/curseforge.md`, no `THIRD_PARTY.md`, no `typecheck` job, no rendered icon. Expected for an unpublished repo; bring it in line before it is published. |
+| field-guide-forever, legacy-forever, tweaks-forever, atlas-forever, hoard-forever | No `.gitleaks.toml`; `secrets` therefore runs gitleaks' default rules instead of the family's allowlist. |
+| field-guide-forever | No `docs/curseforge.md`, no `THIRD_PARTY.md`, no `typecheck` job, no rendered icon. Expected for an unpublished repo; bring it in line before it is published. |
 
 ## Gate for every PR
 

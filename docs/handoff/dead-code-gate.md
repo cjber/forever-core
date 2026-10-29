@@ -14,7 +14,7 @@ So do not rebuild those. The gate has to cover what luacheck and ruff structural
 ## The four gaps, and what to do about each
 
 1. **Namespace members nobody references.** `function ns.X()` / `ns.X = function` where the repo never reads
-   `ns.X`. A scan found exactly seven: AGF `Rebuilding`, skillup `DetailsBarTop`, bestiary `GetErrors` and
+   `ns.X`. A scan found exactly seven: AGF `Rebuilding`, skillup `DetailsBarTop`, Field Guide `GetErrors` and
    `ClearErrors`, atlas `OnReady`, `GetErrors`, `ClearErrors`. Adjudicate each by hand before enforcing:
    `OnReady` is a lifecycle hook the loader calls dynamically and is NOT dead; `GetErrors`/`ClearErrors` may be
    a deliberate public reporting API shared with forever-core's `UI/Report.lua`. Keep an explicit allowlist file

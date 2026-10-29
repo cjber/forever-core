@@ -1,7 +1,7 @@
 # W1: Field Guide spawn coordinates, then "hunt these on the way"
 
-Repo: `cjber/bestiary-forever` (folder `FieldGuideForever`, Interface 16001, `Locales/enUS.lua` only).
-Read `../brief.md`, `../boundaries.md`, `../round9/README.md`, then `bestiary-forever/AGENTS.md` (its gate is the
+Repo: `cjber/field-guide-forever` (folder `FieldGuideForever`, Interface 16001, `Locales/enUS.lua` only).
+Read `../brief.md`, `../boundaries.md`, `../round9/README.md`, then `field-guide-forever/AGENTS.md` (its gate is the
 strictest in the suite: stylua, luacheck, specs, ruff, check_generated, visual_audit, check_screenshots, changelog,
 sift).
 
@@ -14,8 +14,8 @@ to - the coordinate lists are never touched. The addon draws no map markers at a
 
 The value is not another map overlay (boundaries §3 reserves the shared `ForeverMapMarkers` contract, which does
 not exist yet). It is the route decision: "there are three uncatalogued rares within a minute of your route -
-hunt them on the way?". Bestiary picks the targets, Shortest Path does the travel. That split is boundaries
-rule 1 and rule 10: Shortest Path never chooses pickups, Bestiary never predicts spawns.
+hunt them on the way?". Field Guide picks the targets, Shortest Path does the travel. That split is boundaries
+rule 1 and rule 10: Shortest Path never chooses pickups, Field Guide never predicts spawns.
 
 ## PR 1 - spawn data in the public API (ship this first, small)
 
@@ -97,7 +97,7 @@ extended for the new members.
 
 ## Boundary notes
 
-Bestiary chooses targets and prices detours; Shortest Path orders and executes travel. Field Guide must still
+Field Guide chooses targets and prices detours; Shortest Path orders and executes travel. Field Guide must still
 work with nothing else installed (waypoint fallback). Do not read another addon's internals, do not call
 `C_Map.SetUserWaypoint` behind the player's back. If you think a boundary needs to move, say so in the PR body -
 the coordinator owns `boundaries.md`, not you.

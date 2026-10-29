@@ -13,7 +13,7 @@ Owner: Cillian Berragan (`cjber`, cjberragan@gmail.com). You implement, test and
    `wow-retail-ui-style/SKILL.md`). Its twelve rules are hard requirements for the window, not advice: templates,
    NineSlice layouts from `NineSliceLayouts.lua`, font objects, client colours, and atlases resolved against the
    pinned build `1.60.1.70124`. No hand-drawn chrome, no hex gold.
-4. Reference implementation for structure and tooling: `cjber/bestiary-forever` (Field Guide Forever). Copy its
+4. Reference implementation for structure and tooling: `cjber/field-guide-forever` (Field Guide Forever). Copy its
    shape, not its features.
 
 ## What Hoard Forever is

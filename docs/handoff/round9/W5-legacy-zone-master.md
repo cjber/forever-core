@@ -1,12 +1,12 @@
-# W5: Legacy x Bestiary - the "Zone Master" completion row
+# W5: Legacy x Field Guide - the "Zone Master" completion row
 
 Repo: `cjber/legacy-forever` (folder `LegacyForever`, Interface 16001).
 Read `../brief.md`, `../boundaries.md`, `../round9/README.md`, then `legacy-forever/AGENTS.md`.
 
 ## Why
 
-`boundaries.md` §3, Bestiary row: "Zone bestiary completion, creature records, rare and variant sightings |
-Bestiary | Legacy may read it for a *Zone Master* style milestone". Rule 10 says Bestiary awards nothing that is
+`boundaries.md` §3, Field Guide row: "Zone bestiary completion, creature records, rare and variant sightings |
+Field Guide | Legacy may read it for a *Zone Master* style milestone". Rule 10 says Field Guide awards nothing that is
 not cosmetic and does not duplicate Legacy's challenge tracking. Today Legacy has no idea a Field Guide exists,
 and Field Guide's completion is invisible outside its own window, even though `FieldGuideForever.API.Progress(zoneName)`
 already answers `{ zone, catalogued, total, fraction }` and `API.Zones()` lists every zone with its continent.
@@ -16,10 +16,10 @@ one extra row is exactly the permitted direction, and it is a small, contained c
 
 ## What to build
 
-1. `Integrations/Bestiary.lua` - optional, version-checked exactly like `Integrations/Navigate.lua` checks
+1. `Integrations/Field Guide.lua` - optional, version-checked exactly like `Integrations/Navigate.lua` checks
    Shortest Path (`FieldGuideForever.API`, `api.version == 1`, `type(api.Progress) == "function"`). It answers:
-   - `Bestiary.Zone(uiMapID)` -> `{ catalogued, total, fraction, name }?`
-   - `Bestiary.State()` -> `"ready" | "outdated" | "missing" | "loading"`
+   - `Field Guide.Zone(uiMapID)` -> `{ catalogued, total, fraction, name }?`
+   - `Field Guide.State()` -> `"ready" | "outdated" | "missing" | "loading"`
    Resolve `uiMapID` to a zone name through the mapping Legacy already uses for zone completion
    (`Core/ZoneCompletion.lua`, `UI/Map.lua`) - do not build a second zone table. Return `nil` for instances and
    for zones Field Guide does not catalogue.
@@ -50,7 +50,7 @@ one extra row is exactly the permitted direction, and it is a small, contained c
 ## Boundaries
 
 Legacy reads Field Guide's public API and never its internals; Legacy does not track creature kills itself and
-must not ask Field Guide to. Bestiary keeps its own window - no Field Guide UI is drawn from Legacy. If you think
+must not ask Field Guide to. Field Guide keeps its own window - no Field Guide UI is drawn from Legacy. If you think
 the category weight or the tooltip wording moves a boundary, say so in the PR body; the coordinator owns
 `boundaries.md`.
 

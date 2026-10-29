@@ -52,7 +52,7 @@ API.Snapshot(character?) -> { takenAt, containers }[]?   -- what the saved index
 UI: one window (`UI/Window.lua` + `UI/List.lua`), a search box, results with the item link, the total count and
 where each stack is, grouped by container and character; a `/hoard <text>` and `/hoard <itemlink>` slash command
 that opens it pre-filtered. Native client look - read `../wow-retail-ui-style.md` and match a sibling window
-(`bestiary-forever/UI/Window.lua` is the cleanest small one). **No Blizzard tooltip additions** - tooltips belong
+(`field-guide-forever/UI/Window.lua` is the cleanest small one). **No Blizzard tooltip additions** - tooltips belong
 to Tweaks; the addon draws its own window and its own tooltip lines only.
 
 Data honesty: only report what the client exposes. Secret/unreadable values (the client hands some counts over

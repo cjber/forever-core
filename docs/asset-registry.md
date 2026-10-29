@@ -14,7 +14,7 @@ below is from that build's own DB2 tables and listfile, not from retail 12.x.
 | 1. Client atlases | Every `SetAtlas` element the client ships, resolved to its sheet, crop box and slice margins | 2,802 atlases, 20,722 atlas elements, 20,522 members; 217 atlases in art set 1 (the `c60` Forever set); 1,167 elements have a set-1 member | `~/.cache/wowmock/1.60.1.70124/UiTextureAtlas*.csv` |
 | 2. Client textures and fonts | Loose files by path/FDID (frame chrome, portraits, icons, FRIZQT/ARIALN) | 80 resolved paths, 131 files, 38 MB cached for the pinned build | `~/.cache/wowmock/1.60.1.70124/files`, `paths.json` |
 | 3. Repo-owned art | The only art the addons themselves ship | `Icon.tga` in 8 repos; `shortest-path-forever/media/Dot.tga`; `tweaks-forever/media/TooltipBorderModern.tga`, `TooltipBorderRetail.tga` | `<addon>/media/` |
-| 4. Mock/render tooling | `wowmock` widgets, NineSlice layouts, font-object table | ~35 widgets (panel, tabs, side tab, dialog, scrollbar, slider, checkbox, edit-mode, tooltip, bags, context menu, world map, tracker); 11 font objects | `bestiary-forever/tools/wowmock/wowmock.py` |
+| 4. Mock/render tooling | `wowmock` widgets, NineSlice layouts, font-object table | ~35 widgets (panel, tabs, side tab, dialog, scrollbar, slider, checkbox, edit-mode, tooltip, bags, context menu, world map, tracker); 11 font objects | `field-guide-forever/tools/wowmock/wowmock.py` |
 | 5. Loose mock art | Web mockups and renders left in the trees | 13 species JPGs, 14 icon JPGs, window/mockup PNGs, and **Cinzel / EB Garamond / Marcellus** webfonts | `bestiary-mockup/`, `rarity-mockup/`, `rarity-recolour/` |
 
 Cached builds on disk: `1.60.1.70124` (pinned, use this), `1.60.1.70450`, `1.60.1.70532`,

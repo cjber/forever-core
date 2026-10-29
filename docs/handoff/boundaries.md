@@ -18,9 +18,9 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Legacy | legacy-forever | Legacy challenges, zone completion percentages, exploration shading, dungeon and raid entrance challenge pins with done/not-done state | Navigating (it asks Shortest Path), drawing travel routes, quest selection |
 | SkillUp | skillup-forever | Profession numbers: recipes, required skill, colour thresholds, skill-up chance, cheapest level path, shopping lists, trainer annotations, crafted gear | Journey selection, travel planning, other addons' UI |
 | Tweaks | tweaks-forever | Small fixes to the stock client and chores done for you: quest accept and turn-in, vendors, bags, tooltips, nameplates, camp names, entrance pins | Anything specific to levelling, professions, tracking or challenges |
-| Bestiary | bestiary-forever | Horizontal progression: creature cataloguing per zone, sightings, rare and variant records, zone bestiary completion, cosmetic-only rewards | Killing, looting, spawn prediction, anything the client API does not permit |
+| Field Guide | field-guide-forever | Horizontal progression: creature cataloguing per zone, sightings, rare and variant records, zone bestiary completion, cosmetic-only rewards | Killing, looting, spawn prediction, anything the client API does not permit |
 | Hoard | hoard-forever | The cross-container item index: where an item is across bags, bank, warband bank, guild bank, mail and other characters, with search over it and the public API for that question | Reagent planning or profession maths (SkillUp), bag UI fixes and vendor selling (Tweaks), lines added to Blizzard tooltips |
-| Atlas | atlas-forever | The instance map viewer and index: an instance's own maps, wings and floors, entrance coordinates, and its contents as far as the client and QuestieDB place them | Completion state (Legacy), entrance pins on the world map (Tweaks), quest readiness (Adventure Guide), creature cataloguing (Bestiary), travel itself (Shortest Path) |
+| Atlas | atlas-forever | The instance map viewer and index: an instance's own maps, wings and floors, entrance coordinates, and its contents as far as the client and QuestieDB place them | Completion state (Legacy), entrance pins on the world map (Tweaks), quest readiness (Adventure Guide), creature cataloguing (Field Guide), travel itself (Shortest Path) |
 
 ## 2. The boundary rules
 
@@ -33,7 +33,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 7. Tweaks does not plan routes. Its nearest-quest sort and its quest-item and target-creature keys follow Shortest Path's route when one is running.
 8. Legacy does not navigate itself. It asks Shortest Path, with the game's own waypoint as the fallback.
 9. No addon guides a fixed authored route. That is Polestar; Adventure Guide and Tweaks step aside for it.
-10. Bestiary does not award anything that is not cosmetic, and does not duplicate Legacy's challenge tracking. Legacy may read Bestiary for a zone milestone (see §3).
+10. Field Guide does not award anything that is not cosmetic, and does not duplicate Legacy's challenge tracking. Legacy may read Field Guide for a zone milestone (see §3).
 11. Every addon must work alone: anything another addon provides has a fallback that works with none of the others installed.
 12. Shared code is vendored from Forever Core, never re-implemented per addon (§5).
 
@@ -63,13 +63,13 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Legacy challenges, zone completion, exploration shading | Legacy | |
 | Dungeon and raid completion pins (cleared this lockout, all time) | Legacy | |
 | Ironman and hardcore milestones, personal bests | Legacy | local only, no leaderboards |
-| Zone bestiary completion, creature records, rare and variant sightings | Bestiary | Legacy may read it for a *Zone Master* style milestone |
+| Zone bestiary completion, creature records, rare and variant sightings | Field Guide | Legacy may read it for a *Zone Master* style milestone |
 | Profession numbers, cheapest path, shopping list export | SkillUp | export hands raw materials to work-orders-forever or a shopping list |
 | Gathering node route overlays | SkillUp | asks Shortest Path to route between nodes; draws nothing itself |
 | Tracker column, grip, Lock, combat hiding, section order | Forever Core | one implementation, vendored (§5) |
 | Shared visual primitives (backdrop, typography, section chrome) | Forever Core | moved here from the four addons that each had a copy |
 | Map marker visibility contract (one owner per place type) | Forever Core | round 6 shared tooling; each addon registers what it draws |
-| Creature spawn points on a route ("hunt these on the way") | Bestiary proposes, Shortest Path routes | new (round 9). Bestiary picks the targets and prices the detour, Shortest Path orders and executes the travel; no passive overlay until the marker contract lands |
+| Creature spawn points on a route ("hunt these on the way") | Field Guide proposes, Shortest Path routes | new (round 9). Field Guide picks the targets and prices the detour, Shortest Path orders and executes the travel; no passive overlay until the marker contract lands |
 | One `Nearest` ranking by travel | Shortest Path | new (round 9). SkillUp and Adventure Guide call it; see open question 4 |
 | Shopping list export and one buy trip | SkillUp | new (round 9). Export as text and through the API; Shortest Path executes the trip; work-orders-forever consumes the plain `itemID:count` format |
 | Detour cost on a suggestion | Adventure Guide, quoting Shortest Path | new (round 9). Travel price only, the choice stays Adventure Guide's |
@@ -109,11 +109,9 @@ Forever Core owns the code that is identical in every addon, not the features th
   Core lists the five addons as `OptionalDeps` so they load first and core adopts rather than starting a second column.
 - **What stays per addon:** a section's own drawing, its blocks, its strings, and its settings page. Core never learns
   what a quest, a route, a recipe or a creature is.
-- The Field Guide Forever consumer list now includes `bestiary-forever` for `Core/MicroButton.lua` and its contract
-  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column. Field Guide is a
-  private repo, so forever-core cannot read it over unauthenticated raw: it runs its own
-  `tools/check_core_shared.py` from `.github/workflows/core-shared-drift.yml` against public core main, and
-  `tools/check_consumers.py` lists it as a private consumer instead of fetching it.
+- The Field Guide Forever consumer list now includes `field-guide-forever` for `Core/MicroButton.lua` and its contract
+  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column. Field Guide is
+  public, so `tools/check_consumers.py` compares it against public core main.
 
 ## 6. Integration contracts
 
@@ -160,7 +158,7 @@ Rules that keep this file honest:
 1. Should Tweaks leave alone quests Adventure Guide ruled out (droppable), or automate them anyway? Today it automates.
 2. Does the marker contract replace Tweaks' pin-template step-aside in the same round the pins become plain frames?
    Design note says yes; not yet scheduled.
-3. Where does Bestiary's *Zone Master* style milestone live when Legacy is absent: Bestiary says it itself, or nothing?
+3. Where does Field Guide's *Zone Master* style milestone live when Legacy is absent: Field Guide says it itself, or nothing?
 4. Does Shortest Path's `Nearest` absorb Adventure Guide's `Planning/Services.lua` entirely, or keep it as the
    no-Shortest-Path fallback? Today: fallback.
 
@@ -172,7 +170,7 @@ Rules that keep this file honest:
 |---|---|---|
 | 2026-10-21 | File created: one job per addon, twelve boundary rules, feature to owner table, duplicates resolved, Forever Core ownership and the vendoring rule, integration contracts, naming, the change process | owner approved, maintainer wrote |
 | 2026-10-21 | Forever Core added as the seventh addon and the owner of the shared tracker column, grip, Lock, section order and visual primitives | maintainer, from the owner's 2026-10-21 approval |
-| 2026-10-22 | Round 9: Bestiary proposes route spawns and Shortest Path routes them; `Nearest` belongs to Shortest Path; SkillUp gains the shopping export and one buy trip; Adventure Guide may quote a detour cost. All four are marked new and become fact when their round-9 PR lands | maintainer, from the owner's 2026-10-22 ask ("one task per existing enhancement") |
+| 2026-10-22 | Round 9: Field Guide proposes route spawns and Shortest Path routes them; `Nearest` belongs to Shortest Path; SkillUp gains the shopping export and one buy trip; Adventure Guide may quote a detour cost. All four are marked new and become fact when their round-9 PR lands | maintainer, from the owner's 2026-10-22 ask ("one task per existing enhancement") |
 | 2026-10-22 | Hoard and Atlas added as the eighth and ninth addons, with their ownership rows and non-goals | maintainer, from the owner's 2026-10-22 ask ("one task for hoard forever and one for atlas forever") |
 | 2026-10-24 | Report and issue UI, its contract spec, the Forever-family link box and its spec assigned to Forever Core for vendoring into all five addons | maintainer, from the owner's 2026-10-24 request to unify shared addon logic |
 | 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to Forever Core as the report window's shared dependency, vendored into all five addons | owner request to complete the shared-logic extraction |

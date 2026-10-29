@@ -1,6 +1,6 @@
 # Field Guide Forever: per-NPC species icons from each NPC's real model
 
-Repo: cjber/bestiary-forever. Interface 16001, WoW: Forever. Branch off current `main`.
+Repo: cjber/field-guide-forever. Interface 16001, WoW: Forever. Branch off current `main`.
 Raised by Cillian 2026-10-22: "let's see how varied we can go, as much as possible. Ideally just
 directly using the actual image that shows per NPC."
 

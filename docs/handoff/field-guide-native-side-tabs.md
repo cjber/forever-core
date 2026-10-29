@@ -1,6 +1,6 @@
 # Field Guide Forever — native large side tabs (owner request, 2026-10-26)
 
-Repo: **cjber/bestiary-forever** (addon name Field Guide Forever, TOC `FieldGuideForever.toc`, Interface 16001).
+Repo: **cjber/field-guide-forever** (addon name Field Guide Forever, TOC `FieldGuideForever.toc`, Interface 16001).
 
 Owner's words, in order: *"also improve the mocks and UI for the field guide; remember i like the large square bottom
 tabs like we have on the side; usually prefer those over internal tabs please"*, then *"Doesn't look like you're using

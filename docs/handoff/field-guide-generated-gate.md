@@ -1,6 +1,6 @@
 # Field Guide: run the generated-data gate in CI
 
-Repo: `cjber/bestiary-forever` (addon name Field Guide Forever). Branch: `ci/generated-data-gate`.
+Repo: `cjber/field-guide-forever` (addon name Field Guide Forever). Branch: `ci/generated-data-gate`.
 
 ## The gap
 

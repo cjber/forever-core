@@ -1,4 +1,4 @@
-# Brief: rarity recolour instead of an added trim (cjber/bestiary-forever, Field Guide Forever)
+# Brief: rarity recolour instead of an added trim (cjber/field-guide-forever, Field Guide Forever)
 
 Approved design is already merged on `main` as commit 4604a6a: the mockups in `docs/screenshots/rarity-target.png`,
 `rarity-nameplates.png` and `rarity-elite.png`, drawn by `tools/rarity.py`. Those images are the acceptance criteria.

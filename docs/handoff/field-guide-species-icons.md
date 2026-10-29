@@ -1,6 +1,6 @@
 # Field Guide Forever: real creature icons instead of INV_Misc_Bone_01
 
-Repo: cjber/bestiary-forever. Interface 16001, WoW: Forever.
+Repo: cjber/field-guide-forever. Interface 16001, WoW: Forever.
 Raised by Cillian 2026-10-22 after seeing the README on GitHub: every creature row and the detail
 portrait still show the generic bone placeholder.
 
