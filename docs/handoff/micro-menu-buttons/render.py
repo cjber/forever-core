@@ -1,5 +1,5 @@
 import sys, math
-sys.path.insert(0,'/home/nebula/wow/bestiary-forever/tools/wowmock')
+sys.path.insert(0,'/home/nebula/wow/field-guide-forever/tools/wowmock')
 import wowmock as W
 from PIL import Image
 

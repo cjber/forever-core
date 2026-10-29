@@ -6,7 +6,7 @@ deep dive (a player-initiated hunt route that calls `NavigateRoute`) is **out of
 
 Boundaries that decide the shape (`forever-handoff/boundaries.md`, canonical):
 
-- **Bestiary (bestiary-forever, "Field Guide Forever") proposes the targets; Shortest Path orders and executes travel.**
+- **Field Guide (field-guide-forever, "Field Guide Forever") proposes the targets; Shortest Path orders and executes travel.**
 - **Tweaks owns rare alerting.** No chime, no sound, no alert frame, no nameplate or vignette marker. This feature is
   about route decisions only.
 - **Field Guide must work with no other addon installed.** It gains an API and nothing else: no map pins, no `C_Map`
@@ -17,12 +17,12 @@ Boundaries that decide the shape (`forever-handoff/boundaries.md`, canonical):
 
 Two PRs, in this order:
 
-1. **bestiary-forever** - the spawn API (small, unblocks the other).
+1. **field-guide-forever** - the spawn API (small, unblocks the other).
 2. **shortest-path-forever** - the three slices, written so it works whether or not PR 1 has shipped.
 
 Do not touch the existing `codex/engagement-tracking-*` branches or `Core/Progress.lua` work in either repo.
 
-## PR 1 - bestiary-forever: expose creature spawn coordinates
+## PR 1 - field-guide-forever: expose creature spawn coordinates
 
 Comment in the PR that this is Field Guide API **minor 1**, additive only.
 
@@ -65,7 +65,7 @@ Tests (`tests/`), LuaJIT specs through `tests/wow_mock.lua`:
 `CHANGELOG.md`: one `### Added` bullet under `[Unreleased]`. Say the API is additive and names the two functions; no
 version bump in this PR (the release does that).
 
-Gate: the `## Commands` block in `bestiary-forever/AGENTS.md`. No UI change, so no new mockup is required; if you touch
+Gate: the `## Commands` block in `field-guide-forever/AGENTS.md`. No UI change, so no new mockup is required; if you touch
 any README prose, say why in the PR.
 
 ## PR 2 - shortest-path-forever: sightings along the route

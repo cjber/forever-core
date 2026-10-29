@@ -1,6 +1,6 @@
 # Field Guide Forever — visual polish round (owner request, 2026-10-22)
 
-Repo: **cjber/bestiary-forever** (addon name Field Guide Forever, TOC `FieldGuideForever.toc`).
+Repo: **cjber/field-guide-forever** (addon name Field Guide Forever, TOC `FieldGuideForever.toc`).
 
 Owner's words: *"Visuals of the field guide still pretty rough can you please iterate more on them and actually
 improve. Think about spacing, images, tabs used etc. kush lofs of ugly nits to solve."*

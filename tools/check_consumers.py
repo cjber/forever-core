@@ -3,8 +3,7 @@
 The four addons that draw sections into the shared column each carry a byte-identical copy of the files listed in
 VENDORED: that is what lets them work alone, with no dependency to install. This gate is what stops the copies
 drifting: it compares each repo's main branch (or a local checkout) with this repo's copy and names every mismatch.
-The split follows visibility: public consumers are compared from this repo, while the private one cannot be read here
-and instead compares itself against public core from its own core-shared-drift.yml workflow.
+Public consumers are compared from this repo; `--local` supports an offline check against local clones.
 """
 
 import argparse
@@ -23,18 +22,11 @@ ALL_CONSUMERS = (
 )
 
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
-MICRO_CONSUMERS = ("adventure-guide-forever",)
-# Core/Text.lua goes to the three addons that search by name (Hoard, Adventure Guide and Shortest Path); the two
-# private ones among them are compared from their own repos.
-TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
-# The settings canvas goes to every addon in the suite, which is the five public consumers plus the three private ones.
-SETTINGS_CONSUMERS = ALL_CONSUMERS
-# Private repos cannot be read over unauthenticated raw.githubusercontent.com, so this gate names them instead of
-# fetching them: each one runs its own tools/check_core_shared.py from .github/workflows/core-shared-drift.yml,
-# comparing its vendored copies against public core main. tools/sync_consumers.py still syncs them.
-PRIVATE_CONSUMERS = ("field-guide-forever", "atlas-forever", "hoard-forever")
-ALL_SUITE_CONSUMERS = ALL_CONSUMERS + PRIVATE_CONSUMERS
-CHECKOUT_ALIASES = {"field-guide-forever": "bestiary-forever"}
+MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
+# Core/Text.lua goes to the three addons that search by name.
+TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
+SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "atlas-forever", "hoard-forever")
+ALL_SUITE_CONSUMERS = SETTINGS_CONSUMERS
 VENDORED = {
     "tools/deadcode.py": ALL_SUITE_CONSUMERS,
     "tools/deadcode-allow.txt": ALL_SUITE_CONSUMERS,
@@ -78,19 +70,13 @@ def main():
 
     failures = []
     comparisons = 0
-    skipped = 0
     for path, consumers in VENDORED.items():
         mine = Path(path).read_bytes()
         for repo in consumers:
-            # A private repo's copies are read from a local checkout when one is given, and otherwise left to that
-            # repo's own drift workflow rather than counted as a match this gate cannot see.
-            if not arguments.local and repo in PRIVATE_CONSUMERS:
-                skipped += 1
-                continue
             comparisons += 1
             try:
                 if arguments.local:
-                    theirs = (arguments.local / CHECKOUT_ALIASES.get(repo, repo) / path).read_bytes()
+                    theirs = (arguments.local / repo / path).read_bytes()
                 else:
                     theirs = remote(repo, path, arguments.branch)
             except (OSError, urllib.error.URLError, TimeoutError) as error:
@@ -106,13 +92,6 @@ def main():
         print("Fix with tools/sync_consumers.py, then commit the copies in the consumer repos.")
         return 1
     print(f"{comparisons} shared file copies match their consumer repos.")
-    if skipped:
-        print(
-            f"{skipped} copies in private repos were not read from here; "
-            "each of those repos gates them from its own core-shared-drift.yml."
-        )
-    for repo in PRIVATE_CONSUMERS:
-        print(f"{repo}: private, gated from its own repo by core-shared-drift.yml")
     return 0
 
 

@@ -22,11 +22,10 @@ ALL_CONSUMERS = (
 TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
 MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
 # Core/Text.lua goes to the three addons that search by name, and the settings canvas to every addon in the suite --
-# including the three private repos, which is why this list is longer than ALL_CONSUMERS.
+# including Field Guide, Atlas and Hoard, which do not belong to the tracker group.
 TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
 SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "atlas-forever", "hoard-forever")
 ALL_SUITE_CONSUMERS = SETTINGS_CONSUMERS
-CHECKOUT_ALIASES = {"field-guide-forever": "bestiary-forever"}
 VENDORED = {
     "tools/deadcode.py": ALL_SUITE_CONSUMERS,
     "tools/deadcode-allow.txt": ALL_SUITE_CONSUMERS,
@@ -69,7 +68,7 @@ def main():
         consumers = VENDORED[path]
         source = Path(path)
         for repo in consumers:
-            root = arguments.checkouts / CHECKOUT_ALIASES.get(repo, repo)
+            root = arguments.checkouts / repo
             target = root / path
             if not root.is_dir():
                 print(f"{repo}: not checked out under {arguments.checkouts}, skipped")

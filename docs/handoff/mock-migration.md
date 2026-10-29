@@ -6,7 +6,7 @@ Every addon README scene is rendered with the shared `tools/wowmock/wowmock.py` 
 
 ## Consumers and scope
 
-One PR per consumer repository: Adventure Guide, Legacy, Shortest Path, SkillUp, Tweaks, Field Guide (the `bestiary-forever` checkout), Hoard and Atlas. Each PR must point all screenshot imports at `$FOREVER_CORE/tools/wowmock`, remove private renderer copies and stale `WOWMOCK` instructions, render README scenes for every shipped user-facing feature, refresh scene hashes/manifests, and update the README gallery and local regeneration instructions. Atlas and Hoard currently have no shipped window, so their README must say no feature mock is applicable until a player-facing surface ships; do not fabricate a UI.
+One PR per consumer repository: Adventure Guide, Legacy, Shortest Path, SkillUp, Tweaks, Field Guide (the `field-guide-forever` checkout), Hoard and Atlas. Each PR must point all screenshot imports at `$FOREVER_CORE/tools/wowmock`, remove private renderer copies and stale `WOWMOCK` instructions, render README scenes for every shipped user-facing feature, refresh scene hashes/manifests, and update the README gallery and local regeneration instructions. Atlas and Hoard currently have no shipped window, so their README must say no feature mock is applicable until a player-facing surface ships; do not fabricate a UI.
 
 ## Shared renderer correction
 

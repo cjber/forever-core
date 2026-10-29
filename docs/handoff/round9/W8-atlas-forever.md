@@ -29,7 +29,7 @@ Boundaries that constrain the build:
 
 - It never judges completion (Legacy) and never draws entrance pins on the world map (Tweaks).
 - It never selects quests or decides readiness (Adventure Guide).
-- It never catalogues creatures (Bestiary).
+- It never catalogues creatures (Field Guide).
 - It must work with no other Forever addon installed; every integration is optional and version-checked.
 
 ## Scope for v0.1.0
@@ -51,7 +51,7 @@ Boundaries that constrain the build:
    `shortest-path-forever/UI/MapCanvas.lua`), never third-party art. Floor/wing selector when the client exposes
    more than one map for the instance; hidden, not faked, when it does not.
 3. **Contents.** If - and only if - QuestieDB's NPC rows let you place creatures inside an instance (spawn zone is
-   the instance's area, exactly how `bestiary-forever/Integrations/QuestieDB.lua` decides instance membership),
+   the instance's area, exactly how `field-guide-forever/Integrations/QuestieDB.lua` decides instance membership),
    show a contents column with NPC name, level and rank; where positions are unknown, list names without pins and
    say so in a footnote line. Never place imaginary markers on the map canvas.
 4. **Travel button**: "Travel to entrance" -> `ShortestPathForever.API.Navigate("AtlasForever", map, x, y, name,

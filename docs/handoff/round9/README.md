@@ -14,11 +14,11 @@ what) before your own brief.
 
 | # | Item | Repo | Depends on | Brief |
 |---|---|---|---|---|
-| W1 | Field Guide spawn API + "hunt these on the way" route | bestiary-forever | nothing (codex) | `W1-field-guide-spawns.md` |
+| W1 | Field Guide spawn API + "hunt these on the way" route | field-guide-forever | nothing (codex) | `W1-field-guide-spawns.md` |
 | W2 | Shortest Path `Nearest` API (one ranking for the suite) | shortest-path-forever | nothing | `W2-spf-nearest.md` |
 | W3 | SkillUp shopping list API, export and one buy trip | skillup-forever | nothing | `W3-skillup-export.md` |
 | W4 | Gathering node route overlays (SkillUp asks, SPF routes) | skillup-forever (+SPF, read-only) | W3 merged | `W4-gathering-nodes.md` |
-| W5 | Legacy x Bestiary "Zone Master" completion row | legacy-forever | nothing (FG API v1 already has Progress) | `W5-legacy-zone-master.md` |
+| W5 | Legacy x Field Guide "Zone Master" completion row | legacy-forever | nothing (FG API v1 already has Progress) | `W5-legacy-zone-master.md` |
 | W6 | Adventure Guide detour costing from Shortest Path | adventure-guide-forever | nothing (SPF v1 already has EstimateDetail) | `W6-agf-detour-costing.md` |
 | W7 | Hoard Forever - cross-container item index (new addon) | hoard-forever (staged) | nothing | `W7-hoard-forever.md` |
 | W8 | Atlas Forever - instance browser (new addon) | atlas-forever (staged) | nothing | `W8-atlas-forever.md` |
@@ -37,7 +37,7 @@ what) before your own brief.
   is not available, ship the honest fallback and say what is missing in the PR body; do not hard-code a guess.
 - **Locales.** Every new player-visible phrase goes in all nine translations (`deDE esES esMX frFR koKR ptBR
   ruRU zhCN zhTW`) with machine lines marked `-- mt`, and the repo's `tools/check_locales.py` must pass where it
-  exists. Exception: bestiary-forever ships `Locales/enUS.lua` only - keep that as it is.
+  exists. Exception: field-guide-forever ships `Locales/enUS.lua` only - keep that as it is.
 - **UI changes ship with mocks.** New or changed panels need a mocked scene, a README screenshot, a
   `tools/check_screenshots.py --record` pass, `tools/visual_audit.py` where the repo has it, and your own eyes on
   the rendered PNG at full resolution (overlap, clipping, truncation). A green audit does not prove the picture
