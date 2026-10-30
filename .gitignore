@@ -3,3 +3,8 @@ __pycache__/
 *.zip
 .release/
 .release-notes.md
+.sift/runs/
+.types/
+.ruff_cache/
+reference/
+scratch/
