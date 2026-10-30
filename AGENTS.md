@@ -28,6 +28,7 @@ python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui lua
 python3 tools/check_consumers.py          # every consumer's copy matches this repo
 python3 tools/sync_consumers.py ~/wow     # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
+python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
@@ -73,7 +74,7 @@ consumers' `tools/`; edit it here, then run `sync.py update --source <this check
 
 ## Versions and releases
 
-Every version needs a `CHANGELOG.md` entry before its `v*` tag. `release.yml` publishes the GitHub release with the
+Every version needs a `CHANGELOG.md` entry before its `v*` tag. `.github/workflows/release.yml` publishes the GitHub release with the
 packager; there is no CurseForge or Wago page for a library addon, so no store tokens are involved. A core version
 bump is adopted by consumers at their own pace: `tools/sync_consumers.py` in this repo, then one PR per consumer,
 with `tools/check_consumers.py` going green once all four have moved.
