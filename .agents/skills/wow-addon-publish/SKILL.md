@@ -57,11 +57,8 @@ Steps and what trips agents up:
    Distribution: "Allow distribution to 3rd party" (the addon is also on Wago/GitHub).
 5. **Create** (the user's request to publish is the authorization). You land on
    `#/projects/<ID>/files`; the number in the URL is the **project ID**.
-6. **Media** (`#/projects/<ID>/media`): `file_upload` the screenshot PNGs straight into the media file
-   input (`find` "file input for uploading media/screenshots"). This one works; it has a real input
-   (target the `type="file"` button, not its label) and takes several files at once. Each image must
-   be under 2 MB: convert large PNGs to `-quality 90` JPEGs in a temp dir first. Reload the page to see
-   a multi-file upload's results.
+6. **Media** (`#/projects/<ID>/media`): upload with the in-page steps under Store updates, one image
+   per run.
 
 A new project stays hidden until a moderator approves it; uploaded files appear after approval.
 
@@ -70,20 +67,42 @@ A new project stays hidden until a moderator approves it; uploaded files appear 
 `https://addons.wago.io/developers/projects/create`, create from the GitHub repo. Settings: name,
 summary, categories, thumbnail. The project ID is the slug in `addons.wago.io/addons/<ID>`.
 
-Gallery, one image per submit: navigate straight to
+Gallery, one image per submit, in page script at
 `https://addons.wago.io/developers/projects/<slug>/gallery/create` (the "New Gallery Image" link
-sometimes does nothing), `find` the file input, Description and "Add Image", then:
+sometimes does nothing):
 
-1. `file_upload` the image in its own call. Attaching re-renders the form a moment later and wipes
-   anything typed in the same batch.
-2. In a later call: click Description, `ctrl+a`, type the caption, zoom to check it. The first attempt
-   after an upload is often dropped; repeat until the zoom shows it.
-3. Submit only once the caption shows. A submit with an empty caption still uploads.
+1. Fetch the image from `raw.githubusercontent.com` and set the file input from a `DataTransfer`, then
+   dispatch `input` and `change`.
+2. Wait about 2.5 s: attaching re-renders the form and wipes an earlier caption.
+3. Set `input[name=description]` with the native value setter, dispatch `input`, click "Add Image". A
+   submit with an empty caption still uploads.
 4. Check with `get_page_text` on the gallery page.
 
 Wago lists the newest first, so upload in reverse display order. `/gallery/<id>/edit` edits only the
 caption; it cannot swap the image, so a stale image means uploading a new one and the user deleting
 the old one.
+
+## Store updates
+
+Run the browser work in the user's logged-in Chrome, in batches of about three images, so a slow page
+does not outlast the tool call. Confirm every change after a reload or on the public page.
+
+**Descriptions.** Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
+"Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
+press `ctrl+End`, type a newline and click Save with real input. Wago's settings page takes the same
+paste in its `textarea`, a real keypress in it, then "Save changes".
+
+**CurseForge gallery.** The `file_upload` tool cannot reach this page: its file input is created
+detached on click, and a real click opens a native picker that blocks the tab. Instead:
+
+1. Override `HTMLInputElement.prototype.click` to capture `file` inputs without opening a picker.
+2. Click "Add media", then "Upload or Drag Image".
+3. Fetch the image from `raw.githubusercontent.com` into a `File`, set the captured input's `files` from
+   a `DataTransfer`, dispatch `change`. Convert anything over 2 MB in the page: canvas, JPEG, quality 0.9.
+4. Wait about 5 s between images. New images land last, and their caption is a filename.
+5. Click the card, replace Title, click Apply, and use the side arrows for the next image. Move on only
+   after Apply dims. Check for a filename left in Description and an unwanted Feature Media star, which
+   can appear after processing.
 
 ## Keep galleries in sync
 
