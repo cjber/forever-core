@@ -24,7 +24,7 @@ MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
 # Core/Text.lua goes to the three addons that search by name, and the settings canvas to every addon in the suite --
 # including Field Guide, Atlas and Hoard, which do not belong to the tracker group.
 TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
-SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "atlas-forever", "hoard-forever")
+SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "hoard-forever")
 ALL_SUITE_CONSUMERS = SETTINGS_CONSUMERS
 VENDORED = {
     "tools/deadcode.py": ALL_SUITE_CONSUMERS,

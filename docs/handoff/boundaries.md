@@ -17,10 +17,9 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Shortest Path | shortest-path-forever | Travel and the order you travel in: transport graph, walking routes, flight/boat/zeppelin/portal/ tram timing, arrival estimates, quest-log routing, nearest-something ranking | Choosing quests, judging eligibility, tracking completion, drawing entrances or challenges |
 | Legacy | legacy-forever | Legacy challenges, zone completion percentages, exploration shading, dungeon and raid entrance challenge pins with done/not-done state | Navigating (it asks Shortest Path), drawing travel routes, quest selection |
 | SkillUp | skillup-forever | Profession numbers: recipes, required skill, colour thresholds, skill-up chance, cheapest level path, shopping lists, trainer annotations, crafted gear | Journey selection, travel planning, other addons' UI |
-| Tweaks | tweaks-forever | Small fixes to the stock client and chores done for you: quest accept and turn-in, vendors, bags, tooltips, nameplates, camp names, entrance pins | Anything specific to levelling, professions, tracking or challenges |
+| Tweaks | tweaks-forever | Small fixes to the stock client and chores done for you: quest accept and turn-in, vendors, bags, tooltips, nameplates, camp names, entrance pins, painted dungeon and raid maps | Anything specific to levelling, professions, tracking or challenges |
 | Field Guide | field-guide-forever | Horizontal progression: creature cataloguing per zone, sightings, rare and variant records, zone bestiary completion, cosmetic-only rewards | Killing, looting, spawn prediction, anything the client API does not permit |
 | Hoard | hoard-forever | The cross-container item index: where an item is across bags, bank, warband bank, guild bank, mail and other characters, with search over it and the public API for that question | Reagent planning or profession maths (SkillUp), bag UI fixes and vendor selling (Tweaks), lines added to Blizzard tooltips |
-| Atlas | atlas-forever | The instance map viewer and index: an instance's own maps, wings and floors, entrance coordinates, and its contents as far as the client and QuestieDB place them | Completion state (Legacy), entrance pins on the world map (Tweaks), quest readiness (Adventure Guide), creature cataloguing (Field Guide), travel itself (Shortest Path) |
 
 ## 2. The boundary rules
 
@@ -74,7 +73,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Shopping list export and one buy trip | SkillUp | new (round 9). Export as text and through the API; Shortest Path executes the trip; work-orders-forever consumes the plain `itemID:count` format |
 | Detour cost on a suggestion | Adventure Guide, quoting Shortest Path | new (round 9). Travel price only, the choice stays Adventure Guide's |
 | Cross-container item search ("where is it?") | Hoard Forever | new (round 9) |
-| Instance map viewer, wings and entrance coordinates | Atlas Forever | new (round 9). It asks Shortest Path to travel |
+| Painted dungeon and raid maps, opened inside or from an entrance | Tweaks | moved from Atlas Forever, which is retired |
 
 ## 4. Duplicates, and the one owner each got
 
@@ -174,3 +173,4 @@ Rules that keep this file honest:
 | 2026-10-22 | Hoard and Atlas added as the eighth and ninth addons, with their ownership rows and non-goals | maintainer, from the owner's 2026-10-22 ask ("one task for hoard forever and one for atlas forever") |
 | 2026-10-24 | Report and issue UI, its contract spec, the Forever-family link box and its spec assigned to Forever Core for vendoring into all five addons | maintainer, from the owner's 2026-10-24 request to unify shared addon logic |
 | 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to Forever Core as the report window's shared dependency, vendored into all five addons | owner request to complete the shared-logic extraction |
+| 2026-11-01 | Atlas Forever retired before any store release: its painted maps moved to Tweaks, and OpenMap covers the rest | owner request |
