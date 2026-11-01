@@ -104,6 +104,12 @@ detached on click, and a real click opens a native picker that blocks the tab. I
    after Apply dims. Check for a filename left in Description and an unwanted Feature Media star, which
    can appear after processing.
 
+To reorder, open "Reorder gallery" after a full page load: the dialog can keep another project's list
+after in-app navigation. A mouse drag does nothing, so `focus()` the `li.sortable-screenshot-element`,
+press real keys (space, arrows, space), wait 4 s, read the order and click Done. Up does not move exactly
+one row, so check after each move. The author site's order can flip between reloads even after a good
+save: confirm on the public `curseforge.com/wow/addons/<slug>/gallery` page.
+
 ## Keep galleries in sync
 
 A gallery image that no longer matches the addon is a defect of the change that made it stale.
