@@ -21,13 +21,13 @@ The CurseForge footer ("Made by Cillian Berragan · …") is already at the bott
 The store plans, with the exact text and images, are in `/tmp/claude-0/-home-user/76bf530e-5da5-583c-877f-df32f2ad82fa/scratchpad/release/`.
 
 ## 2. GitHub
-- [ ] Add your commit-signing SSH key to GitHub (Settings, then SSH and GPG keys, as a *Signing key*). Until then, commits from these sessions show "unknown key" instead of Verified.
-- [ ] Add this line to `cjber/.github/.github/PULL_REQUEST_TEMPLATE.md` (this session had no push access):
+- [x] Add your commit-signing SSH key to GitHub (Settings, then SSH and GPG keys, as a *Signing key*). Until then, commits from these sessions show "unknown key" instead of Verified.
+- [x] Add this line to `cjber/.github/.github/PULL_REQUEST_TEMPLATE.md`:
   `- [ ] A reporter or requester is credited in the changelog bullet and THIRD_PARTY.md (WFA-33)`
-- [ ] Add repo topics to all five repos: `world-of-warcraft`, `wow-addon`, `wow-forever`, `lua`.
-- [ ] Pin the five repos on your profile.
-- [ ] Add the `package` job to each repo's required checks.
-- [ ] Delete the probe branches in cjber/skills: `ccr-cc333990-q8ydc4-probe` and `fix/probe-xyz`.
+- [x] Add repo topics to all five repos: `world-of-warcraft`, `wow-addon`, `wow-forever`, `lua`.
+- [x] Pin the five repos on your profile.
+- [x] Add the `package` job to each repo's required checks.
+- [x] Delete the probe branches in cjber/skills: `ccr-cc333990-q8ydc4-probe` and `fix/probe-xyz`.
 - [ ] Optional: purge the old QuestieDB-derived test files from AGF's git history (needs a force-push). They're no longer committed.
 
 ## 3. People and comments
