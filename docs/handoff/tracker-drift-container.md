@@ -63,7 +63,7 @@ For each of these three repos, working from fresh `origin/main`, on a branch nam
    tools/typecheck.sh
    for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
    python3 tools/changelog.py --check
-   python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
+   python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
    ```
 5. Commit with a conventional message (`fix(tracker): own the section parent instead of calling Blizzard SetContainer`)
    and PUSH each branch, then open a PR against main in each repo. Omit `-s` on every commit.

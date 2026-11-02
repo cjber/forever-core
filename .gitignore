@@ -3,7 +3,7 @@ __pycache__/
 *.zip
 .release/
 .release-notes.md
-.sift/runs/
+.sloppatrol/runs/
 .types/
 .ruff_cache/
 reference/

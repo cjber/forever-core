@@ -64,7 +64,7 @@ non-zero type or family — encoded compactly in one generated module, and repor
 5. Re-render `docs/screenshots/` and `demo.gif`, restamp `scenes.sha256` with `tools/check_screenshots.py --record`.
 6. Full local suite green: luacheck, stylua, every `tests/*_spec.lua` under luajit, ruff check + format,
    `check_generated.py`, `visual_audit.py`, `check_screenshots.py`, `changelog.py --check`,
-   `.sift/gate.py --base origin/main`, `.sift/agents.py check`.
+   `.sloppatrol/gate.py --base origin/main`, `.sloppatrol/agents.py check`.
 7. Open every README image and inspect it at full resolution before handoff, and step the GIF frames — the
    earlier rounds passed every automated check while the bone glyphs were plainly visible.
 8. CHANGELOG entry under Unreleased. Commit without `-s`. Open a PR to main; do not merge it.

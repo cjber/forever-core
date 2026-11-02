@@ -136,7 +136,7 @@ the thresholds.
 - `stylua --check .`, `luacheck .`, every `tests/*_spec.lua` under luajit, `ruff check tools`,
   `ruff format --check tools`, `ty check tools`, `python3 tools/check_generated.py`,
   `python3 tools/visual_audit.py`, `python3 tools/check_screenshots.py`, `python3 tools/changelog.py --check`,
-  `.sift/gate.py --base origin/main` and `.sift/agents.py check` — all green.
+  `.sloppatrol/gate.py --base origin/main` and `.sloppatrol/agents.py check` — all green.
 - Re-render **every** scene and `demo.gif`; `python3 tools/check_screenshots.py --record` to restamp
   `docs/screenshots/scenes.sha256`.
 - Open every PNG the README references at full resolution AND step every GIF frame. Zoom-crop and re-check four

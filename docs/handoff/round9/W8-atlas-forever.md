@@ -77,7 +77,7 @@ Boundaries that constrain the build:
 - `tests/navigate_spec.lua`: SPF path, waypoint fallback, combat decline, no positional data.
 - Full gate locally: `luacheck .`, `stylua --check .`, every spec with `luajit`, `ruff check tools`,
   `python3 tools/check_generated.py`, `python3 tools/changelog.py --check`,
-  `python3 tools/check_screenshots.py`, `python3 .sift/gate.py --base main` if you add `.sift` rules.
+  `python3 tools/check_screenshots.py`, `python3 .sloppatrol/gate.py --base main` if you add `.sloppatrol` rules.
 
 Public API (`AtlasForever.API`, `version = 1`, `minor = 1`, annotated in `types/API.lua`):
 

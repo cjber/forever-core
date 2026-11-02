@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED = ("types/", "tests/", "tools/", "docs/", ".agents/", "Nav/", ".types/", ".sift/", "reference/")
+IGNORED = ("types/", "tests/", "tools/", "docs/", ".agents/", "Nav/", ".types/", ".sloppatrol/", "reference/")
 # Consumer-only shared modules are stored here as source for sync_consumers.py.
 CORE_SOURCE_ONLY = {"UI/Report.lua", "UI/ForeverFamily.lua"}
 

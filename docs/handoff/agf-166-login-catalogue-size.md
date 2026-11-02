@@ -32,7 +32,7 @@ for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
 luajit -joff tests/plan_bench.lua
 python3 tools/check_generated.py --offline
 python3 tools/changelog.py --check
-python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
+python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
 ```
 Add a CHANGELOG.md bullet under `[Unreleased]` in the repo's prose style, credited to the reporters (jechten, Jechten, Naburiel) where it fits. Do NOT bump the version in a heading and do not tag: the maintainer does release prep.
 

@@ -32,7 +32,7 @@ addonFunc="UNKNOWN()"
    tools/typecheck.sh
    for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
    python3 tools/changelog.py --check
-   python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
+   python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
    ```
 6. Commit with a conventional message referencing (#218) and PUSH the branch `fix/218-container-taint` and open a PR against main. Omit -s on every commit (GitHub auto-signs). Do NOT tag and do NOT touch CHANGELOG version numbers - the maintainer handles release prep.
 

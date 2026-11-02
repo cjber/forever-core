@@ -75,7 +75,7 @@ Do not add `RouteQuests` (separate item, needs the quest planner). Do not change
 - `tests/ui.sh` and the Nearby behaviour must stay green. Run the full `AGENTS.md` gate, including
   `tools/typecheck.sh` (new API members need `types/API.lua` annotations), `luajit -joff tests/journey_bench.lua`,
   `python3 tools/check_locales.py` (nine translations for every new phrase, `-- mt` on machine lines) and
-  `python3 .sift/gate.py --base origin/main`.
+  `python3 .sloppatrol/gate.py --base origin/main`.
 - If `UI/Nearby.lua` gains or changes a player-visible string, the screenshot suite (`tools/screenshots*.py`,
   `tools/check_screenshots.py`) must be re-recorded and you must look at the rendered PNGs.
 

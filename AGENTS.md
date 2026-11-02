@@ -28,7 +28,7 @@ python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui lua
 python3 tools/check_consumers.py          # every consumer's copy matches this repo
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
-python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
+python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
@@ -58,9 +58,9 @@ and run anywhere.
 ## Agent skills
 
 The suite-wide skills live here, in the one repo every addon already vendors from, so an addon repo carries only
-what is specific to itself. Repo-specific skills (a repo's `release` checklist, its `sift-project` gate profile) stay
+what is specific to itself. Repo-specific skills (a repo's `release` checklist, its `sloppatrol-project` gate profile) stay
 in that repo's `.agents/skills/`, never in `cjber/skills`; `cjber/skills` holds only skills that build repo-specific
-logic out of a general rule (how `sift` functions, how `wowmock` renders).
+logic out of a general rule (how `sloppatrol` functions, how `wowmock` renders).
 
 | Skill | Load it when |
 |---|---|

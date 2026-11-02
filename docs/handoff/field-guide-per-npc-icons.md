@@ -117,7 +117,7 @@ backwards-compatible for type/family callers.
 5. Re-render `docs/screenshots/` and `demo.gif`; `tools/check_screenshots.py --record`.
 6. Full local suite green: luacheck, stylua, every `tests/*_spec.lua` under luajit, ruff check +
    format, `check_generated.py`, `visual_audit.py`, `check_screenshots.py`, `changelog.py --check`,
-   `.sift/gate.py --base origin/main`, `.sift/agents.py check`.
+   `.sloppatrol/gate.py --base origin/main`, `.sloppatrol/agents.py check`.
 7. Open every README image at full resolution and inspect it, and step the GIF frames. Automated gates
    passed in earlier rounds while placeholder glyphs were plainly visible.
 8. CHANGELOG under Unreleased. Commit **without `-s`**. PR to main, do not merge it.
