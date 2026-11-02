@@ -1,7 +1,7 @@
 -- Lock the Forever tracker in place: while it is on, the grip ignores drag and says so, and it can be turned on or
 -- off in combat because it is a saved switch read when the player drags, never a frame move.
 --
--- tests/tracker_host_spec.lua covers the rest of the host and stays at sift's 1000-line limit, so the lock's cases
+-- tests/tracker_host_spec.lua covers the rest of the host and stays at the gate's 1000-line limit, so the lock's cases
 -- live here, over the same stubbed client surface. The file is byte-identical across the four Forever addons
 -- (tools/check_shared_tracker.py), so it names no addon and reads its saved slot through ns.TrackerHostSettings.
 local checks = 0

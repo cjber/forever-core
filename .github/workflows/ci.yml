@@ -40,7 +40,7 @@ jobs:
       - run: pipx run ruff==0.16.8 check tools
       - run: pipx run ruff==0.16.8 format --check tools
 
-  sift:
+  project-rules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,8 +49,8 @@ jobs:
           persist-credentials: false
       - env:
           BASE: ${{ github.base_ref || github.event.repository.default_branch }}
-        run: python3 .sift/gate.py --base "origin/$BASE"
-      - run: python3 .sift/agents.py check
+        run: python3 .sloppatrol/gate.py --base "origin/$BASE"
+      - run: python3 .sloppatrol/agents.py check
 
   packaged:
     runs-on: ubuntu-latest

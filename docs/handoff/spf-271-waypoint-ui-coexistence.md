@@ -85,7 +85,7 @@ stylua --check .
 luacheck .
 for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
 python3 tools/changelog.py --check
-python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check
+python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
 ```
 
 Plus `tests/ui.sh` if the UI harness is touched, and a `## [Unreleased]` `CHANGELOG.md` entry in the

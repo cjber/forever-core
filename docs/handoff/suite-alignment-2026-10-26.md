@@ -112,14 +112,14 @@ Evidence is the file's absence or a differing hash against the canonical copy th
   only four modules were copied by hand.
 - `README.md` is not WFA-10 shape: it opens `# Field Guide Forever` with no centred icon, no badges, no family
   block. Rewrite it in the same shape as Atlas and Hoard.
-- `.sift/` has no `ledger/` or `reports/` directories; the other five have them.
+- `.sloppatrol/` has no `ledger/` or `reports/` directories; the other five have them.
 
 ### 2.2 atlas-forever
 
 - `tools/forever_tools/` is current except `editorconfig.py` and `sync.py` (2 of 23 differ from canonical).
 - `Locales/` has `enUS.lua` + `phrases.txt` only; no other locale files (WFA-34).
 - No `docs/screenshots/` and no capture tooling (WFA-9).
-- `.sift/` has `sgconfig.yml` + `scripts/` but no `script-tests/`, `ledger/` or `reports/` (skillup is the same).
+- `.sloppatrol/` has `sgconfig.yml` + `scripts/` but no `script-tests/`, `ledger/` or `reports/` (skillup is the same).
 - No `refresh-data.yml` / `retry-refresh.yml`. Atlas reads the client's own instance data, so confirm this is
   deliberate before adding either (WFA-19 applies only where a repo has a data source to refresh).
 - `README.md` badges use absolute `github.com/cjber/atlas-forever/...` URLs on a private repo. Same defect the
@@ -132,7 +132,7 @@ Evidence is the file's absence or a differing hash against the canonical copy th
 - `Locales/` has `enUS.lua` + `phrases.txt` only (WFA-34).
 - `docs/screenshots/` is empty; `docs/curseforge.md` referenced a `window.png` that never existed. Fixed in #4 by
   removing the image; the page needs a real capture before WFA-9 is met.
-- `.sift/` has an empty `scripts/` and no `script-tests/`, `ledger/` or `reports/`.
+- `.sloppatrol/` has an empty `scripts/` and no `script-tests/`, `ledger/` or `reports/`.
 - No `refresh-data.yml` (Hoard reads containers, so probably deliberate — confirm).
 
 ### 2.4 The six established repos — smaller, but real

@@ -46,7 +46,7 @@ PRECEDENCE = {
 }
 BLOCK_END = {"end", "else", "elseif", "until", "<eof>"}
 ALLOWED = re.compile(r"multi-value:\s*\S.*")
-EXCLUDED_DIRS = frozenset({".git", ".claude", ".types", ".sift", ".release", ".cache"})
+EXCLUDED_DIRS = frozenset({".git", ".claude", ".types", ".sloppatrol", ".release", ".cache"})
 
 
 class Parser:

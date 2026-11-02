@@ -31,7 +31,7 @@ from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
 
-FORBIDDEN = (".agents", ".github", ".sift", "AGENTS.md", "tests", "tools", "types")
+FORBIDDEN = (".agents", ".github", ".sloppatrol", "AGENTS.md", "tests", "tools", "types")
 # What the client accepts for a texture, font or sound path given without its extension.
 EXTENSIONS = ("", ".tga", ".blp", ".png", ".jpg", ".ttf", ".otf", ".ogg", ".mp3")
 LOAD_TAGS = {"Include", "Script"}

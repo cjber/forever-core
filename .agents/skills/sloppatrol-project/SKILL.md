@@ -1,9 +1,9 @@
 ---
-name: sift-project
-description: Project profile for sift in Forever Core: the exact quality-gate and evidence commands, live roots that must never be deleted as dead code, exclusions, conventions and risk order. Load before running sift or any code-quality, cleanup or dead-code work in this repository.
+name: sloppatrol-project
+description: Project profile for Sloppatrol in Forever Core: the exact quality-gate and evidence commands, live roots that must never be deleted as dead code, exclusions, conventions and risk order. Load before running Sloppatrol or any code-quality, cleanup or dead-code work in this repository.
 ---
 
-# sift project profile: Forever Core
+# Sloppatrol project profile: Forever Core
 
 Forever Core is the shared floor under the WoW: Forever addon suite (Interface 16001, Lua 5.1 sandbox):
 the one objective-tracker column the addons dock into, its grip and Lock switch, the section order, and the
@@ -25,7 +25,7 @@ Run in order from the repository root. All must pass before and after any audit 
 | Python | `ruff check tools && ruff format --check tools` | exit 0 (Ruff 0.16.8) |
 | Dead code | `python3 tools/deadcode.py --check` | exit 0 |
 | Package | BigWigs packager `-d -z` then `python3 tools/check_package.py` | every loaded file ships, no development folder does |
-| Sift | `python3 .sift/gate.py --base origin/main && python3 .sift/agents.py check` | 0 findings; skills match their standards |
+| Project rules | `python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check` | 0 findings; skills match their standards |
 
 ## Live roots
 

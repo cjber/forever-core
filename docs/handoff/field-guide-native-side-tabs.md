@@ -100,7 +100,7 @@ wrap the template call and the tooltip/selection wiring — never draw chrome.
   `CENTER -2`, and the two glow atlases.
 - Gate green: `stylua --check .`, `luacheck .`, every `tests/*_spec.lua` under luajit, `ruff check tools`,
   `ruff format --check tools`, `check_generated.py`, `check_core_shared.py`, `visual_audit.py`, `check_screenshots.py`,
-  `changelog.py --check`, `.sift/gate.py --base origin/main`, `.sift/agents.py check`.
+  `changelog.py --check`, `.sloppatrol/gate.py --base origin/main`, `.sloppatrol/agents.py check`.
 
   `tests/wow_mock.lua` must stub `CreateFrame` for `"LargeSideTabButtonTemplate"` returning a frame with `Icon`,
   `SelectedTexture`, `SetChecked`, `SetCustomOnMouseUpHandler` and `tooltipText`, so the window specs still run.

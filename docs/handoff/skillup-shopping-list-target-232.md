@@ -27,7 +27,7 @@ Target version: **0.19.4** (patch), tag `v0.19.4`, Interface stays 16001.
 
 ## Gate
 
-Run the full Commands section of `AGENTS.md` in `cjber/skillup-forever`: `stylua --check .`, `ruff format --check tools && ruff check tools`, `luacheck .`, `tools/typecheck.sh`, every `tests/*_spec.lua` under luajit, `python3 tools/changelog.py --check`, `python3 tools/check_generated.py`, `python3 tools/check_screenshots.py`, `.sift/gate.py --base origin/main` and `.sift/agents.py check`. All must pass before the PR.
+Run the full Commands section of `AGENTS.md` in `cjber/skillup-forever`: `stylua --check .`, `ruff format --check tools && ruff check tools`, `luacheck .`, `tools/typecheck.sh`, every `tests/*_spec.lua` under luajit, `python3 tools/changelog.py --check`, `python3 tools/check_generated.py`, `python3 tools/check_screenshots.py`, `.sloppatrol/gate.py --base origin/main` and `.sloppatrol/agents.py check`. All must pass before the PR.
 
 ## Deliverable
 

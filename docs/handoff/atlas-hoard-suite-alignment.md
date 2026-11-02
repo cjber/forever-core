@@ -11,7 +11,7 @@ Both repos are private and untagged. Do not tag or release them. Open one PR per
 
 | Gap | Requirement | What done looks like |
 |---|---|---|
-| No `.sift/` | WFA-15, WFA-17 | `sift setup` vendors `.sift/` and `.agents/skills/sift-project/`; add the `sift` job to `ci.yml` running `.sift/gate.py --base origin/$BASE` and `.sift/agents.py check`, and a project profile in the Atlas words. |
+| No `.sloppatrol/` | WFA-15, WFA-17 | `sift setup` vendors `.sloppatrol/` and `.agents/skills/sloppatrol-project/`; add the `sift` job to `ci.yml` running `.sloppatrol/gate.py --base origin/$BASE` and `.sloppatrol/agents.py check`, and a project profile in the Atlas words. |
 | No `typecheck` job | WFA-15, WFA-18 | `typecheck` job: lua-language-server against `.luarc.json`, plus `tools/typecheck.sh` running the editorconfig, family, secret, locale and `forever_tools.sync` checks where they apply. |
 | `tools/forever_tools/` absent | WFA-29 | Vendor the canonical package from `.agents/skills/wow-forever-addon/tooling/forever_tools` with its `MANIFEST.json`, and reduce `tools/changelog.py`, `tools/check_package.py` and `tools/release_check.py` to thin entry points that import it. |
 | No `.github/workflows/core-shared-drift.yml` | suite convention | Copy it from `tweaks-forever` unchanged. |
@@ -25,14 +25,14 @@ Both repos are private and untagged. Do not tag or release them. Open one PR per
 
 | Gap | Requirement | What done looks like |
 |---|---|---|
-| No `.sift/` | WFA-15, WFA-17 | As atlas. There is a `.agents/skills/sift-project/SKILL.md` here, but its text is a copy of Field Guide Forever's profile: rewrite it for Hoard (gate commands, the container `pcall` rule, live roots) before `sift setup`. |
+| No `.sloppatrol/` | WFA-15, WFA-17 | As atlas. There is a `.agents/skills/sloppatrol-project/SKILL.md` here, but its text is a copy of Field Guide Forever's profile: rewrite it for Hoard (gate commands, the container `pcall` rule, live roots) before `sift setup`. |
 | No `typecheck` job | WFA-15, WFA-18 | As atlas. |
 | `tools/forever_tools/` is partial | WFA-29 | It holds 4 modules and no `MANIFEST.json`. Vendor the full package from the canonical producer and make the three tool scripts thin entry points. |
 | No `.github/workflows/core-shared-drift.yml` | suite convention | Copy from `tweaks-forever`. |
 | No `## IconTexture` in the TOC | WFA-8 | The icon now exists (`media/icon-400.png`, `media/Icon.tga`, rendered from `media/icon.svg`); the TOC already declares `## IconTexture`, verify it resolves to `media\Icon`. |
 | `docs/screenshots/` empty | WFA-9, WFA-25 | `README.md` and `docs/curseforge.md` already reference `docs/screenshots/window.png`, so this is the first asset to produce: `tools/screenshots.py` from the `wow-mock-screenshots` pack against the real window, plus `scenes.sha256` and the `check_screenshots.py` job. |
 | Guild vault not read | product claim | `Core/Snapshots.lua` reads bags, bank and reagent bank only; `Core/Settings.lua` already offers **Cache the guild vault** and the `Guild` tab filters a `guild` kind nothing produces. Either implement the vault read (`C_GuildBank.GetGuildBankItemInfo` behind `pcall`, cached per guild) or remove the setting and the tab. The docs currently say the tab stays empty. |
-| No `AGENTS.md` standards declaration | WFA-17 | `AGENTS.md` was added in the docs PR; add the `## Standards` line naming the WFA pack at a full commit SHA once `.sift` can check it. |
+| No `AGENTS.md` standards declaration | WFA-17 | `AGENTS.md` was added in the docs PR; add the `## Standards` line naming the WFA pack at a full commit SHA once `.sloppatrol` can check it. |
 
 ## Suite drift found in the same sweep (fix in their own PRs)
 
@@ -45,5 +45,5 @@ Both repos are private and untagged. Do not tag or release them. Open one PR per
 
 ## Gate for every PR
 
-`stylua --check .`, `luacheck .`, every `tests/*_spec.lua` under LuaJIT, `python3 .sift/gate.py --base origin/main`,
+`stylua --check .`, `luacheck .`, every `tests/*_spec.lua` under LuaJIT, `python3 .sloppatrol/gate.py --base origin/main`,
 `python3 tools/changelog.py --check`, and the packaged zip check. Say in the PR which of the WFA ids above it closes.

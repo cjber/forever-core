@@ -1,13 +1,13 @@
 ---
 name: wow-forever-addon
-description: "Standards pack for cjber's WoW: Forever addons (legacy-forever, skillup-forever, tweaks-forever, shortest-path-forever, any new one) - the numbered requirements every addon repo shares for UI look and feel, assets, README and store pages, code and performance, CI and releases. Load before building or changing an addon's UI, icon, screenshots, README, store page, CI, release process or GitHub repo settings, when debugging taint, a blocked action, in-game layout or load time, or when `sift audit` reviews an addon that declares it under `## Standards` in AGENTS.md."
+description: "Standards pack for cjber's WoW: Forever addons (legacy-forever, skillup-forever, tweaks-forever, shortest-path-forever, any new one) - the numbered requirements every addon repo shares for UI look and feel, assets, README and store pages, code and performance, CI and releases. Load before building or changing an addon's UI, icon, screenshots, README, store page, CI, release process or GitHub repo settings, when debugging taint, a blocked action, in-game layout or load time, or when an audit reviews an addon that declares it under `## Standards` in AGENTS.md."
 ---
 
 # WoW: Forever addon standards
 
 One family, one feel: each addon is a small, fast extension of the default Forever UI that works the
 moment it is installed. These requirements are the shared contract. Each repo declares this pack in
-its `AGENTS.md` under `## Standards`; `sift audit` reviews against the ids below, and a repo waives one
+its `AGENTS.md` under `## Standards`; an audit reviews against the ids below, and a repo waives one
 only in its `AGENTS.md`, with the reason.
 
 Reference implementations: **skillup-forever** for CI and release, **tweaks-forever** for settings.
@@ -131,8 +131,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   `tests/*_spec.lua` under LuaJIT (a glob, so a new spec cannot be left out), StyLua `--check`,
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
   history. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. A job
-  named `sift` runs the vendored `python3 .sift/gate.py --base "origin/$BASE"` and
-  `python3 .sift/agents.py check`; `sift setup` vendors both and `sift update` refreshes them.
+  named `project-rules` runs the vendored `python3 .sloppatrol/gate.py --base "origin/$BASE"` and
+  `python3 .sloppatrol/agents.py check`; `sloppatrol init` vendors both and `sloppatrol init --refresh` refreshes them.
   Dependabot updates `github-actions` monthly, grouped. A `package` job runs the pinned BigWigs packager
   with `args: -d -z` (no upload) and `tools/check_package.py` (`forever_tools.package`) on its output: every file a
   TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types` or
@@ -147,7 +147,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%.
-- **WFA-17** Every repo has a lean `AGENTS.md` passing `python3 .sift/agents.py check`, declaring
+- **WFA-17** Every repo has a lean `AGENTS.md` passing `python3 .sloppatrol/agents.py check`, declaring
   this pack at a full commit SHA. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
   the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
