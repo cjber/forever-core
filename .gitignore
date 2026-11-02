@@ -8,3 +8,8 @@ __pycache__/
 .ruff_cache/
 reference/
 scratch/
+
+# Patrol runs: local data, whole checkouts
+.bugpatrol/runs/
+.speedpatrol/runs/
+.sloppatrol/runs/

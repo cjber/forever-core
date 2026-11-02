@@ -1,0 +1,36 @@
+version: 1
+
+# Speedpatrol profile for ForeverCore, written by hand because `speedpatrol init` reads a repo without
+# package.json as an HTTP API. The game client cannot run here, so every benchmark is a command over
+# the headless harness.
+project:
+  name: forever-core
+  source: .
+app:
+  instructions: instructions.md
+  prepare: []
+  setup: []
+  teardown: []
+defaults:
+  iterations: 10
+  warmup: 1
+  timeoutMs: 180000
+  rounds: 2
+benchmarks:
+  - id: gate.specs
+    kind: command
+    critical: true
+    title: "The spec suite, as the gate runs it"
+    run: 'for s in tests/*_spec.lua; do luajit "$s" >/dev/null || exit 1; done'
+    profile: { enabled: false }
+  - id: gate.consumers
+    kind: command
+    critical: false
+    title: "Every consumer's vendored copy matches this repo"
+    run: "python3 tools/check_consumers.py"
+    profile: { enabled: false }
+agents:
+  analyst: { use: claude, timeoutMinutes: 30 }
+  optimizer: { use: claude, enabled: true, maxPerCycle: 1, minImprovement: 0.05 }
+  github: { enabled: false }
+  patrol: { intervalMinutes: 30, pull: origin/main, cycles: 0 }
