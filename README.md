@@ -3,7 +3,7 @@
 The shared floor under the WoW: Forever addon suite: one objective-tracker column, the grip and Lock switch that move
 it, the section order that stacks it, and the Questie bridge that keeps it clear of Questie's own quest list.
 
-**Interface:** 16001 (WoW: Forever, `_classic_beta_`)
+**Interface:** 16001 (WoW: Forever, live client folder `_forever_`, beta `_classic_beta_`)
 
 ## What it is for
 
