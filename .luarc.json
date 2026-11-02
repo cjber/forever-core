@@ -1,4 +1,16 @@
 {
   "runtime.version": "Lua 5.1",
-  "diagnostics.globals": ["ForeverCore", "ForeverTrackerHost", "ForeverCoreDB", "EventUtil", "EventRegistry", "SlashCmdList"]
+  "diagnostics.globals": [
+    "ForeverCore",
+    "ForeverTrackerHost",
+    "ForeverCoreDB",
+    "EventUtil",
+    "EventRegistry",
+    "SlashCmdList"
+  ],
+  "workspace.ignoreDir": [
+    ".bugpatrol",
+    ".speedpatrol",
+    ".sloppatrol"
+  ]
 }

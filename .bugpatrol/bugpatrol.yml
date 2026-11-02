@@ -1,0 +1,30 @@
+version: 1
+
+# Bugpatrol profile for ForeverCore. The game client cannot run here, so the "app" is the repo's
+# headless Lua harness: each tests/<name>_spec.lua stubs the client API and loads the files the TOC
+# lists, in order. The native integration spec is the exception and fetches Blizzard's tracker source.
+app:
+  platform: cli
+  source: .
+  setup: []
+  connect:
+    cli:
+      timeoutMs: 60000
+  instructions: .bugpatrol/instructions.md
+  secrets: []
+
+agents:
+  explorer:
+    use: claude
+    maxSteps: 25
+    budgetUsd: 1
+  judge:
+    use: claude
+  fixer:
+    enabled: false
+    use: claude
+  review:
+    name: harness
+    budgetUsd: 1
+  github:
+    enabled: false
