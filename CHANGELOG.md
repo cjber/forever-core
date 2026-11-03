@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Mock menus keep their transparent corners.** The renderer no longer paints an opaque rectangle behind the rounded native menu artwork, so map previews have no dark square around the popup.
+
 ## 0.4.3 - 2026-11-03
 
 - **The suite's tools ignore fixture TOCs that never ship.** TOC runtime discovery walked every `.toc` under
