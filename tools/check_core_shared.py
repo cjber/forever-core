@@ -2,7 +2,7 @@
 
 Forever Core is the source of every file in VENDORED, this script included: core's tools/sync_consumers.py copies
 them into each consumer and core's tools/check_consumers.py reads the same map. Run it from a consumer's root, whose
-folder name is the repo name:
+repository is inferred from its Git origin:
 
     python3 tools/check_core_shared.py             every file this repo vendors must match core main
     python3 tools/check_core_shared.py --base REF  only the vendored files that REF...HEAD changes
@@ -18,6 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 TRACKER_CONSUMERS = (
     "adventure-guide-forever",
@@ -77,6 +78,27 @@ def paths_for(repo):
     return [path for path, consumers in VENDORED.items() if repo in consumers]
 
 
+def repo_from_git():
+    """Return the GitHub repo name, independent of the checkout directory or worktree name."""
+    result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
+    if result.returncode:
+        return None
+    remote = result.stdout.strip()
+    if remote.startswith("git@github.com:"):
+        name = remote.removeprefix("git@github.com:")
+    else:
+        parsed = urlparse(remote)
+        if parsed.hostname != "github.com":
+            return None
+        name = parsed.path.lstrip("/")
+    name = name.strip("/")
+    if name.lower().endswith(".git"):
+        name = name[:-4]
+    owner, separator, repo = name.partition("/")
+    repo = repo.lower()
+    return repo if separator and owner.lower() == "cjber" and repo in SUITE_CONSUMERS else None
+
+
 def changed_since(base):
     """Every path that `base...HEAD` adds, changes, renames or deletes."""
     result = subprocess.run(
@@ -120,11 +142,16 @@ def compare(root, paths, fetch=core_main):
 def main(argv=None, fetch=core_main):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", help="check only the vendored files that BASE...HEAD changes")
-    parser.add_argument("--repo", help="this consumer's repo name (default: the current folder's name)")
+    parser.add_argument("--repo", help="this consumer's repo name (default: infer it from Git origin)")
     arguments = parser.parse_args(argv)
 
     root = Path.cwd()
-    paths = paths_for(arguments.repo or root.name)
+    if arguments.repo and arguments.repo not in SUITE_CONSUMERS:
+        raise SystemExit(f"Unknown consumer repo: {arguments.repo}")
+    repo = arguments.repo or repo_from_git()
+    if repo is None:
+        raise SystemExit("Cannot identify a known cjber consumer from git remote; pass --repo explicitly.")
+    paths = paths_for(repo)
     if arguments.base:
         touched = changed_since(arguments.base)
         paths = [path for path in paths if path in touched]

@@ -147,6 +147,34 @@ _G.BugGrabber.GetDB = function()
 end
 local duplicateText = reportText({})
 equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
+local caughtErrors = ns.CaughtErrors
+ns.CaughtErrors = function()
+	return { { label = "test", message = ns.CutText(longError, 300), count = 1, stack = "stack" } }
+end
+local legacyText = reportText({})
+equal(
+	legacyText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil,
+	true,
+	"ambiguous clipped legacy errors remain visible"
+)
+ns.CaughtErrors = function()
+	return { { label = "test", message = "A", count = 1, stack = "stack" } }
+end
+_G.BugGrabber.GetDB = function()
+	return { { message = "A", counter = 1, session = 1 } }
+end
+local exactLegacyText = reportText({})
+equal(exactLegacyText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "exact short legacy errors deduplicate")
+_G.BugGrabber.GetDB = function()
+	return { { message = "A suffix", counter = 1, session = 1 } }
+end
+local shortLegacyText = reportText({})
+equal(
+	shortLegacyText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil,
+	true,
+	"distinct short legacy errors remain visible"
+)
+ns.CaughtErrors = caughtErrors
 local sharedPrefix = ("same prefix "):rep(30)
 ns.RecordError("first", sharedPrefix .. "A", "stack")
 ns.RecordError("second", sharedPrefix .. "B", "stack")

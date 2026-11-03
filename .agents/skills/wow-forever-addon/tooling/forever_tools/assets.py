@@ -161,10 +161,12 @@ def check(source: str, suffix: str = ".lua") -> list[tuple[int, str]]:
 def renderer_files(root: Path) -> list[Path]:
     """Renderer entry points, including the shared renderer's own implementation."""
     tools = root / "tools"
+    active = [path for path in (tools / "micro_menu_render.py", tools / "rarity.py") if path.is_file()]
     return sorted(
         {
             *tools.glob("*screenshots*.py"),
             *tools.glob("*mockups*.py"),
+            *active,
             *tools.glob("wowmock/wowmock.py"),
         }
     )

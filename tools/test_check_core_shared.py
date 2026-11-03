@@ -37,6 +37,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         git(self.root, "config", "user.email", "test@example.com")
         git(self.root, "config", "user.name", "Test")
         git(self.root, "config", "commit.gpgsign", "false")
+        git(self.root, "remote", "add", "origin", "git@github.com:cjber/field-guide-forever.git")
         self.core = dict(CORE)
         for path in check_core_shared.paths_for(self.root.name):
             self.write(path, self.fetch(path))
@@ -116,10 +117,27 @@ class CheckCoreSharedTest(unittest.TestCase):
         for path in check_core_shared.VENDORED:
             self.assertTrue((root / check_core_shared.source(path)).is_file(), path)
 
-    def test_a_repo_outside_the_suite_vendors_nothing(self):
-        code, out = self.run_check("--repo", "forever-core")
+    def test_rejects_unknown_consumer(self):
+        with self.assertRaisesRegex(SystemExit, "Unknown consumer repo: forever-core"):
+            self.run_check("--repo", "forever-core")
+
+    def test_repo_from_git_normalizes_supported_remote_forms(self):
+        for remote in (
+            "git@github.com:cjber/field-guide-forever.git/",
+            "ssh://git@github.com/cjber/field-guide-forever.git/",
+            "https://github.com/CJBER/FIELD-GUIDE-FOREVER.git/",
+        ):
+            with self.subTest(remote=remote):
+                git(self.root, "remote", "set-url", "origin", remote)
+                self.assertEqual(check_core_shared.repo_from_git(), "field-guide-forever")
+
+    def test_worktree_uses_remote_repo_not_directory_name(self):
+        worktree = Path(self.tmp.name) / "misleading-worktree-name"
+        git(self.root, "worktree", "add", "--detach", str(worktree), "HEAD")
+        os.chdir(worktree)
+        code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("0 vendored files match", out)
+        self.assertIn("10 vendored files match", out)
 
 
 if __name__ == "__main__":
