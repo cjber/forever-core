@@ -125,7 +125,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         for remote in (
             "git@github.com:cjber/field-guide-forever.git/",
             "ssh://git@github.com/cjber/field-guide-forever.git/",
-            "https://github.com/CJBER/field-guide-forever.git/",
+            "https://github.com/CJBER/FIELD-GUIDE-FOREVER.git/",
         ):
             with self.subTest(remote=remote):
                 git(self.root, "remote", "set-url", "origin", remote)

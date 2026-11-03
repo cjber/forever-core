@@ -95,6 +95,7 @@ def repo_from_git():
     if name.lower().endswith(".git"):
         name = name[:-4]
     owner, separator, repo = name.partition("/")
+    repo = repo.lower()
     return repo if separator and owner.lower() == "cjber" and repo in SUITE_CONSUMERS else None
 
 
