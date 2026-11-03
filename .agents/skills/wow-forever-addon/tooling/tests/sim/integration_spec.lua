@@ -190,6 +190,12 @@ test("Professions book page completes OnShow and runs post-hooks", function()
 	local sim = Sim.new()
 	eq(type(sim.G.ShowProfessionsFrame), "function", "load-on-demand bootstrap available before login")
 	eq(sim.loader.loaded.Blizzard_Professions, nil, "bootstrap did not load the full addon")
+	for _, name in ipairs({ "ExpansionTrial_LoadUI", "PVPUI_LoadUI", "Garrison_LoadUI", "ShowPerksProgramFrame" }) do
+		eq(sim.G[name], nil, name .. " is excluded from the Forever client")
+	end
+	eq(sim.loader.blizzard("Blizzard_PVPUI"), false, "excluded addon cannot load by name")
+	eq(sim.loader.blizzard("Blizzard_PVPUI:Bootstrap"), false, "excluded subset cannot load")
+	eq(sim.loader.blizzard("Blizzard_PVPUI/Blizzard_PVPUI_Bootstrap.lua"), false, "excluded direct file cannot load")
 	local bootstrap = sim.G.ShowProfessionsFrame
 	sim.loader.bootstrap()
 	sim:loadBlizzard("Blizzard_Professions/Blizzard_Professions_Bootstrap.lua")

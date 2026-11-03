@@ -21,6 +21,8 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture used by the report window |
+| `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
+| `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |
 | `tools/check_core_shared.py` | the vendoring map and the consumer's own drift check |
 | `.github/workflows/core-shared-drift.yml` | runs that check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
 
@@ -58,3 +60,32 @@ switched by what that addon registers, so the four copies stay one file.
 - Several installed: the first to load publishes `ForeverTrackerHost`; the rest adopt it, so there is one column.
 - Core installed too: `ForeverCore.toc` lists the five addons as `OptionalDeps`, so they load first and core adopts
   the column they built rather than starting a second one with settings nobody saved.
+
+## Peer statistics
+
+Load `Core/PeerStats.lua` before the addon's statistics adapter. Create one instance with
+`ns.PeerStats.New(config)`: `addon` is the wire identifier, `enabled()` reads the saved sharing switch,
+`db()` returns the peer table, `snapshot()` returns this character's observed rows, and `metrics`
+allowlists the addon's metric names. A metric declares `subject = "all"`, `"numeric"` or `"qualified"`;
+`first = true` ranks its earliest timestamp. Other metrics rank the highest cumulative value.
+Each snapshot row supplies `metric`, `subject`, `value` and `eventUnix`. Cumulative rows may omit the
+timestamp; the first observation of each changed value gets a timestamp. First-completion rows require
+an observed timestamp.
+
+The adapter migrates its own saved layout to `sender -> metric -> subject -> { value, eventUnix }`
+before registering. It owns metric definitions, recording, labels, settings and UI. The shared module
+validates names and rows, bounds saved peers and incoming traffic, and sends only local snapshot rows
+over `WFAStats` wire version 1 on guild and group channels. Received rows are never relayed. All loaded
+copies share one versioned `ForeverPeerStats` manager, event frame and throttled queue.
+
+Call `instance:Sync()` after the character's metrics change. For a sharing toggle, save the setting
+first, then call `instance:SetEnabled(value)`. Disabling cancels pending sends immediately, blocks
+receives and hides peers; it preserves recorded history. Enabling offers the snapshot again. Missing
+settings or a missing peer table mean sharing is off. `instance:Shared()` returns a copy of the
+validated peers, or an empty table while off. `instance:Board(metric, subject, localValue, localEventUnix)`
+returns ranked rows with the personal row included even while sharing is off.
+
+The queue holds at most 512 payloads. Overflow keys are bounded by the snapshot's 2048-row limit and
+refilled from that snapshot as capacity returns. Each addon retains at most 100 peers, 256 subjects
+per metric and 1024 rows per peer. Use client-observed values and timestamps, and present absent
+peer data as unknown. These boards compare what peers report; they cannot verify another client.

@@ -36,6 +36,15 @@ test("loader: bootstrap markers retain matching game conditions", function()
 	eq(toc.bootstrap["Normal.lua"], nil)
 end)
 
+test("loader: addon metadata excludes unsupported game types on every load path", function()
+	eq(Loader.eligible({}), true)
+	eq(Loader.eligible({ AllowLoadGameType = "cata, camelot" }), true)
+	eq(Loader.eligible({ AllowLoadGameType = "cata" }), false)
+	eq(Loader.eligible({ ExcludeLoadGameType = "cata, camelot" }), false)
+	eq(Loader.eligible({ ExcludeLoadGameType = "cata" }), true)
+	eq(Loader.eligible({ AllowLoad = "Glue" }), false)
+end)
+
 test("xml: elements, attributes, entities, CDATA and line numbers", function()
 	local root = XML.parse(
 		'<Ui>\n<Frame name="A" x="1 &amp; 2">\n<Scripts><OnLoad><![CDATA[print("<hi>")]]></OnLoad></Scripts>'

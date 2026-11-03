@@ -13,6 +13,7 @@ Core.lua
 Locales\enUS.lua
 Core\SafeCall.lua
 Core\Text.lua
+Core\PeerStats.lua
 Core\MicroButton.lua
 UI\SettingsPage.lua
 UI\TrackerQuestie.lua
