@@ -276,7 +276,7 @@ function M.build(sim)
 				end
 			end
 			if secretArgs == "NotAllowed" or (secretArgs == "AllowedWhenUntainted" and tainted) then
-				for i = 1, math.max(nargs, select("#", ...)) do
+				for i = 1, math.max(nargs, (select("#", ...))) do
 					local a = fdoc.Arguments and fdoc.Arguments[i] or (fdoc.Arguments and fdoc.Arguments[nargs])
 					-- Type-erased value arguments (issecretvalue's) take any value, secrets included.
 					local erased = a and ((a.Type or ""):match("^LuaValue") or a.Type == "any")
