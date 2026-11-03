@@ -1,4 +1,33 @@
 {
   "schema_version": 1,
-  "items": []
+  "items": [
+    {
+      "id": "9843212045",
+      "lens": "silent-fallbacks",
+      "file": "tools/deadcode.py",
+      "quote": "SCRATCH_DIRS = {\".git\", \".venv\", \".bugpatrol\", \".sloppatrol\", \".speedpatrol\"}",
+      "what": "Whole patrol directories hide tracked guidance evidence",
+      "why": "Exclude generated runs and reports while preserving supported tracked instructions; fresh reviews and positive controls verify both boundaries.",
+      "confidence": "high",
+      "status": "fixed",
+      "reason": "Verified synthetic reproduction, corrected discovery boundary, end-to-end regression tests pass.",
+      "first_seen": "2026-11-03",
+      "updated": "2026-11-03",
+      "guard": "lens-only: run deadcode unit regression matrix and inspect canonical sync boundary"
+    },
+    {
+      "id": "d3f4b0eee0",
+      "lens": "silent-fallbacks",
+      "file": "tools/deadcode.py",
+      "quote": "    for toc in source_files(\"*.toc\"):\n        for line in toc.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines():",
+      "what": "Ignored fixture TOCs can mask orphan runtime Lua",
+      "why": "A fixture listing UI/Orphan.lua suppressed the runtime finding in every ignored prefix; red-capable regression verifies the guard.",
+      "confidence": "high",
+      "status": "fixed",
+      "reason": "Verified synthetic reproduction, corrected discovery boundary, end-to-end regression tests pass.",
+      "first_seen": "2026-11-03",
+      "updated": "2026-11-03",
+      "guard": "lens-only: run deadcode unit regression matrix and inspect canonical sync boundary"
+    }
+  ]
 }
