@@ -1,5 +1,6 @@
 -- Fixture for the combat transition boundary: PLAYER_REGEN_DISABLED fires before lockdown,
 -- while loss-of-control data remains readable for the player but not for other units.
+-- luacheck: globals UnitAffectingCombat InCombatLockdown C_LossOfControl
 SimCombatResults = {}
 
 local function onCombatStart()
