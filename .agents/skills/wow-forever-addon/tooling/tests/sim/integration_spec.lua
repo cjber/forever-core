@@ -148,6 +148,7 @@ test("a protected frame changed from addon code in combat is ADDON_ACTION_BLOCKE
 	sim:runAs("SimCombat", 'SimSecureFrame = CreateFrame("Frame", "SimSecureFrame", UIParent)')
 	sim.widgets.state[sim.G.SimSecureFrame].protected = true
 	sim.inCombat = true
+	sim.combatLockdown = true
 	sim:runAs("SimCombat", "SimSecureFrame:SetPoint('CENTER')")
 	sim:expectError(
 		"[ADDON_ACTION_BLOCKED] AddOn 'SimCombat' tried to call the protected function 'SimSecureFrame:SetPoint()'"
