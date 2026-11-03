@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.2 - 2026-11-03
+
+- **Vendoring keeps the exec bit.** `forever_tools/sync.py update` and `forever_sim/sync.py update` copied with
+  `shutil.copyfile`, which never carries the file mode, so a vendored script with a shebang landed as 100644 and
+  ruff failed the consumer with EXE001. Both copy through a helper that carries the source mode across. Nothing
+  changes in game.
+
 ## 0.4.1 - 2026-10-27
 
 - **The suite's newest-build lookup now sees Forever's own product key.** wago.tools publishes Forever under
