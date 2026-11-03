@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.5 - 2026-11-03
+
 - **Profession scenarios complete their page transitions.** The test client loads startup bootstrap files and the casting bar, supplies the skipped action-bar and micro-menu calls, and keeps native constants readable during addon-triggered calls.
 - **Core's dead-code check works in feature worktrees.** It identifies the shared-source repository by its TOC rather than its folder name.
 
