@@ -157,7 +157,6 @@ equal(
 	true,
 	"ambiguous clipped legacy errors remain visible"
 )
-ns.CaughtErrors = caughtErrors
 ns.CaughtErrors = function()
 	return { { message = "A", count = 1, stack = "stack" } }
 end
