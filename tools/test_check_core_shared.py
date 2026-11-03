@@ -16,6 +16,8 @@ CORE = {
     "UI/SettingsPage.lua": b"core settings\n",
     "tests/settings_page_spec.lua": b"core settings spec\n",
     "Core/MicroButton.lua": b"core micro\n",
+    "Core/PeerStats.lua": b"core peer stats\n",
+    "tests/peer_stats_spec.lua": b"core peer stats spec\n",
     "tests/micro_button_spec.lua": b"core micro spec\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/core-shared-drift.yml": b"core workflow\n",
@@ -69,7 +71,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("8 vendored files match", out)
+        self.assertIn("10 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"

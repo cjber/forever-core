@@ -33,6 +33,7 @@ TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-for
 SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "hoard-forever")
 # This drift check reaches every addon in the suite.
 SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever",)
+PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
 
 # Consumer path: the repos that carry it. A consumer keeps each file at the same path as core, except where SOURCES
 # names the core file it is copied from.
@@ -42,6 +43,8 @@ VENDORED = {
     "tools/deadcode.py": SETTINGS_CONSUMERS,
     "tools/deadcode-allow.txt": SETTINGS_CONSUMERS,
     "Core/Text.lua": TEXT_CONSUMERS,
+    "Core/PeerStats.lua": PEER_CONSUMERS,
+    "tests/peer_stats_spec.lua": PEER_CONSUMERS,
     "tests/text_spec.lua": TEXT_CONSUMERS,
     "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
     "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,

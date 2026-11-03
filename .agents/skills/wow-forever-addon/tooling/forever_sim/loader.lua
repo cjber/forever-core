@@ -78,7 +78,7 @@ function M.allowed(conditions)
 			end
 		elseif kind == "ExcludeLoadGameType" then
 			for _, t in ipairs(tokens(list)) do
-				if t == "camelot" then
+				if M.GAME_TYPES[t] then
 					return false
 				end
 			end
@@ -93,6 +93,17 @@ function M.allowed(conditions)
 		end
 	end
 	return true
+end
+
+-- Addon metadata and file conditions use the same game and environment restrictions.
+function M.eligible(metadata)
+	local conditions = ""
+	for _, kind in ipairs({ "AllowLoad", "AllowLoadGameType", "ExcludeLoadGameType" }) do
+		if metadata[kind] then
+			conditions = conditions .. "[" .. kind .. " " .. metadata[kind] .. "]"
+		end
+	end
+	return M.allowed(conditions)
 end
 
 -- Parses a TOC: { metadata = {key = value}, files = { relative paths }, deps = {...} }.
@@ -192,16 +203,7 @@ function M.build(sim)
 			local text = tocPath and readFile(tocPath)
 			if text then
 				local toc = M.parseToc(text)
-				local md = toc.metadata
-				local allowed = (md.AllowLoad or "both"):lower() ~= "glue"
-				if md.AllowLoadGameType then
-					local matches = false
-					for _, game in ipairs(tokens(md.AllowLoadGameType)) do
-						matches = matches or M.GAME_TYPES[game] == true
-					end
-					allowed = allowed and matches
-				end
-				if allowed then
+				if M.eligible(toc.metadata) then
 					for _, rel in ipairs(toc.files) do
 						if toc.bootstrap[rel] and not bootstrapped[dir .. "/" .. rel] then
 							loadFiles(dir, name, { files = { rel } }, {})
@@ -224,7 +226,11 @@ function M.build(sim)
 		if subset then
 			-- Only the TOC entries of a Blizzard addon whose path matches one of the |-separated words.
 			local dir = blizzardDir(subset)
-			local toc = M.parseToc(readFile(findToc(dir, subset)))
+			local tocPath = findToc(dir, subset)
+			local toc = tocPath and M.parseToc(readFile(tocPath))
+			if not toc or not M.eligible(toc.metadata) then
+				return false
+			end
 			local files = {}
 			for _, rel in ipairs(toc.files) do
 				for word in patterns:gmatch("[^|]+") do
@@ -244,6 +250,9 @@ function M.build(sim)
 			local dir = blizzardDir(addon)
 			local tocPath = findToc(dir, addon)
 			local toc = tocPath and M.parseToc(readFile(tocPath))
+			if not toc or not M.eligible(toc.metadata) then
+				return false
+			end
 			loadFiles(dir, addon, { files = { rel }, bootstrap = toc and toc.bootstrap }, {})
 			L.loaded[name] = { blizzard = true, seconds = 0, partial = true }
 			return true
@@ -254,19 +263,7 @@ function M.build(sim)
 			return false
 		end
 		local toc = M.parseToc(readFile(tocPath))
-		local gameTypes = toc.metadata.AllowLoadGameType
-		if gameTypes then
-			local ok = false
-			for _, t in ipairs(tokens(gameTypes)) do
-				if M.GAME_TYPES[t] then
-					ok = true
-				end
-			end
-			if not ok then
-				return false
-			end
-		end
-		if toc.metadata.AllowLoad and toc.metadata.AllowLoad:lower() == "glue" then
+		if not M.eligible(toc.metadata) then
 			return false
 		end
 		L.loading[name] = true
@@ -304,20 +301,7 @@ function M.build(sim)
 			if text then
 				local toc = M.parseToc(text)
 				local md = toc.metadata
-				local ok = md.LoadOnDemand ~= "1"
-				local allowLoad = (md.AllowLoad or "both"):lower()
-				if allowLoad == "glue" then
-					ok = false
-				end
-				if md.AllowLoadGameType then
-					local any = false
-					for _, t in ipairs(tokens(md.AllowLoadGameType)) do
-						if M.GAME_TYPES[t] then
-							any = true
-						end
-					end
-					ok = ok and any
-				end
+				local ok = md.LoadOnDemand ~= "1" and M.eligible(md)
 				if (md.DefaultState or ""):lower() == "disabled" then
 					ok = false
 				end
