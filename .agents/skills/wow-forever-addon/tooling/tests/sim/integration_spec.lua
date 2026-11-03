@@ -183,5 +183,37 @@ test("the booted Blizzard UI raises no error of its own in tainted execution", f
 	)
 end)
 
+test("Professions book page completes OnShow and runs post-hooks", function()
+	local sim = Sim.new()
+	eq(type(sim.G.ShowProfessionsFrame), "function", "load-on-demand bootstrap available before login")
+	eq(sim.loader.loaded.Blizzard_Professions, nil, "bootstrap did not load the full addon")
+	local bootstrap = sim.G.ShowProfessionsFrame
+	sim.loader.bootstrap()
+	sim:loadBlizzard("Blizzard_Professions/Blizzard_Professions_Bootstrap.lua")
+	sim:loadBlizzard("Blizzard_Professions:Bootstrap")
+	eq(sim.G.ShowProfessionsFrame, bootstrap, "bootstrap remains the same through all loader paths")
+	blacksmith(sim)
+	sim:login()
+	local pf = sim:openProfessions(164)
+	eq(sim.G.ShowProfessionsFrame, bootstrap, "full addon does not execute its bootstrap twice")
+	local ran = false
+	pf.BookPage:HookScript("OnShow", function()
+		ran = true
+	end)
+	sim.widgets.dispatch(pf.ProfessionsOverviewTab, "OnMouseUp", "LeftButton", true)
+	sim:advance(0.05)
+	assert(ran, "BookPage OnShow hook did not run")
+	assert(sim.G.OverlayPlayerCastingBarFrame, "casting bar available")
+	sim:runAs(
+		"SimProfessionCaller",
+		[[
+		assert(type(LE_FRAME_TUTORIAL_PROFESSION_QUALITY_REAGENTS) == "number")
+		ProfessionsFrame.CraftingPage:Show()
+		ProfessionsFrame.CraftingPage:Hide()
+	]]
+	)
+	sim:expectNoErrors("SimProfessionCaller")
+end)
+
 print(string.format("integration_spec: %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

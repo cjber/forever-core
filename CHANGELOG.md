@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Profession scenarios complete their page transitions.** The test client loads startup bootstrap files and the casting bar, supplies the skipped action-bar and micro-menu calls, and keeps native constants readable during addon-triggered calls.
+- **Core's dead-code check works in feature worktrees.** It identifies the shared-source repository by its TOC rather than its folder name.
+
 ## 0.4.4 - 2026-11-03
 
 - **Mock menus keep their transparent corners.** The renderer no longer paints an opaque rectangle behind the rounded native menu artwork, so map previews have no dark square around the popup.

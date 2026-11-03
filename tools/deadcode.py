@@ -45,7 +45,7 @@ def scan():
 
     definitions = []
     for path, content in texts.items():
-        if ROOT.name == "forever-core" and rel(path) in CORE_SOURCE_ONLY:
+        if (ROOT / "ForeverCore.toc").is_file() and rel(path) in CORE_SOURCE_ONLY:
             continue
         for match in re.finditer(
             r"\bfunction\s+ns\.([A-Za-z_]\w*)\s*\(|\bns\.([A-Za-z_]\w*)\s*=\s*function\b", content
@@ -67,7 +67,7 @@ def scan():
                 toc_entries.add(entry)
     for path in source_files("*.lua"):
         name = rel(path)
-        if ignored(path) or (ROOT.name == "forever-core" and name in CORE_SOURCE_ONLY):
+        if ignored(path) or ((ROOT / "ForeverCore.toc").is_file() and name in CORE_SOURCE_ONLY):
             continue
         if not any(name == entry or name.endswith("/" + entry) for entry in toc_entries):
             errors.append((name, 1, "Lua file is not named by any TOC"))
@@ -87,7 +87,7 @@ def scan():
     for source in reference_sources:
         if ignored(source):
             continue
-        if ROOT.name == "forever-core" and rel(source) in CORE_SOURCE_ONLY:
+        if (ROOT / "ForeverCore.toc").is_file() and rel(source) in CORE_SOURCE_ONLY:
             continue
         content = source.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
         if source.suffix == ".lua":

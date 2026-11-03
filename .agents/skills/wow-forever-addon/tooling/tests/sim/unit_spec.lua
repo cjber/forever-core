@@ -6,6 +6,7 @@ local XML = require("xml")
 local Instrument = require("instrument")
 local Veil = require("veil")
 local Taint = require("taint")
+local Loader = require("loader")
 
 local passed, failed = 0, 0
 local function test(name, fn)
@@ -22,6 +23,18 @@ local function eq(a, b, label)
 		error(string.format("%s: expected %s, got %s", label or "value", tostring(b), tostring(a)), 2)
 	end
 end
+
+test("loader: bootstrap markers retain matching game conditions", function()
+	local toc = Loader.parseToc(
+		"Shared.lua [Bootstrap]\nWrong.lua [Bootstrap] [AllowLoadGameType cata]\n"
+			.. "[Family]/Right.lua [Bootstrap] [AllowLoadGameType mainline]\nNormal.lua\n"
+	)
+	eq(#toc.files, 3)
+	eq(toc.bootstrap["Shared.lua"], true)
+	eq(toc.bootstrap["Mainline/Right.lua"], true)
+	eq(toc.bootstrap["Wrong.lua"], nil)
+	eq(toc.bootstrap["Normal.lua"], nil)
+end)
 
 test("xml: elements, attributes, entities, CDATA and line numbers", function()
 	local root = XML.parse(
