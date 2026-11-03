@@ -64,6 +64,31 @@ class CoreWorktreeTest(unittest.TestCase):
                     ["README.md"],
                 )
 
+    def test_only_patrol_run_subtrees_are_scratch(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+            (root / "UI").mkdir()
+            (root / "UI/Main.lua").write_text("local value = true\n")
+            (root / ".bugpatrol/instructions.md").parent.mkdir(parents=True)
+            (root / ".bugpatrol/instructions.md").write_text("python3 tools/real.py\n")
+            for path in (
+                ".bugpatrol/runs/checkouts/base/ForeverCore.toc",
+                ".sloppatrol/runs/checkouts/base/ForeverCore.toc",
+                ".speedpatrol/runs/checkouts/base/ForeverCore.toc",
+                "scratch/ForeverCore.toc",
+                ".release/ForeverCore.toc",
+                "tools/.cache/ForeverCore.toc",
+            ):
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("UI/Fake.lua\n")
+            with patch.object(deadcode, "ROOT", root):
+                paths = {path.relative_to(root).as_posix() for path in deadcode.source_files("*.toc")}
+                self.assertEqual(paths, {"ForeverCore.toc"})
+                markdown = {path.relative_to(root).as_posix() for path in deadcode.source_files("*.md")}
+                self.assertIn(".bugpatrol/instructions.md", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()
