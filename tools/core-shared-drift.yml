@@ -1,0 +1,28 @@
+name: Forever Core drift
+
+# Vendored from cjber/forever-core (tools/core-shared-drift.yml); change it there, never here.
+# A pull request checks only the vendored files it changes, so a hand edit fails while a lag behind core does not
+# block unrelated work. The schedule checks every vendored file and reports the lag.
+on:
+  pull_request:
+  schedule:
+    - cron: "30 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-shared:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: python3 tools/check_core_shared.py --base "origin/$BASE"
+      - if: github.event_name != 'pull_request'
+        run: python3 tools/check_core_shared.py

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   deadcode:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,12 +19,20 @@ jobs:
       - run: python3 tools/deadcode.py --check
 
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y luajit lua-check
+      # Ubuntu 24.04's release-pocket builds, which the archive never replaces.
+      - name: Install LuaJIT and luacheck
+        env:
+          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
+          LUACHECK: 1.1.2-1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --allow-downgrades \
+            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT" "lua-check=$LUACHECK"
       - run: luacheck .
       - run: for spec in tests/*_spec.lua; do luajit "$spec" || exit 1; done
       # The host spec runs Blizzard's own tracker source, fetched at a pinned revision.
@@ -39,9 +47,25 @@ jobs:
           args: --check .
       - run: pipx run ruff==0.16.8 check tools
       - run: pipx run ruff==0.16.8 format --check tools
+      - run: python3 -m unittest discover -s tools -p "test_*.py"
+
+  typecheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install LuaLS 3.19.1
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/luals.tar.gz" https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua-language-server-3.19.1-linux-x64.tar.gz
+          echo "e9235d2d72ef55bc41cf8c99cda2ed64777682024b4bb81f5dea425060c5cbb8  $RUNNER_TEMP/luals.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/luals"
+          tar -xzf "$RUNNER_TEMP/luals.tar.gz" -C "$RUNNER_TEMP/luals"
+          echo "$RUNNER_TEMP/luals/bin" >> "$GITHUB_PATH"
+      - run: bash tools/typecheck.sh
 
   project-rules:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,12 +77,19 @@ jobs:
       - run: python3 .sloppatrol/agents.py check
 
   packaged:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y luajit
+      # Ubuntu 24.04's release-pocket build, which the archive never replaces.
+      - name: Install LuaJIT
+        env:
+          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --allow-downgrades \
+            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT"
       # What a tag would ship: the packager without uploading or zipping, then every file the TOC loads must be in it
       # and no development folder may be.
       - name: Package this commit as an untagged build
@@ -69,7 +100,7 @@ jobs:
       - run: python3 tools/check_package.py
 
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,10 +117,12 @@ jobs:
           "$RUNNER_TEMP/gitleaks" git --redact --no-banner .
 
   workflows:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: pipx run --spec actionlint-py==1.7.12.25 actionlint
-      - run: pipx run zizmor==1.30.1 --offline .github
+      # The drift workflow every consumer vendors from here.
+      - run: pipx run --spec actionlint-py==1.7.12.25 actionlint tools/core-shared-drift.yml
+      - run: pipx run zizmor==1.30.1 --offline .github tools/core-shared-drift.yml
