@@ -137,6 +137,7 @@ test("unit identity is secret in combat for hostile units, readable out of it", 
 	sim.world.units.target = { name = "Defias Bandit", level = 12, guid = "Creature-0-1", friendly = false }
 	eq(sim.secret.is(sim.G.UnitName("target")), false, "out of combat")
 	sim.inCombat = true
+	sim.combatLockdown = true
 	eq(sim.secret.is(sim.G.UnitName("target")), true, "in combat")
 	eq(sim.secret.is(sim.G.UnitName("player")), false, "the player")
 	eq(sim.secret.is(sim.G.UnitHealth("player")), true, "SecretReturns")
@@ -147,11 +148,13 @@ test("a protected frame changed from addon code in combat is ADDON_ACTION_BLOCKE
 	sim:runAs("SimCombat", 'SimSecureFrame = CreateFrame("Frame", "SimSecureFrame", UIParent)')
 	sim.widgets.state[sim.G.SimSecureFrame].protected = true
 	sim.inCombat = true
+	sim.combatLockdown = true
 	sim:runAs("SimCombat", "SimSecureFrame:SetPoint('CENTER')")
 	sim:expectError(
 		"[ADDON_ACTION_BLOCKED] AddOn 'SimCombat' tried to call the protected function 'SimSecureFrame:SetPoint()'"
 	)
 	sim.inCombat = false
+	sim.combatLockdown = false
 	sim:takeErrors()
 	sim:runAs("SimCombat", "SimSecureFrame:SetPoint('CENTER')")
 	eq(#sim.errors, 0, "allowed out of combat")
