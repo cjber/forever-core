@@ -8,6 +8,10 @@ redrawn or approximated, so what you see is what the client draws.
 
 Labels are the element names `SetAtlas` takes, so a keep/ban decision here maps straight onto code.
 
+These sheets are discovery results, not allowlists. `native-retail.png` matches broad prefixes
+and also includes covenant scenery, expansion borders and other blacklisted assets. Check each
+name against the registry and its native host before use; the sheet title does not approve it.
+
 ## The client sets
 
 "Elements" counts every atlas element whose name starts with the set's prefix. "Drawable" counts, of the first
@@ -16,8 +20,8 @@ their atlas sheet is not shipped, so no addon can use them whatever we decide.
 
 | Set | Elements | Drawable of 40 | Sheet | Read |
 |---|---|---|---|---|
-| native retail chrome (`common-`, `ui-frame-`, `minimal-`, `tooltip-`, `128-redbutton`) | 639 | 18 | `native-retail.png` | Flat metal, focus rings, masks, thin nine-slice trims. This is the look to keep. |
-| garrison / class hall (`Garr*`, `ClassHall_*`, `orderhall*`) | 715 | 40 | `garrison-classhall.png` | Two different things: parchment mission-board maps with curled edges, and full-bleed painterly backgrounds with vignettes. The backgrounds are usable as illustration; the parchment is dated as chrome. |
+| broad native-prefix search (`common-`, `ui-frame-`, `minimal-`, `tooltip-`, `128-redbutton`) | 639 | 18 | `native-retail.png` | Mixed prefix matches: native metal and focus art alongside blacklisted expansion scenes and borders. Check each element. |
+| garrison / class hall (`Garr*`, `ClassHall_*`, `orderhall*`) | 715 | 40 | `garrison-classhall.png` | Two different things: parchment mission-board maps with curled edges, and full-bleed painterly backgrounds with vignettes. Both are blacklisted for addon UI; the sheet records appearance only. |
 | covenant / soulbinds | 334 | 11 | `covenant-soulbinds.png` | Full-bleed scenic art for a choice screen. Mostly undrawable here. |
 | warfronts | 168 | 33 | `warfronts.png` | Embossed faction banners, stone/iron bevels, tiered-rarity icon plates. Old-style chrome. |
 | housing | 170 | 40 | `housing.png` | Painted dashboard scenes plus flipbook particle FX. Scenic only; several sheets are missing. |
@@ -57,7 +61,9 @@ Lua/XML. Garrison and other expansion names found by text search are zone names 
 
 ## What this means for the blacklist
 
-The keep list is the approved native retail set in `native-retail.png`. Use it for addon chrome; use Blizzard widgets
+Use Tier 1 in `asset-registry.md`, subject to Tier 2 context restrictions and Tier 3 bans,
+checked against the intended native host.
+`native-retail.png` is a mixed discovery sheet, not an approved set. Use Blizzard widgets
 and templates for controls. Expansion-specific frames and painterly scenes stay out of addon UI, including garrison,
 class hall, housing, warfront, PvP queue, questlog parchment, and legacy wood/leather pieces.
 

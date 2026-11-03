@@ -39,7 +39,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 ### UI
 
-- **WFA-4** Looks like the retail default UI. Stock frame templates, `GameFont*` objects, atlases,
+- **WFA-4** Looks like the retail default UI. For design and mockups, read
+  [wow-retail-ui-style](../wow-retail-ui-style/SKILL.md) and its asset registry first: native host
+  integration, compact content spacing and the host's approved surfaces are part of the match.
+  Contact sheets are discovery aids, not asset allowlists. Stock frame templates, `GameFont*` objects, atlases,
   `GameTooltip`, `MenuUtil` menus, `MapCanvasDataProviderMixin` pins, copied from the Blizzard
   source for the Forever build (Gethe/wow-ui-source, branch `forever`). Never custom-styled frames,
   fonts or colours, except that chat prefixes use the family's mint `|cff33ff99`; addon-drawn art
