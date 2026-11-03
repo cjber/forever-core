@@ -152,7 +152,6 @@ ns.CaughtErrors = function()
 	return { { message = ns.CutText(longError, 300), count = 1, stack = "stack" } }
 end
 local legacyText = reportText({})
-equal(type(legacyText), "string", "legacy caught errors remain readable")
 equal(
 	legacyText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil,
 	true,

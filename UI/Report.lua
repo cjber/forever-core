@@ -160,8 +160,7 @@ local function Errors()
 		end
 		local added = false
 		for _, entry in ipairs(bugGrabber) do
-			local duplicate = caughtMessages[entry.rawMessage or entry.message]
-			if not duplicate then
+			if not caughtMessages[entry.rawMessage or entry.message] then
 				if not added then
 					lines[#lines + 1] = "Recent Lua errors (BugGrabber):"
 					added = true
