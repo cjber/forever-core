@@ -9,6 +9,7 @@ WoW: Forever uses many modern Retail assets. Match the native Forever client, no
 Classic skin or arbitrary assets from current Retail. Use the pinned build in the
 [asset registry](../../../docs/asset-registry.md), including its blacklist and conditional uses.
 Read this skill and the registry before choosing art or rendering a mockup.
+For panel composition and edge ownership, the canonical source is [ui-composition.md](../../../docs/ui-composition.md).
 
 ## Design target
 
@@ -60,9 +61,9 @@ Read this skill and the registry before choosing art or rendering a mockup.
 
 ## Workflow
 
-1. Identify the target Forever build and the native host that owns the interaction. Inspect SkillUp or the nearest suite integration as a concrete layout reference.
+1. Read [ui-composition.md](../../../docs/ui-composition.md), identify the target Forever build and the native host that owns the interaction. Inspect SkillUp or the nearest suite integration as a concrete layout reference.
 2. Inspect the host template, mixin, atlas and API. Resolve every proposed asset against the registry: approved native use, conditional use in its proper context, or blacklisted. Record names and the selected atlas set in the mockup source or review notes.
-3. Build the smallest addon-specific layer on top of those conventions and cover the applicable states from the rules above.
+3. Approve one whole-panel lockup before implementation. Confirm edge ownership, artwork clipping, one icon chrome owner, semantic colours and compact spacing, then build the smallest addon-specific layer on top of those conventions.
 4. Render concepts inside their proposed host with representative full, short, empty and unavailable states. Compare against the host at the same UI scale for gaps, texture choice, row density and alignment. Label sample data and proposed behavior clearly.
 5. Present every generated variant for owner review using the owner's preview workflow. A rendered concept establishes design intent, not in-game correctness; list client checks for the user and do not launch or drive the game.
 
@@ -82,6 +83,7 @@ presence in a sheet, its Retail origin or a broad `ui-frame-*` prefix does not a
 Use Blizzard templates and widgets for controls, and verify the actual host use and resolved
 member in build `1.60.1.70124`. Prefer set 1 where available; a plain set-0 fallback needs native
 host evidence and must not belong to a blacklisted family.
+The UI art evidence pin is `1.60.1.70124`; a newer data pin such as `1.60.1.70753` does not permit a speculative art-cache bump. Follow [ui-composition.md](../../../docs/ui-composition.md) for side-rail, top-tab, bottom-tab, frame and icon ownership.
 Blizzard-owned content icons may still identify game content, but expansion skins and hand-made chrome are out.
 
 - **All expansion-era UI art, including scenic backgrounds.** `Garr*`, `GarrMission_*`, `ClassHall_*`, `orderhall*`, `covenant*`,

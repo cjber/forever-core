@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Native panel composition has one lockup and one chrome owner.** The shared guidance now records
+  native edge ownership for map and portrait frames, source-backed side rails and top/bottom tabs, clipped artwork
+  and unframed versus beveled icons, so addon mockups do not approve impossible tab placement or
+  nested borders.
 - **Peer-statistic readers coexist with the source addon.** A read-only subscription observes validated reports without replacing another addon's sender or relaying its messages. Aggregate counts and encounter difficulties have explicit subject schemas.
 - **Peer sharing tolerates inaccessible roster names.** The transport checks both name and realm before building a group signature.
 - **Buttons use the Forever gold border.** Shared buttons and previews use the set-1 red-button atlas. The shared asset checker rejects legacy loose chrome and templates that select it, including references inside art helpers.

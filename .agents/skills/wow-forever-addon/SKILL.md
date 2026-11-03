@@ -41,7 +41,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 - **WFA-4** Looks like the retail default UI. For design and mockups, read
   [wow-retail-ui-style](../wow-retail-ui-style/SKILL.md) and its asset registry first: native host
-  integration, compact content spacing and the host's approved surfaces are part of the match.
+  integration, compact content spacing, edge ownership and the host's approved surfaces are part
+  of the match. The canonical composition lockup is [ui-composition.md](../../../docs/ui-composition.md).
   Buttons use `SharedButton*Template` and the set-1 `128-RedButton` family. Every addon CI runs
   `python3 -m tools.forever_tools.assets`: the shared blacklist covers runtime and renderer art,
   including legacy loose chrome and inherited templates. Art helpers and `art-ok` do not waive it.
@@ -84,6 +85,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes.sha256` records each
   image's hash beside its scene dump's (`forever_tools.screens`); CI recomputes the dumps headlessly
   (`tools/check_screenshots.py`) and fails when a dump moved but its image did not.
+  A screenshot is evidence only after the whole-panel composition, native tab edge and icon chrome
+  ownership pass [ui-composition.md](../../../docs/ui-composition.md).
 
 ### Docs
 
