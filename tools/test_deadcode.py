@@ -89,6 +89,21 @@ class CoreWorktreeTest(unittest.TestCase):
                 markdown = {path.relative_to(root).as_posix() for path in deadcode.source_files("*.md")}
                 self.assertIn(".bugpatrol/instructions.md", markdown)
 
+    def test_generated_patrol_reports_are_not_reference_input(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "README.md").write_text("root\n")
+            (root / "tools").mkdir()
+            (root / "tools/orphan.py").write_text("value = 1\n")
+            report = root / ".sloppatrol/reports/audit.md"
+            report.parent.mkdir(parents=True)
+            report.write_text("python3 tools/orphan.py\n")
+            with patch.object(deadcode, "ROOT", root):
+                self.assertNotIn(report, deadcode.source_files("*.md"))
+                self.assertIn(
+                    ("tools/orphan.py", 1, "Python module is unreachable from an entrypoint"), deadcode.scan()
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

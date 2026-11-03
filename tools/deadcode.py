@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 IGNORED = ("types/", "tests/", "tools/", "docs/", ".agents/", "Nav/", ".types/", "reference/")
 SCRATCH_ROOTS = {".git", ".venv", "scratch", ".release"}
 SCRATCH_RUNS = {".bugpatrol", ".sloppatrol", ".speedpatrol"}
+PATROL_GUIDANCE = {"instructions.md"}
 # Consumer-only shared modules are stored here as source for sync_consumers.py.
 CORE_SOURCE_ONLY = {"UI/Report.lua", "UI/ForeverFamily.lua"}
 
@@ -20,9 +21,19 @@ def rel(path):
 
 def is_scratch(path):
     parts = path.relative_to(ROOT).parts
+    if any(part in {".git", ".venv"} for part in parts):
+        return True
     if parts and parts[0] in SCRATCH_ROOTS:
         return True
-    return len(parts) >= 2 and parts[0] in SCRATCH_RUNS and parts[1] == "runs"
+    if parts and parts[0] in SCRATCH_RUNS:
+        return (
+            len(parts) < 2
+            or parts[1] == "runs"
+            or len(parts) > 2
+            or parts[1] not in PATROL_GUIDANCE
+            and not parts[1].endswith((".yml", ".yaml"))
+        )
+    return False
 
 
 def source_files(pattern):
