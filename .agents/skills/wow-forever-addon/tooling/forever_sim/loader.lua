@@ -97,7 +97,7 @@ end
 
 -- Parses a TOC: { metadata = {key = value}, files = { relative paths }, deps = {...} }.
 function M.parseToc(text)
-	local toc = { metadata = {}, files = {}, deps = {}, optional = {} }
+	local toc = { metadata = {}, files = {}, deps = {}, optional = {}, bootstrap = {} }
 	for raw in text:gmatch("[^\r\n]+") do
 		local line = raw:gsub("^%s+", ""):gsub("%s+$", "")
 		local key, value = line:match("^##%s*([^:]+):%s*(.-)%s*$")
@@ -128,6 +128,9 @@ function M.parseToc(text)
 			if file and M.allowed(conditions or "") then
 				file = file:gsub("%[Family%]", M.FAMILY):gsub("%[Game%]", M.GAME):gsub("\\", "/")
 				toc.files[#toc.files + 1] = file
+				if conditions:find("[Bootstrap]", 1, true) then
+					toc.bootstrap[file] = true
+				end
 			end
 		end
 	end
@@ -137,6 +140,7 @@ end
 function M.build(sim)
 	local L = { loaded = {}, loading = {}, addons = {}, order = {} }
 	sim.loader = L
+	local bootstrapped = {}
 
 	local function blizzardDir(name)
 		return sim.ui .. "/Interface/AddOns/" .. name
@@ -165,12 +169,49 @@ function M.build(sim)
 	local function loadFiles(dir, folder, toc, ns)
 		for _, rel in ipairs(toc.files) do
 			local path = dir .. "/" .. rel
-			if rel:match("%.lua$") then
-				sim.templates.loadLua(path, folder .. "/" .. rel, folder, ns)
-			elseif rel:match("%.xml$") then
-				sim.templates.loadXML(path, folder, rel, folder, ns)
+			-- Bootstrap files run once, before the load-on-demand addon.
+			if not bootstrapped[path] then
+				if rel:match("%.lua$") then
+					sim.templates.loadLua(path, folder .. "/" .. rel, folder, ns)
+				elseif rel:match("%.xml$") then
+					sim.templates.loadXML(path, folder, rel, folder, ns)
+				end
+			end
+			if toc.bootstrap and toc.bootstrap[rel] then
+				bootstrapped[path] = true
 			end
 		end
+	end
+
+	-- Bootstrap entries run at startup even when their containing addon is load-on-demand.
+	function L.bootstrap()
+		local listing = io.popen('ls "' .. sim.ui .. '/Interface/AddOns"')
+		for name in listing:lines() do
+			local dir = blizzardDir(name)
+			local tocPath = findToc(dir, name)
+			local text = tocPath and readFile(tocPath)
+			if text then
+				local toc = M.parseToc(text)
+				local md = toc.metadata
+				local allowed = (md.AllowLoad or "both"):lower() ~= "glue"
+				if md.AllowLoadGameType then
+					local matches = false
+					for _, game in ipairs(tokens(md.AllowLoadGameType)) do
+						matches = matches or M.GAME_TYPES[game] == true
+					end
+					allowed = allowed and matches
+				end
+				if allowed then
+					for _, rel in ipairs(toc.files) do
+						if toc.bootstrap[rel] and not bootstrapped[dir .. "/" .. rel] then
+							loadFiles(dir, name, { files = { rel } }, {})
+							bootstrapped[dir .. "/" .. rel] = true
+						end
+					end
+				end
+			end
+		end
+		listing:close()
 	end
 
 	-- Loads a Blizzard addon from the UI source with its dependencies; returns false if it cannot be found
@@ -193,19 +234,17 @@ function M.build(sim)
 					end
 				end
 			end
-			loadFiles(dir, subset, { files = files }, {})
+			loadFiles(dir, subset, { files = files, bootstrap = toc.bootstrap }, {})
 			L.loaded[name] = { blizzard = true, seconds = 0, partial = true }
 			return true
 		end
 		local addon, rel = name:match("^([^/]+)/(.+)$")
 		if addon then
 			-- One file of a Blizzard addon.
-			local path = blizzardDir(addon) .. "/" .. rel
-			if rel:match("%.xml$") then
-				sim.templates.loadXML(path, addon, rel, addon, {})
-			else
-				sim.templates.loadLua(path, addon .. "/" .. rel, addon, {})
-			end
+			local dir = blizzardDir(addon)
+			local tocPath = findToc(dir, addon)
+			local toc = tocPath and M.parseToc(readFile(tocPath))
+			loadFiles(dir, addon, { files = { rel }, bootstrap = toc and toc.bootstrap }, {})
 			L.loaded[name] = { blizzard = true, seconds = 0, partial = true }
 			return true
 		end

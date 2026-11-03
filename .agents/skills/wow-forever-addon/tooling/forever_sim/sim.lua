@@ -52,7 +52,7 @@ Sim.CORE = {
 	"Blizzard_ChatFrameBase/Shared/SlashCommands.lua",
 	-- The map, quest log and fog-of-war pieces of Blizzard_UIPanels_Game, in its TOC order.
 	"Blizzard_UIPanels_Game:PlayerInteractionFrameManager|ScrollingFlatPanel|WarCampaignTemplates|WorldMap"
-		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition",
+		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	"Blizzard_WorldMap",
 	"Blizzard_ObjectiveTracker",
@@ -71,10 +71,10 @@ function Sim.new(opts)
 	sim.taint = Taint
 	sim.gaps = {}
 	-- The client's legacy LE_* constants are native and undocumented: client code reading one gets a distinct
-	-- number (recorded in sim.gaps); addon code gets nil.
+	-- number (recorded in sim.gaps), including when the reader runs tainted.
 	local leValue = 200000
 	Taint.onMissingGlobal = function(k)
-		if Taint.current or type(k) ~= "string" or not k:match("^LE_") then
+		if type(k) ~= "string" or not k:match("^LE_") then
 			return nil
 		end
 		leValue = leValue + 1
@@ -134,6 +134,7 @@ function Sim.new(opts)
 	for _, name in ipairs(opts.blizzard or Sim.CORE) do
 		sim:loadBlizzard(name)
 	end
+	sim.loader.bootstrap()
 	sim.createChat()
 	sim.bootSeconds = os.clock() - sim.started
 	return sim
