@@ -57,6 +57,17 @@ class AssetsTest(unittest.TestCase):
             self.assertIsNotNone(assets.problem(template))
         self.assertIsNotNone(assets.problem("Interface/Buttons/UI-SilverButtonLG-Left-Up"))
 
+    def test_active_renderer_modules_are_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "tools"
+            tools.mkdir()
+            for name in ("micro_menu_render.py", "rarity.py"):
+                (tools / name).write_text('button = "UIPanelButtonTemplate"\n')
+            files = assets.renderer_files(root)
+            self.assertEqual({path.name for path in files}, {"micro_menu_render.py", "rarity.py"})
+            self.assertEqual(assets.run(files), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
