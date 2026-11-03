@@ -1515,11 +1515,16 @@ def coin_texture_string(copper, height=14):
     return " ".join(parts) or f"0|TInterface\\MoneyFrame\\UI-CopperIcon:{height}:{height}:2:0|t"
 
 
-def three_slice_button(canvas, x, y, w, h, text, font=None, atlas="128-RedButton"):
+def three_slice_button(canvas, x, y, w, h, text, font=None, atlas="128-RedButton", state="normal"):
     """ThreeSliceButtonTemplate (BigRedThreeSlice: SharedButton*Template): Left/Right caps scaled to the
     button height, trimmed evenly when they don't fit, the tiling centre between; text centred."""
     ui = canvas.ui
-    left, right, centre = ui.atlas(f"{atlas}-Left"), ui.atlas(f"{atlas}-Right"), ui.atlas(f"_{atlas}-Center")
+    suffix = {"normal": "", "hover": "", "pressed": "-Pressed", "disabled": "-Disabled"}[state]
+    left, right, centre = (
+        ui.atlas(f"{atlas}-Left{suffix}"),
+        ui.atlas(f"{atlas}-Right{suffix}"),
+        ui.atlas(f"_{atlas}-Center{suffix}"),
+    )
     scale = h / left.height
     lw, rw = left.width * scale, right.width * scale
     if lw + rw > w:
@@ -1543,8 +1548,13 @@ def three_slice_button(canvas, x, y, w, h, text, font=None, atlas="128-RedButton
     canvas.draw(right_img, x + w - rw, y, rw, h)
     if w - lw - rw > 0:
         canvas.draw(Atlas(centre.name, centre.image, centre.width * scale, h, True, False), x + lw, y, w - lw - rw, h)
-    font = font or FONTS["GameFontNormal"]
-    canvas.text(x, y, text, font, justify="CENTER", width=w, box_height=h)
+    font = font or FONTS["GameFontHighlight" if state == "hover" else "GameFontNormal"]
+    if state == "hover":
+        canvas.draw(ui.atlas(f"{atlas}-Highlight"), x, y, w, h)
+    dx, dy = (-2, -1) if state == "pressed" else (0, 0)
+    canvas.text(
+        x + dx, y + dy, text, font, DISABLED if state == "disabled" else None, justify="CENTER", width=w, box_height=h
+    )
 
 
 def search_box(canvas, x, y, w, h=20, instructions="Search"):
@@ -1729,14 +1739,9 @@ def dialog_border(canvas, x, y, w, h, background=(0, 0, 0, 0.8)):
     canvas.nine_slice(DIALOG_LAYOUT, x, y, w, h)
 
 
-def ui_panel_button(canvas, x, y, w, h, text, font=None):
-    """UIPanelButtonTemplate: UI-Panel-Button-Up's left cap, stretched middle and right cap (12 wide each
-    side, texcoords from SecureUIPanelTemplates.xml) with GameFontNormal centred."""
-    texture = canvas.ui.texture("interface/buttons/ui-panel-button-up.blp")
-    canvas.draw(crop_coords(texture, 0, 0.09375, 0, 0.6875), x, y, 12, h)
-    canvas.draw(crop_coords(texture, 0.09375, 0.53125, 0, 0.6875), x + 12, y, w - 24, h)
-    canvas.draw(crop_coords(texture, 0.53125, 0.625, 0, 0.6875), x + w - 12, y, 12, h)
-    canvas.text(x, y, text, font or FONTS["GameFontNormal"], justify="CENTER", width=w, box_height=h)
+def ui_panel_button(canvas, x, y, w, h, text, font=None, state="normal"):
+    """SharedButtonSmallTemplate, resolved through the Forever atlas set in every state."""
+    three_slice_button(canvas, x, y, w, h, text, font, state=state)
 
 
 def close_button(canvas, right, top):

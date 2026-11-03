@@ -68,6 +68,12 @@ Read this skill and the registry before choosing art or rendering a mockup.
 
 ## Never use (blacklist)
 
+Buttons use the `SharedButton*Template` family and its set-1 `128-RedButton` atlas.
+Legacy loose chrome and the `UIPanelButton*` templates that select it are forbidden.
+Run the shared `forever_tools.assets` checker for runtime and renderer references;
+art helpers and `art-ok` comments do not waive this blacklist. The registry lists
+the approved states and the native highlight exception.
+
 The [asset registry](../../../docs/asset-registry.md) owns the inventory, conditional uses and
 named exceptions. The [audit sheets](../../../docs/asset-audit.md) show actual asset appearance;
 open the relevant sheets when choosing art. They are prefix-search contact sheets, not allowlists:

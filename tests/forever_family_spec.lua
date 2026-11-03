@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
--- made in Shortest Path Forever first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "3beb18e13af61d99bee0c680d6d66b4afd34a52e463de4a0f90f291b6c1aa2f3"
+-- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
+local PINNED = "3383806e355e11101a2028333291bf7ccb6c3300c87ff4a8697633bb11775684"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -80,7 +80,7 @@ check(
 	PATH
 		.. " changed (sha256 "
 		.. actual
-		.. "). It is shared byte for byte by all five Forever addons: make the change in Shortest Path Forever, "
+		.. "). It is shared byte for byte by all five Forever addons: make the change in Forever Core, "
 		.. "update PINNED here, then copy both files unchanged to the others."
 )
 
@@ -388,7 +388,7 @@ check(
 local texts = Texts(window)
 check(texts:find("Copy the address, then open it in your browser.", 1, true), "it says what to do")
 check(texts:find(Family.ADDONS[5].line, 1, true), "with the addon's line")
-local buttons = Children(window, "Button", "UIPanelButtonTemplate")
+local buttons = Children(window, "Button", "SharedButtonSmallTemplate")
 local close, never = buttons[1], buttons[2]
 check(close.text == "Close" and never.text == "Don't suggest this again", "Close and Don't suggest this again")
 check(close.width == 96 and never.width == #"Don't suggest this again" * 7 + 24, "each as wide as its label needs")
@@ -438,7 +438,7 @@ check(saved.suggestFamily == false, "unticking turns the hints off")
 check_.checked = true
 check_:Click()
 check(saved.suggestFamily == true, "ticking turns them on")
-local copies = Children(panel, "Button", "UIPanelButtonTemplate")
+local copies = Children(panel, "Button", "SharedButtonSmallTemplate")
 local icons = Children(panel, "Texture")
 check(#copies == 5 and #icons == 5, "a row per addon")
 local text = Texts(panel)
@@ -519,7 +519,7 @@ page:Show()
 check(Texts(page):find("Nicht installiert", 1, true), "a page made without an L reads in the copy in use's")
 Children(own, "Button")[1]:Click()
 local linkWindow = named.ForeverFamilyLink
-local linkButtons = Children(linkWindow, "Button", "UIPanelButtonTemplate")
+local linkButtons = Children(linkWindow, "Button", "SharedButtonSmallTemplate")
 check(linkButtons[1].text == "Fermer", "Copy link opens the window in the page's language")
 check(Texts(linkWindow):find("Copiez l'adresse.", 1, true), "all of it")
 check(Texts(linkWindow):find("Planifie le trajet le plus rapide.", 1, true), "with the addon's line")

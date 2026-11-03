@@ -11,6 +11,8 @@ import re
 import sys
 from pathlib import Path
 
+from . import assets
+
 __all__ = ["check", "run"]
 
 # Texture and button setters that take art, the markup builders, and inline `|A` and `|T` markup.
@@ -50,7 +52,7 @@ def check(source: str, xml: bool = False) -> list[tuple[int, str]]:
 def run(root: Path, files: list[Path], helpers: frozenset[str]) -> int:
     """Check `files` (Lua and XML) but for `helpers`, the addon's art helper files relative to `root`. A helper
     that does not exist fails: the exemption must name a real file. Exit status 1 on any finding."""
-    failed = False
+    failed = bool(assets.run([*files, *assets.renderer_files(root)]))
     for helper in sorted(helpers):
         if not (root / helper).is_file():
             print(f"{helper}: the art helper file does not exist", file=sys.stderr)
