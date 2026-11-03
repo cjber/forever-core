@@ -17,6 +17,42 @@ APPROVED_BUTTON_TEMPLATES = frozenset(
 )
 LEGACY_BUTTON_TEMPLATES = frozenset(
     {
+        # Virtual descendants from the pinned Forever FrameXML, including texture templates.
+        "AuctionHouseDialogButtonTemplate",
+        "AuctionHouseSearchButtonTemplate",
+        "BankFramePurchaseButton",
+        "BankPanelMoneyFrameButtonTemplate",
+        "CalendarEventButtonTemplate",
+        "CalendarMassInviteArenaButtonTemplate",
+        "CalendarViewEventRSVPButtonTemplate",
+        "ClassTalentLoadoutDialogButtonTemplate",
+        "CommunitiesInviteButtonTemplate",
+        "CommunitiesSettingsButtonTemplate",
+        "CreateChannelPopupButtonTemplate",
+        "CurrencyTransferCancelButtonTemplate",
+        "CurrencyTransferConfirmButtonTemplate",
+        "CurrencyTransferToggleButtonTemplate",
+        "EditModeDialogButton",
+        "EditModeManagerFrameButtonTemplate",
+        "EditModeSystemSettingsDialogButtonTemplate",
+        "EditModeSystemSettingsDialogExtraButtonTemplate",
+        "FriendsFrameButtonTemplate",
+        "FriendsFrameButtonTemplate_BottomLeft",
+        "FriendsFrameButtonTemplate_BottomRight",
+        "GameMenuButtonTemplate",
+        "HousingDashboard_HouseFinderButtonTemplate",
+        "LFGListMagicButtonTemplate",
+        "LFGStartGroupButtonTemplate",
+        "MagicButtonTemplate",
+        "PlayerChoiceBaseOptionButtonTemplate",
+        "PlayerChoiceBaseSmallerOptionButtonTemplate",
+        "StartMissionButtonTemplate",
+        "UIPanelBorderedButtonTemplate",
+        "UIPanelButtonDisabledTexture",
+        "UIPanelButtonDownTexture",
+        "UIPanelButtonHighlightTexture",
+        "UIPanelButtonUpTexture",
+        "UIPanelLargeSilverButton",
         "UIPanelButtonTemplate",
         "UIPanelButtonNoTooltipTemplate",
         "UIPanelButtonGrayTemplate",
@@ -29,7 +65,7 @@ LEGACY_BUTTON_TEMPLATES = frozenset(
 )
 # These are loose pre-atlas chrome families, not content icons in Interface/Icons.
 LEGACY_LOOSE = re.compile(
-    r"^interface/(?:buttons/ui-(?:panel-button|dialogbox-(?:button|goldbutton))"
+    r"^interface/(?:buttons/ui-(?:panel-button|silverbuttonlg|dialogbox-(?:button|goldbutton))"
     r"|dialogframe/ui-dialogbox|tooltips/ui-tooltip-(?:border|background)"
     r"|framegeneral/ui-border|characterframe/ui-character-border)",
     re.IGNORECASE,
@@ -50,11 +86,13 @@ def problem(value: str) -> str | None:
             return "legacy button template; use SharedButtonSmallTemplate (Forever atlas set 1)"
     if re.match(r"^_?128-GoldRedButton|^(?:SharedGoldRed|BigGoldRedThreeSlice)", normal, re.I):
         return "shop button family; use SharedButtonSmallTemplate and the set-1 128-RedButton atlas"
-    if LEGACY_LOOSE.match(normal) or re.match(r"^ui-(?:panel-button|dialogbox-(?:button|goldbutton))", normal, re.I):
+    if LEGACY_LOOSE.match(normal) or re.match(
+        r"^ui-(?:panel-button|silverbuttonlg|dialogbox-(?:button|goldbutton))", normal, re.I
+    ):
         return "legacy loose chrome; use the approved Forever atlas/template family"
     if EXPANSION_CHROME.match(normal):
         return "expansion chrome is outside the approved Forever asset set"
-    for markup in re.finditer(r"\|[TA]([^:|]+)", value):
+    for markup in re.finditer(r"\|(?:T|A:)([^:|]+)", value):
         if reason := problem(markup[1]):
             return reason
     return None

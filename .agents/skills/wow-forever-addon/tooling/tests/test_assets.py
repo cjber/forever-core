@@ -50,6 +50,13 @@ class AssetsTest(unittest.TestCase):
         self.assertTrue(assets.check('label:SetText("Old |TInterface/Buttons/UI-Panel-Button-Up:16|t")'))
         self.assertTrue(assets.check('template = "UIPanel" + "ButtonTemplate"', ".py"))
 
+    def test_inline_atlas_and_inherited_templates(self):
+        self.assertTrue(assets.check('label:SetText("|A:GarrMission_TopBar:16:16|a")'))
+        self.assertTrue(assets.check('label:SetText("|A:128-GoldRedButton-Left:16:16|a")'))
+        for template in ("MagicButtonTemplate", "LFGListMagicButtonTemplate", "UIPanelLargeSilverButton"):
+            self.assertIsNotNone(assets.problem(template))
+        self.assertIsNotNone(assets.problem("Interface/Buttons/UI-SilverButtonLG-Left-Up"))
+
 
 if __name__ == "__main__":
     unittest.main()
