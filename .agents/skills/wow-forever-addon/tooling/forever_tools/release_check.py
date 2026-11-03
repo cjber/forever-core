@@ -1,5 +1,6 @@
 """Publish only a commit that passed the repository's complete CI workflow on main."""
 
+import argparse
 import json
 import os
 import subprocess
@@ -20,8 +21,12 @@ def verified(runs: list[dict], commit: str) -> bool:
     )
 
 
-def main() -> None:
-    repository, commit = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.parse_args(argv)
+    repository, commit = os.environ.get("GITHUB_REPOSITORY"), os.environ.get("GITHUB_SHA")
+    if not repository or not commit:
+        parser.error("GITHUB_REPOSITORY and GITHUB_SHA must identify the release commit")
     pages = json.loads(
         subprocess.check_output(
             [

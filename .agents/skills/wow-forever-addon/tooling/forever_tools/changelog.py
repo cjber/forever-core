@@ -37,7 +37,8 @@ def released(root: Path) -> list[str]:
     tags = subprocess.run(
         ["git", "tag", "--list", "v*"], cwd=root, capture_output=True, text=True, check=True
     ).stdout.split()
-    return [tag.removeprefix("v") for tag in tags if re.fullmatch(r"v\d+\.\d+\.\d+", tag)]
+    versions = [tag.removeprefix("v") for tag in tags if re.fullmatch(r"v\d+\.\d+\.\d+", tag)]
+    return sorted(versions, key=lambda version: tuple(map(int, version.split("."))))
 
 
 def check(text: str, versions: list[str]) -> None:
