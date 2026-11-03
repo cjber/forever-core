@@ -3,16 +3,14 @@ name: Forever tooling
 on:
   push:
     branches: [main]
-    paths: ['.agents/skills/wow-forever-addon/tooling/**', '.github/workflows/forever-tools.yml']
   pull_request:
-    paths: ['.agents/skills/wow-forever-addon/tooling/**', '.github/workflows/forever-tools.yml']
 
 permissions:
   contents: read
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ['3.10', '3.14']
@@ -27,7 +25,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       # forever_tools.locales parses each translation with LuaJIT, and its tests run that path.
-      - run: sudo apt-get update && sudo apt-get install -y luajit
+      # Ubuntu 24.04's release-pocket build, which the archive never replaces.
+      - name: Install LuaJIT
+        env:
+          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --allow-downgrades \
+            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT"
       - run: python3 -m unittest discover -s tests -t .
       - run: python3 forever_tools/sync.py check --allow-unpinned
       - run: pipx run ruff==0.16.8 check .

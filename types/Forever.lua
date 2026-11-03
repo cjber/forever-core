@@ -8,10 +8,6 @@
 ---@field x? number the detached position, from UIParent's top left corner
 ---@field y? number
 
----@class ForeverTrackerModule : Frame
----@field uiOrder? number
----@field parentContainer? Frame
-
 ---@class ForeverTrackerGrip
 ---@field Show fun(value: boolean)
 ---@field SetLabel fun(value: boolean)
@@ -35,6 +31,6 @@
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerLock? table
 ---@field TrackerOrder? ForeverTrackerOrderAPI
----@field TrackerQuestie? table
+---@field TrackerQuestie? ForeverTrackerQuestie
 ---@field TrackerHostSettings? fun(): ForeverTrackerSettings
 ---@field Defaults? ForeverTrackerSettings

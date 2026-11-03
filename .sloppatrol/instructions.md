@@ -7,8 +7,9 @@ that order inside a stubbed client.
 - A change here reaches every addon on the next `tools/sync_consumers.py`, so keep the public surface
   (`ForeverCore`, `/fcore`, the namespaces the addons read) exactly as it is unless the change is about
   that surface.
-- Every consumer's vendored copy has to match: `python3 tools/check_consumers.py` is a check here for a
-  reason, and it fails when a shared file changes without the sync.
+- The files `tools/check_core_shared.py` lists are vendored byte for byte into the consumers, which
+  adopt a change through their own sync PRs. There is no consumer check here: it reads the other
+  repos' main branches, so it goes red whenever a consumer lags and says nothing about a refactor.
 - Never replace a Blizzard global, hook a secure function, or write a field on a Blizzard table.
 - `tests/tracker_host_spec.lua` runs Blizzard's real tracker source, fetched at a pinned revision; it
   is not part of the default spec loop and needs `TRACKER_UI_ROOT`.

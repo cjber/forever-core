@@ -21,6 +21,11 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture used by the report window |
+| `tools/check_core_shared.py` | the vendoring map and the consumer's own drift check |
+| `.github/workflows/core-shared-drift.yml` | runs that check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
+
+`tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
+tracker, report and family set, and the map also holds the settings page, text, micro button and dead-code files.
 
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,

@@ -1,9 +1,9 @@
 """Check every consuming Forever addon's vendored copy against this repo.
 
-The four addons that draw sections into the shared column each carry a byte-identical copy of the files listed in
-VENDORED: that is what lets them work alone, with no dependency to install. This gate is what stops the copies
-drifting: it compares each repo's main branch (or a local checkout) with this repo's copy and names every mismatch.
-Public consumers are compared from this repo; `--local` supports an offline check against local clones.
+Each consumer carries a byte-identical copy of the files tools/check_core_shared.py lists in VENDORED: that is what
+lets them work alone, with no dependency to install. This gate is what stops the copies drifting: it compares each
+repo's main branch (or a local checkout) with this repo's copy and names every mismatch. Public consumers are compared
+from this repo; `--local` supports an offline check against local clones.
 """
 
 import argparse
@@ -13,43 +13,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ALL_CONSUMERS = (
-    "adventure-guide-forever",
-    "legacy-forever",
-    "shortest-path-forever",
-    "skillup-forever",
-    "tweaks-forever",
-)
-
-TRACKER_CONSUMERS = ALL_CONSUMERS[:-1]
-MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
-# Core/Text.lua goes to the three addons that search by name.
-TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever", "hoard-forever")
-SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "hoard-forever")
-ALL_SUITE_CONSUMERS = SETTINGS_CONSUMERS
-VENDORED = {
-    "tools/deadcode.py": ALL_SUITE_CONSUMERS,
-    "tools/deadcode-allow.txt": ALL_SUITE_CONSUMERS,
-    "Core/Text.lua": TEXT_CONSUMERS,
-    "tests/text_spec.lua": TEXT_CONSUMERS,
-    "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
-    "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
-    "Core/MicroButton.lua": MICRO_CONSUMERS,
-    "tests/micro_button_spec.lua": MICRO_CONSUMERS,
-    "UI/TrackerHost.lua": TRACKER_CONSUMERS,
-    "UI/TrackerLock.lua": TRACKER_CONSUMERS,
-    "UI/TrackerOrder.lua": TRACKER_CONSUMERS,
-    "UI/TrackerQuestie.lua": TRACKER_CONSUMERS,
-    "tests/tracker_host_spec.lua": TRACKER_CONSUMERS,
-    "tests/tracker_host_harness.lua": TRACKER_CONSUMERS,
-    "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
-    "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
-    "Core/SafeCall.lua": ALL_CONSUMERS,
-    "UI/Report.lua": ALL_CONSUMERS,
-    "tests/report_spec.lua": ALL_CONSUMERS,
-    "UI/ForeverFamily.lua": ALL_CONSUMERS,
-    "tests/forever_family_spec.lua": ALL_CONSUMERS,
-}
+from check_core_shared import VENDORED, source
 
 
 def digest(data):
@@ -71,7 +35,7 @@ def main():
     failures = []
     comparisons = 0
     for path, consumers in VENDORED.items():
-        mine = Path(path).read_bytes()
+        mine = Path(source(path)).read_bytes()
         for repo in consumers:
             comparisons += 1
             try:

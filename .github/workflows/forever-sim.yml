@@ -3,16 +3,14 @@ name: Forever sim
 on:
   push:
     branches: [main]
-    paths: ['.agents/skills/wow-forever-addon/tooling/forever_sim/**', '.agents/skills/wow-forever-addon/tooling/tests/sim/**', '.github/workflows/forever-sim.yml']
   pull_request:
-    paths: ['.agents/skills/wow-forever-addon/tooling/forever_sim/**', '.agents/skills/wow-forever-addon/tooling/tests/sim/**', '.github/workflows/forever-sim.yml']
 
 permissions:
   contents: read
 
 jobs:
   sim:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -23,7 +21,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y luajit lua-check
+      # Ubuntu 24.04's release-pocket builds, which the archive never replaces.
+      - name: Install LuaJIT and luacheck
+        env:
+          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
+          LUACHECK: 1.1.2-1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --allow-downgrades \
+            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT" "lua-check=$LUACHECK"
       # Blizzard's UI source and the client tables are fetched at test time, never committed; the cache key is the
       # fetcher, which holds the pinned revision and build.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

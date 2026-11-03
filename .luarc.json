@@ -1,16 +1,65 @@
 {
   "runtime.version": "Lua 5.1",
-  "diagnostics.globals": [
-    "ForeverCore",
-    "ForeverTrackerHost",
-    "ForeverCoreDB",
-    "EventUtil",
-    "EventRegistry",
-    "SlashCmdList"
+  "workspace.library": [
+    ".types/vscode-wow-api/Annotations/Core",
+    ".types/vscode-wow-api/Annotations/FrameXML"
   ],
   "workspace.ignoreDir": [
+    ".git",
+    ".types",
+    ".agents",
+    ".claude",
+    ".release",
+    "docs",
+    "tests",
+    "tools",
     ".bugpatrol",
     ".speedpatrol",
     ".sloppatrol"
-  ]
+  ],
+  "workspace.checkThirdParty": false,
+  "diagnostics.libraryFiles": "Disable",
+  "diagnostics.neededFileStatus": {
+    "param-type-mismatch": "Any",
+    "redundant-parameter": "Any",
+    "missing-parameter": "Any",
+    "undefined-field": "Any",
+    "undefined-global": "Any",
+    "need-check-nil": "Any",
+    "assign-type-mismatch": "Any",
+    "return-type-mismatch": "Any",
+    "cast-local-type": "Any",
+    "redundant-return-value": "Any",
+    "missing-return": "Any",
+    "unused-local": "Any"
+  },
+  "diagnostics.severity": {
+    "param-type-mismatch": "Error",
+    "redundant-parameter": "Error",
+    "missing-parameter": "Error",
+    "undefined-field": "Error",
+    "undefined-global": "Error",
+    "need-check-nil": "Error",
+    "assign-type-mismatch": "Error",
+    "return-type-mismatch": "Error",
+    "cast-local-type": "Error",
+    "redundant-return-value": "Error",
+    "missing-return": "Error",
+    "unused-local": "Error"
+  },
+  "diagnostics.groupFileStatus": {
+    "type-check": "Any",
+    "unused": "Any",
+    "unbalanced": "Any",
+    "redefined": "Any",
+    "duplicate": "Any"
+  },
+  "diagnostics.groupSeverity": {
+    "unused": "Information",
+    "redefined": "Information"
+  },
+  "type.checkTableShape": true,
+  "workspace.useGitIgnore": false,
+  "workspace.preloadFileSize": 2000,
+  "workspace.maxPreload": 10000
 }

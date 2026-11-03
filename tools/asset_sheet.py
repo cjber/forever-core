@@ -116,6 +116,7 @@ def own_art_sheet(out, font, title_font):
     for repo in (
         "adventure-guide-forever",
         "atlas-forever",
+        "commissions-forever",
         "field-guide-forever",
         "hoard-forever",
         "legacy-forever",
