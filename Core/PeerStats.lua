@@ -11,6 +11,9 @@ local _, ns = ...
 --   snapshot = function() return { { metric=, subject=, value=, eventUnix= }, ... } end,
 --   metrics  = { name = { subject = "all" | "numeric" | "qualified", first = bool } },
 -- }
+-- Subject modes also include "numeric_or_all" and "numeric_pair" (encounter_difficulty).
+-- PeerStats.Listen(owner, config) observes config.addon's rows without taking over that addon's sender. Its
+-- registration is private to owner, and it never sends a snapshot, even if one was supplied.
 --
 -- Saved layout: db[sender][metric][subject] = { value = n, eventUnix = n }.
 -- Wire v1 on prefix WFAStats: "1|addon|metric|subject|value|unix", GUILD and the group channel only, and received
@@ -22,7 +25,7 @@ local _, ns = ...
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
-local MANAGER_VERSION = 2
+local MANAGER_VERSION = 3
 
 local MAX_PAYLOAD = 128
 local MAX_METRIC = 32
@@ -51,7 +54,7 @@ local MAX_RETRIES = 5
 local MAX_BACKOFF = 30
 local MEMBERSHIP_DELAY = 1
 
-local SUBJECT_MODES = { all = true, numeric = true, qualified = true }
+local SUBJECT_MODES = { all = true, numeric = true, qualified = true, numeric_or_all = true, numeric_pair = true }
 local ALLOWED_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
 local EVENTS = { "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_ENTERING_WORLD" }
 local MEMBERSHIP_EVENTS = { GROUP_ROSTER_UPDATE = true, PLAYER_GUILD_UPDATE = true, PLAYER_ENTERING_WORLD = true }
@@ -139,6 +142,11 @@ local function ValidSubject(mode, subject)
 		return subject == "all"
 	elseif mode == "numeric" then
 		return subject:find("^%d+$") ~= nil and (subject == "0" or subject:sub(1, 1) ~= "0")
+	elseif mode == "numeric_or_all" then
+		return subject == "all" or ValidSubject("numeric", subject)
+	elseif mode == "numeric_pair" then
+		local first, second = subject:match("^([1-9]%d*)_(%d+)$")
+		return first ~= nil and (second == "0" or second:sub(1, 1) ~= "0")
 	elseif mode == "qualified" then
 		return subject:find("^[%a_][%w_]*:[%w_%.%-]+$") ~= nil
 	end
@@ -290,16 +298,17 @@ local function CreateManager()
 	end
 
 	function m.Register(inst)
-		local old = m.instances[inst.addon]
+		local key = inst.key or inst.addon
+		local old = m.instances[key]
 		if old == inst then
 			return
 		end
 		if old then
 			old:Retire()
 		else
-			m.order[#m.order + 1] = inst.addon
+			m.order[#m.order + 1] = key
 		end
-		m.instances[inst.addon] = inst
+		m.instances[key] = inst
 	end
 
 	function m.SyncAll()
@@ -568,6 +577,8 @@ end
 ---@class ForeverPeerStatsInstance
 ---@field config table
 ---@field addon string
+---@field key string
+---@field readOnly boolean
 ---@field dead boolean
 ---@field active boolean
 ---@field override boolean|nil
@@ -630,7 +641,7 @@ end
 function Instance:Sync(onlyDeferred)
 	self.deferred = {}
 	local current = Manager()
-	if not current or not self:IsEnabled() or type(self.config.snapshot) ~= "function" then
+	if self.readOnly or not current or not self:IsEnabled() or type(self.config.snapshot) ~= "function" then
 		return 0
 	end
 	local channels = current.Channels()
@@ -930,14 +941,19 @@ local PeerStats = { PREFIX = PREFIX, Identity = Identity }
 -- first, so two loaded copies never send twice. A config without a valid addon id returns an inert instance.
 ---@param config table
 ---@return ForeverPeerStatsInstance
-function PeerStats.New(config)
+local function New(config, owner)
 	config = type(config) == "table" and config or {}
 	local addon = type(config.addon) == "string" and #config.addon <= MAX_ADDON and config.addon:find("^[%w_%-]+$")
+	local readOnly = owner ~= false
+	local validOwner = type(owner) == "string" and #owner <= MAX_ADDON and owner:find("^[%w_%-]+$")
+	local dead = not addon or (readOnly and not validOwner)
 	---@type ForeverPeerStatsInstance
 	local self = setmetatable({
 		config = config,
 		addon = addon and config.addon or "",
-		dead = not addon,
+		key = not dead and (type(owner) == "string" and (owner .. "@" .. config.addon) or config.addon) or "",
+		readOnly = readOnly,
+		dead = dead,
 		active = false,
 		gen = 0,
 		sent = {},
@@ -961,13 +977,24 @@ function PeerStats.New(config)
 			end
 		end
 	end
-	if addon then
+	if not dead then
 		local current = Manager()
 		if current then
 			current.Register(self)
 		end
 	end
 	return self
+end
+
+function PeerStats.New(config)
+	return New(config, false)
+end
+
+---@param owner string owner addon id, independent of the observed config.addon
+---@param config table
+---@return ForeverPeerStatsInstance
+function PeerStats.Listen(owner, config)
+	return New(config, owner or "")
 end
 
 ns.PeerStats = PeerStats

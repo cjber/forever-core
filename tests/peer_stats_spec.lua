@@ -776,7 +776,7 @@ do
 	local third = load()
 	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
 	local manager = _G.ForeverPeerStats
-	equal(manager.version, 2, "manager is versioned")
+	equal(manager.version, 3, "manager is versioned")
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -867,7 +867,7 @@ do
 	local ns = fresh()
 	local peers, state = make(ns)
 	state.rows = { { metric = "total", subject = "all", value = 1, eventUnix = serverTime } }
-	_G.ForeverPeerStats.version = 1
+	_G.ForeverPeerStats.version = 2
 	local old = _G.ForeverPeerStats
 	load()
 	equal(_G.ForeverPeerStats ~= old, true, "a newer copy replaces an older manager")
@@ -875,6 +875,111 @@ do
 	equal(peers:Sync(), 1, "registered instances move to the new manager")
 	advance(1)
 	equal(#sent, 1, "and send through it")
+end
+
+-- Read-only subscriptions preserve foreign-addon reads without replacing its sender or relaying reports.
+do
+	local ns = fresh()
+	local observed, enabled = {}, true
+	local reader = ns.PeerStats.Listen("fieldguide", {
+		addon = "agf",
+		enabled = function()
+			return enabled
+		end,
+		db = function()
+			return observed
+		end,
+		metrics = METRICS,
+		snapshot = function()
+			return { { metric = "total", subject = "all", value = 999, eventUnix = serverTime } }
+		end,
+	})
+	local sender, state = make(load())
+	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
+	equal(reader:Sync(), 0, "a reader cannot send even with a snapshot")
+	equal(sender:Sync(), 1, "the actual addon still sends after a reader registered first")
+	advance(1)
+	equal(#sent, 1, "the subscriber adds no sends")
+	resetSent()
+	local manager = _G.ForeverPeerStats
+	manager.OnEvent("CHAT_MSG_ADDON", "WFAStats", wire("agf", "total", "all", 8, serverTime), "GUILD", "Alice-X")
+	equal(observed["Alice-X"].total.all.value, 8, "the reader receives its configured source")
+	equal(state.db["Alice-X"].total.all.value, 8, "the actual addon receives the same report independently")
+	advance(30)
+	equal(#sent, 0, "the reader never relays incoming rows")
+	enabled = false
+	reader:SetEnabled(false)
+	equal(count(reader:Shared()), 0, "the reader hides reports while disabled")
+	equal(
+		recv(reader, wire("agf", "total", "all", 9, serverTime), "Alice-X"),
+		false,
+		"an opted-out reader ignores reports"
+	)
+	equal(
+		recv(sender, wire("agf", "total", "all", 9, serverTime), "Alice-X"),
+		true,
+		"the source addon remains independent"
+	)
+	enabled = true
+	reader:SetEnabled(true)
+	equal(reader:Shared()["Alice-X"].total.all.value, 8, "re-enable retains the reader's own saved reports")
+	local replacement = ns.PeerStats.Listen("fieldguide", { addon = "agf", metrics = METRICS })
+	equal(reader.dead, true, "another copy replaces only the same owner's subscription")
+	equal(sender.dead, false, "replacing a subscription leaves the real sender alive")
+	equal(replacement:Sync(), 0, "a reader with no database is inert")
+	local another = ns.PeerStats.Listen("legacy", { addon = "agf", metrics = METRICS })
+	equal(replacement.dead, false, "another subscriber owner does not replace this reader")
+	equal(another.dead, false, "a second owner can subscribe to the same source")
+	equal(ns.PeerStats.Listen(nil, { addon = "agf" }).dead, true, "a reader needs a valid owner")
+	equal(ns.PeerStats.Listen("bad owner", { addon = "agf" }).dead, true, "invalid reader owners are rejected")
+	equal(ns.PeerStats.Listen("fieldguide", { addon = "bad source" }).dead, true, "invalid reader sources are rejected")
+	local old = _G.ForeverPeerStats
+	old.version = 2
+	load()
+	equal(_G.ForeverPeerStats ~= old, true, "a manager upgrade keeps subscriptions separate")
+	equal(sender.dead, false, "manager takeover preserves the source sender")
+	equal(replacement.dead, false, "manager takeover preserves the first owner subscription")
+	equal(another.dead, false, "manager takeover preserves the second owner subscription")
+end
+
+-- Existing node/difficulty subjects stay valid alongside explicit aggregate subjects.
+do
+	local ns = fresh()
+	local db = {}
+	local peers = ns.PeerStats.New({
+		addon = "fieldguide",
+		enabled = function()
+			return true
+		end,
+		db = function()
+			return db
+		end,
+		metrics = { kills = { subject = "numeric_or_all" }, boss = { subject = "numeric_pair" } },
+	})
+	equal(recv(peers, wire("fieldguide", "kills", "all", 3, serverTime), "Alice-X"), true, "aggregate subject accepted")
+	equal(recv(peers, wire("fieldguide", "kills", "42", 3, serverTime), "Alice-X"), true, "numeric subject accepted")
+	equal(
+		recv(peers, wire("fieldguide", "kills", "042", 3, serverTime), "Alice-X"),
+		false,
+		"ambiguous numeric subject rejected"
+	)
+	equal(
+		recv(peers, wire("fieldguide", "boss", "77_0", 3, serverTime), "Alice-X"),
+		true,
+		"encounter difficulty zero accepted"
+	)
+	equal(
+		recv(peers, wire("fieldguide", "boss", "77_3", 3, serverTime), "Alice-X"),
+		true,
+		"encounter difficulty accepted"
+	)
+	for _, subject in ipairs({ "all", "77", "0_3", "077_3", "77_03", "77_-3", "77_3_4" }) do
+		equal(
+			recv(peers, wire("fieldguide", "boss", subject, 3, serverTime), "Alice-X"),
+			false,
+			"invalid pair " .. subject
+		)
+	end
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))
