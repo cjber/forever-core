@@ -50,10 +50,11 @@ Verified by inventory, not by eye alone:
 
 ## Addon UI audit
 
-The right-edge integrations already use Blizzard's `LargeSideTabButtonTemplate`: Adventure Guide on the quest map,
-and SkillUp's Gear and Route tabs on the profession panel. Hoard's and Tweaks' horizontal tabs live inside standalone
-windows, so their `PanelTabButtonTemplate` is the matching native control. The other suite addons have no custom
-right-edge tab UI.
+The right-edge integrations use Blizzard's `LargeSideTabButtonTemplate`: Adventure Guide on the quest map,
+and SkillUp's Gear and Route tabs on the profession panel. `PanelTabButtonTemplate` is a panel-bottom
+control, not a generic standalone-window tab. Top-facing tabs use `PanelTopTabButtonTemplate` or the initialized TabSystem top family, and a standalone window does not make a horizontal tab valid without evidence of
+the host edge and template state. Hoard's window-bottom tabs and Tweaks' Edit Mode sheet-bottom tabs
+retain their verified bottom-edge placement and pass this rule. See [ui-composition.md](ui-composition.md).
 
 The runtime UI uses Blizzard widget templates for controls. The few custom art pieces are semantic content (addon
 icons and route strokes) or Tweaks' existing tooltip-style feature; we found no expansion-era frame chrome in runtime

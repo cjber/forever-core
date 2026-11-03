@@ -44,7 +44,8 @@ Retail origin alone, a matching prefix or a `c60` suffix does not establish appr
 
 1. **Templates before any texture**: `PortraitFrameTemplate`, `ButtonFrameTemplate(NoPortrait)`,
    `InsetFrameTemplate`, `BasicFrameTemplateWithInset`, `Dialog`/`StaticPopupDialogs`,
-   `SharedButtonSmallTemplate`, `PanelTabButtonTemplate`, `LargeSideTabButtonTemplate`, `InputBoxTemplate`,
+   `SharedButtonSmallTemplate`, `PanelTabButtonTemplate`, `PanelTopTabButtonTemplate`,
+   `TabSystemTopButtonTemplate`, `LargeSideTabButtonTemplate`, `InputBoxTemplate`,
    `MinimalScrollBar`/`WowScrollBarWithLabel`, `TooltipDefaultLayout`.
 2. **NineSlice layouts** from `Blizzard_SharedXML/Mainline/NineSliceLayouts.lua`, applied with
    `NineSliceUtil.ApplyLayout`, plus Camelot's overrides where the frame is a Camelot frame.
@@ -59,8 +60,19 @@ Retail origin alone, a matching prefix or a `c60` suffix does not establish appr
 5. **Semantic colours**: `NORMAL_FONT_COLOR`, `HIGHLIGHT_FONT_COLOR`, `GRAY_FONT_COLOR`,
    `RED_FONT_COLOR`, `GREEN_FONT_COLOR`, `ITEM_QUALITY_COLORS`, `BAG_ITEM_QUALITY_COLORS`,
    `TOOLTIP_DEFAULT_BACKGROUND_COLOR`, `PANEL_BACKGROUND_COLOR`, `OBJECTIVE_TRACKER_*`.
-6. **Item and spell icons** by their own `IconFileDataID` / correct subject name, wearing
-   `interface/common/whiteiconframe.blp`, portrait masked by `TempPortraitAlphaMask`.
+6. **Item and spell icons** by their own `IconFileDataID` / correct subject name. Inspect the
+   source before framing: preserve a baked bevel, or apply `interface/common/whiteiconframe.blp`
+   once when the host uses it for an otherwise unframed icon. Never stack WhiteIconFrame over a
+   source that already owns its bevel. Portraits use `TempPortraitAlphaMask` and the host portrait
+   frame. See [ui-composition.md](ui-composition.md) for the one-owner and crop rules.
+
+### Composition limits
+
+The registry approves assets in their native host context, not as isolated pieces. A side tab,
+top tab, bottom tab, portrait frame, map frame and content inset each have an edge owner. A
+`PanelTabButtonTemplate` is not valid on a top edge or outer rail merely because the window is
+standalone. Artwork must remain clipped inside its frame, and every icon must have exactly one
+border owner. The UI art pin is `1.60.1.70124`, independent of any newer data pin.
 
 ## Tier 2 — conditional
 
