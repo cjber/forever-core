@@ -172,6 +172,11 @@ test("combat start exposes the transition boundary and scopes loss-of-control se
 	eq(sim.G.SimCombatResults.lockdown, false, "lockdown during event")
 	eq(sim.secret.is(sim.G.SimCombatResults.playerLossOfControl), false, "player loss-of-control data")
 	eq(sim.secret.is(sim.G.SimCombatResults.otherLossOfControl), true, "other-unit loss-of-control data")
+	eq(sim.G.InCombatLockdown(), true, "lockdown after combat starts")
+	eq(sim.G.UnitAffectingCombat("player"), true, "player combat state after combat starts")
+	sim:leaveCombat()
+	eq(sim.G.InCombatLockdown(), false, "lockdown after combat ends")
+	eq(sim.G.UnitAffectingCombat("player"), false, "player combat state after combat ends")
 end)
 
 test("the client's strings follow the locale", function()
