@@ -155,12 +155,27 @@ local function Errors()
 	local lines = {}
 	if bugGrabber and bugGrabber[1] then
 		local caughtMessages = {}
+		local legacyCaught = {}
 		for _, entry in ipairs(caught) do
-			caughtMessages[entry.rawMessage or entry.message] = true
+			if entry.rawMessage then
+				caughtMessages[entry.rawMessage] = true
+			else
+				legacyCaught[#legacyCaught + 1] = entry.message
+			end
 		end
 		local added = false
 		for _, entry in ipairs(bugGrabber) do
-			if not caughtMessages[entry.rawMessage or entry.message] then
+			local duplicate = caughtMessages[entry.rawMessage]
+			if not duplicate then
+				for _, message in ipairs(legacyCaught) do
+					local prefix = message:sub(-3) == "..." and message:sub(1, -4) or message
+					if entry.rawMessage:sub(1, #prefix) == prefix then
+						duplicate = true
+						break
+					end
+				end
+			end
+			if not duplicate then
 				if not added then
 					lines[#lines + 1] = "Recent Lua errors (BugGrabber):"
 					added = true
