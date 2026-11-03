@@ -161,6 +161,11 @@ ns.CaughtErrors = function()
 	return { { label = "test", message = "A", count = 1, stack = "stack" } }
 end
 _G.BugGrabber.GetDB = function()
+	return { { message = "A", counter = 1, session = 1 } }
+end
+local exactLegacyText = reportText({})
+equal(exactLegacyText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "exact short legacy errors deduplicate")
+_G.BugGrabber.GetDB = function()
 	return { { message = "A suffix", counter = 1, session = 1 } }
 end
 local shortLegacyText = reportText({})

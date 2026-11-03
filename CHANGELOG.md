@@ -8,6 +8,7 @@
 - **Combat transitions have regression coverage.** Specs check combat and lockdown during and after events, including player and other-unit loss-of-control data.
 - **Multiline mock text follows client alignment.** Each line now aligns independently within centered and right-justified text boxes, including the widest-line constraint.
 - **Reports deduplicate BugGrabber errors consistently.** Long caught errors no longer repeat in the BugGrabber section, and its heading is omitted when every entry is already listed.
+- **Shared checks validate consumer identity and renderer coverage.** Worktree drift checks normalize GitHub remotes and reject unknown consumers, while asset checks include every active gallery renderer.
 
 ## 0.4.6 - 2026-11-03
 

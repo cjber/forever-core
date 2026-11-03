@@ -117,7 +117,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         for path in check_core_shared.VENDORED:
             self.assertTrue((root / check_core_shared.source(path)).is_file(), path)
 
-    def test_a_repo_outside_the_suite_vendors_nothing(self):
+    def test_rejects_unknown_consumer(self):
         with self.assertRaisesRegex(SystemExit, "Unknown consumer repo: forever-core"):
             self.run_check("--repo", "forever-core")
 
