@@ -16,6 +16,11 @@ class FakeUi:
 
 
 class TextLayoutTest(unittest.TestCase):
+    def test_text_width_uses_the_widest_line(self):
+        canvas = Canvas(FakeUi(), 120, 40)
+        font = SimpleNamespace(height=16, color=(1, 1, 1), shadow=None, outline=False)
+        self.assertEqual(canvas.text_width("wide line\nx", font), canvas.text_width("wide line", font))
+
     def test_multiline_center_and_right_justify_each_line(self):
         canvas = Canvas(FakeUi(), 120, 40)
         font = SimpleNamespace(height=16, color=(1, 1, 1), shadow=None, outline=False)

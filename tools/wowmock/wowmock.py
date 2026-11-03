@@ -446,7 +446,7 @@ class Canvas:
     def _text_lines(self, text, font, color=None):
         face = self.ui.font(font)
         lines = [[]]
-        runs = text_runs(text, color or font.color) if isinstance(text, str) else text
+        runs = text_runs(text, color or font.color)
         for run, run_color in runs:
             if isinstance(run, str):
                 parts = run.split("\n")
