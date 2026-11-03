@@ -18,6 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 TRACKER_CONSUMERS = (
     "adventure-guide-forever",
@@ -77,6 +78,25 @@ def paths_for(repo):
     return [path for path, consumers in VENDORED.items() if repo in consumers]
 
 
+def repo_from_git():
+    """Return the GitHub repo name, independent of the checkout directory or worktree name."""
+    result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=False)
+    if result.returncode:
+        return None
+    remote = result.stdout.strip()
+    if remote.startswith("git@github.com:"):
+        name = remote.removeprefix("git@github.com:")
+    else:
+        parsed = urlparse(remote)
+        if parsed.hostname != "github.com":
+            return None
+        name = parsed.path.lstrip("/")
+    if name.endswith(".git"):
+        name = name[:-4]
+    owner, separator, repo = name.partition("/")
+    return repo if separator and owner == "cjber" and repo in SUITE_CONSUMERS else None
+
+
 def changed_since(base):
     """Every path that `base...HEAD` adds, changes, renames or deletes."""
     result = subprocess.run(
@@ -124,7 +144,10 @@ def main(argv=None, fetch=core_main):
     arguments = parser.parse_args(argv)
 
     root = Path.cwd()
-    paths = paths_for(arguments.repo or root.name)
+    repo = arguments.repo or repo_from_git()
+    if repo is None:
+        raise SystemExit("Cannot identify a known cjber consumer from git remote; pass --repo explicitly.")
+    paths = paths_for(repo)
     if arguments.base:
         touched = changed_since(arguments.base)
         paths = [path for path in paths if path in touched]

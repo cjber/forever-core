@@ -37,6 +37,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         git(self.root, "config", "user.email", "test@example.com")
         git(self.root, "config", "user.name", "Test")
         git(self.root, "config", "commit.gpgsign", "false")
+        git(self.root, "remote", "add", "origin", "git@github.com:cjber/field-guide-forever.git")
         self.core = dict(CORE)
         for path in check_core_shared.paths_for(self.root.name):
             self.write(path, self.fetch(path))
@@ -120,6 +121,14 @@ class CheckCoreSharedTest(unittest.TestCase):
         code, out = self.run_check("--repo", "forever-core")
         self.assertEqual(code, 0, out)
         self.assertIn("0 vendored files match", out)
+
+    def test_worktree_uses_remote_repo_not_directory_name(self):
+        worktree = Path(self.tmp.name) / "misleading-worktree-name"
+        git(self.root, "worktree", "add", "--detach", str(worktree), "HEAD")
+        os.chdir(worktree)
+        code, out = self.run_check()
+        self.assertEqual(code, 0, out)
+        self.assertIn("10 vendored files match", out)
 
 
 if __name__ == "__main__":
