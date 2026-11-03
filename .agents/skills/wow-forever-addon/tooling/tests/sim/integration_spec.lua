@@ -160,6 +160,20 @@ test("a protected frame changed from addon code in combat is ADDON_ACTION_BLOCKE
 	eq(#sim.errors, 0, "allowed out of combat")
 end)
 
+test("combat start exposes the transition boundary and scopes loss-of-control secrets", function()
+	local sim = Sim.new({ blizzard = {} })
+	sim.impl["C_LossOfControl.GetActiveLossOfControlDataByUnit"] = function(unit)
+		return { unit = unit, spellID = 123 }
+	end
+	sim:addon(fixtures .. "SimCombat", "SimCombat")
+	sim:login()
+	sim:enterCombat()
+	eq(sim.G.SimCombatResults.affectingCombat, true, "player combat state during event")
+	eq(sim.G.SimCombatResults.lockdown, false, "lockdown during event")
+	eq(sim.secret.is(sim.G.SimCombatResults.playerLossOfControl), false, "player loss-of-control data")
+	eq(sim.secret.is(sim.G.SimCombatResults.otherLossOfControl), true, "other-unit loss-of-control data")
+end)
+
 test("the client's strings follow the locale", function()
 	local en = Sim.new({ blizzard = {} })
 	local de = Sim.new({ blizzard = {}, locale = "deDE" })
