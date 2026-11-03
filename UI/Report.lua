@@ -152,13 +152,17 @@ local function Errors()
 	local bugGrabber = BugGrabberErrors()
 	local lines = {}
 	if bugGrabber and bugGrabber[1] then
-		lines[#lines + 1] = "Recent Lua errors (BugGrabber):"
 		local caughtMessages = {}
 		for _, entry in ipairs(caught) do
-			caughtMessages[entry.message] = true
+			caughtMessages[ns.CutText(entry.message, 140)] = true
 		end
+		local added = false
 		for _, entry in ipairs(bugGrabber) do
 			if not caughtMessages[entry.message] then
+				if not added then
+					lines[#lines + 1] = "Recent Lua errors (BugGrabber):"
+					added = true
+				end
 				lines[#lines + 1] = ("- x%d %s"):format(entry.count, entry.message)
 				if entry.stack then
 					lines[#lines + 1] = "    " .. entry.stack

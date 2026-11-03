@@ -474,9 +474,9 @@ class Canvas:
 
     def text(self, x, y, text, font, color=None, box_height=None, justify="LEFT", width=None):
         """Draw a FontString: `text` may carry |cffRRGGBB...|r colour escapes and |A...|a / |T...|t inline
-        textures (centred on the glyphs). The line box is `font.height` tall, vertically centred in
-        `box_height` if given; x is the left edge (or the box of `width` for CENTER/RIGHT). Returns the
-        text width."""
+        textures (centred on the glyphs). Each line is `font.height` tall; the whole text block is
+        vertically centred in `box_height` if given; x is the left edge (or the box of `width` for
+        CENTER/RIGHT). Returns the text width."""
         line_runs, line_widths = self._text_lines(text, font, color)
         face = self.ui.font(font)
         total = max(line_widths, default=0)

@@ -69,6 +69,34 @@ _G.C_AddOns = {
 	GetAddOnMetadata = function(_, key)
 		return key == "X-Website" and "https://github.com/cjber/example-addon" or "1.0.0"
 	end,
+	GetNumAddOns = function()
+		return 0
+	end,
+	GetAddOnInfo = function() end,
+	IsAddOnLoaded = function() return false end,
+}
+_G.GetBuildInfo = function()
+	return "1.0", "build", "", 16001
+end
+_G.GetLocale = function()
+	return "enUS"
+end
+_G.UnitClass = function()
+	return nil, "Mage"
+end
+_G.UnitRace = function()
+	return nil, "Human"
+end
+_G.UnitLevel = function()
+	return 60
+end
+_G.UnitFactionGroup = function()
+	return "Alliance"
+end
+_G.C_Map = {
+	GetBestMapForUnit = function()
+		return nil
+	end,
 }
 
 local phrases = setmetatable({}, {
@@ -95,9 +123,28 @@ assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
 local chunk = assert(loadfile("UI/Report.lua"))
 chunk("ExampleAddon", ns)
 ns.ReportTitle = "ExampleAddon report"
+local reportText = ns.Report.Text
 ns.Report.Text = function(lines)
 	return table.concat(lines, "\n")
 end
+
+local longError = ("long error "):rep(30)
+_G.BugGrabber = {
+	GetDB = function()
+		return { { message = "independent error", counter = 1, session = 1 } }
+	end,
+	GetSessionId = function()
+		return 1
+	end,
+}
+ns.RecordError("test", longError, "stack")
+local uniqueText = reportText({})
+equal(uniqueText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil, true, "unique BugGrabber errors are shown")
+_G.BugGrabber.GetDB = function()
+	return { { message = longError, counter = 1, session = 1 } }
+end
+local duplicateText = reportText({})
+equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
 
 equal(ns.Report.Command("unknown"), false, "unknown command remains for addon handler")
 equal(ns.Report.Command("report"), true, "report command handled")

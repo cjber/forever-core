@@ -8,6 +8,7 @@
 - **Combat transition data stays usable.** The simulator now covers the brief combat-start boundary and keeps player loss-of-control data readable while restricting other units, matching the client.
 - **Combat transitions have regression coverage.** Specs check combat and lockdown before, during and after events, including player and other-unit loss-of-control data.
 - **Multiline mock text follows client alignment.** Each line now aligns independently within centered and right-justified text boxes, including the widest-line constraint.
+- **Reports deduplicate BugGrabber errors consistently.** Long caught errors no longer repeat in the BugGrabber section, and its heading is omitted when every entry is already listed.
 
 ## 0.4.6 - 2026-11-03
 
