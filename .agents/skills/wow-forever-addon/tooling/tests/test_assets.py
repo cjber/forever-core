@@ -22,6 +22,25 @@ class AssetsTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNotNone(assets.problem(value))
 
+    def test_indirect_legacy_chrome_references(self):
+        self.assertTrue(assets.check('CreateFrame("Frame", nil, p, "DialogBorderTemplate")'))
+        self.assertTrue(assets.check("f:SetBackdrop(BACKDROP_DIALOG_32_32)"))
+        for name in assets.LEGACY_CHROME_TEMPLATES:
+            with self.subTest(template=name):
+                self.assertTrue(assets.check(f'CreateFrame("Frame", nil, p, "{name}")'))
+                self.assertTrue(assets.check(f'<Frame inherits="OtherTemplate, {name}"/>', ".xml"))
+        for name in assets.LEGACY_BACKDROPS:
+            with self.subTest(backdrop=name):
+                self.assertTrue(assets.check(f"f:SetBackdrop({name})"))
+                self.assertTrue(assets.check(f"local backdrop = _G.{name}"))
+                self.assertTrue(assets.check(f'<KeyValue key="backdropInfo" value="{name}" type="global"/>', ".xml"))
+                self.assertTrue(assets.check(f"backdrop = {name}", ".py"))
+                self.assertEqual(assets.check(f"-- {name}"), [])
+                self.assertEqual(assets.check(f"# {name}", ".py"), [])
+        self.assertEqual(assets.check('CreateFrame("Frame", nil, p, "BackdropTemplate")'), [])
+        self.assertEqual(assets.check("f:SetBackdrop(customBackdrop)"), [])
+        self.assertEqual(assets.check('CreateFrame("Frame", nil, p, "DialogBorderOpaqueTemplate")'), [])
+
     def test_current_set_and_content_icons(self):
         for value in (*assets.APPROVED_BUTTON_TEMPLATES, "128-RedButton-Left", "Interface/Icons/INV_Misc_Book_09"):
             self.assertIsNone(assets.problem(value))
