@@ -5,7 +5,7 @@
 - **Peer sharing tolerates inaccessible roster names.** The transport checks both name and realm before building a group signature.
 - **Buttons use the Forever gold border.** Shared buttons and previews use the set-1 red-button atlas. The shared asset checker rejects legacy loose chrome and templates that select it, including references inside art helpers.
 - **Linting works in cached checkouts.** The multi-value scanner applies directory exclusions inside its requested root, so a parent cache directory cannot hide every Lua file.
-- **Combat transitions have regression coverage.** Specs check combat and lockdown before, during and after events, including player and other-unit loss-of-control data.
+- **Combat transitions have regression coverage.** Specs check combat and lockdown during and after events, including player and other-unit loss-of-control data.
 - **Multiline mock text follows client alignment.** Each line now aligns independently within centered and right-justified text boxes, including the widest-line constraint.
 - **Reports deduplicate BugGrabber errors consistently.** Long caught errors no longer repeat in the BugGrabber section, and its heading is omitted when every entry is already listed.
 

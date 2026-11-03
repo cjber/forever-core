@@ -156,11 +156,11 @@ local function Errors()
 	if bugGrabber and bugGrabber[1] then
 		local caughtMessages = {}
 		for _, entry in ipairs(caught) do
-			caughtMessages[entry.rawMessage] = true
+			caughtMessages[entry.rawMessage or entry.message] = true
 		end
 		local added = false
 		for _, entry in ipairs(bugGrabber) do
-			if not caughtMessages[entry.rawMessage] then
+			if not caughtMessages[entry.rawMessage or entry.message] then
 				if not added then
 					lines[#lines + 1] = "Recent Lua errors (BugGrabber):"
 					added = true
