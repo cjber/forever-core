@@ -16,7 +16,7 @@
     "loader.lua": "b39a04d029ceaa3f8eed2a050bfaa1bcdcc25443657d788c113bed0bfd5d5a29",
     "natives.lua": "a79308646c7e723a3edbe929f46875ea47d3b6683795946998fba0f0f8edfd64",
     "run.lua": "5a884531bd41c56d04fb4445baa61865e83e9d0deafc19dcbc85e5977d2b166e",
-    "scenario.lua": "0dff1d72624e3887834036a3eb422b10fcfe23242b7d7dc6c465299e1dc66898",
+    "scenario.lua": "1e313ac2c57bb538e69e71ca3af5e2c264df085bb00d45549ffbba077d7e506a",
     "sim.lua": "0b1a4e720fb1fa07a1029d51a6fba07e59a5f6de75e45435f4be00bfc9747b41",
     "stubgen.lua": "d4fcfba06e78f699ec99a5cd66d26a0d93adcb2803829c7b8e4fd5caa4ce07ca",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",

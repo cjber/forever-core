@@ -154,8 +154,8 @@ function M.install(Sim)
 	-- Combat, group, locale
 	---------------------------------------------------------------------------
 	function Sim:enterCombat()
-		self.events.fire("PLAYER_REGEN_DISABLED")
 		self.inCombat = true
+		self.events.fire("PLAYER_REGEN_DISABLED")
 		self:advance(0.1)
 	end
 
