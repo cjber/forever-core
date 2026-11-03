@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Simulator helpers pass consumer multi-value lint.** Explicit single-value argument counts preserve vararg behaviour when the simulator is vendored into an addon.
+
 - **Native panel composition has one lockup and one chrome owner.** The shared guidance now records
   native edge ownership for map and portrait frames, source-backed side rails and top/bottom tabs, clipped artwork
   and unframed versus beveled icons, so addon mockups do not approve impossible tab placement or
