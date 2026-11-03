@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "d644ab5c898036de7247cd88c5825b7d46f5b5474e5c4f69edbde125d443ff81",
-    "changelog.py": "d5cafddab4710c3632919bf882cde79164624a83688806359e743aadf44b8683",
+    "changelog.py": "ff1f73dac6e782c421389e672b8483bb35c022626ccb24a0da9abb28ddb93610",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
     "doctor.py": "515b638747b80cdf397141eb3d9df5de96f40e58a7af28d32310c81540fe0060",
     "editorconfig.py": "736f88f5f0e0727799fd4f8b3d29ebc4adcbd9a46b5f64eacb83bcb5c179c0b5",
@@ -22,7 +22,7 @@
     "multivalue.py": "d3ec55ffe1654fd37e5e83a07ecbb5df540cf82519ae2900e0d3b7b91da53347",
     "package.py": "53923c4497833f439b1bfdf9cf9d86e9604456ebaffc4bbe9dcbf00e05e4e3d3",
     "readable.py": "5f41e691066830727e3218bd958c07c05a442f3b7e311150c9e2cbffefb567d4",
-    "release_check.py": "d31b8f0db80b6156c2312a8ae2ce506c1324b5ce7954e4404349837a2f7d93d8",
+    "release_check.py": "b7a9c1ac0fe8600eef2eb5d8d0df4ed12ab535b0f3f04fc76535725fdb6459a8",
     "report.py": "2b6e11c9e6dfa856f5bc7bb35822013f02a527225a28820ad745be61565c53ba",
     "screens.py": "3b8f4ffccf1b89d51bafeeec640fd51076a29ad6fd344c7a2030446c3f33048a",
     "sync.py": "e39cb69da7203d2e46676225db331ef9b02ef2bd56365aebbd7b6d5e5a94eabd",
