@@ -1,11 +1,36 @@
 ---
 name: wow-retail-ui-style
-description: "Build and review World of Warcraft Retail addon interfaces that fit Blizzard's current UI. Use when creating, changing, or auditing Retail UI frames, widgets, layouts, textures, fonts, or interaction behavior."
+description: "Build and review WoW: Forever addon interfaces using the client's clean Retail-style frames, widgets and assets. Use for UI design, mockups, layouts, textures, fonts, native integrations and visual audits."
 ---
 
 # WoW Retail UI Style
 
-Apply these rules when making WoW Retail addon UI. Prefer Blizzard's current interface conventions and APIs, and inspect the target client/build when an API or visual detail may have changed.
+WoW: Forever uses many modern Retail assets. Match the native Forever client, not an older
+Classic skin or arbitrary assets from current Retail. Use the pinned build in the
+[asset registry](../../../docs/asset-registry.md), including its blacklist and conditional uses.
+Read this skill and the registry before choosing art or rendering a mockup.
+
+## Design target
+
+- **Integrate first.** Put the feature in the native window that owns the task, using its tabs,
+  page or detail pane. SkillUp's Professions side tabs and Adventure Guide's quest-map tab are
+  suite references. A standalone movable window needs a task that the native host cannot serve;
+  a generic floating frame is not the default.
+- **Match the whole panel.** Inspect the host's source and a readable screenshot: frame, portrait,
+  content textures, inset boundaries, selection treatment, typography and action placement.
+  Native fonts and buttons alone do not establish a visual match.
+- **Use compact content rhythm.** Match the host's row heights and icon sizes. SkillUp's recipe
+  list uses 20-unit rows; its two-line item lists use 46-unit rows with 37-unit icons. These are
+  references for different content types, not one global row size. Keep related facts together,
+  align counts, and use shared section headings instead of repeating labels on every row.
+- **Use the host's content surfaces.** Clean Retail style includes textured lists, inset panels
+  and the host's own detail art where the client uses it for that subject. A profession-specific
+  illustration belongs to that profession, not to an unrelated commission page. Do not substitute one large
+  flat fill, spread a short list across a tall window, or add scenery to fill unused space.
+  Preserve native host dimensions when integrating; use a useful detail pane or an honest empty
+  state rather than invented rows.
+- **Keep optional integrations optional.** A page in Blizzard's Professions window must not
+  require SkillUp to be installed. Choose the host by the player's task, not by a dependency.
 
 ## The 12 rules
 
@@ -35,16 +60,22 @@ Apply these rules when making WoW Retail addon UI. Prefer Blizzard's current int
 
 ## Workflow
 
-1. Identify the target Retail build and the nearest Blizzard frame or widget that owns the interaction.
-2. Inspect its current template, mixin, atlas, and API before choosing custom implementation details.
+1. Identify the target Forever build and the native host that owns the interaction. Inspect SkillUp or the nearest suite integration as a concrete layout reference.
+2. Inspect the host template, mixin, atlas and API. Resolve every proposed asset against the registry: approved native use, conditional use in its proper context, or blacklisted. Record names and the selected atlas set in the mockup source or review notes.
 3. Build the smallest addon-specific layer on top of those conventions and cover the applicable states from the rules above.
-4. Review it in the target client, then fix any visual, input, localization, scaling, or protected-frame issues found.
+4. Render concepts inside their proposed host with representative full, short, empty and unavailable states. Compare against the host at the same UI scale for gaps, texture choice, row density and alignment. Label sample data and proposed behavior clearly.
+5. Present every generated variant for owner review using the owner's preview workflow. A rendered concept establishes design intent, not in-game correctness; list client checks for the user and do not launch or drive the game.
 
 ## Never use (blacklist)
 
-The inventory behind these bans, with the build counts that justify each one, is
-`docs/asset-registry.md`. For addon chrome, use only the vetted modern set shown in
-`docs/asset-audit/native-retail.png` (build `1.60.1.70124`); use Blizzard templates and widgets for controls.
+The [asset registry](../../../docs/asset-registry.md) owns the inventory, conditional uses and
+named exceptions. The [audit sheets](../../../docs/asset-audit.md) show actual asset appearance;
+open the relevant sheets when choosing art. They are prefix-search contact sheets, not allowlists:
+even `native-retail.png` contains expansion scenes and borders that are blacklisted. An asset's
+presence in a sheet, its Retail origin or a broad `ui-frame-*` prefix does not approve it.
+Use Blizzard templates and widgets for controls, and verify the actual host use and resolved
+member in build `1.60.1.70124`. Prefer set 1 where available; a plain set-0 fallback needs native
+host evidence and must not belong to a blacklisted family.
 Blizzard-owned content icons may still identify game content, but expansion skins and hand-made chrome are out.
 
 - **All expansion-era UI art, including scenic backgrounds.** `Garr*`, `GarrMission_*`, `ClassHall_*`, `orderhall*`, `covenant*`,
@@ -59,6 +90,7 @@ Blizzard-owned content icons may still identify game content, but expansion skin
   fills. A missing element is styled by an existing template, not by new art.
 - **Loose legacy textures**: `interface/tooltips/ui-tooltip-border.blp` (137057/137056) and any
   pre-NineSlice Backdrop art. Use `Tooltip-NineSlice-*` or the frame's own template.
+- **Quest-log parchment and legacy wood/leather chrome.** A quest-log icon can identify its function; the old parchment columns and `legacy*` frame skins are not neutral panel backgrounds.
 - **Gamepad, cursor and crosshair atlases** — input-device art, never window chrome.
 - **Fonts that are not FRIZQT or ARIALN.** No Cinzel, EB Garamond, Marcellus or any webfont in a
   window, tooltip, or screenshot; and no hand-picked hex described as "gold".
