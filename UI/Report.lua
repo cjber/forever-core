@@ -491,11 +491,11 @@ local function IssueWindow()
 		L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."]
 	)
 
-	local bug = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local bug = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	bug:SetSize(110, 24)
 	bug:SetPoint("TOPLEFT", 18, -66)
 	bug:SetText(L["Bug"])
-	local feature = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local feature = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	feature:SetSize(150, 24)
 	feature:SetPoint("LEFT", bug, "RIGHT", 8, 0)
 	feature:SetText(L["Feature request"])
@@ -515,11 +515,11 @@ local function IssueWindow()
 	details:SetPoint("TOPLEFT", 22, -178)
 	details:SetMaxLetters(1000)
 
-	local copyLink = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local copyLink = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	copyLink:SetSize(150, 24)
 	copyLink:SetPoint("TOPLEFT", 18, -260)
 	copyLink:SetText(L["Copy issue link"])
-	local copyReport = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local copyReport = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	copyReport:SetSize(140, 24)
 	copyReport:SetPoint("LEFT", copyLink, "RIGHT", 8, 0)
 	copyReport:SetText(L["Copy report"])

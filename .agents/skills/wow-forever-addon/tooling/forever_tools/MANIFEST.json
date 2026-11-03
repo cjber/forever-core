@@ -7,7 +7,8 @@
   },
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
-    "art.py": "d644ab5c898036de7247cd88c5825b7d46f5b5474e5c4f69edbde125d443ff81",
+    "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
+    "assets.py": "8ab22ca97b51d02b7d9b7d764bfb757f8e4b6483c5204f107218e87bc3089687",
     "changelog.py": "ff1f73dac6e782c421389e672b8483bb35c022626ccb24a0da9abb28ddb93610",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
     "doctor.py": "515b638747b80cdf397141eb3d9df5de96f40e58a7af28d32310c81540fe0060",
@@ -19,7 +20,7 @@
     "locales.py": "f7dc8dbacbc5e422f4e3ca20251d6094236e9a604bbcd40e866d8fd5af30343d",
     "lua.py": "030f1dd8c9dd5fa29bda054b8699570a4d9e17fae8022a48e6d171cea167a7a3",
     "luadata.py": "d2621f31d1ddfa8c338d3305d3dbfb74020555f512c96b5991484404632c598e",
-    "multivalue.py": "d3ec55ffe1654fd37e5e83a07ecbb5df540cf82519ae2900e0d3b7b91da53347",
+    "multivalue.py": "39815c69ae1518e1f847a8043837ca48f096d626b05d49a7bc9b6052521c639f",
     "package.py": "53923c4497833f439b1bfdf9cf9d86e9604456ebaffc4bbe9dcbf00e05e4e3d3",
     "readable.py": "5f41e691066830727e3218bd958c07c05a442f3b7e311150c9e2cbffefb567d4",
     "release_check.py": "b7a9c1ac0fe8600eef2eb5d8d0df4ed12ab535b0f3f04fc76535725fdb6459a8",

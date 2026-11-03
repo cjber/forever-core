@@ -9,6 +9,20 @@ below is from that build's own DB2 tables and listfile, not from retail 12.x.
 
 ## The five layers of art the suite can reach
 
+Buttons use `SharedButtonTemplate`, `SharedButtonSmallTemplate`,
+`SharedButtonLargeTemplate` or `SharedButtonExtraSmallTemplate`. These select the
+gold-bordered set-1 `128-RedButton` family, including its pressed and disabled states.
+The native `128-RedButton-Highlight` overlay is an approved set-0 exception.
+The similarly named `128-GoldRedButton` shop family is outside this set.
+
+The shared `forever_tools.assets` checker rejects legacy loose button, dialog,
+tooltip and border chrome, plus the templates that select it. This includes
+`UI-Panel-Button-*`, `UI-DialogBox-*`, `UI-Tooltip-Border/Background`,
+`UI-Border-*`, `UI-Character-Border-*` and the `UIPanelButton*` template family.
+The blacklist applies to runtime Lua/XML and Python screenshot renderers, including
+art helpers and references carrying an `art-ok` comment. Content icons and native
+host backgrounds are separate from these chrome families.
+
 | Layer | What it is | Size / reach | Where |
 |---|---|---|---|
 | 1. Client atlases | Every `SetAtlas` element the client ships, resolved to its sheet, crop box and slice margins | 2,802 atlases, 20,722 atlas elements, 20,522 members; 217 atlases in art set 1 (the `c60` Forever set); 1,167 elements have a set-1 member | `~/.cache/wowmock/1.60.1.70124/UiTextureAtlas*.csv` |
@@ -30,7 +44,7 @@ Retail origin alone, a matching prefix or a `c60` suffix does not establish appr
 
 1. **Templates before any texture**: `PortraitFrameTemplate`, `ButtonFrameTemplate(NoPortrait)`,
    `InsetFrameTemplate`, `BasicFrameTemplateWithInset`, `Dialog`/`StaticPopupDialogs`,
-   `UIPanelButtonTemplate`, `PanelTabButtonTemplate`, `LargeSideTabButtonTemplate`, `InputBoxTemplate`,
+   `SharedButtonSmallTemplate`, `PanelTabButtonTemplate`, `LargeSideTabButtonTemplate`, `InputBoxTemplate`,
    `MinimalScrollBar`/`WowScrollBarWithLabel`, `TooltipDefaultLayout`.
 2. **NineSlice layouts** from `Blizzard_SharedXML/Mainline/NineSliceLayouts.lua`, applied with
    `NineSliceUtil.ApplyLayout`, plus Camelot's overrides where the frame is a Camelot frame.

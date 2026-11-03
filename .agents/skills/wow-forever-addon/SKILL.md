@@ -42,6 +42,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-4** Looks like the retail default UI. For design and mockups, read
   [wow-retail-ui-style](../wow-retail-ui-style/SKILL.md) and its asset registry first: native host
   integration, compact content spacing and the host's approved surfaces are part of the match.
+  Buttons use `SharedButton*Template` and the set-1 `128-RedButton` family. Every addon CI runs
+  `python3 -m tools.forever_tools.assets`: the shared blacklist covers runtime and renderer art,
+  including legacy loose chrome and inherited templates. Art helpers and `art-ok` do not waive it.
   Contact sheets are discovery aids, not asset allowlists. Stock frame templates, `GameFont*` objects, atlases,
   `GameTooltip`, `MenuUtil` menus, `MapCanvasDataProviderMixin` pins, copied from the Blizzard
   source for the Forever build (Gethe/wow-ui-source, branch `forever`). Never custom-styled frames,

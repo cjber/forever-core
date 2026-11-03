@@ -48,6 +48,12 @@ jobs:
       - run: pipx run ruff==0.16.8 check tools
       - run: pipx run ruff==0.16.8 format --check tools
       - run: python3 -m unittest discover -s tools -p "test_*.py"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - run: pip install pillow==12.2.0
+      - run: python3 -m unittest discover -s tools/wowmock -p "test_*.py"
+      - run: python3 tools/check_assets.py
 
   typecheck:
     runs-on: ubuntu-24.04

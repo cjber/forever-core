@@ -582,6 +582,38 @@ do
 	equal(#sent, 6, "the instance group's new member receives the snapshot")
 	groupNames.party1 = "InstanceReplacement"
 	equal(peers:Sync(), 6, "an instance replacement receives unchanged stats")
+	local unitName = _G.UnitName
+	local inaccessible = {}
+	_G.canaccessvalue = function(value)
+		return value ~= inaccessible
+	end
+	_G.UnitName = function(unit)
+		if unit == "party1" then
+			return inaccessible, "MyRealm"
+		end
+		return unitName(unit)
+	end
+	equal(
+		pcall(function()
+			peers:Sync()
+		end),
+		true,
+		"an inaccessible roster name is never concatenated"
+	)
+	_G.UnitName = function(unit)
+		if unit == "party1" then
+			return "Member", inaccessible
+		end
+		return unitName(unit)
+	end
+	equal(
+		pcall(function()
+			peers:Sync()
+		end),
+		true,
+		"an inaccessible roster realm is never concatenated"
+	)
+	_G.UnitName, _G.canaccessvalue = unitName, nil
 end
 
 -- Transport rate, throttle, queue cap ---------------------------------------------------------------------------
@@ -744,7 +776,7 @@ do
 	local third = load()
 	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
 	local manager = _G.ForeverPeerStats
-	equal(manager.version, 1, "manager is versioned")
+	equal(manager.version, 2, "manager is versioned")
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -835,7 +867,7 @@ do
 	local ns = fresh()
 	local peers, state = make(ns)
 	state.rows = { { metric = "total", subject = "all", value = 1, eventUnix = serverTime } }
-	_G.ForeverPeerStats.version = 0
+	_G.ForeverPeerStats.version = 1
 	local old = _G.ForeverPeerStats
 	load()
 	equal(_G.ForeverPeerStats ~= old, true, "a newer copy replaces an older manager")
