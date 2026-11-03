@@ -445,10 +445,16 @@ class Canvas:
 
     def text_width(self, text, font):
         face = self.ui.font(font)
-        return sum(
-            face.getlength(run) / self.ui.scale if isinstance(run, str) else inline_texture_size(self.ui, run, font)[0]
-            for run, _ in text_runs(text, font.color)
-        )
+        widths = [0]
+        for run, _ in text_runs(text, font.color):
+            if isinstance(run, str):
+                parts = run.split("\n")
+                widths[-1] += face.getlength(parts[0]) / self.ui.scale
+                for part in parts[1:]:
+                    widths.append(face.getlength(part) / self.ui.scale)
+            else:
+                widths[-1] += inline_texture_size(self.ui, run, font)[0]
+        return max(widths, default=0)
 
     def text(self, x, y, text, font, color=None, box_height=None, justify="LEFT", width=None):
         """Draw a FontString: `text` may carry |cffRRGGBB...|r colour escapes and |A...|a / |T...|t inline
@@ -457,35 +463,59 @@ class Canvas:
         text width."""
         runs = text_runs(text, color or font.color)
         face = self.ui.font(font)
-        total = self.text_width(text, font)
-        if justify == "CENTER":
-            x += (width - total) / 2
-        elif justify == "RIGHT":
-            x += width - total
-        top = y + ((box_height - font.height) / 2 if box_height else 0)
+        line_runs = [[]]
+        for run, run_color in runs:
+            if isinstance(run, str):
+                parts = run.split("\n")
+                for index, part in enumerate(parts):
+                    if part:
+                        line_runs[-1].append((part, run_color))
+                    if index < len(parts) - 1:
+                        line_runs.append([])
+            else:
+                line_runs[-1].append((run, run_color))
+
+        def run_width(line):
+            return sum(
+                face.getlength(run) / self.ui.scale
+                if isinstance(run, str)
+                else inline_texture_size(self.ui, run, font)[0]
+                for run, _ in line
+            )
+
+        line_widths = [run_width(line) for line in line_runs]
+        total = max(line_widths, default=0)
+        line_height = font.height
+        top = y + ((box_height - line_height * len(line_runs)) / 2 if box_height else 0)
         layer = Image.new("RGBA", self.image.size)
         draw = ImageDraw.Draw(layer)
         stroke = max(1, round(self.ui.scale)) if font.outline else 0
-        cursor = x
         icons = []
         # The client centres an inline texture on the glyphs, not on the line box: Friz's ascent puts the
         # digits' ink ~1.5 units below the box centre, and a real capture's coins sit level with the digits.
         _, ink_top, _, ink_bottom = face.getbbox("0")
         ink_centre = (ink_top + ink_bottom) / 2 / self.ui.scale
-        for run, run_color in runs:
-            if not isinstance(run, str):
-                w, h = inline_texture_size(self.ui, run, font)
-                icons.append((run, cursor + run.offset[0], top + ink_centre - h / 2 - run.offset[1], w, h))
-                cursor += w
-                continue
-            position = (self.px(cursor), self.px(top))
-            if font.shadow:
-                offset = (self.px(font.shadow[0]), -self.px(font.shadow[1]))
-                draw.text((position[0] + offset[0], position[1] + offset[1]), run, font=face, fill=(0, 0, 0, 255))
-            draw.text(
-                position, run, font=face, fill=rgba255(run_color), stroke_width=stroke, stroke_fill=(0, 0, 0, 255)
-            )
-            cursor += face.getlength(run) / self.ui.scale
+        for line_index, (line, line_width) in enumerate(zip(line_runs, line_widths, strict=True)):
+            cursor = x
+            if justify == "CENTER":
+                cursor += (width - line_width) / 2
+            elif justify == "RIGHT":
+                cursor += width - line_width
+            line_top = top + line_height * line_index
+            for run, run_color in line:
+                if not isinstance(run, str):
+                    w, h = inline_texture_size(self.ui, run, font)
+                    icons.append((run, cursor + run.offset[0], line_top + ink_centre - h / 2 - run.offset[1], w, h))
+                    cursor += w
+                    continue
+                position = (self.px(cursor), self.px(line_top))
+                if font.shadow:
+                    offset = (self.px(font.shadow[0]), -self.px(font.shadow[1]))
+                    draw.text((position[0] + offset[0], position[1] + offset[1]), run, font=face, fill=(0, 0, 0, 255))
+                draw.text(
+                    position, run, font=face, fill=rgba255(run_color), stroke_width=stroke, stroke_fill=(0, 0, 0, 255)
+                )
+                cursor += face.getlength(run) / self.ui.scale
         self.image = Image.alpha_composite(self.image, layer)
         for run, left, icon_top, w, h in icons:
             self.draw(inline_texture_image(self.ui, run), left, icon_top, w, h)
