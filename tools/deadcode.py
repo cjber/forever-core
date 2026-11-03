@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IGNORED = ("types/", "tests/", "tools/", "docs/", ".agents/", "Nav/", ".types/", ".sloppatrol/", "reference/")
+SCRATCH_DIRS = {".git", ".venv", ".bugpatrol", ".sloppatrol", ".speedpatrol"}
 # Consumer-only shared modules are stored here as source for sync_consumers.py.
 CORE_SOURCE_ONLY = {"UI/Report.lua", "UI/ForeverFamily.lua"}
 
@@ -17,7 +18,7 @@ def rel(path):
 
 
 def source_files(pattern):
-    return sorted(p for p in ROOT.rglob(pattern) if not any(x in {".git", ".venv"} for x in p.parts))
+    return sorted(p for p in ROOT.rglob(pattern) if not any(x in SCRATCH_DIRS for x in p.parts))
 
 
 def ignored(path):
