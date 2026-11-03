@@ -156,7 +156,7 @@ end
 ---@param tooltip? string a phrase, read through ns.L
 ---@return Button
 function Page.AddButton(panel, label, callback, tooltip)
-	local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	local button = CreateFrame("Button", nil, panel, "SharedButtonSmallTemplate")
 	button:SetSize(180, 24)
 	button:SetPoint("TOPLEFT", 16, Next(panel, BUTTON))
 	button:SetText(Text(label))
@@ -164,5 +164,5 @@ function Page.AddButton(panel, label, callback, tooltip)
 	if tooltip then
 		button.tooltipText = Text(tooltip)
 	end
-	return button
+	return button --[[@as Button]]
 end

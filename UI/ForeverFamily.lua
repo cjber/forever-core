@@ -303,14 +303,14 @@ local function Window()
 	hint:SetPoint("RIGHT", -16, 0)
 	hint:SetJustifyH("LEFT")
 
-	local close = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local close = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	close:SetHeight(22)
 	close:SetPoint("BOTTOMRIGHT", -14, 14)
 	close:SetScript("OnClick", function()
 		frame:Hide()
 	end)
 
-	local never = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") --[[@as Button]]
+	local never = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	never:SetHeight(22)
 	never:SetPoint("RIGHT", close, "LEFT", -8, 0)
 	never:SetScript("OnClick", function()
@@ -435,7 +435,7 @@ function Family.CreatePanel(parent, db, current, locale)
 			local icon = panel:CreateTexture(nil, "ARTWORK")
 			icon:SetSize(32, 32)
 			icon:SetPoint("TOPLEFT", 16, top)
-			local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate") --[[@as Button]]
+			local button = CreateFrame("Button", nil, panel, "SharedButtonSmallTemplate") --[[@as Button]]
 			button:SetHeight(22)
 			button:SetPoint("TOPRIGHT", -16, top - 5)
 			button:SetText(L["Copy link"])

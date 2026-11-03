@@ -216,7 +216,7 @@ equal(dropdown.selected, "a", "and moves the dropdown's own selection")
 
 -- AddButton: the label, and the callback behind it.
 local button = Children(panel, "Button")[1]
-check(button ~= nil and button.template == "UIPanelButtonTemplate", "the page has its button")
+check(button ~= nil and button.template == "SharedButtonSmallTemplate", "the page has its button")
 equal(button.text, "Cocher", "its label is translated")
 equal(button.width, 180, "and it is the page's button width")
 button.scripts.OnClick(button)
