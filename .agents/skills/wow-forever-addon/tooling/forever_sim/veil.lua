@@ -253,7 +253,7 @@ function M.install(G)
 		for i = 1, select("#", ...) do
 			out[i] = wrap(out[i])
 		end
-		return unpack(out, 1, select("#", ...))
+		return unpack(out, 1, (select("#", ...)))
 	end
 	G.scrubsecretvalues = function(...)
 		local out = { ... }
@@ -262,7 +262,7 @@ function M.install(G)
 				out[i] = nil
 			end
 		end
-		return unpack(out, 1, select("#", ...))
+		return unpack(out, 1, (select("#", ...)))
 	end
 	G.scrub = G.scrubsecretvalues
 end

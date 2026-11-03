@@ -73,7 +73,7 @@ function M.build(sim)
 		for i = 1, select("#", ...) do
 			out[i] = Secret.unwrap(out[i])
 		end
-		return unpack(out, 1, select("#", ...))
+		return unpack(out, 1, (select("#", ...)))
 	end
 	sim.impl.dropsecretaccess = function()
 		if not Taint.current then
