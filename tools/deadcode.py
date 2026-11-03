@@ -18,7 +18,7 @@ def rel(path):
 
 
 def source_files(pattern):
-    return sorted(p for p in ROOT.rglob(pattern) if not any(x in SCRATCH_DIRS for x in p.parts))
+    return sorted(p for p in ROOT.rglob(pattern) if not any(x in SCRATCH_DIRS for x in p.relative_to(ROOT).parts))
 
 
 def ignored(path):
@@ -147,7 +147,7 @@ def scan():
             entries.update(
                 name for name in py if re.search(rf"python3?\s+(?:-m\s+)?tools/{re.escape(name)}(?:\.py)?\b", content)
             )
-    for documentation in ROOT.rglob("*.md"):
+    for documentation in source_files("*.md"):
         if ignored(documentation):
             continue
         content = documentation.read_text(encoding="utf-8", errors="replace")
