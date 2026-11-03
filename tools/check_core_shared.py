@@ -2,7 +2,7 @@
 
 Forever Core is the source of every file in VENDORED, this script included: core's tools/sync_consumers.py copies
 them into each consumer and core's tools/check_consumers.py reads the same map. Run it from a consumer's root, whose
-folder name is the repo name:
+repository is inferred from its Git origin:
 
     python3 tools/check_core_shared.py             every file this repo vendors must match core main
     python3 tools/check_core_shared.py --base REF  only the vendored files that REF...HEAD changes
@@ -140,7 +140,7 @@ def compare(root, paths, fetch=core_main):
 def main(argv=None, fetch=core_main):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", help="check only the vendored files that BASE...HEAD changes")
-    parser.add_argument("--repo", help="this consumer's repo name (default: the current folder's name)")
+    parser.add_argument("--repo", help="this consumer's repo name (default: infer it from Git origin)")
     arguments = parser.parse_args(argv)
 
     root = Path.cwd()
