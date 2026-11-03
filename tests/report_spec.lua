@@ -153,7 +153,24 @@ ns.CaughtErrors = function()
 end
 local legacyText = reportText({})
 equal(type(legacyText), "string", "legacy caught errors remain readable")
-equal(legacyText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "legacy caught errors still deduplicate")
+equal(
+	legacyText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil,
+	true,
+	"ambiguous clipped legacy errors remain visible"
+)
+ns.CaughtErrors = caughtErrors
+ns.CaughtErrors = function()
+	return { { message = "A", count = 1, stack = "stack" } }
+end
+_G.BugGrabber.GetDB = function()
+	return { { message = "A suffix", counter = 1, session = 1 } }
+end
+local shortLegacyText = reportText({})
+equal(
+	shortLegacyText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil,
+	true,
+	"distinct short legacy errors remain visible"
+)
 ns.CaughtErrors = caughtErrors
 local sharedPrefix = ("same prefix "):rep(30)
 ns.RecordError("first", sharedPrefix .. "A", "stack")
