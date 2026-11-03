@@ -2140,7 +2140,7 @@ function M.build(sim)
 				error(string.format("%s:%s(): bad self (call with ':')", kind, name), 2)
 			end
 			if secretArgs == "NotAllowed" or (secretArgs == "AllowedWhenUntainted" and Taint.current) then
-				for i = 1, math.max(nargs, select("#", ...)) do
+				for i = 1, math.max(nargs, (select("#", ...))) do
 					if Secret.is((select(i, ...))) then
 						error(
 							string.format(
