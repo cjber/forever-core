@@ -1,4 +1,4 @@
-"""Canvas text layout regressions, using Pillow's bundled bitmap font."""
+"""Canvas text layout regressions, using Pillow's bundled default font."""
 
 import unittest
 from types import SimpleNamespace

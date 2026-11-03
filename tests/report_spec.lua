@@ -147,6 +147,13 @@ _G.BugGrabber.GetDB = function()
 end
 local duplicateText = reportText({})
 equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
+local caughtErrors = ns.CaughtErrors
+ns.CaughtErrors = function()
+	return { { message = longError, count = 1, stack = "stack" } }
+end
+local legacyText = reportText({})
+equal(legacyText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "legacy caught errors still deduplicate")
+ns.CaughtErrors = caughtErrors
 local sharedPrefix = ("same prefix "):rep(30)
 ns.RecordError("first", sharedPrefix .. "A", "stack")
 ns.RecordError("second", sharedPrefix .. "B", "stack")
