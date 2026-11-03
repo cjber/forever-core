@@ -582,6 +582,38 @@ do
 	equal(#sent, 6, "the instance group's new member receives the snapshot")
 	groupNames.party1 = "InstanceReplacement"
 	equal(peers:Sync(), 6, "an instance replacement receives unchanged stats")
+	local unitName = _G.UnitName
+	local inaccessible = {}
+	_G.canaccessvalue = function(value)
+		return value ~= inaccessible
+	end
+	_G.UnitName = function(unit)
+		if unit == "party1" then
+			return inaccessible, "MyRealm"
+		end
+		return unitName(unit)
+	end
+	equal(
+		pcall(function()
+			peers:Sync()
+		end),
+		true,
+		"an inaccessible roster name is never concatenated"
+	)
+	_G.UnitName = function(unit)
+		if unit == "party1" then
+			return "Member", inaccessible
+		end
+		return unitName(unit)
+	end
+	equal(
+		pcall(function()
+			peers:Sync()
+		end),
+		true,
+		"an inaccessible roster realm is never concatenated"
+	)
+	_G.UnitName, _G.canaccessvalue = unitName, nil
 end
 
 -- Transport rate, throttle, queue cap ---------------------------------------------------------------------------

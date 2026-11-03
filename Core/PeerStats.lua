@@ -99,6 +99,14 @@ local function OwnName()
 	end
 end
 
+local function Readable(name, realm)
+	local canAccess = rawget(_G, "canaccessvalue")
+	if canAccess and (not canAccess(name) or not canAccess(realm)) then
+		return nil
+	end
+	return name, realm
+end
+
 -- The saved key and the lowercase identity for a sender. Spaces and hyphens leave the realm, and the local realm
 -- leaves the name, so "Name", "Name-MyRealm" and "name-My Realm" are one player.
 ---@param sender any
@@ -221,7 +229,7 @@ local function CreateManager()
 		local raid = IsInRaid and IsInRaid(category)
 		for index = 1, math.min(size, 40) do
 			local unit = raid and ("raid" .. index) or (index == size and "player" or "party" .. index)
-			local name, realm = UnitName(unit)
+			local name, realm = Readable(UnitName(unit))
 			members[#members + 1] = name and (name .. "-" .. (realm or "")) or unit
 		end
 		table.sort(members)
