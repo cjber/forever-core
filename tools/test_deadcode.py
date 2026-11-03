@@ -27,11 +27,17 @@ class CoreWorktreeTest(unittest.TestCase):
             (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
             (root / "UI").mkdir()
             (root / "UI/Main.lua").write_text("local value = true\n")
+            (root / "UI/Orphan.lua").write_text("local value = true\n")
             checkout = root / ".speedpatrol/runs/checkouts/base/tests"
             checkout.mkdir(parents=True)
             (checkout / "fixture.lua").write_text("fixture = true\n")
             with patch.object(deadcode, "ROOT", root):
-                self.assertEqual(deadcode.scan(), [])
+                findings = deadcode.scan()
+                self.assertIn(("UI/Orphan.lua", 1, "Lua file is not named by any TOC"), findings)
+                self.assertNotIn(
+                    (".speedpatrol/runs/checkouts/base/tests/fixture.lua", 1, "Lua file is not named by any TOC"),
+                    findings,
+                )
 
 
 if __name__ == "__main__":
