@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.6 - 2026-11-03
+
 - **Addons share one peer-statistics transport.** The shared module validates and bounds guild and group rows, ranks cumulative totals and observed first completions, and cancels sends and hides peers immediately when sharing is switched off.
 - **Simulator loading respects excluded game types.** Startup bootstrap files, explicit addon loads and partial loads all honour the Forever client's addon restrictions.
 
