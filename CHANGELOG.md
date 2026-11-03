@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.4.3 - 2026-11-03
+
+- **The suite's tools ignore fixture TOCs that never ship.** TOC runtime discovery walked every `.toc` under
+  a consumer, including the ones `tools/` and `tests/` keep for their own fixtures, so a vendored simulator
+  could report a runtime file the packager never ships. Explicit tools and tests roots are now excluded while
+  nested child-addon TOCs outside those roots are still found, with a regression covering the simulator's
+  Auctionator stubs. Nothing changes in game.
+- **Release help and changelog ordering work again.** `tools/changelog.py --help` answered with a traceback
+  instead of usage, and version headings were compared as text, so 0.10.0 sorted below 0.9.0 when the tool
+  checked which tags still need an entry. Both are fixed; entries are ordered numerically.
+
 ## 0.4.2 - 2026-11-03
 
 - **Vendoring keeps the exec bit.** `forever_tools/sync.py update` and `forever_sim/sync.py update` copied with
