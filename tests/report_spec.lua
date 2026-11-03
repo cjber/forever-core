@@ -149,7 +149,7 @@ local duplicateText = reportText({})
 equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
 local caughtErrors = ns.CaughtErrors
 ns.CaughtErrors = function()
-	return { { message = ns.CutText(longError, 300), count = 1, stack = "stack" } }
+	return { { label = "test", message = ns.CutText(longError, 300), count = 1, stack = "stack" } }
 end
 local legacyText = reportText({})
 equal(
@@ -158,7 +158,7 @@ equal(
 	"ambiguous clipped legacy errors remain visible"
 )
 ns.CaughtErrors = function()
-	return { { message = "A", count = 1, stack = "stack" } }
+	return { { label = "test", message = "A", count = 1, stack = "stack" } }
 end
 _G.BugGrabber.GetDB = function()
 	return { { message = "A suffix", counter = 1, session = 1 } }

@@ -91,10 +91,11 @@ def repo_from_git():
         if parsed.hostname != "github.com":
             return None
         name = parsed.path.lstrip("/")
-    if name.endswith(".git"):
+    name = name.strip("/")
+    if name.lower().endswith(".git"):
         name = name[:-4]
     owner, separator, repo = name.partition("/")
-    return repo if separator and owner == "cjber" and repo in SUITE_CONSUMERS else None
+    return repo if separator and owner.lower() == "cjber" and repo in SUITE_CONSUMERS else None
 
 
 def changed_since(base):
@@ -144,6 +145,8 @@ def main(argv=None, fetch=core_main):
     arguments = parser.parse_args(argv)
 
     root = Path.cwd()
+    if arguments.repo and arguments.repo not in SUITE_CONSUMERS:
+        raise SystemExit(f"Unknown consumer repo: {arguments.repo}")
     repo = arguments.repo or repo_from_git()
     if repo is None:
         raise SystemExit("Cannot identify a known cjber consumer from git remote; pass --repo explicitly.")
