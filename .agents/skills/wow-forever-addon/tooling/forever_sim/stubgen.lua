@@ -223,7 +223,9 @@ function M.build(sim)
 		for key, rule in pairs(PREDICATES) do
 			if fdoc[key] then
 				local active = r[rule[1]]
-				if rule[1] == "unitRestricted" then
+				if rule[1] == "combat" then
+					active = sim.inCombat
+				elseif rule[1] == "unitRestricted" then
 					active = sim.inCombat or r.restrictedMap or r.unitRestricted
 				end
 				if active then
