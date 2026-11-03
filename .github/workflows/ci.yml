@@ -47,9 +47,12 @@ jobs:
           args: --check .
       - run: pipx run ruff==0.16.8 check tools
       - run: pipx run ruff==0.16.8 format --check tools
-      - run: python3 -m pip install --disable-pip-version-check --no-input --user Pillow==12.3.0
       - run: python3 -m unittest discover -s tools -p "test_*.py"
-      - run: python3 -m unittest discover -s tools/wowmock -p "test_*.py"
+      - name: Test wowmock renderer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/wowmock-venv"
+          "$RUNNER_TEMP/wowmock-venv/bin/pip" install --quiet Pillow==12.3.0
+          PYTHONPATH=tools/wowmock "$RUNNER_TEMP/wowmock-venv/bin/python" -m unittest discover -s tools/wowmock -p "test_*.py"
 
   typecheck:
     runs-on: ubuntu-24.04

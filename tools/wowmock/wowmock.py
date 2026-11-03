@@ -443,39 +443,22 @@ class Canvas:
         full.paste(alpha, (self.px(x), self.px(y)))
         self.image.putalpha(ImageChops.multiply(self.image.getchannel("A"), full))
 
-    def text_width(self, text, font):
+    def _text_lines(self, text, font, color=None):
         face = self.ui.font(font)
-        widths = [0]
-        for run, _ in text_runs(text, font.color):
-            if isinstance(run, str):
-                parts = run.split("\n")
-                widths[-1] += face.getlength(parts[0]) / self.ui.scale
-                for part in parts[1:]:
-                    widths.append(face.getlength(part) / self.ui.scale)
-            else:
-                widths[-1] += inline_texture_size(self.ui, run, font)[0]
-        return max(widths, default=0)
-
-    def text(self, x, y, text, font, color=None, box_height=None, justify="LEFT", width=None):
-        """Draw a FontString: `text` may carry |cffRRGGBB...|r colour escapes and |A...|a / |T...|t inline
-        textures (centred on the glyphs). The line box is `font.height` tall, vertically centred in
-        `box_height` if given; x is the left edge (or the box of `width` for CENTER/RIGHT). Returns the
-        text width."""
-        runs = text_runs(text, color or font.color)
-        face = self.ui.font(font)
-        line_runs = [[]]
+        lines = [[]]
+        runs = text_runs(text, color or font.color) if isinstance(text, str) else text
         for run, run_color in runs:
             if isinstance(run, str):
                 parts = run.split("\n")
                 for index, part in enumerate(parts):
                     if part:
-                        line_runs[-1].append((part, run_color))
+                        lines[-1].append((part, run_color))
                     if index < len(parts) - 1:
-                        line_runs.append([])
+                        lines.append([])
             else:
-                line_runs[-1].append((run, run_color))
+                lines[-1].append((run, run_color))
 
-        def run_width(line):
+        def line_width(line):
             return sum(
                 face.getlength(run) / self.ui.scale
                 if isinstance(run, str)
@@ -483,7 +466,19 @@ class Canvas:
                 for run, _ in line
             )
 
-        line_widths = [run_width(line) for line in line_runs]
+        return lines, [line_width(line) for line in lines]
+
+    def text_width(self, text, font):
+        _, widths = self._text_lines(text, font)
+        return max(widths, default=0)
+
+    def text(self, x, y, text, font, color=None, box_height=None, justify="LEFT", width=None):
+        """Draw a FontString: `text` may carry |cffRRGGBB...|r colour escapes and |A...|a / |T...|t inline
+        textures (centred on the glyphs). The line box is `font.height` tall, vertically centred in
+        `box_height` if given; x is the left edge (or the box of `width` for CENTER/RIGHT). Returns the
+        text width."""
+        line_runs, line_widths = self._text_lines(text, font, color)
+        face = self.ui.font(font)
         total = max(line_widths, default=0)
         line_height = font.height
         top = y + ((box_height - line_height * len(line_runs)) / 2 if box_height else 0)
