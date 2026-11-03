@@ -57,7 +57,7 @@ local PREDICATES = {
 	SecretWhenUnitComparisonRestricted = { "unitRestricted", unit = true },
 	SecretWhenCooldownsRestricted = { "combat" },
 	SecretWhenAurasRestricted = { "combat" },
-	SecretWhenLossOfControlInfoRestricted = { "combat" },
+	SecretWhenLossOfControlInfoRestricted = { "combat", unit = true },
 	SecretWhenTotemSlotSecret = { "combat" },
 	SecretWhenEncounterEvent = { "encounter" },
 	SecretInChatMessagingLockdown = { "chatLockdown" },
