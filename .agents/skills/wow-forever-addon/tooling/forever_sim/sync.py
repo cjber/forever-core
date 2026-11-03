@@ -37,6 +37,12 @@ def digest(path: Path) -> str:
 SUFFIXES = {".lua", ".py", ".toc"}
 
 
+def copy_preserving_mode(source: Path, target: Path) -> None:
+    """Copy a file and carry its mode across, so a vendored executable stays executable."""
+    shutil.copyfile(source, target)
+    shutil.copymode(source, target)
+
+
 def sources(directory: Path) -> list[Path]:
     return sorted(
         path
@@ -134,7 +140,7 @@ def update(source: Path, revision: str | None) -> int:
             stale.unlink()
     for name in expected:
         (PACKAGE / name).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(directory / name, PACKAGE / name)
+        copy_preserving_mode(directory / name, PACKAGE / name)
     write_manifest(PACKAGE, head)
     print(f"forever_sim: updated {len(expected)} files to {head}")
     return 0
