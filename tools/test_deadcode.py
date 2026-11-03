@@ -21,6 +21,18 @@ class CoreWorktreeTest(unittest.TestCase):
             with patch.object(deadcode, "ROOT", root):
                 self.assertEqual(len(deadcode.scan()), 2)
 
+    def test_scratch_checkouts_are_not_scanned_as_source(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+            (root / "UI").mkdir()
+            (root / "UI/Main.lua").write_text("local value = true\n")
+            checkout = root / ".speedpatrol/runs/checkouts/base/tests"
+            checkout.mkdir(parents=True)
+            (checkout / "fixture.lua").write_text("fixture = true\n")
+            with patch.object(deadcode, "ROOT", root):
+                self.assertEqual(deadcode.scan(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
