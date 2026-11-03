@@ -22,7 +22,7 @@ local _, ns = ...
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
-local MANAGER_VERSION = 1
+local MANAGER_VERSION = 2
 
 local MAX_PAYLOAD = 128
 local MAX_METRIC = 32
