@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Map drawings share a canvas that leaves Blizzard's map tables untouched.** Adventure Guide and Legacy can draw, scale and interact with their own pins through the same helper, including each pin's right-click policy, thanks to cjber for the report.
+
 ## [0.4.7] - 2026-11-03
 
 - **Legacy dialog chrome cannot bypass the asset check through native names.** The shared checker rejects templates and backdrop globals that select the old loose textures, including Lua identifiers and XML backdrop values.

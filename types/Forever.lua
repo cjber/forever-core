@@ -27,6 +27,8 @@
 ---@field Sort fun(modules: ForeverTrackerModule[])
 
 ---@class ForeverTrackerNamespace
+---@field MapCanvas? ForeverMapCanvas
+---@field SafeCall fun(label: string, fn: function, ...: any): boolean, ...any
 ---@field L table<string, string>
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerLock? table

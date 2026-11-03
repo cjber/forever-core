@@ -1,5 +1,20 @@
 ---@meta
 
+---@type {GetCurrentStyle: fun(): number}?
+C_InputInterfaceStyle = nil
+---@type Frame
+SoftCursor = nil
+---@type table<string, fun(map: ForeverCanvasMap): {x: number, y: number, kind: string}[]>
+ForeverMapMarkers = nil
+---@param value number
+---@return number
+function Saturate(value) end
+---@param a number
+---@param b number
+---@param t number
+---@return number
+function Lerp(a, b, t) end
+
 -- FrameXML surfaces the shared files read that Ketho's pinned Core annotations do not carry. Signatures follow
 -- Gethe/wow-ui-source forever. Consumers declare the same globals in their own types/; these declarations never load
 -- in the client.
