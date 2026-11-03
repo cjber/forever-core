@@ -94,6 +94,20 @@ class TocTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "useGitIgnore"):
             toc.check_coverage(root)
 
+    def test_tooling_tocs_are_ignored_but_nested_child_addons_are_kept(self):
+        root = self.make(
+            {
+                "A.toc": "a.lua\n",
+                "a.lua": "",
+                "Child/Child.toc": "child.lua\n",
+                "Child/child.lua": "",
+                "tools/forever_sim/stubs/Auctionator/Auctionator.toc": "Auctionator.lua\n",
+                "tools/forever_sim/stubs/Auctionator/Auctionator.lua": "",
+            }
+        )
+        names = [p.relative_to(root.resolve()).as_posix() for p in toc.runtime_files(root)]
+        self.assertEqual(names, ["Child/child.lua", "a.lua"])
+
 
 if __name__ == "__main__":
     unittest.main()

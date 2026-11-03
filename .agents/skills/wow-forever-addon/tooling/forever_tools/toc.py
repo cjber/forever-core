@@ -6,6 +6,7 @@ from pathlib import Path
 
 LOAD_TAGS = {"Include", "Script"}
 PRELOAD_BYTES = 10 * 1024 * 1024
+NON_RUNTIME_TOC_ROOTS = {"tools", "tests"}
 
 
 def _toc_files(root: Path) -> list[Path]:
@@ -13,6 +14,7 @@ def _toc_files(root: Path) -> list[Path]:
         toc
         for toc in sorted(root.rglob("*.toc"))
         if not any(part.startswith(".") or part == "node_modules" for part in toc.relative_to(root).parts)
+        and toc.relative_to(root).parts[0] not in NON_RUNTIME_TOC_ROOTS
     ]
 
 
