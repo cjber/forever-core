@@ -1,7 +1,23 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from forever_tools import multivalue, taint
 from forever_tools.lua import LuaSyntaxError, tokenize
+
+
+class ScanRootsTest(unittest.TestCase):
+    def test_absolute_cache_parent_does_not_exclude_the_requested_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / ".cache" / "checkout"
+            root.mkdir(parents=True)
+            source = root / "Core.lua"
+            source.write_text("return select(2, ...)\n")
+            nested = root / ".cache" / "ignored.lua"
+            nested.parent.mkdir()
+            nested.write_text("return select(2, ...)\n")
+            self.assertEqual(multivalue.lua_files([root]), [source])
+            self.assertEqual(multivalue.lua_files([source]), [source])
 
 
 def messages(found):

@@ -293,7 +293,7 @@ def lua_files(paths: list[Path], excluded: frozenset[str] = EXCLUDED_DIRS) -> li
             file
             for path in paths
             for file in (path.rglob("*.lua") if path.is_dir() else [path])
-            if not excluded.intersection(file.parts)
+            if not excluded.intersection(file.relative_to(path).parts if path.is_dir() else (file.name,))
         }
     )
 
