@@ -89,6 +89,20 @@ class CoreWorktreeTest(unittest.TestCase):
                 markdown = {path.relative_to(root).as_posix() for path in deadcode.source_files("*.md")}
                 self.assertIn(".bugpatrol/instructions.md", markdown)
 
+    def test_fixture_tocs_cannot_mask_runtime_orphans(self):
+        for prefix in ("tools", "tests", "docs", ".agents", "reference"):
+            with self.subTest(prefix=prefix), tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+                root = Path(directory)
+                (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+                (root / "UI").mkdir()
+                (root / "UI/Main.lua").write_text("local value = true\n")
+                (root / "UI/Orphan.lua").write_text("local value = true\n")
+                fixture = root / prefix / "fixture.toc"
+                fixture.parent.mkdir(parents=True)
+                fixture.write_text("UI/Orphan.lua\n")
+                with patch.object(deadcode, "ROOT", root):
+                    self.assertIn(("UI/Orphan.lua", 1, "Lua file is not named by any TOC"), deadcode.scan())
+
     def test_generated_patrol_reports_are_not_reference_input(self):
         with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
             root = Path(directory)

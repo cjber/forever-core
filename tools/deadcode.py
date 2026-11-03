@@ -83,6 +83,8 @@ def scan():
 
     toc_entries = set()
     for toc in source_files("*.toc"):
+        if ignored(toc):
+            continue
         for line in toc.read_text(encoding="utf-8", errors="replace").splitlines():
             entry = line.split("#", 1)[0].strip().replace("\\", "/").lstrip("./")
             if entry.lower().endswith(".lua"):
