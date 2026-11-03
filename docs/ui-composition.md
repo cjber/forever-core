@@ -29,7 +29,7 @@ Record this table before implementation and beside every exact-asset mockup or c
 | `InsetFrameTemplate` | content inset | NineSlice layout | 1 when available | artwork clipped inside | frame | border above artwork |
 | inspected content icon | content box | subject file or atlas | resolved | proven crop only | exactly one owner | artwork, then one frame |
 
-The inspected FrameXML extract is `1.60.1.69913` (`~/drive/proj/wow/wow-handoff/blizzard-ui/version.txt`, a local evidence checkout); confirm any newer client differences during implementation. The separate UI art evidence pin remains `1.60.1.70124`. A generated data refresh may name `1.60.1.70753`, but that does not change the art pin or justify a speculative cache bump.
+The inspected FrameXML extract is [1.60.1.69913 at `70ef1b2`](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/version.txt). [TabSystem templates](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/Interface/AddOns/Blizzard_SharedXML/Shared/TabSystem/TabSystemTemplates.xml) and [panel templates](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/Interface/AddOns/Blizzard_SharedXML/Mainline/SharedUIPanelTemplates.xml) are reproducible upstream evidence. This older source extract supports discovery; confirm the selected template behavior in the target client build before approving implementation. The separate UI art evidence pin remains `1.60.1.70124`. A generated data refresh may name `1.60.1.70753`, but that does not change the art pin or justify a speculative cache bump.
 
 ## Full sweep
 
