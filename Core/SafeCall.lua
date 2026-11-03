@@ -11,6 +11,7 @@ local STACK_LINES = 4
 ---@class ForeverCaughtError
 ---@field label string where it was caught, e.g. "route listener"
 ---@field message string the error, cut to 300 characters
+---@field rawMessage string the full error, for exact deduplication
 ---@field stack string up to four stack lines, outermost last
 ---@field count integer how many times this label and message were caught this session
 
@@ -39,7 +40,8 @@ ns.CutText = Cut
 ---@param message any
 ---@param stack? string
 function ns.RecordError(label, message, stack)
-	message = Cut(tostring(message), MAX_MESSAGE)
+	local rawMessage = tostring(message)
+	message = Cut(rawMessage, MAX_MESSAGE)
 	local lines = {}
 	for line in (stack or ""):gmatch("[^\n]+") do
 		line = strtrim(line)
@@ -50,12 +52,12 @@ function ns.RecordError(label, message, stack)
 	end
 	local entry
 	for index, old in ipairs(caught) do
-		if old.label == label and old.message == message then
+		if old.label == label and old.rawMessage == rawMessage then
 			entry = table.remove(caught, index)
 			break
 		end
 	end
-	entry = entry or { label = label, message = message, count = 0 }
+	entry = entry or { label = label, message = message, rawMessage = rawMessage, count = 0 }
 	entry.stack, entry.count = table.concat(lines, "\n"), entry.count + 1
 	caught[#caught + 1] = entry
 	if #caught > MAX_ERRORS then
@@ -71,6 +73,7 @@ function ns.CaughtErrors()
 		copies[index] = {
 			label = entry.label,
 			message = entry.message,
+			rawMessage = entry.rawMessage,
 			stack = entry.stack,
 			count = entry.count,
 		}

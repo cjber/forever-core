@@ -73,7 +73,9 @@ _G.C_AddOns = {
 		return 0
 	end,
 	GetAddOnInfo = function() end,
-	IsAddOnLoaded = function() return false end,
+	IsAddOnLoaded = function()
+		return false
+	end,
 }
 _G.GetBuildInfo = function()
 	return "1.0", "build", "", 16001
@@ -145,6 +147,21 @@ _G.BugGrabber.GetDB = function()
 end
 local duplicateText = reportText({})
 equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
+local sharedPrefix = ("same prefix "):rep(30)
+ns.RecordError("first", sharedPrefix .. "A", "stack")
+ns.RecordError("second", sharedPrefix .. "B", "stack")
+_G.BugGrabber.GetDB = function()
+	return {
+		{ message = sharedPrefix .. "A", counter = 1, session = 1 },
+		{ message = sharedPrefix .. "C", counter = 1, session = 1 },
+	}
+end
+local distinctText = reportText({})
+equal(
+	select(2, distinctText:gsub("Recent Lua errors %(BugGrabber%):", "")),
+	1,
+	"distinct long errors keep one external section"
+)
 
 equal(ns.Report.Command("unknown"), false, "unknown command remains for addon handler")
 equal(ns.Report.Command("report"), true, "report command handled")
