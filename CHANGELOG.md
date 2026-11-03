@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Legacy dialog chrome cannot bypass the asset check through native names.** The shared checker rejects templates and backdrop globals that select the old loose textures, including Lua identifiers and XML backdrop values.
 - **Simulator helpers pass consumer multi-value lint.** Explicit single-value argument counts preserve vararg behaviour when the simulator is vendored into an addon.
 
 - **Native panel composition has one lockup and one chrome owner.** The shared guidance now records

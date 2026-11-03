@@ -63,6 +63,45 @@ LEGACY_BUTTON_TEMPLATES = frozenset(
         "UIPanelButtonNoTooltipResizeToFitTemplate",
     }
 )
+# Named indirections verified in the pinned Forever FrameXML, including virtual descendants.
+LEGACY_CHROME_TEMPLATES = frozenset(
+    {
+        "AddFriendButtonTemplate",
+        "AdventuresRewardsScreenTemplate",
+        "AuthChallengeButtonTemplate",
+        "CRFManagerFilterButtonTemplate",
+        "DialogBorderDarkTemplate",
+        "DialogBorderTemplate",
+        "DialogBoxFrame",
+        "DialogButtonDisabledTexture",
+        "DialogButtonHighlightTexture",
+        "DialogButtonNormalTexture",
+        "DialogButtonPushedTexture",
+        "IslandsQueueScreenDifficultySelector",
+        "QuestSessionDialogButtonTemplate",
+        "SecureDialogBorderDarkTemplate",
+        "SecureDialogBorderTemplate",
+        "SecureTransferButtonTemplate",
+        "StaticPopupButtonTemplate",
+        "StoreButtonSmallTemplate",
+        "TableAttributeDisplayTemplate",
+        "UIPanelButtonDisabledDownTexture",
+        "WowTokenButtonTemplate",
+    }
+)
+LEGACY_BACKDROPS = frozenset(
+    {
+        "BACKDROP_CHARACTER_CREATE_TOOLTIP_32_32",
+        "BACKDROP_DARK_DIALOG_32_32",
+        "BACKDROP_DIALOG_32_32",
+        "BACKDROP_DIALOG_EDGE_32",
+        "BACKDROP_GOLD_DIALOG_32_32",
+        "BACKDROP_MISTS_CHARACTER_CREATE_TOOLTIP_32_32",
+        "BACKDROP_TUTORIAL_16_16",
+        "BACKDROP_WATERMARK_DIALOG_0_16",
+        "BACKDROP_WRATH_CHARACTER_CREATE_TOOLTIP_32_32",
+    }
+)
 # These are loose pre-atlas chrome families, not content icons in Interface/Icons.
 LEGACY_LOOSE = re.compile(
     r"^interface/(?:buttons/ui-(?:panel-button|silverbuttonlg|dialogbox-(?:button|goldbutton))"
@@ -84,6 +123,10 @@ def problem(value: str) -> str | None:
     for template in normal.split(","):
         if template.strip() in LEGACY_BUTTON_TEMPLATES:
             return "legacy button template; use SharedButtonSmallTemplate (Forever atlas set 1)"
+        if template.strip() in LEGACY_CHROME_TEMPLATES:
+            return "legacy chrome template; use the approved Forever atlas/template family"
+    if normal in LEGACY_BACKDROPS:
+        return "legacy backdrop global; use the approved Forever atlas/template family"
     if re.match(r"^_?128-GoldRedButton|^(?:SharedGoldRed|BigGoldRedThreeSlice)", normal, re.I):
         return "shop button family; use SharedButtonSmallTemplate and the set-1 128-RedButton atlas"
     if LEGACY_LOOSE.match(normal) or re.match(
@@ -98,8 +141,8 @@ def problem(value: str) -> str | None:
     return None
 
 
-def literals(source: str, suffix: str) -> list[tuple[int, str]]:
-    """Read literals without treating comments as references; retain f-string fragments."""
+def references(source: str, suffix: str) -> list[tuple[int, str]]:
+    """Read literals and known backdrop identifiers, excluding comments; retain f-string fragments."""
     if suffix == ".py":
         tree = ast.parse(source)
         values = [
@@ -107,6 +150,12 @@ def literals(source: str, suffix: str) -> list[tuple[int, str]]:
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         ]
+
+        values.extend(
+            (node.lineno, node.id)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id in LEGACY_BACKDROPS
+        )
 
         def constant(node):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -132,6 +181,8 @@ def literals(source: str, suffix: str) -> list[tuple[int, str]]:
     values = []
     tokens = tokenize(source)[0]
     for index, token in enumerate(tokens):
+        if token.kind == "name" and token.text in LEGACY_BACKDROPS:
+            values.append((token.line, token.text))
         if token.kind != "string":
             continue
         opening = LONG_OPEN.match(token.text)
@@ -152,7 +203,7 @@ def check(source: str, suffix: str = ".lua") -> list[tuple[int, str]]:
     return sorted(
         {
             (line, f"asset-blacklist: {value}: {reason}")
-            for line, value in literals(source, suffix)
+            for line, value in references(source, suffix)
             if (reason := problem(value))
         }
     )
