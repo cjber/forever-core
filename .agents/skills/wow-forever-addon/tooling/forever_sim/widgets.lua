@@ -1659,14 +1659,22 @@ function M.build(sim)
 		return scrollRange(self, "h")
 	end
 	impl.ScrollFrame.SetVerticalScroll = function(self, offset)
-		st(self).vscroll = offset
+		local s = st(self)
+		if (Secret.unwrap(s.vscroll) or 0) == Secret.unwrap(offset) then
+			return
+		end
+		s.vscroll = offset
 		fire(self, "OnVerticalScroll", offset)
 	end
 	impl.ScrollFrame.GetVerticalScroll = function(self)
 		return st(self).vscroll or 0
 	end
 	impl.ScrollFrame.SetHorizontalScroll = function(self, offset)
-		st(self).hscroll = offset
+		local s = st(self)
+		if (Secret.unwrap(s.hscroll) or 0) == Secret.unwrap(offset) then
+			return
+		end
+		s.hscroll = offset
 		fire(self, "OnHorizontalScroll", offset)
 	end
 	impl.ScrollFrame.GetHorizontalScroll = function(self)
