@@ -789,7 +789,7 @@ function M.build(sim)
 		return s.protected == true, s.protected == true
 	end
 	impl.ScriptRegion.CanChangeProtectedState = function()
-		return not Taint.current and not sim.inCombat
+		return not Taint.current and not sim.combatLockdown
 	end
 	impl.ScriptRegion.GetSourceLocation = function(self)
 		return st(self).source
@@ -1192,7 +1192,7 @@ function M.build(sim)
 	end
 	impl.Frame.SetAttribute = function(self, name, value)
 		local s = st(self)
-		if s.protected and Taint.current and sim.inCombat then
+		if s.protected and Taint.current and sim.combatLockdown then
 			sim.blocked(self, "SetAttribute")
 			return
 		end
@@ -2154,7 +2154,7 @@ function M.build(sim)
 					end
 				end
 			end
-			if protected and s.protected and Taint.current and sim.inCombat then
+			if protected and s.protected and Taint.current and sim.combatLockdown then
 				sim.blocked(self, name)
 				return
 			end

@@ -601,7 +601,7 @@ function M.build(sim)
 		return unpack(E.listeners(event))
 	end
 	G.InCombatLockdown = function()
-		return sim.inCombat == true
+		return sim.combatLockdown == true
 	end
 	G.GetLocale = function()
 		return sim.locale

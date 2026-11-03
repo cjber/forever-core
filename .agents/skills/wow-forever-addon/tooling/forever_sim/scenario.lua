@@ -156,10 +156,12 @@ function M.install(Sim)
 	function Sim:enterCombat()
 		self.inCombat = true
 		self.events.fire("PLAYER_REGEN_DISABLED")
+		self.combatLockdown = true
 		self:advance(0.1)
 	end
 
 	function Sim:leaveCombat()
+		self.combatLockdown = false
 		self.inCombat = false
 		self.events.fire("PLAYER_REGEN_ENABLED")
 		self:advance(0.1)
