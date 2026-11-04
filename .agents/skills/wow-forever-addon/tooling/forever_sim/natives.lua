@@ -181,6 +181,13 @@ function M.build(sim)
 			end,
 		})
 	G.addframetext = function() end
+	-- Empty quest fixtures still use the native quest-map refresh and sorting entry points.
+	G.SortQuestSortTypes = function() end
+	G.SortQuests = function() end
+	G.QuestMapUpdateAllQuests = function()
+		return 0
+	end
+	G.QuestPOIUpdateIcons = function() end
 	G.SpellCanTargetQuest = function()
 		return false
 	end
