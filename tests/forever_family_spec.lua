@@ -545,11 +545,11 @@ check(linkWindow.width == 400, "a hidden button takes no room")
 -- keeps on its own table (one name, listed once for Escape), and an addon still holding the older copy's view is
 -- served by the newer one.
 Client()
-local v3view = Load({ L = PhraseLocale() })
-local v3 = env.ForeverFamily
-v3view.ShowLink(nil, nil, "TweaksForever")
-local v3window = v3.window
-check(v3window == named.ForeverFamilyLink and v3window:IsShown(), "the window is kept on the module")
+local currentView = Load({ L = PhraseLocale() })
+local current = env.ForeverFamily
+currentView.ShowLink(nil, nil, "TweaksForever")
+local currentWindow = current.window
+check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
 local served = {}
 local v5 = {
 	VERSION = 5,
@@ -562,12 +562,12 @@ local v5 = {
 	end,
 }
 env.ForeverFamily = v5
-check(v3view.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever", "a newer copy serves ShowLink")
-check(v3.Once("Test.later") == "v5", "and Once, so there is one record")
+check(currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever", "a newer copy serves ShowLink")
+check(current.Once("Test.later") == "v5", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
 local olderWindow = Create("Frame")
-env.ForeverFamily = { VERSION = 2, window = olderWindow }
+env.ForeverFamily = { VERSION = 3, window = olderWindow }
 env.UISpecialFrames[1] = "ForeverFamilyLink"
 local takeoverView = Load({ L = PhraseLocale() })
 takeoverView.ShowLink(nil, nil, "TweaksForever")
