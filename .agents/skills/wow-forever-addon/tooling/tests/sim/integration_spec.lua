@@ -95,6 +95,48 @@ local function mapScenario(addon)
 	return sim
 end
 
+test("native map API opens, closes and reopens with visibility callbacks", function()
+	local sim = Sim.new()
+	sim.world.maps[1454] = { name = "Orgrimmar", parent = 1411 }
+	sim.world.maps[1411] = { name = "Durotar", parent = 1414 }
+	sim.world.maps[1414] = { name = "Kalimdor", parent = 947, mapType = 2 }
+	sim:login()
+	for _, err in ipairs(sim:takeErrors()) do
+		assert(not err.message:find("QuestMapFrame", 1, true), err.message)
+	end
+	local G = sim.G
+	local shows, hides = 0, 0
+	local opened = {}
+	local listener = G.CreateFrame("Frame")
+	listener:RegisterEvent("WORLD_MAP_OPEN")
+	listener:SetScript("OnEvent", function(_, event, mapID)
+		eq(event, "WORLD_MAP_OPEN", "documented map event")
+		opened[#opened + 1] = mapID
+	end)
+	G.WorldMapFrame:HookScript("OnShow", function()
+		shows = shows + 1
+	end)
+	G.WorldMapFrame:HookScript("OnHide", function()
+		hides = hides + 1
+	end)
+	for cycle = 1, 2 do
+		local mapID = cycle == 1 and 1454 or 1411
+		sim.taint.dispatch("MapCaller", function()
+			G.C_Map.OpenWorldMap(mapID)
+			eq(opened[cycle], mapID, "API dispatches synchronous map event")
+			eq(sim.taint.current, "MapCaller", "API restores caller taint")
+		end)
+		sim:advance(0.1)
+		eq(G.WorldMapFrame:IsVisible(), true, "API opens map")
+		eq(G.WorldMapFrame:GetMapID(), mapID, "requested map selected")
+		eq(shows, cycle, "OnShow once per opening")
+		sim:closeWorldMap()
+		eq(G.WorldMapFrame:IsVisible(), false, "map closes")
+		eq(hides, cycle, "OnHide once per closing")
+		sim:expectNoErrors()
+	end
+end)
+
 test("a map data provider added from addon code is gamepad-interface taint, and blocks the gamepad", function()
 	local sim = mapScenario("SimMapProvider")
 	local found = sim:gamepadTaint("SimMapProvider")
