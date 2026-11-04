@@ -4,6 +4,15 @@ local t = harness.new({ deferReady = true, headerShown = true })
 local check, drain = t.check, t.drain
 local host, grip, native, parent = t.host, t.grip, t.native, t.parent
 local first, second = t.first, t.second
+-- The native tracker is protected: the host reads it and never writes it. Blizzard's own moves set `point` directly.
+for _, method in ipairs({ "SetPoint", "ClearAllPoints", "SetClampedToScreen" }) do
+	native[method] = function()
+		error("the host wrote the protected native tracker: " .. method)
+	end
+end
+local function MoveNative(...)
+	native.point = { ... }
+end
 
 check(t.pending() == 0, "must not render before player and saved data are ready")
 check(
@@ -18,12 +27,10 @@ drain()
 check(first.point[5] == 0 and second.point[5] == -90, "sections follow uiOrder")
 check(t.nativeHeader.point[2] == native, "native header stays anchored to its native parent")
 check(first.point[5] == 0, "visible native header reserves no top gap")
+check(native.point[1] == "TOPRIGHT" and native.point[5] == -100, "the native tracker keeps its own slot")
 check(
-	native.point[5]
-		== (host:GetBottom() * host:GetEffectiveScale() / parent:GetEffectiveScale() - parent:GetHeight())
-			* parent:GetEffectiveScale()
-			/ native:GetEffectiveScale(),
-	"native frame top meets the host bottom"
+	host.point[1] == "TOP" and host.point[2] == native.NineSlice and host.point[3] == "BOTTOM" and host.point[5] == 0,
+	"the column hangs from the bottom of the native quests"
 )
 t.native.headerWanted = false
 t.updateOrder()
@@ -36,7 +43,7 @@ check(t.nativeHeader.point[2] == native, "client update re-anchors header to nat
 host:MarkDirty()
 drain()
 check(t.nativeHeader.point[2] == native, "layouts leave header anchored to native parent")
-check(second.available == 518, "remaining space follows screen geometry")
+check(math.abs(second.available - (540 - 24 / 1.25 - 90)) < 1e-9, "remaining space runs from the quests to the screen")
 check(native:GetHeight() == 300, "native viewport preserves an externally sized height before clamping")
 native:SetHeight(420)
 native.scripts.OnSizeChanged(native)
@@ -46,24 +53,28 @@ native:SetHeight(700)
 native.scripts.OnSizeChanged(native)
 drain()
 check(native:GetHeight() == 700, "native container keeps its externally sized height")
-native:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+MoveNative("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
 t.eventRegistry:TriggerEvent("EditMode.SavedLayouts")
 drain()
-check(native.point[1] == "TOPLEFT" and native.point[2] == parent, "private host repairs native reanchor independently")
+check(
+	native.point[5] == 0 and host.point[2] == native.NineSlice,
+	"a saved layout moves the tracker and the column follows it"
+)
 -- The managed frame layout or a UI addon can put the native frame back in its saved slot with no event at all.
 local probe = t.probe()
 check(probe ~= nil and probe ~= host, "an addon-owned probe follows the native frame's top left corner")
-native:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -100)
+MoveNative("TOPRIGHT", parent, "TOPRIGHT", 0, -100)
 probe.scripts.OnSizeChanged(probe)
 check(t.pending() == 1, "a silent native reanchor reflows the column")
 drain()
-check(native.point[1] == "TOPLEFT" and native.point[2] == parent, "the silent reanchor is restacked below the column")
-probe.scripts.OnSizeChanged(probe)
-check(t.pending() == 0, "the host's own restack does not queue another reflow")
+check(
+	native.point[5] == -100 and host.point[2] == native.NineSlice,
+	"the silent reanchor leaves the tracker where it was put"
+)
 t.editMode.active, t.editMode.shown = true, true
 t.eventRegistry:TriggerEvent("EditMode.Enter")
 check(host.shown == false, "private tracker hides while Edit Mode owns native slot")
-check(native.clamped == true, "Edit Mode gets the native frame's screen clamp back")
+check(native.clamped == true, "the native frame keeps its screen clamp")
 check(probe.point == nil, "Edit Mode disconnects the native geometry probe")
 check(host.point[2] == parent, "hidden companion no longer depends on the native tracker's anchors")
 drain()
@@ -81,8 +92,7 @@ t.eventRegistry:TriggerEvent("EditMode.Exit")
 drain()
 check(host.shown == true, "private tracker returns after Edit Mode")
 check(probe.point[2] == native, "leaving Edit Mode reconnects the native geometry probe")
-check(native.clamped == false, "restacking after Edit Mode unclamps the native frame again")
-check(native.point[1] == "TOPLEFT" and native.point[2] == parent, "native objectives stay independently anchored")
+check(native.clamped == true and native.point[1] == "TOPRIGHT", "leaving Edit Mode leaves the native tracker alone")
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local attachmentChanges = 0
 t.ns.TrackerHost.OnAttachmentChanged(function(value)

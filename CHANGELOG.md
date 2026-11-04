@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **The tracker column stays still through combat.** Entering combat no longer lays the column out again, and a redraw in combat keeps every section whole: the last section used to lose its last line, or vanish, by a rounding error each time, so the column jumped in height until combat ended.
+- **The tracker column stays still through combat, quests first.** The column no longer moves the game's quest tracker: the All Objectives header and the quests keep their slot, and the Forever sections read below them, in combat and out. Out of combat the sections used to sit above the quests and swap below them as a fight began, and a redraw in combat could drop the last section's last line.
 
 ## [0.4.11] - 2026-11-04
 

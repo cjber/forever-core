@@ -138,11 +138,14 @@ function harness.new(options)
 	nativeHeader.MinimizeButton = minimizeButton
 	native.Header = nativeHeader
 	native.headerWanted = options.headerShown == true
-	-- The native container anchors this to the bottom of its last shown module; scenarios set it to the content bottom.
+	-- The native container anchors this to the bottom of its last shown module: here 100 px of quests below its top.
 	native.NineSlice = {
-		bottom = 0,
+		bottom = 540,
 		GetBottom = function(self)
 			return self.bottom
+		end,
+		GetEffectiveScale = function()
+			return native:GetEffectiveScale()
 		end,
 	}
 	-- Blizzard's tracker re-anchors its header at the end of every update.

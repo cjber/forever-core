@@ -248,19 +248,16 @@ local function scenario(options)
 	}
 end
 
+-- The native tracker keeps its own slot and the column starts where the native quests end.
 local function stacked(s, label)
-	local _, slotTop = bounds({
-		point = s.slot,
-		width = s.native.width,
-		height = s.native.height,
-		GetEffectiveScale = function()
-			return s.native:GetEffectiveScale()
-		end,
-	})
-	local _, hostTop, _, hostHeight = bounds(s.host)
-	local _, nativeTop = bounds(s.native)
-	check(near(hostTop, slotTop), label .. ": the column starts in the native slot")
-	check(near(nativeTop, hostTop - hostHeight), label .. ": the native tracker stacks below the column")
+	local p, rel, rp, x, y = s.native:GetPoint()
+	check(
+		p == s.slot[1] and rel == s.slot[2] and rp == s.slot[3] and x == s.slot[4] and y == s.slot[5],
+		label .. ": the native tracker keeps its slot"
+	)
+	local _, _, _, _, contentBottom = bounds(s.native.NineSlice)
+	local _, hostTop = bounds(s.host)
+	check(near(hostTop, contentBottom), label .. ": the column starts below the native quests")
 end
 
 for _, scale in ipairs({ 0.75, 1, 1.25 }) do
@@ -279,15 +276,15 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 				return result
 			end
 
-			-- Without Questie nothing changes: the column takes the native slot and the native tracker stacks below.
+			-- Without Questie nothing changes: the native tracker keeps its slot and the column reads below its quests.
 			stacked(scenario(base), label .. " no Questie")
 
-			-- Hiding the journey section leaves no companion content, so the native tracker is returned to its own slot.
+			-- Hiding the journey section leaves no companion content: the column hides and the native tracker keeps its slot.
 			local empty = scenario(base)
 			empty.module.empty = true
 			empty.host:MarkDirty()
 			empty.drain()
-			check(not empty.host:IsShown(), label .. ": no journey section releases the default tracker anchor")
+			check(not empty.host:IsShown(), label .. ": no journey section hides the column")
 			check(
 				empty.native.point[1] == empty.slot[1]
 					and empty.native.point[2] == empty.slot[2]
@@ -361,7 +358,7 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 			s.drain()
 			check(clears(s.host, s.questie), label .. ": the column follows the list when the drag ends")
 
-			-- Questie hides its list: the column returns to the native slot.
+			-- Questie hides its list: the column returns below the native quests.
 			s.questie:Hide()
 			s.native.shown = true
 			s.questie.hooks.OnHide(s.questie)

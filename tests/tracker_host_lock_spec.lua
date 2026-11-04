@@ -127,6 +127,9 @@ native.NineSlice = {
 	GetBottom = function()
 		return 0
 	end,
+	GetEffectiveScale = function()
+		return 1
+	end,
 }
 local nativeHeader = frame()
 nativeHeader.MinimizeButton = frame()

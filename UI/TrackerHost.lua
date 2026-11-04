@@ -62,81 +62,16 @@ end
 local attached
 local dragging = false
 local attachmentCallbacks = {}
--- Preserve Blizzard's edit-mode placement for the combined column. The
--- private host takes the native frame's original slot; the native frame is
--- placed below it after the private content has laid out. This keeps every
--- section in one column without registering our frames with Blizzard's
--- secure module collection.
-local nativeAnchor
-local appliedNativeAnchor
--- The saved slot ReleaseNative last wrote, so the probe does not reflow for our own handback.
-local releasedNativeAnchor
--- The handback is ignored only once: a later move back onto that slot is someone else's move and reflows.
-local releasedNativeProbe = false
--- The column's height and header room when the native frame was last stacked below it: in combat the native frame
--- cannot move, so the sections redraw within this.
-local stackedHeight, stackedReserve = 1, 0
--- Sub-pixel room the in-combat redraw adds to that height. The stack is a running sum of fractional section heights;
--- subtracting the earlier sections back out of it can leave the last one a rounding error short of its own height,
--- and Blizzard's modules fit a block only when it fits exactly, so every in-combat layout dropped the last section's
--- last block, or the whole section, and the column jumped. Half a pixel absorbs the rounding and is no real growth.
-local FIT_SLACK = 0.5
--- Whether the native frame was clamped to the screen before we stacked it below our column.
-local nativeClamped
-
--- Hands the native frame's screen clamp back whenever it stops being stacked under our column.
-local function RestoreNativeClamp()
-	if nativeClamped then
-		ObjectiveTrackerFrame:SetClampedToScreen(true)
-	end
-	nativeClamped = nil
-end
-local function SameAnchor(anchor, point, relativeTo, relativePoint, x, y)
-	return anchor
-		and anchor.point == point
-		and anchor.relativeTo == relativeTo
-		and anchor.relativePoint == relativePoint
-		and math.abs(anchor.x - (x or 0)) <= 0.5
-		and math.abs(anchor.y - (y or 0)) <= 0.5
-end
-local function IsAppliedNativeAnchor(point, relativeTo, relativePoint, x, y)
-	return SameAnchor(appliedNativeAnchor, point, relativeTo, relativePoint, x, y)
-end
+-- The native tracker is protected and keeps the slot Blizzard, Edit Mode or a UI addon gave it: this host never moves
+-- it, in combat or out. The private column reads below it, so the header and the game's quests come first and the
+-- Forever sections follow, and the same placement runs in and out of combat, so entering or leaving combat moves
+-- nothing. The sections stay outside Blizzard's secure module collection.
 local function StackPoints(point)
 	if point == "CENTER" or point == "TOP" or point == "BOTTOM" then
 		return "TOP", "BOTTOM"
 	end
 	local horizontal = point:find("RIGHT", 1, true) and "RIGHT" or "LEFT"
 	return "TOP" .. horizontal, "BOTTOM" .. horizontal
-end
--- Whether the native frame is still where our last restack put it (or on a legacy anchor to the host), rather than
--- somewhere Blizzard, Edit Mode or a UI addon has moved it since.
-local function NativeStillOurs(point, relativeTo, relativePoint, x, y)
-	return nativeAnchor ~= nil and (relativeTo == host or IsAppliedNativeAnchor(point, relativeTo, relativePoint, x, y))
-end
-local function CaptureNativeAnchor()
-	local point, relativeTo, relativePoint, x, y = ObjectiveTrackerFrame:GetPoint()
-	if NativeStillOurs(point, relativeTo, relativePoint, x, y) then
-		return
-	end
-	point, y = point or "TOPRIGHT", y or 0
-	local saved = { point = point, relativeTo = relativeTo or UIParent, relativePoint = relativePoint or "TOPRIGHT" }
-	saved.x, saved.y = x or 0, y
-	-- The column stacks downward from this anchor, so it must be the tracker's top edge. A tracker Edit Mode placed
-	-- by its centre or bottom edge would otherwise start the column at that point and push everything off below it.
-	if not point:find("TOP", 1, true) then
-		local height = ObjectiveTrackerFrame:GetHeight() or 0
-		y = y + (point:find("BOTTOM", 1, true) and height or height / 2)
-		point = StackPoints(point)
-	end
-	nativeAnchor = {
-		point = point,
-		relativeTo = relativeTo or UIParent,
-		relativePoint = relativePoint or "TOPRIGHT",
-		x = x or 0,
-		y = y,
-		saved = saved,
-	}
 end
 host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
 local function MatchNativeScale()
@@ -149,16 +84,6 @@ local function MatchNativeScale()
 	end
 end
 MatchNativeScale()
--- The native tracker's saved offsets are in its own scale. The private host carries the user's tracker
--- scale on top of that, so convert them to keep the same screen placement and only scale the content.
-local function NativeRatio()
-	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-	local hostScale = host:GetEffectiveScale()
-	if nativeScale and hostScale and hostScale > 0 then
-		return nativeScale / hostScale
-	end
-	return 1
-end
 host:SetWidth(ObjectiveTrackerFrame:GetWidth())
 host:SetHeight(1)
 host:SetMovable(true)
@@ -303,20 +228,7 @@ local function AvoidMinimap(point)
 		return
 	end
 	host:ClearAllPoints()
-	-- Blizzard can temporarily leave the protected frame anchored to our host. Never
-	-- anchor back to it in that state: use the saved Edit Mode slot to avoid a cycle.
-	local _, relativeTo = ObjectiveTrackerFrame:GetPoint()
-	if relativeTo == host and nativeAnchor then
-		local direction = point:find("RIGHT", 1, true) and -1 or 1
-		local ratio = NativeRatio()
-		host:SetPoint(
-			nativeAnchor.point,
-			nativeAnchor.relativeTo,
-			nativeAnchor.relativePoint,
-			nativeAnchor.x * ratio + direction * (host:GetWidth() + 8),
-			nativeAnchor.y * ratio
-		)
-	elseif point:find("LEFT", 1, true) then
+	if point:find("LEFT", 1, true) then
 		host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
 	else
 		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
@@ -377,14 +289,6 @@ end
 
 -- Native methods remain untouched so controller and combat paths retain their secure execution.
 local nativeHeader = ObjectiveTrackerFrame.Header --[[@as ForeverNativeTrackerHeader?]]
-local function NativeHeaderShown()
-	if not nativeHeader or not ObjectiveTrackerFrame:IsShown() or not nativeHeader:IsShown() then
-		return false
-	end
-	-- IsVisible also covers an ancestor the client or another addon has hidden, which IsShown on the header alone
-	-- would miss. The harness frames model it the same way.
-	return nativeHeader.IsVisible == nil or nativeHeader:IsVisible()
-end
 
 local function NativeCollapsed()
 	return ObjectiveTrackerFrame.isCollapsed == true
@@ -416,30 +320,12 @@ local function LayoutModules(width, available, reserve)
 	host:SetHeight(math.max(1, height))
 	return hasSections
 end
--- Hands the native frame back to the slot Blizzard, Edit Mode or a UI addon gave it, clamp included, when it is still
--- where our last restack left it. One moved since is already in someone else's hands and stays where it is. Out of
--- combat only: the native frame is protected.
-local function ReleaseNative()
-	if NativeStillOurs(ObjectiveTrackerFrame:GetPoint()) then
-		ObjectiveTrackerFrame:ClearAllPoints()
-		local saved = nativeAnchor.saved
-		ObjectiveTrackerFrame:SetPoint(saved.point, saved.relativeTo, saved.relativePoint, saved.x, saved.y)
-		releasedNativeAnchor, releasedNativeProbe = saved, true
-	end
-	appliedNativeAnchor = nil
-	RestoreNativeClamp()
-end
 -- Switches the host between attached and detached when the settings or combat state allow, and returns the settings
 -- that chose the mode.
 local function ApplyAttachment()
 	local settings = Settings()
 	local desired = settings.attached ~= false
-	if attached == nil then
-		attached = desired
-	elseif not InCombatLockdown() and desired ~= attached then
-		if not desired then
-			ReleaseNative()
-		end
+	if attached == nil or not InCombatLockdown() then
 		attached = desired
 	end
 	return settings
@@ -477,115 +363,10 @@ local function LayoutDetached(settings)
 	host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 end
 
--- In combat: the native tracker is protected, so the private column lives around it rather than restacking it.
-local function LayoutInCombat()
-	-- The native tracker is protected: in combat it cannot be restacked below our column. The header is not
-	-- protected and nothing protected anchors to it, so it stays at the top of our column. Only Blizzard moving
-	-- the native frame itself sends us to the one-column fallback below its content.
-	if appliedNativeAnchor and IsAppliedNativeAnchor(ObjectiveTrackerFrame:GetPoint()) then
-		-- Still stacked: the sections follow their content within the height the stack gave them (less the last
-		-- section's 10px gap, which LayoutModules adds back), and the next out-of-combat reflow sizes them again.
-		-- A hidden header leaves no gap; a section that gains content grows the stack instead of waiting.
-		local reserve = NativeHeaderShown() and stackedReserve or 0
-		local function Room()
-			return math.max(0, stackedHeight - reserve - 10) + FIT_SLACK
-		end
-		local room = Room()
-		local truncated = false
-		local drew = not NativeCollapsed() and LayoutModules(host:GetWidth(), room, reserve)
-		for _, module in ipairs(modules) do
-			truncated = truncated or (module.IsTruncated ~= nil and module:IsTruncated())
-		end
-		if drew and truncated then
-			-- Measure the new content uncapped, then keep the taller stack for the rest of the fight.
-			LayoutModules(host:GetWidth(), math.max(room, (host:GetTop() or UIParent:GetHeight()) - 24), reserve)
-			stackedHeight = math.max(stackedHeight, host:GetHeight() or 1)
-			drew = LayoutModules(host:GetWidth(), Room(), reserve)
-		end
-		if drew then
-			host:Show()
-		else
-			host:Hide()
-		end
-		return
-	end
-	-- An empty column hid the host out of combat; a section that gains content in combat shows it again (it is
-	-- addon-owned, so showing it in combat is allowed). A collapsed All Objectives keeps the sections hidden.
-	host:SetShown(not NativeCollapsed())
-	CaptureNativeAnchor()
-	host:SetWidth(ObjectiveTrackerFrame:GetWidth())
-	host:ClearAllPoints()
-	-- Once Blizzard has restored the protected frame to its saved slot, anchor our private
-	-- column to the native frame's actual top edge. This follows CENTER/BOTTOM anchors,
-	-- offsets and UI scale without writing the protected frame. During the brief window
-	-- before that restore, the native frame still points at us; use the saved slot instead
-	-- to avoid creating an anchor cycle.
-	local point, nativeRelativeTo = ObjectiveTrackerFrame:GetPoint()
-	if nativeRelativeTo == host then
-		-- Preserve the saved slot if a legacy host-relative anchor is restored.
-		-- Moving relative to that protected child would create an anchor cycle.
-		if nativeAnchor then
-			local ratio = NativeRatio()
-			host:SetPoint(
-				nativeAnchor.point,
-				nativeAnchor.relativeTo,
-				nativeAnchor.relativePoint,
-				nativeAnchor.x * ratio,
-				nativeAnchor.y * ratio
-			)
-		end
-	elseif point then
-		local nativePoint, hostPoint = StackPoints(point)
-		local ratio = NativeRatio()
-		-- First choice: one column. The header goes back to the native frame and our sections sit directly below
-		-- the native tracker's visible content, measured from its own content region, so the column reads the
-		-- header, the game's modules, then the Forever sections. The protected frame stays where Blizzard put it.
-		local nineSlice = ObjectiveTrackerFrame.NineSlice
-		local nativeBottom = ObjectiveTrackerFrame:GetBottom()
-		local contentBottom = nineSlice and ObjectiveTrackerFrame:IsShown() and nineSlice:GetBottom() or nativeBottom
-		local contentGap = (nativeBottom and contentBottom) and (contentBottom - nativeBottom) or 0
-		host:SetPoint("TOP", ObjectiveTrackerFrame, "BOTTOM", 0, contentGap * ratio)
-		local layoutScale = host:GetEffectiveScale()
-		local layoutScreenScale = UIParent:GetEffectiveScale()
-		local layoutMargin = 24 * layoutScreenScale / layoutScale
-		contentBottom = (contentBottom or 0) * ratio
-		LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0)
-		if contentBottom - (host:GetHeight() or 0) >= layoutMargin then
-			return
-		end
-		-- The one-column placement would run off the bottom of the screen. If there is no room above the restored
-		-- tracker, use the side away from its anchored edge. This keeps the private column visible without moving
-		-- or overlapping the protected frame.
-		host:ClearAllPoints()
-		local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
-		local screenTop = UIParent:GetHeight() or nativeTop
-		local hostScale = host:GetEffectiveScale()
-		local screenScale = UIParent:GetEffectiveScale()
-		local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-		local room = screenTop * screenScale - nativeTop * nativeScale
-		if room >= math.max(host:GetHeight() or 0, 1) * hostScale then
-			host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
-		elseif SidePoint(point) == "LEFT" then
-			host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
-		else
-			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-		end
-		AvoidMinimap(point)
-	elseif nativeAnchor then
-		local _, hostPoint = StackPoints(nativeAnchor.point)
-		local ratio = NativeRatio()
-		host:SetPoint(
-			hostPoint,
-			nativeAnchor.relativeTo,
-			nativeAnchor.relativePoint,
-			nativeAnchor.x * ratio,
-			nativeAnchor.y * ratio
-		)
-	end
-	AvoidMinimap(nativeAnchor and nativeAnchor.point or "TOPRIGHT")
-end
-
--- Attached: the private column shares the native tracker's slot and stacks below its content.
+-- Attached: the column reads below the native tracker's visible content, measured from its own content region, so the
+-- column is the header, the game's quests, then the Forever sections. Only our frames move, and this one placement
+-- runs in combat and out, so a fight starting or ending changes nothing on screen. A collapsed All Objectives hides
+-- the sections with it.
 local function LayoutAttached()
 	-- Read the global each time, not once at load: Blizzard_EditMode is load-on-demand, so it may appear later. A
 	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
@@ -593,99 +374,58 @@ local function LayoutAttached()
 	if Editing() then
 		return
 	end
-	host:Show()
-	-- The native frame may only receive its final Edit Mode anchor after the
-	-- player and saved variables are ready. Capture it before our first reflow.
-	CaptureNativeAnchor()
-	local width = ObjectiveTrackerFrame:GetWidth()
-	MatchNativeScale()
-	local ratio = NativeRatio()
-	host:ClearAllPoints()
-	host:SetPoint(
-		nativeAnchor.point,
-		nativeAnchor.relativeTo,
-		nativeAnchor.relativePoint,
-		nativeAnchor.x * ratio,
-		nativeAnchor.y * ratio
-	)
-	local layoutScale = host:GetEffectiveScale()
-	local layoutScreenScale = UIParent:GetEffectiveScale()
-	-- The user's scale enlarges the column; keep it on screen the way the detached column already is.
-	width = math.min(width, UIParent:GetWidth() * layoutScreenScale / layoutScale)
-	local layoutMargin = 40 * layoutScreenScale / layoutScale
-	local available = math.max(0, (host:GetTop() or UIParent:GetHeight()) - layoutMargin)
-	host:SetWidth(width)
-	-- The native header stays in its frame, so the private column reserves no header room.
-	local collapsed = NativeCollapsed()
-	local headerReserve = 0
-	if collapsed or not LayoutModules(width, available, 0) then
-		-- Nothing to stack: release the native tracker and hide the empty host.
-		ReleaseNative()
-		host:SetHeight(1)
+	local point = ObjectiveTrackerFrame:GetPoint()
+	if not point then
+		-- The native frame is between anchors (an Edit Mode or managed-frame transition): hold the column where it is
+		-- until the move that follows reflows it.
+		return
+	end
+	if NativeCollapsed() then
 		host:Hide()
 		return
 	end
-	-- If the combined column would run below the screen, move the whole
-	-- column upward from its saved edit-mode slot.  The offset is calculated
-	-- from the original point each pass, so repeated refreshes never drift.
-	local shift = 0
+	host:Show()
+	MatchNativeScale()
+	local layoutScale = host:GetEffectiveScale()
+	local layoutScreenScale = UIParent:GetEffectiveScale()
+	-- The user's scale enlarges the column; keep it on screen the way the detached column already is.
+	host:SetWidth(math.min(ObjectiveTrackerFrame:GetWidth(), UIParent:GetWidth() * layoutScreenScale / layoutScale))
 	host:ClearAllPoints()
-	host:SetPoint(
-		nativeAnchor.point,
-		nativeAnchor.relativeTo,
-		nativeAnchor.relativePoint,
-		nativeAnchor.x * ratio,
-		nativeAnchor.y * ratio
-	)
-	local screenHeight = UIParent:GetHeight()
-	local top = host:GetTop()
-	local scale = host:GetEffectiveScale()
-	local screenScale = UIParent:GetEffectiveScale()
-	local margin = 24 * screenScale / scale
-	local screen = screenHeight and screenHeight * screenScale / scale
-	if screen and top and top - host:GetHeight() < margin then
-		shift = margin - (top - host:GetHeight())
-		shift = math.min(shift, math.max(0, screen - margin - top))
+	-- The column hangs from the bottom of the native content region (NineSlice, which Blizzard anchors to its last
+	-- module), so it follows the quests as they grow or shrink with no reflow of ours. A native tracker with nothing to
+	-- show hides itself, and Questie hides it too: then the column takes its slot from the top.
+	---@type Frame, FramePoint
+	local edge, edgePoint = ObjectiveTrackerFrame, "TOP"
+	if ObjectiveTrackerFrame:IsShown() then
+		edge, edgePoint = ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOM"
 	end
+	host:SetPoint("TOP", edge, edgePoint, 0, 0)
+	local contentBottom = edgePoint == "TOP" and edge:GetTop() or edge:GetBottom()
+	local layoutMargin = 24 * layoutScreenScale / layoutScale
+	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / host:GetEffectiveScale()
+	if not LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0) then
+		host:Hide()
+		return
+	end
+	if contentBottom - (host:GetHeight() or 0) >= layoutMargin then
+		return
+	end
+	-- The column would run off the bottom of the screen. If there is room above the tracker it goes there, otherwise to
+	-- the side away from the tracker's anchored edge, so it stays visible without overlapping the protected frame.
+	local nativePoint, hostPoint = StackPoints(point)
 	host:ClearAllPoints()
-	host:SetPoint(
-		nativeAnchor.point,
-		nativeAnchor.relativeTo,
-		nativeAnchor.relativePoint,
-		nativeAnchor.x * ratio,
-		nativeAnchor.y * ratio + shift
-	)
+	local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
+	local screenTop = UIParent:GetHeight() or nativeTop
 	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-	local hostScale = host:GetEffectiveScale()
-	local hostLeft = (host:GetLeft() or 0) * hostScale / screenScale
-	-- Keep the native frame directly below the host; its header remains inside the native frame.
-	local nativeY = (host:GetBottom() or 0) * hostScale / screenScale - UIParent:GetHeight()
-	-- The native container owns its height. Screen clamping would pull it up over the
-	-- companion column, so preserve its size and let its scrolling content extend below us.
-	if nativeClamped == nil then
-		nativeClamped = ObjectiveTrackerFrame:IsClampedToScreen() and true or false
+	local room = screenTop * layoutScreenScale - nativeTop * nativeScale
+	if room >= math.max(host:GetHeight() or 0, 1) * layoutScale then
+		host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
+	elseif SidePoint(point) == "LEFT" then
+		host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
+	else
+		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 	end
-	ObjectiveTrackerFrame:SetClampedToScreen(false)
-	ObjectiveTrackerFrame:ClearAllPoints()
-	local nativeWidth = ObjectiveTrackerFrame:GetWidth() * nativeScale / screenScale
-	-- A smaller private column must not push the full-width native quests beyond the screen edge.
-	hostLeft = math.max(0, math.min(hostLeft, UIParent:GetWidth() - nativeWidth))
-	local nativeX = hostLeft * screenScale / nativeScale
-	local nativeOffsetY = nativeY * screenScale / nativeScale
-	-- Read our height before moving the protected frame: its layout can reflow us inside SetPoint.
-	local stackHeight = host:GetHeight() or 1
-	ObjectiveTrackerFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", nativeX, nativeOffsetY)
-	releasedNativeAnchor, releasedNativeProbe = nil, false
-	stackedHeight, stackedReserve = stackHeight, headerReserve
-	appliedNativeAnchor = {
-		point = "TOPLEFT",
-		relativeTo = UIParent,
-		relativePoint = "TOPLEFT",
-		x = nativeX,
-		y = nativeOffsetY,
-	}
-	-- Resizing the managed container schedules a native layout that restores its Edit Mode
-	-- anchor. Leave its height alone so the host and native tracker can settle in one pass.
+	AvoidMinimap(point)
 end
 
 -- Attached while Questie's list covers the native slot: the column goes below, above or beside it and the native
@@ -697,9 +437,6 @@ local function LayoutBesideQuestie(questie)
 		return
 	end
 	besideQuestie = true
-	if not InCombatLockdown() then
-		ReleaseNative()
-	end
 	if not questie then
 		host:SetShown(LayoutModules(host:GetWidth(), questieRoom, 0))
 		return
@@ -744,10 +481,6 @@ local function Layout()
 		return
 	end
 	besideQuestie = false
-	if InCombatLockdown() then
-		LayoutInCombat()
-		return
-	end
 	LayoutAttached()
 end
 
@@ -772,8 +505,7 @@ end
 function api.GetScale()
 	return Settings().scale or 1
 end
--- The attached host must not restack the protected native tracker during combat, so a scale change waits for
--- the reflow on PLAYER_REGEN_ENABLED. Detached, the host owns its frames and scales straight away.
+-- Only the host scales, so a change applies at the next layout, in combat too.
 ---@param value number
 function api.SetScale(value)
 	if type(value) ~= "number" or value ~= value then
@@ -834,8 +566,8 @@ function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
 end
--- Combat ending applies what combat held back (an attachment or scale change, the native restack). Combat starting
--- changes nothing on screen, so it is no reason to lay the column out again: that pass only ever moved it.
+-- Combat ending applies an attachment change combat held back. Combat starting changes nothing on screen, so it is no
+-- reason to lay the column out again.
 host:RegisterEvent("PLAYER_REGEN_ENABLED")
 host:RegisterEvent("DISPLAY_SIZE_CHANGED")
 host:RegisterEvent("UI_SCALE_CHANGED")
@@ -858,10 +590,9 @@ end)
 ObjectiveTrackerFrame:HookScript("OnSizeChanged", function()
 	host:MarkDirty()
 end)
--- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI put the native frame back in its saved
--- slot with no event of their own, which left the quests drawn over the Forever sections until the next quest event.
--- An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so any move
--- of the native frame resizes the probe and its OnSizeChanged reflows the column. Our own restack is skipped.
+-- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI move the native frame with no event of
+-- their own. An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so
+-- any move of the native frame resizes the probe and its OnSizeChanged reflows the column.
 local probe = CreateFrame("Frame", nil, UIParent)
 local probeEnabled = false
 local function SetProbeEnabled(enabled)
@@ -876,14 +607,7 @@ local function SetProbeEnabled(enabled)
 	end
 end
 probe:SetScript("OnSizeChanged", function()
-	if not probeEnabled then
-		return
-	end
-	local point, relativeTo, relativePoint, x, y = ObjectiveTrackerFrame:GetPoint()
-	local released = attached and SameAnchor(releasedNativeAnchor, point, relativeTo, relativePoint, x, y)
-	if released and releasedNativeProbe then
-		releasedNativeProbe = false
-	elseif not IsAppliedNativeAnchor(point, relativeTo, relativePoint, x, y) and not released then
+	if probeEnabled then
 		host:MarkDirty()
 	end
 end)
@@ -903,10 +627,6 @@ local function OnEditModeChanged()
 	local editing = Editing()
 	SetProbeEnabled(not editing)
 	if editing and attached then
-		-- Hand the native anchor and screen clamp back before Edit Mode moves the tracker.
-		if not InCombatLockdown() then
-			ReleaseNative()
-		end
 		host:Hide()
 		-- Hidden frames still participate in anchor dependencies; detach our column too.
 		host:ClearAllPoints()
@@ -946,7 +666,7 @@ function api.Debug()
 		)
 	end
 	local form = "combat=%s shown=%s hostH=%.1f host[%s] g[%s] nativeH=%.1f native[%s] g[%s] uiS%.2f"
-	return (form .. " stacked=%s clamped=%s questie=%s"):format(
+	return (form .. " questie=%s"):format(
 		tostring(InCombatLockdown()),
 		tostring(host:IsShown()),
 		host:GetHeight() or -1,
@@ -956,8 +676,6 @@ function api.Debug()
 		point(ObjectiveTrackerFrame),
 		geometry(ObjectiveTrackerFrame),
 		UIParent:GetEffectiveScale(),
-		tostring(IsAppliedNativeAnchor(ObjectiveTrackerFrame:GetPoint()) and true or false),
-		tostring(ObjectiveTrackerFrame:IsClampedToScreen()),
 		tostring(besideQuestie)
 	)
 end
