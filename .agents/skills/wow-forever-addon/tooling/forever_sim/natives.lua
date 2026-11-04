@@ -194,6 +194,10 @@ function M.build(sim)
 	G.SpellIsTargeting = function()
 		return false
 	end
+	-- Undocumented legacy native the client's bag frames read: the sim's player carries no profession bags.
+	G.IsInventoryItemProfessionBag = function()
+		return false
+	end
 	G.SpellCanTargetItem = function()
 		return false
 	end

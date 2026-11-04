@@ -191,6 +191,30 @@ test("switching to the gamepad runs the interface transition, so a pooled menu's
 	eq(type(sim.G.SimEdgePan), "number", "gamepad map CVar under taint")
 end)
 
+test("SettingsPanel opens and closes through the panel manager with no errors, mouse and gamepad", function()
+	for _, gamepad in ipairs({ false, true }) do
+		local sim = Sim.new()
+		sim:login()
+		local G = sim.G
+		eq(G.ContainerFrame1:GetParent(), G.ContainerFrameContainer, "a bag frame takes its template's parent")
+		sim:setGamepad(gamepad)
+		sim:takeErrors()
+		sim:input(function()
+			G.ShowUIPanel(G.SettingsPanel)
+		end)
+		eq(G.SettingsPanel:IsShown(), true, "panel shown")
+		sim:input(function()
+			G.SettingsPanel:Close()
+		end)
+		sim:advance(0.1)
+		eq(G.SettingsPanel:IsShown(), false, "panel closed")
+		local errors = sim:takeErrors()
+		if #errors > 0 then
+			error((gamepad and "gamepad" or "mouse") .. ":\n" .. Sim.describe(errors))
+		end
+	end
+end)
+
 test("native map API opens, closes and reopens with visibility callbacks", function()
 	local sim = Sim.new()
 	sim.world.maps[1454] = { name = "Orgrimmar", parent = 1411 }
