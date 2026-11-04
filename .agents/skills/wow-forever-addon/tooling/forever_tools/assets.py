@@ -174,10 +174,16 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         return values
     if suffix == ".xml":
         source = re.sub(r"<!--.*?-->", lambda match: "\n" * match[0].count("\n"), source, flags=re.DOTALL)
-        return [
+        values = [
             (source.count("\n", 0, match.start()) + 1, match[2])
-            for match in re.finditer(r"\b(?:atlas|file|bgFile|edgeFile|inherits|value)\s*=\s*([\"'])(.*?)\1", source)
+            for match in re.finditer(
+                r"\b(?:atlas|file|bgFile|edgeFile|inherits|value)\s*=\s*([\"'])([\s\S]*?)\1", source
+            )
         ]
+        for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
+            offset = source.count("\n", 0, match.start(1))
+            values.extend((line + offset, value) for line, value in references(match[1], ".lua"))
+        return values
     values = []
     tokens = tokenize(source)[0]
     for index, token in enumerate(tokens):

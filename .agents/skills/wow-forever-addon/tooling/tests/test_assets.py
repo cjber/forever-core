@@ -67,6 +67,17 @@ class AssetsTest(unittest.TestCase):
         )
         self.assertEqual(len(assets.check(source, ".xml")), 2)
 
+    def test_xml_script_bodies_and_multiline_attributes_are_checked(self):
+        source = (
+            '<Frame inherits="OtherTemplate,\n UIPanelButtonTemplate">\n'
+            '  <OnLoad>self:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")</OnLoad>\n'
+            "</Frame>"
+        )
+        findings = assets.check(source, ".xml")
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(any(line == 1 and "UIPanelButtonTemplate" in message for line, message in findings))
+        self.assertTrue(any(line == 3 and "UI-Panel-Button-Up" in message for line, message in findings))
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
