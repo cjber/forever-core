@@ -87,7 +87,10 @@ function harness.new(options)
 		function f:ClearAllPoints()
 			self.point = nil
 		end
-		f.RegisterEvent = noop
+		function f:RegisterEvent(event)
+			self.events = self.events or {}
+			self.events[event] = true
+		end
 		f.SetMovable, f.RegisterForDrag = noop, noop
 		f.clamped = true
 		function f:SetClampedToScreen(value)
@@ -359,6 +362,13 @@ function harness.new(options)
 			nativeAnchorPoint = value
 		end,
 	}
+	-- Delivers a client event to the host only when the host registered it, as the client does.
+	function ctx.fire(event)
+		local host = ctx.host
+		if host.events and host.events[event] then
+			host.scripts.OnEvent(host, event)
+		end
+	end
 	function ctx.loadHost(namespace, path)
 		path = path or "UI/TrackerHost.lua"
 		setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", namespace) -- the grip, before the host

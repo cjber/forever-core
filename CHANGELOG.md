@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The tracker column stays still through combat.** Entering combat no longer lays the column out again, and a redraw in combat keeps every section whole: the last section used to lose its last line, or vanish, by a rounding error each time, so the column jumped in height until combat ended.
+
 ## [0.4.11] - 2026-11-04
 
 - **Simulator panels can close the bags.** The sim loads the client's bag frames (`ContainerFrame`), so `ShowUIPanel` and closing a panel reach the real `CloseAllBags`. A top-level XML frame takes its template's `parent` attribute, and `IsInventoryItemProfessionBag` exists. Opening and closing SettingsPanel raises no errors under the mouse or the gamepad.

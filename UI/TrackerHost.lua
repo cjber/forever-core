@@ -76,6 +76,11 @@ local releasedNativeProbe = false
 -- The column's height and header room when the native frame was last stacked below it: in combat the native frame
 -- cannot move, so the sections redraw within this.
 local stackedHeight, stackedReserve = 1, 0
+-- Sub-pixel room the in-combat redraw adds to that height. The stack is a running sum of fractional section heights;
+-- subtracting the earlier sections back out of it can leave the last one a rounding error short of its own height,
+-- and Blizzard's modules fit a block only when it fits exactly, so every in-combat layout dropped the last section's
+-- last block, or the whole section, and the column jumped. Half a pixel absorbs the rounding and is no real growth.
+local FIT_SLACK = 0.5
 -- Whether the native frame was clamped to the screen before we stacked it below our column.
 local nativeClamped
 
@@ -482,7 +487,10 @@ local function LayoutInCombat()
 		-- section's 10px gap, which LayoutModules adds back), and the next out-of-combat reflow sizes them again.
 		-- A hidden header leaves no gap; a section that gains content grows the stack instead of waiting.
 		local reserve = NativeHeaderShown() and stackedReserve or 0
-		local room = math.max(0, stackedHeight - reserve - 10)
+		local function Room()
+			return math.max(0, stackedHeight - reserve - 10) + FIT_SLACK
+		end
+		local room = Room()
 		local truncated = false
 		local drew = not NativeCollapsed() and LayoutModules(host:GetWidth(), room, reserve)
 		for _, module in ipairs(modules) do
@@ -492,7 +500,7 @@ local function LayoutInCombat()
 			-- Measure the new content uncapped, then keep the taller stack for the rest of the fight.
 			LayoutModules(host:GetWidth(), math.max(room, (host:GetTop() or UIParent:GetHeight()) - 24), reserve)
 			stackedHeight = math.max(stackedHeight, host:GetHeight() or 1)
-			drew = LayoutModules(host:GetWidth(), math.max(0, stackedHeight - reserve - 10), reserve)
+			drew = LayoutModules(host:GetWidth(), Room(), reserve)
 		end
 		if drew then
 			host:Show()
@@ -826,8 +834,9 @@ function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
 end
+-- Combat ending applies what combat held back (an attachment or scale change, the native restack). Combat starting
+-- changes nothing on screen, so it is no reason to lay the column out again: that pass only ever moved it.
 host:RegisterEvent("PLAYER_REGEN_ENABLED")
-host:RegisterEvent("PLAYER_REGEN_DISABLED")
 host:RegisterEvent("DISPLAY_SIZE_CHANGED")
 host:RegisterEvent("UI_SCALE_CHANGED")
 -- Native objective changes and managed-frame transitions can restore the tracker anchor.
