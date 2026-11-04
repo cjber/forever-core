@@ -174,7 +174,11 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         )
         return values
     if suffix == ".xml":
-        source = re.sub(r"<!--.*?-->", lambda match: "\n" * match[0].count("\n"), source, flags=re.DOTALL)
+        source = re.sub(
+            r"(<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->)",
+            lambda match: match[1] if match[1].startswith("<![CDATA[") else "\n" * match[0].count("\n"),
+            source,
+        )
         values = [
             (source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
             for match in re.finditer(
@@ -183,8 +187,12 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         ]
         for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
             offset = source.count("\n", 0, match.start(1))
-            body = re.sub(r"<!\[CDATA\[([\s\S]*?)\]\]>", r"\1", match[1])
-            values.extend((line + offset, value) for line, value in references(html.unescape(body), ".lua"))
+            body = re.sub(
+                r"<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]+)",
+                lambda part: part[1] if part[1] is not None else html.unescape(part[2]),
+                match[1],
+            )
+            values.extend((line + offset, value) for line, value in references(body, ".lua"))
         return values
     values = []
     tokens = tokenize(source)[0]
