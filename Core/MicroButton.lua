@@ -40,10 +40,12 @@ end
 
 local function HookUpdate()
 	if type(UpdateMicroButtons) == "function" and hookedUpdate ~= UpdateMicroButtons and hooksecurefunc then
-		hookedUpdate = UpdateMicroButtons
 		hooksecurefunc("UpdateMicroButtons", function()
 			Safe("micro button refresh", MicroButton.Refresh)
 		end)
+		-- hooksecurefunc replaces the global with a wrapper. Remember the wrapper, or the next refresh hooks it again
+		-- and every UpdateMicroButtons call nests one hook deeper until the client's C stack overflows.
+		hookedUpdate = UpdateMicroButtons
 	end
 end
 

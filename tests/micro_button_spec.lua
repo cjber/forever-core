@@ -52,7 +52,9 @@ end
 _G.MicroMenu = frame("MicroMenu")
 _G.MainMenuMicroButton = frame("MainMenuMicroButton")
 _G.CollectionsMicroButton = frame("CollectionsMicroButton")
+local hooks = 0
 _G.hooksecurefunc = function(name, callback)
+	hooks = hooks + 1
 	local original = _G[name]
 	_G[name] = function(...)
 		original(...)
@@ -132,6 +134,15 @@ local old = _G.MainMenuMicroButton
 _G.MainMenuMicroButton = frame("NewMainMenuMicroButton")
 _G.UpdateMicroButtons()
 assert(button.points[2] == _G.MainMenuMicroButton and button.points[2] ~= old)
+
+-- hooksecurefunc swaps the global for a wrapper; refreshing again must not hook that wrapper too, or every
+-- UpdateMicroButtons call nests one hook deeper until the client's C stack overflows.
+local before = hooks
+for _ = 1, 50 do
+	_G.UpdateMicroButtons()
+	ns.MicroButton.Refresh()
+end
+assert(hooks == before, "UpdateMicroButtons hooked again: " .. (hooks - before))
 
 local saved = _G.MicroMenu
 _G.MicroMenu = nil
