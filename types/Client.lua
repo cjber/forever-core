@@ -1,5 +1,16 @@
 ---@meta
 
+-- Core checks the helper without loading the generated FrameXML annotations consumers provide.
+---@class WorldMapFrame : Frame
+---@field GetMapID fun(self: WorldMapFrame): number?
+---@field GetCanvas fun(self: WorldMapFrame): Frame
+---@field GetCanvasScale fun(self: WorldMapFrame): number?
+---@field GetCanvasZoomPercent fun(self: WorldMapFrame): number?
+---@field GetGlobalPinScale fun(self: WorldMapFrame): number?
+---@field GetPinFrameLevelsManager? fun(self: WorldMapFrame): ForeverCanvasLevels
+---@class ForeverCanvasLevels
+---@field GetValidFrameLevel fun(self: ForeverCanvasLevels, levelType: string): number?
+
 ---@type {GetCurrentStyle: fun(): number}?
 C_InputInterfaceStyle = nil
 ---@type Frame

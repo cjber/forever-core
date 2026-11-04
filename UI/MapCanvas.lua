@@ -27,16 +27,7 @@ local addonName, ns = ...
 -- GLOBAL_MOUSE_DOWN and GLOBAL_MOUSE_UP on a frame of ours. By default the right button goes through to the canvas
 -- (zoom out); a pin may override it. Under the gamepad interface the nearest pin shows its tooltip.
 
----@class ForeverCanvasMap : Frame
----@field GetMapID fun(self: ForeverCanvasMap): number?
----@field GetCanvas fun(self: ForeverCanvasMap): Frame
----@field GetCanvasScale fun(self: ForeverCanvasMap): number?
----@field GetCanvasZoomPercent fun(self: ForeverCanvasMap): number?
----@field GetGlobalPinScale fun(self: ForeverCanvasMap): number?
----@field GetPinFrameLevelsManager? fun(self: ForeverCanvasMap): ForeverCanvasLevels
-
----@class ForeverCanvasLevels
----@field GetValidFrameLevel fun(self: ForeverCanvasLevels, levelType: string): number?
+---@alias ForeverCanvasMap WorldMapFrame
 
 ---@class ForeverMapCanvas
 local MapCanvas = {}
