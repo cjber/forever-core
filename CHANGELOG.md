@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-11-04
+
+- **The suite's documents no longer list Hoard Forever as a consumer.** The boundaries and consumer lists name only the addons that ship against this core, so a reader is not pointed at an addon that has been retired.
+
 ## [0.4.9] - 2026-11-04
 
 - **The shared asset checker reads XML, not only Lua.** Backdrop file attributes, inline script handlers, multiline attributes and texture markup inside XML text now go through the same blacklist as Lua paths, so legacy chrome cannot slip back in through a template, and the shared family module carries a new version so an older installed copy cannot stay active.
