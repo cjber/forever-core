@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Simulator panels can close the bags.** The sim loads the client's bag frames (`ContainerFrame`), so `ShowUIPanel` and closing a panel reach the real `CloseAllBags`. A top-level XML frame takes its template's `parent` attribute, and `IsInventoryItemProfessionBag` exists. Opening and closing SettingsPanel raises no errors under the mouse or the gamepad.
 - **Simulator loadstring chunks keep their instrumentation under setfenv.** An addon's runtime chunk binds the taint marker as a local, so a data parser that gives the chunk an empty environment gets its table back, and functions the chunk defines still report the addon.
 - **Simulator SetToDefaults clears anchors.** A region released to the menu compositor's pool no longer keeps its old points, so reopening a stock dropdown with checkboxes cannot raise "Cannot anchor to a region dependent on it".
 - **Simulator gamepad interface matches the client.** The watched binding stack is `GamepadSharedUtility.InputBindingManager`'s, `FocusEnter` and `FocusExit` run `OnEnter` and `OnLeave` in the caller's taint, `SpellCanTargetItem` and `SpellStopTargeting` exist, and the producer's `fetch.py` and `sync.py` are executable.

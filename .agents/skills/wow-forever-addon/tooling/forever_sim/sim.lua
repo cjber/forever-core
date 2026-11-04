@@ -52,7 +52,7 @@ Sim.CORE = {
 	"Blizzard_ChatFrameBase/Shared/SlashCommands.lua",
 	-- The map, quest log and fog-of-war pieces of Blizzard_UIPanels_Game, in its TOC order.
 	"Blizzard_UIPanels_Game:PlayerInteractionFrameManager|ScrollingFlatPanel|WarCampaignTemplates|WorldMap"
-		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame",
+		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	"Blizzard_WorldMap",
 	"Blizzard_ObjectiveTracker",

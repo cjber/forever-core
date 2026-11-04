@@ -1088,7 +1088,19 @@ function M.build(sim)
 							T.templates[node.attr.name] = entry
 						end
 					else
-						local parent = node.attr.parent and G[node.attr.parent]
+						-- A frame without its own parent attribute takes its nearest template's (ContainerFrame1..N
+						-- inherit parent="ContainerFrameContainer" from ContainerFrameTemplate).
+						local parentName = node.attr.parent
+						if not parentName then
+							local templates = chain(node)
+							for i = #templates, 1, -1 do
+								parentName = templates[i].node.attr.parent
+								if parentName then
+									break
+								end
+							end
+						end
+						local parent = parentName and G[parentName]
 						sim.run(function()
 							instantiate(node, parent, path, chunk, Taint.current)
 						end)
