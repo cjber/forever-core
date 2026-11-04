@@ -29,7 +29,7 @@ def main():
     selected = arguments.only or VENDORED.keys()
     for path in selected:
         consumers = VENDORED[path]
-        origin = Path(source(path))
+        origin = Path(__file__).resolve().parent.parent / source(path)
         for repo in consumers:
             root = arguments.checkouts / repo
             target = root / path
