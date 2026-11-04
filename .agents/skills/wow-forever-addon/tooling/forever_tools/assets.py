@@ -180,6 +180,11 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
             source,
         )
         attribute_source = re.sub(r"<!\[CDATA\[[\s\S]*?\]\]>", lambda match: "\n" * match[0].count("\n"), source)
+        attribute_source = re.sub(
+            r"(<On[A-Za-z0-9_]+\b[^>]*>)([\s\S]*?)(</On[A-Za-z0-9_]+\s*>)",
+            lambda match: match[1] + "\n" * match[2].count("\n") + match[3],
+            attribute_source,
+        )
         values = [
             (attribute_source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
             for match in re.finditer(
