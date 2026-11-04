@@ -95,6 +95,10 @@ class AssetsTest(unittest.TestCase):
         findings = assets.check(source, ".xml")
         self.assertEqual(len(findings), 1)
 
+    def test_xml_cdata_after_whitespace_is_checked(self):
+        source = '<OnLoad>\n<![CDATA[local value = "&quot;"\nself:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")]]>\n</OnLoad>'
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

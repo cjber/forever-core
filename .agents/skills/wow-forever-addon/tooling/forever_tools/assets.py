@@ -187,11 +187,8 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         ]
         for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
             offset = source.count("\n", 0, match.start(1))
-            body = re.sub(
-                r"<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]+)",
-                lambda part: part[1] if part[1] is not None else html.unescape(part[2]),
-                match[1],
-            )
+            parts = re.split(r"(<!\[CDATA\[[\s\S]*?\]\]>)", match[1])
+            body = "".join(part[9:-3] if part.startswith("<![CDATA[") else html.unescape(part) for part in parts)
             values.extend((line + offset, value) for line, value in references(body, ".lua"))
         return values
     values = []
