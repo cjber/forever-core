@@ -24,6 +24,32 @@ local function eq(a, b, label)
 	end
 end
 
+test("widgets: scroll callbacks only report changed offsets", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	for _, axis in ipairs({ "Vertical", "Horizontal" }) do
+		local frame = widgets.new("ScrollFrame")
+		local calls = 0
+		local setter, getter = frame["Set" .. axis .. "Scroll"], frame["Get" .. axis .. "Scroll"]
+		frame:SetScript("On" .. axis .. "Scroll", function(self, offset)
+			calls = calls + 1
+			eq(getter(self), offset, "callback observes stored offset")
+			-- A scrollbar callback can write the same offset back, as Blizzard's map legend does.
+			assert(calls <= 3, "unchanged offset recursively fires the scroll handler")
+			setter(self, offset)
+		end)
+		setter(frame, 0)
+		eq(calls, 0, axis .. " initial zero")
+		setter(frame, 12)
+		eq(calls, 1, axis .. " change fires once")
+		setter(frame, 12)
+		eq(calls, 1, axis .. " unchanged offset")
+		setter(frame, 0)
+		eq(calls, 2, axis .. " returning to zero")
+	end
+end)
+
 test("loader: bootstrap markers retain matching game conditions", function()
 	local toc = Loader.parseToc(
 		"Shared.lua [Bootstrap]\nWrong.lua [Bootstrap] [AllowLoadGameType cata]\n"

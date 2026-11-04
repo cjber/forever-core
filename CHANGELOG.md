@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Simulator startup avoids recursive scroll callbacks.** Scroll offsets notify handlers only when their value changes, preventing Blizzard's map legend from overflowing the Lua stack and triggering native crashes in the pinned CI runtime, thanks to cjber for the report.
+
 ## [0.4.7] - 2026-11-03
 
 - **Legacy dialog chrome cannot bypass the asset check through native names.** The shared checker rejects templates and backdrop globals that select the old loose textures, including Lua identifiers and XML backdrop values.
