@@ -82,6 +82,14 @@ class AssetsTest(unittest.TestCase):
         source = '<Button text="|TInterface/Buttons/UI-Panel-Button-Up:16|t"/>'
         self.assertEqual(len(assets.check(source, ".xml")), 1)
 
+    def test_xml_cdata_and_entities_are_checked(self):
+        source = (
+            '<OnLoad><![CDATA[self:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")]]></OnLoad>\n'
+            "<OnShow>self:SetNormalTexture(&quot;Interface\\Buttons\\UI-Panel-Button-Down&quot;)</OnShow>"
+        )
+        findings = assets.check(source, ".xml")
+        self.assertEqual(len(findings), 2)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

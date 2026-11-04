@@ -6,6 +6,7 @@ and templates which select it are forbidden, even inside an Art helper.
 
 import argparse
 import ast
+import html
 import re
 from pathlib import Path
 
@@ -175,14 +176,15 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
     if suffix == ".xml":
         source = re.sub(r"<!--.*?-->", lambda match: "\n" * match[0].count("\n"), source, flags=re.DOTALL)
         values = [
-            (source.count("\n", 0, match.start()) + 1, match[2])
+            (source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
             for match in re.finditer(
                 r"\b(?:atlas|file|bgFile|edgeFile|inherits|text|value)\s*=\s*([\"'])([\s\S]*?)\1", source
             )
         ]
         for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
             offset = source.count("\n", 0, match.start(1))
-            values.extend((line + offset, value) for line, value in references(match[1], ".lua"))
+            body = re.sub(r"<!\[CDATA\[([\s\S]*?)\]\]>", r"\1", match[1])
+            values.extend((line + offset, value) for line, value in references(html.unescape(body), ".lua"))
         return values
     values = []
     tokens = tokenize(source)[0]
