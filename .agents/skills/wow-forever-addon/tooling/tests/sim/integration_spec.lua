@@ -57,6 +57,13 @@ local function tooltipScenario(addon)
 	return sim
 end
 
+test("Blizzard boot does not overflow the scroll callback stack", function()
+	local sim = Sim.new()
+	for _, err in ipairs(sim.errors) do
+		assert(not err.message:find("stack overflow", 1, true), err.message .. "\n" .. (err.traceback or ""))
+	end
+end)
+
 test("a reused frame in GameTooltip_InsertFrame raises the client's secret-number error", function()
 	local sim = tooltipScenario("SimTooltipReuse")
 	local e = sim:expectError(
