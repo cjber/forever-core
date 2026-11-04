@@ -177,7 +177,7 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         values = [
             (source.count("\n", 0, match.start()) + 1, match[2])
             for match in re.finditer(
-                r"\b(?:atlas|file|bgFile|edgeFile|inherits|value)\s*=\s*([\"'])([\s\S]*?)\1", source
+                r"\b(?:atlas|file|bgFile|edgeFile|inherits|text|value)\s*=\s*([\"'])([\s\S]*?)\1", source
             )
         ]
         for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
