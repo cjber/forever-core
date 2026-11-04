@@ -35,7 +35,7 @@ def main():
     failures = []
     comparisons = 0
     for path, consumers in VENDORED.items():
-        mine = Path(source(path)).read_bytes()
+        mine = (Path(__file__).resolve().parent.parent / source(path)).read_bytes()
         for repo in consumers:
             comparisons += 1
             try:

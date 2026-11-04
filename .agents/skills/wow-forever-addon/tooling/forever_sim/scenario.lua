@@ -257,18 +257,11 @@ function M.install(Sim)
 	-- World map
 	---------------------------------------------------------------------------
 	function Sim:openWorldMap(mapID)
-		local G = self.G
 		self.run(function()
-			G.C_AddOns.LoadAddOn("Blizzard_WorldMap")
+			self.G.C_Map.OpenWorldMap(mapID)
 		end)
-		self:showPanel(G.WorldMapFrame)
-		if mapID then
-			self.run(function()
-				G.WorldMapFrame:SetMapID(mapID)
-			end)
-		end
-		self:advance(0.2)
-		return G.WorldMapFrame
+		self:advance(0.3)
+		return self.G.WorldMapFrame
 	end
 
 	function Sim:closeWorldMap()
