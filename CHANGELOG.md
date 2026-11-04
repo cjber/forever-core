@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-11-04
+
+- **The shared asset checker reads XML, not only Lua.** Backdrop file attributes, inline script handlers, multiline attributes and texture markup inside XML text now go through the same blacklist as Lua paths, so legacy chrome cannot slip back in through a template, and the shared family module carries a new version so an older installed copy cannot stay active.
+
 ## [0.4.8] - 2026-11-04
 
 - **Generated-data checks keep scratch on the cache filesystem.** Independent regeneration uses ignored cache storage by default, honours explicit temporary-directory settings and explains cache-copy failures without starting a generator, thanks to cjber for the report.
