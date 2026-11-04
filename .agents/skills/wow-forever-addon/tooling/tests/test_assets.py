@@ -112,6 +112,15 @@ class AssetsTest(unittest.TestCase):
         )
         self.assertEqual(len(assets.check(source, ".xml")), 1)
 
+    def test_xml_handler_comments_are_not_checked_as_attributes(self):
+        source = '<Frame><Scripts><OnLoad>-- text = "UIPanelButtonTemplate"\n</OnLoad></Scripts></Frame>'
+        self.assertEqual(assets.check(source, ".xml"), [])
+        source = (
+            '<Frame><Scripts><OnLoad>-- text = "UIPanelButtonTemplate"\n'
+            'self:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")</OnLoad></Scripts></Frame>'
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
