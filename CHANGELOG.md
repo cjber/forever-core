@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Generated-data checks keep scratch on the cache filesystem.** Independent regeneration uses ignored cache storage by default, honours explicit temporary-directory settings and explains cache-copy failures without starting a generator, thanks to cjber for the report.
 - **Map drawings share a canvas that leaves Blizzard's map tables untouched.** Adventure Guide and Legacy can draw, scale and interact with their own pins through the same helper, including each pin's right-click policy, thanks to cjber for the report.
 - **Simulator startup avoids recursive scroll callbacks.** Scroll offsets notify handlers only when their value changes, preventing Blizzard's map legend from overflowing the Lua stack and triggering native crashes in the pinned CI runtime, thanks to cjber for the report.
 

@@ -7,6 +7,7 @@ and changes, not only its name.
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import tempfile
@@ -85,13 +86,26 @@ def check_generated(
 
     `regenerate(scratch, offline)` removes the generated files and runs every generator. An online first pass
     copies the inputs it downloaded back into the shared cache, so the second pass and later runs work offline.
+    Scratch lives in the ignored shared cache, avoiding limited system tmpfs. An explicit TMPDIR, TEMP or TMP
+    keeps the platform's temporary-directory selection. Cache inputs remain independent copies.
     """
-    with tempfile.TemporaryDirectory(prefix=prefix) as temporary:
+    shared = input_cache(root, cache)
+    temporary_root = None
+    if not any(os.environ.get(name) for name in ("TMPDIR", "TEMP", "TMP")):
+        temporary_root = shared / ".scratch"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_root) as temporary:
         scratch = Path(temporary)
-        copy_tracked(root, scratch)
-        shared = input_cache(root, cache)
-        if shared.is_dir():
-            shutil.copytree(shared, scratch / cache, dirs_exist_ok=True)
+        try:
+            copy_tracked(root, scratch)
+            if shared.is_dir():
+                shutil.copytree(shared, scratch / cache, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".scratch"))
+        except OSError as error:
+            reason = error.args[0][0][2] if isinstance(error, shutil.Error) and error.args[0] else str(error)
+            raise SystemExit(
+                f"Cannot prepare generated-data scratch at {scratch}: {reason}\n"
+                f"Input cache: {shared}\nSet TMPDIR to a writable filesystem with room for an independent cache copy."
+            ) from error
         expected = outputs(scratch)
         regenerate(scratch, offline)
         if not offline and (scratch / cache).is_dir():
