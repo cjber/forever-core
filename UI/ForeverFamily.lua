@@ -5,7 +5,7 @@ local _, ns = ...
 -- byte-identical in all five addons (tests/forever_family_spec.lua pins it): the first copy to load sets the
 -- `ForeverFamily` global and later copies use it, unless a later copy is newer (a higher VERSION), which takes over
 -- so an addon updated first never runs on an older copy. It holds no addon's own code: each addon passes in its
--- saved variables (`db`) and its own folder, and `ns.Family` is a view bound to the addon's own L (VERSION 3), so
+-- saved variables (`db`) and its own folder, and `ns.Family` is a view bound to the addon's own L (VERSION 4), so
 -- its page and window read in its translations and nowhere else's. Nothing here is protected, hooks Blizzard code,
 -- runs in combat or reaches the network: a hint is a grey line, a menu entry or a settings row that shows a link.
 
@@ -38,7 +38,7 @@ local _, ns = ...
 ---@field SetTitle fun(self: ForeverFamilyLinkWindow, title: string)
 ---@field GetPortrait fun(self: ForeverFamilyLinkWindow): Texture
 
-local VERSION = 3
+local VERSION = 4
 if ForeverFamily and (tonumber(ForeverFamily.VERSION) or 0) >= VERSION then
 	ns.Family = type(ForeverFamily.For) == "function" and ForeverFamily.For(ns.FamilyL or ns.L) or ForeverFamily
 	return

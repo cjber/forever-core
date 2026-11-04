@@ -6,6 +6,7 @@ and templates which select it are forbidden, even inside an Art helper.
 
 import argparse
 import ast
+import html
 import re
 from pathlib import Path
 
@@ -173,11 +174,25 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         )
         return values
     if suffix == ".xml":
-        source = re.sub(r"<!--.*?-->", lambda match: "\n" * match[0].count("\n"), source, flags=re.DOTALL)
-        return [
-            (source.count("\n", 0, match.start()) + 1, match[2])
-            for match in re.finditer(r"\b(?:atlas|file|inherits|value)\s*=\s*([\"'])(.*?)\1", source)
+        source = re.sub(
+            r"(<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->)",
+            lambda match: match[1] if match[1].startswith("<![CDATA[") else "\n" * match[0].count("\n"),
+            source,
+        )
+        attribute_source = re.sub(r"<!\[CDATA\[[\s\S]*?\]\]>", lambda match: "\n" * match[0].count("\n"), source)
+        values = [
+            (attribute_source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
+            for match in re.finditer(
+                r"\b(?:atlas|file|bgFile|edgeFile|inherits|text|value)\s*=\s*([\"'])([\s\S]*?)\1",
+                attribute_source,
+            )
         ]
+        for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
+            offset = source.count("\n", 0, match.start(1))
+            parts = re.split(r"(<!\[CDATA\[[\s\S]*?\]\]>)", match[1])
+            body = "".join(part[9:-3] if part.startswith("<![CDATA[") else html.unescape(part) for part in parts)
+            values.extend((line + offset, value) for line, value in references(body, ".lua"))
+        return values
     values = []
     tokens = tokenize(source)[0]
     for index, token in enumerate(tokens):

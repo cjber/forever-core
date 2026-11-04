@@ -53,6 +53,65 @@ class AssetsTest(unittest.TestCase):
         self.assertEqual(assets.check('-- "UIPanelButtonTemplate" is forbidden'), [])
         self.assertEqual(assets.check('<!-- <Button inherits="UIPanelButtonTemplate"/> -->', ".xml"), [])
 
+    def test_xml_backdrop_file_attributes_are_checked(self):
+        source = (
+            '<Backdrop bgFile="Interface\\DialogFrame\\UI-DialogBox-Background" '
+            'edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border"/>'
+        )
+        self.assertEqual(
+            assets.references(source, ".xml"),
+            [
+                (1, "Interface\\DialogFrame\\UI-DialogBox-Background"),
+                (1, "Interface\\DialogFrame\\UI-DialogBox-Border"),
+            ],
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 2)
+
+    def test_xml_script_bodies_and_multiline_attributes_are_checked(self):
+        source = (
+            '<Frame inherits="OtherTemplate,\n UIPanelButtonTemplate">\n'
+            '  <OnLoad>self:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")</OnLoad>\n'
+            "</Frame>"
+        )
+        findings = assets.check(source, ".xml")
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(any(line == 1 and "UIPanelButtonTemplate" in message for line, message in findings))
+        self.assertTrue(any(line == 3 and "UI-Panel-Button-Up" in message for line, message in findings))
+
+    def test_xml_text_atlas_markup_is_checked(self):
+        source = '<Button text="|TInterface/Buttons/UI-Panel-Button-Up:16|t"/>'
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
+    def test_xml_cdata_and_entities_are_checked(self):
+        source = (
+            '<OnLoad><![CDATA[self:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")]]></OnLoad>\n'
+            "<OnShow>self:SetNormalTexture(&quot;Interface\\Buttons\\UI-Panel-Button-Down&quot;)</OnShow>"
+        )
+        findings = assets.check(source, ".xml")
+        self.assertEqual(len(findings), 2)
+
+    def test_xml_cdata_keeps_literal_entities_and_comments(self):
+        source = (
+            '<OnLoad><![CDATA[local text = "&quot; <!-- literal -->"\n'
+            'self:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")]]></OnLoad>'
+        )
+        findings = assets.check(source, ".xml")
+        self.assertEqual(len(findings), 1)
+
+    def test_xml_cdata_after_whitespace_is_checked(self):
+        source = (
+            '<OnLoad>\n<![CDATA[local value = "&quot;"\n'
+            'self:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")]]>\n</OnLoad>'
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
+    def test_xml_attributes_inside_cdata_cannot_hide_real_attributes(self):
+        source = (
+            '<OnLoad><![CDATA[local value = "file=" ]]></OnLoad>\n'
+            '<Texture file="Interface\\Buttons\\UI-Panel-Button-Up"/>'
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
