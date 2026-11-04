@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Generated-data checks keep scratch on the cache filesystem.** Independent regeneration uses ignored cache storage by default, honours explicit temporary-directory settings and explains cache-copy failures without starting a generator, thanks to cjber for the report.
+
 - **Simulator startup avoids recursive scroll callbacks.** Scroll offsets notify handlers only when their value changes, preventing Blizzard's map legend from overflowing the Lua stack and triggering native crashes in the pinned CI runtime, thanks to cjber for the report.
 
 ## [0.4.7] - 2026-11-03
