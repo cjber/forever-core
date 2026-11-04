@@ -53,6 +53,20 @@ class AssetsTest(unittest.TestCase):
         self.assertEqual(assets.check('-- "UIPanelButtonTemplate" is forbidden'), [])
         self.assertEqual(assets.check('<!-- <Button inherits="UIPanelButtonTemplate"/> -->', ".xml"), [])
 
+    def test_xml_backdrop_file_attributes_are_checked(self):
+        source = (
+            '<Backdrop bgFile="Interface\\DialogFrame\\UI-DialogBox-Background" '
+            'edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border"/>'
+        )
+        self.assertEqual(
+            assets.references(source, ".xml"),
+            [
+                (1, "Interface\\DialogFrame\\UI-DialogBox-Background"),
+                (1, "Interface\\DialogFrame\\UI-DialogBox-Border"),
+            ],
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 2)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -176,7 +176,7 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         source = re.sub(r"<!--.*?-->", lambda match: "\n" * match[0].count("\n"), source, flags=re.DOTALL)
         return [
             (source.count("\n", 0, match.start()) + 1, match[2])
-            for match in re.finditer(r"\b(?:atlas|file|inherits|value)\s*=\s*([\"'])(.*?)\1", source)
+            for match in re.finditer(r"\b(?:atlas|file|bgFile|edgeFile|inherits|value)\s*=\s*([\"'])(.*?)\1", source)
         ]
     values = []
     tokens = tokenize(source)[0]
