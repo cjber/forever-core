@@ -507,7 +507,7 @@ function M.build(sim)
 	impl["C_Map.OpenWorldMap"] = function(mapID)
 		sim.taint.dispatch(nil, function()
 			G.C_AddOns.LoadAddOn("Blizzard_WorldMap")
-			G.OpenWorldMap(mapID)
+			sim.events.fire("WORLD_MAP_OPEN", mapID)
 		end)
 	end
 	impl["C_Map.GetBestMapForUnit"] = function(u)

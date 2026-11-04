@@ -106,6 +106,13 @@ test("native map API opens, closes and reopens with visibility callbacks", funct
 	end
 	local G = sim.G
 	local shows, hides = 0, 0
+	local opened = {}
+	local listener = G.CreateFrame("Frame")
+	listener:RegisterEvent("WORLD_MAP_OPEN")
+	listener:SetScript("OnEvent", function(_, event, mapID)
+		eq(event, "WORLD_MAP_OPEN", "documented map event")
+		opened[#opened + 1] = mapID
+	end)
 	G.WorldMapFrame:HookScript("OnShow", function()
 		shows = shows + 1
 	end)
@@ -116,6 +123,7 @@ test("native map API opens, closes and reopens with visibility callbacks", funct
 		local mapID = cycle == 1 and 1454 or 1411
 		sim.taint.dispatch("MapCaller", function()
 			G.C_Map.OpenWorldMap(mapID)
+			eq(opened[cycle], mapID, "API dispatches synchronous map event")
 			eq(sim.taint.current, "MapCaller", "API restores caller taint")
 		end)
 		sim:advance(0.1)
