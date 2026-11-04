@@ -1,12 +1,14 @@
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from forever_tools import generated
 
@@ -30,6 +32,7 @@ def git(root, *args):
 
 def repository(directory, tracked):
     root = Path(directory)
+    root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q")
     git(root, "config", "user.email", "t@example.com")
     git(root, "config", "user.name", "t")
@@ -73,6 +76,66 @@ class GeneratedTest(unittest.TestCase):
     def test_gate_rejects_stale_committed_output(self):
         with self.assertRaisesRegex(SystemExit, "Stale generated files"):
             self.run_gate(GENERATOR.replace("ns.A = {", "ns.A = {\\n\\t[2] = true,"))
+
+    def test_gate_keeps_cache_scratch_off_the_default_temporary_filesystem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository(directory, {"Data/X.lua": "same"})
+            cache = root / "tools/.cache"
+            cache.mkdir(parents=True)
+            (cache / "input.csv").write_text("original")
+            visited = []
+
+            def regenerate(scratch, offline):
+                self.assertEqual(scratch.parent, cache / ".scratch")
+                self.assertEqual((cache / "input.csv").read_text(), "original")
+                (scratch / "tools/.cache/input.csv").write_text("scratch only")
+                visited.append(scratch)
+
+            with patch.dict(os.environ):
+                for name in ("TMPDIR", "TEMP", "TMP"):
+                    os.environ.pop(name, None)
+                generated.check_generated(
+                    root,
+                    outputs=lambda r: {"Data/X.lua": (r / "Data/X.lua").read_bytes()},
+                    regenerate=regenerate,
+                    offline=True,
+                    success="ok",
+                )
+            self.assertEqual(len(visited), 2)
+            self.assertFalse(visited[0].exists())
+
+    def test_gate_honours_an_explicit_temporary_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository(Path(directory) / "repo", {"Data/X.lua": "same"})
+            override = Path(directory) / "scratch"
+            override.mkdir()
+            visited = []
+            with patch.dict(os.environ, {"TMPDIR": str(override)}), patch.object(tempfile, "tempdir", None):
+                generated.check_generated(
+                    root,
+                    outputs=lambda r: {"Data/X.lua": (r / "Data/X.lua").read_bytes()},
+                    regenerate=lambda scratch, offline: visited.append(scratch),
+                    offline=True,
+                    success="ok",
+                )
+            self.assertEqual(len(visited), 2)
+            self.assertEqual(visited[0].parent, override)
+            self.assertFalse(visited[0].exists())
+
+    def test_cache_copy_failure_explains_how_to_choose_scratch_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository(directory, {"Data/X.lua": "same"})
+            cache = root / "tools/.cache"
+            cache.mkdir(parents=True)
+            regenerate = Mock()
+            failure = shutil.Error([("input.csv", "copy.csv", "[Errno 122] Disk quota exceeded")])
+            with patch.object(generated.shutil, "copytree", side_effect=failure):
+                with self.assertRaises(SystemExit) as raised:
+                    generated.check_generated(root, outputs=Mock(), regenerate=regenerate, offline=True, success="ok")
+            self.assertIn("TMPDIR", str(raised.exception))
+            self.assertIn(str(cache), str(raised.exception))
+            self.assertIn("Disk quota exceeded", str(raised.exception))
+            regenerate.assert_not_called()
 
     def test_data_report_compares_a_revision_with_the_working_tree(self):
         with tempfile.TemporaryDirectory() as directory:
