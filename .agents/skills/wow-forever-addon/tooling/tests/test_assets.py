@@ -105,6 +105,13 @@ class AssetsTest(unittest.TestCase):
         )
         self.assertEqual(len(assets.check(source, ".xml")), 1)
 
+    def test_xml_attributes_inside_cdata_cannot_hide_real_attributes(self):
+        source = (
+            '<OnLoad><![CDATA[local value = "file=" ]]></OnLoad>\n'
+            '<Texture file="Interface\\Buttons\\UI-Panel-Button-Up"/>'
+        )
+        self.assertEqual(len(assets.check(source, ".xml")), 1)
+
     def test_art_helper_and_shape_waiver_cannot_bypass_blacklist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

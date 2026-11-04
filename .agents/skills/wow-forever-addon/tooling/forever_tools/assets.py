@@ -179,10 +179,12 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
             lambda match: match[1] if match[1].startswith("<![CDATA[") else "\n" * match[0].count("\n"),
             source,
         )
+        attribute_source = re.sub(r"<!\[CDATA\[[\s\S]*?\]\]>", lambda match: "\n" * match[0].count("\n"), source)
         values = [
-            (source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
+            (attribute_source.count("\n", 0, match.start()) + 1, html.unescape(match[2]))
             for match in re.finditer(
-                r"\b(?:atlas|file|bgFile|edgeFile|inherits|text|value)\s*=\s*([\"'])([\s\S]*?)\1", source
+                r"\b(?:atlas|file|bgFile|edgeFile|inherits|text|value)\s*=\s*([\"'])([\s\S]*?)\1",
+                attribute_source,
             )
         ]
         for match in re.finditer(r"<On[A-Za-z0-9_]+\b[^>]*>([\s\S]*?)</On[A-Za-z0-9_]+\s*>", source):
