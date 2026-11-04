@@ -562,7 +562,10 @@ local v5 = {
 	end,
 }
 env.ForeverFamily = v5
-check(currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever", "a newer copy serves ShowLink")
+check(
+	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
+	"a newer copy serves ShowLink"
+)
 check(current.Once("Test.later") == "v5", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
