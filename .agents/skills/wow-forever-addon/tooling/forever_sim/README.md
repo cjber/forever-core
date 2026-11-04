@@ -48,7 +48,7 @@ checks off for a scenario that asserts on them itself.
 | `sim:joinGroup{ ... }`, `sim:leaveGroup()` | party members and GROUP_ROSTER_UPDATE |
 | `sim:hover(frame)`, `sim:leave()`, `sim:click(frame)`, `sim:hoverUnit(unit)` | input, as fresh secure dispatches |
 | `sim:event(name, ...)`, `sim:advance(seconds)` | client events; timers, animations, OnUpdate, OnSizeChanged |
-| `sim:setGamepad(true)`, `sim:gamepadNavigate()` | the gamepad interface, and one secure pass of its navigation |
+| `sim:setGamepad(true)`, `sim:gamepadNavigate()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), and one secure pass of its navigation |
 | `sim:stub("Questie", options)` | a third-party stand-in, loaded with the addons |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |

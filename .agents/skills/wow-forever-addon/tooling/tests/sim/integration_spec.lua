@@ -95,6 +95,102 @@ local function mapScenario(addon)
 	return sim
 end
 
+local function orgrimmar(sim)
+	sim.world.maps[1454] = { name = "Orgrimmar", parent = 1411 }
+	sim.world.maps[1411] = { name = "Durotar", parent = 1414 }
+	sim.world.maps[1414] = { name = "Kalimdor", parent = 947, mapType = 2 }
+end
+
+test("an addon's loadstring chunk runs under its own setfenv and still reports the addon", function()
+	local sim = Sim.new()
+	sim:login()
+	sim:runAs(
+		"SimData",
+		[[
+		local data = loadstring("return {[12]=1429}")
+		setfenv(data, {})
+		local ok, t = pcall(data)
+		SimDataParsed = ok and t[12] or tostring(t)
+		SimDataFn = loadstring("return function() end")()
+	]]
+	)
+	sim:expectNoErrors("SimData")
+	eq(sim.G.SimDataParsed, 1429, "data chunk parsed under its own environment")
+	local fn, by = sim.G.SimDataFn, nil
+	sim.run(function()
+		fn()
+		by = sim.taint.current
+	end)
+	eq(by, "SimData", "a loadstring function still reports its addon")
+end)
+
+test("the gamepad binding stack is watched, and backing out of a panel under the gamepad raises nothing", function()
+	local sim = Sim.new()
+	sim:login()
+	local stack = sim.G.GamepadSharedUtility.InputBindingManager.bindingSetStack
+	sim:runAs("SimBinder", "table.insert(GamepadSharedUtility.InputBindingManager.bindingSetStack, {})")
+	local found = sim:gamepadTaint("SimBinder")
+	eq(#found, 1, "binding stack write recorded")
+	eq(found[1].table, "GamepadSharedUtility.InputBindingManager.bindingSetStack", "watched table")
+	table.remove(stack)
+	sim:takeErrors()
+	sim:setGamepad(true)
+	sim:input(function()
+		sim.G.ShowUIPanel(sim.G.SettingsPanel)
+	end)
+	sim:input(function()
+		sim.G.SettingsPanel:Close()
+	end)
+	for _, e in ipairs(sim:takeErrors()) do
+		assert(not e.message:find("Spell%a+Target%a+"), e.message)
+	end
+end)
+
+test("switching to the gamepad runs the interface transition, so a pooled menu's submenu opens clean", function()
+	local sim = Sim.new()
+	orgrimmar(sim)
+	sim:login()
+	local transitions = {}
+	local listener = sim.G.CreateFrame("Frame")
+	listener:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
+	listener:SetScript("OnEvent", function(_, _, new, old)
+		transitions[#transitions + 1] = new .. "<" .. old
+	end)
+	sim:openWorldMap(1454)
+	local button = sim.G.WorldMapFrame.WorldMapTrackingOptionsButton
+	sim:input(function()
+		button:OpenMenu()
+	end)
+	sim:input(function()
+		button:CloseMenu()
+	end)
+	sim:takeErrors()
+	sim:setGamepad(true)
+	local E = sim.G.Enum.InputDeviceInterfaceType
+	eq(transitions[1], E.Gamepad .. "<" .. E.Mkb, "transition (new, old)")
+	sim:input(function()
+		button:OpenMenu()
+	end)
+	local submenu
+	for _, d in button.menuDescription:EnumerateElementDescriptions() do
+		if d:HasElements() then
+			submenu = d
+		end
+	end
+	assert(submenu, "the filter menu has a submenu")
+	sim:input(function()
+		submenu:ForceOpenSubmenu()
+	end)
+	sim:advance(0.1)
+	sim:closeWorldMap()
+	sim:setGamepad(false)
+	eq(transitions[2], E.Mkb .. "<" .. E.Gamepad, "transition back")
+	sim:expectNoErrors()
+	-- The transition's CVars read as numbers in tainted code too, where an unset CVar reads nil.
+	sim:runAs("SimCvar", 'SimEdgePan = GetCVarNumberOrDefault("GamepadMapEdgePanDistance")')
+	eq(type(sim.G.SimEdgePan), "number", "gamepad map CVar under taint")
+end)
+
 test("native map API opens, closes and reopens with visibility callbacks", function()
 	local sim = Sim.new()
 	sim.world.maps[1454] = { name = "Orgrimmar", parent = 1411 }

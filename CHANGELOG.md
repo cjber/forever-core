@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **Simulator loadstring chunks keep their instrumentation under setfenv.** An addon's runtime chunk binds the taint marker as a local, so a data parser that gives the chunk an empty environment gets its table back, and functions the chunk defines still report the addon.
+- **Simulator SetToDefaults clears anchors.** A region released to the menu compositor's pool no longer keeps its old points, so reopening a stock dropdown with checkboxes cannot raise "Cannot anchor to a region dependent on it".
+- **Simulator gamepad interface matches the client.** The watched binding stack is `GamepadSharedUtility.InputBindingManager`'s, `FocusEnter` and `FocusExit` run `OnEnter` and `OnLeave` in the caller's taint, `SpellCanTargetItem` and `SpellStopTargeting` exist, and the producer's `fetch.py` and `sync.py` are executable.
+- **Simulator setGamepad runs the interface transition.** Switching fires `INPUT_DEVICE_INTERFACE_TRANSITION` (new style, old style), and the gamepad map CVars it reads have values, so a pooled menu's gamepad setup runs and its submenus open clean.
+
 ## [0.4.10] - 2026-11-04
 
 - **The suite's documents no longer list Hoard Forever as a consumer.** The boundaries and consumer lists name only the addons that ship against this core, so a reader is not pointed at an addon that has been retired.

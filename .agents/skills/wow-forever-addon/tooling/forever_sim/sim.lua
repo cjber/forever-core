@@ -119,13 +119,22 @@ function Sim.new(opts)
 	if opts.hook or os.getenv("FOREVER_SIM_HOOK") == "1" then
 		Taint.attach()
 	end
+	-- An addon's runtime chunk is instrumented with the marker bound as a local of a wrapper, so the chunk keeps it
+	-- under any environment the addon gives it (a data parser's setfenv(chunk, {})). The chunk name defaults to the
+	-- addon's own code, as the client's does.
 	local rawLoadstring = loadstring
+	local Instrument = require("instrument")
+	local bind = "local " .. Instrument.MARKER .. " = ...; return function(...) "
 	sim.G.loadstring = function(code, name)
 		local addon = Taint.current
+		local chunk, err
 		if addon and type(code) == "string" then
-			code = require("instrument").rewrite(code, addon)
+			local wrapper
+			wrapper, err = rawLoadstring(bind .. Instrument.rewrite(code, addon) .. "\nend", name or code)
+			chunk = wrapper and wrapper(mark)
+		else
+			chunk, err = rawLoadstring(code, name)
 		end
-		local chunk, err = rawLoadstring(code, name)
 		if chunk then
 			setfenv(chunk, sim.env)
 		end

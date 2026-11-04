@@ -768,6 +768,13 @@ function M.build(sim)
 	impl.ScriptRegion.IsMouseMotionFocus = function(self)
 		return sim.mouseFocus == self
 	end
+	-- Gamepad focus (SmartNavigation) runs the region's OnEnter / OnLeave in the caller's taint.
+	impl.ScriptRegion.FocusEnter = function(self)
+		fire(self, "OnEnter")
+	end
+	impl.ScriptRegion.FocusExit = function(self)
+		fire(self, "OnLeave")
+	end
 	impl.ScriptRegion.IsAnchoringSecret = function(self)
 		return anchoringSecret(self)
 	end
@@ -777,8 +784,10 @@ function M.build(sim)
 	impl.ScriptRegion.HasAnySecretAspect = function(self)
 		return next(st(self).aspects) ~= nil
 	end
+	-- The client's SetToDefaults also clears the anchors: Compositor's PoolReset only hides a pooled region.
 	impl.ScriptRegion.SetToDefaults = function(self)
 		local s = st(self)
+		s.points = {}
 		s.aspects = {}
 		s.secretSize = nil
 		s.text = nil
