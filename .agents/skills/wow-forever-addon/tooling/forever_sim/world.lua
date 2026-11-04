@@ -504,6 +504,12 @@ function M.build(sim)
 	end
 
 	-- Maps: the player's position and the map tree (fill sim.world.maps[id] = { name, parent, mapType }).
+	impl["C_Map.OpenWorldMap"] = function(mapID)
+		sim.taint.dispatch(nil, function()
+			G.C_AddOns.LoadAddOn("Blizzard_WorldMap")
+			G.OpenWorldMap(mapID)
+		end)
+	end
 	impl["C_Map.GetBestMapForUnit"] = function(u)
 		if Secret.unwrap(u) == "player" then
 			return W.player.map

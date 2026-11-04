@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Simulator map visibility follows the client API.** Opening a map selects the requested area, and closing or reopening it dispatches visibility callbacks without quest-map refresh errors, thanks to cjber for the report.
+
 - **Simulator startup avoids recursive scroll callbacks.** Scroll offsets notify handlers only when their value changes, preventing Blizzard's map legend from overflowing the Lua stack and triggering native crashes in the pinned CI runtime, thanks to cjber for the report.
 
 ## [0.4.7] - 2026-11-03
