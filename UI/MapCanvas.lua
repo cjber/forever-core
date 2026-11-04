@@ -12,8 +12,8 @@ local addonName, ns = ...
 --   map:GetMapID(), map:GetCanvas(), map:GetCanvasScale(), map:GetCanvasZoomPercent(), map:GetGlobalPinScale(),
 --   map:IsVisible() and map:GetPinFrameLevelsManager():GetValidFrameLevel(type)
 -- (each returns a field or works one out from fields: Blizzard_MapCanvas.lua, MapCanvas_PinFrameLevelsManager.lua),
--- plus the canvas's size and the gamepad's SoftCursor. tests/map_canvas_spec.lua runs the map files against a map that
--- fails on any write.
+-- plus the canvas's size and the gamepad's SoftCursor. tests/map_canvas_spec.lua runs this shared helper against a map
+-- that fails on any write.
 --
 -- One view per map: a frame of ours on the canvas, which clips it and shows and hides it with the map. It is made
 -- with no parent and then moved there, since the gamepad interface follows frames created inside an open window.
