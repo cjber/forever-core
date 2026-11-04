@@ -35,10 +35,14 @@ SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "hoard-forever")
 # This drift check reaches every addon in the suite.
 SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever",)
 PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
+MAP_CANVAS_CONSUMERS = ("adventure-guide-forever", "legacy-forever")
 
 # Consumer path: the repos that carry it. A consumer keeps each file at the same path as core, except where SOURCES
 # names the core file it is copied from.
 VENDORED = {
+    "UI/MapCanvas.lua": MAP_CANVAS_CONSUMERS,
+    "tests/strict_map.lua": MAP_CANVAS_CONSUMERS,
+    "tests/map_canvas_spec.lua": MAP_CANVAS_CONSUMERS,
     "tools/check_core_shared.py": SUITE_CONSUMERS,
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
     "tools/deadcode.py": SETTINGS_CONSUMERS,

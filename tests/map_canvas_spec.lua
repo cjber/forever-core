@@ -1,0 +1,90 @@
+-- The map rejects writes and calls beyond the helper's read-only contract.
+local Kit = dofile("tests/strict_map.lua")
+Kit.Install(_G)
+_G.Enum = {}
+local checks = 0
+local function check(value, message)
+	checks = checks + 1
+	assert(value, message)
+end
+local ns = {
+	SafeCall = function(_, fn, ...)
+		return true, fn(...)
+	end,
+}
+assert(loadfile("UI/MapCanvas.lua"))("CanvasSpec", ns)
+local changes = {}
+local canvas = ns.MapCanvas
+canvas.Watch(Kit.map, function(_, what)
+	changes[#changes + 1] = what
+end)
+local actions = {}
+local mixin = CreateFromMixins(canvas.PinMixin, {
+	takesMouse = true,
+	clicks = true,
+	OnAcquired = function(self, x, y)
+		self:SetPosition(x, y)
+		self:UseFrameLevelType("PIN_FRAME_LEVEL_AREA_POI")
+		self:SetScalingLimits(1, 1, 1.2)
+	end,
+	OnMouseClickAction = function(_, button)
+		actions[#actions + 1] = button
+	end,
+})
+local pool = canvas.Pool(Kit.map, mixin, { marker = "route" })
+Kit.Tick()
+local pin = pool:Acquire(0.25, 0.5)
+check(pin.point[2] == Kit.canvas and pin.point[4] == 250 and pin.point[5] == -350, "position")
+check(pin.level == 30, "native frame level")
+check(#pin.passThrough == 1 and pin.passThrough[1] == "RightButton", "default right passthrough")
+local function Click(button)
+	Kit.mouseOver = pin
+	pin:Run("OnEnter")
+	Kit.Fire("GLOBAL_MOUSE_DOWN", button)
+	Kit.Fire("GLOBAL_MOUSE_UP", button)
+end
+Click("LeftButton")
+Click("RightButton")
+Click("MiddleButton")
+check(#actions == 1 and actions[1] == "LeftButton", "default clicks")
+check(not pcall(function()
+	Kit.map.overlayFrames[1] = pin
+end), "map overlay writes fail")
+pool:ReleaseAll()
+check(#pool:Active() == 0, "released pool is empty")
+check(pool:Acquire(0.5, 0.25) == pin, "released pins are reused")
+pool:ReleaseAll()
+mixin.ShouldMouseButtonBePassthrough = function()
+	return false
+end
+-- New frames receive the consumer's right-button policy when mixed in.
+pool = canvas.Pool(Kit.map, mixin, { marker = "route" })
+pin = pool:Acquire(0.25, 0.5)
+check(#pin.passThrough == 0, "right action takes both buttons")
+Click("RightButton")
+check(#actions == 2 and actions[2] == "RightButton", "right action fires")
+local count = 0
+for _, active in ipairs(pool:Active()) do
+	count = count + 1
+	check(active == pin, "active iterator returns pin")
+end
+check(count == 1, "active count")
+local markers = ForeverMapMarkers.CanvasSpec(Kit.map)
+check(#markers == 1 and markers[1].kind == "route" and markers[1].x == 0.25, "addon-keyed markers")
+Kit.scale, Kit.zoom = 2, 1
+Kit.Tick()
+check(math.abs(pin.scale - 0.6) < 1e-9 and math.abs(pin.point[4] - 250 / 0.6) < 1e-9, "zoom preserves position")
+canvas.SetShown(Kit.map, false)
+check(#ForeverMapMarkers.CanvasSpec(Kit.map) == 0, "hidden markers omitted")
+canvas.SetShown(Kit.map, true)
+Kit.mapID = 1415
+check(#ForeverMapMarkers.CanvasSpec(Kit.map) == 0, "stale map markers omitted")
+Kit.Tick()
+check(changes[#changes] == "map", "map change")
+Kit.canvas:SetSize(800, 600)
+Kit.Tick()
+check(changes[#changes] == "size", "resize notification")
+check(math.abs(pin.point[4] - 200 / 0.6) < 1e-9, "resize repositions pins")
+Kit.Close()
+check(changes[#changes] == "hide", "hide notification")
+print(("map_canvas_spec: %d checks passed"):format(checks))
