@@ -50,6 +50,37 @@ test("widgets: scroll callbacks only report changed offsets", function()
 	end
 end)
 
+test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local parent = widgets.new("Frame")
+	local region = widgets.new("Frame", parent)
+	region:SetPoint("LEFT", parent, "LEFT", 4, 0)
+	eq(region:GetNumPoints(), 1, "anchored")
+	region:SetToDefaults()
+	eq(region:GetNumPoints(), 0, "anchors cleared")
+end)
+
+test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's taint", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local frame = widgets.new("Button")
+	local seen = {}
+	frame:SetScript("OnEnter", function()
+		seen[#seen + 1] = "enter:" .. tostring(Taint.current)
+	end)
+	frame:SetScript("OnLeave", function()
+		seen[#seen + 1] = "leave:" .. tostring(Taint.current)
+	end)
+	frame:FocusEnter()
+	Taint.set("Addon")
+	frame:FocusExit()
+	Taint.set(nil)
+	eq(table.concat(seen, ","), "enter:nil,leave:Addon")
+end)
+
 test("loader: bootstrap markers retain matching game conditions", function()
 	local toc = Loader.parseToc(
 		"Shared.lua [Bootstrap]\nWrong.lua [Bootstrap] [AllowLoadGameType cata]\n"

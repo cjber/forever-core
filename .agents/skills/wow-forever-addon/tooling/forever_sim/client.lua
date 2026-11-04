@@ -638,7 +638,19 @@ function M.build(sim)
 	end
 
 	-- CVars.
+	-- Numeric CVars client code reads through GetCVarNumberOrDefault even when tainted (an unset one reads nil
+	-- then, and tonumber(nil) errors). The gamepad interface transition reads these; the values are stand-ins.
+	local cvarDefaults = {
+		GamepadMapScrollSpeed = "1",
+		GamepadMapScrollSpeedFullScreen = "1",
+		GamepadMapZoomSpeed = "1",
+		GamepadMapEdgePanDistance = "40",
+		GamepadTargetingModifierVisualDelay = "0.5",
+	}
 	sim.cvars = {}
+	for name, value in pairs(cvarDefaults) do
+		sim.cvars[name] = value
+	end
 	-- Client code reads CVars the client always defines; an unset one reads "0" for it (recorded as a gap).
 	local function cvar(name)
 		local v = sim.cvars[name]
@@ -658,7 +670,7 @@ function M.build(sim)
 		return v == "1" or v == "true"
 	end
 	sim.impl["C_CVar.GetCVarDefault"] = function(name)
-		return sim.cvars[name]
+		return cvarDefaults[name] or sim.cvars[name]
 	end
 	sim.impl["C_CVar.RegisterCVar"] = function(name, value)
 		if sim.cvars[name] == nil then

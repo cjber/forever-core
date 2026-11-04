@@ -194,6 +194,10 @@ function M.build(sim)
 	G.SpellIsTargeting = function()
 		return false
 	end
+	G.SpellCanTargetItem = function()
+		return false
+	end
+	G.SpellStopTargeting = function() end
 	G.debuglocals = function()
 		return ""
 	end

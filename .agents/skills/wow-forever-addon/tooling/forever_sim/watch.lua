@@ -23,7 +23,10 @@ M.WATCHED = {
 	{ "ObjectiveTrackerManager.containers", { "ObjectiveTrackerManager", "containers" } },
 	{ "ObjectiveTrackerManager.moduleToContainerMap", { "ObjectiveTrackerManager", "moduleToContainerMap" } },
 	{ "ObjectiveTrackerFrame.modules", { "ObjectiveTrackerFrame", "modules" } },
-	{ "InputBindingManager.bindingSetStack", { "InputBindingManager", "bindingSetStack" } },
+	{
+		"GamepadSharedUtility.InputBindingManager.bindingSetStack",
+		{ "GamepadSharedUtility", "InputBindingManager", "bindingSetStack" },
+	},
 }
 
 function M.build(sim)
@@ -152,17 +155,26 @@ function M.build(sim)
 		end
 	end
 
-	-- Turns the gamepad interface on or off (C_InputInterfaceStyle, CVAR_UPDATE).
+	local function interfaceStyle(gamepad)
+		local E = G.Enum.InputDeviceInterfaceType or {}
+		return gamepad and (E.Gamepad or 1) or (E.Mkb or 0)
+	end
+
+	-- Turns the gamepad interface on or off (C_InputInterfaceStyle, CVAR_UPDATE), and on a change fires
+	-- INPUT_DEVICE_INTERFACE_TRANSITION (new style, old style), which runs InputUtil's gamepad Setup/Init schemes.
 	function sim.setGamepad(_, on)
+		local was = sim.gamepad == true
 		sim.gamepad = on and true or false
 		sim.cvars.GamePadEnable = on and "1" or "0"
 		sim.events.fire("CVAR_UPDATE", "GamePadEnable", sim.cvars.GamePadEnable)
 		sim.events.fire("ACTIVE_INPUT_DEVICE_TYPE_CHANGED")
+		if was ~= sim.gamepad then
+			sim.events.fire("INPUT_DEVICE_INTERFACE_TRANSITION", interfaceStyle(sim.gamepad), interfaceStyle(was))
+		end
 		sim:advance(0.1)
 	end
 	sim.impl["C_InputInterfaceStyle.GetCurrentStyle"] = function()
-		local E = G.Enum.InputDeviceInterfaceType or {}
-		return sim.gamepad and (E.Gamepad or 1) or (E.Mkb or 0)
+		return interfaceStyle(sim.gamepad)
 	end
 
 	-- One gamepad navigation pass, as the client's secure gamepad code runs on a target change: it walks the
