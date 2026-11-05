@@ -34,7 +34,7 @@ python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py 
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
-fetched at a pinned revision by `tools/fetch_tracker_ui.py`, against this host. The other four specs stub everything
+fetched at a pinned revision by `tools/fetch_tracker_ui.py`, against this host. The other tracker specs stub everything
 and run anywhere.
 
 ## Layout

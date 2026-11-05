@@ -15,6 +15,9 @@ the addon they already have.
 | `tests/tracker_host_spec.lua` | the native integration contract, run against Blizzard's own tracker source |
 | `tests/tracker_host_harness.lua` | the tracker test harness shared by the four tracker consumers |
 | `tests/tracker_questie_spec.lua` | the Questie placement contract |
+| `tests/tracker_combat_spec.lua` | the column stays still as combat starts and ends |
+| `tests/tracker_geometry_spec.lua` | the column below the native quests across tracker anchors and scales |
+| `tests/tracker_host_lock_spec.lua` | the grip and the Lock switch on the host |
 | `tools/fetch_tracker_ui.py` | the pinned Blizzard tracker source the host spec runs against |
 | `UI/Report.lua` | the shared report and issue composer |
 | `tests/report_spec.lua` | the report and issue contract |
