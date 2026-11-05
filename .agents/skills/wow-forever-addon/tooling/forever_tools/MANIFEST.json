@@ -9,7 +9,7 @@
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
     "assets.py": "0a7c034e1f8d31c9b8c103ef22ebb9d05a2d9bb2b68a0ebb9df9ec72865c3587",
-    "changelog.py": "ff1f73dac6e782c421389e672b8483bb35c022626ccb24a0da9abb28ddb93610",
+    "changelog.py": "5a283e655bdac72957ce7d8a07b8c30f5f90ece3a7b99653e6d130500e8af496",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
     "doctor.py": "515b638747b80cdf397141eb3d9df5de96f40e58a7af28d32310c81540fe0060",
     "editorconfig.py": "736f88f5f0e0727799fd4f8b3d29ebc4adcbd9a46b5f64eacb83bcb5c179c0b5",
