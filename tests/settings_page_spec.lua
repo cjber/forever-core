@@ -95,24 +95,6 @@ _G.Settings = {
 		calls.categories[#calls.categories + 1] = category
 	end,
 }
--- The dropdown API the client exposes as plain globals.
-local menus = {}
-_G.UIDropDownMenu_CreateInfo = function()
-	return {}
-end
-_G.UIDropDownMenu_SetWidth = function(dropdown, width)
-	dropdown.menuWidth = width
-end
-_G.UIDropDownMenu_SetSelectedValue = function(dropdown, value)
-	dropdown.selected = value
-end
-_G.UIDropDownMenu_AddButton = function(info, level)
-	menus[#menus + 1] = { info = info, level = level }
-end
-_G.UIDropDownMenu_Initialize = function(dropdown, initialize)
-	dropdown.initialize = initialize
-end
-
 -- An addon's L: the phrases it translated, and English for the rest, exactly as Locales/enUS.lua answers.
 local function Locale(phrases)
 	return setmetatable(phrases, {
@@ -123,7 +105,6 @@ local function Locale(phrases)
 end
 
 local function Load(phrases)
-	menus = {}
 	calls = { categories = {}, initializers = {} }
 	local ns = { L = phrases and Locale(phrases) or nil }
 	assert(loadfile("UI/SettingsPage.lua"))("ExampleAddon", ns)
@@ -142,7 +123,7 @@ local function Children(frame, kind)
 end
 
 -- A page with one of everything, the way an addon's own Core/Settings.lua builds it.
-local saved = { enabled = true, scale = 1.5, mode = "b" }
+local saved = { enabled = true, scale = 1.5 }
 local Page = Load({ ["Example options"] = "Options d'exemple", ["Tick"] = "Cocher", ["Wide"] = "Large" })
 local seen = {}
 local category, panel = Page.Register("Example options", function(target, page)
@@ -157,11 +138,6 @@ local category, panel = Page.Register("Example options", function(target, page)
 	end, function(value)
 		saved.scale = value
 	end, 0.5, 2, 0.5)
-	page.AddDropdown(target, "Tick", function()
-		return saved.mode
-	end, function(value)
-		saved.mode = value
-	end, { { "a", "Tick" }, { "b", "Wide" } })
 	page.AddButton(target, "Tick", function()
 		saved.pressed = true
 	end)
@@ -203,20 +179,6 @@ equal(slider.step, 0.5, "and its step")
 slider:SetValue(2)
 equal(saved.scale, 2, "moving it writes the setting")
 
--- AddDropdown: the saved value selected, one menu entry per choice, the value written on pick.
-local dropdown = Children(panel, "Frame")[1]
-check(dropdown ~= nil and dropdown.template == "UIDropDownMenuTemplate", "the page has its dropdown")
-equal(dropdown.selected, "b", "it starts on the saved value")
-equal(dropdown.menuWidth, 180, "at the page's width")
-dropdown.initialize(dropdown, 1)
-equal(#menus, 2, "one menu entry per choice")
-equal(menus[1].info.text, "Cocher", "each entry labelled through ns.L")
-equal(menus[2].info.text, "Large", "including the selected one")
-equal(menus[1].info.value, "a", "each entry carrying the value the addon saves")
-menus[1].info.func()
-equal(saved.mode, "a", "picking writes the value")
-equal(dropdown.selected, "a", "and moves the dropdown's own selection")
-
 -- AddButton: the label, and the callback behind it.
 local button = Children(panel, "Button")[1]
 check(button ~= nil and button.template == "SharedButtonSmallTemplate", "the page has its button")
@@ -233,7 +195,7 @@ for _, child in ipairs(panel.children) do
 		rows[#rows + 1] = child
 	end
 end
-check(#rows == 5, "the title and the four rows are placed on the canvas")
+check(#rows == 4, "the title and the three rows are placed on the canvas")
 check(rows[1] == panel.title and panel.title.y == -16, "the title sits at the top")
 for index = 2, #rows do
 	check(rows[index].y < rows[index - 1].y, "row " .. index .. " sits below row " .. (index - 1))

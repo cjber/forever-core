@@ -23,6 +23,8 @@ jobs:
       # Forever Core's client load rule (tools/check_client_load.py): every font object exists in the client, and no
       # TOC lists Bindings.xml. First, so a vendored file that lags core does not hide it.
       - run: python3 tools/check_client_load.py
+      # Forever Core's menu rule (tools/check_menu_scroll.py): a menu built from a list scrolls.
+      - run: python3 tools/check_menu_scroll.py
       - if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}

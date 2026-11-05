@@ -46,6 +46,7 @@ VENDORED = {
     "tools/check_core_shared.py": SUITE_CONSUMERS,
     "tools/check_client_load.py": SUITE_CONSUMERS,
     "tools/blizzard_fonts.txt": SUITE_CONSUMERS,
+    "tools/check_menu_scroll.py": SUITE_CONSUMERS,
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
     "tools/deadcode.py": SETTINGS_CONSUMERS,
     "tools/deadcode-allow.txt": SETTINGS_CONSUMERS,
