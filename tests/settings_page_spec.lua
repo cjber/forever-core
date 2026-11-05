@@ -64,8 +64,10 @@ local function widget(kind, parent, template)
 	function methods:GetValue()
 		return self.value
 	end
-	function methods:CreateFontString()
-		return widget("FontString", self)
+	function methods:CreateFontString(_, _, font)
+		local text = widget("FontString", self)
+		text.font = font
+		return text
 	end
 	-- A client frame answers a method it has and nothing else: reading a field it never had gives nil, as the client
 	-- does, so a value the page keeps on the panel is the page's own and not a stub's.
@@ -173,6 +175,7 @@ equal(panel.name, "Options d'exemple", "and so is the frame, as the client's sea
 check(calls.categories[1] == category and #calls.categories == 1, "the category is registered once, by the page")
 check(calls.canvas.panel == panel, "the canvas is the panel")
 equal(panel.title.text, "Options d'exemple", "the page has its title, translated")
+equal(panel.title.font, "GameFontHighlightHuge", "in the font Blizzard's own settings pages title theirs with")
 
 -- AddCheck: checked from the getter, writes the setter, carries its tooltip.
 local check_ = Children(panel, "CheckButton")[1]

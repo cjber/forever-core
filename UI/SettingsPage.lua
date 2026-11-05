@@ -49,7 +49,7 @@ function Page.Register(name, build)
 	end
 	local panel = CreateFrame("Frame")
 	panel.name = Text(name)
-	local title = panel:CreateFontString(nil, "ARTWORK", "GameFontLarge")
+	local title = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
 	title:SetPoint("TOPLEFT", 16, -TITLE)
 	title:SetText(Text(name))
 	panel.title = title

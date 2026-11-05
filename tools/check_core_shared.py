@@ -44,6 +44,8 @@ VENDORED = {
     "tests/strict_map.lua": MAP_CANVAS_CONSUMERS,
     "tests/map_canvas_spec.lua": MAP_CANVAS_CONSUMERS,
     "tools/check_core_shared.py": SUITE_CONSUMERS,
+    "tools/check_client_load.py": SUITE_CONSUMERS,
+    "tools/blizzard_fonts.txt": SUITE_CONSUMERS,
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
     "tools/deadcode.py": SETTINGS_CONSUMERS,
     "tools/deadcode-allow.txt": SETTINGS_CONSUMERS,

@@ -20,6 +20,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Forever Core's client load rule (tools/check_client_load.py): every font object exists in the client, and no
+      # TOC lists Bindings.xml. First, so a vendored file that lags core does not hide it.
+      - run: python3 tools/check_client_load.py
       - if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}

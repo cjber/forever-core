@@ -20,6 +20,8 @@ CORE = {
     "tests/peer_stats_spec.lua": b"core peer stats spec\n",
     "tests/micro_button_spec.lua": b"core micro spec\n",
     "tools/check_core_shared.py": b"core checker\n",
+    "tools/check_client_load.py": b"core client load\n",
+    "tools/blizzard_fonts.txt": b"core fonts\n",
     "tools/core-shared-drift.yml": b"core workflow\n",
 }
 
@@ -72,7 +74,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("10 vendored files match", out)
+        self.assertIn("12 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
@@ -137,7 +139,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("10 vendored files match", out)
+        self.assertIn("12 vendored files match", out)
 
 
 if __name__ == "__main__":

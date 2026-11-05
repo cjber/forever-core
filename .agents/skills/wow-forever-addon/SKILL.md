@@ -200,6 +200,13 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   returns first when `ns.Usable(tooltip)` is false (nil or forbidden). Both live in a small file with no other
   addon state (Adventure Guide Forever's `Core/Secret.lua`), so it copies across the family as is. `tools/lint_secret.py` (`forever_tools.readable`) runs in `typecheck.sh`
   and refuses an unguarded read unless its line says why it is safe (`-- secret-ok: reason`).
+- **WFA-37** Only what the client defines loads. A font object (`CreateFontString`'s third argument,
+  `SetFontObject` and its button forms, XML `inherits=`, `font=` and `style=`) is one the Forever client's UI defines
+  or the addon defines itself: the client has `GameFontNormalLarge` but no `GameFontLarge`, and a missing one errors
+  on every login. A settings page title uses `GameFontHighlightHuge`, as Blizzard's own pages do. A TOC never lists
+  `Bindings.xml`: the client loads it by itself, and listed it logs one warning per binding. `tools/check_client_load.py`
+  and its font list `tools/blizzard_fonts.txt`, vendored from forever-core, run in the required `core-shared` job of
+  every repo.
 - **WFA-31** `THIRD_PARTY.md` lists every input: what it is, where its pin lives (the constant in `tools/`, never
   a copied value that a data refresh would leave stale), its licence, and whether it ships in the zip or is
   build-only. An embedded library (LibStub and the like) ships with its licence and is credited there; every
