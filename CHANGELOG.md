@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **The micro-menu button hooks the game's update once.** It hooked `UpdateMicroButtons` again on every refresh, so each update ran one layer deeper until the game menu, the map and the micro buttons threw "C stack overflow" errors and the frame rate dropped.
+
+## [0.4.12] - 2026-11-05
+
 - **The tracker column stays still through combat, quests first.** The column no longer moves the game's quest tracker: the All Objectives header and the quests keep their slot, and the Forever sections read below them, in combat and out. Out of combat the sections used to sit above the quests and swap below them as a fight began, and a redraw in combat could drop the last section's last line.
 
 ## [0.4.11] - 2026-11-04
