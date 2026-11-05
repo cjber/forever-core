@@ -47,7 +47,9 @@ local function clears(a, b)
 	local bl, bt, bw, _, bb = bounds(b)
 	return not (al < bl + bw - 0.01 and al + aw > bl + 0.01 and ab < bt - 0.01 and at > bb + 0.01)
 end
-local function scenario(anchor, scale, uiScale, userScale)
+-- `fill`: the section takes all the room it is given, as a long guide does; otherwise it is one 227-high block, shown
+-- whole when it fits and skipped when it does not, as Blizzard's modules lay out blocks.
+local function scenario(anchor, scale, uiScale, userScale, fill)
 	local frames, timers, ready, combat = {}, {}, nil, false
 	local screen
 	local function frame(_, name, parent)
@@ -191,12 +193,16 @@ local function scenario(anchor, scale, uiScale, userScale)
 	local host = frames[4]
 	local module = frame()
 	module.uiOrder = -1
-	module.SetContainer, module.Update = noop, noop
+	local used = 0
+	module.SetContainer = noop
+	module.Update = function(_, available)
+		used = fill and math.max(0, math.floor(available)) or (available >= 227 and 227 or 0)
+	end
 	module.SetParent = function(self, parent)
 		self.parent = parent
 	end
 	module.GetContentsHeight = function()
-		return 227
+		return used
 	end
 	ns.TrackerHost.Attach(module)
 	local function drain()
@@ -206,7 +212,7 @@ local function scenario(anchor, scale, uiScale, userScale)
 			fn()
 		end
 	end
-	local label = anchor .. " scale " .. scale .. " ui " .. uiScale .. " user " .. userScale
+	local label = anchor .. " scale " .. scale .. " ui " .. uiScale .. " user " .. userScale .. (fill and " fill" or "")
 	local slot = { native:GetPoint() }
 	ready()
 	drain()
@@ -226,6 +232,12 @@ local function scenario(anchor, scale, uiScale, userScale)
 	local top, contentBottom = below()
 	-- Only the off-screen fallback, for quests ending too low to fit the column below them, places it elsewhere.
 	local fits = host.point[2] == nineSlice
+	if fill and used > 0 then
+		-- A section that fills the room below the quests shrinks to it: it never sends the column to the side.
+		check(fits, "a section filling the room stays below the quests: " .. label)
+		local _, _, _, _, hostBottom = bounds(host)
+		check(hostBottom >= -0.01, "and ends on screen: " .. label)
+	end
 	if fits then
 		check(math.abs(top - contentBottom) < 0.01, "the column starts where the native quests end: " .. label)
 	end
@@ -278,6 +290,7 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 		for _, userScale in ipairs({ 0.5, 1 }) do
 			scenario(anchor, scale, 1, userScale)
 			scenario(anchor, scale, 0.8, userScale)
+			scenario(anchor, scale, 1, userScale, true)
 		end
 	end
 end

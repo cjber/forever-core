@@ -43,7 +43,11 @@ check(t.nativeHeader.point[2] == native, "client update re-anchors header to nat
 host:MarkDirty()
 drain()
 check(t.nativeHeader.point[2] == native, "layouts leave header anchored to native parent")
-check(math.abs(second.available - (540 - 24 / 1.25 - 90)) < 1e-9, "remaining space runs from the quests to the screen")
+-- The first section's 80 and the gap under it, then the gap the second section leaves under itself.
+check(
+	math.abs(second.available - (540 - 24 / 1.25 - 90 - 10)) < 1e-9,
+	"remaining space runs from the quests to the screen, less each section's gap"
+)
 check(native:GetHeight() == 300, "native viewport preserves an externally sized height before clamping")
 native:SetHeight(420)
 native.scripts.OnSizeChanged(native)

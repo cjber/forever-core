@@ -294,17 +294,21 @@ local function NativeCollapsed()
 	return ObjectiveTrackerFrame.isCollapsed == true
 end
 
--- Lays every section out from the host's top. Returns whether any section drew.
+-- The space under each section that draws.
+local GAP = 10
+
+-- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
+-- column never runs past `available`. Returns whether any section drew.
 local function LayoutModules(width, available, reserve)
 	ns.TrackerOrder.Sort(modules)
 	local heights, total = {}, 0
 	for index, module in ipairs(modules) do
 		module:SetWidth(width)
-		module:Update(math.max(0, available - total))
+		module:Update(math.max(0, available - total - GAP))
 		local used = module:GetContentsHeight()
 		heights[index] = used
 		if used > 0 then
-			total = total + used + 10
+			total = total + used + GAP
 		end
 	end
 	local hasSections = total > 0
@@ -314,7 +318,7 @@ local function LayoutModules(width, available, reserve)
 		module:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -height)
 		local used = heights[index]
 		if used > 0 then
-			height = height + used + 10
+			height = height + used + GAP
 		end
 	end
 	host:SetHeight(math.max(1, height))
@@ -403,15 +407,19 @@ local function LayoutAttached()
 	local contentBottom = edgePoint == "TOP" and edge:GetTop() or edge:GetBottom()
 	local layoutMargin = 24 * layoutScreenScale / layoutScale
 	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / host:GetEffectiveScale()
-	if not LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0) then
+	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
+	-- column elsewhere.
+	if LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0) then
+		return
+	end
+	-- No section fits below at all (quests ending at the bottom of the screen). If there is anything to show, it goes
+	-- above the tracker when there is room there, otherwise to the side away from the tracker's anchored edge, so it
+	-- stays visible without overlapping the protected frame.
+	local screenHeight = (UIParent:GetHeight() or 0) * layoutScreenScale / layoutScale
+	if not LayoutModules(host:GetWidth(), math.max(0, screenHeight - layoutMargin), 0) then
 		host:Hide()
 		return
 	end
-	if contentBottom - (host:GetHeight() or 0) >= layoutMargin then
-		return
-	end
-	-- The column would run off the bottom of the screen. If there is room above the tracker it goes there, otherwise to
-	-- the side away from the tracker's anchored edge, so it stays visible without overlapping the protected frame.
 	local nativePoint, hostPoint = StackPoints(point)
 	host:ClearAllPoints()
 	local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
