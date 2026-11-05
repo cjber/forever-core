@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Tall tracker sections stay under your quests.** A section that fills the room left below the quest tracker, such as a long guide step, now shows what fits there instead of the whole column jumping beside the tracker. Each section is given the room the ones above it left, less the gap under it, so the column never runs past the bottom of the screen. The column only moves above or beside the tracker when no section fits below it at all.
+
 ## [0.4.16] - 2026-11-05
 
 - **The Forever addons settings page ends with a Ko-fi row.** Its Copy link button shows the Ko-fi address in the same small window the addons' store links use, ready to copy. Nothing is locked behind it, and it shows only when you open the settings page. For addon authors: `ShowSupport` opens that window, and `VERSION` is 5.
