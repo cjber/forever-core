@@ -85,7 +85,9 @@ UpdateMicroButtons = nil
 ---@field buttons ForeverMicroButton[] every addon button, in creation order
 ---@field Reflow fun() the first copy's placement, which every copy runs
 ---@field hookedUpdate boolean?
----@field hookedLayout boolean?
+---@field hookedScripts table<Frame, boolean>? the frames whose scripts are hooked, weak keys
+---@field events Frame? the frame listening for Edit Mode layout changes
+---@field first { button: Frame, origin: number, applied: number }? where the row's first button was placed last
 ---@type ForeverMicroButtonRegistry?
 ForeverMicroButtons = nil
 

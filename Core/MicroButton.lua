@@ -103,28 +103,31 @@ local function Reflow()
 		Chain(before, MicroMenu, anchoredRight and "LEFT" or "RIGHT", 0)
 		return
 	end
-	-- Every slot is one step: a button's width less the grid's overlap. The button that never moves (Game Menu when
-	-- the row grows left, the first button when it grows right) still has the grid's own anchor, so each run places
-	-- the row from where the grid put it and repeated runs land in the same place.
+	-- Every slot is one step: a button's width less the grid's overlap. The grid puts its first button at the row's
+	-- origin; this places the row from there, so repeated runs land in the same place. The first button's own anchor
+	-- gives the origin unless it still holds the offset this placed it at last time.
 	local collections = position[CollectionsMicroButton] or 0
 	local width = native[1]:GetWidth()
 	local step = (width > 0 and width or 32) + padding
-	local fixed = anchoredRight and gameMenu or 1
-	local _, _, _, fixedX = native[fixed]:GetPoint(1)
-	if not fixedX then
+	local function Units(index)
+		if anchoredRight then
+			return -((index <= collections and #after or 0) + (index < gameMenu and #before or 0))
+		end
+		return (index > collections and #after or 0) + (index >= gameMenu and #before or 0)
+	end
+	local _, _, _, firstX = native[1]:GetPoint(1)
+	if not firstX then
 		return
 	end
-	for index, button in ipairs(native) do
-		local units
-		if anchoredRight then
-			units = -((index <= collections and #after or 0) + (index < gameMenu and #before or 0))
-		else
-			units = (index > collections and #after or 0) + (index >= gameMenu and #before or 0)
-		end
-		if index ~= fixed then
-			Place(button, fixedX + (index - fixed + units) * step)
-		end
+	local last = shared.first
+	local origin = firstX
+	if last and last.button == native[1] and math.abs(last.applied - firstX) < 0.01 then
+		origin = last.origin
 	end
+	for index, button in ipairs(native) do
+		Place(button, origin + (index - 1 + Units(index)) * step)
+	end
+	shared.first = { button = native[1], origin = origin, applied = origin + Units(1) * step }
 	Chain(before, MainMenuMicroButton, "LEFT", overlap)
 	Chain(after, CollectionsMicroButton, "RIGHT", overlap)
 end
@@ -152,11 +155,34 @@ local function HookUpdate()
 			Safe("micro button refresh", MicroButton.Refresh)
 		end)
 	end
-	-- The grid re-places Blizzard's buttons on every Layout; make room again straight after. hooksecurefunc leaves the
-	-- method secure, so Blizzard's own Layout calls stay untainted.
-	if not shared.hookedLayout and MicroMenu and type(MicroMenu.Layout) == "function" and hooksecurefunc then
-		shared.hookedLayout = true
-		hooksecurefunc(MicroMenu, "Layout", ReflowAll)
+	-- The grid re-places Blizzard's buttons when one of them shows or hides, or the menu changes size or Edit Mode
+	-- layout; make room again straight after. Script hooks and an event frame of our own leave Blizzard's methods
+	-- and their callers untouched.
+	if MicroMenu and MicroMenu.GetChildren then
+		shared.hookedScripts = shared.hookedScripts or setmetatable({}, { __mode = "k" })
+		local targets = { MicroMenu } ---@type Frame[]
+		for _, child in ipairs({ MicroMenu:GetChildren() }) do
+			---@cast child ForeverMicroGridChild
+			if child.layoutIndex then
+				targets[#targets + 1] = child
+			end
+		end
+		for _, target in ipairs(targets) do
+			if not shared.hookedScripts[target] and target.HookScript then
+				shared.hookedScripts[target] = true
+				if target == MicroMenu then
+					target:HookScript("OnSizeChanged", ReflowAll)
+				else
+					target:HookScript("OnShow", ReflowAll)
+					target:HookScript("OnHide", ReflowAll)
+				end
+			end
+		end
+	end
+	if not shared.events then
+		shared.events = CreateFrame("Frame")
+		shared.events:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+		shared.events:SetScript("OnEvent", ReflowAll)
 	end
 end
 

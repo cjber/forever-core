@@ -65,13 +65,27 @@ local function frame(name, parent)
 	function f:SetScript(scriptName, value)
 		self.scripts[scriptName] = value
 	end
+	function f:HookScript(scriptName, hook)
+		self.hooked = (self.hooked or 0) + 1
+		local original = self.scripts[scriptName]
+		self.scripts[scriptName] = function(...)
+			if original then
+				original(...)
+			end
+			hook(...)
+		end
+	end
+	function f:RegisterEvent(event)
+		self.events = self.events or {}
+		self.events[event] = true
+	end
 	if parent then
 		parent.children[#parent.children + 1] = f
 	end
 	return f
 end
 
-local hooks = { UpdateMicroButtons = 0, Layout = 0 }
+local hooks = { UpdateMicroButtons = 0 }
 _G.hooksecurefunc = function(target, name, callback)
 	if type(target) == "string" then
 		target, name, callback = _G, target, name
@@ -93,6 +107,15 @@ for index, short in ipairs(NATIVE) do
 	button.layoutIndex = index
 	native[#native + 1] = button
 	_G[button.name] = button
+end
+-- Like MainMenuBarMicroButtonMixin, a Blizzard button re-lays the row when it shows or hides.
+for _, button in ipairs(native) do
+	button:SetScript("OnShow", function()
+		_G.MicroMenu:Layout()
+	end)
+	button:SetScript("OnHide", function()
+		_G.MicroMenu:Layout()
+	end)
 end
 menu.stride = #native
 -- Blizzard's grid: shown children with a layoutIndex, left to right from the menu's TOPLEFT, overlapping by 5.
@@ -223,9 +246,13 @@ for _ = 1, 5 do
 	first.Refresh()
 	second.Refresh()
 	menu:Layout()
+	_G.UpdateMicroButtons()
 end
 assert(row() == beforeBoth, row())
-assert(hooks.Layout == 1, "MicroMenu.Layout hooked " .. hooks.Layout .. " times")
+for _, f in ipairs(native) do
+	assert(f.hooked == 2, f.name .. " script hooks: " .. tostring(f.hooked))
+end
+assert(menu.hooked == 1, "menu script hooks: " .. tostring(menu.hooked))
 -- hooksecurefunc swaps the global for a wrapper; refreshing again must not hook that wrapper too, or every
 -- UpdateMicroButtons call nests one hook deeper until the client's C stack overflows.
 local before = hooks.UpdateMicroButtons
@@ -246,10 +273,8 @@ assert(
 )
 -- Without Collections it falls back to before Game Menu.
 _G.CollectionsMicroButton:Hide()
-menu:Layout()
 assert(row():find("HelpMicroButton Second First MainMenuMicroButton$"), row())
 _G.CollectionsMicroButton:Show()
-menu:Layout()
 slot.Second = "beforeGameMenu"
 
 -- Hiding a button gives its place back; hiding both leaves Blizzard's row exactly as the grid laid it.
@@ -266,10 +291,17 @@ second.Refresh()
 assert(row() == beforeBoth, row())
 
 -- A menu anchored on the left grows right instead, so Character stays put.
+-- Moved in Edit Mode, which leaves the grid as it was and fires EDIT_MODE_LAYOUTS_UPDATED.
 menu:SetPoint("BOTTOMLEFT", nil, "BOTTOMLEFT", 0, 0)
-menu:Layout()
+local events = _G.ForeverMicroButtons.events
+assert(events.events.EDIT_MODE_LAYOUTS_UPDATED)
+events.scripts.OnEvent(events, "EDIT_MODE_LAYOUTS_UPDATED")
 assert(row() == beforeBoth, row())
 assert(left(_G.CharacterMicroButton) == 0 and left(_G.MainMenuMicroButton) == gameMenuLeft + 54, row())
+-- and back, without a re-lay in between.
+menu:SetPoint("BOTTOMRIGHT", nil, "BOTTOMRIGHT", 0, 0)
+events.scripts.OnEvent(events, "EDIT_MODE_LAYOUTS_UPDATED")
+assert(row() == beforeBoth and left(_G.MainMenuMicroButton) == gameMenuLeft, row())
 
 -- Destroy takes the button out of the shared row.
 first.Destroy(a)
