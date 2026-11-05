@@ -563,6 +563,17 @@ function api.SavePosition(x, y)
 	settings.x, settings.y = x, y
 	host:MarkDirty()
 end
+-- Adventure Guide draws its own context menu because Blizzard_Menu.AcquireMenu can assert in Forever 70009. A consumer
+-- that defines one gets it with the same generator shape; the rest keep Blizzard's menu.
+---@param owner Frame
+---@param generator fun(owner: Frame, root: any)
+local function OpenContextMenu(owner, generator)
+	if type(ns.ContextMenu) == "function" then
+		ns.ContextMenu(owner, generator)
+	else
+		MenuUtil.CreateContextMenu(owner, generator)
+	end
+end
 -- Every section header answers a right click the same way: the column's own switches, so a player can attach, detach
 -- or lock it from whichever section is in front of them. The section's own click runs first and is never replaced;
 -- writing a saved setting is safe in combat, and the layout waits for combat's end as ApplyAttachment already does.
@@ -583,7 +594,7 @@ local function AddHeaderMenu(module)
 		if button ~= "RightButton" then
 			return
 		end
-		MenuUtil.CreateContextMenu(module:GetContextMenuParent(), function(_, root)
+		OpenContextMenu(module:GetContextMenuParent(), function(_, root)
 			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
 				api.SetAttached(not api.IsAttachedToQuestTracker())
 			end)

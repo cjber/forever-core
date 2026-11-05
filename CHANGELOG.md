@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- **The tracker header menu uses the addon's own menu where it has one.** Adventure Guide draws its own context menu, so its tracker right click no longer calls `MenuUtil.CreateContextMenu`, which can assert in Forever 70009; the other addons keep Blizzard's menu.
 
 ## [0.4.18] - 2026-11-05
 - **Right-click any tracker section to attach or detach the column.** Each section's header now opens a small menu with **Attach to quest tracker** and **Lock the tracker**, so the column can be moved or locked without opening Settings. A switch made in combat waits for combat to end, and each section's left click keeps doing what it did.
