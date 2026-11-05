@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **The Forever addons settings page ends with a Ko-fi row.** Its Copy link button shows the Ko-fi address in the same small window as the addons' store links, ready to copy. Nothing is locked behind it, and it shows only when the player opens the page. For addon authors: `ShowSupport` opens that window, and `VERSION` is 5.
+- **The Forever addons settings page ends with a Ko-fi row.** Its Copy link button shows the Ko-fi address (`https://ko-fi.com/cjber`) in the same small window as the addons' store links, ready to copy. Nothing is locked behind it, and it shows only when the player opens the page. For addon authors: `ShowSupport` opens that window, and `VERSION` is 5.
 
 ## [0.4.15] - 2026-11-05
 
