@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Refuse what the Forever client cannot load: a font object it never defines, and a TOC that lists Bindings.xml.
 
 Fonts. `CreateFontString(name, layer, font)`, `SetFontObject(font)` (and its Normal, Highlight and Disabled forms),
