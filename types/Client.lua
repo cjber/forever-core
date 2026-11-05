@@ -71,6 +71,9 @@ function CreateFramePoolCollection() end
 ---@field stride number? buttons per row
 ---@type ForeverMicroMenu?
 MicroMenu = nil
+-- The Edit Mode frame the menu sits in; MicroMenuContainer:Layout sizes it to the menu.
+---@type Frame?
+MicroMenuContainer = nil
 -- A child of the micro menu's grid: Blizzard's buttons carry the layout order the grid sorts by.
 ---@class ForeverMicroGridChild : Frame
 ---@field layoutIndex number?
@@ -87,7 +90,7 @@ UpdateMicroButtons = nil
 ---@field hookedUpdate boolean?
 ---@field hookedScripts table<Frame, boolean>? the frames whose scripts are hooked, weak keys
 ---@field events Frame? the frame listening for Edit Mode layout changes
----@field first { button: Frame, origin: number, applied: number }? where the row's first button was placed last
+---@field width number? the width the last placement widened the menu to, nil while the menu has Blizzard's own
 ---@type ForeverMicroButtonRegistry?
 ForeverMicroButtons = nil
 
@@ -96,6 +99,7 @@ ForeverMicroButtons = nil
 ---@field microButtonSpec table the spec the consumer passed to Create
 ---@field icon Texture the glyph drawn over the plate
 ---@field alert table? the template's alert overlay, hidden for a custom button
+---@field textureName string the atlas name the template's pushed and normal highlights are built from
 
 -- The templates UI/SettingsPage.lua creates, each the widget its row is: the return type of CreateFrame with a
 -- template is the union of the template class and the widget class.

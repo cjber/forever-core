@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **Addon micro-menu buttons stay inside the micro menu.** Blizzard's buttons used to slide aside past the menu's own edge, so the row ran over the action bar beside it, or off the edge of the screen. The menu and its Edit Mode frame now grow by the addon buttons, so the action bar and bags beside them move aside, as they do for Blizzard's own buttons. In combat the row waits for combat to end.
+- **Pressing an addon micro-menu button no longer errors.** Blizzard's pressed highlight read a texture name the button never had, so every press logged "attempt to concatenate field 'textureName'".
+
 ## [0.4.16] - 2026-11-05
 
 - **The Forever addons settings page ends with a Ko-fi row.** Its Copy link button shows the Ko-fi address in the same small window the addons' store links use, ready to copy. Nothing is locked behind it, and it shows only when you open the settings page. For addon authors: `ShowSupport` opens that window, and `VERSION` is 5.
