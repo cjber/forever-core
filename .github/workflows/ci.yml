@@ -102,7 +102,7 @@ jobs:
       # and no development folder may be.
       - name: Package this commit as an untagged build
         run: git tag --points-at HEAD | xargs -r git tag --delete
-      - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2.6.1
+      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:
           args: -d -z
       - run: python3 tools/check_package.py
