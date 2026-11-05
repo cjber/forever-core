@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The Forever addons settings page ends with a Ko-fi row.** Its Copy link button shows the Ko-fi address in the same small window as the addons' store links, ready to copy. Nothing is locked behind it, and it shows only when the player opens the page. For addon authors: `ShowSupport` opens that window, and `VERSION` is 5.
+
 ## [0.4.15] - 2026-11-05
 
 - **The release workflow's packager action moves forward.** Releases are built and uploaded by a newer version of the packager action, so nothing a player sees changes.

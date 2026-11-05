@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
 -- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "9adf91e21b265a8bebc6db4ac78e461593141a50fc5e6a0f239da34935b05060"
+local PINNED = "28a2f89395ebb5a96edac7c6c871cdfb7af79ebf752ed01ea83a5851de6447cf"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -288,7 +288,7 @@ Client()
 local first = { L = PhraseLocale() }
 local firstView = Load(first)
 local Family = env.ForeverFamily
-check(Family and Family.VERSION == 4, "the first copy sets the shared global")
+check(Family and Family.VERSION == 5, "the first copy sets the shared global")
 check(firstView.State == Family.State and firstView.VERSION == Family.VERSION, "an addon's view is the shared module")
 check(Family.For(first.L) == firstView, "bound to its own L, the same view each time")
 check(Family.For(nil) == Family, "with no L, the module itself")
@@ -302,7 +302,7 @@ local older = { VERSION = Family.VERSION - 1 }
 env.ForeverFamily = older
 local newer = { L = PhraseLocale() }
 Load(newer)
-check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 4, "a newer copy takes over from an older one")
+check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 5, "a newer copy takes over from an older one")
 env.ForeverFamily = Family
 
 -- The five addons, in order, with their store pages.
@@ -320,6 +320,8 @@ for index, row in ipairs(expected) do
 	check(addon.url == "https://www.curseforge.com/wow/addons/" .. row[3], row[1] .. " links to its CurseForge page")
 	check(type(addon.line) == "string" and addon.line ~= "" and not addon.line:find("!"), row[1] .. " has a plain line")
 end
+check(Family.SUPPORT.name == "Ko-fi" and Family.SUPPORT.url == "https://ko-fi.com/cjber59408", "the Ko-fi address")
+check(Family.SUPPORT.line:find("nothing locked", 1, true) and not Family.SUPPORT.line:find("!"), "with a plain line")
 
 -- State: running, installed but not running, or not installed.
 addons.AdventureGuideForever, addons.LegacyForever = "on", "off"
@@ -440,7 +442,7 @@ check_:Click()
 check(saved.suggestFamily == true, "ticking turns them on")
 local copies = Children(panel, "Button", "SharedButtonSmallTemplate")
 local icons = Children(panel, "Texture")
-check(#copies == 5 and #icons == 5, "a row per addon")
+check(#copies == 6 and #icons == 6, "a row per addon, then the Ko-fi row")
 local text = Texts(panel)
 check(text:find("This addon", 1, true), "the addon's own row says so")
 check(text:find("On", 1, true) and text:find("Not installed", 1, true), "the others show their state")
@@ -453,6 +455,19 @@ check(Texts(panel):find("Installed, turned off", 1, true), "the states are read 
 check(icons[3].texture == "Interface\\AddOns\\SkillUpForever\\media\\Icon", "and the icons")
 copies[3]:Click()
 check(window:IsShown() and window.title == "SkillUp Forever", "Copy link opens that addon's address")
+check(icons[6].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row has a coin")
+check(text:find(Family.SUPPORT.line, 1, true) and copies[6].shown, "its line and Copy link button")
+never:Show()
+copies[6]:Click()
+check(window:IsShown() and window.title == "Ko-fi" and edit.text == "https://ko-fi.com/cjber59408", "Ko-fi's address")
+check(edit.focused and edit.highlighted and not never:IsShown(), "selected, with no hint to dismiss")
+check(window.portrait.texture == "Interface\\Icons\\INV_Misc_Coin_01", "and the coin in the portrait")
+edit:Type("x")
+check(edit.text == "https://ko-fi.com/cjber59408", "typing can't change it")
+close:Click()
+combat = true
+check(not Family.ShowSupport() and not window:IsShown(), "never in combat")
+combat = false
 saved.suggestFamily = false
 panel:Show()
 check(not check_.checked, "the box shows the saved setting")
@@ -531,6 +546,11 @@ frenchView.ShowLink(nil, nil, "ShortestPathForever")
 check(linkButtons[1].text == "Fermer", "a view's ShowLink reads in its own L")
 frenchView.ShowLink(nil, nil, "ShortestPathForever", nil, PhraseLocale())
 check(linkButtons[1].text == "Close", "unless the call names another")
+french[Translated.SUPPORT.line] = "Les addons Forever sont gratuits."
+check(ownText:find(Translated.SUPPORT.line, 1, true), "an untranslated Ko-fi line reads as English")
+frenchView.ShowSupport()
+check(Texts(linkWindow):find("Les addons Forever sont gratuits.", 1, true), "and a translated one in the caller's L")
+check(linkButtons[1].text == "Fermer", "with the window's buttons")
 
 -- A long translation grows the window rather than pushing a button out of it or running the line over the box. The
 -- hidden Don't suggest button doesn't count.
@@ -551,26 +571,31 @@ currentView.ShowLink(nil, nil, "TweaksForever")
 local currentWindow = current.window
 check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
 local served = {}
-local v5 = {
-	VERSION = 5,
+local v6 = {
+	VERSION = 6,
 	ShowLink = function(_, _, folder)
 		served[#served + 1] = folder
 		return true
 	end,
+	ShowSupport = function()
+		served[#served + 1] = "Ko-fi"
+		return true
+	end,
 	Once = function()
-		return "v5"
+		return "v6"
 	end,
 }
-env.ForeverFamily = v5
+env.ForeverFamily = v6
 check(
 	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
 	"a newer copy serves ShowLink"
 )
-check(current.Once("Test.later") == "v5", "and Once, so there is one record")
+check(currentView.ShowSupport() and served[2] == "Ko-fi", "and ShowSupport")
+check(current.Once("Test.later") == "v6", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
 local olderWindow = Create("Frame")
-env.ForeverFamily = { VERSION = 3, window = olderWindow }
+env.ForeverFamily = { VERSION = 4, window = olderWindow }
 env.UISpecialFrames[1] = "ForeverFamilyLink"
 local takeoverView = Load({ L = PhraseLocale() })
 takeoverView.ShowLink(nil, nil, "TweaksForever")
