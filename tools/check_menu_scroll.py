@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Refuse a menu built from a list that can outgrow the screen without scrolling.
 
 Blizzard's Menu API never clamps a submenu to the screen, and a dropdown's root only flips sideways, so a menu whose
