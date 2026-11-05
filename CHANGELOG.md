@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-11-05
+
 - **Every addon's micro-menu button gets its own place.** Buttons of different Forever addons in the same slot sat on the same spot, so only one showed, and each covered the Blizzard button beside Game Menu or Collections. They now line up in creation order, one slot each, and Blizzard's buttons move aside to make room, growing away from the screen edge the menu sits against. The vendored copies share one registry and hook each function and script once. The module hooks only scripts, an event and `UpdateMicroButtons`, and no longer runs the menu's Layout from addon code.
 - **The micro-menu button hooks the game's update once.** It hooked `UpdateMicroButtons` again on every refresh, so each update ran one layer deeper until the game menu, the map and the micro buttons threw "C stack overflow" errors and the frame rate dropped.
+- **The shared settings page titles itself in a font the client has.** It asked for `GameFontLarge`, which the Forever client does not define, so every addon's settings page raised "Couldn't find inherited node" on login. It now uses `GameFontHighlightHuge`, the font Blizzard's own settings pages use.
+- **For addon authors:** `tools/check_client_load.py` now fails when Lua or XML inherits a font object neither the client nor the addon defines, and when a TOC lists `Bindings.xml`. It is vendored into every addon and runs in the required core-shared job.
 
 ## [0.4.12] - 2026-11-05
 
