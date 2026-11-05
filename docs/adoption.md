@@ -14,6 +14,7 @@ the addon they already have.
 | `UI/TrackerQuestie.lua` | Questie's quest list, so the column steps beside it |
 | `tests/tracker_host_spec.lua` | the native integration contract, run against Blizzard's own tracker source |
 | `tests/tracker_host_harness.lua` | the tracker test harness shared by the four tracker consumers |
+| `tests/tracker_header_menu_spec.lua` | the section-header menu contract |
 | `tests/tracker_questie_spec.lua` | the Questie placement contract |
 | `tests/tracker_combat_spec.lua` | the column stays still as combat starts and ends |
 | `tests/tracker_geometry_spec.lua` | the column below the native quests across tracker anchors and scales |

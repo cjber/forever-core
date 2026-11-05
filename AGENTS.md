@@ -52,7 +52,7 @@ and run anywhere.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/TrackerQuestie.lua`: Questie's quest list, so the column steps beside it instead of under it.
 - `Locales/enUS.lua`: the phrases the shared files themselves draw. A consumer keeps its own locale file for its own
-  copy; these four phrases are the only ones core owns.
+  copy; the phrases there are the only ones core owns.
 - The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in
   `docs/handoff/` (handoff briefs, audit notes, the ledger). Read `docs/handoff/boundaries.md` before assigning a
   feature or moving code between addons.

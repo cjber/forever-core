@@ -9,7 +9,7 @@ function harness.new(options)
 		checks = checks + 1
 	end
 	local function noop() end
-	local timers, readyFn, frames, releases = {}, nil, {}, {}
+	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
 	local initializationEvents
 	local combat = false
 	local parent
@@ -64,8 +64,20 @@ function harness.new(options)
 		function f:SetScript(event, fn)
 			self.scripts[event] = fn
 		end
+		-- As the client's HookScript: the frame's own handler runs first, then the hook.
 		function f:HookScript(event, fn)
-			self.scripts[event] = fn
+			local original = self.scripts[event]
+			if not original then
+				self.scripts[event] = fn
+				return
+			end
+			self.scripts[event] = function(...)
+				original(...)
+				fn(...)
+			end
+		end
+		function f:EnableMouse(value)
+			self.mouse = value
 		end
 		function f:SetParent(owner)
 			self.parent = owner
@@ -238,6 +250,30 @@ function harness.new(options)
 				return { type = "Frame" }
 			end,
 		},
+		-- The client's menu API, recorded so a spec can read back what a click offered.
+		MenuUtil = {
+			CreateContextMenu = function(owner, generator)
+				local menu = { owner = owner, entries = {} }
+				local root = {}
+				function root.CreateCheckbox(_, text, isSelected, setSelected)
+					menu.entries[#menu.entries + 1] =
+						{ text = text, isSelected = isSelected, setSelected = setSelected }
+					return {}
+				end
+				function root.CreateTitle(_, text)
+					menu.title = text
+				end
+				function root.CreateButton(_, text, callback)
+					menu.entries[#menu.entries + 1] = { text = text, callback = callback }
+					return {}
+				end
+				if generator then
+					generator(owner, root)
+				end
+				menus[#menus + 1] = menu
+				return menu
+			end,
+		},
 		Mixin = function(target, mixin)
 			for key, value in pairs(mixin) do
 				target[key] = value
@@ -335,6 +371,7 @@ function harness.new(options)
 		minimizeButton = minimizeButton,
 		eventRegistry = eventRegistry,
 		editMode = editMode,
+		menus = menus,
 		check = check,
 		checks = function()
 			return checks
@@ -378,10 +415,23 @@ function harness.new(options)
 		setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", namespace) -- the section order
 		setfenv(assert(loadfile(path)), env)("Test", namespace)
 	end
-	function ctx.module(order)
+	function ctx.module(order, headerClick)
 		local m = frame()
 		m.uiOrder, m.ContentsFrame, m.lineTemplate = order, frame(), "Line"
 		m.contentHeight = 80
+		m.Header = frame()
+		m.Header.Text = {
+			text = "",
+			SetText = function(self, value)
+				self.text = value
+			end,
+			GetText = function(self)
+				return self.text
+			end,
+		}
+		if headerClick then
+			m.Header:SetScript("OnMouseUp", headerClick)
+		end
 		function m:SetContainer(container)
 			-- Blizzard's template method registers modules with the native tracker manager.
 			env.ObjectiveTrackerManager:SetModuleContainer(self, container)
