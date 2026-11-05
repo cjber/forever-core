@@ -27,12 +27,21 @@ jobs:
       - name: Tag a dispatched release
         if: github.event_name == 'workflow_dispatch'
         env:
-          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ inputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          git config user.name "cjber"
-          git config user.email "cjberragan@gmail.com"
-          git tag -a "v${VERSION}" -m "v${VERSION}"
-          git push origin "v${VERSION}"
+          # A missing tag answers 404 with its error body on stdout, so branch on the exit status, not the output.
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null); then
+            if [ "$existing" != "$RELEASE_COMMIT" ]; then
+              echo "::error::$RELEASE_TAG already names $existing."
+              exit 1
+            fi
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null
+          fi
+          # The packager reads the version from the tag on the checked-out commit; a full-history checkout may already hold it.
+          git tag -f "$RELEASE_TAG" "$RELEASE_COMMIT"
       - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         env:
           # The packager reads GITHUB_OAUTH to create the GitHub release; GITHUB_TOKEN alone left it
