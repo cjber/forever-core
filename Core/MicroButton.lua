@@ -1,14 +1,20 @@
 local _, ns = ...
 -- luacheck: globals CollectionsMicroButton DEFAULT_CHAT_FRAME GameTooltip_Hide
--- luacheck: globals MainMenuMicroButton MicroMenu UpdateMicroButtons
+-- luacheck: globals MainMenuMicroButton MicroMenu UpdateMicroButtons ForeverMicroButtons
 -- luacheck: globals hooksecurefunc NORMAL_FONT_COLOR GRAY_FONT_COLOR
 
 -- The button is an addon-owned micro-menu child. Addons provide their own saved setting and click action.
 local MicroButton = {}
 ns.MicroButton = MicroButton
 
-local buttons = {}
-local hookedUpdate
+-- Every Forever addon vendors this file, so each loads its own copy. They share one registry, published by the first
+-- copy to load, so the buttons of every addon form one row instead of each copy stacking its own on the same spot.
+-- The registry is addon state: nothing of Blizzard's reads it.
+local shared = _G.ForeverMicroButtons
+if type(shared) ~= "table" then
+	shared = { buttons = {} }
+	_G.ForeverMicroButtons = shared
+end
 
 local function Safe(label, fn, ...)
 	if ns.SafeCall then
@@ -17,45 +23,175 @@ local function Safe(label, fn, ...)
 	return pcall(fn, ...)
 end
 
-local function Anchor(button, slot)
-	if slot == "afterCollections" and CollectionsMicroButton and CollectionsMicroButton:IsShown() then
-		button:ClearAllPoints()
-		button:SetPoint("LEFT", CollectionsMicroButton, "RIGHT", -5, 0)
-	else
-		button:ClearAllPoints()
-		button:SetPoint("RIGHT", MainMenuMicroButton, "LEFT", 5, 0)
+-- Blizzard's micro buttons, in the order MicroMenu's grid lays them out. Only shown children with a layoutIndex are
+-- in the grid; the addon buttons have none, so the grid never reads a field an addon wrote.
+local function NativeButtons()
+	local list = {}
+	for _, child in ipairs({ MicroMenu:GetChildren() }) do
+		---@cast child ForeverMicroGridChild
+		if child.layoutIndex and child:IsShown() then
+			list[#list + 1] = child
+		end
 	end
-	if MicroMenu.Layout then
-		MicroMenu:Layout()
+	table.sort(list, function(a, b)
+		return a.layoutIndex < b.layoutIndex
+	end)
+	return list
+end
+
+-- Moves a Blizzard button along the row to `x`, keeping the rest of the anchor the grid gave it.
+local function Place(button, x)
+	local point, relativeTo, relativePoint, oldX, y = button:GetPoint(1)
+	if point and math.abs(oldX - x) >= 0.01 then
+		button:ClearAllPoints()
+		button:SetPoint(point, relativeTo, relativePoint, x, y)
 	end
+end
+
+local function SlotOf(button)
+	local spec = button.microButtonSpec
+	return spec and (spec.getSlot and spec.getSlot() or spec.slot)
+end
+
+-- Chains `list` from `anchor`, each button `toward` ("LEFT" or "RIGHT") of the one before, overlapping by the grid's
+-- own padding, so the addon buttons sit at the same spacing as Blizzard's.
+local function Chain(list, anchor, toward, overlap)
+	local from = toward == "LEFT" and "RIGHT" or "LEFT"
+	local x = toward == "LEFT" and overlap or -overlap
+	for _, button in ipairs(list) do
+		button:ClearAllPoints()
+		button:SetPoint(from, anchor, toward, x, 0)
+		anchor = button
+	end
+end
+
+-- Places every shown addon button in its slot and moves Blizzard's buttons aside to make room. The row grows away
+-- from the side the menu is anchored to, so it never runs off the edge of the screen it sits against.
+local function Reflow()
+	if not (MicroMenu and MicroMenu.GetChildren) then
+		return
+	end
+	local native = NativeButtons()
+	local position = {}
+	for index, button in ipairs(native) do
+		position[button] = index
+	end
+	local before, after = {}, {}
+	for _, button in ipairs(shared.buttons) do
+		if button:IsShown() then
+			if SlotOf(button) == "afterCollections" and position[CollectionsMicroButton] then
+				after[#after + 1] = button
+			else
+				before[#before + 1] = button
+			end
+		end
+	end
+	local padding = MicroMenu.childXPadding or -5
+	local overlap = -padding
+	local anchorPoint = MicroMenu:GetPoint(1)
+	local anchoredRight = type(anchorPoint) == "string" and anchorPoint:find("RIGHT") ~= nil
+	local gameMenu = position[MainMenuMicroButton]
+	local oneRow = MicroMenu.isHorizontal ~= false
+		and MicroMenu.layoutFramesGoingRight ~= false
+		and (MicroMenu.stride or #native) >= #native
+	if not (oneRow and gameMenu) then
+		-- A vertical or stacked menu: leave Blizzard's grid alone and line the addon buttons up beside it. Switching
+		-- the menu to either changes the grid's settings, so its Layout re-places every button it had moved aside.
+		for _, button in ipairs(after) do
+			before[#before + 1] = button
+		end
+		Chain(before, MicroMenu, anchoredRight and "LEFT" or "RIGHT", 0)
+		return
+	end
+	-- Every slot is one step: a button's width less the grid's overlap. The grid puts its first button at the row's
+	-- origin; this places the row from there, so repeated runs land in the same place. The first button's own anchor
+	-- gives the origin unless it still holds the offset this placed it at last time.
+	local collections = position[CollectionsMicroButton] or 0
+	local width = native[1]:GetWidth()
+	local step = (width > 0 and width or 32) + padding
+	local function Units(index)
+		if anchoredRight then
+			return -((index <= collections and #after or 0) + (index < gameMenu and #before or 0))
+		end
+		return (index > collections and #after or 0) + (index >= gameMenu and #before or 0)
+	end
+	local _, _, _, firstX = native[1]:GetPoint(1)
+	if not firstX then
+		return
+	end
+	local last = shared.first
+	local origin = firstX
+	if last and last.button == native[1] and math.abs(last.applied - firstX) < 0.01 then
+		origin = last.origin
+	end
+	for index, button in ipairs(native) do
+		Place(button, origin + (index - 1 + Units(index)) * step)
+	end
+	shared.first = { button = native[1], origin = origin, applied = origin + Units(1) * step }
+	Chain(before, MainMenuMicroButton, "LEFT", overlap)
+	Chain(after, CollectionsMicroButton, "RIGHT", overlap)
+end
+shared.Reflow = shared.Reflow or Reflow
+
+local function ReflowAll()
+	Safe("micro button placement", shared.Reflow)
 end
 
 local function RefreshOne(button)
 	local spec = button.microButtonSpec
 	if spec then
 		button:SetShown(spec.getShown() == true)
-		Anchor(button, spec.getSlot and spec.getSlot() or spec.slot)
 	end
 end
 
+-- One hook of each for every copy, kept in the shared registry. Each hook is made once and never again: hooksecurefunc
+-- replaces the hooked function with a wrapper, so a guard that compares against the current function hooks again
+-- whenever another copy or addon has wrapped it since, and every call then nests one hook deeper until the client's
+-- C stack overflows.
 local function HookUpdate()
-	if type(UpdateMicroButtons) == "function" and hookedUpdate ~= UpdateMicroButtons and hooksecurefunc then
+	if not shared.hookedUpdate and type(UpdateMicroButtons) == "function" and hooksecurefunc then
+		shared.hookedUpdate = true
 		hooksecurefunc("UpdateMicroButtons", function()
 			Safe("micro button refresh", MicroButton.Refresh)
 		end)
-		-- hooksecurefunc replaces the global with a wrapper. Remember the wrapper, or the next refresh hooks it again
-		-- and every UpdateMicroButtons call nests one hook deeper until the client's C stack overflows.
-		hookedUpdate = UpdateMicroButtons
+	end
+	-- The grid re-places Blizzard's buttons when one of them shows or hides, or the menu changes size or Edit Mode
+	-- layout; make room again straight after. Script hooks and an event frame of our own leave Blizzard's methods
+	-- and their callers untouched.
+	if MicroMenu and MicroMenu.GetChildren then
+		shared.hookedScripts = shared.hookedScripts or setmetatable({}, { __mode = "k" })
+		local targets = { MicroMenu } ---@type Frame[]
+		for _, child in ipairs({ MicroMenu:GetChildren() }) do
+			---@cast child ForeverMicroGridChild
+			if child.layoutIndex then
+				targets[#targets + 1] = child
+			end
+		end
+		for _, target in ipairs(targets) do
+			if not shared.hookedScripts[target] and target.HookScript then
+				shared.hookedScripts[target] = true
+				if target == MicroMenu then
+					target:HookScript("OnSizeChanged", ReflowAll)
+				else
+					target:HookScript("OnShow", ReflowAll)
+					target:HookScript("OnHide", ReflowAll)
+				end
+			end
+		end
+	end
+	if not shared.events then
+		shared.events = CreateFrame("Frame")
+		shared.events:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+		shared.events:SetScript("OnEvent", ReflowAll)
 	end
 end
 
 function MicroButton.Refresh()
 	HookUpdate()
-	for _, button in ipairs(buttons) do
-		if button then
-			Safe("micro button placement", RefreshOne, button)
-		end
+	for _, button in ipairs(shared.buttons) do
+		Safe("micro button visibility", RefreshOne, button)
 	end
+	ReflowAll()
 end
 
 ---@param spec table
@@ -96,16 +232,21 @@ function MicroButton.Create(spec)
 		GameTooltip:Show()
 	end)
 	button:SetScript("OnLeave", GameTooltip_Hide)
-	buttons[#buttons + 1] = button
+	-- The template's OnShow and OnHide run MicroMenuContainer:Layout, which from addon code would taint the grid's
+	-- cached settings. Showing or hiding an addon button only needs the addon row placed again.
+	button:SetScript("OnShow", ReflowAll)
+	button:SetScript("OnHide", ReflowAll)
+	shared.buttons[#shared.buttons + 1] = button
 	HookUpdate()
-	Safe("micro button placement", RefreshOne, button)
+	Safe("micro button visibility", RefreshOne, button)
+	ReflowAll()
 	return button
 end
 
 function MicroButton.Destroy(button)
-	for index, candidate in ipairs(buttons) do
+	for index, candidate in ipairs(shared.buttons) do
 		if candidate == button then
-			table.remove(buttons, index)
+			table.remove(shared.buttons, index)
 			break
 		end
 	end
@@ -117,10 +258,12 @@ function MicroButton.Destroy(button)
 			spec.host.microButton = nil
 		end
 	end
+	ReflowAll()
 end
 
 function MicroButton.SetShown(button, shown)
 	if button then
 		button:SetShown(shown == true)
+		ReflowAll()
 	end
 end

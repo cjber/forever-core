@@ -65,14 +65,31 @@ function CreateFramePoolCollection() end
 -- The client's micro menu bar and the buttons Core/MicroButton.lua anchors against (FrameXML MicroMenu).
 ---@class ForeverMicroMenu : Frame
 ---@field Layout fun(self: ForeverMicroMenu)
+---@field childXPadding number? the grid's gap between buttons, negative where they overlap
+---@field isHorizontal boolean?
+---@field layoutFramesGoingRight boolean?
+---@field stride number? buttons per row
 ---@type ForeverMicroMenu?
 MicroMenu = nil
+-- A child of the micro menu's grid: Blizzard's buttons carry the layout order the grid sorts by.
+---@class ForeverMicroGridChild : Frame
+---@field layoutIndex number?
 ---@type Button?
 MainMenuMicroButton = nil
 ---@type Button?
 CollectionsMicroButton = nil
 ---@type fun()
 UpdateMicroButtons = nil
+-- The registry every vendored copy of Core/MicroButton.lua shares, published by the first to load.
+---@class ForeverMicroButtonRegistry
+---@field buttons ForeverMicroButton[] every addon button, in creation order
+---@field Reflow fun() the first copy's placement, which every copy runs
+---@field hookedUpdate boolean?
+---@field hookedScripts table<Frame, boolean>? the frames whose scripts are hooked, weak keys
+---@field events Frame? the frame listening for Edit Mode layout changes
+---@field first { button: Frame, origin: number, applied: number }? where the row's first button was placed last
+---@type ForeverMicroButtonRegistry?
+ForeverMicroButtons = nil
 
 -- The frame Core/MicroButton.lua builds: Blizzard's micro button template plus the state it stores on it.
 ---@class ForeverMicroButton : Button
