@@ -1,5 +1,10 @@
 -- Questie draws its quest list in Questie_BaseFrame over the native tracker's slot (cjber/shortest-path-forever#214).
 -- The shared column must move out from under that list without touching it, and come back when it hides.
+-- Every scenario builds fresh closures, which LuaJIT cannot trace; the game runs plain Lua 5.1, so interpret.
+local jit = rawget(_G, "jit")
+if jit then
+	jit.off()
+end
 local checks = 0
 local function check(value, message)
 	assert(value, message)
@@ -35,6 +40,13 @@ local function clears(a, b)
 end
 local function near(a, b)
 	return math.abs(a - b) < 0.01
+end
+
+-- Each scenario runs the files afresh in its own environment; compiling them once keeps that cheap.
+local chunks = {}
+local function chunk(path)
+	chunks[path] = chunks[path] or assert(loadfile(path))
+	return chunks[path]
 end
 
 -- options: questie = { point, x, y, height } or nil, attached, scale, uiScale, userScale, loadsLate
@@ -173,10 +185,10 @@ local function scenario(options)
 		end,
 	}, { __index = _G })
 	env._G = env
-	setfenv(assert(loadfile("UI/TrackerQuestie.lua")), env)("Test", ns)
-	setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", ns)
-	setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", ns) -- the section order, loaded before the host
-	setfenv(assert(loadfile(os.getenv("TRACKER_HOST_SOURCE") or "UI/TrackerHost.lua")), env)("Test", ns)
+	setfenv(chunk("UI/TrackerQuestie.lua"), env)("Test", ns)
+	setfenv(chunk("UI/TrackerLock.lua"), env)("Test", ns)
+	setfenv(chunk("UI/TrackerOrder.lua"), env)("Test", ns) -- the section order, loaded before the host
+	setfenv(chunk(os.getenv("TRACKER_HOST_SOURCE") or "UI/TrackerHost.lua"), env)("Test", ns)
 	local host = frames[4]
 	local module = frame()
 	module.uiOrder = -1
