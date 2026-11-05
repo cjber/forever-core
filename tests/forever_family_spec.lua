@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
 -- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "28a2f89395ebb5a96edac7c6c871cdfb7af79ebf752ed01ea83a5851de6447cf"
+local PINNED = "b69618b7ec09353d1b6d57a76e62d7e59b6a6892191db7a5c1cc5bb11dafcef9"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -320,7 +320,7 @@ for index, row in ipairs(expected) do
 	check(addon.url == "https://www.curseforge.com/wow/addons/" .. row[3], row[1] .. " links to its CurseForge page")
 	check(type(addon.line) == "string" and addon.line ~= "" and not addon.line:find("!"), row[1] .. " has a plain line")
 end
-check(Family.SUPPORT.name == "Ko-fi" and Family.SUPPORT.url == "https://ko-fi.com/cjber59408", "the Ko-fi address")
+check(Family.SUPPORT.name == "Ko-fi" and Family.SUPPORT.url == "https://ko-fi.com/cjber", "the Ko-fi address")
 check(Family.SUPPORT.line:find("nothing locked", 1, true) and not Family.SUPPORT.line:find("!"), "with a plain line")
 
 -- State: running, installed but not running, or not installed.
@@ -459,11 +459,11 @@ check(icons[6].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row h
 check(text:find(Family.SUPPORT.line, 1, true) and copies[6].shown, "its line and Copy link button")
 never:Show()
 copies[6]:Click()
-check(window:IsShown() and window.title == "Ko-fi" and edit.text == "https://ko-fi.com/cjber59408", "Ko-fi's address")
+check(window:IsShown() and window.title == "Ko-fi" and edit.text == "https://ko-fi.com/cjber", "Ko-fi's address")
 check(edit.focused and edit.highlighted and not never:IsShown(), "selected, with no hint to dismiss")
 check(window.portrait.texture == "Interface\\Icons\\INV_Misc_Coin_01", "and the coin in the portrait")
 edit:Type("x")
-check(edit.text == "https://ko-fi.com/cjber59408", "typing can't change it")
+check(edit.text == "https://ko-fi.com/cjber", "typing can't change it")
 close:Click()
 combat = true
 check(not Family.ShowSupport() and not window:IsShown(), "never in combat")

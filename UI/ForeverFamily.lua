@@ -151,7 +151,7 @@ Family.ADDONS = List(Strings(NO_STRINGS))
 local function Support(L)
 	return {
 		name = "Ko-fi",
-		url = "https://ko-fi.com/cjber59408",
+		url = "https://ko-fi.com/cjber",
 		line = L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."],
 	}
 end
