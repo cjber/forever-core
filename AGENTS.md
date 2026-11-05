@@ -27,6 +27,7 @@ for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
 python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
 bash tools/typecheck.sh                   # LuaLS 3.19.1 over the shared Lua, with the pinned WoW API annotations
 python3 tools/check_consumers.py          # every consumer's copy matches this repo
+python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"
@@ -57,7 +58,12 @@ and run anywhere.
 - `tools/check_core_shared.py`: the vendoring map (`VENDORED`, which consumer carries which file) and the consumer-side
   check, vendored into every consumer. In a consumer it compares its copies with core main; with `--base REF` it
   checks only the vendored files `REF...HEAD` changes, so a hand edit fails a PR while a lag behind core does not.
-- `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, which runs that
+- `tools/check_client_load.py`: the client load rule, vendored into every consumer with its font list
+  `tools/blizzard_fonts.txt`: every font object the addon's Lua or XML inherits is one the client's UI or the addon
+  defines, and no TOC lists Bindings.xml. Regenerate the list from the pinned Blizzard UI source with
+  `python3 tools/check_client_load.py --blizzard-ui ../wow-handoff/blizzard-ui`; `tools/test_check_client_load.py` is
+  its spec.
+- `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, which runs the client load rule and that
   check on every PR (`--base`) and on a schedule (the full check). It lives outside `.github/workflows` so it never runs
   here; the `workflows` CI job lints it.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the vendoring gate and its fix, both reading the map above.
@@ -70,7 +76,7 @@ and run anywhere.
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to main: `deadcode`, `check` (luacheck, the specs, the native
-tracker spec, StyLua, ruff and the `tools/` unit tests), `typecheck`, `project-rules`, `packaged`, `secrets` and
+tracker spec, StyLua, ruff, the `tools/` unit tests and the client load rule), `typecheck`, `project-rules`, `packaged`, `secrets` and
 `workflows` (actionlint and zizmor over `.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and LuaJIT and luacheck are

@@ -27,7 +27,9 @@ the addon they already have.
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
 | `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |
 | `tools/check_core_shared.py` | the vendoring map and the consumer's own drift check |
-| `.github/workflows/core-shared-drift.yml` | runs that check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
+| `tools/check_client_load.py` | the client load rule: fonts the client defines, no Bindings.xml in a TOC (WFA-37) |
+| `tools/blizzard_fonts.txt` | the font objects the client's UI defines, generated from the pinned Blizzard UI source |
+| `.github/workflows/core-shared-drift.yml` | runs the client load rule and the drift check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
 
 `tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
 tracker, report and family set, and the map also holds the settings page, text, micro button and dead-code files.
