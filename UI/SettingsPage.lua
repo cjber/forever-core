@@ -1,6 +1,4 @@
 local _, ns = ...
--- luacheck: globals UIDropDownMenu_AddButton UIDropDownMenu_CreateInfo UIDropDownMenu_Initialize
--- luacheck: globals UIDropDownMenu_SetSelectedValue UIDropDownMenu_SetWidth
 
 -- The settings page every Forever addon draws, and only the page. Field Guide and Hoard each hand-rolled the same
 -- CheckButton (the template, a label font string, a tooltip) and the same RegisterCanvasLayoutCategory pair, and the
@@ -24,7 +22,7 @@ end
 -- How far down the panel the next row goes, and how much room each kind of row takes. A canvas has no layout engine, so
 -- the page keeps one cursor and every row claims its height.
 local TITLE = 16
-local CHECK, SLIDER, DROPDOWN, BUTTON = 28, 56, 52, 36
+local CHECK, SLIDER, BUTTON = 28, 56, 36
 
 ---@param panel Frame
 ---@param height integer
@@ -112,41 +110,6 @@ function Page.AddSlider(panel, label, get, set, minimum, maximum, step, tooltip)
 		set(value)
 	end)
 	return slider
-end
-
--- A dropdown of `choices`, each `{ value, phrase }`, in order. The phrase is read through ns.L; the value is what the
--- addon saves, so a translated label never changes a saved setting.
----@param panel Frame
----@param label string a phrase, read through ns.L
----@param get fun(): string?
----@param set fun(value: string)
----@param choices table[] { value, phrase } pairs
----@param tooltip? string a phrase, read through ns.L
----@return Frame
-function Page.AddDropdown(panel, label, get, set, choices, tooltip)
-	local text = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-	text:SetPoint("TOPLEFT", 16, Next(panel, DROPDOWN))
-	text:SetText(Text(label))
-	local dropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-	dropdown:SetPoint("TOPLEFT", text, "BOTTOMLEFT", -16, -4)
-	UIDropDownMenu_SetWidth(dropdown, 180)
-	UIDropDownMenu_SetSelectedValue(dropdown, get())
-	UIDropDownMenu_Initialize(dropdown, function(_, level)
-		for _, choice in ipairs(choices) do
-			local info = UIDropDownMenu_CreateInfo()
-			info.text = Text(choice[2])
-			info.value = choice[1]
-			info.func = function()
-				set(choice[1])
-				UIDropDownMenu_SetSelectedValue(dropdown, choice[1])
-			end
-			UIDropDownMenu_AddButton(info, level)
-		end
-	end)
-	if tooltip then
-		dropdown.tooltipText = Text(tooltip)
-	end
-	return dropdown
 end
 
 -- A button that runs `callback`; the addon does whatever it does behind it.

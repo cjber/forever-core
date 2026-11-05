@@ -49,6 +49,7 @@ jobs:
       - run: pipx run ruff==0.16.8 format --check tools
       - run: python3 -m unittest discover -s tools -p "test_*.py"
       - run: python3 tools/check_client_load.py
+      - run: python3 tools/check_menu_scroll.py
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"

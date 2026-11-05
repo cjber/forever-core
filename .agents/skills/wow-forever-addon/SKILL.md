@@ -69,6 +69,14 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   carries this rule under Rules and its gate runs `tools/lint_art.py` (`forever_tools.art`): art is set only in
   the repo's art helper file, or on a line that says why its shape is right (`art-ok: reason`). A texture reused
   for a file icon after an atlas keeps the atlas's crop: reset its texcoords first.
+- **WFA-36** A menu or dropdown built from a list scrolls. Blizzard's Menu API never clamps a submenu to the
+  screen and a dropdown's root only flips sideways, so a list that grows runs off the bottom. A description (root or
+  submenu) that gets entries in a loop, or is handed to a helper in a loop, calls `SetScrollMode(extent)` on itself
+  in the same function: 20 rows of 20 px (`SetScrollMode(400)`) unless the repo already names its extent. A loop that
+  stays short by construction (a constant table of a few options) says why on its `for` line or the line above:
+  `-- menu-scroll-ok: <reason>`. `UIDropDownMenu_AddButton` cannot scroll, so a list goes through the Menu API.
+  `tools/check_menu_scroll.py`, vendored from forever-core, runs in the required `core-shared` job of every repo;
+  where a spec stubs the menu, it asserts the extent too.
 
 ### Assets
 
