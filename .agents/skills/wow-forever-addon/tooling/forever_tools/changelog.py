@@ -3,33 +3,50 @@
 The release workflow hands what this prints to the packager, so GitHub, CurseForge and Wago show the same
 words as the changelog in the repository. A tag with no entry, or an empty one, fails here rather than
 publishing notes nobody wrote. CI runs `--check`, so a released version the changelog forgot fails on the
-next push instead of going unnoticed.
+next push instead of going unnoticed, and so does a newest release whose section no longer reads as it did at its
+tag (a merge that moved new bullets under it), since those words already shipped as that release's notes.
 
     python3 tools/changelog.py 0.2.0           # that version's entry (a leading v is fine)
-    python3 tools/changelog.py --check         # every v* tag has an entry, and Unreleased is there
+    python3 tools/changelog.py --check         # every v* tag has an entry, the newest as at its tag
     python3 tools/changelog.py --check 0.3.0   # that version has an entry, before it is tagged
 """
 
 import argparse
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 HEADING = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]? - \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
 UNRELEASED = re.compile(r"^## \[Unreleased\]\s*$", re.MULTILINE)
 
 
-def section(text: str, version: str) -> str:
+def find(text: str, version: str) -> str | None:
+    """`version`'s section body, stripped, or None when the text has no heading for it."""
     matches = list(HEADING.finditer(text))
     for index, match in enumerate(matches):
         if match["version"] == version:
             end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-            body = text[match.end() : end].strip()
-            if not body:
-                raise SystemExit(f"CHANGELOG.md's section for {version} is empty")
-            return body
-    known = ", ".join(m["version"] for m in matches) or "none"
-    raise SystemExit(f"CHANGELOG.md has no section for {version} (has: {known})")
+            return text[match.end() : end].strip()
+    return None
+
+
+def section(text: str, version: str) -> str:
+    body = find(text, version)
+    if body is None:
+        known = ", ".join(m["version"] for m in HEADING.finditer(text)) or "none"
+        raise SystemExit(f"CHANGELOG.md has no section for {version} (has: {known})")
+    if not body:
+        raise SystemExit(f"CHANGELOG.md's section for {version} is empty")
+    return body
+
+
+def at_tag(root: Path, version: str) -> str | None:
+    """CHANGELOG.md as it was at the `v<version>` tag, or None when the tag or the file is missing there."""
+    shown = subprocess.run(
+        ["git", "show", f"v{version}:CHANGELOG.md"], cwd=root, capture_output=True, text=True, check=False
+    )
+    return shown.stdout if shown.returncode == 0 else None
 
 
 def released(root: Path) -> list[str]:
@@ -41,11 +58,23 @@ def released(root: Path) -> list[str]:
     return sorted(versions, key=lambda version: tuple(map(int, version.split("."))))
 
 
-def check(text: str, versions: list[str]) -> None:
+def check(text: str, versions: list[str], tagged: Callable[[str], str | None] | None = None) -> None:
+    """Every version in `versions` (oldest first) has a section. With `tagged` (a version's changelog at its tag),
+    the newest one must also read as it did at its tag: a branch that merges main after a release lands its
+    Unreleased bullets under that newest heading. Older sections are left alone, since a few were reworded on
+    purpose, and a tag whose file has no section for it is skipped."""
     if not UNRELEASED.search(text):
         raise SystemExit("CHANGELOG.md has no ## [Unreleased] heading")
     for version in versions:
         section(text, version)
+    if tagged is not None and versions:
+        version = versions[-1]
+        before = find(tagged(version) or "", version)
+        if before is not None and before != find(text, version):
+            raise SystemExit(
+                f"CHANGELOG.md's section for {version} differs from its v{version} tag, whose notes already shipped;"
+                f" move new bullets under ## [Unreleased] (`git diff v{version} -- CHANGELOG.md` shows the change)"
+            )
     print(f"CHANGELOG.md documents {', '.join(versions) or 'no releases yet'}")
 
 
@@ -58,7 +87,10 @@ def main(root: Path, argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if args.check is not None:
-        check(text, [args.check.removeprefix("v")] if args.check else released(root))
+        if args.check:
+            check(text, [args.check.removeprefix("v")])
+        else:
+            check(text, released(root), lambda version: at_tag(root, version))
         return
     if not args.version:
         parser.error("give a version or --check")

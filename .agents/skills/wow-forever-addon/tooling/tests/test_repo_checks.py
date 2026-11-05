@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +34,30 @@ class ChangelogTest(unittest.TestCase):
         self.assertTrue(notes.startswith("- **A fix.**"))
         self.assertIn("### For addon authors\n\n- **`API.Thing` takes a map.**", notes)
         self.assertNotIn("first", notes)
+
+    def test_a_released_section_must_match_its_tag(self):
+        shipped = LOG.replace("[Unreleased]\n", "[Unreleased]\n- later\n")
+        moved = LOG.replace("- first\n", "- first\n- later\n")
+        changelog.check(LOG, ["1.0.0"], {"1.0.0": shipped}.get)
+        changelog.check(LOG, ["1.0.0"], {}.get)
+        changelog.check(LOG, ["1.0.0"], {"1.0.0": "## [Unreleased]\n"}.get)
+        with self.assertRaisesRegex(SystemExit, r"1\.0\.0.*differs from its v1\.0\.0 tag"):
+            changelog.check(moved, ["1.0.0"], {"1.0.0": LOG}.get)
+        reworded = moved.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n- next\n")
+        changelog.check(reworded, ["1.0.0", "1.1.0"], {"1.0.0": LOG, "1.1.0": reworded}.get)
+
+    def test_released_sections_are_read_at_their_tags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-c", "user.email=t@example.com"]
+            run = lambda *args: subprocess.run([*git, *args], cwd=root, check=True, capture_output=True)  # noqa: E731
+            run("init", "-q")
+            (root / "CHANGELOG.md").write_text(LOG)
+            run("add", "CHANGELOG.md")
+            run("-c", "user.name=t", "commit", "-q", "-m", "x")
+            run("tag", "v1.0.0")
+            self.assertEqual(changelog.at_tag(root, "1.0.0"), LOG)
+            self.assertIsNone(changelog.at_tag(root, "9.9.9"))
 
     def test_empty_section_fails(self):
         with self.assertRaisesRegex(SystemExit, "empty"):
