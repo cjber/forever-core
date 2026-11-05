@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+## [0.4.18] - 2026-11-05
 - **Right-click any tracker section to attach or detach the column.** Each section's header now opens a small menu with **Attach to quest tracker** and **Lock the tracker**, so the column can be moved or locked without opening Settings. A switch made in combat waits for combat to end, and each section's left click keeps doing what it did.
 
 ## [0.4.17] - 2026-11-05
