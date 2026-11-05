@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-11-05
+
+- **For addon authors:** `tools/check_menu_scroll.py` refuses a menu built from a list that can outgrow the screen. Blizzard's Menu API never clamps a submenu, so a description that takes its entries in a loop needs `SetScrollMode`, a `UIDropDownMenu_AddButton` loop is refused outright, and a loop known to stay short says why on a `-- menu-scroll-ok:` line. The check is vendored into every Forever addon and runs first in the shared-file drift job, and `SettingsPage.AddDropdown` is gone because no addon called it and its old dropdown could not scroll.
+
 ## [0.4.13] - 2026-11-05
 
 - **Every addon's micro-menu button gets its own place.** Buttons of different Forever addons in the same slot sat on the same spot, so only one showed, and each covered the Blizzard button beside Game Menu or Collections. They now line up in creation order, one slot each, and Blizzard's buttons move aside to make room, growing away from the screen edge the menu sits against. The vendored copies share one registry and hook each function and script once. The module hooks only scripts, an event and `UpdateMicroButtons`, and no longer runs the menu's Layout from addon code.
