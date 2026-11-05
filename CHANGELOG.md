@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Right-click any tracker section to attach or detach the column.** Each section's header now opens a small menu with **Attach to quest tracker** and **Lock the tracker**, so the column can be moved or locked without opening Settings. A switch made in combat waits for combat to end, and each section's left click keeps doing what it did.
+
 ## [0.4.17] - 2026-11-05
 - **Tall tracker sections stay under your quests.** A section that fills the room left below the quest tracker, such as a long guide step, now shows what fits there instead of the whole column jumping beside the tracker. Each section is given the room the ones above it left, less the gap under it, so the column never runs past the bottom of the screen. The column only moves above or beside the tracker when no section fits below it at all.
 - **Addon micro-menu buttons stay inside the micro menu.** Blizzard's buttons used to slide aside past the menu's own edge, so the row ran over the action bar beside it, or off the edge of the screen. The menu and its Edit Mode frame now grow by the addon buttons, so the action bar and bags beside them move aside, as they do for Blizzard's own buttons. In combat the row waits for combat to end.

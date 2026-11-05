@@ -4,6 +4,9 @@ local _, ns = ...
 ---@class ForeverTrackerModule : Frame
 ---@field uiOrder? number
 ---@field parentContainer? Frame
+---@field Header? Frame
+---@field headerMenu? boolean
+---@field GetContextMenuParent fun(self: ForeverTrackerModule): Frame
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
 
@@ -560,6 +563,38 @@ function api.SavePosition(x, y)
 	settings.x, settings.y = x, y
 	host:MarkDirty()
 end
+-- Every section header answers a right click the same way: the column's own switches, so a player can attach, detach
+-- or lock it from whichever section is in front of them. The section's own click runs first and is never replaced;
+-- writing a saved setting is safe in combat, and the layout waits for combat's end as ApplyAttachment already does.
+---@param module ForeverTrackerModule
+local function AddHeaderMenu(module)
+	local header = module.Header
+	if not header or module.headerMenu then
+		return
+	end
+	module.headerMenu = true
+	-- Read through the same keys TrackerLock uses: Adventure Guide's L is constant keyed, the other addons' L answers
+	-- the English phrase, and an untranslated line still reads as English.
+	local L = ns.L
+	local attach = rawget(L, "SETTING_ATTACH_TRACKER") or L["Attach to quest tracker"] or "Attach to quest tracker"
+	local lock = rawget(L, "SETTING_LOCK_TRACKER") or L["Lock the tracker"] or "Lock the tracker"
+	header:EnableMouse(true)
+	header:HookScript("OnMouseUp", function(_, button)
+		if button ~= "RightButton" then
+			return
+		end
+		MenuUtil.CreateContextMenu(module:GetContextMenuParent(), function(_, root)
+			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
+				api.SetAttached(not api.IsAttachedToQuestTracker())
+			end)
+			if api.IsLocked and api.SetLocked then
+				root:CreateCheckbox(lock, api.IsLocked, function()
+					api.SetLocked(not api.IsLocked())
+				end)
+			end
+		end)
+	end)
+end
 function api.Attach(module)
 	---@cast module ForeverTrackerModule
 	if module.parentContainer == host then
@@ -568,6 +603,7 @@ function api.Attach(module)
 	Mixin(module, Module)
 	modules[#modules + 1] = module
 	module:SetContainer(host)
+	AddHeaderMenu(module)
 	host:MarkDirty()
 end
 function api.IsAttached(module)
