@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-11-05
+
+- **The release workflow's packager action moves forward.** Releases are built and uploaded by a newer version of the packager action, so nothing a player sees changes.
+
 ## [0.4.14] - 2026-11-05
 
 - **For addon authors:** `tools/check_menu_scroll.py` refuses a menu built from a list that can outgrow the screen. Blizzard's Menu API never clamps a submenu, so a description that takes its entries in a loop needs `SetScrollMode`, a `UIDropDownMenu_AddButton` loop is refused outright, and a loop known to stay short says why on a `-- menu-scroll-ok:` line. The check is vendored into every Forever addon and runs first in the shared-file drift job, and `SettingsPage.AddDropdown` is gone because no addon called it and its old dropdown could not scroll.
