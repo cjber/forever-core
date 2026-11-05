@@ -1,7 +1,7 @@
 local _, ns = ...
 -- luacheck: globals CollectionsMicroButton DEFAULT_CHAT_FRAME GameTooltip_Hide
--- luacheck: globals MainMenuMicroButton MicroMenu UpdateMicroButtons ForeverMicroButtons
--- luacheck: globals hooksecurefunc NORMAL_FONT_COLOR GRAY_FONT_COLOR
+-- luacheck: globals MainMenuMicroButton MicroMenu MicroMenuContainer UpdateMicroButtons ForeverMicroButtons
+-- luacheck: globals hooksecurefunc InCombatLockdown NORMAL_FONT_COLOR GRAY_FONT_COLOR
 
 -- The button is an addon-owned micro-menu child. Addons provide their own saved setting and click action.
 local MicroButton = {}
@@ -65,10 +65,32 @@ local function Chain(list, anchor, toward, overlap)
 	end
 end
 
--- Places every shown addon button in its slot and moves Blizzard's buttons aside to make room. The row grows away
--- from the side the menu is anchored to, so it never runs off the edge of the screen it sits against.
+-- Sets the menu's width to `width`, and the container's to match, as MicroMenuContainer:Layout sizes it. The width
+-- is the menu's only measure of the row: Edit Mode places the container by it, the action bar and bags anchor to
+-- its sides, and the menu's art spans it.
+local function Resize(width)
+	if math.abs(MicroMenu:GetWidth() - width) >= 0.01 then
+		MicroMenu:SetWidth(width)
+	end
+	local container = MicroMenuContainer
+	if container and MicroMenu:GetParent() == container then
+		local scaled = width * MicroMenu:GetScale()
+		if math.abs(container:GetWidth() - scaled) >= 0.01 then
+			container:SetWidth(scaled)
+		end
+	end
+end
+
+-- Places every shown addon button in its slot, moves Blizzard's buttons after it aside to make room, and widens the
+-- menu by the room it made. The menu sits in its container at the corner nearest the screen edge (MicroMenuMixin's
+-- AnchorToMenuContainer) and the container grows with it, so the row stays inside the menu, its art and its
+-- neighbours however Edit Mode placed it.
 local function Reflow()
 	if not (MicroMenu and MicroMenu.GetChildren) then
+		return
+	end
+	-- Resizing the container moves the action bar anchored to it, which waits for the end of combat.
+	if InCombatLockdown and InCombatLockdown() then
 		return
 	end
 	local native = NativeButtons()
@@ -88,48 +110,47 @@ local function Reflow()
 	end
 	local padding = MicroMenu.childXPadding or -5
 	local overlap = -padding
-	local anchorPoint = MicroMenu:GetPoint(1)
-	local anchoredRight = type(anchorPoint) == "string" and anchorPoint:find("RIGHT") ~= nil
 	local gameMenu = position[MainMenuMicroButton]
 	local oneRow = MicroMenu.isHorizontal ~= false
 		and MicroMenu.layoutFramesGoingRight ~= false
 		and (MicroMenu.stride or #native) >= #native
 	if not (oneRow and gameMenu) then
-		-- A vertical or stacked menu: leave Blizzard's grid alone and line the addon buttons up beside it. Switching
-		-- the menu to either changes the grid's settings, so its Layout re-places every button it had moved aside.
+		-- A vertical or stacked menu: leave Blizzard's grid alone and line the addon buttons up beside it, away from
+		-- the screen edge the menu is anchored to. Switching the menu to either changes the grid's settings, so its
+		-- Layout re-places every button and resizes the menu.
 		for _, button in ipairs(after) do
 			before[#before + 1] = button
 		end
+		local anchorPoint = MicroMenu:GetPoint(1)
+		local anchoredRight = type(anchorPoint) == "string" and anchorPoint:find("RIGHT") ~= nil
 		Chain(before, MicroMenu, anchoredRight and "LEFT" or "RIGHT", 0)
+		shared.width = nil
 		return
 	end
 	-- Every slot is one step: a button's width less the grid's overlap. The grid puts its first button at the row's
-	-- origin; this places the row from there, so repeated runs land in the same place. The first button's own anchor
-	-- gives the origin unless it still holds the offset this placed it at last time.
-	local collections = position[CollectionsMicroButton] or 0
-	local width = native[1]:GetWidth()
-	local step = (width > 0 and width or 32) + padding
-	local function Units(index)
-		if anchoredRight then
-			return -((index <= collections and #after or 0) + (index < gameMenu and #before or 0))
-		end
-		return (index > collections and #after or 0) + (index >= gameMenu and #before or 0)
-	end
-	local _, _, _, firstX = native[1]:GetPoint(1)
-	if not firstX then
+	-- origin, and this never moves that button, so its anchor gives the origin on every run.
+	local _, _, _, origin = native[1]:GetPoint(1)
+	if not origin then
 		return
 	end
-	local last = shared.first
-	local origin = firstX
-	if last and last.button == native[1] and math.abs(last.applied - firstX) < 0.01 then
-		origin = last.origin
-	end
+	local collections = position[CollectionsMicroButton] or 0
+	local width = native[1]:GetWidth()
+	width = width > 0 and width or 32
+	local step = width + padding
 	for index, button in ipairs(native) do
-		Place(button, origin + (index - 1 + Units(index)) * step)
+		local units = (index > collections and #after or 0) + (index >= gameMenu and #before or 0)
+		Place(button, origin + (index - 1 + units) * step)
 	end
-	shared.first = { button = native[1], origin = origin, applied = origin + Units(1) * step }
 	Chain(before, MainMenuMicroButton, "LEFT", overlap)
 	Chain(after, CollectionsMicroButton, "RIGHT", overlap)
+	-- The grid sized the menu to its own buttons. Widen it by the addon buttons, or give back what the last run
+	-- added once none is shown, and leave a menu this never widened as Blizzard sized it.
+	local added = #before + #after
+	if added > 0 or shared.width then
+		local row = origin + (#native - 1 + added) * step + width
+		Resize(row)
+		shared.width = added > 0 and row or nil
+	end
 end
 shared.Reflow = shared.Reflow or Reflow
 
@@ -184,6 +205,8 @@ local function HookUpdate()
 		shared.events:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 		shared.events:SetScript("OnEvent", ReflowAll)
 	end
+	-- A placement skipped in combat runs when it ends.
+	shared.events:RegisterEvent("PLAYER_REGEN_ENABLED")
 end
 
 function MicroButton.Refresh()
@@ -205,6 +228,8 @@ function MicroButton.Create(spec)
 	end
 	local button = CreateFrame("Button", spec.name, MicroMenu, "MainMenuBarMicroButton") --[[@as ForeverMicroButton]]
 	button.microButtonSpec = spec
+	-- The template's OnMouseDown builds the pressed highlight from this name, as LoadMicroButtonTextures sets it.
+	button.textureName = spec.atlas
 	if spec.host then
 		spec.host.microButton = button
 	end
