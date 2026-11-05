@@ -1,4 +1,5 @@
 tools/.cache/
+.agents/skills/wow-forever-addon/tooling/tools/.cache/
 __pycache__/
 *.zip
 .release/

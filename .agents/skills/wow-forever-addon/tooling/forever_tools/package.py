@@ -7,8 +7,9 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 - an addon folder that is missing, or has no TOC of its own name;
 - a file a TOC or its XML loads (`Script`, `Include`), or an `Interface\\AddOns\\<packaged folder>\\...` path a TOC
   tag, XML attribute or whole Lua string names, that is not in the package;
-- a development folder that shipped (`tests`, `tools`, `types`, `.agents` and the like), or a required file that
-  did not (a licence file in every packaged folder, and `THIRD_PARTY.md` in the main addon);
+- a development file or folder that shipped at an addon folder's top level (`tests`, `tools`, `types`, `docs`,
+  `ruff.toml`, `stylua.toml` and any dot file such as `.luacheckrc`), or a required file that did not (a licence
+  file in every packaged folder, and `THIRD_PARTY.md` in the main addon);
 - credits that do not ship with it (WFA-10, WFA-31): the main addon's `README.md` needs a `## Credits` section and
   its `THIRD_PARTY.md` an `## Ideas and contributors` section, each with some text under the heading;
 - a spec that fails when run against the packaged files instead of the checkout: the package is copied to a scratch
@@ -31,7 +32,8 @@ from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
 
-FORBIDDEN = (".agents", ".github", ".sloppatrol", "AGENTS.md", "tests", "tools", "types")
+# Besides these, every top-level name starting with a dot (`.agents`, `.luacheckrc`, `.luarc.json`) is development.
+FORBIDDEN = ("AGENTS.md", "docs", "ruff.toml", "stylua.toml", "tests", "tools", "types")
 # What the client accepts for a texture, font or sound path given without its extension.
 EXTENSIONS = ("", ".tga", ".blp", ".png", ".jpg", ".ttf", ".otf", ".ogg", ".mp3")
 LOAD_TAGS = {"Include", "Script"}
@@ -41,11 +43,11 @@ SPEC_TIMEOUT = 900
 @dataclass(frozen=True)
 class Policy:
     """`addons`: every folder the package holds, the main addon first (`package-as`, then each `move-folders`
-    target). `forbidden`: names that must not appear at any addon folder's top level. Every folder must ship a
-    licence file (`licence_file`). `required`: other files the main addon folder must ship. `credits`: (file,
-    heading) pairs the main addon folder must ship, each file holding that ATX heading (`has_section`) with text
-    under it. `specs`: repository-relative specs to run on the packaged files, with `support` (paths in the checkout,
-    never shipped) laid over a copy of the package first."""
+    target). `forbidden`: names that must not appear at any addon folder's top level, besides any dot file. Every
+    folder must ship a licence file (`licence_file`). `required`: other files the main addon folder must ship.
+    `credits`: (file, heading) pairs the main addon folder must ship, each file holding that ATX heading
+    (`has_section`) with text under it. `specs`: repository-relative specs to run on the packaged files, with
+    `support` (paths in the checkout, never shipped) laid over a copy of the package first."""
 
     addons: tuple[str, ...]
     forbidden: tuple[str, ...] = FORBIDDEN
@@ -166,7 +168,7 @@ def check(release: Path, policy: Policy) -> list[str]:
             continue
         forbidden = {name.lower() for name in policy.forbidden}
         for child in sorted(folder.iterdir()):
-            if child.name.lower() in forbidden:
+            if child.name.startswith(".") or child.name.lower() in forbidden:
                 problems.append(f"{addon}/{child.name}: shipped; add it to .pkgmeta's ignore list")
         # The addon's own TOC, and any flavour TOC beside it (Addon_Vanilla.toc, Addon-Classic.toc).
         tocs = [

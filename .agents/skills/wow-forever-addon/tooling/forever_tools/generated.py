@@ -7,6 +7,7 @@ and changes, not only its name.
 """
 
 import argparse
+import filecmp
 import os
 import shutil
 import subprocess
@@ -35,6 +36,27 @@ def copy_tracked(root: Path, scratch: Path) -> None:
             target = scratch / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+
+
+def copy_back(source: Path, target: Path) -> None:
+    """Copy into `target` each file under `source` that is new or changed, leaving unchanged ones alone.
+
+    A changed file is replaced through a temporary sibling, never written in place, so a read-only file (a git pack,
+    0444) is replaced rather than refused. A top-level `.scratch` folder is never copied.
+    """
+    for folder, directories, files in os.walk(source):
+        here = Path(folder)
+        if here == source:
+            directories[:] = [name for name in directories if name != ".scratch"]
+        destination = target / here.relative_to(source)
+        destination.mkdir(parents=True, exist_ok=True)
+        for name in files:
+            new, old = here / name, destination / name
+            if old.is_file() and filecmp.cmp(new, old, shallow=True):
+                continue
+            partial = destination / f".{name}.partial"
+            shutil.copy2(new, partial)
+            os.replace(partial, old)
 
 
 def lua_texts(expected: Outputs, actual: Outputs) -> dict[str, tuple[str | None, str | None]]:
@@ -85,9 +107,9 @@ def check_generated(
     """Regenerate twice in a scratch copy of the tracked tree, seeded with the shared input cache.
 
     `regenerate(scratch, offline)` removes the generated files and runs every generator. An online first pass
-    copies the inputs it downloaded back into the shared cache, so the second pass and later runs work offline.
-    Scratch lives in the ignored shared cache, avoiding limited system tmpfs. An explicit TMPDIR, TEMP or TMP
-    keeps the platform's temporary-directory selection. Cache inputs remain independent copies.
+    copies the inputs it downloaded or changed back into the shared cache (`copy_back`), so the second pass and
+    later runs work offline. Scratch lives in the ignored shared cache, avoiding limited system tmpfs. An explicit
+    TMPDIR, TEMP or TMP keeps the platform's temporary-directory selection. Cache inputs remain independent copies.
     """
     shared = input_cache(root, cache)
     temporary_root = None
@@ -109,7 +131,7 @@ def check_generated(
         expected = outputs(scratch)
         regenerate(scratch, offline)
         if not offline and (scratch / cache).is_dir():
-            shutil.copytree(scratch / cache, shared, dirs_exist_ok=True)
+            copy_back(scratch / cache, shared)
         generated = outputs(scratch)
         compare(expected, generated, "Stale generated files; run the canonical generators", hints, subsets)
         regenerate(scratch, True)

@@ -152,8 +152,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   `python3 .sloppatrol/agents.py check`; `sloppatrol init` vendors both and `sloppatrol init --refresh` refreshes them.
   Dependabot updates `github-actions` monthly, grouped. A `package` job runs the pinned BigWigs packager
   with `args: -d -z` (no upload) and `tools/check_package.py` (`forever_tools.package`) on its output: every file a
-  TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types` or
-  `.agents` ships, every packaged folder ships a licence file (LICENSE, LICENCE, COPYING or UNLICENSE), THIRD_PARTY.md
+  TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types`, `docs`,
+  `ruff.toml`, `stylua.toml` or dot file (`.agents`, `.luacheckrc`) ships, every packaged folder ships a licence file (LICENSE, LICENCE, COPYING or UNLICENSE), THIRD_PARTY.md
   and the WFA-10 and WFA-31 credits sections ship with text under them, and the smoke spec passes on the packaged
   folder. `tools/doctor.py`
   (`forever_tools.doctor`) checks a machine against every pin in `ci.yml` and `typecheck.sh` and prints a fix for

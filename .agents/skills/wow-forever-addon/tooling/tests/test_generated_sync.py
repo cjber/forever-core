@@ -122,6 +122,39 @@ class GeneratedTest(unittest.TestCase):
             self.assertEqual(visited[0].parent, override)
             self.assertFalse(visited[0].exists())
 
+    def test_online_pass_keeps_read_only_shared_inputs_and_adds_new_ones(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository(directory, {"Data/X.lua": "same"})
+            pack = root / "tools/.cache/clone/.git/objects/pack/pack-1.pack"
+            pack.parent.mkdir(parents=True)
+            pack.write_text("pack")
+            pack.chmod(0o444)
+            stale = root / "tools/.cache/clone/FETCH_HEAD"
+            stale.write_text("old")
+            stale.chmod(0o444)
+
+            def regenerate(scratch, offline):
+                if not offline:
+                    cache = scratch / "tools/.cache/clone"
+                    (cache / ".git/objects/pack/pack-2.pack").write_text("new pack")
+                    (cache / "FETCH_HEAD").chmod(0o644)
+                    (cache / "FETCH_HEAD").write_text("new")
+
+            try:
+                generated.check_generated(
+                    root,
+                    outputs=lambda r: {"Data/X.lua": (r / "Data/X.lua").read_bytes()},
+                    regenerate=regenerate,
+                    offline=False,
+                    success="ok",
+                )
+                self.assertEqual(pack.read_text(), "pack")
+                self.assertEqual((pack.parent / "pack-2.pack").read_text(), "new pack")
+                self.assertEqual(stale.read_text(), "new")
+            finally:
+                for path in (pack, stale):
+                    path.chmod(0o644)
+
     def test_cache_copy_failure_explains_how_to_choose_scratch_storage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = repository(directory, {"Data/X.lua": "same"})
