@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- **The shared micro-menu button is now a minimap button.** Field Guide's and Adventure Guide's buttons sit on the Minimap rim instead of widening the micro menu, which left the menu out of line with the XP bar. `Core/MinimapButton.lua` draws the client's own modern minimap plate and round hover glow around the addon's icon, drags around the rim with the angle saved in the addon's settings, and honours a hide flag. The vendored copies share one registry, so two addons' buttons land on different angles by default. No Blizzard frame is hooked or resized.
 
 ## [0.4.20] - 2026-11-06
 - **The tracker column steps aside for EQ Objective Tracker.** EQ Objective Tracker hides the game's quest tracker and draws its own list in that same slot, so its quests and the Forever sections drew over each other and neither could be read. `UI/TrackerEqot.lua` reads EQOT's list through its public API and re-places after each of its layout callbacks, and reads EQOT's own frame the same way when that API is not there; `UI/TrackerHost.lua` consults EQOT before Questie and generalises the beside-a-list layout. Never hooks or moves a protected frame, so the same placement runs in combat. Turn EQOT off and the column goes back where it was.

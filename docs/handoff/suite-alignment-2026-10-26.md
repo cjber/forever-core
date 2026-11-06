@@ -73,7 +73,7 @@ This is not new logic, it is the §5 files missing or stale. Current state, byte
 | `tests/report_spec.lua` | missing | missing | missing |
 | `UI/ForeverFamily.lua` | missing | missing | missing |
 | `tests/forever_family_spec.lua` | missing | missing | missing |
-| `Core/MicroButton.lua` | current | — | — |
+| `Core/MinimapButton.lua` | current | — | — |
 | tracker files | n/a (no column) | n/a | n/a |
 
 Do it the §5 way: nothing changes in core; run `tools/sync_consumers.py` against each checkout and open one PR per
@@ -172,7 +172,7 @@ gaining `typecheck` is the one that changes what is tested, so that PR says so.
 - `ALL_CONSUMERS` is the five original addons. `atlas-forever` and `hoard-forever` are absent from both lists, so
   their `SafeCall.lua` drift is invisible to the gate.
 - `PRIVATE_CONSUMERS = ("field-guide-forever",)` is correct, but the Field Guide side
-  (`tools/check_core_shared.py`) only compares `Core/MicroButton.lua` and its spec. Widen that list as the new
+  (`tools/check_core_shared.py`) only compares `Core/MinimapButton.lua` and its spec. Widen that list as the new
   vendored files land.
 - `VENDORED` needs `UI/SettingsPage.lua`, `Core/Text.lua` and their specs once §1.1 and §1.2 exist.
 

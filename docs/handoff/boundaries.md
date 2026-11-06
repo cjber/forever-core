@@ -107,9 +107,9 @@ Forever Core owns the code that is identical in every addon, not the features th
   Core lists the five addons as `OptionalDeps` so they load first and core adopts rather than starting a second column.
 - **What stays per addon:** a section's own drawing, its blocks, its strings, and its settings page. Core never learns
   what a quest, a route, a recipe or a creature is.
-- The Field Guide Forever consumer list now includes `field-guide-forever` for `Core/MicroButton.lua` and its contract
-  spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column. Field Guide is
-  public, so `tools/check_consumers.py` compares it against public core main.
+- The Field Guide Forever consumer list now includes `field-guide-forever` for `Core/MinimapButton.lua` and its
+  contract spec; it does not join `ALL_CONSUMERS` or the tracker group because it has no tracker column. Field Guide
+  is public, so `tools/check_consumers.py` compares it against public core main.
 
 ## 6. Integration contracts
 
@@ -174,3 +174,4 @@ Rules that keep this file honest:
 | 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to Forever Core as the report window's shared dependency, vendored into all five addons | owner request to complete the shared-logic extraction |
 | 2026-11-01 | Atlas Forever retired before any store release: its painted maps moved to Tweaks, and OpenMap covers the rest | owner request |
 | 2026-11-04 | Hoard Forever retired and archived: Baganator covers bag, bank and alt search (cjber/hoard-forever#50) | owner decision |
+| 2026-11-06 | The shared micro-menu button is replaced by a minimap button: one draggable rim button per addon, sharing one registry and saving its angle and hide flag in the addon's settings (cjber/forever-core#152) | owner decision |

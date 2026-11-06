@@ -27,7 +27,7 @@ TRACKER_CONSUMERS = (
     "skillup-forever",
 )
 ALL_CONSUMERS = TRACKER_CONSUMERS + ("tweaks-forever",)
-MICRO_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
+MINIMAP_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
 # Core/Text.lua goes to the addons that search by name.
 TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
 # The settings canvas and the dead-code gate go to every addon with a settings page, Field Guide included.
@@ -56,8 +56,8 @@ VENDORED = {
     "tests/text_spec.lua": TEXT_CONSUMERS,
     "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
     "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
-    "Core/MicroButton.lua": MICRO_CONSUMERS,
-    "tests/micro_button_spec.lua": MICRO_CONSUMERS,
+    "Core/MinimapButton.lua": MINIMAP_CONSUMERS,
+    "tests/minimap_button_spec.lua": MINIMAP_CONSUMERS,
     "UI/TrackerHost.lua": TRACKER_CONSUMERS,
     "UI/TrackerLock.lua": TRACKER_CONSUMERS,
     "UI/TrackerOrder.lua": TRACKER_CONSUMERS,

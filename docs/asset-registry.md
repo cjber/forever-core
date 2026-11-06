@@ -120,12 +120,17 @@ primitive, not chrome — allowed.
 
 ## What the addons actually reference today
 
-Ten atlas names and three loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
+Thirteen atlas names and three loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
 `questlog-icon-setting`, `common-icon-checkmark`, `common-dropdown-c-button-hover-arrow`,
 `checkmark-minimal`, `Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`,
-`UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`; `map-icon-suramardoor.tga`,
-`media/Dot.tga`, `media/TooltipBorder*.tga`. Every one is Tier 1 or a named exception, so the
-blacklist is prophylactic: it stops the next new feature reaching for garrison or covenant art.
+`UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`, `UI-HUD-Minimap-Button`,
+`UI-HUD-Minimap-Button-Down`, `bags-roundhighlight`; `map-icon-suramardoor.tga`, `media/Dot.tga`,
+`media/TooltipBorder*.tga`. The minimap plate's two states are the art the client's own
+`AddonCompartment` and tracking buttons use (`Blizzard_Minimap/Mainline/AddonCompartment.xml`), and the
+round hover glow is the one its bag, wardrobe and container slots use. All three are set 0 and none belongs
+to a blacklisted family, so the native host use is the evidence. Every other asset above is Tier 1 or a
+named exception, so the blacklist is prophylactic: it stops the next new feature reaching for garrison or
+covenant art.
 
 ## Checking an element before you use it
 
