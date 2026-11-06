@@ -70,10 +70,10 @@ and run anywhere.
   a loop calls `SetScrollMode` in the same function, or the loop says why it stays short (`-- menu-scroll-ok:
   <reason>`). It reads Lua through the skill pack's `forever_tools/lua.py` lexer; `tools/test_check_menu_scroll.py`
   is its spec.
-- `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data, `forever_tools/legacy_chrome.txt`
-  (old chrome by FileDataID) and `forever_tools/interface_paths.txt` (the known interface-path set), from the
+- `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data, `.agents/skills/wow-forever-addon/tooling/forever_tools/legacy_chrome.txt`
+  (old chrome by FileDataID) and `.agents/skills/wow-forever-addon/tooling/forever_tools/interface_paths.txt` (the known interface-path set), from the
   wago.tools listfile for 1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule
-  itself lives in the skill pack's `forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
+  itself lives in `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, which runs the client load
   rule, the menu rule and that check on every PR (`--base`) and on a schedule (the full check). Its `core-shared` job is required in
   every consumer, so both rules gate every consumer PR with no change to the consumer's own CI. It lives outside `.github/workflows` so it never runs

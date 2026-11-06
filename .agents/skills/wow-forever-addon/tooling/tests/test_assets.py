@@ -46,8 +46,8 @@ class AssetsTest(unittest.TestCase):
             self.assertIsNone(assets.problem(value))
 
     def test_legacy_chrome_is_rejected_by_filedataid_age(self):
-        self.assertTrue(assets.check('local texture = "Interface\\\\Taxiframe\\\\UI-Taxi-Line"'))
-        self.assertTrue(assets.check('local texture = "Interface/Taxiframe/UI-Taxi-Line"'))
+        self.assertTrue(assets.check('local texture = "Interface\\\\TargetingFrame\\\\UI-StatusBar"'))
+        self.assertTrue(assets.check('local texture = "Interface/TargetingFrame/UI-StatusBar"'))
         self.assertEqual(assets.check('local texture = "Interface\\\\Icons\\\\INV_Misc_QuestionMark"'), [])
         self.assertEqual(assets.check('local texture = "Interface\\\\TargetingFrame\\\\UI-RaidTargetingIcon_1"'), [])
         self.assertEqual(assets.check('texture:SetAtlas("common-dropdown-bg")'), [])
