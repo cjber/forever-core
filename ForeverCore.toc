@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Forever Core
-## Notes: The shared tracker column, grip, Lock switch and section order every Forever addon is built on.
+## Notes: The shared tracker column, grip, Lock switch, section order and leaderboards every Forever addon is built on.
 ## Author: cjber
 ## Version: @project-version@
 ## Category: Map
@@ -21,4 +21,6 @@ UI\TrackerEqot.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
 UI\TrackerHost.lua
+Core\LeaderboardsData.lua
+UI\Leaderboards.lua
 Expose.lua

@@ -52,6 +52,12 @@ and run anywhere.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which must load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/TrackerQuestie.lua`: Questie's quest list, so the column steps beside it instead of under it.
+- `Core/LeaderboardsData.lua`: the leaderboards' data half, overall points, standing, the per-scope cache keyed on
+  each board's `revision` and the unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one
+  cache lookup rather than a board build and sort.
+- `UI/Leaderboards.lua`: the shared Forever Leaderboards window, its registration and tabs, vendored with
+  `Core/LeaderboardsData.lua` to the six consumers that carry `Core/PeerStats.lua`; each addon registers one board
+  and nothing there knows an addon.
 - `Locales/enUS.lua`: the phrases the shared files themselves draw. A consumer keeps its own locale file for its own
   copy; the phrases there are the only ones core owns.
 - The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in

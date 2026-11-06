@@ -3,6 +3,7 @@ max_line_length = 120
 exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**"}
 globals = {
 	"ForeverFamily",
+	"ForeverLeaderboards",
 	"ForeverTrackerHost",
 	"EventUtil",
 	"ShortestPathForever",
@@ -21,9 +22,16 @@ read_globals = {
 	"IsAltKeyDown",
 	"CreateFramePoolCollection",
 	"C_XMLUtil",
+	"C_DateAndTime",
 	"Ambiguate",
 	"C_ChatInfo",
 	"Clamp",
+	"CreateDataProvider",
+	"CreateScrollBoxListLinearView",
+	"ScrollBoxConstants",
+	"ScrollUtil",
+	"RAID_CLASS_COLORS",
+	"GREEN_FONT_COLOR",
 	"CreateSettingsButtonInitializer",
 	"Lerp",
 	"Menu",
@@ -193,6 +201,9 @@ files["Locales/*.lua"] = { max_line_length = false }
 -- ForeverCore: the shared files publish these globals, and Core.lua's saved table.
 globals[#globals + 1] = "ForeverCore"
 globals[#globals + 1] = "ForeverCoreDB"
+-- UI/Leaderboards.lua: the window's slash commands.
+globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS1"
+globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS2"
 -- Core/MinimapButton.lua publishes the registry every vendored copy shares.
 globals[#globals + 1] = "ForeverMinimapButtons"
 -- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.

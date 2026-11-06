@@ -29,6 +29,8 @@
 ---@class ForeverTrackerNamespace
 ---@field MapCanvas? ForeverMapCanvas
 ---@field ContextMenu? fun(owner: Frame, generator: fun(owner: Frame, root: any)): any
+---@field Leaderboards? ForeverLeaderboardsAPI
+---@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field SafeCall fun(label: string, fn: function, ...: any): boolean, ...any
 ---@field L table<string, string>
