@@ -231,7 +231,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   whether they wrote on GitHub or in store comments: the changelog bullet ends "thanks to X for the report" (or "for
   the idea"), and THIRD_PARTY.md's `## Ideas and contributors` table gains or extends their row with what came of it.
   Use the handle they posted under; an anonymous store handle (`user_` and random characters) gets the table's
-  generic thanks instead. Praise, and requests that weren't built, are not credited. The org PR template
+  generic thanks instead. Praise, and requests that weren't built, are not credited. The addons' author, cjber, is
+  never credited: not in a changelog bullet, THIRD_PARTY.md, release notes, README or store copy. Only other players
+  are credited. The org PR template
   (`cjber/.github`) carries the checklist line `- [ ] A reporter or requester is credited in the changelog bullet and
   THIRD_PARTY.md (WFA-33)`.
 - **WFA-34** Every addon ships in the client languages the Forever client offers besides English (deDE, esES,
