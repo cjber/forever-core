@@ -250,26 +250,54 @@ local function SidePoint(point)
 	return point:find("LEFT", 1, true) and "LEFT" or "RIGHT"
 end
 
--- Where a detached column sits until the player drags it: beside the quest list (the native tracker, or Questie's)
--- and level with its top, so neither draws over the other. To its left when the column fits there, otherwise to its
--- right. Offsets are from UIParent's top left corner in the host's own scale; the caller keeps them on screen.
-local function Beside(list, width, screenHeight)
+-- The list's left, right and top in the host's own scale, whether it is a real frame (Questie) or the normalised
+-- bounds table UI/TrackerEqot.lua returns.
+local function ListEdges(list)
+	if list.left then
+		return list.left, list.right, list.top
+	end
+	-- A frame the client has not placed yet answers nil, and multiplying that would throw inside the layout.
 	local left, right, top = list:GetLeft(), list:GetRight(), list:GetTop()
+	if not (left and right and top) then
+		return nil
+	end
+	local toHost = list:GetEffectiveScale() / host:GetEffectiveScale()
+	return left * toHost, right * toHost, top * toHost
+end
+
+-- Where a detached column sits until the player drags it: beside the quest list (the native tracker, Questie's or
+-- EQOT's) and level with its top, so neither draws over the other. To its left when the column fits there, otherwise
+-- to its right. Offsets are from UIParent's top left corner in the host's own scale; the caller keeps them on screen.
+local function Beside(list, width, screenHeight)
+	local left, right, top = ListEdges(list)
 	if not (left and right and top) then
 		return 0, -40
 	end
-	local toHost = list:GetEffectiveScale() / host:GetEffectiveScale()
-	local x = left * toHost - 8 - width
+	local x = left - 8 - width
 	if x < 0 then
-		x = right * toHost + 8
+		x = right + 8
 	end
-	return x, top * toHost - screenHeight
+	return x, top - screenHeight
 end
 
--- UI/TrackerQuestie.lua, loaded first, finds Questie's quest list (a host loaded without it ignores Questie).
+-- UI/TrackerEqot.lua and UI/TrackerQuestie.lua, loaded first, find the quest list another tracker draws over the
+-- native slot (a host loaded without either ignores that addon). EQOT is the more specific cover, since it hides the
+-- native frame, so its list is consulted before Questie's.
+local TrackerEqot = ns.TrackerEqot
+	or {
+		List = function() end,
+		Await = function() end,
+		Room = function()
+			return 0
+		end,
+		Places = function()
+			return {}
+		end,
+	}
 local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = function() end }
--- Whether the last attached layout went round Questie's list, and the room it gave the sections.
-local besideQuestie, questieRoom = false, 0
+-- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
+---@type boolean, boolean, boolean, "eqot"|"questie"|nil, number
+local besideList, besideQuestie, besideEqot, besideKind, displacedRoom = false, false, false, nil, 0
 
 -- Blizzard's Edit Mode owns the native slot while its manager is on screen. The manager can also be hidden and locked
 -- without exiting (CheckHideAndLockEditMode), which leaves editModeActive true with no EditMode.Exit: a hidden manager
@@ -353,8 +381,8 @@ local function LayoutDetached(settings)
 	if settings.x and settings.y then
 		x, y = settings.x / scale, settings.y / scale
 	else
-		local questie = TrackerQuestie.List(host, host.MarkDirty)
-		x, y = Beside(questie or ObjectiveTrackerFrame, width, screenHeight)
+		local list = TrackerEqot.List(host, host.MarkDirty) or TrackerQuestie.List(host, host.MarkDirty)
+		x, y = Beside(list or ObjectiveTrackerFrame, width, screenHeight)
 	end
 	x = math.max(0, math.min(x, math.max(0, screenWidth - width)))
 	y = math.min(0, math.max(y, 24 - screenHeight))
@@ -439,32 +467,35 @@ local function LayoutAttached()
 	AvoidMinimap(point)
 end
 
--- Attached while Questie's list covers the native slot: the column goes below, above or beside it and the native
--- tracker keeps its slot. Only our frames move, so this runs in combat too; with `questie` nil (Questie hid its list in
--- combat) the column holds its place until combat ends.
----@param questie Frame?
-local function LayoutBesideQuestie(questie)
+-- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
+-- native tracker keeps its slot. Only our frames move, so this runs in combat too; with `list` nil (the addon hid its
+-- list in combat) the column holds its place until combat ends.
+---@param list ForeverTrackerEqotList|Frame?
+---@param kind "eqot"|"questie"?
+local function LayoutBesideList(list, kind)
 	if Editing() then
 		return
 	end
-	besideQuestie = true
-	if not questie then
-		host:SetShown(LayoutModules(host:GetWidth(), questieRoom, 0))
+	besideList, besideKind = true, kind
+	besideEqot, besideQuestie = kind == "eqot", kind == "questie"
+	if not list then
+		host:SetShown(LayoutModules(host:GetWidth(), displacedRoom, 0))
 		return
 	end
+	local module = kind == "eqot" and TrackerEqot or TrackerQuestie
 	host:Show()
 	MatchNativeScale()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(ObjectiveTrackerFrame:GetWidth(), screenWidth)
 	host:SetWidth(width)
-	questieRoom = TrackerQuestie.Room(questie, host)
-	if not LayoutModules(width, questieRoom, 0) then
+	displacedRoom = module.Room(list, host)
+	if not LayoutModules(width, displacedRoom, 0) then
 		host:Hide()
 		return
 	end
-	local besideX = Beside(questie, width, screenHeight)
-	local places = TrackerQuestie.Places(questie, host, besideX, screenWidth, screenHeight)
+	local besideX = Beside(list, width, screenHeight)
+	local places = module.Places(list, host, besideX, screenWidth, screenHeight)
 	for index, place in ipairs(places) do
 		host:ClearAllPoints()
 		host:SetPoint(place[1], UIParent, place[1], place[2], place[3])
@@ -481,17 +512,29 @@ local function Layout()
 	end
 	local settings = ApplyAttachment()
 	Grip.Show(not attached)
+	-- Lock the host's scale before a list is normalised into it, so a saved user scale is already applied.
+	MatchNativeScale()
 	if not attached then
-		besideQuestie = false
+		besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
 		LayoutDetached(settings)
 		return
 	end
-	local questie = TrackerQuestie.List(host, host.MarkDirty)
-	if questie or (besideQuestie and InCombatLockdown()) then
-		LayoutBesideQuestie(questie)
+	local eqot = TrackerEqot.List(host, host.MarkDirty)
+	if eqot then
+		LayoutBesideList(eqot, "eqot")
 		return
 	end
-	besideQuestie = false
+	local questie = TrackerQuestie.List(host, host.MarkDirty)
+	if questie then
+		LayoutBesideList(questie, "questie")
+		return
+	end
+	-- Both lists are away, so the column holds the place the list it was avoiding gave it until combat ends.
+	if besideList and InCombatLockdown() then
+		LayoutBesideList(nil, besideKind)
+		return
+	end
+	besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
 	LayoutAttached()
 end
 
@@ -501,9 +544,9 @@ function host.MarkDirty(_)
 		C_Timer.After(0, Layout)
 	end
 end
--- Questie hides the native tracker and its header, so a collapsed All Objectives no longer hides the sections.
+-- Questie or EQOT hides the native tracker and its header, so a collapsed All Objectives no longer hides the sections.
 function host.IsCollapsed(_)
-	return attached == true and not besideQuestie and NativeCollapsed()
+	return attached == true and not besideList and NativeCollapsed()
 end
 function host:ForceExpand()
 	self:MarkDirty()
@@ -721,7 +764,7 @@ function api.Debug()
 		)
 	end
 	local form = "combat=%s shown=%s hostH=%.1f host[%s] g[%s] nativeH=%.1f native[%s] g[%s] uiS%.2f"
-	return (form .. " questie=%s"):format(
+	return (form .. " questie=%s eqot=%s"):format(
 		tostring(InCombatLockdown()),
 		tostring(host:IsShown()),
 		host:GetHeight() or -1,
@@ -731,7 +774,8 @@ function api.Debug()
 		point(ObjectiveTrackerFrame),
 		geometry(ObjectiveTrackerFrame),
 		UIParent:GetEffectiveScale(),
-		tostring(besideQuestie)
+		tostring(besideQuestie),
+		tostring(besideEqot)
 	)
 end
 
@@ -741,5 +785,6 @@ ns.TrackerHost = api
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true
 	host:MarkDirty()
+	TrackerEqot.Await(host.MarkDirty)
 	TrackerQuestie.Await(host.MarkDirty)
 end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")

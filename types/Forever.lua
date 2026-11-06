@@ -35,5 +35,6 @@
 ---@field TrackerLock? table
 ---@field TrackerOrder? ForeverTrackerOrderAPI
 ---@field TrackerQuestie? ForeverTrackerQuestie
+---@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerHostSettings? fun(): ForeverTrackerSettings
 ---@field Defaults? ForeverTrackerSettings
