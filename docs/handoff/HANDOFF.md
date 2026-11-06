@@ -61,7 +61,7 @@ checks for the owner. Check the live versions against each repo's tags before yo
   use our code freely (the owner confirmed). **Don't comment on SPF #143 again.**
 - **Secrets.** Never print one. A GitHub token goes only to api.github.com.
 - **GitHub posts.** Don't post comments the owner hasn't asked for. Opening issues for player reports is fine.
-- **Quality.** Before any cleanup, load `.agents/skills/sloppatrol-project/SKILL.md` in the repo. Follow each repo's AGENTS.md
+- **Quality.** Before any cleanup, read `.sloppatrol/instructions.md` (its live roots) in the repo. Follow each repo's AGENTS.md
   and `## Commands` gate.
 
 ## Other sessions

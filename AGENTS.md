@@ -34,7 +34,6 @@ python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinne
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"
-python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
@@ -88,7 +87,7 @@ and run anywhere.
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to main: `deadcode`, `check` (luacheck, the specs, the native
-tracker spec, StyLua, ruff, the `tools/` unit tests, the client load rule and the menu rule), `typecheck`, `project-rules`, `packaged`, `secrets` and
+tracker spec, StyLua, ruff, the `tools/` unit tests), `typecheck`, `project-rules` (the client load rule and the menu rule), `packaged`, `secrets` and
 `workflows` (actionlint and zizmor over `.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and LuaJIT and luacheck are
@@ -97,7 +96,7 @@ installed at that release's exact apt versions, so a runner image update cannot 
 ## Agent skills
 
 The suite-wide skills live here, in the one repo every addon already vendors from, so an addon repo carries only
-what is specific to itself. Repo-specific skills (a repo's `release` checklist, its `sloppatrol-project` gate profile) stay
+what is specific to itself. Repo-specific skills (a repo's `release` checklist, its `tools/repo_rules.py`) stay
 in that repo's `.agents/skills/`, never in `cjber/skills`; `cjber/skills` holds only skills that build repo-specific
 logic out of a general rule (how `sloppatrol` functions, how `wowmock` renders).
 

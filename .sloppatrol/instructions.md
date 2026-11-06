@@ -13,4 +13,8 @@ that order inside a stubbed client.
 - Never replace a Blizzard global, hook a secure function, or write a field on a Blizzard table.
 - `tests/tracker_host_spec.lua` runs Blizzard's real tracker source, fetched at a pinned revision; it
   is not part of the default spec loop and needs `TRACKER_UI_ROOT`.
+- The paths mirror a consumer repo on purpose: a shared file stays at the path its vendored copy has, so the copy
+  is a pure copy. Moving one breaks every consumer's spec.
+- `Expose.lua` publishes the public `ForeverCore` table and `/fcore`, and loads last; `UI/TrackerLock.lua` loads
+  before the tracker host.
 - Never launch the game, Battle.net, Lutris or Wine, and never use the network.

@@ -2,9 +2,6 @@
 line-length = 120
 target-version = "py310"
 
-# Vendored byte for byte by sloppatrol init; sloppatrol init --refresh refreshes them.
-extend-exclude = [".sloppatrol/gate.py", ".sloppatrol/agents.py"]
-
 [lint]
 select = ["E", "F", "I", "UP", "B"]
 
