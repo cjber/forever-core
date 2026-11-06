@@ -62,44 +62,38 @@ ObjectiveTrackerFrame = nil
 ---@return ForeverPrivatePoolCollection
 function CreateFramePoolCollection() end
 
--- The client's micro menu bar and the buttons Core/MicroButton.lua anchors against (FrameXML MicroMenu).
----@class ForeverMicroMenu : Frame
----@field Layout fun(self: ForeverMicroMenu)
----@field childXPadding number? the grid's gap between buttons, negative where they overlap
----@field isHorizontal boolean?
----@field layoutFramesGoingRight boolean?
----@field stride number? buttons per row
----@type ForeverMicroMenu?
-MicroMenu = nil
--- The Edit Mode frame the menu sits in; MicroMenuContainer:Layout sizes it to the menu.
----@type Frame?
-MicroMenuContainer = nil
--- A child of the micro menu's grid: Blizzard's buttons carry the layout order the grid sorts by.
----@class ForeverMicroGridChild : Frame
----@field layoutIndex number?
----@type Button?
-MainMenuMicroButton = nil
----@type Button?
-CollectionsMicroButton = nil
----@type fun()
-UpdateMicroButtons = nil
--- The registry every vendored copy of Core/MicroButton.lua shares, published by the first to load.
----@class ForeverMicroButtonRegistry
----@field buttons ForeverMicroButton[] every addon button, in creation order
----@field Reflow fun() the first copy's placement, which every copy runs
----@field hookedUpdate boolean?
----@field hookedScripts table<Frame, boolean>? the frames whose scripts are hooked, weak keys
----@field events Frame? the frame listening for Edit Mode layout changes
----@field width number? the width the last placement widened the menu to, nil while the menu has Blizzard's own
----@type ForeverMicroButtonRegistry?
-ForeverMicroButtons = nil
+-- The saved table a consumer hands the shared minimap button: the angle and the hide flag live in it.
+---@class ForeverMinimapButtonSpec
+---@field name string the frame name, unique in the addon
+---@field icon string|number the addon's own content icon
+---@field title string the tooltip title
+---@field binding? string shown under the title, e.g. "Shift-F"
+---@field subtext? string the tooltip's one line about what a click does
+---@field onClick? fun(button: Frame, mouseButton: string) what a left click runs
+---@field settings? table the saved table holding the angle and hide flag
+---@field angleKey? string the settings key holding the angle, default "minimapButtonAngle"
+---@field hiddenKey? string the settings key whose true value hides the button, default "minimapButtonHidden"
+---@field getShown? fun(): boolean an addon-owned visibility rule, which wins over the hide flag
+---@field host? table receives the frame as its minimapButton
 
--- The frame Core/MicroButton.lua builds: Blizzard's micro button template plus the state it stores on it.
----@class ForeverMicroButton : Button
----@field microButtonSpec table the spec the consumer passed to Create
----@field icon Texture the glyph drawn over the plate
----@field alert table? the template's alert overlay, hidden for a custom button
----@field textureName string the atlas name the template's pushed and normal highlights are built from
+-- The registry every vendored copy of Core/MinimapButton.lua shares, published by the first to load.
+---@class ForeverMinimapButtonRegistry
+---@field buttons ForeverMinimapButton[] every addon button, in creation order
+---@type ForeverMinimapButtonRegistry?
+ForeverMinimapButtons = nil
+
+-- The frame Core/MinimapButton.lua builds: the client's minimap plate, the addon's icon and the angle on the rim.
+---@class ForeverMinimapButton : Button
+---@field minimapButtonSpec ForeverMinimapButtonSpec the spec the consumer passed to Create
+---@field icon Texture the addon's icon drawn on the plate
+---@field angle number the angle around the Minimap, in degrees
+---@field dragging boolean? true while the player drags the button around the rim
+
+---@class ForeverMinimapButtonAPI
+---@field Create fun(spec: ForeverMinimapButtonSpec): ForeverMinimapButton?
+---@field Destroy fun(button: ForeverMinimapButton?)
+---@field Refresh fun()
+---@field SetShown fun(button: ForeverMinimapButton?, shown: boolean)
 
 -- The templates UI/SettingsPage.lua creates, each the widget its row is: the return type of CreateFrame with a
 -- template is the union of the template class and the widget class.

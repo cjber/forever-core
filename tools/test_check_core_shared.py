@@ -15,10 +15,10 @@ CORE = {
     "tools/deadcode-allow.txt": b"core allow\n",
     "UI/SettingsPage.lua": b"core settings\n",
     "tests/settings_page_spec.lua": b"core settings spec\n",
-    "Core/MicroButton.lua": b"core micro\n",
+    "Core/MinimapButton.lua": b"core minimap\n",
     "Core/PeerStats.lua": b"core peer stats\n",
     "tests/peer_stats_spec.lua": b"core peer stats spec\n",
-    "tests/micro_button_spec.lua": b"core micro spec\n",
+    "tests/minimap_button_spec.lua": b"core minimap spec\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/check_client_load.py": b"core client load\n",
     "tools/blizzard_fonts.txt": b"core fonts\n",
@@ -92,20 +92,20 @@ class CheckCoreSharedTest(unittest.TestCase):
         self.assertIn("No vendored file changed", out)
 
     def test_base_fails_a_hand_edit_of_a_vendored_copy(self):
-        self.write("Core/MicroButton.lua", b"edited here\n")
+        self.write("Core/MinimapButton.lua", b"edited here\n")
         self.write("Core/Own.lua", b"own, changed\n")
         self.commit("hand edit")
         code, out = self.run_check("--base", "base")
         self.assertEqual(code, 1)
-        self.assertIn("Core/MicroButton.lua: consumer", out)
+        self.assertIn("Core/MinimapButton.lua: consumer", out)
         self.assertNotIn("UI/SettingsPage.lua", out)
 
     def test_base_fails_a_deleted_vendored_copy(self):
-        (self.root / "tests/micro_button_spec.lua").unlink()
+        (self.root / "tests/minimap_button_spec.lua").unlink()
         self.commit("delete")
         code, out = self.run_check("--base", "base")
         self.assertEqual(code, 1)
-        self.assertIn("tests/micro_button_spec.lua: missing here", out)
+        self.assertIn("tests/minimap_button_spec.lua: missing here", out)
 
     def test_base_passes_a_sync_to_core_main(self):
         self.core["tools/core-shared-drift.yml"] = b"core workflow, newer\n"

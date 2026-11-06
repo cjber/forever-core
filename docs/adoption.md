@@ -25,6 +25,8 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture used by the report window |
+| `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the plate art and the hide flag |
+| `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
 | `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |
 | `tools/check_core_shared.py` | the vendoring map and the consumer's own drift check |
@@ -34,7 +36,7 @@ the addon they already have.
 | `.github/workflows/core-shared-drift.yml` | runs the client load rule, the menu rule and the drift check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
 
 `tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
-tracker, report and family set, and the map also holds the settings page, text, micro button and dead-code files.
+tracker, report and family set, and the map also holds the settings page, text, minimap button and dead-code files.
 
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
@@ -67,6 +69,16 @@ switched by what that addon registers, so the four copies stay one file.
 - Several installed: the first to load publishes `ForeverTrackerHost`; the rest adopt it, so there is one column.
 - Core installed too: `ForeverCore.toc` lists the five addons as `OptionalDeps`, so they load first and core adopts
   the column they built rather than starting a second one with settings nobody saved.
+
+## Minimap buttons
+
+Load `Core/MinimapButton.lua` before the addon builds its button. `ns.MinimapButton.Create(spec)` parents one button
+to `Minimap` and registers it in the suite-wide ring; `ns.MinimapButton.Refresh()` re-reads every addon's hide flag
+and saved angle, and `Destroy(button)` takes one out again. A spec supplies `name`, `icon`, `title`, optional
+`binding` and `subtext`, `onClick`, and the addon's saved `settings` table. The angle is written to
+`settings.minimapButtonAngle` and the hide flag is read from `settings.minimapButtonHidden`, unless the spec names its
+own `angleKey`/`hiddenKey` or supplies `getShown`. A drag moves the button around the rim and saves the angle it
+stopped on. Nothing here hooks or resizes a Blizzard frame.
 
 ## Peer statistics
 

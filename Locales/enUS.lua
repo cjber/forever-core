@@ -17,4 +17,4 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 	"The tracker is locked. Turn off Lock the tracker to move it."
 L["Attach to quest tracker"] = "Attach to quest tracker"
 L["Lock the tracker"] = "Lock the tracker"
-L.MICRO_MENU_UNAVAILABLE = "Micro menu unavailable; skipping custom button."
+L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."
