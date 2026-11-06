@@ -99,6 +99,10 @@ Blizzard-owned content icons may still identify game content, but expansion skin
 - **Loose legacy textures**: `interface/tooltips/ui-tooltip-border.blp` (137057/137056) and any
   pre-NineSlice Backdrop art. Use `Tooltip-NineSlice-*` or the frame's own template.
 - **Quest-log parchment and legacy wood/leather chrome.** A quest-log icon can identify its function; the old parchment columns and `legacy*` frame skins are not neutral panel backgrounds.
+- **Profession crafting progress bar art.** `Profession-ProgressBar-BG` and `Profession-ProgressBar-frame`
+  read as the crafting cast bar wherever they are reused as a generic progress bar. Use a plain
+  `StatusBar` filled with `common-stat-bar-white` over `common-stat-bar-BG`, the client's
+  `ColoredProgressBarTemplate` art.
 - **Gamepad, cursor and crosshair atlases** — input-device art, never window chrome.
 - **Fonts that are not FRIZQT or ARIALN.** No Cinzel, EB Garamond, Marcellus or any webfont in a
   window, tooltip, or screenshot; and no hand-picked hex described as "gold".

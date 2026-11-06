@@ -123,6 +123,8 @@ CLIENT_PATH = re.compile(r"(?i)(?<![a-z0-9_/])(?:\|T)?interface[\\/]+[^\s\"'|:,;
 # An addon's own `Interface\AddOns\<addon>\media\...` path is not a client file; the package check
 # owns it. Only the client's own art lives under the rest of `interface/`.
 ADDONS_PREFIX = "interface/addons/"
+# The profession crafting bar reads as the crafting cast bar wherever it is reused as a generic progress bar.
+CRAFTING_PROGRESS_BAR = re.compile(r"^profession-progressbar-(?:bg|frame)$", re.IGNORECASE)
 
 
 def _old_problem(value: str) -> str | None:
@@ -143,6 +145,11 @@ def _old_problem(value: str) -> str | None:
         return "legacy loose chrome; use the approved Forever atlas/template family"
     if EXPANSION_CHROME.match(normal):
         return "expansion chrome is outside the approved Forever asset set"
+    if CRAFTING_PROGRESS_BAR.match(normal):
+        return (
+            "profession crafting bar art reads as a casting bar; use the approved native progress bar instead "
+            "(a StatusBar filled with common-stat-bar-white over common-stat-bar-BG)"
+        )
     for markup in re.finditer(r"\|(?:T|A:)([^:|]+)", value):
         if reason := _old_problem(markup[1]):
             return reason

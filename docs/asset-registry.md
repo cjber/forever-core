@@ -19,11 +19,15 @@ The shared `forever_tools.assets` checker rejects legacy loose button, dialog,
 tooltip and border chrome, plus the templates that select it. This includes
 `UI-Panel-Button-*`, `UI-DialogBox-*`, `UI-Tooltip-Border/Background`,
 `UI-Border-*`, `UI-Character-Border-*` and the `UIPanelButton*` template family.
+It also rejects the profession crafting progress bar atlases
+(`Profession-ProgressBar-BG` and `Profession-ProgressBar-frame`), which read as
+the crafting cast bar wherever they are reused. A progress bar uses
+`common-stat-bar-white` over `common-stat-bar-BG`, the `ColoredProgressBarTemplate` art.
 It also rejects **any** loose `interface/` texture whose FileDataID is below
 1,000,000, which catches old art that no name list knew about. The blacklist
 applies to runtime Lua/XML and Python screenshot renderers, including art helpers
 and references carrying an `art-ok` comment. Content icons and native host
-backgrounds are separate from these chrome families; atlases are untouched.
+backgrounds are separate from these chrome families, and the age rule leaves atlases alone.
 
 ## Pre-Legion chrome by FileDataID age
 
@@ -145,6 +149,7 @@ Use only where the client itself shows that art in the same context, and never a
 | `dragonriding*`, `plunderstorm*`, `eyeofthejailer*` | 280 elements, 0 in set 1 | Event/expansion art with no set-1 counterpart. |
 | PvP queue / PvP talents: `pvpqueue*`, `pvptalents*` | 60 elements, 0 in set 1 | Old PvP-frame art. |
 | `gamepad*`, `cursor*`, `crosshair*` atlases | 3,302 elements | Input-device and cursor art; never window chrome or decoration. |
+| Profession crafting progress bar art: `Profession-ProgressBar-BG`, `Profession-ProgressBar-frame` | 4 elements, 2 in set 1 | Set membership does not approve a casting-bar context: the bar reads as the profession craft cast bar wherever it is reused. Use a plain `StatusBar` filled with `common-stat-bar-white` over `common-stat-bar-BG` instead. |
 | Any `-c60`-named member that resolves into a **set-0** atlas | 352 `-c60` element names exist | The documented trap: the tooltip centre has a c60 member in a set-0 atlas that is brown, while the real Forever tooltip is blue-grey. Resolve to a set-1 atlas or use a plain member only with evidence that the intended native host uses it; the other blacklist rules still apply. |
 | Loose legacy Backdrop textures: `interface/tooltips/ui-tooltip-border.blp` (137057/137056) | 1 file | The pre-NineSlice tooltip border. Use `Tooltip-NineSlice-*` / the template. |
 | Hand-made frame chrome shipped in `media/` | — | A border, fill, gradient, gem, glow or crest drawn by us always reads as addon art. Style a missing element with a template instead of new art. |

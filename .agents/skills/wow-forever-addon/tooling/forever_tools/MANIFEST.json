@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "assets.py": "72744f59cae32445aeb229ac7e4691b40dc5b9c748dcb34accfabd09f50cc085",
+    "assets.py": "d568803db166af4bb8d84a876405a458c87cea7aae4ebade9770a83952ab1814",
     "changelog.py": "5a283e655bdac72957ce7d8a07b8c30f5f90ece3a7b99653e6d130500e8af496",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
     "doctor.py": "515b638747b80cdf397141eb3d9df5de96f40e58a7af28d32310c81540fe0060",
