@@ -19,9 +19,56 @@ The shared `forever_tools.assets` checker rejects legacy loose button, dialog,
 tooltip and border chrome, plus the templates that select it. This includes
 `UI-Panel-Button-*`, `UI-DialogBox-*`, `UI-Tooltip-Border/Background`,
 `UI-Border-*`, `UI-Character-Border-*` and the `UIPanelButton*` template family.
-The blacklist applies to runtime Lua/XML and Python screenshot renderers, including
-art helpers and references carrying an `art-ok` comment. Content icons and native
-host backgrounds are separate from these chrome families.
+It also rejects **any** loose `interface/` texture whose FileDataID is below
+1,000,000, which catches old art that no name list knew about. The blacklist
+applies to runtime Lua/XML and Python screenshot renderers, including art helpers
+and references carrying an `art-ok` comment. Content icons and native host
+backgrounds are separate from these chrome families; atlases are untouched.
+
+## Pre-Legion chrome by FileDataID age
+
+FileDataIDs were assigned roughly in the order art was added. About 130,000-140,000
+is the 2004 UI, and 200,000-1,000,000 is Cataclysm and Mists of Pandaria (trainer
+textures, marble and rock backgrounds, the Cataclysm Encounter Journal, help-frame
+sheets). A loose texture referenced by path under `interface/` whose FileDataID is
+below **1,000,000** is pre-Legion chrome and fails with
+`pre-Legion UI chrome (FileDataID < 1000000); use an atlas`.
+
+The age rule covers Lua, XML and the Python screenshot renderers. A value looks
+like a client path when it starts `Interface\...` or `interface/...` (either slash,
+any case) and may carry `.blp` or `.tga`. Exempt categories are content
+(`interface/icons/`), maps (`interface/worldmap/`, including dungeon and zone
+tiles), portraits, `interface/cursor/` and fonts. `Interface\AddOns\<addon>\...`
+is the addon's own media, not a client file, so the package check owns it.
+
+A path under `interface/` that is not in the pinned build's listfile fails as
+`unverifiable client path`, which catches a typo or art from another build. The
+short allowlist in `forever_tools/legacy_chrome.py` names the few old pieces with
+no modern replacement and gives a one-line reason for each (the raid target
+markers, `WhiteIconFrame`, the native menu and item-button pieces `wowmock`
+reproduces). Everything else old is fixed to an atlas or template.
+
+The data is generated offline from the pinned build and committed, so the gate needs
+no network:
+
+- `forever_tools/legacy_chrome.txt` — sorted lowercase extensionless paths of
+  banned chrome (7,066 paths, 329 KB).
+- `forever_tools/interface_paths.txt` — every `interface/` path in the build, as a
+  sorted zlib-compressed base64 set used for the fallback (about 145,000 paths,
+  731 KB).
+
+Regenerate both after a client art pin change:
+
+```sh
+python3 tools/gen_legacy_chrome.py            # cached listfile under tools/.cache/legacy-chrome/
+python3 tools/gen_legacy_chrome.py --refresh  # download the pinned build's listfile again
+```
+
+The generator reads the pinned build's listfile from wago.tools with both `version=`
+and `build=1.60.1.70124`; its unpaged CSV export times out, so it asks for the
+listfile's `interface/` slice through the search API. The generated files live in
+`forever_tools/`, so `tools/forever_tools/sync.py` vendors them into every consumer
+with the checker.
 
 | Layer | What it is | Size / reach | Where |
 |---|---|---|---|
@@ -120,17 +167,18 @@ primitive, not chrome — allowed.
 
 ## What the addons actually reference today
 
-Thirteen atlas names and three loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
+Thirteen atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
 `questlog-icon-setting`, `common-icon-checkmark`, `common-dropdown-c-button-hover-arrow`,
 `checkmark-minimal`, `Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`,
 `UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`, `UI-HUD-Minimap-Button`,
 `UI-HUD-Minimap-Button-Down`, `bags-roundhighlight`; `map-icon-suramardoor.tga`, `media/Dot.tga`,
-`media/TooltipBorder*.tga`. The minimap plate's two states are the art the client's own
-`AddonCompartment` and tracking buttons use (`Blizzard_Minimap/Mainline/AddonCompartment.xml`), and the
-round hover glow is the one its bag, wardrobe and container slots use. All three are set 0 and none belongs
-to a blacklisted family, so the native host use is the evidence. Every other asset above is Tier 1 or a
-named exception, so the blacklist is prophylactic: it stops the next new feature reaching for garrison or
-covenant art.
+`media/TooltipBorder*.tga`, plus the allowlisted native widget pieces `WhiteIconFrame`,
+`ButtonHilight-Square` and `UI-QuestTitleHighlight`. The minimap plate's two states are the art the
+client's own `AddonCompartment` and tracking buttons use (`Blizzard_Minimap/Mainline/AddonCompartment.xml`),
+and the round hover glow is the one its bag, wardrobe and container slots use. All three are set 0 and none
+belongs to a blacklisted family, so the native host use is the evidence. Every other asset above is Tier 1,
+a named exception or an allowlisted native widget, so the blacklist is prophylactic: it stops the next new
+feature reaching for garrison or covenant art.
 
 ## Checking an element before you use it
 

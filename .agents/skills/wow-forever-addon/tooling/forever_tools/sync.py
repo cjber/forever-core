@@ -27,6 +27,9 @@ PRODUCER_PATH = ".agents/skills/wow-forever-addon/tooling/forever_tools"
 REPOSITORY = "https://github.com/cjber/forever-core"
 UNPINNED = "UNPINNED"
 MANIFEST = "MANIFEST.json"
+# The generated data assets.py reads. They are vendored byte for byte with the modules, so a consumer
+# gets the age rule and its pinned-build data in one update.
+DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt")
 
 
 def digest(path: Path) -> str:
@@ -40,7 +43,9 @@ def copy_preserving_mode(source: Path, target: Path) -> None:
 
 
 def sources(directory: Path) -> list[Path]:
-    return sorted(path for path in directory.glob("*.py"))
+    return sorted(
+        path for path in directory.iterdir() if path.is_file() and (path.suffix == ".py" or path.name in DATA_FILES)
+    )
 
 
 def hashes(directory: Path) -> dict[str, str]:

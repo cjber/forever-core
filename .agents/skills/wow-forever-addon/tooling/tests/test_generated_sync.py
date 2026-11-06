@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from forever_tools import generated
+from forever_tools import generated, sync
 
 PACKAGE = Path(__file__).resolve().parent.parent / "forever_tools"
 GENERATOR = """from pathlib import Path
@@ -191,6 +191,11 @@ class SyncTest(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(self.copy / "sync.py"), *args], capture_output=True, text=True, check=False
         )
+
+    def test_data_files_are_vendored_with_the_modules(self):
+        names = {path.name for path in sync.sources(PACKAGE)}
+        self.assertIn("legacy_chrome.txt", names)
+        self.assertIn("interface_paths.txt", names)
 
     def test_manifest_refuses_a_module_gitleaks_would_flag(self):
         (self.copy / "secret_store.py").write_text("")

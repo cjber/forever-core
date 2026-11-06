@@ -81,7 +81,7 @@ horizontally, BL vertically, BR both, BottomEdge vertically, RightEdge horizonta
   a 40-unit gap (engine-side; measured on the skillup screenshot, see SkillUp scenes). Money line = SetTooltipMoney: "Sell Price:" then coins, 13-unit icons, 4 units apart.
 - Bag item tooltip anchor (ContainerFrameItemButton_CalculateItemTooltipAnchors): button on the right half of
   the screen -> tooltip BOTTOMRIGHT at button TOPLEFT; left half -> BOTTOMLEFT at TOPRIGHT.
-- ItemButton: 37x37; icon BORDER; `Interface\Buttons\UI-Quickslot2` 64x64 centred (0, -1); count BOTTOMRIGHT
+- ItemButton: 37x37; icon BORDER; `bags-item-slot64` atlas 64x64 centred (0, -1); count BOTTOMRIGHT
   (-5, 2); quality border `Interface\Common\WhiteIconFrame` OVERLAY; hover `ButtonHilight-Square` ADD.
   An addon texture created in ARTWORK lands above the icon and below the quality border.
 - Backpack (ContainerFrame.xml / .lua): width 178 (engine constant, assumed), 4 columns, spacing 5, HeldBagLayout,
