@@ -162,8 +162,11 @@ function MinimapButton.Create(spec)
 		spec.host.minimapButton = button
 	end
 	button:SetSize(BUTTON_SIZE, BUTTON_SIZE)
+	-- LibDBIcon's layering: above the Minimap and its border, pinned so a parent change never drops it back behind.
 	button:SetFrameStrata("MEDIUM")
+	button:SetFixedFrameStrata(true)
 	button:SetFrameLevel(8)
+	button:SetFixedFrameLevel(true)
 	button:SetHighlightTexture(136477) -- art-ok: LibDBIcon's minimap highlight, interface/minimap/
 	button:RegisterForClicks("LeftButtonUp")
 	button:RegisterForDrag("LeftButton")
