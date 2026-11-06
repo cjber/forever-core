@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.22] - 2026-11-06
 - **The family block points players to GitHub.** Every addon's README and store page now has an Issues link beside its store link, and a line under the table says bug reports, feature requests and pull requests are welcome on GitHub and that everyone whose report or idea ships is thanked by name in the addon's credits and changelog. Nothing changes in game.
 
 ## [0.4.21] - 2026-11-06
