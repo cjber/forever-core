@@ -156,9 +156,20 @@ Use only where the client itself shows that art in the same context, and never a
 | Non-client fonts: Cinzel, EB Garamond, Marcellus (and any other webfont in `*-mockup/`) | 3 families | Only FRIZQT and ARIALN are client fonts. Using anything else in a window, tooltip, or screenshot is instantly visible. |
 | Hand-picked hex colours described as "gold" | — | Gold is the font object's colour and `NORMAL_FONT_COLOR`. A hex that is "gold-ish" is the single most common review flag. |
 | `1.15.9.70003` cached art | 1 build | Classic-era client; its UI art predates the Forever redesign. |
-| `legacy-forever/media/Shade.tga`, `shortest-path-forever/media/zeppelin.tga` | Removed | Screenshot-only assets were replaced with a flat panel fill and Blizzard's `flightmasterferry` atlas. |
+| `legacy-forever/media/Shade.tga` | Removed | Legacy's completion bar draws the client's `Legacy-Progressbar-BG`, `-Fill` and `-Frame` atlases instead. |
 
-## Sanctioned exception, needs the owner's call
+## Named exceptions
+
+The owner approved each of these by name. A new use of the same art in another context is not covered.
+
+| Asset | Where | Why it stays |
+|---|---|---|
+| `islands-queue-prop-compass` | Adventure Guide, Legacy | The client shows it as a standalone prop on the Islands queue screen (`Blizzard_IslandsQueueUI.xml`): an illustrated object with no expansion branding, at high resolution. Allowed only as a standalone navigation icon, never as framing. |
+| `shortest-path-forever/media/Zeppelin.tga` | Shortest Path | The client has no zeppelin icon. |
+| `adventureguide-ring` | Shortest Path route stop ring | The only replacement on offer is a loose pre-Legion file. |
+| `loottoast-sheen` | Field Guide, on shiny creatures | The owner asked for it. |
+| The native target-frame rarity art | Field Guide | The owner asked for it; it is the client's own frame, recoloured. |
+
 
 `tweaks-forever/media/TooltipBorder{Modern,Retail}.tga` (4,114 B each, drawn by
 `tools/tooltip_border.py`, applied in `UI/Tooltips.lua`) is hand-made chrome and is therefore in
