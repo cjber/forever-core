@@ -62,6 +62,12 @@ local function frame(name, parent)
 	function f:SetFrameLevel(value)
 		self.level = value
 	end
+	function f:SetFixedFrameStrata(value)
+		self.fixedStrata = value
+	end
+	function f:SetFixedFrameLevel(value)
+		self.fixedLevel = value
+	end
 	function f:SetHighlightTexture(value, blend)
 		self.highlight, self.highlightBlend = value, blend
 	end
@@ -183,6 +189,7 @@ end
 -- LibDBIcon's construction: a 31-unit button with the tracking border over a 24-unit background and 18-unit icon.
 assert(a.width == 31 and a.height == 31, "size")
 assert(a.strata == "MEDIUM", a.strata)
+assert(a.fixedStrata == true and a.level == 8 and a.fixedLevel == true, "pinned above the Minimap")
 assert(a.level == 8, a.level)
 assert(a.highlight == 136477, a.highlight)
 local overlay = textureOn(a, "OVERLAY")
