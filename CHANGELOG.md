@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.21] - 2026-11-06
 - **The minimap button stays in front of the Minimap.** It took the Minimap's own layer, so the Minimap's border could draw over it. It now sits on LibDBIcon's layer, pinned so it never falls behind.
 - **For addon authors:** the asset registry names the owner's approved exceptions (the Islands compass as a standalone navigation icon only, Shortest Path's zeppelin icon, the `adventureguide-ring` route stop, Field Guide's `loottoast-sheen` and its recoloured target-frame rarity art), and WFA-27 now forbids any non-uniform resize outside the axis the client's own template stretches.
 - **The shared micro-menu button is now a minimap button.** Field Guide's and Adventure Guide's buttons sit on the Minimap rim instead of widening the micro menu, which left the menu out of line with the XP bar. `Core/MinimapButton.lua` draws the addon's icon on the rim, drags around it with the angle saved in the addon's settings, and honours a hide flag. The vendored copies share one registry, so two addons' buttons land on different angles by default. No Blizzard frame is hooked or resized.
