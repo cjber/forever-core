@@ -9,7 +9,10 @@ from pathlib import Path
 from forever_tools import family
 
 CHECK_COPY = Path(__file__).resolve().parents[2] / "check_copy.py"
-URL = re.compile(r"^\| \[([^\]]+)\]\(https://www\.curseforge\.com/wow/addons/([a-z-]+)\) \| ([^|]+) \|$")
+URL = re.compile(
+    r"^\| \[([^\]]+)\]\(https://www\.curseforge\.com/wow/addons/([a-z-]+)\) \| ([^|]+) "
+    r"\| \[Issues\]\(https://github\.com/cjber/([a-z-]+)/issues\) \|$"
+)
 
 
 class FamilyTest(unittest.TestCase):
@@ -34,11 +37,19 @@ class FamilyTest(unittest.TestCase):
             [row[1] for row in rows],
             ["Shortest Path Forever", "Adventure Guide Forever", "SkillUp Forever", "Legacy Forever", "Tweaks Forever"],
         )
-        for name, slug, line in ((row[1], row[2], row[3]) for row in rows):
+        for name, slug, line, issues in ((row[1], row[2], row[3], row[4]) for row in rows):
             self.assertEqual(slug, name.lower().replace(" ", "-"))
+            self.assertEqual(issues, slug)
             self.assertNotIn("!", line)
             self.assertNotIn("—", line)
         self.assertEqual(family.BLOCK.splitlines()[2], "## The Forever addons")
+        self.assertIn("| Addon | What it does | Issues |", family.BLOCK)
+        self.assertIn("| [Issues](https://github.com/cjber/skillup-forever/issues) |", family.BLOCK)
+        self.assertIn(
+            "Bug reports, feature requests and pull requests are welcome on each addon's GitHub. "
+            "Everyone whose report or idea ships is thanked by name in the addon's credits and changelog.",
+            family.BLOCK,
+        )
         self.assertTrue(family.BLOCK.startswith(family.START) and family.BLOCK.endswith(family.END))
 
     def test_an_exact_block_in_both_files_passes(self):
