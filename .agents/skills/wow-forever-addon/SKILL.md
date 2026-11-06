@@ -150,8 +150,11 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   `tests/*_spec.lua` under LuaJIT (a glob, so a new spec cannot be left out), StyLua `--check`,
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
   history. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. A job
-  named `project-rules` runs the vendored `python3 .sloppatrol/gate.py --base "origin/$BASE"` and
-  `python3 .sloppatrol/agents.py check`; `sloppatrol init` vendors both and `sloppatrol init --refresh` refreshes them.
+  named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
+  one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
+  hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,
+  not a gate: a repo it patrols keeps `.sloppatrol/sloppatrol.yml`, whose checks are the fast CI checks plus the
+  rules script, and `.sloppatrol/instructions.md`, its live roots; nothing else under `.sloppatrol/` is tracked.
   Dependabot updates `github-actions` monthly, grouped. A `package` job runs the pinned BigWigs packager
   with `args: -d -z` (no upload) and `tools/check_package.py` (`forever_tools.package`) on its output: every file a
   TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types`, `docs`,
@@ -166,8 +169,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%.
-- **WFA-17** Every repo has a lean `AGENTS.md` passing `python3 .sloppatrol/agents.py check`, declaring
-  this pack at a full commit SHA. Headless specs pass on builds that are broken in game, so a change
+- **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack at a full commit SHA. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
   the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.

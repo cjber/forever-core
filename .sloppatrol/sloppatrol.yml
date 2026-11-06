@@ -1,6 +1,6 @@
 # Sloppatrol profile for ForeverCore, the Lua 5.1 library the WoW: Forever addons vendor.
-# `sloppatrol init` writes a failing placeholder for a repo without package.json, so the checks are
-# set by hand from the gate in AGENTS.md. Lua is not among sloppatrol's languages yet, so its census
+# The checks are the fast ones from AGENTS.md, set by hand: the repo has no package.json to infer
+# them from. Lua is not among sloppatrol's languages yet, so its census
 # sees nothing; the checks here are what makes a proposed refactor verifiable.
 agent: claude
 prepare: []
@@ -11,10 +11,7 @@ checks:
   - { name: specs, run: "for s in tests/*_spec.lua; do luajit \"$s\" || exit 1; done", tests: true }
   - { name: typecheck, run: "bash tools/typecheck.sh" }
   - { name: tools, run: "ruff format --check tools && ruff check tools && python3 -m unittest discover -s tools -p 'test_*.py'", tests: true }
-  - { name: gate, run: "python3 .sloppatrol/gate.py --base origin/main && python3 .sloppatrol/agents.py check" }
+  - { name: rules, run: "python3 tools/check_client_load.py && python3 tools/check_menu_scroll.py" }
 focus: [Core.lua, Expose.lua, UI/TrackerHost.lua, UI/Report.lua, UI/ForeverFamily.lua]
 ignore: [docs/**]
 guards: { maxFiles: 6, maxLines: 300 }
-agents:
-  refactorer: { maxPerCycle: 1, maxAttempts: 2 }
-github: { enabled: false }
