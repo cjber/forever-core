@@ -56,6 +56,15 @@ class AssetsTest(unittest.TestCase):
         findings = assets.check('local texture = "Interface\\\\Buttons\\\\NoSuchTexture"')
         self.assertTrue(any("unverifiable client path" in message for _, message in findings))
 
+    def test_profession_crafting_progress_bar_atlases(self):
+        for value in ("Profession-ProgressBar-BG", "Profession-ProgressBar-frame", "profession-progressbar-bg"):
+            with self.subTest(value=value):
+                reason = assets.problem(value) or ""
+                self.assertIn("native progress bar", reason)
+                self.assertTrue(assets.check(f't:SetAtlas("{value}")'))
+        self.assertTrue(assets.check('<Texture atlas="Profession-ProgressBar-frame"/>', ".xml"))
+        self.assertTrue(assets.check('label:SetText("|A:Profession-ProgressBar-BG:16:16|a")'))
+
     def test_lua_xml_and_renderer(self):
         self.assertTrue(assets.check('local TEMPLATE = "UIPanelButtonTemplate"'))
         self.assertTrue(assets.check('<Button inherits="UIPanelButtonTemplate"/>', ".xml"))
