@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.23] - 2026-11-06
 - **Peer stats recognise a two-part player name.** The self check uses the same normalisation as an incoming sender, so a Forever name like Hel Io no longer stores the player's own broadcast as a peer and each board lists the player once.
 
 ## [0.4.22] - 2026-11-06
