@@ -296,6 +296,7 @@ local TrackerEqot = ns.TrackerEqot
 	}
 local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = function() end }
 -- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
+---@type boolean, boolean, boolean, "eqot"|"questie"|nil, number
 local besideList, besideQuestie, besideEqot, besideKind, displacedRoom = false, false, false, nil, 0
 
 -- Blizzard's Edit Mode owns the native slot while its manager is on screen. The manager can also be hidden and locked
@@ -470,7 +471,7 @@ end
 -- native tracker keeps its slot. Only our frames move, so this runs in combat too; with `list` nil (the addon hid its
 -- list in combat) the column holds its place until combat ends.
 ---@param list ForeverTrackerEqotList|Frame?
----@param kind "eqot"|"questie"
+---@param kind "eqot"|"questie"?
 local function LayoutBesideList(list, kind)
 	if Editing() then
 		return
@@ -519,16 +520,18 @@ local function Layout()
 		return
 	end
 	local eqot = TrackerEqot.List(host, host.MarkDirty)
-	local questie = not eqot and TrackerQuestie.List(host, host.MarkDirty)
-	if eqot or questie or (besideList and InCombatLockdown()) then
-		local list, kind = eqot, "eqot"
-		if not list then
-			list, kind = questie, "questie"
-		end
-		if not list then
-			kind = besideKind
-		end
-		LayoutBesideList(list, kind)
+	if eqot then
+		LayoutBesideList(eqot, "eqot")
+		return
+	end
+	local questie = TrackerQuestie.List(host, host.MarkDirty)
+	if questie then
+		LayoutBesideList(questie, "questie")
+		return
+	end
+	-- Both lists are away, so the column holds the place the list it was avoiding gave it until combat ends.
+	if besideList and InCombatLockdown() then
+		LayoutBesideList(nil, besideKind)
 		return
 	end
 	besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil

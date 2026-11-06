@@ -14,6 +14,10 @@ local _, ns = ...
 local TrackerEqot = {}
 ns.TrackerEqot = TrackerEqot
 
+---@class ForeverEqotTrackerFrame : Frame
+---@field isMoving? boolean true while the player drags the list
+---@field isSizing? boolean true while the player resizes it
+
 ---@class ForeverTrackerEqotList
 ---@field left number
 ---@field right number
@@ -35,7 +39,7 @@ local ticker, sinceTick, lastPlace
 local listenerModule, listenerActive, apiDisabled = nil, false, false
 
 -- Another addon's globals, read with rawget: neither exists unless EQOT is installed.
----@return Frame?
+---@return ForeverEqotTrackerFrame?
 local function Frame()
 	return rawget(_G, "EQOTTrackerFrame")
 end
@@ -71,7 +75,7 @@ local function Present()
 end
 
 -- EQOT can fade its list out instead of hiding it, so an alpha at or near zero counts as hidden too.
----@param frame Frame
+---@param frame ForeverEqotTrackerFrame
 ---@return number
 local function EffectiveAlpha(frame)
 	if type(frame.GetEffectiveAlpha) == "function" then
@@ -89,14 +93,14 @@ local function EffectiveAlpha(frame)
 	return 1
 end
 
----@param frame Frame
+---@param frame ForeverEqotTrackerFrame
 ---@return boolean
 local function Visible(frame)
 	return frame:IsShown() and EffectiveAlpha(frame) > ALPHA_HIDDEN
 end
 
 -- Where the list says it is, as one string, so a move, a resize or a fade shows up as a different one.
----@param frame Frame
+---@param frame ForeverEqotTrackerFrame
 ---@return string
 local function Place(frame)
 	local point, relativeTo, relativePoint, x, y = frame:GetPoint()
@@ -122,7 +126,7 @@ end
 -- code reads the list's corners just before clearing its points, so a layout pass landing in that window errored and
 -- left the list unanchored, invisible and undraggable. EQOT reads its own corners the same way. Read here, never
 -- written.
----@param frame Frame
+---@param frame ForeverEqotTrackerFrame
 ---@param onChange function
 local function Watch(frame, onChange)
 	watched = true
@@ -248,12 +252,13 @@ local function FrameList(host, onChange)
 	if relativeTo == host then
 		return nil
 	end
-	if not (frame:GetLeft() and frame:GetRight() and frame:GetTop() and frame:GetBottom()) then
+	local rawLeft, rawRight, rawTop, rawBottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+	if not (rawLeft and rawRight and rawTop and rawBottom) then
 		return nil
 	end
 	local toHost = frame:GetEffectiveScale() / host:GetEffectiveScale()
-	local left, right = frame:GetLeft() * toHost, frame:GetRight() * toHost
-	local top, bottom = frame:GetTop() * toHost, frame:GetBottom() * toHost
+	local left, right = rawLeft * toHost, rawRight * toHost
+	local top, bottom = rawTop * toHost, rawBottom * toHost
 	return { left = left, right = right, top = top, bottom = bottom, frame = frame, topOnly = true }
 end
 
@@ -269,7 +274,7 @@ function TrackerEqot.List(host, onChange)
 			return FrameList(host, onChange)
 		end
 		local left, right, top, bottom = ApiEdges(api, host)
-		if not left then
+		if not (left and right and top and bottom) then
 			return nil
 		end
 		return { left = left, right = right, top = top, bottom = bottom }
