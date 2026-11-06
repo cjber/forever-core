@@ -82,10 +82,10 @@ function CreateFramePoolCollection() end
 ---@type ForeverMinimapButtonRegistry?
 ForeverMinimapButtons = nil
 
--- The frame Core/MinimapButton.lua builds: the client's minimap plate, the addon's icon and the angle on the rim.
+-- The frame Core/MinimapButton.lua builds: LibDBIcon's minimap button, the addon's icon and the angle on the rim.
 ---@class ForeverMinimapButton : Button
 ---@field minimapButtonSpec ForeverMinimapButtonSpec the spec the consumer passed to Create
----@field icon Texture the addon's icon drawn on the plate
+---@field icon Texture the addon's icon drawn inside LibDBIcon's border
 ---@field angle number the angle around the Minimap, in degrees
 ---@field dragging boolean? true while the player drags the button around the rim
 
