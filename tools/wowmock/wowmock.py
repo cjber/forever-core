@@ -7,7 +7,7 @@ per UI unit.
 
     ui = Ui(scale=2)                       # build defaults to the WoW: Forever client
     ui.atlas("Tooltip-NineSlice-Center")   # element name as the UI code uses it -> Atlas
-    ui.texture("interface/common/whiteiconframe.blp") or ui.texture(651080)
+    ui.texture(651080)                     # a client texture by FileDataID
     ui.item(4818)                          # Item: name, quality, icon, stats, ...
     FONTS["GameTooltipText"]               # Font objects as Blizzard_Fonts defines them
 
@@ -859,7 +859,7 @@ def item_button(canvas, x, y, item=None, count=None, hover=False, artwork=None, 
     else:
         canvas.draw(ui.texture(item.icon), x, y, ITEM_BUTTON, ITEM_BUTTON)
     canvas.draw(
-        ui.texture("interface/buttons/ui-quickslot2.blp"),
+        ui.atlas("bags-item-slot64"),
         x + (ITEM_BUTTON - 64) / 2,
         y + (ITEM_BUTTON - 64) / 2 + 1,
         64,

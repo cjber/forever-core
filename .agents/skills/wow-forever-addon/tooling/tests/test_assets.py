@@ -45,6 +45,17 @@ class AssetsTest(unittest.TestCase):
         for value in (*assets.APPROVED_BUTTON_TEMPLATES, "128-RedButton-Left", "Interface/Icons/INV_Misc_Book_09"):
             self.assertIsNone(assets.problem(value))
 
+    def test_legacy_chrome_is_rejected_by_filedataid_age(self):
+        self.assertTrue(assets.check('local texture = "Interface\\\\Taxiframe\\\\UI-Taxi-Line"'))
+        self.assertTrue(assets.check('local texture = "Interface/Taxiframe/UI-Taxi-Line"'))
+        self.assertEqual(assets.check('local texture = "Interface\\\\Icons\\\\INV_Misc_QuestionMark"'), [])
+        self.assertEqual(assets.check('local texture = "Interface\\\\TargetingFrame\\\\UI-RaidTargetingIcon_1"'), [])
+        self.assertEqual(assets.check('texture:SetAtlas("common-dropdown-bg")'), [])
+
+    def test_a_path_the_listfile_cannot_resolve_is_rejected(self):
+        findings = assets.check('local texture = "Interface\\\\Buttons\\\\NoSuchTexture"')
+        self.assertTrue(any("unverifiable client path" in message for _, message in findings))
+
     def test_lua_xml_and_renderer(self):
         self.assertTrue(assets.check('local TEMPLATE = "UIPanelButtonTemplate"'))
         self.assertTrue(assets.check('<Button inherits="UIPanelButtonTemplate"/>', ".xml"))
@@ -76,7 +87,7 @@ class AssetsTest(unittest.TestCase):
         findings = assets.check(source, ".xml")
         self.assertEqual(len(findings), 2)
         self.assertTrue(any(line == 1 and "UIPanelButtonTemplate" in message for line, message in findings))
-        self.assertTrue(any(line == 3 and "UI-Panel-Button-Up" in message for line, message in findings))
+        self.assertTrue(any(line == 3 and "ui-panel-button-up" in message for line, message in findings))
 
     def test_xml_text_atlas_markup_is_checked(self):
         source = '<Button text="|TInterface/Buttons/UI-Panel-Button-Up:16|t"/>'

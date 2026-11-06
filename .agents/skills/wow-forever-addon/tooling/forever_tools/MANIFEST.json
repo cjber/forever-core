@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "assets.py": "0a7c034e1f8d31c9b8c103ef22ebb9d05a2d9bb2b68a0ebb9df9ec72865c3587",
+    "assets.py": "72744f59cae32445aeb229ac7e4691b40dc5b9c748dcb34accfabd09f50cc085",
     "changelog.py": "5a283e655bdac72957ce7d8a07b8c30f5f90ece3a7b99653e6d130500e8af496",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
     "doctor.py": "515b638747b80cdf397141eb3d9df5de96f40e58a7af28d32310c81540fe0060",
@@ -16,7 +16,10 @@
     "family.py": "15ae45b3b5d34cd16eb8e6d2092ec1d996d82251c329fb399484f94d030c493a",
     "fsio.py": "a6af0c5ce14823f67f00553dde5c3c014be596e2e4e0b12aaa902349c173e41c",
     "generated.py": "1165ae433d771dd26c5aa606ed56a2e9bc8e6bea6e3436e34ca07c2f9fc10569",
+    "interface_paths.txt": "14179c8c508b67347fe98dacbf6f62e0a8ebaacc6a4e9c9ca8c016f8a957233e",
     "latest_build.py": "31d483946a872f5a90f62e03f34dae8b4a78f3516f819f323714687985f6e483",
+    "legacy_chrome.py": "2a16c209accd7b5917eef1e6f334e2ea9e491864e5abe745123d35b524404f60",
+    "legacy_chrome.txt": "e22129f6cd09cdf46e1fd5dae7279a24aa3933f75a635c49fa6cba42d64a540b",
     "locales.py": "f7dc8dbacbc5e422f4e3ca20251d6094236e9a604bbcd40e866d8fd5af30343d",
     "lua.py": "030f1dd8c9dd5fa29bda054b8699570a4d9e17fae8022a48e6d171cea167a7a3",
     "luadata.py": "d2621f31d1ddfa8c338d3305d3dbfb74020555f512c96b5991484404632c598e",
@@ -26,7 +29,7 @@
     "release_check.py": "b7a9c1ac0fe8600eef2eb5d8d0df4ed12ab535b0f3f04fc76535725fdb6459a8",
     "report.py": "2b6e11c9e6dfa856f5bc7bb35822013f02a527225a28820ad745be61565c53ba",
     "screens.py": "3b8f4ffccf1b89d51bafeeec640fd51076a29ad6fd344c7a2030446c3f33048a",
-    "sync.py": "e39cb69da7203d2e46676225db331ef9b02ef2bd56365aebbd7b6d5e5a94eabd",
+    "sync.py": "511c6276ce0ca641067da15cfb176653efc78640b018a9632f71c060a657b8e6",
     "taint.py": "befc9deb1a1fa5df813a51d37664a3510a58792b009ed3e44330ceb20f64bbb9",
     "toc.py": "c01d18716f1805b6ac277fbfd96c0a6390cb55b969ad6080ee11acd68df4f8e5",
     "wago.py": "8bdf7084192d0081051be90d362251e28e64ff1a80315a81f4160f2640fdbed4"

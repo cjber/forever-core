@@ -10,6 +10,7 @@ import html
 import re
 from pathlib import Path
 
+from . import legacy_chrome
 from .lua import LONG_OPEN, tokenize
 from .toc import runtime_files
 
@@ -116,10 +117,16 @@ EXPANSION_CHROME = re.compile(
     r"|shop-|pvpqueue|pvptalents|dragonriding|plunderstorm|eyeofthejailer)",
     re.IGNORECASE,
 )
+# A client texture path: `Interface\...` or `interface/...`, either slash, any case. The optional
+# `|T` prefix is inline texture markup; `:16|t` and punctuation after the path are left out.
+CLIENT_PATH = re.compile(r"(?i)(?<![a-z0-9_/])(?:\|T)?interface[\\/]+[^\s\"'|:,;()<>\[\]{}`]+")
+# An addon's own `Interface\AddOns\<addon>\media\...` path is not a client file; the package check
+# owns it. Only the client's own art lives under the rest of `interface/`.
+ADDONS_PREFIX = "interface/addons/"
 
 
-def problem(value: str) -> str | None:
-    """Explain why one literal asset reference is forbidden."""
+def _old_problem(value: str) -> str | None:
+    """The named-family rules that predate the FileDataID age rule."""
     normal = re.sub(r"/+", "/", value.replace("\\", "/"))
     for template in normal.split(","):
         if template.strip() in LEGACY_BUTTON_TEMPLATES:
@@ -137,9 +144,51 @@ def problem(value: str) -> str | None:
     if EXPANSION_CHROME.match(normal):
         return "expansion chrome is outside the approved Forever asset set"
     for markup in re.finditer(r"\|(?:T|A:)([^:|]+)", value):
-        if reason := problem(markup[1]):
+        if reason := _old_problem(markup[1]):
             return reason
     return None
+
+
+def _client_findings(value: str) -> list[tuple[str, str]]:
+    """The age rule and its unverifiable-path fallback, one finding per client path in `value`."""
+    findings = []
+    for match in CLIENT_PATH.finditer(value):
+        candidate = match.group(0)
+        if candidate[:2].upper() == "|T":
+            candidate = candidate[2:]
+        candidate = candidate.rstrip(".")
+        path = legacy_chrome.normalise(candidate)
+        if path == "interface/addons" or path.startswith(ADDONS_PREFIX):
+            continue
+        if path.endswith("/") or not path.rsplit("/", 1)[-1]:
+            continue
+        # A constant prefix being built into a path (`UI-BonusObjectiveBlob-`) is not a path yet.
+        if path.endswith(("-", "_")) and not legacy_chrome.is_legacy(path):
+            continue
+        if not legacy_chrome.is_known(path) and not legacy_chrome.is_legacy(path):
+            if legacy_chrome.is_path_prefix(path):
+                continue
+        if reason := legacy_chrome.reason(path):
+            findings.append((path, reason))
+    return findings
+
+
+def findings(value: str) -> list[tuple[str, str]]:
+    """(subject, reason) for every forbidden thing in one literal. A client path gets the age rule's
+    answer first, even when a named family would also match; the age rule names the path so an inline
+    `|T...|t` reports the path, not the whole markup."""
+    found = _client_findings(value)
+    if found:
+        return found
+    if reason := _old_problem(value):
+        return [(value, reason)]
+    return []
+
+
+def problem(value: str) -> str | None:
+    """Explain why one literal asset reference is forbidden."""
+    found = findings(value)
+    return found[0][1] if found else None
 
 
 def references(source: str, suffix: str) -> list[tuple[int, str]]:
@@ -222,9 +271,9 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
 def check(source: str, suffix: str = ".lua") -> list[tuple[int, str]]:
     return sorted(
         {
-            (line, f"asset-blacklist: {value}: {reason}")
+            (line, f"asset-blacklist: {subject}: {reason}")
             for line, value in references(source, suffix)
-            if (reason := problem(value))
+            for subject, reason in findings(value)
         }
     )
 

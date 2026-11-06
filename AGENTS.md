@@ -29,6 +29,8 @@ bash tools/typecheck.sh                   # LuaLS 3.19.1 over the shared Lua, wi
 python3 tools/check_consumers.py          # every consumer's copy matches this repo
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WFA-36)
+python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
+python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"
@@ -68,6 +70,10 @@ and run anywhere.
   a loop calls `SetScrollMode` in the same function, or the loop says why it stays short (`-- menu-scroll-ok:
   <reason>`). It reads Lua through the skill pack's `forever_tools/lua.py` lexer; `tools/test_check_menu_scroll.py`
   is its spec.
+- `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data, `forever_tools/legacy_chrome.txt`
+  (old chrome by FileDataID) and `forever_tools/interface_paths.txt` (the known interface-path set), from the
+  wago.tools listfile for 1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule
+  itself lives in the skill pack's `forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, which runs the client load
   rule, the menu rule and that check on every PR (`--base`) and on a schedule (the full check). Its `core-shared` job is required in
   every consumer, so both rules gate every consumer PR with no change to the consumer's own CI. It lives outside `.github/workflows` so it never runs
