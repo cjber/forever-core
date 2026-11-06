@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.4.20] - 2026-11-06
+- **The tracker column steps aside for EQ Objective Tracker.** EQ Objective Tracker hides the game's quest tracker and draws its own list in that same slot, so its quests and the Forever sections drew over each other and neither could be read. `UI/TrackerEqot.lua` reads EQOT's list through its public API and re-places after each of its layout callbacks, and reads EQOT's own frame the same way when that API is not there; `UI/TrackerHost.lua` consults EQOT before Questie and generalises the beside-a-list layout. Never hooks or moves a protected frame, so the same placement runs in combat. Turn EQOT off and the column goes back where it was.
+
 ## [0.4.19] - 2026-11-05
 - **The tracker header menu uses the addon's own menu where it has one.** Adventure Guide draws its own context menu, so its tracker right click no longer calls `MenuUtil.CreateContextMenu`, which can assert in Forever 70009; the other addons keep Blizzard's menu.
 
