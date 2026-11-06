@@ -229,9 +229,12 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   THIRD_PARTY.md, that section or README's `## Credits`.
 - **WFA-32** README.md and docs/curseforge.md each carry the family block, "The Forever addons", once,
   between `<!-- forever-family:start -->` and `<!-- forever-family:end -->`, in place of any hand-written list of
-  the other addons. The text is `forever_tools.family` and never edited in a repo: `tools/check_family.py` runs in
-  `typecheck.sh` and fails on any difference (`--fix` rewrites it after a sync, `--print` gives it to place). Prose
-  outside the block says only what a sibling really adds to this addon.
+  the other addons. The table has three columns: the addon linked to its CurseForge page, what it does, and an
+  Issues link to `https://github.com/cjber/<repo>/issues`. A line under the table says bug reports, feature
+  requests and pull requests are welcome on each addon's GitHub, and that everyone whose report or idea ships is
+  thanked by name in the addon's credits and changelog. The text is `forever_tools.family` and never edited in a
+  repo: `tools/check_family.py` runs in `typecheck.sh` and fails on any difference (`--fix` rewrites it after a
+  sync, `--print` gives it to place). Prose outside the block says only what a sibling really adds to this addon.
 - **WFA-33** A player who reported a bug we fix, or asked for a feature we build, is credited by name in the same PR,
   whether they wrote on GitHub or in store comments: the changelog bullet ends "thanks to X for the report" (or "for
   the idea"), and THIRD_PARTY.md's `## Ideas and contributors` table gains or extends their row with what came of it.
