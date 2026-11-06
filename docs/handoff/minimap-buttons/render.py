@@ -2,16 +2,24 @@ import math
 import sys
 from pathlib import Path
 
+from PIL import Image, ImageChops
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools/wowmock"))
 import wowmock as W
 
 BUILD = "1.60.1.70124"
 ui = W.Ui(scale=2, build=BUILD)
 
-BTN = 20
-ICON = 13
+# LibDBIcon's construction, the art every LibDBIcon addon button on the rim uses.
+BTN = 31
+OVERLAY = 50
+BACKGROUND = 24
+ICON = 18
 MINIMAP = 198
 RIM_OFFSET = 5
+HIGHLIGHT = 136477  # interface/minimap/ui-minimap-zoombutton-highlight.blp
+TRACKING_BORDER = 136430  # interface/minimap/minimap-trackingborder.blp
+MINIMAP_BACKGROUND = 136467  # interface/minimap/ui-minimap-background.blp
 # Core/MinimapButton.lua's first two default angles: bottom-left, then a little further round the rim.
 FIELD_GUIDE_ANGLE = 225
 ADVENTURE_GUIDE_ANGLE = 195
@@ -19,36 +27,46 @@ FIELD_GUIDE_ICON = "interface/icons/inv_misc_book_09.blp"
 ADVENTURE_GUIDE_ICON = "interface/icons/inv_misc_map_01.blp"
 
 
-def round_icon(ui, icon):
-    """The icon as Core/MinimapButton.lua draws it: cropped to texcoords 0.08-0.92 and masked by CircleMaskScalable."""
+def icon_art(ui, icon):
+    """The icon as Core/MinimapButton.lua draws it: cropped to texcoords 0.05-0.95, unmasked."""
     art = ui.texture(icon)
     w, h = art.size
-    art = art.crop((round(w * 0.08), round(h * 0.08), round(w * 0.92), round(h * 0.92)))
+    art = art.crop((round(w * 0.05), round(h * 0.05), round(w * 0.95), round(h * 0.95)))
     out = ui.canvas(ICON, ICON)
     out.draw(art, 0, 0, ICON, ICON)
-    out.mask(ui.atlas("CircleMaskScalable").image, 0, 0, ICON, ICON)
     return out
 
 
+def add_glow(canvas, texture, left, top, size):
+    """Additive like the client's highlight: the texture's black backing adds nothing and stays transparent."""
+    box = (canvas.px(left), canvas.px(top), canvas.px(left + size), canvas.px(top + size))
+    region = canvas.image.crop(box)
+    piece = texture.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS)
+    added = ImageChops.add(region.convert("RGB"), piece.convert("RGB"))
+    alpha = ImageChops.lighter(region.getchannel("A"), piece.convert("L"))
+    out = added.convert("RGBA")
+    out.putalpha(alpha)
+    canvas.image.paste(out, box[:2])
+
+
+def button_art(canvas, left, top, icon, hover=False, pressed=False):
+    """LibDBIcon's pieces at its sizes: background under the icon, tracking border over it, highlight on top."""
+    cx, cy = left + BTN / 2, top + BTN / 2
+    canvas.draw(canvas.ui.texture(MINIMAP_BACKGROUND), cx - BACKGROUND / 2, cy - BACKGROUND / 2, BACKGROUND, BACKGROUND)
+    # LibDBIcon nudges the icon one unit down-right while the mouse button is held.
+    nudge = 1 if pressed else 0
+    canvas.paste(icon_art(canvas.ui, icon), cx - ICON / 2 + nudge, cy - ICON / 2 + nudge)
+    canvas.draw(canvas.ui.texture(TRACKING_BORDER), left, top, OVERLAY, OVERLAY)
+    if hover:
+        add_glow(canvas, canvas.ui.texture(HIGHLIGHT), left, top, BTN)
+
+
 def button(canvas, cx, cy, angle, icon, hover=False):
-    """A register's button: the client's minimap plate, the addon icon, and the native round hover glow."""
+    """A register's button on the Minimap rim, centred on its angle."""
     radius = MINIMAP / 2 + RIM_OFFSET
     x = cx + math.cos(math.radians(angle)) * radius
     y = cy - math.sin(math.radians(angle)) * radius
-    state = "UI-HUD-Minimap-Button-Down" if hover else "UI-HUD-Minimap-Button"
-    canvas.draw(canvas.ui.atlas(state), x - BTN / 2, y - BTN / 2, BTN, BTN)
-    canvas.paste(round_icon(canvas.ui, icon), x - ICON / 2, y - ICON / 2)
-    if hover:
-        # The client's own round hover glow (bags-roundhighlight), the one its bag and container slots use.
-        canvas.draw(
-            canvas.ui.atlas("bags-roundhighlight"),
-            x - BTN / 2,
-            y - BTN / 2,
-            BTN,
-            BTN,
-            color=(1, 1, 1, 0.55),
-            blend="ADD",
-        )
+    button_art(canvas, x - BTN / 2, y - BTN / 2, icon, hover)
 
 
 def minimap(canvas, cx, cy, hovered):
@@ -99,26 +117,13 @@ def options(path):
 
 def detail(path):
     big = W.Ui(scale=6, build=BUILD)
-    canvas = big.canvas(BTN * 2 + 40, BTN + 34)
-    for index, (icon, hover) in enumerate([(FIELD_GUIDE_ICON, False), (FIELD_GUIDE_ICON, True)]):
+    canvas = big.canvas(BTN * 3 + 60, BTN + 34)
+    states = [("normal", False, False), ("hover", True, False), ("pressed", False, True)]
+    for index, (label, hover, pressed) in enumerate(states):
         x = 10 + index * (BTN + 20)
         y = 24
-        state = "UI-HUD-Minimap-Button-Down" if hover else "UI-HUD-Minimap-Button"
-        canvas.draw(big.atlas(state), x, y, BTN, BTN)
-        canvas.paste(round_icon(big, icon), x + (BTN - ICON) / 2, y + (BTN - ICON) / 2)
-        if hover:
-            canvas.draw(
-                big.atlas("bags-roundhighlight"),
-                x,
-                y,
-                BTN,
-                BTN,
-                color=(1, 1, 1, 0.55),
-                blend="ADD",
-            )
-        canvas.text(
-            x, 4, "hover" if hover else "normal", W.FONTS["GameFontNormalSmall"], W.NORMAL, width=BTN, justify="CENTER"
-        )
+        button_art(canvas, x, y, FIELD_GUIDE_ICON, hover=hover, pressed=pressed)
+        canvas.text(x, 4, label, W.FONTS["GameFontNormalSmall"], W.NORMAL, width=BTN, justify="CENTER")
     base = W.backdrop(big, canvas.width, canvas.height)
     base.paste(canvas, 0, 0)
     base.save(path)

@@ -183,18 +183,19 @@ primitive, not chrome — allowed.
 
 ## What the addons actually reference today
 
-Thirteen atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
+Eleven atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
 `questlog-icon-setting`, `common-icon-checkmark`, `common-dropdown-c-button-hover-arrow`,
 `checkmark-minimal`, `Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`,
-`UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`, `UI-HUD-Minimap-Button`,
-`UI-HUD-Minimap-Button-Down`, `bags-roundhighlight`; `map-icon-suramardoor.tga`, `media/Dot.tga`,
-`media/TooltipBorder*.tga`, plus the allowlisted native widget pieces `WhiteIconFrame`,
-`ButtonHilight-Square` and `UI-QuestTitleHighlight`. The minimap plate's two states are the art the
-client's own `AddonCompartment` and tracking buttons use (`Blizzard_Minimap/Mainline/AddonCompartment.xml`),
-and the round hover glow is the one its bag, wardrobe and container slots use. All three are set 0 and none
-belongs to a blacklisted family, so the native host use is the evidence. Every other asset above is Tier 1,
-a named exception or an allowlisted native widget, so the blacklist is prophylactic: it stops the next new
-feature reaching for garrison or covenant art.
+`UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`, `bags-roundhighlight`; `map-icon-suramardoor.tga`,
+`media/Dot.tga`, `media/TooltipBorder*.tga`, plus the allowlisted native widget pieces `WhiteIconFrame`,
+`ButtonHilight-Square` and `UI-QuestTitleHighlight`. The shared minimap button uses LibDBIcon's three loose
+pieces by FileDataID, the same construction Questie's, RXP's and AtlasLoot's buttons already wear on the
+player's rim: `136477` (`interface/minimap/ui-minimap-zoombutton-highlight`) as the button's highlight,
+`136430` (`interface/minimap/minimap-trackingborder`) as the 50-unit overlay, and `136467`
+(`interface/minimap/ui-minimap-background`) as the 24-unit background. They sit under `interface/minimap/`,
+which the age rule already exempts, and each is drawn square to square at LibDBIcon's sizes. Every other
+asset above is Tier 1, a named exception or an allowlisted native widget, so the blacklist is prophylactic:
+it stops the next new feature reaching for garrison or covenant art.
 
 ## Checking an element before you use it
 

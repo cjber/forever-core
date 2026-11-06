@@ -25,7 +25,7 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture used by the report window |
-| `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the plate art and the hide flag |
+| `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
 | `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
 | `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |

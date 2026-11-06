@@ -17,14 +17,17 @@ end
 
 local ANGLE_KEY = "minimapButtonAngle"
 local HIDDEN_KEY = "minimapButtonHidden"
--- The button's centre sits this far outside the Minimap's edge, so half of the 20-unit button overlaps the rim.
+-- The button's centre sits this far outside the Minimap's edge, so half of the 31-unit button overlaps the rim.
 local RIM_OFFSET = 5
 -- Half the rim is the usual place for one addon button; the rest spread around it before falling back to every 15°.
 local DEFAULT_ANGLES = { 225, 195, 255, 165, 285, 135, 315, 105, 345, 75, 15, 45 }
--- Two buttons this close would sit on top of each other.
-local MIN_GAP = 20
--- The icon fits inside the 20-unit plate's ring.
-local ICON_SIZE = 13
+-- Two 31-unit buttons this close would sit on top of each other.
+local MIN_GAP = 25
+-- LibDBIcon's construction: a 31-unit button, a 50-unit tracking border, a 24-unit background and an 18-unit icon.
+local BUTTON_SIZE = 31
+local OVERLAY_SIZE = 50
+local BACKGROUND_SIZE = 24
+local ICON_SIZE = 18
 
 local function Safe(label, fn, ...)
 	if ns.SafeCall then
@@ -158,24 +161,35 @@ function MinimapButton.Create(spec)
 	if spec.host then
 		spec.host.minimapButton = button
 	end
-	button:SetSize(20, 20)
-	button:SetNormalAtlas("UI-HUD-Minimap-Button") -- art-ok: the client's own modern minimap button plate
-	button:SetPushedAtlas("UI-HUD-Minimap-Button-Down") -- art-ok: the client's own modern minimap button plate
-	button:SetHighlightAtlas("bags-roundhighlight", "ADD") -- art-ok: the client's own round hover glow
+	button:SetSize(BUTTON_SIZE, BUTTON_SIZE)
+	button:SetFrameStrata("MEDIUM")
+	button:SetFrameLevel(8)
+	button:SetHighlightTexture(136477) -- art-ok: LibDBIcon's minimap highlight, interface/minimap/
 	button:RegisterForClicks("LeftButtonUp")
 	button:RegisterForDrag("LeftButton")
-	-- The icon sits inside the plate's ring, cropped past its baked square border and masked round, as the
-	-- client's own minimap buttons show theirs.
+	-- LibDBIcon's three pieces: the tracking border over the icon, the round background under it, and the
+	-- addon's icon in the middle, all drawn square to square at LibDBIcon's sizes.
+	local overlay = button:CreateTexture(nil, "OVERLAY")
+	overlay:SetSize(OVERLAY_SIZE, OVERLAY_SIZE)
+	overlay:SetPoint("TOPLEFT")
+	overlay:SetTexture(136430) -- art-ok: LibDBIcon's minimap tracking border, interface/minimap/
+	local background = button:CreateTexture(nil, "BACKGROUND")
+	background:SetSize(BACKGROUND_SIZE, BACKGROUND_SIZE)
+	background:SetPoint("CENTER")
+	background:SetTexture(136467) -- art-ok: LibDBIcon's minimap background, interface/minimap/
 	local icon = button:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(ICON_SIZE, ICON_SIZE)
 	icon:SetPoint("CENTER")
-	icon:SetTexture(spec.icon) -- art-ok: the addon's own content icon, drawn on the client's plate
-	icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	local mask = button:CreateMaskTexture()
-	mask:SetAllPoints(icon)
-	mask:SetAtlas("CircleMaskScalable") -- art-ok: the client's round mask, already in the registry
-	icon:AddMaskTexture(mask)
+	icon:SetTexture(spec.icon) -- art-ok: the addon's own content icon, drawn on LibDBIcon's border
+	icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
 	button.icon = icon
+	-- LibDBIcon nudges the icon down-right while a mouse button is held, then puts it back.
+	button:SetScript("OnMouseDown", function(self)
+		self.icon:SetPoint("CENTER", self, "CENTER", 1, -1)
+	end)
+	button:SetScript("OnMouseUp", function(self)
+		self.icon:SetPoint("CENTER")
+	end)
 	button:SetScript("OnClick", function(self, mouseButton)
 		if spec.onClick then
 			Safe("minimap button click", spec.onClick, self, mouseButton)

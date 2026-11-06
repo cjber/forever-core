@@ -16,7 +16,7 @@ local function newNs()
 end
 
 local function frame(name, parent)
-	local f = { name = name, shown = true, points = {}, scripts = {}, atlases = {} }
+	local f = { name = name, shown = true, points = {}, scripts = {}, textures = {} }
 	function f:SetSize(width, height)
 		self.width, self.height = width, height
 	end
@@ -56,17 +56,17 @@ local function frame(name, parent)
 	function f:RegisterForDrag(...)
 		self.drags = { ... }
 	end
-	function f:SetNormalAtlas(value)
-		self.atlases.normal = value
+	function f:SetFrameStrata(value)
+		self.strata = value
 	end
-	function f:SetPushedAtlas(value)
-		self.atlases.pushed = value
+	function f:SetFrameLevel(value)
+		self.level = value
 	end
-	function f:SetHighlightAtlas(value, blend)
-		self.atlases.highlight, self.atlases.blend = value, blend
+	function f:SetHighlightTexture(value, blend)
+		self.highlight, self.highlightBlend = value, blend
 	end
-	function f.CreateTexture()
-		local texture = {}
+	function f.CreateTexture(_, _, layer)
+		local texture = { layer = layer }
 		function texture:SetSize(width, height)
 			self.width, self.height = width, height
 		end
@@ -79,21 +79,8 @@ local function frame(name, parent)
 		function texture:SetTexCoord(...)
 			self.texCoord = { ... }
 		end
-		function texture:AddMaskTexture(mask)
-			self.mask = mask
-		end
-		f.icon = texture
+		f.textures[#f.textures + 1] = texture
 		return texture
-	end
-	function f.CreateMaskTexture()
-		local mask = {}
-		function mask:SetAllPoints(target)
-			self.target = target
-		end
-		function mask:SetAtlas(value)
-			self.atlas = value
-		end
-		return mask
 	end
 	if parent then
 		f.parent = parent
@@ -184,25 +171,57 @@ local aSpec = spec("FirstMinimapButton", settingsA)
 local a = first.Create(aSpec)
 assert(a, "no button")
 assert(a.parent == minimap, "not parented to the Minimap")
-assert(a.width == 20 and a.height == 20, "size")
-assert(a.atlases.normal == "UI-HUD-Minimap-Button", a.atlases.normal)
-assert(a.atlases.pushed == "UI-HUD-Minimap-Button-Down", a.atlases.pushed)
-assert(a.atlases.highlight == "bags-roundhighlight" and a.atlases.blend == "ADD", a.atlases.highlight)
+
+local function textureOn(button, layer)
+	for _, texture in ipairs(button.textures) do
+		if texture.layer == layer then
+			return texture
+		end
+	end
+end
+
+-- LibDBIcon's construction: a 31-unit button with the tracking border over a 24-unit background and 18-unit icon.
+assert(a.width == 31 and a.height == 31, "size")
+assert(a.strata == "MEDIUM", a.strata)
+assert(a.level == 8, a.level)
+assert(a.highlight == 136477, a.highlight)
+local overlay = textureOn(a, "OVERLAY")
+assert(overlay and overlay.width == 50 and overlay.height == 50, "overlay size")
+assert(overlay.texture == 136430, overlay.texture)
+assert(overlay.points[1] == "TOPLEFT", overlay.points[1])
+local background = textureOn(a, "BACKGROUND")
+assert(background and background.width == 24 and background.height == 24, "background size")
+assert(background.texture == 136467, background.texture)
+assert(background.points[1] == "CENTER", background.points[1])
+assert(a.icon == textureOn(a, "ARTWORK"), "icon is not the artwork texture")
 assert(a.icon.texture == "icon-FirstMinimapButton", a.icon.texture)
-assert(a.icon.width == 13 and a.icon.height == 13, "icon size")
-assert(a.icon.mask and a.icon.mask.atlas == "CircleMaskScalable", "icon masked round")
+assert(a.icon.width == 18 and a.icon.height == 18, "icon size")
+assert(a.icon.points[1] == "CENTER", a.icon.points[1])
+assert(not a.icon.mask, "icon still masked")
+local texCoord = a.icon.texCoord
+assert(
+	texCoord and texCoord[1] == 0.05 and texCoord[2] == 0.95 and texCoord[3] == 0.05 and texCoord[4] == 0.95,
+	"icon texcoord"
+)
 assert(aSpec.host.minimapButton == a, "host not published")
 assert(a.clicks and a.clicks[1] == "LeftButtonUp", "clicks")
 assert(a.drags and a.drags[1] == "LeftButton", "drag button")
 assert(settingsA.minimapButtonAngle == 225, settingsA.minimapButtonAngle)
 assert(a.shown, "hidden on create")
 
+-- Holding the mouse nudges the icon down-right, as LibDBIcon does, and letting go puts it back.
+a.scripts.OnMouseDown(a)
+assert(a.icon.points[1] == "CENTER" and a.icon.points[2] == a and a.icon.points[3] == "CENTER", "nudge anchor")
+assert(a.icon.points[4] == 1 and a.icon.points[5] == -1, "nudge offset")
+a.scripts.OnMouseUp(a)
+assert(a.icon.points[1] == "CENTER" and #a.icon.points == 1, "nudge stayed")
+
 -- A second addon gets the next free angle rather than landing on the first one.
 local settingsB2 = {}
 local b = second.Create(spec("SecondMinimapButton", settingsB2))
 assert(b, "no second button")
 assert(settingsB2.minimapButtonAngle == 195, settingsB2.minimapButtonAngle)
-assert(math.abs(a.angle - b.angle) >= 20, "two buttons on one angle")
+assert(math.abs(a.angle - b.angle) >= 25, "two buttons on one angle")
 assert(#_G.ForeverMinimapButtons.buttons == 2, "registry")
 
 -- The angle is an offset from the Minimap's centre, not a screen position.
