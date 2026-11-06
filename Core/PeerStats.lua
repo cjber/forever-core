@@ -132,6 +132,18 @@ local function Identity(sender)
 	return key, key:lower()
 end
 
+-- The player's own identity, normalised exactly as an incoming sender, so a Forever two-part name ("Hel Io") and the
+-- compacted key it arrives under ("HelIo") are the same player.
+---@return string|nil identity
+local function OwnIdentity()
+	local name = OwnName()
+	if not name then
+		return nil
+	end
+	local _, identity = Identity(name)
+	return identity or Compact(name):lower()
+end
+
 ---@param mode string
 ---@param subject any
 local function ValidSubject(mode, subject)
@@ -471,8 +483,7 @@ end
 ---@param self ForeverPeerStatsInstance
 local function SanitizeStore(self, raw)
 	local now = Now()
-	local own = OwnName()
-	own = own and own:lower()
+	local own = OwnIdentity()
 	local merged, order = {}, {}
 	for _, key in ipairs(SortedStringKeys(raw, MAX_SCAN_KEYS)) do
 		local clean, identity = Identity(key)
@@ -840,8 +851,7 @@ function Instance:Receive(prefix, payload, channel, sender)
 		return false, "disabled"
 	end
 	local key, identity = Identity(sender)
-	local own = OwnName()
-	if not key or identity == (own and own:lower()) then
+	if not key or identity == OwnIdentity() then
 		return false, "sender"
 	end
 	if not AllowSender(self, identity) then
@@ -893,7 +903,7 @@ function Instance:Board(metric, subject, localValue, localEventUnix)
 	local rows = {
 		{
 			name = name,
-			identity = name:lower(),
+			identity = OwnIdentity() or name:lower(),
 			value = IntIn(type(localValue) == "number" and math.floor(localValue) or nil, 0, MAX_VALUE) or 0,
 			eventUnix = IntIn(localEventUnix, 1, Now() + FUTURE_SECONDS),
 			self = true,

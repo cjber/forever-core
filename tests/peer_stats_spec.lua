@@ -235,6 +235,47 @@ do
 	)
 end
 
+-- Own name with a Forever surname --------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	groupNames.player = "Hel Io"
+
+	-- The echoed broadcast can arrive under the spaced name or the compacted key.
+	for _, sender in ipairs({ "Hel Io", "HelIo", "hel io-MyRealm", "helio-MyRealm" }) do
+		local ok, why = recv(peers, wire("agf", "total", "all", 85, now), sender)
+		equal(ok, false, "own two-part name ignored: " .. sender)
+		equal(why, "sender", "own two-part name reason: " .. sender)
+	end
+	equal(count(state.db), 0, "own broadcast stored nothing")
+
+	equal(recv(peers, wire("agf", "total", "all", 85, now), "Hello"), true, "another player is accepted")
+	equal(state.db.Hello.total.all.value, 85, "another player is stored")
+
+	-- A saved copy from before the fix may hold the player under the compacted key.
+	local db = {
+		HelIo = { total = { all = { value = 85, eventUnix = now } } },
+		["Hel Io-MyRealm"] = { total = { all = { value = 85, eventUnix = now } } },
+		Hello = { total = { all = { value = 85, eventUnix = now } } },
+	}
+	local reloaded = make(load(), { db = db })
+	equal(count(reloaded:Shared()), 1, "old own rows are dropped and the peer kept")
+	equal(db.HelIo, nil, "compacted own key removed")
+	equal(db["Hel Io-MyRealm"], nil, "own name with realm removed")
+	local board = reloaded:Board("total", "all", 85, now)
+	equal(#board, 2, "the board has one personal row and one peer")
+	local ownRows = 0
+	for _, row in ipairs(board) do
+		if row.self then
+			ownRows = ownRows + 1
+			equal(row.identity, "helio", "personal row identity is compacted")
+			equal(row.name, "Hel Io", "personal row keeps the display name")
+		end
+	end
+	equal(ownRows, 1, "the player appears once")
+end
+
 -- Receive: cumulative, stale, duplicate, out of order, first ---------------------------------------------------
 do
 	local ns = fresh()
