@@ -115,6 +115,17 @@ def scan():
                 # The directory is supplied dynamically (for example, the installed addon's icon).
                 continue
             reference = match.group(1)
+            # A folder followed by a format spec (media/Numbers/%d.tga) means any texture directly inside it.
+            if re.match(r"/%[-+ #0]*\d*(?:\.\d+)?[A-Za-z]", content[match.end() :]):
+                prefix = reference.casefold() + "/"
+                pattern_media = {
+                    key
+                    for key in media_files
+                    if key.startswith(prefix) and "/" not in key[len(prefix) :] and Path(key).suffix in {".tga", ".blp"}
+                }
+                if pattern_media:
+                    resolved_media.update(pattern_media)
+                    continue
             # WoW texture paths commonly omit the .tga/.blp extension.
             candidates = [reference.casefold()]
             if Path(reference).suffix == "":
