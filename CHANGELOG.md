@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.25] - 2026-11-07
 - **The Forever Leaderboards window opens.** `/flb` and `/forever` raised a Lua error on first open because the list's rows had no height; the rows now have a fixed height. (#174)
 
 ## [0.4.24] - 2026-11-07
