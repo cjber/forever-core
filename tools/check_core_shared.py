@@ -56,6 +56,8 @@ VENDORED = {
     "Core/LeaderboardsData.lua": PEER_CONSUMERS,
     "UI/Leaderboards.lua": PEER_CONSUMERS,
     "tests/leaderboards_spec.lua": PEER_CONSUMERS,
+    "tests/leaderboards_window_spec.lua": PEER_CONSUMERS,
+    "tests/leaderboards_harness.lua": PEER_CONSUMERS,
     "tests/text_spec.lua": TEXT_CONSUMERS,
     "UI/SettingsPage.lua": SETTINGS_CONSUMERS,
     "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
