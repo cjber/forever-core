@@ -37,6 +37,7 @@ import json
 import math
 import re
 import struct
+import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -44,10 +45,25 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
+TOOLING = Path(__file__).resolve().parents[2] / ".agents/skills/wow-forever-addon/tooling"
+if str(TOOLING) not in sys.path:
+    sys.path.insert(0, str(TOOLING))
+from forever_tools import assets  # noqa: E402
+
 BUILD = "1.60.1.70124"
 USER_AGENT = "wowmock/1.0"
 # WoW: Forever draws its "c60" art (atlas set 1) wherever an atlas element has a member in that set.
 FOREVER_ATLAS_SET = 1
+
+
+class BannedAsset(ValueError):
+    """A render touched art the suite's asset blacklist forbids."""
+
+    def __init__(self, asset, reason):
+        self.asset = asset
+        self.reason = reason
+        super().__init__(f"banned asset {asset!r}: {reason}")
+
 
 FRIZQT = "fonts/frizqt__.ttf"
 ARIALN = "fonts/arialn.ttf"
@@ -107,6 +123,8 @@ class Wago:
         (self.cache / "files").mkdir(parents=True, exist_ok=True)
         self.paths_file = self.cache / "paths.json"
         self.paths = json.loads(self.paths_file.read_text()) if self.paths_file.exists() else {}
+        self._paths_by_fdid = None
+        self._listfile_paths = None
 
     def fetch(self, url, timeout=180):
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -138,6 +156,32 @@ class Wago:
             self.resolve([path])
         return self.paths[path]
 
+    def path(self, fdid):
+        """Client path for a file data ID, from paths.json or a cached pinned listfile."""
+        if self._paths_by_fdid is None:
+            self._paths_by_fdid = {value: key for key, value in self.paths.items()}
+        path = self._paths_by_fdid.get(fdid)
+        if path is None:
+            path = self.listfile_paths().get(fdid)
+            if path is not None:
+                self._paths_by_fdid[fdid] = path
+        return path
+
+    def listfile_paths(self):
+        """File data ID to path for the pinned build, from any cached listfile rather than the network."""
+        if self._listfile_paths is None:
+            self._listfile_paths = {}
+            for candidate in (
+                self.cache / f"listfile-{self.build}.json",
+                Path(__file__).resolve().parents[2] / "tools/.cache/legacy-chrome" / f"listfile-{self.build}.json",
+            ):
+                if not candidate.exists():
+                    continue
+                rows = json.loads(candidate.read_text())
+                self._listfile_paths = {int(fdid): raw.replace("\\", "/").lower() for fdid, raw in rows.items()}
+                break
+        return self._listfile_paths
+
     def resolve(self, paths):
         """Look several paths up at once; the search endpoint takes ~30 s per call, so run them in parallel."""
         missing = [p.lower().replace("\\", "/") for p in paths if p.lower().replace("\\", "/") not in self.paths]
@@ -152,6 +196,7 @@ class Wago:
                 if path not in found:
                     raise KeyError(f"no file {path!r} in the listfile")
                 self.paths.update(found)
+        self._paths_by_fdid = None
         self.paths_file.write_text(json.dumps(self.paths, indent=1, sort_keys=True))
 
 
@@ -197,15 +242,35 @@ class Ui:
         self._tables = {}
         self._textures = {}
         self._fonts = {}
+        self._asset_problems = {}
 
     def table(self, name, key="ID"):
         if name not in self._tables:
             self._tables[name] = {row[key]: row for row in self.wago.db2(name)}
         return self._tables[name]
 
+    def check_asset(self, asset):
+        """Reject one texture path or atlas name the suite's asset blacklist forbids, caching the answer."""
+        if asset not in self._asset_problems:
+            self._asset_problems[asset] = assets.problem(asset)
+        reason = self._asset_problems[asset]
+        if reason:
+            raise BannedAsset(asset, reason)
+
     def texture(self, ref):
         """RGBA image of a texture by file data ID or client path."""
-        fdid = ref if isinstance(ref, int) else self.wago.fdid(ref)
+        if isinstance(ref, int):
+            path = self.wago.path(ref)
+            if path is not None:
+                self.check_asset(path)
+            fdid = ref
+        else:
+            self.check_asset(ref)
+            fdid = self.wago.fdid(ref)
+        return self._image(fdid)
+
+    def _image(self, fdid):
+        """The decoded image for a file data ID; atlas sheets come through here after their name is checked."""
         if fdid not in self._textures:
             self._textures[fdid] = decode_texture(self.wago.file(fdid))
         return self._textures[fdid]
@@ -223,6 +288,7 @@ class Ui:
 
     def atlas(self, name):
         """Resolve an atlas element name the way SetAtlas does, preferring this client's atlas set."""
+        self.check_asset(name)
         elements = self.table("UiTextureAtlasElement", key="Name")
         element = next((row for n, row in elements.items() if n.lower() == name.lower()), None)
         if element is None:
@@ -256,7 +322,7 @@ class Ui:
 
         member = max(members, key=rank)
         atlas = atlases[member["UiTextureAtlasID"]]
-        sheet = self.texture(int(atlas["FileDataID"]))
+        sheet = self._image(int(atlas["FileDataID"]))
         # BLP size can differ from the committed atlas size (a mip dropped); scale committed coordinates.
         sx, sy = sheet.width / int(atlas["AtlasWidth"]), sheet.height / int(atlas["AtlasHeight"])
         box = [int(member[k]) for k in ("CommittedLeft", "CommittedTop", "CommittedRight", "CommittedBottom")]
