@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.26] - 2026-11-07
 - **Leaderboards show full names.** Rows and tooltips now draw a player's first name and surname with the space the client's own name formatting uses, taken from the sender and saved beside the compacted identity key so no saved data moves. A row saved before this change splits at its single inner capital; the next message from that player replaces it. (cjber/forever-core#179)
 
 ## [0.4.25] - 2026-11-07
