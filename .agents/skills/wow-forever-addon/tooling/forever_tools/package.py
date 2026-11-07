@@ -36,6 +36,8 @@ __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"
 FORBIDDEN = ("AGENTS.md", "docs", "ruff.toml", "stylua.toml", "tests", "tools", "types")
 # What the client accepts for a texture, font or sound path given without its extension.
 EXTENSIONS = ("", ".tga", ".blp", ".png", ".jpg", ".ttf", ".otf", ".ogg", ".mp3")
+# A string.format spec in a file name (media\Numbers\%d): the path names every file it can fill in.
+FORMAT_SPEC = re.compile(r"%[-+ #0]*\d*(?:\.\d+)?[A-Za-z]")
 LOAD_TAGS = {"Include", "Script"}
 SPEC_TIMEOUT = 900
 
@@ -69,11 +71,11 @@ def addon_path(text: str, release: Path, addons: tuple[str, ...]) -> Path | None
     return None if folder is None else release.joinpath(folder, *parts[3:])
 
 
-def locate(path: Path, extensions: tuple[str, ...] = ("",)) -> Path | None:
-    """The file the client would load for `path`: case ignored, as on Windows, with any of `extensions` added."""
+def locate_folder(path: Path) -> Path | None:
+    """The folder the client would read for `path`, case ignored, as on Windows."""
     absolute = path.is_absolute()
     current = Path(path.anchor) if absolute else Path(".")
-    for part in path.parent.parts[1 if absolute else 0 :]:
+    for part in path.parts[1 if absolute else 0 :]:
         step = current / part
         if not step.is_dir():
             children = current.iterdir() if current.is_dir() else ()
@@ -81,7 +83,20 @@ def locate(path: Path, extensions: tuple[str, ...] = ("",)) -> Path | None:
             if step is None:
                 return None
         current = step
+    return current
+
+
+def locate(path: Path, extensions: tuple[str, ...] = ("",)) -> Path | None:
+    """The file the client would load for `path`: case ignored, as on Windows, with any of `extensions` added.
+    A name with a format spec (`%d`) finds any file that fills it in."""
+    current = locate_folder(path.parent)
+    if current is None:
+        return None
     files = {child.name.lower(): child for child in current.iterdir() if child.is_file()}
+    if FORMAT_SPEC.search(path.name):
+        stem = ".+".join(re.escape(part) for part in FORMAT_SPEC.split(path.name))
+        wanted = re.compile(f"{stem}(?:{'|'.join(re.escape(e) for e in extensions)})", re.IGNORECASE)
+        return next((files[key] for key in sorted(files) if wanted.fullmatch(key)), None)
     return next((files[key] for key in ((path.name + e).lower() for e in extensions) if key in files), None)
 
 

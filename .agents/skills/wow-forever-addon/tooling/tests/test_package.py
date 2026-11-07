@@ -165,6 +165,16 @@ class PackageTest(unittest.TestCase):
         self.assertIn("Addon/Core.lua:1: names Interface\\AddOns\\Addon\\media\\Dot", problems[0] + problems[1])
         self.assertIn("Lib: not in", problems[0] + problems[1])
 
+    def test_a_formatted_path_needs_one_file_it_fills_in(self):
+        files = self.good()
+        files["Addon/Core.lua"] += 'local NUMBER = "Interface\\\\AddOns\\\\Addon\\\\media\\\\Numbers\\\\%d"\n'
+        files["Addon/media/Numbers/1.tga"] = ""
+        self.assertEqual(package.check(self.make(files), POLICY), [])
+        del files["Addon/media/Numbers/1.tga"]
+        problems = package.check(self.make(files), POLICY)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("media\\Numbers\\%d, which is not in the package", problems[0])
+
     def test_the_client_rules_for_case_prefixes_absolute_includes_and_flavours(self):
         files = self.good()
         files["Addon/Addon.toc"] = files["Addon/Addon.toc"].replace("Core.lua", "core.lua")
