@@ -695,6 +695,8 @@ local function Window()
 	scrollBar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, 0)
 	scrollBar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 4, 0)
 	local view = CreateScrollBoxListLinearView()
+	-- A bare Button has no XML template for the view to read a height from, so the row height is set here.
+	view:SetElementExtent(ROW_HEIGHT)
 	view:SetElementInitializer("Button", function(button, entry)
 		local rowButton = button --[[@as ForeverLeaderboardsRowButton]]
 		InitRow(rowButton)
