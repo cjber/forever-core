@@ -1,410 +1,13 @@
 -- Contract for the shared Forever Leaderboards window (UI/Leaderboards.lua), against a mocked client.
-local PATH = "UI/Leaderboards.lua"
-local DATA_PATH = "Core/LeaderboardsData.lua"
-
-local checks = 0
-local function check(value, message)
-	assert(value, message)
-	checks = checks + 1
-end
-
-local function equal(actual, expected, label)
-	checks = checks + 1
-	if actual ~= expected then
-		error(("%s: expected %s, got %s"):format(label, tostring(expected), tostring(actual)), 2)
-	end
-end
-
--- Client mock ----------------------------------------------------------------------------------------------------
-local frames, named = {}, {}
-local unitNames, unitClasses, guildMembers = {}, {}, {}
-local guildCalls = 0
-local Create
-local function noop() end
-
-local Widget = {}
-Widget.__index = function(_, key)
-	return Widget[key] or noop
-end
-
-function Widget:SetScript(event, handler)
-	self.scripts[event] = handler
-end
-
-function Widget:GetScript(event)
-	return self.scripts[event]
-end
-
-function Widget:HookScript(event, handler)
-	self.hooks[event] = self.hooks[event] or {}
-	self.hooks[event][#self.hooks[event] + 1] = handler
-end
-
-function Widget:Show()
-	self.shown = true
-	if self.scripts.OnShow then
-		self.scripts.OnShow(self)
-	end
-end
-
-function Widget:Hide()
-	self.shown = false
-end
-
-function Widget:IsShown()
-	return self.shown ~= false
-end
-
-function Widget:SetShown(shown)
-	if shown then
-		self:Show()
-	else
-		self:Hide()
-	end
-end
-
-function Widget:SetText(text)
-	self.text = text
-end
-
-function Widget:GetText()
-	return self.text
-end
-
-function Widget:SetTextColor(r, g, b)
-	self.textColor = { r, g, b }
-end
-
-function Widget:SetChecked(checked)
-	self.checked = checked and true or false
-end
-
-function Widget:GetChecked()
-	return self.checked == true
-end
-
-function Widget:SetEnabled(enabled)
-	self.enabled = enabled
-end
-
-function Widget:SetWidth(width)
-	self.width = width
-end
-
-function Widget:GetWidth()
-	return self.width or 0
-end
-
-function Widget:SetHeight(height)
-	self.height = height
-end
-
-function Widget:GetHeight()
-	return self.height or 0
-end
-
-function Widget:SetSize(width, height)
-	self.width, self.height = width, height
-end
-
-function Widget:SetPoint(point)
-	self.points[point] = true
-end
-
-function Widget:GetParent()
-	return self.parent
-end
-
-function Widget:SetAtlas(atlas)
-	self.atlas = atlas
-end
-
-function Widget:SetTexture(texture)
-	self.texture = texture
-end
-
-function Widget:SetAllPoints()
-	self.allPoints = true
-end
-
-function Widget:SetTitle(title)
-	self.title = title
-end
-
-function Widget:GetPortrait()
-	return self.portrait
-end
-
-function Widget:SetDefaultText(text)
-	self.defaultText = text
-end
-
-function Widget:SetupMenu(generator)
-	self.menu = generator
-end
-
-function Widget:SetCustomOnMouseUpHandler(handler)
-	self.mouseUp = handler
-end
-
-function Widget:SetDataProvider(provider)
-	self.provider = provider
-	self.buttons = {}
-	local view = rawget(self, "view")
-	if view and view.initializer then
-		for _, entry in ipairs(provider and provider.entries or {}) do
-			local button = Create("Button", self)
-			self.buttons[#self.buttons + 1] = button
-			view.initializer(button, entry)
-		end
-	end
-end
-
-function Widget:GetUnit()
-	return self.unitName, self.unit
-end
-
-function Widget:AddLine(text, r, g, b)
-	local lines = rawget(self, "lines")
-	if not lines then
-		lines = {}
-		self.lines = lines
-	end
-	lines[#lines + 1] = { text = text, r = r, g = g, b = b }
-end
-
-function Widget:Click()
-	if self.scripts.OnClick then
-		self.scripts.OnClick(self)
-	end
-end
-
-function Widget:ClickTab()
-	if self.mouseUp then
-		self.mouseUp(self, "LeftButton", true)
-	end
-end
-
-function Widget:CreateFontString()
-	return Create("FontString", self)
-end
-
-function Widget:CreateTexture()
-	return Create("Texture", self)
-end
-
-function Create(kind, parent, template)
-	local widget = setmetatable({
-		kind = kind,
-		parent = parent,
-		template = template,
-		scripts = {},
-		hooks = {},
-		children = {},
-		points = {},
-		shown = true,
-	}, Widget)
-	if parent then
-		parent.children[#parent.children + 1] = widget
-	end
-	if template == "PortraitFrameTemplate" then
-		widget.portrait = Create("Texture", widget)
-	end
-	if template == "LargeSideTabButtonTemplate" then
-		widget.Icon = Create("Texture", widget)
-	end
-	if kind == "CheckButton" then
-		widget.checked = false
-	end
-	frames[#frames + 1] = widget
-	return widget
-end
-
-local env
-local serverTime, weekRemaining = 1700000000, 100000
-local function Client()
-	frames, named, unitNames = {}, {}, { player = { "Me" } }
-	unitClasses, guildMembers, guildCalls = { player = "HUNTER" }, {}, 0
-	serverTime, weekRemaining = 1700000000, 100000
-	env = setmetatable({
-		UIParent = Create("Frame"),
-		UISpecialFrames = {},
-		tContains = function(list, item)
-			for _, value in ipairs(list) do
-				if value == item then
-					return true
-				end
-			end
-			return false
-		end,
-		CreateFrame = function(kind, name, parent, template)
-			local widget = Create(kind, parent, template)
-			if name then
-				named[name] = widget
-			end
-			return widget
-		end,
-		UnitName = function(unit)
-			local found = unitNames[unit]
-			if found then
-				return found[1], found[2]
-			end
-			return "Me"
-		end,
-		UnitClass = function(unit)
-			local class = unitClasses[unit]
-			if class then
-				return class, class
-			end
-		end,
-		IsInRaid = function()
-			return false
-		end,
-		Ambiguate = function(name, context)
-			if type(name) ~= "string" then
-				return name
-			end
-			if context == "short" then
-				return name:match("^([^%-]+)") or name
-			end
-			return name
-		end,
-		GetNumGuildMembers = function()
-			return #guildMembers
-		end,
-		GetGuildRosterInfo = function(index)
-			guildCalls = guildCalls + 1
-			local member = guildMembers[index]
-			if not member then
-				return nil
-			end
-			-- name, rank, rankIndex, level, class, zone, note, officerNote, online, status, classFileName
-			return member.name, nil, nil, nil, nil, nil, nil, nil, nil, nil, member.class
-		end,
-		GetNormalizedRealmName = function()
-			return "MyRealm"
-		end,
-		GetServerTime = function()
-			return serverTime
-		end,
-		C_DateAndTime = {
-			GetSecondsUntilWeeklyReset = function()
-				return weekRemaining
-			end,
-		},
-		CreateDataProvider = function(entries)
-			return { entries = entries }
-		end,
-		CreateScrollBoxListLinearView = function()
-			return {
-				SetElementInitializer = function(self, _, initializer)
-					self.initializer = initializer
-				end,
-				SetPadding = noop,
-			}
-		end,
-		ScrollUtil = {
-			InitScrollBoxListWithScrollBar = function(box, _, view)
-				box.view = view
-			end,
-		},
-		ScrollBoxConstants = { RetainScrollPosition = 1 },
-		SlashCmdList = {},
-		RAID_CLASS_COLORS = {
-			HUNTER = {
-				GetRGB = function()
-					return 0.67, 0.83, 0.45
-				end,
-			},
-			MAGE = {
-				GetRGB = function()
-					return 0.25, 0.78, 0.92
-				end,
-			},
-			PRIEST = {
-				GetRGB = function()
-					return 1, 1, 1
-				end,
-			},
-			ROGUE = {
-				GetRGB = function()
-					return 1, 0.96, 0.41
-				end,
-			},
-			WARRIOR = {
-				GetRGB = function()
-					return 0.78, 0.61, 0.43
-				end,
-			},
-		},
-		NORMAL_FONT_COLOR = {
-			GetRGB = function()
-				return 1, 0.82, 0
-			end,
-		},
-		GRAY_FONT_COLOR = {
-			GetRGB = function()
-				return 0.5, 0.5, 0.5
-			end,
-		},
-		GREEN_FONT_COLOR = {
-			GetRGB = function()
-				return 0.12, 1, 0
-			end,
-		},
-		HIGHLIGHT_FONT_COLOR = {
-			GetRGB = function()
-				return 1, 1, 1
-			end,
-		},
-	}, { __index = _G })
-	env._G = env
-	env.GameTooltip = Create("GameTooltip")
-	return env
-end
-
-local function PhraseLocale()
-	return setmetatable({}, {
-		__index = function(_, phrase)
-			return phrase
-		end,
-	})
-end
-
-local function Load()
-	local ns = { L = PhraseLocale() }
-	setfenv(assert(loadfile(DATA_PATH)), env)("Test", ns)
-	setfenv(assert(loadfile(PATH)), env)("Test", ns)
-	return ns.Leaderboards
-end
-
-local function row(name, value, extra, you, class)
-	return { name = name, value = value, extra = extra, you = you, class = class }
-end
-
-local ICON = "Interface\\Icons\\INV_Misc_Trophy_Argent"
-local function spec(key, week, all, extra)
-	return {
-		title = key,
-		metric = "Metric " .. key,
-		icon = ICON,
-		board = function(scope)
-			return scope == "week" and week or all
-		end,
-		sharing = function()
-			return not extra or extra.shared ~= false
-		end,
-		setSharing = function(value)
-			if extra then
-				extra.shared = value
-			end
-		end,
-	}
-end
+local harness = dofile("tests/leaderboards_harness.lua")
+local check, equal = harness.check, harness.equal
+local Client, Load = harness.Client, harness.Load
+local row, ICON, spec, noop = harness.row, harness.ICON, harness.spec, harness.noop
 
 -- Registration, the window and its rows --------------------------------------------------------------------------
 do
 	Client()
+	local env, frames, named = harness.env, harness.frames, harness.named
 	local api = Load()
 	check(api ~= nil and api.VERSION == 1, "the first copy publishes a versioned global")
 	check(env.ForeverLeaderboards == api, "the global is the same table")
@@ -554,6 +157,7 @@ end
 -- A consumer that already owns /forever keeps it -----------------------------------------------------------------
 do
 	Client()
+	local env = harness.env
 	env.SLASH_FOREVER1 = "/forever"
 	local api = Load()
 	equal(env.SLASH_FOREVERLEADERBOARDS1, nil, "/forever stays with its owner")
@@ -715,7 +319,7 @@ do
 	api:Overall("week")
 	equal(builds, 3, "and each scope keeps its own cache")
 
-	weekRemaining = 200000
+	harness.weekRemaining = 200000
 	api:Overall("week")
 	equal(builds, 4, "a new week start rebuilds")
 
@@ -738,9 +342,11 @@ end
 -- Classes the client already knows --------------------------------------------------------------------------------
 do
 	Client()
+	local frames = harness.frames
+	local unitNames, unitClasses = harness.unitNames, harness.unitClasses
 	unitClasses.party1 = "MAGE"
 	unitNames.party1 = { "Groupie", "OtherRealm" }
-	guildMembers = {
+	harness.guildMembers = {
 		{ name = "Guilder-OtherRealm", class = "ROGUE" },
 		{ name = "Second", class = "PRIEST" },
 	}
@@ -770,17 +376,17 @@ do
 	equal(window.scroll.buttons[4].nameText.textColor[1], 1, "and keeps the neutral colour")
 
 	-- Refreshing the rows repeatedly must not read the guild roster again.
-	local built = guildCalls
+	local built = harness.guildCalls
 	api:Select("classes")
 	api:Select("overall")
 	api:Select("classes")
-	equal(guildCalls, built, "a refresh reuses the cached classes")
+	equal(harness.guildCalls, built, "a refresh reuses the cached classes")
 
 	-- A roster event while the window is closed only marks the cache stale.
 	api:Toggle()
 	check(api:IsShown() == false, "the window is closed")
-	guildMembers[#guildMembers + 1] = { name = "Newbie-OtherRealm", class = "PRIEST" }
-	local before = guildCalls
+	harness.guildMembers[#harness.guildMembers + 1] = { name = "Newbie-OtherRealm", class = "PRIEST" }
+	local before = harness.guildCalls
 	local function RosterEvent(event)
 		for _, widget in ipairs(frames) do
 			local handler = widget.scripts and widget.scripts.OnEvent
@@ -792,214 +398,24 @@ do
 		error("no roster event frame")
 	end
 	RosterEvent("GUILD_ROSTER_UPDATE")
-	equal(guildCalls, before, "a closed window does not read the roster")
+	equal(harness.guildCalls, before, "a closed window does not read the roster")
 	equal(api.ClassOf("Newbie"), "PRIEST", "but the next lookup rebuilds the guild part")
-	equal(guildCalls, before + #guildMembers, "once, over the whole roster")
+	equal(harness.guildCalls, before + #harness.guildMembers, "once, over the whole roster")
 
 	-- While the window is shown the event rebuilds at once, and a group event leaves the guild part alone.
 	api:Open("classes")
-	guildMembers[#guildMembers + 1] = { name = "Shown-OtherRealm", class = "MAGE" }
-	before = guildCalls
+	harness.guildMembers[#harness.guildMembers + 1] = { name = "Shown-OtherRealm", class = "MAGE" }
+	before = harness.guildCalls
 	RosterEvent("GUILD_ROSTER_UPDATE")
-	equal(guildCalls, before + #guildMembers, "an open window rebuilds the guild part on the event")
+	equal(harness.guildCalls, before + #harness.guildMembers, "an open window rebuilds the guild part on the event")
 	equal(api.ClassOf("Shown"), "MAGE", "and the new member resolves")
 	unitNames.party2 = { "Latish", "OtherRealm" }
 	unitClasses.party2 = "WARRIOR"
-	before = guildCalls
+	before = harness.guildCalls
 	RosterEvent("GROUP_ROSTER_UPDATE")
-	equal(guildCalls, before, "a group event does not read the guild roster")
+	equal(harness.guildCalls, before, "a group event does not read the guild roster")
 	equal(api.ClassOf("Latish-OtherRealm"), "WARRIOR", "the new group member resolves")
 	equal(api.ClassOf("Second"), "PRIEST", "and the guild part is still there")
 end
 
--- Sharing is opt-out ---------------------------------------------------------------------------------------------
-do
-	Client()
-	local api = Load()
-	local saved = {}
-	local function shareSpec(key, value)
-		return {
-			title = key,
-			metric = "Metric " .. key,
-			icon = ICON,
-			board = function()
-				return { row("Me", 1, nil, true, "HUNTER") }
-			end,
-			sharing = function()
-				if value == "error" then
-					error("no saved setting")
-				end
-				return value
-			end,
-			setSharing = function(flag)
-				saved[key] = flag
-			end,
-		}
-	end
-
-	api:Register("missing", shareSpec("missing", nil))
-	api:Open("missing")
-	check(api.window.share:IsShown(), "a board with a switch shows it")
-	check(api.window.share:GetChecked(), "a missing setting reads as on")
-	api.window.share:SetChecked(false)
-	api.window.share:Click()
-	equal(saved.missing, false, "unchecking still saves an explicit false")
-
-	api:Register("off", shareSpec("off", false))
-	api:Open("off")
-	check(api.window.share:GetChecked() == false, "an explicit false reads as off")
-
-	api:Register("off", shareSpec("off", nil))
-	api:Register("on", shareSpec("on", true))
-	api:Open("overall")
-	check(api.window.share:GetChecked(), "Overall is on when no board is off")
-	api:Open("overall")
-	check(api.window.share:GetChecked(), "a missing setting does not uncheck Overall")
-	api:Register("errors", shareSpec("errors", "error"))
-	api:Open("overall")
-	check(api.window.share:GetChecked(), "a share callback that errors reads as on")
-	api:Register("off", shareSpec("off", false))
-	api:Open("overall")
-	check(api.window.share:GetChecked() == false, "one explicit false unchecks Overall")
-end
-
--- The tooltip ----------------------------------------------------------------------------------------------------
-do
-	Client()
-	local api = Load()
-	api:Register(
-		"one",
-		spec("one", {
-			row("Abe-OtherRealm", 100, nil, false, "MAGE"),
-			row("Me", 90, nil, true, "HUNTER"),
-		}, {
-			row("Abe-OtherRealm", 100, nil, false, "MAGE"),
-			row("Me", 90, nil, true, "HUNTER"),
-		})
-	)
-	api:Register(
-		"two",
-		spec("two", {
-			row("Abe-OtherRealm", 100, nil, false, "MAGE"),
-			row("Me", 90, nil, true, "HUNTER"),
-		}, {
-			row("Abe-OtherRealm", 100, nil, false, "MAGE"),
-			row("Me", 90, nil, true, "HUNTER"),
-		})
-	)
-	api:Register(
-		"wide",
-		spec(
-			"wide",
-			(function()
-				local list = {}
-				for index = 1, 9 do
-					list[index] =
-						row(index == 9 and "Ninth-OtherRealm" or ("Peer" .. index), 100 - index, nil, false, "MAGE")
-				end
-				return list
-			end)(),
-			{}
-		)
-	)
-	unitNames.target = { "Abe", "OtherRealm" }
-	unitNames.ninth = { "Ninth", "OtherRealm" }
-	unitNames.nobody = { "Nobody", "OtherRealm" }
-
-	local hook = env.GameTooltip.hooks.OnTooltipSetUnit
-	equal(#hook, 1, "one unit-tooltip hook")
-	local tip = Create("GameTooltip")
-	tip.unit = "target"
-	hook[1](tip)
-	equal(#tip.lines, 2, "an overall leader gets two lines")
-	check(tip.lines[1].text:find("Forever: 1st overall this week", 1, true), "the gold line")
-	check(tip.lines[1].text:find("|A:challenges-medal-gold:14:14|a", 1, true), "with the medal")
-	equal(tip.lines[1].r, 1, "gold colour")
-	equal(tip.lines[2].text, "one 1st, two 1st", "the per-addon places")
-
-	tip = Create("GameTooltip")
-	tip.unit = "ninth"
-	hook[1](tip)
-	equal(#tip.lines, 1, "a player placing nowhere gets one line")
-	equal(tip.lines[1].text, "Uses Forever addons", "and it says so")
-	equal(tip.lines[1].r, 0.5, "in grey")
-
-	tip = Create("GameTooltip")
-	tip.unit = "nobody"
-	hook[1](tip)
-	equal(rawget(tip, "lines"), nil, "an unknown player adds nothing")
-
-	api.scope = "all"
-	tip = Create("GameTooltip")
-	tip.unit = "target"
-	hook[1](tip)
-	check(tip.lines[1].text:find("Forever: 1st overall", 1, true), "all-time wording")
-	check(not tip.lines[1].text:find("this week", 1, true), "and no week note")
-end
-
--- The modern tooltip hook ----------------------------------------------------------------------------------------
-do
-	Client()
-	local calls = {}
-	env.Enum = { TooltipDataType = { Unit = 7 } }
-	env.TooltipDataProcessor = {
-		AddTooltipPostCall = function(_, kind, handler)
-			calls[#calls + 1] = { kind = kind, handler = handler }
-		end,
-	}
-	local api = Load()
-	equal(#calls, 1, "TooltipDataProcessor gets the unit hook")
-	equal(calls[1].kind, 7, "for unit tooltips only")
-	check(api.tooltipHooked, "the hook is marked installed")
-	equal(env.GameTooltip.hooks.OnTooltipSetUnit, nil, "the widget script is not also hooked")
-	api:Register("guide", spec("guide", { row("Me", 1, nil, true, "HUNTER") }, {}))
-	local tip = Create("GameTooltip")
-	tip.unit = "player"
-	calls[1].handler(tip)
-	equal(#tip.lines, 2, "the processor handler reaches the board")
-	check(tip.lines[1].text:find("Forever: 1st overall this week", 1, true), "with the place")
-
-	api.VERSION = 0
-	local fresh = Load()
-	equal(#calls, 1, "a newer copy takes the hook without installing another")
-	check(fresh.tooltipHooked, "the flag is handed over")
-end
-
--- Version takeover -----------------------------------------------------------------------------------------------
-do
-	Client()
-	local api = Load()
-	api:Register("guide", spec("guide", { row("Me", 1, nil, true, "HUNTER") }, {}))
-	api:Open("guide")
-	local oldWindow = api.window
-	check(oldWindow:IsShown(), "the old window is open")
-
-	-- An older copy in the same environment is replaced by this one, which keeps its registrations.
-	api.VERSION = 0
-	local fresh = Load()
-	check(fresh ~= api, "a newer copy replaces an older global")
-	equal(env.ForeverLeaderboards, fresh, "the new global is published")
-	equal(api.window, oldWindow, "the old API keeps its own window reference")
-	check(oldWindow:IsShown() == false, "the old window is put away")
-	equal(#fresh:Boards(), 1, "registrations survive the takeover")
-	equal(fresh:Boards()[1].key, "guide", "with their keys")
-	check(fresh.tooltipHooked, "the one tooltip hook is handed over")
-	equal(#env.GameTooltip.hooks.OnTooltipSetUnit, 1, "and is not installed twice")
-
-	-- The older copy's own call sites reach the newer window.
-	fresh.VERSION = 2
-	api:Register("late", spec("late", { row("Me", 1, nil, true, "HUNTER") }, {}))
-	equal(#fresh:Boards(), 2, "an old copy's Register joins the new API")
-	api:Open("late")
-	equal(fresh.window.heading.text, "Metric late", "an old copy's Open reaches the new window")
-	api:Toggle()
-	check(fresh.window:IsShown() == false, "an old copy's Toggle reaches the new window")
-
-	-- A copy older than the published global joins it instead of replacing it.
-	fresh.VERSION = 9
-	local joined = Load()
-	equal(env.ForeverLeaderboards, fresh, "a newer global is kept")
-	equal(joined, fresh, "the older file adopts it")
-end
-
-print(("leaderboards_spec: %d checks passed"):format(checks))
+print(("leaderboards_spec: %d checks passed"):format(harness.checks()))

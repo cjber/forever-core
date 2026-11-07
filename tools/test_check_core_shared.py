@@ -21,6 +21,8 @@ CORE = {
     "Core/LeaderboardsData.lua": b"core leaderboards data\n",
     "UI/Leaderboards.lua": b"core leaderboards\n",
     "tests/leaderboards_spec.lua": b"core leaderboards spec\n",
+    "tests/leaderboards_window_spec.lua": b"core leaderboards window spec\n",
+    "tests/leaderboards_harness.lua": b"core leaderboards harness\n",
     "tests/minimap_button_spec.lua": b"core minimap spec\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/check_client_load.py": b"core client load\n",
@@ -78,7 +80,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("16 vendored files match", out)
+        self.assertIn("18 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
@@ -143,7 +145,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("16 vendored files match", out)
+        self.assertIn("18 vendored files match", out)
 
 
 if __name__ == "__main__":
