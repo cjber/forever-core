@@ -50,6 +50,7 @@ class FamilyTest(unittest.TestCase):
             "Everyone whose report or idea ships is thanked by name in the addon's credits and changelog.",
             family.BLOCK,
         )
+        self.assertIn("(https://discord.gg/FpHugGxRJY)", family.BLOCK)
         self.assertTrue(family.BLOCK.startswith(family.START) and family.BLOCK.endswith(family.END))
 
     def test_an_exact_block_in_both_files_passes(self):
