@@ -20,6 +20,7 @@ TRACKING_ATLASES = {
     "ammunition": "Ammunition",
     "auctioneer": "Auctioneer",
     "banker": "Banker",
+    "battlemaster": "BattleMaster",
     "class": "Class",
     "flightmaster": "FlightMaster",
     "food": "Food",

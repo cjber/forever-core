@@ -11,6 +11,7 @@
 
 ## [0.4.26] - 2026-11-07
 - **Leaderboards show full names.** Rows and tooltips now draw a player's first name and surname with the space the client's own name formatting uses, taken from the sender and saved beside the compacted identity key so no saved data moves. A row saved before this change splits at its single inner capital; the next message from that player replaces it. (cjber/forever-core#179)
+- **Banned art now fails a mock at render time.** `wowmock.Ui.texture` and `Ui.atlas` check every path, atlas name and resolved FileDataID against the shared blacklist and raise `BannedAsset` naming the art and why, so a render from a scratch script or an f-string-built name fails the same way the repo gate does. The blanket `interface/minimap/` exemption is gone: map content stays exempt, the three LibDBIcon minimap-button pieces stay allowlisted by name, and the 2004 tracking icons under `interface/minimap/tracking/` fail and point at the atlas of the same name (`Repair`, `Banker`, `Innkeeper`, and the rest). The empty equipment-slot art the client returns from `C_PaperDollInfo.GetInventorySlotInfo` is exempt, as the game's own character pane draws it. (cjber/forever-core#182)
 
 ## [0.4.25] - 2026-11-07
 - **The Forever Leaderboards window opens.** `/flb` and `/forever` raised a Lua error on first open because the list's rows had no height; the rows now have a fixed height. (#174)
