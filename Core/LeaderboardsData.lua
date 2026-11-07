@@ -86,12 +86,36 @@ function Data.Identity(name, realm)
 	return (plainRealm and (plainName .. "-" .. plainRealm) or plainName):lower()
 end
 
+-- Forever's client returns the surname as UnitName's second return. Blizzard's NameUtil joins the two with
+-- Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR; without that constant the second return is
+-- the realm, as on a client with no surname, so only the first return is the player's name.
+---@return string?
+local function NameSeparator()
+	local constants = rawget(_G, "Constants")
+	local separators = type(constants) == "table" and constants.CharacterNameSeparatorConsts
+	local separator = type(separators) == "table" and separators.CHARACTERNAME_SURNAME_SEPARATOR
+	if type(separator) == "string" and separator ~= "" then
+		return separator
+	end
+end
+
+---@param unit string
+---@return string?
+local function UnitDisplayName(unit)
+	local name, surname = UnitName(unit)
+	if type(name) ~= "string" or name == "" then
+		return nil
+	end
+	local separator = NameSeparator()
+	if separator and type(surname) == "string" and surname ~= "" then
+		return name .. separator .. surname
+	end
+	return name
+end
+
 ---@return string?
 function Data.OwnName()
-	local name = UnitName and UnitName("player")
-	if type(name) == "string" and name ~= "" then
-		return name
-	end
+	return UnitDisplayName("player")
 end
 
 -- Other players' rows carry only a name, and the wire format has no class to add. The client already knows who is what
@@ -156,7 +180,7 @@ end
 local function BuildGroup()
 	local map = {}
 	local function Remember(unit)
-		local key = ShortName(UnitName(unit))
+		local key = ShortName(UnitDisplayName(unit))
 		if key then
 			local class = UnitClassToken(unit)
 			if class then
@@ -307,6 +331,24 @@ local function Revisions(api)
 	return sum
 end
 
+-- A player heard on several boards may arrive as a full display name on one and a compacted key on another. Keep the
+-- full name when either board supplies one, so a consumer's older row never shortens a peer's name.
+---@param current string?
+---@param candidate any
+---@return string?
+local function BetterName(current, candidate)
+	if type(candidate) ~= "string" or candidate == "" then
+		return current
+	end
+	if type(current) ~= "string" or current == "" then
+		return candidate
+	end
+	if candidate:find("%s") and not current:find("%s") then
+		return candidate
+	end
+	return current
+end
+
 -- Ranked overall rows, summed from each board's own rank order: 10, 8, 6, 5, 4, 3, 2, 1 points per place. Only
 -- players who placed appear; a player on a board but outside the points is found by Standing and gets no row.
 ---@param api ForeverLeaderboardsAPI
@@ -324,7 +366,11 @@ local function Build(api, scope)
 		local seen = {}
 		for index, row in ipairs(rows) do
 			local name = type(row) == "table" and row.name
-			local identity = Data.Identity(name)
+			local identity = type(row) == "table"
+				and type(row.identity) == "string"
+				and row.identity ~= ""
+				and row.identity
+			identity = identity or Data.Identity(name)
 			if identity and not seen[identity] then
 				seen[identity] = true
 				local player = players[identity]
@@ -340,7 +386,7 @@ local function Build(api, scope)
 					}
 					players[identity], order[#order + 1] = player, identity
 				end
-				player.name = name
+				player.name = BetterName(player.name, name)
 				if type(row.class) == "string" and row.class ~= "" then
 					player.class = row.class
 				end
@@ -374,6 +420,7 @@ local function Build(api, scope)
 		player.rank = index
 		rows[index] = {
 			name = player.name,
+			identity = player.identity,
 			class = player.class or Data.ClassOf(player.name),
 			value = player.points,
 			extra = player.boards .. " " .. L[player.boards == 1 and "board" or "boards"],
@@ -462,16 +509,21 @@ function Data.AddTooltip(api, tooltip)
 	if not ok or type(unit) ~= "string" then
 		return
 	end
-	local name, realm = UnitName(unit)
+	local name, surname = UnitName(unit)
 	local canAccess = rawget(_G, "canaccessvalue")
 	if
 		type(name) ~= "string"
 		or name == ""
-		or (canAccess and (not canAccess(name) or (realm ~= nil and not canAccess(realm))))
+		or (canAccess and (not canAccess(name) or (surname ~= nil and not canAccess(surname))))
 	then
 		return
 	end
-	local identity = Data.Identity(realm and realm ~= "" and (name .. "-" .. realm) or name)
+	local separator = NameSeparator()
+	local lookup = name
+	if type(surname) == "string" and surname ~= "" then
+		lookup = name .. (separator or "-") .. surname
+	end
+	local identity = Data.Identity(lookup)
 	local standing = identity and Data.Standing(api, identity, api.scope)
 	if not standing or not standing.found then
 		return

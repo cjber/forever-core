@@ -16,7 +16,8 @@ local _, ns = ...
 -- PeerStats.Listen(owner, config) observes config.addon's rows without taking over that addon's sender. Its
 -- registration is private to owner, and it never sends a snapshot, even if one was supplied.
 --
--- Saved layout: db[sender][metric][subject] = { value = n, eventUnix = n }.
+-- Saved layout: db[sender][metric][subject] = { value = n, eventUnix = n }, with the sender's display name saved
+-- beside the rows under DISPLAY_KEY. Keys stay compacted, so identity matching and saved data never move.
 -- Wire v1 on prefix WFAStats: "1|addon|metric|subject|value|unix", GUILD and the group channel only, and received
 -- rows are never re-sent. A foreign addon's rows are ignored, so no suite-wide metric list exists.
 --
@@ -26,13 +27,16 @@ local _, ns = ...
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
-local MANAGER_VERSION = 5
+local MANAGER_VERSION = 6
 
 -- Weekly baselines live beside the cumulative rows: `record.week`/`record.weekUnix` hold the first value heard this
 -- week, and the player's own baseline sits under WEEKLY_KEY in the same metric/subject layout. Older saved tables have
 -- neither, and both are optional, so an older copy still reads every row it wrote.
 local WEEK_SECONDS = 7 * 86400
 local WEEKLY_KEY = "\1week"
+-- The display name saved beside a peer's metric rows. A metric name cannot contain a control byte, so this can never
+-- collide with one.
+local DISPLAY_KEY = "\1name"
 
 local MAX_PAYLOAD = 128
 local MAX_METRIC = 32
@@ -180,11 +184,35 @@ local function LocalRealm()
 	end
 end
 
-local function OwnName()
-	local name = UnitName and UnitName("player")
-	if type(name) == "string" and name ~= "" then
-		return name
+-- Forever's client returns the surname as UnitName's second return. Blizzard's NameUtil joins the two with
+-- Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR; without that constant the second return is
+-- the realm, as on a client with no surname, so only the first return is the player's name.
+---@return string|nil
+local function NameSeparator()
+	local constants = rawget(_G, "Constants")
+	local separators = type(constants) == "table" and constants.CharacterNameSeparatorConsts
+	local separator = type(separators) == "table" and separators.CHARACTERNAME_SURNAME_SEPARATOR
+	if type(separator) == "string" and separator ~= "" then
+		return separator
 	end
+end
+
+---@param unit string
+---@return string|nil
+local function UnitDisplayName(unit)
+	local name, surname = UnitName(unit)
+	if type(name) ~= "string" or name == "" then
+		return nil
+	end
+	local separator = NameSeparator()
+	if separator and type(surname) == "string" and surname ~= "" then
+		return name .. separator .. surname
+	end
+	return name
+end
+
+local function OwnName()
+	return UnitDisplayName("player")
 end
 
 local function Readable(name, realm)
@@ -215,6 +243,52 @@ local function Identity(sender)
 	end
 	local key = realm and (name .. "-" .. realm) or name
 	return key, key:lower()
+end
+
+-- The sender's name as received, without its realm. The key stays compacted; this is only what a row draws.
+---@param sender any
+---@return string|nil
+local function DisplayName(sender)
+	if type(sender) ~= "string" or sender == "" or #sender > MAX_NAME or sender:find("[%c|]") then
+		return nil
+	end
+	local name = sender:match("^([^%-]+)%-") or sender
+	return name ~= "" and name or nil
+end
+
+-- A display name read back from the saved table. It is drawn as it arrived, so spaces survive.
+---@param value any
+---@return string|nil
+local function SavedDisplay(value)
+	if type(value) ~= "string" or value == "" or #value > MAX_NAME or value:find("[%c|]") then
+		return nil
+	end
+	return value
+end
+
+-- The display for a peer saved before display names: split the compacted name at its single inner ASCII capital
+-- ("DirtyjokeLovetties" becomes "Dirtyjoke Lovetties"), else leave the saved key as it is. The next message from that
+-- player replaces it.
+---@param key string
+---@return string
+local function KeyDisplay(key)
+	local name, realm = key:match("^([^%-]+)%-(.+)$")
+	name = name or key
+	local split
+	for index = 2, #name - 1 do
+		local byte = name:byte(index)
+		if byte >= 65 and byte <= 90 then
+			if split then
+				return key
+			end
+			split = index
+		end
+	end
+	if not split then
+		return key
+	end
+	local spaced = name:sub(1, split - 1) .. " " .. name:sub(split)
+	return realm and (spaced .. "-" .. realm) or spaced
 end
 
 -- The player's own identity, normalised exactly as an incoming sender, so a Forever two-part name ("Hel Io") and the
@@ -592,9 +666,12 @@ local function SanitizeStore(self, raw)
 		local peerRaw = raw[key]
 		if clean and identity and identity ~= own and type(peerRaw) == "table" then
 			local peer = merged[identity]
+			local display = SavedDisplay(peerRaw[DISPLAY_KEY])
 			if not peer then
-				peer = { key = clean, identity = identity, rows = {} }
+				peer = { key = clean, identity = identity, rows = {}, display = display }
 				merged[identity], order[#order + 1] = peer, identity
+			elseif not peer.display then
+				peer.display = display
 			end
 			for _, metric in ipairs(self.metricList) do
 				local subjects = peerRaw[metric]
@@ -696,6 +773,9 @@ local function SanitizeStore(self, raw)
 	self.index, self.latest, self.peerCount = {}, {}, #peers
 	for _, peer in ipairs(peers) do
 		local saved = {}
+		if peer.display then
+			saved[DISPLAY_KEY] = peer.display
+		end
 		for _, row in ipairs(peer.list) do
 			saved[row.metric] = saved[row.metric] or {}
 			saved[row.metric][row.subject] =
@@ -970,13 +1050,14 @@ local function EvictStalePeer(self)
 end
 
 ---@param self ForeverPeerStatsInstance
-local function Apply(self, key, identity, config, metric, subject, value, unix)
+local function Apply(self, key, identity, display, config, metric, subject, value, unix)
 	local store = self.store
 	if not store then
 		return false, "disabled"
 	end
 	local peerKey = self.index[identity]
 	local peer = peerKey and store[peerKey]
+	local changed = false
 	if not peer then
 		if self.peerCount >= MAX_PEERS and not EvictStalePeer(self) then
 			return false, "peers"
@@ -984,25 +1065,41 @@ local function Apply(self, key, identity, config, metric, subject, value, unix)
 		peer = {}
 		store[key], self.index[identity] = peer, key
 		self.peerCount = self.peerCount + 1
+		changed = true
+	end
+	-- The display name is the sender's own spelling, saved beside the compacted key. A stale row still replaces an
+	-- older row's missing or run-together name.
+	if display and peer[DISPLAY_KEY] ~= display then
+		peer[DISPLAY_KEY] = display
+		changed = true
 	end
 	local subjects = peer[metric]
 	local record = subjects and subjects[subject]
 	if record then
 		if not Better(config.first, record, value, unix) then
+			if changed then
+				self.revision = self.revision + 1
+				return true
+			end
 			return false, "stale"
 		end
 		record.value, record.eventUnix = value, unix
 	else
 		local total, inMetric = 0, 0
 		for name, rows in pairs(peer) do
-			for _ in pairs(rows) do
-				total = total + 1
-				if name == metric then
-					inMetric = inMetric + 1
+			if type(rows) == "table" then
+				for _ in pairs(rows) do
+					total = total + 1
+					if name == metric then
+						inMetric = inMetric + 1
+					end
 				end
 			end
 		end
 		if total >= MAX_ROWS or inMetric >= MAX_SUBJECTS then
+			if changed then
+				self.revision = self.revision + 1
+			end
 			return false, "rows"
 		end
 		subjects = subjects or {}
@@ -1061,7 +1158,7 @@ function Instance:Receive(prefix, payload, channel, sender)
 	if not value or not unix then
 		return false, "value"
 	end
-	return Apply(self, key, identity, config, metric, subject, value, unix)
+	return Apply(self, key, identity, DisplayName(sender), config, metric, subject, value, unix)
 end
 
 -- A deep copy of every cached peer row in the saved layout; empty while disabled.
@@ -1072,19 +1169,35 @@ function Instance:Shared()
 	end
 	for peer, metrics in pairs(self.store) do
 		copy[peer] = {}
+		local display = SavedDisplay(metrics[DISPLAY_KEY])
+		if display then
+			copy[peer][DISPLAY_KEY] = display
+		end
 		for metric, subjects in pairs(metrics) do
-			copy[peer][metric] = {}
-			for subject, record in pairs(subjects) do
-				copy[peer][metric][subject] = {
-					value = record.value,
-					eventUnix = record.eventUnix,
-					week = record.week,
-					weekUnix = record.weekUnix,
-				}
+			if type(subjects) == "table" then
+				copy[peer][metric] = {}
+				for subject, record in pairs(subjects) do
+					copy[peer][metric][subject] = {
+						value = record.value,
+						eventUnix = record.eventUnix,
+						week = record.week,
+						weekUnix = record.weekUnix,
+					}
+				end
 			end
 		end
 	end
 	return copy
+end
+
+-- What a peer's row draws: the saved display name, else the old key split at its single inner ASCII capital.
+---@param self ForeverPeerStatsInstance
+---@param key string
+---@return string
+local function PeerDisplay(self, key)
+	local peer = self.store and self.store[key]
+	local saved = type(peer) == "table" and SavedDisplay(peer[DISPLAY_KEY])
+	return saved or KeyDisplay(key)
 end
 
 -- Ranked rows for one metric and subject: the personal row always, peers only while enabled. A first metric ranks by
@@ -1114,7 +1227,7 @@ function Instance:Board(metric, subject, localValue, localEventUnix)
 			local record = subjects and subjects[subject]
 			if record and identity ~= rows[1].identity then
 				rows[#rows + 1] = {
-					name = key,
+					name = PeerDisplay(self, key),
 					identity = identity,
 					value = record.value,
 					eventUnix = record.eventUnix,
@@ -1248,7 +1361,7 @@ function Instance:WeekBoard(metric, subject, localValue, localEventUnix)
 					weekly = math.max(0, record.value - baseline)
 				end
 				rows[#rows + 1] = {
-					name = key,
+					name = PeerDisplay(self, key),
 					identity = identity,
 					value = weekly,
 					eventUnix = record.eventUnix,

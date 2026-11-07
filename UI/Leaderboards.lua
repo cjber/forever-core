@@ -19,6 +19,7 @@ local _, ns = ...
 
 ---@class ForeverLeaderboardsRow
 ---@field name string the player's display name
+---@field identity? string the compacted key the row was ranked under, when the board supplies one
 ---@field class? string a RAID_CLASS_COLORS key, e.g. "HUNTER"
 ---@field value number the number in the right-hand column
 ---@field extra? string the grey value before it, e.g. "377 total" or "5 boards"
@@ -285,6 +286,7 @@ local function Rows(key, scope)
 		for _, row in ipairs(api:Overall(scope)) do
 			rows[#rows + 1] = {
 				name = row.name,
+				identity = row.identity,
 				class = type(row.class) == "string" and row.class or data.ClassOf(row.name),
 				value = row.value,
 				extra = row.extra,
@@ -296,7 +298,7 @@ local function Rows(key, scope)
 		local placed = false
 		local own = Identity(OwnName())
 		for _, row in ipairs(rows) do
-			if not row.you and own and Identity(row.name) == own then
+			if not row.you and own and (row.identity or Identity(row.name)) == own then
 				row.you = true
 			end
 			placed = placed or row.you

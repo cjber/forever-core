@@ -282,7 +282,60 @@ do
 	equal(api:Standing("Ninth", "week").points, 0, "with no points")
 end
 
--- The overall cache ---------------------------------------------------------------------------------------------
+-- Full Forever names in the overall rows --------------------------------------------------------------------------
+do
+	Client()
+	local env = harness.env
+	harness.unitNames.player = { "Hel", "Io" }
+	env.Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+	local api, ns = Load()
+	equal(ns.LeaderboardsData.OwnName(), "Hel Io", "the own name joins both UnitName returns")
+
+	local rows = {}
+	for index = 1, 8 do
+		rows[index] = row("Peer" .. index, 100 - index, nil, false, "MAGE")
+	end
+	rows[9] = row("HelIo", 1, nil, true, "HUNTER")
+	api:Register("ninth", spec("ninth", rows, {}))
+	api:Open("overall")
+	local own
+	for _, button in ipairs(api.window.scroll.buttons) do
+		if button.nameText.text == "Hel Io (you)" then
+			own = button
+		end
+	end
+	check(own ~= nil, "the player's row is built from both returns")
+	check(api:Standing("HelIo", "week").found, "the compacted key still finds the player")
+end
+
+-- A display name and its compacted key are one player -------------------------------------------------------------
+do
+	Client()
+	local api = Load()
+	api:Register("display", spec("display", { row("Dirtyjoke Lovetties", 10, nil, false, "MAGE") }, {}))
+	api:Register("compact", spec("compact", { row("DirtyjokeLovetties", 9, nil, false, "MAGE") }, {}))
+	local overall = api:Overall("week")
+	equal(#overall, 1, "the spaced name and the compacted key are one player")
+	equal(overall[1].name, "Dirtyjoke Lovetties", "the display name is what the row draws")
+	equal(overall[1].value, 20, "both boards score")
+	equal(overall[1].identity, "dirtyjokelovetties", "the compacted identity is kept")
+end
+
+-- Two peers whose display names match keep their own identities ---------------------------------------------------
+do
+	Client()
+	local api = Load()
+	api:Register(
+		"realm",
+		spec("realm", { { name = "Abe", identity = "abe-otherrealm", value = 5, class = "MAGE" } }, {})
+	)
+	api:Register("home", spec("home", { { name = "Abe", identity = "abe", value = 4, class = "MAGE" } }, {}))
+	local rows = api:Overall("week")
+	equal(#rows, 2, "two players with the same display name stay apart")
+	equal(rows[1].name, "Abe", "both draw the display name")
+	equal(rows[2].name, "Abe", "both draw the display name")
+end
+
 do
 	Client()
 	local api = Load()

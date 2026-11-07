@@ -132,6 +132,25 @@ do
 	check(not tip.lines[1].text:find("this week", 1, true), "and no week note")
 end
 
+-- A tooltip finds a player by their full Forever name -------------------------------------------------------------
+do
+	Client()
+	local env = harness.env
+	env.Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+	local api = Load()
+	api:Register(
+		"one",
+		spec("one", { row("Hel Io", 100, nil, false, "MAGE") }, { row("Hel Io", 100, nil, false, "MAGE") })
+	)
+	harness.unitNames.target = { "Hel", "Io" }
+	local hook = env.GameTooltip.hooks.OnTooltipSetUnit
+	local tip = Create("GameTooltip")
+	tip.unit = "target"
+	hook[1](tip)
+	equal(#tip.lines, 2, "the name and surname reach the shared standing")
+	check(tip.lines[1].text:find("Forever: 1st overall this week", 1, true), "with their place")
+end
+
 -- The modern tooltip hook ----------------------------------------------------------------------------------------
 do
 	Client()
