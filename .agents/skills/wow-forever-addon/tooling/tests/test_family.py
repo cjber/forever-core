@@ -30,12 +30,19 @@ class FamilyTest(unittest.TestCase):
     def read(self, name):
         return (self.root / name).read_text(encoding="utf-8")
 
-    def test_the_block_lists_the_five_addons_in_order(self):
+    def test_the_block_lists_the_family_in_order(self):
         rows = [URL.match(line) for line in family.BLOCK.splitlines() if line.startswith("| [")]
         self.assertTrue(all(rows))
         self.assertEqual(
             [row[1] for row in rows],
-            ["Shortest Path Forever", "Adventure Guide Forever", "SkillUp Forever", "Legacy Forever", "Tweaks Forever"],
+            [
+                "Shortest Path Forever",
+                "Adventure Guide Forever",
+                "SkillUp Forever",
+                "Legacy Forever",
+                "Tweaks Forever",
+                "Field Guide Forever",
+            ],
         )
         for name, slug, line, issues in ((row[1], row[2], row[3], row[4]) for row in rows):
             self.assertEqual(slug, name.lower().replace(" ", "-"))
