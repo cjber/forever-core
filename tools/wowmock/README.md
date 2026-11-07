@@ -31,5 +31,9 @@ Use `ui.atlas(...)` and `ui.texture(...)` for client art, `ui.font(...)` for the
 shared widget/compositing helpers for native UI chrome. Keep the renderer path configurable so CI and local
 checkouts can point at the same Core source. Do not add hand-drawn replacements for real client art.
 
+`Ui` checks every texture path, resolved FileDataID and atlas name against the suite's asset blacklist and
+raises `wowmock.BannedAsset` naming the asset and the reason. A scene that reaches for banned client art fails
+at render time, wherever the calling script lives and however the name was built.
+
 Read [NOTES.md](NOTES.md) before changing asset lookup or a widget. It records client-specific behavior that
 is easy to misrender, including atlas variants, BLP decoding and nine-slice margins.

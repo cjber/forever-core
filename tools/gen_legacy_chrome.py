@@ -86,6 +86,9 @@ EXEMPT_PREFIXES = (
     "interface/minimap/uieventpoiicons",
     "interface/minimap/vehicle-",
     "interface/taxiframe/",  # flight map nodes and route lines: map content
+    # Empty equipment-slot art: the client hands these out itself through C_PaperDollInfo.GetInventorySlotInfo,
+    # and its own character pane draws them, so an addon showing a slot draws exactly what the game does.
+    "interface/paperdoll/ui-paperdoll-slot-",
     "interface/moneyframe/",  # coin icons
     "interface/lfgframe/lfgicon-",  # dungeon pictures
     "interface/targetingframe/ui-raidtargetingicon",  # raid marker icons

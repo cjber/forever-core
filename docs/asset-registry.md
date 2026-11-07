@@ -42,8 +42,15 @@ The age rule covers Lua, XML and the Python screenshot renderers. A value looks
 like a client path when it starts `Interface\...` or `interface/...` (either slash,
 any case) and may carry `.blp` or `.tga`. Exempt categories are content
 (`interface/icons/`), maps (`interface/worldmap/`, including dungeon and zone
-tiles), portraits, `interface/cursor/` and fonts. `Interface\AddOns\<addon>\...`
-is the addon's own media, not a client file, so the package check owns it.
+tiles), minimap map content (quest and objective blobs, tiles, pings, arrows and
+unit markers), the empty equipment-slot art the client hands out through
+`C_PaperDollInfo.GetInventorySlotInfo` (`interface/paperdoll/ui-paperdoll-slot-*`), portraits, `interface/cursor/` and fonts. Loose minimap chrome is
+not blanket-exempt (the three LibDBIcon button pieces are allowlisted by name),
+and neither are the 2004 tracking icons under `interface/minimap/tracking/`:
+each fails the age rule and points at the atlas of the same name (`Repair`,
+`Banker`, `Innkeeper`, and the rest).
+`Interface\AddOns\<addon>\...` is the addon's own media, not a client file, so
+the package check owns it.
 
 A path under `interface/` that is not in the pinned build's listfile fails as
 `unverifiable client path`, which catches a typo or art from another build. The
@@ -56,10 +63,9 @@ The data is generated offline from the pinned build and committed, so the gate n
 no network:
 
 - `forever_tools/legacy_chrome.txt` — sorted lowercase extensionless paths of
-  banned chrome (7,066 paths, 329 KB).
+  banned chrome (6,775 paths, 317 KB).
 - `forever_tools/interface_paths.txt` — every `interface/` path in the build, as a
-  sorted zlib-compressed base64 set used for the fallback (about 145,000 paths,
-  731 KB).
+  sorted zlib-compressed base64 set used for the fallback (144,998 paths, 731 KB).
 
 Regenerate both after a client art pin change:
 
