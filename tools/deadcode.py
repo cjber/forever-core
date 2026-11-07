@@ -116,7 +116,7 @@ def scan():
                 continue
             reference = match.group(1)
             # A folder followed by a format spec (media/Numbers/%d.tga) means any texture directly inside it.
-            if re.match(r"/%[-+ #0]*\d*(?:\.\d+)?[A-Za-z]", content[match.end() :]):
+            if re.match(r"/+%[-+ #0]*\d*(?:\.\d+)?[A-Za-z]", content[match.end() :]):
                 prefix = reference.casefold() + "/"
                 pattern_media = {
                     key
