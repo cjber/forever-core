@@ -304,14 +304,24 @@ function harness.Client()
 		end,
 		CreateScrollBoxListLinearView = function()
 			return {
-				SetElementInitializer = function(self, _, initializer)
-					self.initializer = initializer
+				SetElementInitializer = function(self, template, initializer)
+					self.template, self.initializer = template, initializer
+				end,
+				SetElementExtent = function(self, extent)
+					self.extent = extent
 				end,
 				SetPadding = noop,
 			}
 		end,
 		ScrollUtil = {
 			InitScrollBoxListWithScrollBar = function(box, _, view)
+				-- The client's ScrollBoxListView reads a row's height from its XML template; a bare frame type has
+				-- none, so it raises "Failed to obtain template info" unless the view has a fixed extent (#174).
+				local bare = view.template == "Button" or view.template == "Frame"
+				assert(
+					not bare or view.extent,
+					"a templateless " .. tostring(view.template) .. " row needs SetElementExtent"
+				)
 				box.view = view
 			end,
 		},
