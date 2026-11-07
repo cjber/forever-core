@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased]
+
+## [0.4.27] - 2026-11-07
 - **Peer stats share only their metrics.** `Instance:Shared()` returned the saved display name beside the metric tables, so an addon looping over a peer row hit a string. It returns the metrics alone again; board rows still draw the full name. (#186)
 
 ## [0.4.26] - 2026-11-07
