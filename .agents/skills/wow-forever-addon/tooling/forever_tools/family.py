@@ -52,6 +52,11 @@ ADDONS = (
         "tweaks-forever",
         "Adds quest automation, rare alerts and merchant options to the game's settings.",
     ),
+    (
+        "Field Guide Forever",
+        "field-guide-forever",
+        "Keeps a cosmetic journal of the creatures you kill, zone by zone.",
+    ),
 )
 
 BLOCK = "\n".join(
