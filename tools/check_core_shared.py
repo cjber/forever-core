@@ -74,6 +74,7 @@ VENDORED = {
     "tests/tracker_combat_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_geometry_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_host_lock_spec.lua": TRACKER_CONSUMERS,
+    "tests/tracker_lock_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_eqot_spec.lua": TRACKER_CONSUMERS,
     "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
