@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- **Peer stats share only their metrics.** `Instance:Shared()` returned the saved display name beside the metric tables, so an addon looping over a peer row hit a string. It returns the metrics alone again; board rows still draw the full name. (#186)
 
 ## [0.4.26] - 2026-11-07
 - **Leaderboards show full names.** Rows and tooltips now draw a player's first name and surname with the space the client's own name formatting uses, taken from the sender and saved beside the compacted identity key so no saved data moves. A row saved before this change splits at its single inner capital; the next message from that player replaces it. (cjber/forever-core#179)

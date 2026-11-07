@@ -312,7 +312,11 @@ do
 		end
 	end
 	equal(peerName, "Dirtyjoke Lovetties", "the board row draws the full name")
-	equal(peers:Shared()["DirtyjokeLovetties-OtherRealm"]["\1name"], "Dirtyjoke Lovetties", "Shared carries it too")
+	equal(peers:Shared()["DirtyjokeLovetties-OtherRealm"]["\1name"], nil, "Shared leaves the display name out")
+	local sharedRow = peers:Shared()["DirtyjokeLovetties-OtherRealm"]
+	for metric, subjects in pairs(sharedRow) do
+		equal(type(subjects), "table", "every value in a Shared row is a metric table: " .. tostring(metric))
+	end
 	local reloaded = make(load(), { db = state.db })
 	local reloadedName
 	for _, row in ipairs(reloaded:Board("total", "all", 1, now)) do
