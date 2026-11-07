@@ -251,13 +251,18 @@ check(tooltipText == "Drag to move", "an unlocked grip offers to be dragged")
 check(label.text == "Forever tracker", "an unlocked grip keeps the tracker's title")
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "an unlocked drag moves and saves")
+grip.scripts.OnLeave(grip)
 
--- Locked: OnDragStart returns before it starts anything, so the column stays put and nothing is saved.
-hostSettings.locked = true
+-- Locked: OnDragStart returns before it starts anything, so the column stays put and nothing is saved. The grip draws
+-- no sentence of its own: the locked text lives only in the tooltip, and the short title returns on hover.
+ns.TrackerHost.SetLocked(true)
 check(ns.TrackerHost.IsLocked(), "lock reads back from the saved settings")
+check(label.text == "", "a locked grip draws no text until it is hovered")
 hover()
 check(tooltipText == "The tracker is locked. Turn off Lock the tracker to move it.", "a locked grip says it is locked")
-check(label.text == tooltipText, "a locked grip's own label says it is locked too")
+check(label.text == "Forever tracker", "a hovered locked grip shows only the tracker's title")
+grip.scripts.OnLeave(grip)
+check(label.text == "", "leaving a locked grip hides its text again")
 local savedX, savedY = hostSettings.x, hostSettings.y
 drag()
 check(not host.moving, "a locked drag never starts moving the column")

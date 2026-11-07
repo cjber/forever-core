@@ -148,13 +148,19 @@ handle.scripts.OnDragStop(handle)
 check(column.moving == false, "letting go stops the move")
 check(#saved == 1, "the drag saves once")
 check(saved[1][1] == 500 and saved[1][2] == -180, "the drag saves the column's screen position")
+handle.scripts.OnLeave(handle)
 
--- Locked: the drag is refused before it starts, so letting go saves nothing.
+-- Locked: the drag is refused before it starts, so letting go saves nothing. The grip draws no sentence of its own:
+-- the long text lives only in the tooltip, and the short title returns only while the pointer is over the grip.
 locked = true
 check(module.Locked(), "lock reads back from the host")
+grip.SetLabel(true)
+check(label.text == "", "a locked grip draws no text until it is hovered")
 hover()
 check(tooltipText == "The tracker is locked. Turn off Lock the tracker to move it.", "a locked grip says so")
-check(label.text == tooltipText, "a locked grip's own label says so too")
+check(label.text == "Forever tracker", "a hovered locked grip shows only the column's title")
+handle.scripts.OnLeave(handle)
+check(label.text == "", "leaving a locked grip hides its text again")
 handle.scripts.OnDragStart(handle)
 check(column.moving == false, "a locked drag never starts")
 column.left, column.top = 510, 910
@@ -165,7 +171,7 @@ locked = false
 grip.SetLabel(false)
 check(label.text == "Forever tracker", "the label follows the switch back to the column's title")
 grip.SetLabel(true)
-check(label.text == "The tracker is locked. Turn off Lock the tracker to move it.", "and to the locked sentence")
+check(label.text == "", "and the locked sentence never returns to the label")
 
 -- Attached, the host moves the column itself, so the grip refuses a drag whether or not Lock is on.
 locked = false
