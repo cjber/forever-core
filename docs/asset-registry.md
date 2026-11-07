@@ -42,8 +42,8 @@ The age rule covers Lua, XML and the Python screenshot renderers. A value looks
 like a client path when it starts `Interface\...` or `interface/...` (either slash,
 any case) and may carry `.blp` or `.tga`. Exempt categories are content
 (`interface/icons/`), maps (`interface/worldmap/`, including dungeon and zone
-tiles), minimap map content (quest and objective blobs, tiles, pings, arrows and
-unit markers), the empty equipment-slot art the client hands out through
+tiles), minimap map content (quest and objective blobs, tiles, pings including
+`ui-minimap-ping-*`, arrows and unit markers), the empty equipment-slot art the client hands out through
 `C_PaperDollInfo.GetInventorySlotInfo` (`interface/paperdoll/ui-paperdoll-slot-*`), portraits, `interface/cursor/` and fonts. Loose minimap chrome is
 not blanket-exempt (the three LibDBIcon button pieces are allowlisted by name),
 and neither are the 2004 tracking icons under `interface/minimap/tracking/`:
@@ -63,7 +63,7 @@ The data is generated offline from the pinned build and committed, so the gate n
 no network:
 
 - `forever_tools/legacy_chrome.txt` — sorted lowercase extensionless paths of
-  banned chrome (6,775 paths, 317 KB).
+  banned chrome (6,772 paths, 317 KB).
 - `forever_tools/interface_paths.txt` — every `interface/` path in the build, as a
   sorted zlib-compressed base64 set used for the fallback (144,998 paths, 731 KB).
 

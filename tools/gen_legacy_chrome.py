@@ -72,6 +72,7 @@ EXEMPT_PREFIXES = (
     "interface/minimap/override_art/",
     "interface/minimap/partyraidblips",
     "interface/minimap/ping",
+    "interface/minimap/ui-minimap-ping",
     "interface/minimap/poiicons",
     "interface/minimap/raid",
     "interface/minimap/rotating-minimap",

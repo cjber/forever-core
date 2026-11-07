@@ -49,13 +49,16 @@ class LegacyChromeAgeTest(unittest.TestCase):
             ],
         )
         self.assertIn("use the Banker atlas of the same name", self.messages("Interface/Minimap/Tracking/Banker")[0])
+        self.assertIn("use the BattleMaster atlas", self.messages("Interface/Minimap/Tracking/BattleMaster")[0])
 
-    def test_minimap_map_content_stays_exempt(self):
+    def test_map_content_and_client_slot_art_stay_exempt(self):
         for value in (
             "Interface\\Minimap\\UI-QuestBlobMinimap-Inside",
             "Interface\\Minimap\\ObjectIcons",
             "Interface\\Minimap\\POIIcons",
             "Interface\\Minimap\\Ping\\Ping2",
+            "Interface\\Minimap\\UI-Minimap-Ping-Expand",
+            "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head",
             "Interface\\Minimap\\Minimap_Chest_Elite",
         ):
             with self.subTest(value=value):

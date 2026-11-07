@@ -5295,9 +5295,6 @@ interface/minimap/ui-minimap-minimizebuttonup-disabled
 interface/minimap/ui-minimap-minimizebuttonup-down
 interface/minimap/ui-minimap-minimizebuttonup-highlight
 interface/minimap/ui-minimap-minimizebuttonup-up
-interface/minimap/ui-minimap-ping-center
-interface/minimap/ui-minimap-ping-expand
-interface/minimap/ui-minimap-ping-rotate
 interface/minimap/ui-minimap-targetoverlay
 interface/minimap/ui-minimap-worldmapsquare
 interface/minimap/ui-minimap-zoombutton-highlight
