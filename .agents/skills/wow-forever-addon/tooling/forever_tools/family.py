@@ -1,10 +1,11 @@
 """The shared "The Forever addons" block in every addon's README.md and docs/curseforge.md (WFA-32).
 
-`BLOCK` is the one copy: a heading, a sentence and a table of the five addons in the family's order, each name linked
-to its CurseForge page and its row to the addon's GitHub issues. A line under the table invites bug reports, feature
-requests and pull requests, and says that everyone whose report or idea ships is thanked by name. Each repo places it
-once per file, between `START` and `END`, where it fits that page; `check` fails when a file lacks the markers or the
-text between them differs, so a change here reaches every page through a sync and nothing drifts.
+`BLOCK` is the one copy: a heading, a sentence and a table of the five addons in the family's order, each name linked to
+its CurseForge page and its row to the addon's GitHub issues. A line under the table invites bug reports, feature
+requests and pull requests, and says that everyone whose report or idea ships is thanked by name, and a last line links
+the suite's Discord. Each repo places it once per file, between `START` and `END`, where it fits that page; `check`
+fails when a file lacks the markers or the text between them differs, so a change here reaches every page through a sync
+and nothing drifts.
 
     python3 tools/check_family.py          # check README.md and docs/curseforge.md
     python3 tools/check_family.py --fix    # rewrite the text between the markers (the markers stay where they are)
@@ -71,6 +72,8 @@ BLOCK = "\n".join(
         "",
         "Bug reports, feature requests and pull requests are welcome on each addon's GitHub. Everyone whose report "
         "or idea ships is thanked by name in the addon's credits and changelog.",
+        "",
+        "For help, ideas and each day's release notes, join [cjber's Workshop on Discord](https://discord.gg/FpHugGxRJY).",
         "",  # a blank line ends the table, so no renderer reads the end marker as a row
         END,
     ]
