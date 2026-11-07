@@ -19,6 +19,7 @@ the addon they already have.
 | `tests/tracker_combat_spec.lua` | the column stays still as combat starts and ends |
 | `tests/tracker_geometry_spec.lua` | the column below the native quests across tracker anchors and scales |
 | `tests/tracker_host_lock_spec.lua` | the grip and the Lock switch on the host |
+| `tests/tracker_lock_spec.lua` | the grip and Lock switch contract on the lock module |
 | `tools/fetch_tracker_ui.py` | the pinned Blizzard tracker source the host spec runs against |
 | `UI/Report.lua` | the shared report and issue composer |
 | `tests/report_spec.lua` | the report and issue contract |
