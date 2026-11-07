@@ -39,6 +39,43 @@ class LegacyChromeAgeTest(unittest.TestCase):
     def test_a_modern_client_texture_passes(self):
         self.assertEqual(self.messages("Interface\\Minimap\\UI-BonusObjectiveBlob-Outside"), [])
 
+    def test_minimap_tracking_icons_fail_with_their_atlas(self):
+        messages = self.messages("Interface\\Minimap\\Tracking\\Repair")
+        self.assertEqual(
+            messages,
+            [
+                "asset-blacklist: interface/minimap/tracking/repair: "
+                "pre-Legion UI chrome (FileDataID < 1000000); use the Repair atlas of the same name instead"
+            ],
+        )
+        self.assertIn("use the Banker atlas of the same name", self.messages("Interface/Minimap/Tracking/Banker")[0])
+
+    def test_minimap_map_content_stays_exempt(self):
+        for value in (
+            "Interface\\Minimap\\UI-QuestBlobMinimap-Inside",
+            "Interface\\Minimap\\ObjectIcons",
+            "Interface\\Minimap\\POIIcons",
+            "Interface\\Minimap\\Ping\\Ping2",
+            "Interface\\Minimap\\Minimap_Chest_Elite",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(self.messages(value), [])
+
+    def test_minimap_chrome_stays_under_the_age_rule(self):
+        messages = self.messages("Interface\\Minimap\\UI-Minimap-Border")
+        self.assertTrue(any("pre-Legion UI chrome" in message for message in messages))
+
+    def test_libdbicon_minimap_pieces_are_allowlisted_but_tracking_still_fails(self):
+        for value in (
+            "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
+            "Interface\\Minimap\\Minimap-TrackingBorder",
+            "Interface\\Minimap\\UI-Minimap-Background",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(self.messages(value), [])
+        messages = self.messages("Interface\\Minimap\\Tracking\\Repair")
+        self.assertTrue(any("use the Repair atlas of the same name instead" in message for message in messages))
+
     def test_an_allowlisted_raid_target_icon_passes(self):
         for name in ("UI-RaidTargetingIcon_1", "UI-RaidTargetingIcons"):
             with self.subTest(name=name):

@@ -56,6 +56,13 @@ class AssetsTest(unittest.TestCase):
         findings = assets.check('local texture = "Interface\\\\Buttons\\\\NoSuchTexture"')
         self.assertTrue(any("unverifiable client path" in message for _, message in findings))
 
+    def test_minimap_tracking_icons_point_at_their_atlas(self):
+        self.assertEqual(
+            assets.problem("Interface\\Minimap\\Tracking\\Repair"),
+            "pre-Legion UI chrome (FileDataID < 1000000); use the Repair atlas of the same name instead",
+        )
+        self.assertIsNone(assets.problem("Interface\\Minimap\\POIIcons"))
+
     def test_profession_crafting_progress_bar_atlases(self):
         for value in ("Profession-ProgressBar-BG", "Profession-ProgressBar-frame", "profession-progressbar-bg"):
             with self.subTest(value=value):

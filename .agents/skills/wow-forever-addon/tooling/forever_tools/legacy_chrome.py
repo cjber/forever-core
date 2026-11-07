@@ -16,6 +16,21 @@ PINNED_BUILD = "1.60.1.70124"
 LEGACY_FDID_LIMIT = 1_000_000
 TEXTURE_EXTENSIONS = (".blp", ".tga")
 DATA = Path(__file__).resolve().parent
+TRACKING_ATLASES = {
+    "ammunition": "Ammunition",
+    "auctioneer": "Auctioneer",
+    "banker": "Banker",
+    "class": "Class",
+    "flightmaster": "FlightMaster",
+    "food": "Food",
+    "innkeeper": "Innkeeper",
+    "mailbox": "Mailbox",
+    "poisons": "Poisons",
+    "profession": "Profession",
+    "reagents": "Reagents",
+    "repair": "Repair",
+    "stablemaster": "StableMaster",
+}
 
 # Old chrome with no modern atlas or template. Keep one line per entry and say why it is still art
 # the suite may draw. Everything else old is fixed, not allowlisted.
@@ -34,6 +49,9 @@ ALLOWLIST = {
     "interface/framegeneral/ui-background-rock": "wowmock's world-map rock backdrop; no equivalent atlas",
     "interface/helpframe/cs_helptextures": "wowmock's native world-map NavBar sheet",
     "interface/helpframe/cs_helptextures_tile": "wowmock's native world-map NavBar tile",
+    "interface/minimap/minimap-trackingborder": "LibDBIcon's tracking-border art; no atlas is the same piece",
+    "interface/minimap/ui-minimap-background": "LibDBIcon's button background art; no atlas is the same piece",
+    "interface/minimap/ui-minimap-zoombutton-highlight": "LibDBIcon's button highlight art; no atlas is the same piece",
     "interface/questframe/ui-questlog-bookicon": "wowmock's native default world-map portrait",
     "interface/questframe/ui-questtitlehighlight": "wowmock's native menu row highlight",
 }
@@ -89,13 +107,22 @@ def allowed(path: str) -> bool:
     return normalise(path) in ALLOWLIST
 
 
+def _tracking_hint(path: str) -> str:
+    """The atlas that replaced a 2004 minimap tracking icon."""
+    if not path.startswith("interface/minimap/tracking/"):
+        return ""
+    atlas = TRACKING_ATLASES.get(path.rsplit("/", 1)[-1])
+    return f" use the {atlas} atlas of the same name instead" if atlas else " use the atlas of the same name instead"
+
+
 def reason(path: str) -> str | None:
     """Why this client path fails the age rule, or None when it is current, exempt or allowlisted."""
     path = normalise(path)
     if allowed(path):
         return None
     if is_legacy(path):
-        return f"pre-Legion UI chrome (FileDataID < {LEGACY_FDID_LIMIT}); use an atlas"
+        hint = _tracking_hint(path)
+        return f"pre-Legion UI chrome (FileDataID < {LEGACY_FDID_LIMIT});{hint or ' use an atlas'}"
     if not is_known(path):
         return f"unverifiable client path; not in the {PINNED_BUILD} listfile"
     return None
