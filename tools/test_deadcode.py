@@ -103,7 +103,7 @@ class MediaPatternTest(unittest.TestCase):
             (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
             (root / "UI").mkdir()
             (root / "UI/Main.lua").write_text(
-                'local path = string.format("Interface\\AddOns\\X\\media\\Numbers\\%d.tga", n)\n'
+                'local path = string.format("Interface\\\\AddOns\\\\X\\\\media\\\\Numbers\\\\%d.tga", n)\n'
             )
             (root / "media/Numbers").mkdir(parents=True)
             (root / "media/Numbers/1.tga").write_bytes(b"")
