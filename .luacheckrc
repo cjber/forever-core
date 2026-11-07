@@ -190,6 +190,9 @@ read_globals[#read_globals + 1] = "GetLocale"
 read_globals[#read_globals + 1] = "UnitClass"
 read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
+-- LeaderboardsData.lua: the guild roster's classFileName behind a peer row's missing class.
+read_globals[#read_globals + 1] = "GetGuildRosterInfo"
+read_globals[#read_globals + 1] = "GetNumGuildMembers"
 read_globals[#read_globals + 1] = "UISpecialFrames"
 read_globals[#read_globals + 1] = "tContains"
 -- Mover.lua: whether the button of a fine drag is still held.

@@ -17,7 +17,8 @@ end
 
 -- Client mock ----------------------------------------------------------------------------------------------------
 local frames, named = {}, {}
-local unitNames = {}
+local unitNames, unitClasses, guildMembers = {}, {}, {}
+local guildCalls = 0
 local Create
 local function noop() end
 
@@ -223,6 +224,7 @@ local env
 local serverTime, weekRemaining = 1700000000, 100000
 local function Client()
 	frames, named, unitNames = {}, {}, { player = { "Me" } }
+	unitClasses, guildMembers, guildCalls = { player = "HUNTER" }, {}, 0
 	serverTime, weekRemaining = 1700000000, 100000
 	env = setmetatable({
 		UIParent = Create("Frame"),
@@ -248,6 +250,36 @@ local function Client()
 				return found[1], found[2]
 			end
 			return "Me"
+		end,
+		UnitClass = function(unit)
+			local class = unitClasses[unit]
+			if class then
+				return class, class
+			end
+		end,
+		IsInRaid = function()
+			return false
+		end,
+		Ambiguate = function(name, context)
+			if type(name) ~= "string" then
+				return name
+			end
+			if context == "short" then
+				return name:match("^([^%-]+)") or name
+			end
+			return name
+		end,
+		GetNumGuildMembers = function()
+			return #guildMembers
+		end,
+		GetGuildRosterInfo = function(index)
+			guildCalls = guildCalls + 1
+			local member = guildMembers[index]
+			if not member then
+				return nil
+			end
+			-- name, rank, rankIndex, level, class, zone, note, officerNote, online, status, classFileName
+			return member.name, nil, nil, nil, nil, nil, nil, nil, nil, nil, member.class
 		end,
 		GetNormalizedRealmName = function()
 			return "MyRealm"
@@ -287,6 +319,21 @@ local function Client()
 			MAGE = {
 				GetRGB = function()
 					return 0.25, 0.78, 0.92
+				end,
+			},
+			PRIEST = {
+				GetRGB = function()
+					return 1, 1, 1
+				end,
+			},
+			ROGUE = {
+				GetRGB = function()
+					return 1, 0.96, 0.41
+				end,
+			},
+			WARRIOR = {
+				GetRGB = function()
+					return 0.78, 0.61, 0.43
 				end,
 			},
 		},
@@ -686,6 +733,83 @@ do
 	})
 	api:Overall("week")
 	equal(builds, 6, "registering a board rebuilds and calls both")
+end
+
+-- Classes the client already knows --------------------------------------------------------------------------------
+do
+	Client()
+	unitClasses.party1 = "MAGE"
+	unitNames.party1 = { "Groupie", "OtherRealm" }
+	guildMembers = {
+		{ name = "Guilder-OtherRealm", class = "ROGUE" },
+		{ name = "Second", class = "PRIEST" },
+	}
+	local api = Load()
+	api:Register(
+		"classes",
+		spec("classes", {
+			row("Me", 40, nil, true),
+			row("Groupie-OtherRealm", 30, nil, false),
+			row("Guilder", 20, nil, false),
+			row("Nobody-X", 10, nil, false),
+		}, {})
+	)
+	api:Open("classes")
+
+	equal(api.ClassOf("Me"), "HUNTER", "the player's own class comes from UnitClass('player')")
+	equal(api.ClassOf("Groupie-OtherRealm"), "MAGE", "a group member matches regardless of the realm spelling")
+	equal(api.ClassOf("guilder"), "ROGUE", "a guild member comes from the roster's classFileName")
+	equal(api.ClassOf("Nobody"), nil, "an unknown player has no class")
+
+	local window = api.window
+	equal(window.scroll.buttons[1].classIcon.atlas, "groupfinder-icon-class-hunter", "the own row's icon")
+	equal(window.scroll.buttons[2].classIcon.atlas, "groupfinder-icon-class-mage", "the group row's icon")
+	equal(window.scroll.buttons[3].classIcon.atlas, "groupfinder-icon-class-rogue", "the guild row's icon")
+	equal(window.scroll.buttons[3].nameText.textColor[2], 0.96, "and its class colour")
+	check(window.scroll.buttons[4].classIcon:IsShown() == false, "an unknown row has no icon")
+	equal(window.scroll.buttons[4].nameText.textColor[1], 1, "and keeps the neutral colour")
+
+	-- Refreshing the rows repeatedly must not read the guild roster again.
+	local built = guildCalls
+	api:Select("classes")
+	api:Select("overall")
+	api:Select("classes")
+	equal(guildCalls, built, "a refresh reuses the cached classes")
+
+	-- A roster event while the window is closed only marks the cache stale.
+	api:Toggle()
+	check(api:IsShown() == false, "the window is closed")
+	guildMembers[#guildMembers + 1] = { name = "Newbie-OtherRealm", class = "PRIEST" }
+	local before = guildCalls
+	local function RosterEvent(event)
+		for _, widget in ipairs(frames) do
+			local handler = widget.scripts and widget.scripts.OnEvent
+			if handler then
+				handler(widget, event)
+				return
+			end
+		end
+		error("no roster event frame")
+	end
+	RosterEvent("GUILD_ROSTER_UPDATE")
+	equal(guildCalls, before, "a closed window does not read the roster")
+	equal(api.ClassOf("Newbie"), "PRIEST", "but the next lookup rebuilds the guild part")
+	equal(guildCalls, before + #guildMembers, "once, over the whole roster")
+
+	-- While the window is shown the event rebuilds at once, and a group event leaves the guild part alone.
+	api:Open("classes")
+	guildMembers[#guildMembers + 1] = { name = "Shown-OtherRealm", class = "MAGE" }
+	before = guildCalls
+	RosterEvent("GUILD_ROSTER_UPDATE")
+	equal(guildCalls, before + #guildMembers, "an open window rebuilds the guild part on the event")
+	equal(api.ClassOf("Shown"), "MAGE", "and the new member resolves")
+	unitNames.party2 = { "Latish", "OtherRealm" }
+	unitClasses.party2 = "WARRIOR"
+	before = guildCalls
+	RosterEvent("GROUP_ROSTER_UPDATE")
+	equal(guildCalls, before, "a group event does not read the guild roster")
+	equal(api.ClassOf("Latish-OtherRealm"), "WARRIOR", "the new group member resolves")
+	equal(api.ClassOf("Second"), "PRIEST", "and the guild part is still there")
 end
 
 -- Sharing is opt-out ---------------------------------------------------------------------------------------------

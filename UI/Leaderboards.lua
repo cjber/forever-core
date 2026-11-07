@@ -107,6 +107,7 @@ end
 ---@field selected? string the board the window shows
 ---@field window? ForeverLeaderboardsWindow the window once built, for a newer copy to put away
 ---@field tooltipHooked? boolean the one unit-tooltip hook is already installed
+---@field ClassOf fun(name: string): string? the client's class token for a player name, when it knows one
 ---@field registration integer raised with every successful Register, so the data cache notices the board list
 local api = {
 	VERSION = LEADERBOARDS_VERSION,
@@ -261,6 +262,18 @@ function api:Standing(name, scope)
 	return data.Standing(self, name, scope or self.scope)
 end
 
+-- The client's own class for a player name, so a board does not need a ClassOf helper of its own. A name the client has
+-- not heard of returns nil, and the row draws without an icon in the neutral colour.
+---@param name string
+---@return string?
+function api.ClassOf(name)
+	local newer = Newer()
+	if newer then
+		return newer.ClassOf(name)
+	end
+	return data.ClassOf(name)
+end
+
 -- One board's display rows: the caller's order, with the weekly flag for the value column and a rank for the medal.
 ---@param key string
 ---@param scope ForeverLeaderboardsScope
@@ -272,7 +285,7 @@ local function Rows(key, scope)
 		for _, row in ipairs(api:Overall(scope)) do
 			rows[#rows + 1] = {
 				name = row.name,
-				class = row.class,
+				class = type(row.class) == "string" and row.class or data.ClassOf(row.name),
 				value = row.value,
 				extra = row.extra,
 				you = row.you == true,
@@ -296,6 +309,7 @@ local function Rows(key, scope)
 				if standing.found then
 					rows[#rows + 1] = {
 						name = name,
+						class = data.ClassOf(name),
 						value = 0,
 						extra = "0 " .. L["boards"],
 						you = true,
@@ -322,7 +336,7 @@ local function Rows(key, scope)
 			local value = tonumber(row.value)
 			rows[#rows + 1] = {
 				name = name,
-				class = type(row.class) == "string" and row.class or nil,
+				class = type(row.class) == "string" and row.class or data.ClassOf(name),
 				value = value and value == value and value or 0,
 				extra = type(row.extra) == "string" and row.extra or nil,
 				you = row.you == true,
@@ -787,6 +801,29 @@ function api:IsShown()
 	end
 	return self.window ~= nil and self.window:IsShown() == true
 end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Roster classes
+
+-- The client's roster is the only way a stored name gets a class: the group and guild parts live in
+-- Core/LeaderboardsData.lua, built on first need. A roster change rebuilds its part and repaints an open window; while
+-- the window is closed it only marks the part stale, so no event reads the roster for a window nobody is looking at.
+local rosterEvents = CreateFrame("Frame")
+rosterEvents:RegisterEvent("GUILD_ROSTER_UPDATE")
+rosterEvents:RegisterEvent("GROUP_ROSTER_UPDATE")
+rosterEvents:SetScript("OnEvent", function(_, event)
+	local newer = Newer()
+	if newer then
+		return
+	end
+	local part = event == "GUILD_ROSTER_UPDATE" and "guild" or "group"
+	if api:IsShown() then
+		data.RefreshClasses(part)
+		Refresh()
+	else
+		data.InvalidateClasses(part)
+	end
+end)
 
 --------------------------------------------------------------------------------------------------------------------
 -- Tooltip

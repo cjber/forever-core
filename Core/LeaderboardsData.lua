@@ -15,6 +15,9 @@ local _, ns = ...
 ---@field Strings fun(): table<string, string>
 ---@field Identity fun(name: any, realm?: any): string?
 ---@field OwnName fun(): string?
+---@field ClassOf fun(name: any): string?
+---@field RefreshClasses fun(part?: "guild"|"group")
+---@field InvalidateClasses fun(part?: "guild"|"group")
 ---@field WeekStart fun(now: number): number
 ---@field Overall fun(api: ForeverLeaderboardsAPI, scope: ForeverLeaderboardsScope): ForeverLeaderboardsRow[]
 ---@field Standing fun(api: ForeverLeaderboardsAPI, name: string, scope: any): ForeverLeaderboardsStanding
@@ -88,6 +91,160 @@ function Data.OwnName()
 	local name = UnitName and UnitName("player")
 	if type(name) == "string" and name ~= "" then
 		return name
+	end
+end
+
+-- Other players' rows carry only a name, and the wire format has no class to add. The client already knows who is what
+-- class from the units beside the player and the guild roster, so a missing row class is answered from there: the
+-- player's own from UnitClass("player"), a group member by short name, then a guild member from GetGuildRosterInfo's
+-- classFileName. The answers are cached by short name ("Abe-OtherRealm" and "Abe" are one player), the group and guild
+-- parts are built on first need, and a roster event rebuilds its part only while the window is shown.
+local MAX_GUILD_MEMBERS = 2000
+local MAX_CACHED_CLASSES = 512
+local classCache = {}
+local cachedClasses = 0
+local groupClasses = {}
+local guildClasses = {}
+local groupStale, guildStale = true, true
+
+-- A class token is a RAID_CLASS_COLORS key. The client returns the token beside the localized name, and a roster entry
+-- returns it as classFileName; anything else is left to the neutral colour rather than drawn as a broken icon.
+---@param value any
+---@return string?
+local function ClassToken(value)
+	if type(value) ~= "string" or value == "" then
+		return nil
+	end
+	local token = value:upper()
+	local colors = rawget(_G, "RAID_CLASS_COLORS")
+	if type(colors) == "table" and not colors[token] then
+		return nil
+	end
+	return token
+end
+
+-- The name key every source is matched on: the client's short spelling when it can give one, else the part before the
+-- realm, compacted and lowercased like Core/PeerStats.lua's identities.
+---@param name any
+---@return string?
+local function ShortName(name)
+	if type(name) ~= "string" or name == "" then
+		return nil
+	end
+	local short
+	local ambiguate = rawget(_G, "Ambiguate")
+	if type(ambiguate) == "function" then
+		local ok, value = pcall(ambiguate, name, "short")
+		if ok and type(value) == "string" and value ~= "" then
+			short = value
+		end
+	end
+	short = short or name:match("^([^%-]+)%-") or name
+	local key = Compact(short):lower()
+	if key ~= "" then
+		return key
+	end
+end
+
+---@param unit string
+---@return string?
+local function UnitClassToken(unit)
+	local _, class = UnitClass(unit)
+	return ClassToken(class)
+end
+
+local function BuildGroup()
+	local map = {}
+	local function Remember(unit)
+		local key = ShortName(UnitName(unit))
+		if key then
+			local class = UnitClassToken(unit)
+			if class then
+				map[key] = class
+			end
+		end
+	end
+	Remember("player")
+	if IsInRaid and IsInRaid() then
+		for index = 1, 40 do
+			Remember("raid" .. index)
+		end
+	else
+		for index = 1, 4 do
+			Remember("party" .. index)
+		end
+	end
+	groupClasses, groupStale = map, false
+end
+
+local function BuildGuild()
+	local map = {}
+	local total = GetNumGuildMembers and tonumber(GetNumGuildMembers()) or 0
+	local get = GetGuildRosterInfo
+	if type(get) == "function" and total and total > 0 then
+		for index = 1, math.min(total, MAX_GUILD_MEMBERS) do
+			local name, _, _, _, _, _, _, _, _, _, classFileName = get(index)
+			local key = ShortName(name)
+			local class = ClassToken(classFileName)
+			if key and class then
+				map[key] = class
+			end
+		end
+	end
+	guildClasses, guildStale = map, false
+end
+
+-- The player's class when the client can say it, else what a group member's unit or the guild roster says. The cache
+-- keeps only answers it has, so a guild roster that arrives after the first row still fills later ones.
+---@param name any
+---@return string?
+function Data.ClassOf(name)
+	local key = ShortName(name)
+	if not key then
+		return nil
+	end
+	local class = classCache[key]
+	if class then
+		return class
+	end
+	if groupStale then
+		BuildGroup()
+	end
+	class = groupClasses[key]
+	if not class then
+		if guildStale then
+			BuildGuild()
+		end
+		class = guildClasses[key]
+	end
+	if class then
+		if cachedClasses >= MAX_CACHED_CLASSES then
+			classCache, cachedClasses = {}, 0
+		end
+		classCache[key], cachedClasses = class, cachedClasses + 1
+	end
+	return class
+end
+
+-- UI/Leaderboards.lua calls these on the roster events: while the window is shown its part is rebuilt at once, while
+-- it is closed only marked stale so the next row lookup does the work.
+---@param part? "guild"|"group" nil rebuilds both
+function Data.RefreshClasses(part)
+	if part ~= "group" then
+		BuildGuild()
+	end
+	if part ~= "guild" then
+		BuildGroup()
+	end
+end
+
+---@param part? "guild"|"group" nil invalidates both
+function Data.InvalidateClasses(part)
+	if part ~= "group" then
+		guildStale = true
+	end
+	if part ~= "guild" then
+		groupStale = true
 	end
 end
 
@@ -217,7 +374,7 @@ local function Build(api, scope)
 		player.rank = index
 		rows[index] = {
 			name = player.name,
-			class = player.class,
+			class = player.class or Data.ClassOf(player.name),
 			value = player.points,
 			extra = player.boards .. " " .. L[player.boards == 1 and "board" or "boards"],
 			you = player.you == true,
