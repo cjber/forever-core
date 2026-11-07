@@ -26,6 +26,9 @@ The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](too
 client asset extraction, BLP decoding, font and atlas lookup, native widgets and frame compositing. Addon scene
 scripts remain specific to the feature each repo owns.
 
+The Discord release digest lives in [`tools/discord_digest.py`](tools/discord_digest.py) and runs hourly from
+`.github/workflows/discord-digest.yml`.
+
 ## What it does not do
 
 It draws no sections of its own and knows nothing about quests, routes, professions, challenges or creatures. Sections
