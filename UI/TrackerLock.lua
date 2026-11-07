@@ -40,16 +40,26 @@ function TrackerLock.Grip(host, source)
 	local label = grip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	label:SetPoint("CENTER", grip, "CENTER", 0, 0)
 	label:SetText(title)
+	-- While Lock is on the grip draws no sentence of its own: one unclamped FontString centred on the grip is wider
+	-- than the column, so it overlaps the UI below and runs off screen at an edge. The locked sentence lives only in
+	-- the tooltip, which the game keeps on screen; the short title returns only while the pointer is over the grip.
+	local hovered = false
+	local function DrawLabel(isLocked)
+		label:SetText(isLocked and (hovered and title or "") or title)
+	end
 	-- Only a drag this grip started keeps moving, so OnDragStop ignores whatever the host refused to start.
 	local dragging = false
 	grip:SetScript("OnEnter", function(self)
 		local isLocked = TrackerLock.Locked()
-		label:SetText(isLocked and locked or title)
+		hovered = true
+		DrawLabel(isLocked)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText(isLocked and locked or drag)
 		GameTooltip:Show()
 	end)
 	grip:SetScript("OnLeave", function()
+		hovered = false
+		DrawLabel(TrackerLock.Locked())
 		GameTooltip:Hide()
 	end)
 	grip:SetScript("OnDragStart", function()
@@ -75,7 +85,7 @@ function TrackerLock.Grip(host, source)
 			grip:SetShown(value)
 		end,
 		SetLabel = function(value)
-			label:SetText(value and locked or title)
+			DrawLabel(value)
 		end,
 	}
 end
