@@ -96,5 +96,33 @@ class CoreWorktreeTest(unittest.TestCase):
                 )
 
 
+class MediaPatternTest(unittest.TestCase):
+    def test_a_formatted_texture_path_references_its_folder(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+            (root / "UI").mkdir()
+            (root / "UI/Main.lua").write_text(
+                'local path = string.format("Interface\\AddOns\\X\\media\\Numbers\\%d.tga", n)\n'
+            )
+            (root / "media/Numbers").mkdir(parents=True)
+            (root / "media/Numbers/1.tga").write_bytes(b"")
+            (root / "media/Numbers/2.blp").write_bytes(b"")
+            with patch.object(deadcode, "ROOT", root):
+                self.assertEqual(deadcode.scan(), [])
+
+    def test_a_formatted_texture_path_with_no_files_is_an_error(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+            (root / "UI").mkdir()
+            (root / "UI/Main.lua").write_text('local path = ("Interface\\AddOns\\X\\media\\Numbers\\%02d"):format(n)\n')
+            with patch.object(deadcode, "ROOT", root):
+                self.assertEqual(
+                    deadcode.scan(),
+                    [("UI/Main.lua", 1, "media reference does not exist: media/Numbers")],
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
