@@ -1,0 +1,57 @@
+name: Discord digest
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What to post
+        required: true
+        type: choice
+        options: [digest, features]
+        default: features
+      since:
+        description: Backfill start as an ISO time, for a digest
+        required: false
+        type: string
+      dry_run:
+        description: Print the payload instead of posting it
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Post the digest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DISCORD_ANNOUNCE_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_SINCE: ${{ inputs.since }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            now="$(date -u +%Y-%m-%dT%H:00:00Z)"
+            python3 tools/discord_digest.py --mode features --now "$now"
+            if [ "${now:11:2}" = "18" ]; then
+              python3 tools/discord_digest.py --mode digest --now "$now"
+            fi
+          else
+            args=(--mode "${INPUT_MODE:-features}")
+            if [ -n "${INPUT_SINCE:-}" ]; then
+              args+=(--since "$INPUT_SINCE")
+            fi
+            if [ "${INPUT_DRY_RUN:-true}" = "true" ]; then
+              args+=(--dry-run)
+            fi
+            python3 tools/discord_digest.py "${args[@]}"
+          fi
