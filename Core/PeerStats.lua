@@ -184,6 +184,14 @@ local function LocalRealm()
 	end
 end
 
+local function Readable(name, realm)
+	local canAccess = rawget(_G, "canaccessvalue")
+	if canAccess and (not canAccess(name) or not canAccess(realm)) then
+		return nil
+	end
+	return name, realm
+end
+
 -- Forever's client returns the surname as UnitName's second return. Blizzard's NameUtil joins the two with
 -- Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR; without that constant the second return is
 -- the realm, as on a client with no surname, so only the first return is the player's name.
@@ -200,7 +208,7 @@ end
 ---@param unit string
 ---@return string|nil
 local function UnitDisplayName(unit)
-	local name, surname = UnitName(unit)
+	local name, surname = Readable(UnitName(unit))
 	if type(name) ~= "string" or name == "" then
 		return nil
 	end
@@ -213,14 +221,6 @@ end
 
 local function OwnName()
 	return UnitDisplayName("player")
-end
-
-local function Readable(name, realm)
-	local canAccess = rawget(_G, "canaccessvalue")
-	if canAccess and (not canAccess(name) or not canAccess(realm)) then
-		return nil
-	end
-	return name, realm
 end
 
 -- The saved key and the lowercase identity for a sender. Spaces and hyphens leave the realm, and the local realm

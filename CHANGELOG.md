@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.4.28] - 2026-11-07
+- **Peer stats read a player's name through the secret guard.** The shared PeerStats vendored into every addon called `UnitName` without the `Readable` guard in `UnitDisplayName`, so the consumer addons' secret lint failed. The read now goes through `Readable`, and the guard is declared above its first use.
+
 ## [0.4.27] - 2026-11-07
 - **Peer stats share only their metrics.** `Instance:Shared()` returned the saved display name beside the metric tables, so an addon looping over a peer row hit a string. It returns the metrics alone again; board rows still draw the full name. (#186)
 
