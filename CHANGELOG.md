@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.24] - 2026-11-07
 - **Every Forever addon shares one Forever Leaderboards window.** `/forever` or `/flb` opens the overall standing and each installed addon's board, with a weekly or all-time scope, medal places, class-coloured names, the player's own highlighted row and a sharing switch. Each addon registers a small board callback, so one shared file serves them all. The unit tooltip gains the player's overall place and their per-addon places, or one line for someone who uses the addons without placing. Nothing goes to chat and nothing glows. Overall is cached per scope and rebuilt only when a board's revision, the registered board list or the current week moves, so a tooltip hover is one lookup.
 - **Peer statistics can rank a week.** `Instance:WeekBoard` mirrors `Board` with each value measured from the first value heard since the weekly reset, taken from the client's reset countdown or a Tuesday 15:00 UTC fallback. The player's own baseline is saved in the same layout, so old saved tables still load and gain baselines. `Instance:Revision()` rises whenever a stored row or the player's snapshot changes, and no addon messages are sent in combat; a queued change waits for combat to end.
 - **Peer sharing is opt-out.** A missing saved setting now means on, and only an explicit off stays off, so every Forever addon appears on the boards and in tooltips without a first visit to its settings. The window's "Share my progress" checkbox and the settings pages still turn it off.
