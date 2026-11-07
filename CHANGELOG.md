@@ -1,6 +1,10 @@
 # Changelog
 
 ## [Unreleased]
+
+
+## [0.4.29] - 2026-11-07
+
 - **A locked tracker grip draws no long sentence.** While Lock is on the grip stays blank until the pointer is over it, and the locked sentence lives only in the tooltip, so a column placed at a screen edge no longer has text running off screen or over the UI below. Unlocked behaviour is unchanged. Thanks to MrFIXlT. (#193)
 
 ## [0.4.28] - 2026-11-07
