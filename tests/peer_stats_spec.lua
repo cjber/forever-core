@@ -288,7 +288,90 @@ do
 	equal(ownRows, 1, "the player appears once")
 end
 
--- Receive: cumulative, stale, duplicate, out of order, first ---------------------------------------------------
+-- Display names beside the compacted keys ------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(
+		recv(peers, wire("agf", "total", "all", 42, now), "Dirtyjoke Lovetties-OtherRealm"),
+		true,
+		"a spaced sender is accepted"
+	)
+	equal(state.db["DirtyjokeLovetties-OtherRealm"].total.all.value, 42, "the compacted key still holds the row")
+	equal(
+		state.db["DirtyjokeLovetties-OtherRealm"]["\1name"],
+		"Dirtyjoke Lovetties",
+		"the display name is saved beside the row, without the realm"
+	)
+	local board = peers:Board("total", "all", 1, now)
+	local peerName
+	for _, row in ipairs(board) do
+		if not row.self then
+			peerName = row.name
+		end
+	end
+	equal(peerName, "Dirtyjoke Lovetties", "the board row draws the full name")
+	equal(peers:Shared()["DirtyjokeLovetties-OtherRealm"]["\1name"], "Dirtyjoke Lovetties", "Shared carries it too")
+	local reloaded = make(load(), { db = state.db })
+	local reloadedName
+	for _, row in ipairs(reloaded:Board("total", "all", 1, now)) do
+		if row.identity == "dirtyjokelovetties-otherrealm" then
+			reloadedName = row.name
+		end
+	end
+	equal(reloadedName, "Dirtyjoke Lovetties", "a saved display name survives a reload")
+end
+
+-- Old rows without a display name --------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local now = serverTime
+	local db = {
+		DirtyjokeLovetties = { total = { all = { value = 3, eventUnix = now } } },
+		NewGame = { total = { all = { value = 2, eventUnix = now } } },
+		["Abe-OtherRealm"] = { total = { all = { value = 1, eventUnix = now } } },
+	}
+	local peers = make(ns, { db = db })
+	local names = {}
+	for _, row in ipairs(peers:Board("total", "all", 0, now)) do
+		names[row.identity] = row.name
+	end
+	equal(names.dirtyjokelovetties, "Dirtyjoke Lovetties", "a single inner capital becomes the name break")
+	equal(names.newgame, "New Game", "and another one does too")
+	equal(names["abe-otherrealm"], "Abe-OtherRealm", "a key with no single inner capital is shown as it is")
+	equal(db.DirtyjokeLovetties["\1name"], nil, "the fallback is not saved")
+
+	-- The next message replaces the guess and keeps the compacted key.
+	equal(recv(peers, wire("agf", "total", "all", 4, now), "Dirtyjoke Lovetties"), true, "a new row from the player")
+	equal(db.DirtyjokeLovetties["\1name"], "Dirtyjoke Lovetties", "the sender's spelling is saved beside the same key")
+	equal(db.DirtyjokeLovetties.total.all.value, 4, "and the row still lives under it")
+	equal(recv(peers, wire("agf", "total", "all", 1, now), "New Game"), true, "an older value still brings the name")
+	equal(db.NewGame["\1name"], "New Game", "saved beside the unchanged key")
+	equal(db.NewGame.total.all.value, 2, "while the better value stays")
+end
+
+-- The own name from both UnitName returns -------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local unitName = _G.UnitName
+	_G.UnitName = function(unit)
+		if unit == "player" then
+			return "Hel", "Io"
+		end
+		return unitName(unit)
+	end
+	_G.Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+	local peers = make(ns)
+	local now = serverTime
+	local board = peers:Board("total", "all", 3, now)
+	equal(board[1].name, "Hel Io", "the personal row joins both returns")
+	equal(board[1].identity, "helio", "and keeps the compacted identity")
+	equal(recv(peers, wire("agf", "total", "all", 9, now), "HelIo"), false, "the own compacted key is still the player")
+	_G.UnitName = unitName
+	_G.Constants = nil
+end
+
 do
 	local ns = fresh()
 	local peers, state = make(ns)
@@ -532,7 +615,7 @@ do
 	for _, row in ipairs(board) do
 		names[#names + 1] = row.rank .. row.name
 	end
-	equal(table.concat(names, ","), "1Cy-X,2Abe-X,3Bea-X,4Me,5Dee-X", "value descending, ties by identity")
+	equal(table.concat(names, ","), "1Cy,2Abe,3Bea,4Me,5Dee", "value descending, ties by identity")
 	equal(board[4].self, true, "personal row flagged")
 	equal(peers:Board("total", "all", nil)[5].value, 0, "missing local value is zero and still listed")
 	equal(#peers:Board("nothing", "all", 4), 1, "unknown metric lists only the personal row")
@@ -553,7 +636,7 @@ do
 	for _, row in ipairs(first) do
 		names[#names + 1] = row.name
 	end
-	equal(table.concat(names, ","), "Abe-X,Cy-X,Me,Bea-X", "first record ascending, ties by identity")
+	equal(table.concat(names, ","), "Abe,Cy,Me,Bea", "first record ascending, ties by identity")
 	local none = peers:Board("firstkill", "9", 0, nil)
 	equal(none[#none].self, true, "a personal row without a record ranks last")
 
@@ -865,7 +948,7 @@ do
 	state.enabled = true
 	recv(peers, wire("agf", "total", "all", 8, now), "Rod-X")
 	local reloaded = make(fresh(), { db = state.db, rows = state.rows })
-	equal(reloaded:Board("total", "all", 1)[1].name, "Rod-X", "cached peers are back after a reload")
+	equal(reloaded:Board("total", "all", 1)[1].name, "Rod", "cached peers are back after a reload")
 	local off = make(fresh(), { db = state.db, enabled = false })
 	equal(#off:Board("total", "all", 1), 1, "a saved false stays off after a reload")
 	equal(off:Sync(), 0, "and does not send")
@@ -911,7 +994,7 @@ do
 	local third = load()
 	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
 	local manager = _G.ForeverPeerStats
-	equal(manager.version, 5, "manager is versioned")
+	equal(manager.version, 6, "manager is versioned")
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -1130,7 +1213,7 @@ do
 	equal(recv(peers, wire("agf", "total", "all", 60, now), "Wk-X"), true, "second peer value")
 	local board = peers:WeekBoard("total", "all", 5, now)
 	equal(#board, 2, "one personal row and one peer")
-	equal(board[1].name, "Wk-X", "the peer's weekly value ranks first")
+	equal(board[1].name, "Wk", "the peer's weekly value ranks first")
 	equal(board[1].value, 8, "current minus the first value heard")
 	equal(board[2].self, true, "the personal row is there")
 	equal(board[2].value, 0, "a first observation is the personal baseline")
@@ -1188,9 +1271,9 @@ do
 	local firstBoard = firstPeers:WeekBoard("firstkill", "9", 1, weekStart - 50)
 	local old, new
 	for _, row in ipairs(firstBoard) do
-		if row.name == "Old-X" then
+		if row.name == "Old" then
 			old = row.value
-		elseif row.name == "New-X" then
+		elseif row.name == "New" then
 			new = row.value
 		end
 	end

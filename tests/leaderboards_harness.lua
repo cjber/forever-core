@@ -393,7 +393,7 @@ function harness.Load(path, dataPath)
 	local ns = { L = harness.PhraseLocale() }
 	setfenv(assert(loadfile(dataPath or DATA_PATH)), harness.env)("Test", ns)
 	setfenv(assert(loadfile(path or PATH)), harness.env)("Test", ns)
-	return ns.Leaderboards
+	return ns.Leaderboards, ns
 end
 
 function harness.row(name, value, extra, you, class)
