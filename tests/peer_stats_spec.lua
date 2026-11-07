@@ -1,4 +1,5 @@
 -- Contract for the shared peer stats protocol and board (Core/PeerStats.lua), against a mocked client.
+-- rule-ignore: file-size-no-growth - vendored byte for byte from forever-core
 local checks = 0
 local function equal(actual, expected, label)
 	checks = checks + 1
@@ -15,13 +16,23 @@ local sendResult = 0
 local inGuild, groupKind, groupSize = true, nil, 0
 local frames = {}
 local groupNames = {}
+local weekRemaining
+local inCombatNow = false
 
+_G.InCombatLockdown = function()
+	return inCombatNow
+end
 _G.GetTime = function()
 	return clock
 end
 _G.GetServerTime = function()
 	return serverTime
 end
+_G.C_DateAndTime = {
+	GetSecondsUntilWeeklyReset = function()
+		return weekRemaining
+	end,
+}
 _G.C_Timer = {
 	After = function(delay, callback)
 		timers[#timers + 1] = { at = clock + delay, callback = callback, order = #timers }
@@ -128,6 +139,7 @@ local function fresh()
 	timers, sent, frames, groupNames = {}, {}, {}, {}
 	clock, serverTime = 1000, 1700000000
 	sendResult, inGuild, groupKind, groupSize = 0, true, nil, 0
+	weekRemaining, inCombatNow = nil, false
 	local ns = {}
 	assert(loadfile("Core/PeerStats.lua"))("ForeverCore", ns)
 	return ns
@@ -447,14 +459,63 @@ do
 	equal(peers:Board("total", "all", 3)[1].value, 3, "personal value shown")
 	state.db = {}
 	equal(peers:IsEnabled(), true, "db arriving enables")
+	-- Sharing is opt-out: a missing saved setting reads as on, and only an explicit false is off.
 	state.enabled = nil
-	equal(peers:IsEnabled(), false, "a falsy setting is off")
+	equal(peers:IsEnabled(), true, "a missing setting means sharing is on")
+	state.enabled = false
+	equal(peers:IsEnabled(), false, "only an explicit false is off")
+	state.enabled = true
+	local plainDb = {}
+	local plain = ns.PeerStats.New({
+		addon = "plain",
+		db = function()
+			return plainDb
+		end,
+		metrics = METRICS,
+	})
+	equal(plain:IsEnabled(), true, "a config without an enabled function shares by default")
+	plain:SetEnabled(false)
+	equal(plain:IsEnabled(), false, "and the explicit switch still turns it off")
 
 	local inert = ns.PeerStats.New({ addon = "bad addon!" })
 	equal(inert:Sync(), 0, "invalid addon id is inert")
 	equal(inert:SetEnabled(true), false, "inert instance cannot enable")
 	equal(#inert:Board("x", nil, 1), 1, "inert board has the personal row")
 	equal(count(ns.PeerStats.New():Shared()), 0, "missing config is safe")
+end
+
+-- Revision: the cache key the leaderboards read ----------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(peers:Revision(), 0, "a fresh instance starts at zero")
+	equal(recv(peers, wire("agf", "total", "all", 5, now), "Rev-X"), true, "a row is stored")
+	local afterReceive = peers:Revision()
+	equal(afterReceive > 0, true, "a stored row raises the revision")
+	equal(recv(peers, wire("agf", "total", "all", 4, now), "Rev-X"), false, "a stale row is refused")
+	equal(peers:Revision(), afterReceive, "a refused row leaves it alone")
+
+	state.rows = { { metric = "total", subject = "all", value = 7, eventUnix = now } }
+	equal(peers:Sync(), 1, "the snapshot is queued")
+	local afterSync = peers:Revision()
+	equal(afterSync > afterReceive, true, "a changed snapshot raises the revision")
+	advance(1)
+	equal(peers:Sync(), 0, "an unchanged snapshot is not queued")
+	equal(peers:Revision(), afterSync, "and leaves the revision alone")
+
+	state.enabled = false
+	equal(peers:IsEnabled(), false, "the saved setting turns sharing off")
+	local afterOff = peers:Revision()
+	equal(afterOff > afterSync, true, "the visibility change raises the revision")
+	state.enabled = true
+	peers:IsEnabled()
+	equal(peers:Revision() > afterOff, true, "and so does turning it back on")
+
+	local reloaded = make(load(ns), { db = state.db, rows = state.rows })
+	equal(reloaded:Revision(), 0, "a reloaded instance starts at zero")
+	reloaded:IsEnabled()
+	equal(reloaded:Revision() > 0, true, "reading its saved table raises the revision")
 end
 
 -- Board ---------------------------------------------------------------------------------------------------------
@@ -810,6 +871,39 @@ do
 	equal(off:Sync(), 0, "and does not send")
 end
 
+-- Combat defers sends --------------------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local manager = _G.ForeverPeerStats
+	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
+	inCombatNow = true
+	manager.OnEvent("PLAYER_REGEN_DISABLED")
+	peers:Sync()
+	advance(30)
+	equal(#sent, 0, "nothing is sent in combat")
+	equal(manager.QueueSize(), 1, "the queued row waits")
+	inCombatNow = false
+	manager.OnEvent("PLAYER_REGEN_ENABLED")
+	advance(1)
+	equal(#sent, 1, "it goes out when combat ends")
+	equal(peers:Sync(), 0, "and is not offered twice")
+
+	-- A queue built while the client reports combat waits too, even without the event.
+	resetSent()
+	local otherNs = fresh()
+	inCombatNow = true
+	local other, otherState = make(otherNs)
+	otherState.rows = { { metric = "total", subject = "all", value = 4, eventUnix = serverTime } }
+	other:Sync()
+	advance(30)
+	equal(#sent, 0, "the live combat check holds the row")
+	inCombatNow = false
+	_G.ForeverPeerStats.OnEvent("PLAYER_REGEN_ENABLED")
+	advance(1)
+	equal(#sent, 1, "and releases it when the fight ends")
+end
+
 -- Several copies and addons --------------------------------------------------------------------------------------
 do
 	local first = fresh()
@@ -817,7 +911,7 @@ do
 	local third = load()
 	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
 	local manager = _G.ForeverPeerStats
-	equal(manager.version, 3, "manager is versioned")
+	equal(manager.version, 5, "manager is versioned")
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -1021,6 +1115,130 @@ do
 			"invalid pair " .. subject
 		)
 	end
+end
+
+-- Weekly baselines and WeekBoard ---------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	-- 100,000 seconds to the next reset puts this week's start 504,800 seconds before serverTime.
+	weekRemaining = 100000
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(recv(peers, wire("agf", "total", "all", 52, now - 100), "Wk-X"), true, "first peer value")
+	equal(state.db["Wk-X"].total.all.week, 52, "the first value heard this week is the baseline")
+	equal(state.db["Wk-X"].total.all.weekUnix, now - 100, "with its timestamp")
+	equal(recv(peers, wire("agf", "total", "all", 60, now), "Wk-X"), true, "second peer value")
+	local board = peers:WeekBoard("total", "all", 5, now)
+	equal(#board, 2, "one personal row and one peer")
+	equal(board[1].name, "Wk-X", "the peer's weekly value ranks first")
+	equal(board[1].value, 8, "current minus the first value heard")
+	equal(board[2].self, true, "the personal row is there")
+	equal(board[2].value, 0, "a first observation is the personal baseline")
+
+	-- The player's own baseline persists in the same table, in the same layout.
+	local before = state.db["\1week"].total.all.value
+	equal(before, 5, "the personal baseline is saved")
+	board = peers:WeekBoard("total", "all", 12, now)
+	equal(board[1].value, 8, "the peer is unchanged")
+	equal(board[2].value, 7, "the player's progress is measured from their baseline")
+
+	local reloaded = make(load(), { db = state.db, rows = state.rows })
+	board = reloaded:WeekBoard("total", "all", 15, now)
+	local own, peer
+	for _, row in ipairs(board) do
+		if row.self then
+			own = row.value
+		else
+			peer = row.value
+		end
+	end
+	equal(own, 10, "the personal baseline survives a reload")
+	equal(peer, 8, "so does the peer's")
+
+	-- Past the weekly reset, last week's baselines no longer count.
+	serverTime = serverTime + 100000
+	weekRemaining = 604700
+	board = reloaded:WeekBoard("total", "all", 15, serverTime)
+	for _, row in ipairs(board) do
+		equal(row.value, 0, "a stale baseline reads as no progress this week")
+	end
+	recv(reloaded, wire("agf", "total", "all", 70, serverTime), "Wk-X")
+	board = reloaded:WeekBoard("total", "all", 20, serverTime)
+	own, peer = nil, nil
+	for _, row in ipairs(board) do
+		if row.self then
+			own = row.value
+		else
+			peer = row.value
+		end
+	end
+	equal(own, 5, "the player's baseline was retaken by the first post-reset call")
+	equal(peer, 0, "so is the peer's")
+	recv(reloaded, wire("agf", "total", "all", 79, serverTime), "Wk-X")
+	local resumed = reloaded:WeekBoard("total", "all", 25, serverTime)
+	equal(resumed[1].value, 10, "then the player's weekly progress resumes")
+	equal(resumed[2].value, 9, "and the peer's")
+
+	-- A first metric counts whether the record happened this week.
+	local firstPeers = make(fresh())
+	weekRemaining = 100000
+	local weekStart = serverTime + 100000 - 604800
+	recv(firstPeers, wire("agf", "firstkill", "9", 1, weekStart - 100), "Old-X")
+	recv(firstPeers, wire("agf", "firstkill", "9", 1, weekStart + 100), "New-X")
+	local firstBoard = firstPeers:WeekBoard("firstkill", "9", 1, weekStart - 50)
+	local old, new
+	for _, row in ipairs(firstBoard) do
+		if row.name == "Old-X" then
+			old = row.value
+		elseif row.name == "New-X" then
+			new = row.value
+		end
+	end
+	equal(new, 1, "a peer's first record this week counts")
+	equal(old, 0, "last week's does not")
+	local ownRow
+	for _, row in ipairs(firstBoard) do
+		if row.self then
+			ownRow = row
+		end
+	end
+	equal(ownRow.value, 0, "a personal record before the reset has no weekly count")
+	local selfRow
+	for _, row in ipairs(firstPeers:WeekBoard("firstkill", "9", 1, weekStart + 50)) do
+		if row.self then
+			selfRow = row
+		end
+	end
+	equal(selfRow.value, 1, "and a personal record this week counts")
+
+	-- Old saved rows have no baseline; the module fills one at the row's value and reads nothing as progress.
+	local oldDb = { Old = { total = { all = { value = 50, eventUnix = serverTime - 50 } } } }
+	local oldPeers = make(load(), { db = oldDb })
+	local shared = oldPeers:Shared()
+	equal(shared.Old.total.all.value, 50, "an old row still loads")
+	equal(shared.Old.total.all.week, 50, "its baseline starts at the current value")
+	equal(shared.Old.total.all.weekUnix, serverTime - 50, "with the row's own time")
+	equal(oldPeers:WeekBoard("total", "all", 10, serverTime)[1].value, 0, "the old peer has no weekly progress")
+	local malformed = { Bad = { total = { all = { value = 5, eventUnix = serverTime, week = -1, weekUnix = 1 } } } }
+	local malformedPeers = make(load(), { db = malformed })
+	equal(malformedPeers:Shared().Bad.total.all.week, 5, "a malformed baseline is replaced")
+
+	-- No weekly API: the Tuesday 15:00 UTC reset is the fallback. 1700000000 is a Tuesday.
+	local fallback = fresh()
+	_G.C_DateAndTime = nil
+	serverTime = 1699974400 -- Tuesday 15:06:40 UTC
+	local fallbackPeers = make(fallback)
+	local reset = 1699974000 -- Tuesday 15:00 UTC
+	recv(fallbackPeers, wire("agf", "total", "all", 10, reset - 600), "Fall-X")
+	recv(fallbackPeers, wire("agf", "total", "all", 12, reset + 100), "Fall-X")
+	equal(fallbackPeers:WeekBoard("total", "all", 1, reset + 200)[1].value, 0, "the first value after the reset")
+	recv(fallbackPeers, wire("agf", "total", "all", 16, reset + 200), "Fall-X")
+	equal(fallbackPeers:WeekBoard("total", "all", 1, reset + 300)[1].value, 4, "progress since the reset")
+	_G.C_DateAndTime = {
+		GetSecondsUntilWeeklyReset = function()
+			return weekRemaining
+		end,
+	}
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))

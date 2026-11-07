@@ -3,6 +3,7 @@ max_line_length = 120
 exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**"}
 globals = {
 	"ForeverFamily",
+	"ForeverLeaderboards",
 	"ForeverTrackerHost",
 	"EventUtil",
 	"ShortestPathForever",
@@ -21,9 +22,16 @@ read_globals = {
 	"IsAltKeyDown",
 	"CreateFramePoolCollection",
 	"C_XMLUtil",
+	"C_DateAndTime",
 	"Ambiguate",
 	"C_ChatInfo",
 	"Clamp",
+	"CreateDataProvider",
+	"CreateScrollBoxListLinearView",
+	"ScrollBoxConstants",
+	"ScrollUtil",
+	"RAID_CLASS_COLORS",
+	"GREEN_FONT_COLOR",
 	"CreateSettingsButtonInitializer",
 	"Lerp",
 	"Menu",
@@ -182,6 +190,9 @@ read_globals[#read_globals + 1] = "GetLocale"
 read_globals[#read_globals + 1] = "UnitClass"
 read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
+-- LeaderboardsData.lua: the guild roster's classFileName behind a peer row's missing class.
+read_globals[#read_globals + 1] = "GetGuildRosterInfo"
+read_globals[#read_globals + 1] = "GetNumGuildMembers"
 read_globals[#read_globals + 1] = "UISpecialFrames"
 read_globals[#read_globals + 1] = "tContains"
 -- Mover.lua: whether the button of a fine drag is still held.
@@ -193,6 +204,9 @@ files["Locales/*.lua"] = { max_line_length = false }
 -- ForeverCore: the shared files publish these globals, and Core.lua's saved table.
 globals[#globals + 1] = "ForeverCore"
 globals[#globals + 1] = "ForeverCoreDB"
+-- UI/Leaderboards.lua: the window's slash commands.
+globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS1"
+globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS2"
 -- Core/MinimapButton.lua publishes the registry every vendored copy shares.
 globals[#globals + 1] = "ForeverMinimapButtons"
 -- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.

@@ -1,4 +1,5 @@
 local _, ns = ...
+-- rule-ignore: file-size-no-growth - vendored byte for byte from forever-core
 
 -- Bounded guild and group peer statistics for the Forever addons. ns.PeerStats.New(config) returns one instance per
 -- addon: it sends that addon's own snapshot rows, stores validated rows from peers, and ranks a board. Nothing here
@@ -6,7 +7,7 @@ local _, ns = ...
 --
 -- config = {
 --   addon    = "agf",                      -- wire addon id, 1-16 of [%w_-]
---   enabled  = function() return bool end, -- the saved setting; missing or false means off
+--   enabled  = function() return bool end, -- the saved setting; sharing is opt-out, so only an explicit false is off
 --   db       = function() return table end, -- peer table owned by the caller; no table means off
 --   snapshot = function() return { { metric=, subject=, value=, eventUnix= }, ... } end,
 --   metrics  = { name = { subject = "all" | "numeric" | "qualified", first = bool } },
@@ -25,7 +26,13 @@ local _, ns = ...
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
-local MANAGER_VERSION = 3
+local MANAGER_VERSION = 5
+
+-- Weekly baselines live beside the cumulative rows: `record.week`/`record.weekUnix` hold the first value heard this
+-- week, and the player's own baseline sits under WEEKLY_KEY in the same metric/subject layout. Older saved tables have
+-- neither, and both are optional, so an older copy still reads every row it wrote.
+local WEEK_SECONDS = 7 * 86400
+local WEEKLY_KEY = "\1week"
 
 local MAX_PAYLOAD = 128
 local MAX_METRIC = 32
@@ -56,7 +63,14 @@ local MEMBERSHIP_DELAY = 1
 
 local SUBJECT_MODES = { all = true, numeric = true, qualified = true, numeric_or_all = true, numeric_pair = true }
 local ALLOWED_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
-local EVENTS = { "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_ENTERING_WORLD" }
+local EVENTS = {
+	"CHAT_MSG_ADDON",
+	"GROUP_ROSTER_UPDATE",
+	"PLAYER_GUILD_UPDATE",
+	"PLAYER_ENTERING_WORLD",
+	"PLAYER_REGEN_DISABLED",
+	"PLAYER_REGEN_ENABLED",
+}
 local MEMBERSHIP_EVENTS = { GROUP_ROSTER_UPDATE = true, PLAYER_GUILD_UPDATE = true, PLAYER_ENTERING_WORLD = true }
 local CHANNEL_ORDER = { "GUILD", "PARTY", "RAID", "INSTANCE_CHAT" }
 
@@ -82,6 +96,77 @@ end
 
 local function Now()
 	return GetServerTime and GetServerTime() or 0
+end
+
+-- Seconds until the next weekly reset, when this client can say. A restricted or malformed answer reads as unknown,
+-- so the caller uses the Tuesday 15:00 UTC fallback rather than guessing at a week.
+---@return number|nil
+local function WeeklyRemaining()
+	local api = rawget(_G, "C_DateAndTime")
+	local get = type(api) == "table" and api.GetSecondsUntilWeeklyReset
+	if type(get) ~= "function" then
+		return nil
+	end
+	local ok, seconds = pcall(get)
+	if ok and type(seconds) == "number" and seconds == seconds and seconds >= 0 and seconds <= WEEK_SECONDS then
+		return seconds
+	end
+end
+
+-- The instant the current week began: the client's reset countdown when it has one, else the last Tuesday 15:00 UTC.
+---@param now number
+---@return number
+local function WeekStart(now)
+	local remaining = WeeklyRemaining()
+	if remaining then
+		return now + remaining - WEEK_SECONDS
+	end
+	local date = os.date("!*t", now)
+	if type(date) ~= "table" then
+		return now - WEEK_SECONDS
+	end
+	local dayStart = now - (date.hour * 3600 + date.min * 60 + date.sec)
+	local start = dayStart - (date.wday - 3) % 7 * 86400 + 15 * 3600
+	if start > now then
+		start = start - WEEK_SECONDS
+	end
+	return start
+end
+
+-- The first value heard this week, kept only while its timestamp is inside the current week.
+---@param record table
+---@param weekStart number
+---@param now number
+---@return number|nil value
+---@return number|nil unix
+local function SavedBaseline(record, weekStart, now)
+	local value = IntIn(record.week, 0, MAX_VALUE)
+	local unix = IntIn(record.weekUnix, 1, now + FUTURE_SECONDS)
+	if value and unix and unix >= weekStart then
+		return value, unix
+	end
+end
+
+-- The earliest fresh baseline among a saved record and the row already in the store, or the current value when this
+-- week has none yet. Used while rebuilding the saved table, where two spellings of one player merge.
+---@param records table[]
+---@param weekStart number
+---@param now number
+---@param value number
+---@param unix number
+---@return number
+---@return number
+local function BaselineOf(records, weekStart, now, value, unix)
+	local bestValue, bestUnix
+	for _, record in ipairs(records) do
+		if type(record) == "table" then
+			local base, baseUnix = SavedBaseline(record, weekStart, now)
+			if base and baseUnix and (not bestUnix or baseUnix < bestUnix) then
+				bestValue, bestUnix = base, baseUnix
+			end
+		end
+	end
+	return bestValue or value, bestUnix or unix
 end
 
 local function Compact(text)
@@ -205,6 +290,7 @@ local function CreateManager()
 	local timerPending, timerToken, syncPending = false, 0, false
 	local available, groupSize, roster = {}, 0, ""
 	local tokens, tokenTime, blockedUntil = SEND_BURST, nil, 0
+	local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown() == true or false
 	local Pump
 
 	local function Remove(position)
@@ -283,7 +369,11 @@ local function CreateManager()
 		end
 		entry.payload, entry.value, entry.unix = payload, value, unix
 		entry.gen, entry.epoch, entry.retries = inst.gen, m.epoch[channel] or 0, 0
-		m.Schedule(0)
+		-- In combat the queue waits for PLAYER_REGEN_ENABLED rather than scheduling a pump that would only
+		-- return; that keeps combat free of timers as well as sends.
+		if not inCombat then
+			m.Schedule(0)
+		end
 		return true
 	end
 
@@ -335,6 +425,12 @@ local function CreateManager()
 	function Pump()
 		timerPending = false
 		if m.retired then
+			return
+		end
+		-- Nothing leaves the client in combat. The queue keeps its entries and PLAYER_REGEN_ENABLED schedules
+		-- this pump again, so a change made mid-fight is deferred rather than dropped.
+		if inCombat or (type(InCombatLockdown) == "function" and InCombatLockdown() == true) then
+			inCombat = true
 			return
 		end
 		local now = GetTime()
@@ -410,6 +506,11 @@ local function CreateManager()
 					inst:Receive(prefix, text, channel, sender)
 				end
 			end
+		elseif event == "PLAYER_REGEN_DISABLED" then
+			inCombat = true
+		elseif event == "PLAYER_REGEN_ENABLED" then
+			inCombat = false
+			m.Schedule(0)
 		elseif MEMBERSHIP_EVENTS[event] then
 			if not (C_Timer and C_Timer.After) then
 				m.SyncAll()
@@ -483,6 +584,7 @@ end
 ---@param self ForeverPeerStatsInstance
 local function SanitizeStore(self, raw)
 	local now = Now()
+	local weekStart = WeekStart(now)
 	local own = OwnIdentity()
 	local merged, order = {}, {}
 	for _, key in ipairs(SortedStringKeys(raw, MAX_SCAN_KEYS)) do
@@ -505,9 +607,44 @@ local function SanitizeStore(self, raw)
 							local unix = IntIn(record.eventUnix, 1, now + FUTURE_SECONDS)
 							local slot = metric .. "|" .. subject
 							if value and unix and Better(config.first, peer.rows[slot], value, unix) then
-								peer.rows[slot] =
-									{ metric = metric, subject = subject, value = value, eventUnix = unix }
+								local previous = peer.rows[slot]
+								local row = {
+									metric = metric,
+									subject = subject,
+									value = value,
+									eventUnix = unix,
+								}
+								if not config.first then
+									row.week, row.weekUnix =
+										BaselineOf({ record, previous }, weekStart, now, value, unix)
+								end
+								peer.rows[slot] = row
 							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- The player's own baseline shares the peer layout but has its own key, so a saved table never lists the player as
+	-- a peer. Keep only rows inside the current week.
+	local ownWeek, ownRows = {}, 0
+	local ownRaw = raw[WEEKLY_KEY]
+	if type(ownRaw) == "table" then
+		for _, metric in ipairs(self.metricList) do
+			local subjects = ownRaw[metric]
+			if type(subjects) == "table" then
+				local config = self.metrics[metric]
+				for _, subject in ipairs(SortedStringKeys(subjects, MAX_SCAN_SUBJECTS)) do
+					local record = subjects[subject]
+					if ownRows < MAX_ROWS and ValidSubject(config.subject, subject) and type(record) == "table" then
+						local value = IntIn(record.value, 0, MAX_VALUE)
+						local unix = IntIn(record.eventUnix, 1, now + FUTURE_SECONDS)
+						if value and unix and unix >= weekStart then
+							ownWeek[metric] = ownWeek[metric] or {}
+							ownWeek[metric][subject] = { value = value, eventUnix = unix }
+							ownRows = ownRows + 1
 						end
 					end
 				end
@@ -561,11 +698,16 @@ local function SanitizeStore(self, raw)
 		local saved = {}
 		for _, row in ipairs(peer.list) do
 			saved[row.metric] = saved[row.metric] or {}
-			saved[row.metric][row.subject] = { value = row.value, eventUnix = row.eventUnix }
+			saved[row.metric][row.subject] =
+				{ value = row.value, eventUnix = row.eventUnix, week = row.week, weekUnix = row.weekUnix }
 		end
 		raw[peer.key] = saved
 		self.index[peer.identity], self.latest[peer.identity] = peer.key, peer.latest
 	end
+	if next(ownWeek) then
+		raw[WEEKLY_KEY] = ownWeek
+	end
+	self.revision = self.revision + 1
 end
 
 -- The caller's peer table, sanitized the first time it is seen; nil while there is none.
@@ -596,6 +738,7 @@ end
 ---@field gen integer
 ---@field sent table
 ---@field observed table<string, {value: number, unix: number}>
+---@field weekLocal table<string, {value: number, eventUnix: number}> the player's own baselines while there is no db
 ---@field deferred table<string, boolean>
 ---@field rate table
 ---@field rateCount integer
@@ -605,6 +748,7 @@ end
 ---@field metrics table<string, {subject: string, first: boolean}>
 ---@field metricList string[]
 ---@field store table|nil
+---@field revision integer the cache key LeaderboardsData sums; raised when a stored row or snapshot changes
 local Instance = {}
 Instance.__index = Instance
 
@@ -625,19 +769,34 @@ function Instance:Retire()
 	self:Cancel()
 end
 
--- Whether this instance may send, receive and show peers now. The saved setting is the truth, SetEnabled(false)
--- overrides it until SetEnabled(true), and a missing database or setting means off. Turning off cancels at once.
+-- Whether this instance may send, receive and show peers now. Saving is opt-out: only an explicit false from the
+-- saved setting is off, so a missing setting (or no setting function at all) shares once a database exists.
+-- SetEnabled(false) overrides it until SetEnabled(true), and a missing database still means off.
 function Instance:IsEnabled()
 	local on = false
-	if not self.dead and self.override ~= false and type(self.config.enabled) == "function" then
-		local ok, value = pcall(self.config.enabled)
-		on = ok and value and EnsureStore(self) ~= nil or false
+	if not self.dead and self.override ~= false then
+		local allowed = true
+		if type(self.config.enabled) == "function" then
+			local ok, value = pcall(self.config.enabled)
+			allowed = not ok or value ~= false
+		end
+		on = allowed and EnsureStore(self) ~= nil or false
 	end
 	if self.active and not on then
 		self:Cancel()
 	end
+	if self.active ~= on then
+		self.revision = self.revision + 1
+	end
 	self.active = on
 	return on
+end
+
+-- The cache key UI/Leaderboards.lua reads through a board's `revision` callback. It rises whenever a stored peer row,
+-- the player's own snapshot or the enabled state changes, so an open window and a tooltip hover rebuild only then.
+---@return integer
+function Instance:Revision()
+	return self.revision
 end
 
 function Instance:RecordSent(entry)
@@ -690,6 +849,27 @@ function Instance:Sync(onlyDeferred)
 			end
 		end
 	end
+	-- The player's own snapshot is the other half of a board, so a change there invalidates the same cache as a
+	-- peer row. An unchanged snapshot leaves the revision alone, and with it a hover's single lookup.
+	local changed = false
+	for key, item in pairs(observed) do
+		local old = self.observed[key]
+		if not old or old.value ~= item.value or old.unix ~= item.unix then
+			changed = true
+			break
+		end
+	end
+	if not changed then
+		for key in pairs(self.observed) do
+			if not observed[key] then
+				changed = true
+				break
+			end
+		end
+	end
+	if changed then
+		self.revision = self.revision + 1
+	end
 	self.observed = observed
 	for sentKey, entry in pairs(self.sent) do
 		if not byKey[entry.key] then
@@ -734,6 +914,9 @@ function Instance:SetEnabled(flag)
 		return false
 	end
 	self.override = false
+	if self.active then
+		self.revision = self.revision + 1
+	end
 	self.active = false
 	self:Cancel()
 	return false
@@ -823,11 +1006,22 @@ local function Apply(self, key, identity, config, metric, subject, value, unix)
 			return false, "rows"
 		end
 		subjects = subjects or {}
-		peer[metric], subjects[subject] = subjects, { value = value, eventUnix = unix }
+		record = { value = value, eventUnix = unix }
+		peer[metric], subjects[subject] = subjects, record
+	end
+	-- The first value heard this week is the baseline a weekly board subtracts. A baseline from before the current
+	-- reset is replaced by this observation, which is then the first one heard this week.
+	if not config.first then
+		local now = Now()
+		local baseline = SavedBaseline(record, WeekStart(now), now)
+		if not baseline then
+			record.week, record.weekUnix = value, unix
+		end
 	end
 	if unix > (self.latest[identity] or 0) then
 		self.latest[identity] = unix
 	end
+	self.revision = self.revision + 1
 	return true
 end
 
@@ -881,7 +1075,12 @@ function Instance:Shared()
 		for metric, subjects in pairs(metrics) do
 			copy[peer][metric] = {}
 			for subject, record in pairs(subjects) do
-				copy[peer][metric][subject] = { value = record.value, eventUnix = record.eventUnix }
+				copy[peer][metric][subject] = {
+					value = record.value,
+					eventUnix = record.eventUnix,
+					week = record.week,
+					weekUnix = record.weekUnix,
+				}
 			end
 		end
 	end
@@ -942,6 +1141,140 @@ function Instance:Board(metric, subject, localValue, localEventUnix)
 	return rows
 end
 
+---@param rows table
+---@return integer
+local function OwnRowCount(rows)
+	local total = 0
+	for _, subjects in pairs(rows) do
+		if type(subjects) == "table" then
+			for _ in pairs(subjects) do
+				total = total + 1
+			end
+		end
+	end
+	return total
+end
+
+-- The value the player's own current total is measured from this week. Saved under WEEKLY_KEY beside the peers, or
+-- in memory while the caller has no peer table yet.
+---@param self ForeverPeerStatsInstance
+---@param metric string
+---@param subject string
+---@param value number
+---@return number baseline
+local function LocalBaseline(self, metric, subject, value)
+	local now = Now()
+	local weekStart = WeekStart(now)
+	local store = EnsureStore(self)
+	if not store then
+		local key = metric .. "|" .. subject
+		local cached = self.weekLocal[key]
+		if type(cached) ~= "table" or type(cached.eventUnix) ~= "number" or cached.eventUnix < weekStart then
+			cached = { value = value, eventUnix = now }
+			self.weekLocal[key] = cached
+		end
+		return cached.value
+	end
+	local rows = store[WEEKLY_KEY]
+	if type(rows) ~= "table" then
+		rows = {}
+		store[WEEKLY_KEY] = rows
+	end
+	local subjects = rows[metric]
+	if type(subjects) ~= "table" then
+		if OwnRowCount(rows) >= MAX_ROWS then
+			return value
+		end
+		subjects = {}
+		rows[metric] = subjects
+	end
+	local record = subjects[subject]
+	if not record and OwnRowCount(rows) >= MAX_ROWS then
+		return value
+	end
+	local savedValue = type(record) == "table" and IntIn(record.value, 0, MAX_VALUE) or nil
+	local savedUnix = type(record) == "table" and IntIn(record.eventUnix, 1, now + FUTURE_SECONDS) or nil
+	if not savedValue or not savedUnix or savedUnix < weekStart then
+		record = { value = value, eventUnix = now }
+		subjects[subject] = record
+		return value
+	end
+	return savedValue
+end
+
+-- The weekly board, mirroring Board: the personal row always, peers only while enabled. A cumulative metric ranks by
+-- the current value minus the first value heard this week; a first metric counts a record inside this week. Rows:
+-- { rank, name, identity, value, eventUnix, self }.
+---@param metric string
+---@param subject? string defaults to "all"
+---@param localValue? number
+---@param localEventUnix? number
+function Instance:WeekBoard(metric, subject, localValue, localEventUnix)
+	subject = subject or "all"
+	local config = self.metrics[metric]
+	local first = config and config.first
+	local now = Now()
+	local weekStart = WeekStart(now)
+	local name = OwnName() or "player"
+	local value = IntIn(type(localValue) == "number" and math.floor(localValue) or nil, 0, MAX_VALUE) or 0
+	local localUnix = IntIn(localEventUnix, 1, now + FUTURE_SECONDS)
+	local ownValue
+	if first then
+		ownValue = localUnix and localUnix >= weekStart and 1 or 0
+	elseif config and ValidSubject(config.subject, subject) then
+		ownValue = math.max(0, value - LocalBaseline(self, metric, subject, value))
+	else
+		ownValue = 0
+	end
+	local rows = {
+		{
+			name = name,
+			identity = OwnIdentity() or name:lower(),
+			value = ownValue,
+			eventUnix = localUnix,
+			self = true,
+		},
+	}
+	if config and ValidSubject(config.subject, subject) and self:IsEnabled() then
+		for identity, key in pairs(self.index) do
+			local subjects = self.store[key] and self.store[key][metric]
+			local record = subjects and subjects[subject]
+			if record and identity ~= rows[1].identity then
+				local weekly
+				if first then
+					weekly = record.eventUnix and record.eventUnix >= weekStart and 1 or 0
+				else
+					local baseline = SavedBaseline(record, weekStart, now) or record.value
+					weekly = math.max(0, record.value - baseline)
+				end
+				rows[#rows + 1] = {
+					name = key,
+					identity = identity,
+					value = weekly,
+					eventUnix = record.eventUnix,
+				}
+			end
+		end
+	end
+	table.sort(rows, function(a, b)
+		if first then
+			if (a.eventUnix == nil) ~= (b.eventUnix == nil) then
+				return a.eventUnix ~= nil
+			end
+			if a.eventUnix ~= b.eventUnix then
+				return a.eventUnix < b.eventUnix
+			end
+		elseif a.value ~= b.value then
+			return a.value > b.value
+		end
+		return a.identity < b.identity
+	end)
+	for rank, row in ipairs(rows) do
+		row.rank = rank
+	end
+	return rows
+end
+
 --------------------------------------------------------------------------------------------------------------------
 
 ---@class ForeverPeerStatsNamespace
@@ -968,6 +1301,7 @@ local function New(config, owner)
 		gen = 0,
 		sent = {},
 		observed = {},
+		weekLocal = {},
 		deferred = {},
 		rate = {},
 		rateCount = 0,
@@ -976,6 +1310,7 @@ local function New(config, owner)
 		peerCount = 0,
 		metrics = {},
 		metricList = {},
+		revision = 0,
 	}, Instance)
 	if type(config.metrics) == "table" then
 		for _, metric in ipairs(SortedStringKeys(config.metrics, MAX_METRICS)) do

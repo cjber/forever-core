@@ -45,6 +45,10 @@ function GameTooltip_Hide() end
 ---@type {trackerHost?: ForeverTrackerSettings}?
 ForeverCoreDB = nil
 
+-- UI/Leaderboards.lua publishes the shared window every Forever addon registers into.
+---@type ForeverLeaderboardsAPI?
+ForeverLeaderboards = nil
+
 ---@class EditModeManagerFrame : Frame
 ---@field IsEditModeActive fun(self: EditModeManagerFrame): boolean
 ---@type EditModeManagerFrame?
@@ -111,3 +115,31 @@ Settings = nil
 -- The settings page keeps one cursor down its canvas, so every row claims its height.
 ---@class Frame
 ---@field settingsRowY? number
+
+-- UI/Leaderboards.lua: the client widgets it builds, declared here because the shared file typechecks in core.
+---@class ForeverClassColor
+---@field GetRGB fun(self: ForeverClassColor): number, number, number
+---@type table<string, ForeverClassColor>?
+RAID_CLASS_COLORS = nil
+
+---@class ForeverDataProvider
+---@field entries any[]
+---@param entries? any[]
+---@return ForeverDataProvider
+function CreateDataProvider(entries) end
+
+---@class ForeverScrollBoxView
+---@field SetElementInitializer fun(self: ForeverScrollBoxView, template: string, initializer: fun(button: Button, element: any))
+---@field SetPadding fun(self: ForeverScrollBoxView, ...: number)
+---@return ForeverScrollBoxView
+function CreateScrollBoxListLinearView() end
+
+---@class ForeverScrollUtil
+---@field InitScrollBoxListWithScrollBar fun(box: Frame, bar: any, view: ForeverScrollBoxView)
+---@type ForeverScrollUtil
+ScrollUtil = nil
+
+---@class ForeverScrollBoxConstants
+---@field RetainScrollPosition integer
+---@type ForeverScrollBoxConstants
+ScrollBoxConstants = nil
