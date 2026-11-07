@@ -1161,7 +1161,7 @@ function Instance:Receive(prefix, payload, channel, sender)
 	return Apply(self, key, identity, DisplayName(sender), config, metric, subject, value, unix)
 end
 
--- A deep copy of every cached peer row in the saved layout; empty while disabled.
+-- A deep copy of every cached peer's metric tables in the saved layout; empty while disabled.
 function Instance:Shared()
 	local copy = {}
 	if not self:IsEnabled() then
@@ -1169,10 +1169,6 @@ function Instance:Shared()
 	end
 	for peer, metrics in pairs(self.store) do
 		copy[peer] = {}
-		local display = SavedDisplay(metrics[DISPLAY_KEY])
-		if display then
-			copy[peer][DISPLAY_KEY] = display
-		end
 		for metric, subjects in pairs(metrics) do
 			if type(subjects) == "table" then
 				copy[peer][metric] = {}
