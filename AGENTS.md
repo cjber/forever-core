@@ -107,7 +107,9 @@ and run anywhere.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.
-- `types/`: LuaLS declarations for the tracker contract and the client globals the shared files read.
+- `types/`: LuaLS declarations. `types/ForeverTracker.lua` is the tracker contract (settings, host, lock, order and
+  the namespace fields the tracker files read), vendored with the tracker files so a consumer declares none of it by
+  hand; `types/Forever.lua` and `types/Client.lua` are core's own and stay here.
   `tools/typecheck.sh` checks every Lua file outside `tests/`, `tools/`, `docs/` and `.agents/` against them; CI
   installs LuaLS 3.19.1 by checksum, and the script refuses any other version.
 

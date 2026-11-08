@@ -162,6 +162,13 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertTrue((root / "tools/deadcode.py").is_file())
 
+    def test_a_new_type_declaration_does_not_wait_for_a_toc(self):
+        self.write(self.core, "types/ForeverTracker.lua", b"---@meta\n")
+        root = self.consumer()
+        code, out = self.run_sync(only=("types/ForeverTracker.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "types/ForeverTracker.lua").read_bytes(), b"---@meta\n")
+
 
 if __name__ == "__main__":
     unittest.main()
