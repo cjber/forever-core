@@ -108,21 +108,34 @@ class UnansweredTest(unittest.TestCase):
             comment(4, "only another player answered", replies=[comment(40, "player reply", parent=4)]),
             comment(
                 5,
-                "owner answered a reply, not the top level",
+                "owner answered the reporter's own follow-up",
                 replies=[comment(50, "player reply", parent=5, replies=[owner_reply(51, 50)])],
+            ),
+            comment(
+                6,
+                "reporter followed up after the owner's answer",
+                replies=[owner_reply(60, 6), comment(61, "it is 4 percent per point", parent=6)],
             ),
         ]
 
-    def test_lists_top_level_comments_without_an_owner_reply(self):
+    def test_lists_threads_whose_latest_post_is_not_the_owners(self):
         output = run(["--unanswered"], fake_fetch(self.rows()))
-        ids = [int(match) for match in re.findall(r"(?m)^\[test-mod\] #(\d+) ", output)]
-        self.assertEqual(ids, [1, 4, 5])
+        heads = [int(match) for match in re.findall(r"(?m)^=== \[test-mod\] thread #(\d+),", output)]
+        self.assertEqual(heads, [1, 4, 6])
         self.assertIn("3 unanswered", output)
 
-    def test_matches_owner_replies_by_parent_id_across_the_flattened_list(self):
-        flat = cfwatch.flatten(self.rows())
-        self.assertIn(30, [row["id"] for row in flat])
-        self.assertEqual([row["id"] for row in cfwatch.unanswered(flat)], [1, 4, 5])
+    def test_prints_the_whole_thread_so_a_follow_up_reads_in_context(self):
+        output = run(["--unanswered"], fake_fetch(self.rows()))
+        thread = output[output.index("thread #6,") :]
+        self.assertRegex(thread, r"(?m)^\[test-mod\] #6 ")
+        self.assertRegex(thread, r"(?m)^\[test-mod\] #60 .*cjber \(reply to #6\)")
+        self.assertRegex(thread, r"(?m)^\[test-mod\] #61 .*\n  it is 4 percent per point$")
+
+    def test_a_reply_listed_at_the_top_level_joins_its_thread(self):
+        groups = {top["id"]: [row["id"] for row in rows] for top, rows in cfwatch.threads(self.rows())}
+        self.assertEqual(groups[3], [3, 30])
+        self.assertNotIn(30, groups)
+        self.assertEqual(groups[5], [5, 50, 51])
 
 
 if __name__ == "__main__":
