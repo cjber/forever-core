@@ -174,7 +174,3 @@ ScrollUtil = nil
 ---@field RetainScrollPosition integer
 ---@type ForeverScrollBoxConstants
 ScrollBoxConstants = nil
-
--- UI/QuestLogTabs.lua: the client's protected call, which keeps a panel's error from breaking the module's switch.
----@param fn function
-function securecallfunction(fn, ...) end

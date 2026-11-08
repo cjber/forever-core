@@ -25,8 +25,6 @@ local api = {}
 ---@type table<string, ForeverQuestLogTabEntry>
 local tabs = {}
 local selectedKey
--- The key whose panel was last reported visible through `shown`, so each change is reported exactly once.
-local reportedKey
 ---@type ForeverQuestLogTab?
 local questsTab
 local tabOffsetY = 0
@@ -52,63 +50,6 @@ local function Sorted()
 		return a.key < b.key
 	end)
 	return list
-end
-
--- Tell a panel whether the player can see it. No panel sets OnShow or OnHide: a script under WorldMapFrame runs
--- inside the map's close path, where addon taint blocks the gamepad's interact target (shortest-path-forever#158).
----@param spec ForeverQuestLogTabSpec
----@param visible boolean
-local function NotifyShown(spec, visible)
-	if not spec.shown then
-		return
-	end
-	if securecallfunction then
-		securecallfunction(spec.shown, visible)
-	else
-		spec.shown(visible)
-	end
-end
-
----@param key string
-local function ReportHidden(key)
-	if reportedKey ~= key then
-		return
-	end
-	reportedKey = nil
-	local entry = tabs[key]
-	if entry then
-		NotifyShown(entry.spec, false)
-	end
-end
-
----@param key string
-local function ReportVisible(key)
-	if reportedKey == key then
-		return
-	end
-	if reportedKey then
-		ReportHidden(reportedKey)
-	end
-	local entry = tabs[key]
-	if not entry then
-		return
-	end
-	reportedKey = key
-	NotifyShown(entry.spec, true)
-end
-
-local function PanelShown(_, frame)
-	if frame ~= WorldMapFrame or not selectedKey then
-		return
-	end
-	ReportVisible(selectedKey)
-end
-
-local function PanelHidden(_, frame)
-	if frame ~= WorldMapFrame or not reportedKey then
-		return
-	end
-	ReportHidden(reportedKey)
 end
 
 local function Anchor()
@@ -165,10 +106,6 @@ local function Install()
 			api.ShowQuests()
 		end
 	end)
-	-- A panel must not set OnShow or OnHide under the world map, so the map's own callbacks tell it instead.
-	EventRegistry:RegisterCallback("UIParentPanelManager.ShowUIPanel", PanelShown, api)
-	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, api)
-	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, api)
 end
 
 ---@param key string
@@ -212,9 +149,6 @@ function api.Select(key)
 	if questsTab then
 		questsTab:SetChecked(false)
 	end
-	if QuestMapFrame:IsShown() then
-		ReportVisible(key)
-	end
 end
 
 function api.ShowQuests()
@@ -229,9 +163,6 @@ function api.ShowQuests()
 	end
 	if questsTab then
 		questsTab:SetChecked(true)
-	end
-	if reportedKey then
-		ReportHidden(reportedKey)
 	end
 end
 
