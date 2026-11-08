@@ -122,7 +122,14 @@ _G.geterrorhandler = function()
 	return function() end
 end
 _G.seterrorhandler = function() end
+_G.GetTime = function()
+	return 1
+end
+_G.date = function()
+	return "d"
+end
 assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
+assert(loadfile("Core/Log.lua"))("ForeverCore", ns)
 local chunk = assert(loadfile("UI/Report.lua"))
 chunk("ExampleAddon", ns)
 ns.ReportTitle = "ExampleAddon report"
@@ -210,6 +217,40 @@ equal(
 	true,
 	"earlier sessions are included in the report"
 )
+
+-- The copy carries the newest log lines after the error journal.
+local logStore = {}
+ns.AttachLog(logStore)
+ns.Log("info", "test", "first log line")
+ns.Log("debug", "test", "dropped debug line")
+ns.Log("warn", "test", "second log line")
+local loggedText = reportText({})
+equal(loggedText:find("Log %(last 2%):", 1) ~= nil, true, "the log has its own heading")
+equal(loggedText:find("dropped debug line", 1, true), nil, "a dropped debug line is not in the copy")
+local errorAt = loggedText:find("error from an earlier session", 1, true)
+local logAt = loggedText:find("first log line", 1, true)
+equal(errorAt ~= nil and logAt ~= nil and errorAt < logAt, true, "the log follows the error journal")
+
+ns.CaughtErrors = function()
+	return {}
+end
+_G.BugGrabber = nil
+for index = 1, 60 do
+	ns.Log("info", "test", "log-%d", index)
+end
+local fullText = reportText({})
+equal(fullText:find("Log %(last 50%):", 1) ~= nil, true, "the copy shows the newest 50 log lines")
+equal(fullText:find("log-10\n", 1, true), nil, "the 51st newest line is left out")
+equal(fullText:find("log-11\n", 1, true) ~= nil, true, "the 50th newest line is included")
+equal(fullText:find("log-60\n", 1, true) ~= nil, true, "the newest line is included")
+
+-- A log too long for the report keeps the newest lines, not the oldest: the section is built newest-first.
+for index = 1, 30 do
+	ns.Log("info", "test", ("long-%02d "):format(index) .. string.rep("x", 110))
+end
+local longText = reportText({})
+equal(longText:find("long-30 ", 1, true) ~= nil, true, "the newest line survives the report cap")
+equal(longText:find("long-01 ", 1, true), nil, "the oldest line is dropped for room")
 
 equal(ns.Report.Command("unknown"), false, "unknown command remains for addon handler")
 equal(ns.Report.Command("report"), true, "report command handled")

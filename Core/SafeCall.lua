@@ -539,12 +539,12 @@ end
 -- only errors that name its own folder, so several installed addons never record the same error twice.
 if addonName and not shared.installed[addonName] then
 	shared.installed[addonName] = true
-	previousHandler = geterrorhandler()
+	previousHandler = type(geterrorhandler) == "function" and geterrorhandler() or nil
 	local set = _G.seterrorhandler
 	if type(set) == "function" then
 		set(Handler)
 	end
-	if geterrorhandler() ~= Handler then
+	if type(geterrorhandler) == "function" and geterrorhandler() ~= Handler then
 		AttachBugGrabber()
 	end
 	if type(CreateFrame) == "function" then

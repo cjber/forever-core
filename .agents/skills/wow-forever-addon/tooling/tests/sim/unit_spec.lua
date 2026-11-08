@@ -7,6 +7,16 @@ local Instrument = require("instrument")
 local Veil = require("veil")
 local Taint = require("taint")
 local Loader = require("loader")
+local Client = require("client")
+
+-- A client built on its own, without the Blizzard UI source: enough for the error handler and the native stubs.
+local function freshClient()
+	Taint.current = nil
+	Taint.globalTaint = {}
+	local sim = { taint = Taint, impl = {} }
+	local G = Client.build(sim)
+	return sim, G
+end
 
 local passed, failed = 0, 0
 local function test(name, fn)
@@ -209,6 +219,40 @@ test("taint: hooksecurefunc keeps the field secure and runs the hook isolated", 
 	eq(t.f(), 1)
 	eq(seen, true)
 	eq(Taint.current, nil, "the hook's taint does not leak")
+end)
+
+test("client: a handler forwarding to the saved default records one error, at its raise site", function()
+	local sim, G = freshClient()
+	local previous = G.geterrorhandler()
+	local seen = {}
+	G.seterrorhandler(function(message)
+		seen[#seen + 1] = message
+		return previous(message)
+	end)
+	sim.reportError("Blizzard_X/File.lua:1: boom", "traceback", "SomeAddon")
+	eq(#sim.errors, 1, "recorded once")
+	eq(sim.errors[1].message, "Blizzard_X/File.lua:1: boom")
+	eq(sim.errors[1].taint, "SomeAddon", "the raise site's taint")
+	eq(#seen, 1, "the handler saw it")
+	eq(seen[1], "Blizzard_X/File.lua:1: boom")
+end)
+
+test("client: the default handler records an error passed straight to it", function()
+	local sim, G = freshClient()
+	G.geterrorhandler()("boom")
+	eq(#sim.errors, 1, "recorded once")
+	eq(sim.errors[1].message, "boom")
+end)
+
+test("client: the key-binding globals the settings pages call are stubbed", function()
+	local _, G = freshClient()
+	eq(type(G.GetModifiedClick), "function", "GetModifiedClick")
+	eq(type(G.GetBinding), "function", "GetBinding")
+	local click = G.GetModifiedClick("SELFCAST")
+	assert(click == nil or type(click) == "string", "GetModifiedClick returns the documented string")
+	local action, category = G.GetBinding(1)
+	assert(action == nil or type(action) == "string", "GetBinding returns the documented command")
+	assert(category == nil or type(category) == "string", "GetBinding returns the documented category")
 end)
 
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))

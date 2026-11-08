@@ -33,6 +33,7 @@ for _, path in ipairs(tocFiles()) do
 end
 for _, path in ipairs({
 	"Core.lua",
+	"Core/Log.lua",
 	"Core/Text.lua",
 	"Expose.lua",
 	"Locales/enUS.lua",

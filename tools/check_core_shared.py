@@ -83,6 +83,8 @@ VENDORED = {
     "tests/tracker_eqot_spec.lua": TRACKER_CONSUMERS,
     "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
     "Core/SafeCall.lua": ALL_CONSUMERS,
+    "Core/Log.lua": ALL_CONSUMERS,
+    "tests/debug_log_spec.lua": ALL_CONSUMERS,
     "UI/Report.lua": ALL_CONSUMERS,
     "tests/report_spec.lua": ALL_CONSUMERS,
     "UI/ForeverFamily.lua": ALL_CONSUMERS,

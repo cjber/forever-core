@@ -33,6 +33,15 @@ TITLE = "chore: sync shared files from forever-core"
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
 COMMIT_NAME = "github-actions[bot]"
 COMMIT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
+PER_PAGE = 100
+REPOSITORY_PAGES = 2
+AUTO_MERGE_QUERY = """
+mutation($pullRequestId: ID!) {
+  enablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId, mergeMethod: SQUASH}) {
+    pullRequest { number }
+  }
+}
+"""
 
 
 class SyncError(RuntimeError):
@@ -64,6 +73,25 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return run(["gh", *args], check=check)
 
 
+def api(path: str, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return gh("api", path, *args, check=check)
+
+
+def api_json(path: str, *args: str):
+    return json.loads(api(path, *args).stdout)
+
+
+def list_repositories() -> list[dict]:
+    """The owner's repositories over REST, two pages like the old `gh repo list --limit 200`."""
+    repositories = []
+    for page in range(1, REPOSITORY_PAGES + 1):
+        batch = api_json(f"users/{OWNER}/repos?per_page={PER_PAGE}&page={page}")
+        repositories.extend(batch)
+        if len(batch) < PER_PAGE:
+            break
+    return repositories
+
+
 def consumer_repos(discovered=()) -> list[str]:
     """VENDORED's repositories plus repositories found to vendor the tooling, never this repo."""
     vendored = {repo for repos in VENDORED.values() for repo in repos}
@@ -72,7 +100,7 @@ def consumer_repos(discovered=()) -> list[str]:
 
 def repo_vendors_tooling(repo: str) -> bool:
     for path in TOOLING_MANIFESTS:
-        if gh("api", f"repos/{OWNER}/{repo}/contents/{path}", "--silent", check=False).returncode == 0:
+        if api(f"repos/{OWNER}/{repo}/contents/{path}", "--silent", check=False).returncode == 0:
             return True
     return False
 
@@ -80,14 +108,14 @@ def repo_vendors_tooling(repo: str) -> bool:
 def discover_tooling_repos() -> set[str]:
     """The live repositories that vendor the tooling, so a new consumer needs no edit here."""
     try:
-        listed = json.loads(gh("repo", "list", OWNER, "--limit", "200", "--json", "name,isArchived").stdout)
+        listed = list_repositories()
     except (SyncError, json.JSONDecodeError) as error:
         print(f"::warning::Could not list {OWNER}'s repositories ({error}); using VENDORED's consumers only.")
         return set()
     return {
         item["name"]
         for item in listed
-        if not item.get("isArchived") and item["name"] != CORE_REPO and repo_vendors_tooling(item["name"])
+        if not item.get("archived") and item["name"] != CORE_REPO and repo_vendors_tooling(item["name"])
     }
 
 
@@ -154,51 +182,75 @@ def pr_body(sha: str, files: tuple[str, ...]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def open_or_update_pr(repo: str, body: str) -> tuple[int, str, str]:
-    listed = json.loads(
-        gh(
-            "pr",
-            "list",
-            "--repo",
-            f"{OWNER}/{repo}",
-            "--head",
-            BRANCH,
-            "--state",
-            "open",
-            "--json",
-            "number,url",
+def open_sync_prs(repo: str) -> list[dict]:
+    return api_json(f"repos/{OWNER}/{repo}/pulls?head={OWNER}:{BRANCH}&state=open")
+
+
+def close_stale_prs(repo: str, sha: str) -> list[int]:
+    """Close the sync PR an earlier run left open once the consumer already matches core, and drop its branch."""
+    closed = []
+    for pull in open_sync_prs(repo):
+        number = pull["number"]
+        api(
+            f"repos/{OWNER}/{repo}/issues/{number}/comments",
+            "--method",
+            "POST",
+            "-f",
+            f"body=main already matches forever-core {sha}; nothing left to sync.",
+        )
+        api(f"repos/{OWNER}/{repo}/pulls/{number}", "--method", "PATCH", "-f", "state=closed")
+        closed.append(number)
+    if closed:
+        api(f"repos/{OWNER}/{repo}/git/refs/heads/{BRANCH}", "--method", "DELETE", check=False)
+    return closed
+
+
+def open_or_update_pr(repo: str, body: str) -> tuple[int, str, str, str | None]:
+    listed = open_sync_prs(repo)
+    if listed:
+        pull = listed[0]
+        number, url = pull["number"], pull["html_url"]
+        api(
+            f"repos/{OWNER}/{repo}/pulls/{number}",
+            "--method",
+            "PATCH",
+            "-f",
+            f"title={TITLE}",
+            "-f",
+            f"body={body}",
+        )
+        # Arm it again only when it is not armed: a first attempt that failed, or a merge disabled by hand.
+        return number, url, "updated", None if pull.get("auto_merge") else pull.get("node_id")
+    created = json.loads(
+        api(
+            f"repos/{OWNER}/{repo}/pulls",
+            "--method",
+            "POST",
+            "-f",
+            f"title={TITLE}",
+            "-f",
+            f"head={BRANCH}",
+            "-f",
+            "base=main",
+            "-f",
+            f"body={body}",
         ).stdout
     )
-    if listed:
-        number, url, status = listed[0]["number"], listed[0]["url"], "updated"
-        gh("pr", "edit", str(number), "--repo", f"{OWNER}/{repo}", "--title", TITLE, "--body", body)
-        return number, url, status
-    output = [
-        line.strip()
-        for line in gh(
-            "pr",
-            "create",
-            "--repo",
-            f"{OWNER}/{repo}",
-            "--base",
-            "main",
-            "--head",
-            BRANCH,
-            "--title",
-            TITLE,
-            "--body",
-            body,
-        ).stdout.splitlines()
-        if line.strip()
-    ]
-    url = output[-1]
-    return int(url.rstrip("/").rsplit("/", 1)[-1]), url, "opened"
+    return created["number"], created["html_url"], "opened", created.get("node_id")
 
 
-def enable_auto_merge(repo: str, number: int) -> None:
-    view = json.loads(gh("pr", "view", str(number), "--repo", f"{OWNER}/{repo}", "--json", "autoMergeRequest").stdout)
-    if view.get("autoMergeRequest") is None:
-        gh("pr", "merge", str(number), "--repo", f"{OWNER}/{repo}", "--squash", "--auto")
+def enable_auto_merge(node_id: str) -> None:
+    """The one GraphQL call left: auto-merge has no REST endpoint."""
+    api("graphql", "-f", f"query={AUTO_MERGE_QUERY}", "-f", f"pullRequestId={node_id}")
+
+
+def auto_merge_warning(node_id: str) -> str | None:
+    """Arm auto-merge, or return the warning that the PR waits for a manual merge."""
+    try:
+        enable_auto_merge(node_id)
+    except (SyncError, OSError) as error:
+        return f"auto-merge not enabled; waiting for a manual merge ({error})"
+    return None
 
 
 def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Result:
@@ -208,12 +260,13 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Resu
         sync_checkout(root, core_root)
         files = staged_files(root)
         if not files:
-            return Result(repo, "up to date")
+            closed = close_stale_prs(repo, sha)
+            return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         commit(root, sha)
         git(root, "push", "--force", "origin", f"HEAD:refs/heads/{BRANCH}")
-        number, url, status = open_or_update_pr(repo, pr_body(sha, files))
-        enable_auto_merge(repo, number)
-        return Result(repo, status, files, url)
+        number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files))
+        warning = auto_merge_warning(node_id) if node_id else None
+        return Result(repo, status, files, url, warning)
     except (SyncError, json.JSONDecodeError, OSError) as error:
         return Result(repo, "failed", detail=str(error))
 
