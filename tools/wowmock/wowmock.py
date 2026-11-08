@@ -921,16 +921,10 @@ def item_button(canvas, x, y, item=None, count=None, hover=False, artwork=None, 
     lands. `junk` shows the JunkIcon coin (OVERLAY 5, above the quality border)."""
     ui = canvas.ui
     if item is None:
+        # SetItemButtonTexture(nil) puts the empty-slot atlas in the icon texture itself.
         canvas.draw(ui.atlas("bags-item-slot64"), x, y, ITEM_BUTTON, ITEM_BUTTON)
     else:
         canvas.draw(ui.texture(item.icon), x, y, ITEM_BUTTON, ITEM_BUTTON)
-    canvas.draw(
-        ui.atlas("bags-item-slot64"),
-        x + (ITEM_BUTTON - 64) / 2,
-        y + (ITEM_BUTTON - 64) / 2 + 1,
-        64,
-        64,
-    )
     if artwork:
         artwork(canvas, x, y)
     if count and count > 1:

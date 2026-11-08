@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Mock backpacks show their items.** `tools/wowmock/wowmock.py` drew the empty-slot atlas as a 64-unit overlay over every backpack slot, so item icons, quality borders and counts were hidden. An empty slot's art now fills the 37-unit icon texture, as `SetItemButtonTexture(nil)` does in `ContainerFrameItemButtonMixin`, and a filled slot draws only its item. (#211)
+
+- **The CurseForge watch keeps its place and sees Field Guide.** `docs/handoff/cfwatch.py` stores its seen IDs under `${XDG_STATE_HOME:-~/.local/state}/forever-core/cfwatch-seen.json` instead of inside a checkout, includes `field-guide-forever`, prints each comment's own ID, and adds `--unanswered` to list top-level comments with no `cjber` reply by matching replies to their parentId. (#230)
+
 - **The simulator records each error once.** `forever_sim`'s default error handler recorded an error a second time, under the addon's name, when an addon's handler saved it and passed the error on, as the shared error capture and BugGrabber do. It now records only errors that reach it first, and the settings pages' `GetModifiedClick` and `GetBinding` calls have stubs. (#225)
 
 - **A bug report can now say what led to the error.** `Core/Log.lua` adds `ns.Log(level, topic, message, ...)`: a 200-line ring per addon kept in its saved variables, so a `/reload` keeps earlier sessions. `info`, `warn` and `error` are always kept; `debug` only while `/forever debug` is on for the character, and a dropped debug line skips all formatting. `/forever debug pin` keeps it on across sessions, `/forever debug off` turns it off and unpins, and `/forever debug show` opens the report window with every attached addon's latest lines under its name, selected for copying. The state is shared by every loaded Forever addon and the report's copy adds the newest lines that fit after the error journal, so the lines closest to the error survive a long journal. Nothing is written to chat. Consumers attach it with `ns.AttachLog(store)`. (#206)
