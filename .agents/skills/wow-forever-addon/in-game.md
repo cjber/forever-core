@@ -55,8 +55,11 @@ whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 mi
   the sign the client is in the world.
 - The Wine environment comes from `~/.config/forever-client/env.json`. `capture-env` records it from a client Lutris
   started, and is needed again only when the Lutris runner changes.
-- The launcher logs in on its own and Enter at the character list enters with the last character. A timeout
-  prints the last frame's path: a login form or an update prompt there needs the player.
+- Battle.net needs the network, so run the tool outside the agent sandbox; `up` checks Battle.net is reachable
+  before it starts anything.
+- The launcher logs in on its own. Until the game starts, `up` re-sends the launch every 15 s, since Battle.net
+  drops one that arrives during its login or a news modal; Enter at the character list enters with the last
+  character. A timeout prints the last frame's path: a login form or an update prompt there needs the player.
 
 ## Scope
 

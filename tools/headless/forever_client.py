@@ -40,6 +40,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -51,6 +52,8 @@ PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
 LAUNCHER = PREFIX / "drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
 LAUNCH_ARGS = ["--exec=launch_uid wowf"]
+# The account's Battle.net region: the launcher logs in here before it can start the game.
+BATTLE_NET = ("eu.actual.battle.net", 1119)
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "forever-client/env.json"
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
@@ -325,6 +328,13 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             f"the Wine prefix {PREFIX} is in use: {who}. "
             "A second client would log the first one out, so no session starts."
         )
+    try:
+        socket.create_connection(BATTLE_NET, timeout=10).close()
+    except OSError as error:
+        raise ClientError(
+            f"cannot reach Battle.net at {BATTLE_NET[0]}:{BATTLE_NET[1]} ({error}): the launcher could not log in. "
+            "A sandboxed shell has no network: run forever_client.py outside the sandbox."
+        ) from None
     if not CONFIG.exists():
         raise ClientError(
             f"no Wine environment recorded: run `forever_client.py capture-env` while Lutris runs the client ({CONFIG})"
@@ -385,10 +395,23 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         state_file().write_text(json.dumps(state))
         print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
 
+        def launch(extra_env: Mapping[str, str]) -> None:
+            subprocess.Popen(
+                [wine["WINE"], str(LAUNCHER), *LAUNCH_ARGS],
+                cwd=LAUNCHER.parent,
+                env={**env, **extra_env},
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+
         def at_character_select():
             # Enter at the character list enters the world with the last character; before then it does nothing.
             if client_pid():
                 x(state, "key", "Return")
+            else:
+                # Battle.net drops the first --exec when it arrives while the launcher logs in or shows a news modal.
+                # A second Battle.net.exe in the prefix hands its --exec to the running launcher and exits.
+                launch({"DISPLAY": state["display"]})
 
         try:
             ready = wait_for_world(before, min(args.timeout, MAX_SESSION), nudge=at_character_select)

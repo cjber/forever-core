@@ -59,6 +59,14 @@ class ForeverClientTest(unittest.TestCase):
         ):
             fc.up(args())
 
+    def test_up_fails_fast_without_a_network(self):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection", side_effect=OSError("Network is unreachable")),
+            self.assertRaisesRegex(fc.ClientError, "cannot reach Battle.net.*outside the sandbox"),
+        ):
+            fc.up(args())
+
     def test_a_second_session_fails_clearly_unless_it_waits(self):
         (self.state / "session.json").write_text('{"pid": 7}')
         holder = open(self.state / "lock", "w")
