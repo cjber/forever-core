@@ -20,6 +20,14 @@ L["Lock the tracker"] = "Lock the tracker"
 L["Tracker background"] = "Tracker background"
 L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."
 
+-- Forever quest list.
+L["Forever quest list"] = "Forever quest list"
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
+L["Use the game's quest list"] = "Use the game's quest list"
+L["Ready to turn in"] = "Ready to turn in"
+L["%d yd"] = "%d yd"
+
 -- Forever Leaderboards.
 L["Forever Leaderboards"] = "Forever Leaderboards"
 L["Overall"] = "Overall"

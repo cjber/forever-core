@@ -10,6 +10,7 @@ core.TrackerHost = ns.TrackerHost
 core.TrackerLock = ns.TrackerLock
 core.TrackerOrder = ns.TrackerOrder
 core.TrackerQuestie = ns.TrackerQuestie
+core.TrackerQuests = ns.TrackerQuests
 
 ---Attaches a section frame to the shared column; false when there is no column (no native tracker).
 ---@param module ForeverTrackerModule
@@ -27,7 +28,14 @@ ForeverCore = core -- taint-ok: addon-owned registry of the shared primitives
 
 if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE1 = "/fcore"
-	SlashCmdList.FOREVERCORE = function()
+	SlashCmdList.FOREVERCORE = function(message)
+		local command = tostring(message or ""):match("^%s*(%S*)")
+		if command:lower() == "quests" then
+			if ns.TrackerQuests ~= nil then
+				ns.TrackerQuests.Toggle()
+			end
+			return
+		end
 		local host = ns.TrackerHost
 		if host ~= nil and host.Debug ~= nil then
 			print(host.Debug())

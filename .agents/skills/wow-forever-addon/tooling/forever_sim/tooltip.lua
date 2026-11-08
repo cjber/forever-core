@@ -265,8 +265,8 @@ function M.build(sim)
 		return unpack(out, 1, n)
 	end
 	sim.impl["C_RestrictedActions.CheckAllowProtectedFunctions"] = function(object)
-		local s = object and S[object]
-		if s and s.protected and Taint.current and sim.combatLockdown then
+		local protected = sim.widgets.protection(object)
+		if protected and Taint.current and sim.combatLockdown then
 			sim.blocked(object, "CheckAllowProtectedFunctions")
 			return false
 		end

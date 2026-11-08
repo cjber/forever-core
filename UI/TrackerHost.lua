@@ -9,6 +9,7 @@ local _, ns = ...
 ---@field GetContextMenuParent fun(self: ForeverTrackerModule): Frame
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
+---@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
 
 ---@class ForeverNativeTrackerHeader : Frame
 ---@field Text FontString
@@ -727,6 +728,10 @@ local function AddHeaderMenu(module)
 				end, function()
 					api.SetBackdropOpacity(value)
 				end)
+			end
+			-- A section may add its own entries after the column's, without the host learning what the section is.
+			if type(module.AddHeaderMenuEntries) == "function" then
+				module:AddHeaderMenuEntries(root)
 			end
 		end)
 	end)

@@ -43,7 +43,7 @@ EventUtil = {}
 function GameTooltip_Hide() end
 
 -- ForeverCore's own saved variables, from ForeverCore.toc.
----@type {trackerHost?: ForeverTrackerSettings}?
+---@type {trackerHost?: ForeverTrackerSettings, questList?: boolean}?
 ForeverCoreDB = nil
 
 -- UI/Leaderboards.lua publishes the shared window every Forever addon registers into.
@@ -57,6 +57,52 @@ EditModeManagerFrame = nil
 
 ---@type ForeverNativeTrackerFrame
 ObjectiveTrackerFrame = nil
+
+-- Blizzard's own quest tracker mixins, read by UI/TrackerQuests.lua so its section behaves like the game's.
+---@class ForeverQuestObjectiveTrackerMixin
+---@field ShouldDisplayQuest fun(self: any, quest: any): boolean
+---@field OnBlockHeaderClick fun(self: any, block: any, mouseButton: string)
+---@type ForeverQuestObjectiveTrackerMixin
+QuestObjectiveTrackerMixin = nil
+---@type ForeverQuestObjectiveTrackerMixin
+CampaignQuestObjectiveTrackerMixin = nil
+---@class ForeverQuestCache
+---@field Get fun(self: ForeverQuestCache, questID: number): any
+---@type ForeverQuestCache
+QuestCache = nil
+
+---@type string
+TRACKER_HEADER_QUESTS = nil
+---@type string
+QUEST_WATCH_QUEST_COMPLETE = nil
+---@type string
+QUEST_WATCH_CLICK_TO_COMPLETE = nil
+---@type string
+QUEST_WATCH_QUEST_READY = nil
+---@type string
+FAILED = nil
+---@type string
+WAYPOINT_OBJECTIVE_FORMAT_OPTIONAL = nil
+---@type number
+OBJECTIVE_DASH_STYLE_HIDE = nil
+---@class ForeverObjectiveTrackerColor
+---@field r number
+---@field g number
+---@field b number
+---@type table<string, ForeverObjectiveTrackerColor>
+OBJECTIVE_TRACKER_COLOR = nil
+---@param questID number
+---@param title string
+---@return string
+function SetQuestTitleLevelAndDifficultyColor(questID, title) end
+---@param questLogIndex number
+---@return string?
+function GetQuestLogCompletionText(questLogIndex) end
+---@param questID number
+---@return boolean
+function IsQuestSequenced(questID) end
+---@return number?
+function QuestMapFrame_GetFocusedQuestID() end
 
 -- Blizzard_SharedXML/Pool.lua; addon-owned instances, never ObjectiveTrackerManager's pool.
 ---@class ForeverPrivateFramePool

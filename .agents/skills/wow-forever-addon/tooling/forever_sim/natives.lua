@@ -199,6 +199,40 @@ function M.build(sim)
 		return 0
 	end
 	G.QuestPOIUpdateIcons = function() end
+	-- The quest log's header collapse/expand, which the quest map calls while it refreshes its filters.
+	G.ExpandQuestHeader = function() end
+	G.CollapseQuestHeader = function() end
+	-- The FrameXML-era quest-log natives the client implements in C: Blizzard's tracker and quest map read them, and
+	-- the documentation does not list them. A scenario answers through sim.impl when it has objectives to show.
+	local function questNative(name, default)
+		G[name] = function(...)
+			local f = sim.impl[name]
+			if f then
+				return f(...)
+			end
+			return default
+		end
+	end
+	questNative("GetNumQuestLeaderBoards", 0)
+	questNative("GetQuestLogLeaderBoard", nil)
+	questNative("GetQuestLogCompletionText", nil)
+	questNative("IsQuestSequenced", false)
+	-- The quest's special item, if any. Blizzard's tracker asks before it makes the item button; no item means none.
+	questNative("GetQuestLogSpecialItemInfo", nil)
+	-- The item button's cooldown and range checks; the client answers no cooldown and out of range.
+	questNative("GetQuestLogSpecialItemCooldown", nil)
+	questNative("IsQuestLogSpecialItemInRange", 0)
+	-- The bonus objectives table: the sim's player has none.
+	G.GetTasksTable = function()
+		return {}
+	end
+	-- Auto quest pop-ups: none.
+	questNative("GetNumAutoQuestPopUps", 0)
+	-- No scenario: no stages. The tracker compares the count GetInfo returns.
+	G.C_Scenario = G.C_Scenario or {}
+	G.C_Scenario.GetInfo = function()
+		return nil, nil, 0
+	end
 	G.SpellCanTargetQuest = function()
 		return false
 	end

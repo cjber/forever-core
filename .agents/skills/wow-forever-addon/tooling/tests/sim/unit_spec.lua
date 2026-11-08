@@ -271,5 +271,60 @@ test("client: the key-binding globals the settings pages call are stubbed", func
 	assert(category == nil or type(category) == "string", "GetBinding returns the documented category")
 end)
 
+test("natives: the quest-log leaderboard helpers answer the client's zero values", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	eq(G.GetNumQuestLeaderBoards(1), 0, "no objectives")
+	eq(G.GetQuestLogLeaderBoard(1, 1), nil, "no objective line")
+	eq(G.GetQuestLogCompletionText(1), nil, "no completion text")
+	eq(G.IsQuestSequenced(1), false, "not sequenced")
+	eq(G.GetQuestLogSpecialItemInfo(1), nil, "no quest item")
+	eq(type(G.ExpandQuestHeader), "function", "expand a quest header")
+	eq(type(G.CollapseQuestHeader), "function", "collapse a quest header")
+	-- A scenario answers through sim.impl, as it does for a documented API.
+	sim.impl.GetNumQuestLeaderBoards = function()
+		return 2
+	end
+	sim.impl.GetQuestLogLeaderBoard = function(index)
+		return "Objective " .. index, nil, index == 2
+	end
+	sim.impl.GetQuestLogCompletionText = function()
+		return "Return to the quest giver"
+	end
+	sim.impl.IsQuestSequenced = function()
+		return true
+	end
+	eq(G.GetNumQuestLeaderBoards(1), 2, "the scenario's objective count")
+	eq(select(1, G.GetQuestLogLeaderBoard(2, 1)), "Objective 2", "the scenario's objective text")
+	eq(select(3, G.GetQuestLogLeaderBoard(2, 1)), true, "the scenario's finished flag")
+	eq(G.GetQuestLogCompletionText(1), "Return to the quest giver", "the scenario's completion text")
+	eq(G.IsQuestSequenced(1), true, "the scenario's sequenced flag")
+end)
+
+test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()
+	local sim, G = freshClient()
+	sim.docs = {
+		enums = {},
+		constants = {
+			QuestInfoLuaConsts = {
+				Values = {
+					{ Name = "QUEST_INFO_ELITE_ID", Value = 1 },
+					{ Name = "QUEST_INFO_DUNGEON_ID", Value = 81 },
+					{ Name = "QUEST_INFO_PVP_ID", Value = 41 },
+					{ Name = "QUEST_INFO_RAID_ID", Value = 62 },
+				},
+			},
+		},
+		systems = {},
+		events = {},
+		widgets = {},
+		structures = {},
+	}
+	sim.dataDir = here .. "../../forever_sim/no-data"
+	require("stubgen").build(sim)
+	eq(G.Constants.QuestConsts.QUEST_INFO_DUNGEON_ID, 81, "the dungeon tag id")
+	eq(G.Constants.QuestConsts, G.Constants.QuestInfoLuaConsts, "the alias")
+end)
+
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

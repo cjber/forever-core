@@ -329,6 +329,52 @@ test("a protected frame changed from addon code in combat is ADDON_ACTION_BLOCKE
 	eq(#sim.errors, 0, "allowed out of combat")
 end)
 
+test("a frame is protected implicitly through a protected descendant, not explicitly", function()
+	local sim = Sim.new()
+	sim:loadBlizzard("Blizzard_FrameXML/SecureTemplates.lua")
+	sim:loadBlizzard("Blizzard_FrameXML/SecureTemplates.xml")
+	sim:runAs(
+		"SimImplicit",
+		[[
+		SimPlain = CreateFrame("Frame", "SimPlain", UIParent)
+		SimSecureChild = CreateFrame("Button", "SimSecureChild", SimPlain, "SecureActionButtonTemplate")
+		SimPlainNoChild = CreateFrame("Frame", "SimPlainNoChild", UIParent)
+	]]
+	)
+	local protected, explicit = sim.G.SimPlain:IsProtected()
+	eq(protected, true, "the parent is protected")
+	eq(explicit, false, "the parent is not explicitly protected")
+	protected, explicit = sim.G.SimSecureChild:IsProtected()
+	eq(protected, true, "the secure child is protected")
+	eq(explicit, true, "the secure child is explicitly protected")
+	protected, explicit = sim.G.SimPlainNoChild:IsProtected()
+	eq(protected, false, "a frame with no protected descendant is not protected")
+	eq(explicit, false, "nor explicitly protected")
+end)
+
+test("implicit protection blocks a tainted Hide in combat, as the client does", function()
+	local sim = Sim.new()
+	sim:loadBlizzard("Blizzard_FrameXML/SecureTemplates.lua")
+	sim:loadBlizzard("Blizzard_FrameXML/SecureTemplates.xml")
+	sim:runAs(
+		"SimImplicit",
+		[[
+		SimPlain = CreateFrame("Frame", "SimPlain", UIParent)
+		CreateFrame("Button", "SimSecureChild", SimPlain, "SecureActionButtonTemplate")
+		SimPlainNoChild = CreateFrame("Frame", "SimPlainNoChild", UIParent)
+	]]
+	)
+	sim.inCombat = true
+	sim.combatLockdown = true
+	sim:runAs("SimImplicit", "SimPlain:Hide()")
+	sim:expectError(
+		"[ADDON_ACTION_BLOCKED] AddOn 'SimImplicit' tried to call the protected function 'SimPlain:Hide()'"
+	)
+	sim:takeErrors()
+	sim:runAs("SimImplicit", "SimPlainNoChild:Hide()")
+	eq(#sim.errors, 0, "a frame with no protected descendant is not blocked")
+end)
+
 test("combat start exposes the transition boundary and scopes loss-of-control secrets", function()
 	local sim = Sim.new({ blizzard = {} })
 	sim.impl["C_LossOfControl.GetActiveLossOfControlDataByUnit"] = function(unit)
