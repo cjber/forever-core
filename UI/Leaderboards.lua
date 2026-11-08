@@ -13,6 +13,7 @@ local _, ns = ...
 ---@class ForeverLeaderboardsNamespace
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
+---@field DebugCommand? fun(argument?: string): boolean
 ---@field L? table<string, string>
 
 ---@alias ForeverLeaderboardsScope "week"|"all"
@@ -870,7 +871,8 @@ end
 --------------------------------------------------------------------------------------------------------------------
 -- Slash commands
 
--- A consumer that already owns /forever keeps it; /flb always opens this window. Neither prints anything.
+-- A consumer that already owns /forever keeps it; /flb always opens this window. `debug` is the shared log's
+-- subcommand, routed here so every copy of this file answers it; the log shows its answer on screen, never in chat.
 local foreverTaken = false
 for index = 1, 9 do
 	if rawget(_G, "SLASH_FOREVER" .. index) ~= nil then
@@ -882,6 +884,13 @@ SLASH_FOREVERLEADERBOARDS1 = not foreverTaken and "/forever" or nil
 SLASH_FOREVERLEADERBOARDS2 = "/flb"
 SlashCmdList["FOREVERLEADERBOARDS"] = function(message)
 	local key = type(message) == "string" and message:match("^%s*(.-)%s*$") or ""
+	local command, rest = key:match("^(%S+)%s*(.-)$")
+	if command == "debug" then
+		if type(ns.DebugCommand) == "function" then
+			ns.DebugCommand(rest)
+		end
+		return
+	end
 	if key == "" then
 		api:Toggle()
 	else

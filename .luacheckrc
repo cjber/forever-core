@@ -41,6 +41,7 @@ read_globals = {
 	"C_Map",
 	"C_Texture",
 	"C_Timer",
+	"date",
 	"CreateFrame",
 	"CreateFromMixins",
 	"CreateVector2D",

@@ -12,6 +12,7 @@
 Core.lua
 Locales\enUS.lua
 Core\SafeCall.lua
+Core\Log.lua
 Core\Text.lua
 Core\PeerStats.lua
 Core\MinimapButton.lua

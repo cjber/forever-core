@@ -5,6 +5,7 @@ local addonName = ...
 ---@field ReportTitle string
 ---@field CutText fun(text: string, limit: integer): string
 ---@field CaughtErrors fun(): table
+---@field LogLines? fun(count?: integer): string[]
 ---@field SafeCall fun(label: string, callback: function, ...: any): boolean, any
 ---@field ReportLines fun(): string[]
 local ns = select(2, ...)
@@ -19,8 +20,9 @@ local ns = select(2, ...)
 local L, Art = ns.L, ns.Art
 -- One Discord or forum message; a GitHub issue field takes it whole.
 local LIMIT = 2000
--- The addon's own lines and the caught errors each stop here, leaving room for the header and the addon list.
-local LINES_LIMIT, ERRORS_LIMIT = 1000, 600
+-- The addon's own lines and the caught errors each stop here, leaving room for the header and the addon list. The log
+-- section follows the errors; it adds the newest 50 lines only while they fit.
+local LINES_LIMIT, ERRORS_LIMIT, LOG_SHOWN = 1000, 600, 50
 local ICON = "Interface\\AddOns\\" .. addonName .. "\\media\\Icon"
 local WIDTH, HEIGHT = 460, 380
 
@@ -210,6 +212,45 @@ local function Errors()
 	return lines
 end
 
+-- The newest structured log lines, beneath the error journal, in time order. The block is built from the newest line
+-- backwards and whole lines are added only while they fit in `room`, so a long journal never crowds out the lines
+-- closest to the error. A consumer that has not vendored the shared log says so instead of failing its report.
+---@param room integer
+---@return string
+local function Logs(room)
+	local reader = ns.LogLines
+	if type(reader) ~= "function" then
+		return "Log: not available in this addon"
+	end
+	local ok, kept = pcall(reader, LOG_SHOWN)
+	if not ok or type(kept) ~= "table" then
+		return "Log: could not be read"
+	end
+	if not kept[1] then
+		return "Log: none this session"
+	end
+	local chosen, total = {}, 0
+	for index = #kept, 1, -1 do
+		local line = tostring(kept[index])
+		local count = #chosen + 1
+		-- The heading, the lines and one newline after each, which is what the joined section counts.
+		local size = #(("Log (last %d):"):format(count)) + total + #line + count
+		if size > room then
+			break
+		end
+		chosen[count] = line
+		total = total + #line
+	end
+	if not chosen[1] then
+		return "Log: no room in this report"
+	end
+	local ordered = {}
+	for index = #chosen, 1, -1 do
+		ordered[#ordered + 1] = chosen[index]
+	end
+	return ("Log (last %d):\n"):format(#ordered) .. table.concat(ordered, "\n")
+end
+
 -- The other loaded addons with their versions, as many as fit in `room` characters.
 ---@param room integer
 ---@return string
@@ -239,16 +280,18 @@ local function Addons(room)
 end
 
 -- The whole report: the header, the addon's `lines` (at most LINES_LIMIT characters), the caught errors (at most
--- ERRORS_LIMIT), then the other addons in what room is left. Each section has its own cap, so long addon lines never
--- push the errors out.
+-- ERRORS_LIMIT), the newest log lines that fit, then the other addons in what room is left. Each section has its own
+-- cap, so long addon lines never push the errors out.
 ---@param lines string[]
 ---@return string
 function Report.Text(lines)
-	local text = table.concat({
-		table.concat(Header(), "\n"),
-		ns.CutText(table.concat(lines, "\n"), LINES_LIMIT),
-		ns.CutText(table.concat(Errors(), "\n"), ERRORS_LIMIT),
-	}, "\n")
+	local header = table.concat(Header(), "\n")
+	local own = ns.CutText(table.concat(lines, "\n"), LINES_LIMIT)
+	local errors = ns.CutText(table.concat(Errors(), "\n"), ERRORS_LIMIT)
+	-- Three separators between the four sections and one before the addon list.
+	local room = math.max(LIMIT - (#header + #own + #errors + 4), 0)
+	local log = Logs(room)
+	local text = table.concat({ header, own, errors, log }, "\n")
 	text = text .. "\n" .. Addons(math.max(LIMIT - #text - 1, 0))
 	return ns.CutText(text, LIMIT)
 end
