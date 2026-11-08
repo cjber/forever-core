@@ -26,6 +26,8 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture and journal used by the report window |
+| `Core/Log.lua` | the shared structured log, its saved ring and the `/forever debug` switch |
+| `tests/debug_log_spec.lua` | the log's ring, levels, persistence, switch and copy contract |
 | `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
 | `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
@@ -40,8 +42,8 @@ the addon they already have.
 | `.github/workflows/core-shared-drift.yml` | runs the client load rule, the menu rule and the drift check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
 
 `tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
-tracker, report, family, peer-statistics and leaderboard set, and the map also holds the settings page, text, minimap
-button and dead-code files.
+tracker, report, family, log, peer-statistics and leaderboard set, and the map also holds the settings page, text,
+minimap button and dead-code files.
 
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
@@ -62,6 +64,41 @@ The addon's defaults should make that table exist before this line runs. The jou
 drops the least recently seen. Nothing else changes: `ns.SafeCall`, `ns.RecordError` and `ns.CaughtErrors` work as
 before, and every error still reaches BugSack or the default error frame.
 
+## Debug log
+
+Load `Core/Log.lua` after `Core/SafeCall.lua` (it cuts lines with `ns.CutText`) and hand it the saved table that should
+hold the ring, at the same point the journal is attached:
+
+```lua
+ns.AttachLog(AdventureGuideForeverDB.log)
+```
+
+The addon's defaults should create that table (`log = {}`); `ns.AttachLog` fills in `lines` and the `pinned` flag. The
+ring keeps the newest 200 lines, oldest dropped, and earlier sessions stay until the ring pushes them out, so a
+`/reload` does not lose what led to a bug. `ns.Log(level, topic, message, ...)` takes `debug`, `info`, `warn` or
+`error`; `info` and above are always kept, and a `debug` line that is off costs one comparison because the level is
+checked before the message is formatted. `message` is a `string.format` template only when arguments follow it. Each
+line carries the client's date, this session's `GetTime` seconds, the level, the caller's topic and the message, cut
+with `ns.CutText`.
+
+`/forever debug` toggles debug for this character for the session, `/forever debug pin` keeps it on across sessions,
+`/forever debug off` turns it off and unpins, and `/forever debug show` opens the report window with every attached
+addon's latest lines under its name, selected for copying. The state lives in the published `ForeverDebugLog` global,
+so every loaded Forever addon shares one switch for the character; each attached addon registers its saved table and
+its name there, and a pin is written to every attached table. Nothing writes to chat. The report window's copy adds
+the newest lines that fit after the error journal, picked from the newest backwards, so the lines closest to the
+error survive a long journal. The shared leaderboards copy routes `debug` on `/flb` and on `/forever` when it owns
+that name; a consumer that already claimed `/forever` adds the same `ns.DebugCommand(rest)` branch to its own handler.
+
+The on-screen answers and the usage line come from `ns.L`, like the report's hint and the leaderboards' labels. The
+keys are listed in core's `Locales/enUS.lua`; a consuming addon copies the ones it uses into its own locale file, as
+it already does for the other shared files. The log section's headings are plain English like the error journal's.
+
+Log the addon's own key transitions as `info`: login and saved-variable load, data or catalogue load, route, plan or
+guide rebuilds, settings changes, and the detection of another addon the addon integrates with. Use `debug` for
+per-frame or per-item detail and `warn` or `error` beside a handled failure. Keep an expensive debug message behind
+`if ns.DebugEnabled() then`, so nothing is built while debug is off.
+
 ## Why the paths are `UI/...` in a repo whose own addon is `ForeverCore`
 
 Suite convention is flat Lua at the repo root, and this repo is the deliberate exception. Keeping the files where
@@ -75,9 +112,11 @@ by path, run here unchanged.
 2. Bump `CHANGELOG.md` and the tag when the change is worth a release of its own.
 3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
 4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
-   is the gate. Tracker files go to four addons; report, Forever-family and SafeCall files go to all five. Peer
+   is the gate. Tracker files go to four addons; report, Forever-family, SafeCall and log files go to all five. Peer
    statistics and the leaderboards go to the six that share a statistics adapter: the four tracker addons, Field Guide
-   and Commissions. The checker is green once every mapped consumer has the same bytes.
+   and Commissions. The checker is green once every mapped consumer has the same bytes. `/forever debug` routes
+   through this file's leaderboards copy, so a leaderboard consumer without `Core/Log.lua` yet keeps working and simply
+   has no debug switch until it adopts the log.
 
 ## When the addons disagree with the core
 

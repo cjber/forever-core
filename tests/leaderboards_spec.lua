@@ -134,6 +134,29 @@ do
 	radios[1].onClick()
 end
 
+-- /forever debug routes to the shared log without opening a board ------------------------------------------------
+do
+	Client()
+	local env = harness.env
+	local api, ns = Load()
+	local seen
+	ns.DebugCommand = function(argument)
+		seen = argument
+		return true
+	end
+	check(api:IsShown() == false, "debug starts with no window")
+	env.SlashCmdList.FOREVERLEADERBOARDS("debug show")
+	equal(seen, "show", "the debug subcommand receives its argument")
+	check(api:IsShown() == false, "debug does not open the window")
+	env.SlashCmdList.FOREVERLEADERBOARDS("debug")
+	equal(seen, "", "a bare debug reaches the log")
+	ns.DebugCommand = nil
+	env.SlashCmdList.FOREVERLEADERBOARDS("debug show")
+	check(api:IsShown() == false, "a copy without the log still answers debug")
+	env.SlashCmdList.FOREVERLEADERBOARDS("paths")
+	check(api:IsShown(), "a board name still opens a board")
+end
+
 -- Tab order ------------------------------------------------------------------------------------------------------
 do
 	Client()

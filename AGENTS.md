@@ -9,8 +9,8 @@ addon, `ForeverCore`.
 
 1. **The shared files are the source of truth, and nothing here is addon specific.** Tracker files are vendored byte
    for byte into adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever. Error capture,
-   report and Forever-family files are vendored into all five consumer addons at the same paths
-   (`Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`; see `docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
+   report, Forever-family and log files are vendored into all five consumer addons at the same paths
+   (`Core/SafeCall.lua`, `Core/Log.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`; see `docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
    consumer repo and never bend these files toward one addon's needs: they read everything addon specific through the
    namespace (`ns.TrackerHostSettings`, `ns.ReportTitle`, `ns.L`), by design.
 2. **The paths mirror a consumer repo.** Suite convention is flat Lua at the repo root, and this repo is the one
@@ -46,7 +46,8 @@ and run anywhere.
 - `Expose.lua`: the public `ForeverCore` table and `/fcore`; the last file the TOC loads, because it publishes what
   the shared modules built.
 - `Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`: shared error capture, report, issue and link UI vendored into all five consumers.
-- `tests/report_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
+- `Core/Log.lua`: the shared structured log, its 200-line saved ring, the `/forever debug` switch and the lines the report copies.
+- `tests/report_spec.lua`, `tests/debug_log_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
 - `UI/TrackerHost.lua`: the private tracker column, its layout, combat and Edit Mode handling, and the
   `ForeverTrackerHost` global the first-loaded Forever addon publishes and the rest adopt.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which must load before the host.
