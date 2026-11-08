@@ -10,8 +10,6 @@ local _, ns = ...
 -- Core/LeaderboardsData.lua, loaded first, owns overall points, a player's standing, the per-scope cache and the
 -- tooltip text; this file owns the window and the registration.
 
--- luacheck: read globals InputUtil
-
 ---@class ForeverLeaderboardsNamespace
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
@@ -75,7 +73,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 5
+local LEADERBOARDS_VERSION = 6
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -631,10 +629,14 @@ local PERIOD_CHOICES = {
 	{ scope = "all", reach = "met" },
 }
 
--- The client's gamepad switch, read the way UI/ForeverFamily.lua reads it.
+-- The client's gamepad switch. Read through _G because not every consumer's pinned WoW API annotations declare
+-- InputUtil, and this file has to typecheck unchanged in each of them.
 ---@return boolean
 local function GamepadUI()
-	return (InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()) == true
+	local input = rawget(_G, "InputUtil")
+	return type(input) == "table"
+		and type(input.IsGamepadUIEnabled) == "function"
+		and input.IsGamepadUIEnabled() == true
 end
 
 ---@return ForeverLeaderboardsWindow
