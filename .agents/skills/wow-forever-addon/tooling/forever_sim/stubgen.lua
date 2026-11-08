@@ -109,6 +109,66 @@ function M.build(sim)
 		local meta = { MinValue = e.MinValue, MaxValue = e.MaxValue, NumValues = e.NumValues }
 		G.Enum[name .. "Meta"] = meta
 	end
+	-- Enums the client defines but the pinned build's Blizzard_APIDocumentationGenerated (1.60.1.70425) does not
+	-- enumerate. Enum.GameRule is one, and Blizzard's UI reads it constantly. The values are Ketho/vscode-wow-api's
+	-- Annotations/Core/Data/Enum.lua (release 0.22.3, its 12.0.1 annotation set), the only published table naming
+	-- these members; this lists the ones the Blizzard UI the client loads reads.
+	G.Enum.GameRule = {
+		AchievementsPanelDisabled = 40,
+		ActionButtonTypeOverlayStrategy = 165,
+		ActionbarIconIntroDisabled = 60,
+		BagsUIDisabled = 64,
+		CharacterPanelDisabled = 37,
+		ChatLinkLevelToastsDisabled = 63,
+		CustomActionbarOverlayHeightOffset = 33,
+		EditModeDisabled = 82,
+		EjDungeonsDisabled = 149,
+		EjItemSetsDisabled = 151,
+		EjJourneysDisabled = 156,
+		EjRaidsDisabled = 150,
+		EjSuggestedContentDisabled = 148,
+		EncounterJournalDisabled = 42,
+		ExperienceBarDisabled = 159,
+		FrontEndChat = 50,
+		GuildsDisabled = 46,
+		IngameCalendarDisabled = 75,
+		IngameFriendsListDisabled = 79,
+		IngameMailNotificationDisabled = 74,
+		IngameTrackingDisabled = 76,
+		IngameWhoListDisabled = 77,
+		InstanceDifficultyBannerDisabled = 83,
+		LandingPageFactionID = 35,
+		MacrosDisabled = 80,
+		MapPlunderstormCircle = 48,
+		MaximizeWorldMapDisabled = 67,
+		MerchantFilterDisabled = 101,
+		MinimapDisabled = 146,
+		NameplateCastBarDisabled = 107,
+		ObjectiveTrackerDisabled = 104,
+		PetBattlesDisabled = 65,
+		PlayerCastBarDisabled = 105,
+		PlunderstormAreaSelection = 94,
+		QuestLogPanelDisabled = 71,
+		TargetCastBarDisabled = 106,
+		TutorialFrameDisabled = 73,
+		UserAddonsDisabled = 29,
+		UserScriptsDisabled = 30,
+		WorldMapDisabled = 145,
+		WorldMapFrameStrata = 100,
+		WorldMapHelpPlateDisabled = 70,
+		WorldMapTrackingOptionsDisabled = 68,
+		WorldMapTrackingPinDisabled = 69,
+	}
+	-- GetGameRuleAsFrameStrata converts a rule to a frame strata. The only frame-strata rule is WorldMapFrameStrata,
+	-- and the world map's own strata is MEDIUM: WorldMapFrame inherits MapCanvasFrameTemplate, declared
+	-- frameStrata="MEDIUM" in Blizzard_MapCanvas/Blizzard_MapCanvas.xml:56, and Blizzard_WorldMap.xml:4 inherits it.
+	-- A rule that is not a strata converts to the "UNKNOWN" the world map already skips (Blizzard_WorldMap.lua:389).
+	sim.impl["C_GameRules.GetGameRuleAsFrameStrata"] = function(gameRule)
+		if gameRule == G.Enum.GameRule.WorldMapFrameStrata then
+			return "MEDIUM"
+		end
+		return "UNKNOWN"
+	end
 	G.Constants = setmetatable(G.Constants or {}, {
 		__index = function(t, k)
 			if Taint.current or type(k) ~= "string" then
