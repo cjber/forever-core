@@ -124,6 +124,19 @@ for the user to delete.
 ## X-Wago-ID: <wago id>
 ```
 
+Before the version bump, smoke the build in the client when it is running, under the game lock, and only
+when the player is not playing (a deskpilot screenshot first):
+
+1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
+   note `date +%s`, then `/reload`.
+2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from `forever-smoke`). It opens and closes every
+   loaded Forever addon's slash command and the world map, and shows "Dev Smoke: N surfaces, F failed" on
+   screen.
+3. `/reload` again so the client writes SavedVariables, then
+   `python3 tools/forever_errors.py --since <noted time> --addon <AddonFolder>`. It reads the journals,
+   BugGrabber, `taint.log` and the selftest's failed surfaces. Exit 1 blocks the release: fix the error first.
+4. Point the link back at `test-artifacts/<repo>-dev` and `/reload`.
+
 Then move `## [Unreleased]` to `## [x.y.z] - <today UTC>`, signed commit (personal email for these
 repos), push, `git tag -s vX.Y.Z -m vX.Y.Z`, push the tag, and watch the run:
 
