@@ -64,6 +64,11 @@ by path, run here unchanged.
    statistics and the leaderboards go to the six that share a statistics adapter: the four tracker addons, Field Guide
    and Commissions. The checker is green once every mapped consumer has the same bytes.
 
+A push to `main` runs `.github/workflows/sync-consumers.yml`, which does steps 3 and 4 for every consumer: it
+force-pushes `forever-core-sync` and opens or refreshes the PR with squash auto-merge armed, leaving that consumer's
+checks to decide when it lands. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and
+stays green.
+
 ## When the addons disagree with the core
 
 They cannot, in the steady state: `tools/check_consumers.py` fails on a byte difference, and that is the point. If a
