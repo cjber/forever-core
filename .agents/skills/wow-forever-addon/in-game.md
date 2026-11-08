@@ -57,9 +57,9 @@ whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 mi
   started, and is needed again only when the Lutris runner changes.
 - Battle.net needs the network, so run the tool outside the agent sandbox; `up` checks Battle.net is reachable
   before it starts anything.
-- The launcher logs in on its own. Until the game starts, `up` re-sends the launch every 15 s, since Battle.net
-  drops one that arrives during its login or a news modal; Enter at the character list enters with the last
-  character. A timeout prints the last frame's path: a login form or an update prompt there needs the player.
+- The launcher logs in on its own and opens the WoW: Forever page, but ignores the launch it was started with, so
+  until the game starts `up` clicks Play every 15 s (`PLAY_BUTTON`, measured in the launcher window gamescope
+  gives it; a launcher redesign moves it). Enter at the character list enters with the last character. A timeout prints the last frame's path: a login form or an update prompt there needs the player.
 
 ## Scope
 

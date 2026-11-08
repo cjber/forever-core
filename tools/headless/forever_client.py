@@ -52,6 +52,10 @@ PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
 LAUNCHER = PREFIX / "drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
 LAUNCH_ARGS = ["--exec=launch_uid wowf"]
+# Battle.net ignores --exec once it is logged in, so the session presses Play: its centre on the WoW: Forever page
+# that --exec opens, in the launcher window gamescope gives it. Another window size means another layout.
+LAUNCHER_WINDOW = (1266, 684)
+PLAY_BUTTON = (921, 367)
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
@@ -246,6 +250,31 @@ def slash(state: Mapping, command: str) -> None:
     send(state, "key", "Return")
 
 
+def press_play(state: Mapping) -> None:
+    """Click Play in the launcher's main window, the one gamescope sized to LAUNCHER_WINDOW."""
+    found = subprocess.run(
+        ["xdotool", "search", "--name", "^Battle.net$"],
+        env={**os.environ, "DISPLAY": state["display"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for window in found.stdout.split():
+        geometry = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", window],
+            env={**os.environ, "DISPLAY": state["display"]},
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        size = dict(line.split("=", 1) for line in geometry.split())
+        if (int(size.get("WIDTH", 0)), int(size.get("HEIGHT", 0))) == LAUNCHER_WINDOW:
+            x(state, "mousemove", "--window", window, *map(str, PLAY_BUTTON))
+            time.sleep(0.5)
+            x(state, "click", "1")
+            return
+
+
 def reload(state: Mapping, timeout: float = 120) -> Path:
     before = screenshots()
     slash(state, "/reload")
@@ -374,9 +403,16 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
                 "-H",
                 str(HEIGHT),
                 "--",
+                # Gamescope's reaper ends every process once its child exits, and Battle.net exits as the game
+                # starts, so the child waits for the whole Wine session instead: the launcher, then `wineserver -w`.
+                "sh",
+                "-c",
+                '"$1" "$2" "$3"; exec "$4" -w',
+                "forever-client",
                 wine["WINE"],
                 str(LAUNCHER),
                 *LAUNCH_ARGS,
+                str(Path(wine["WINE"]).with_name("wineserver")),
             ],
             cwd=LAUNCHER.parent,
             env=env,
@@ -395,23 +431,12 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         state_file().write_text(json.dumps(state))
         print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
 
-        def launch(extra_env: Mapping[str, str]) -> None:
-            subprocess.Popen(
-                [wine["WINE"], str(LAUNCHER), *LAUNCH_ARGS],
-                cwd=LAUNCHER.parent,
-                env={**env, **extra_env},
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
-
         def at_character_select():
             # Enter at the character list enters the world with the last character; before then it does nothing.
             if client_pid():
                 x(state, "key", "Return")
             else:
-                # Battle.net drops the first --exec when it arrives while the launcher logs in or shows a news modal.
-                # A second Battle.net.exe in the prefix hands its --exec to the running launcher and exits.
-                launch({"DISPLAY": state["display"]})
+                press_play(state)
 
         try:
             ready = wait_for_world(before, min(args.timeout, MAX_SESSION), nudge=at_character_select)
