@@ -10,6 +10,9 @@ local _, ns = ...
 -- runs in combat or reaches the network: a hint is a grey line, a menu entry or a settings row that shows a link. The
 -- settings page ends with one more row, the Ko-fi address, shown only when the player clicks its Copy link button.
 
+-- The client's gamepad switch, read by Family.Register.
+-- luacheck: read globals InputUtil
+
 ---@class ForeverFamilyNamespace
 ---@field L? ForeverFamilyL
 ---@field FamilyL? ForeverFamilyL an English-keyed L for this file, for an addon whose own L uses other keys
@@ -42,7 +45,7 @@ local _, ns = ...
 ---@field SetTitle fun(self: ForeverFamilyLinkWindow, title: string)
 ---@field GetPortrait fun(self: ForeverFamilyLinkWindow): Texture
 
-local VERSION = 6
+local VERSION = 7
 if ForeverFamily and (tonumber(ForeverFamily.VERSION) or 0) >= VERSION then
 	ns.Family = type(ForeverFamily.For) == "function" and ForeverFamily.For(ns.FamilyL or ns.L) or ForeverFamily
 	return
@@ -61,6 +64,7 @@ local previous = ForeverFamily
 ---@field ADDONS ForeverFamilyAddon[] the five addons, in order
 ---@field SUPPORT ForeverFamilyLink where a player can support the addons
 ---@field window? ForeverFamilyLinkWindow the link window once built, for a newer copy to put away
+---@field Register fun(category: table, db: ForeverFamilySaved, current?: string, locale?: ForeverFamilyL): table
 local Family = { VERSION = VERSION }
 
 -- The copy now in charge when a newer version has taken over the global since this one loaded: an addon still
@@ -427,6 +431,24 @@ local ROW_HEIGHT = 52
 -- `Text`. A caller that names no addon still gets its own name, so two pages never share one.
 local pages = 0
 
+-- The page's own name, or a fresh one for a caller that names no addon.
+---@param current? string
+---@return string
+local function Owner(current)
+	pages = pages + 1
+	return type(current) == "string" and current ~= "" and current or "Unnamed" .. pages
+end
+
+-- An addon's saved variables, or the function that returns them once they load.
+---@param db ForeverFamilySaved
+---@return ForeverFamilyDB?
+local function Resolve(db)
+	if type(db) == "function" then
+		return db()
+	end
+	return db
+end
+
 -- The "Forever addons" settings page: the hint setting, then a row per addon with its icon, line, state and a Copy link
 -- button, then a last row with the Ko-fi address. `db` is the addon's saved variables, or a function that returns them
 -- once they load; `current` is the addon's own folder, whose row says "This addon". The rows are built the first time
@@ -438,8 +460,7 @@ local pages = 0
 ---@param locale? ForeverFamilyL
 ---@return ForeverFamilyPanel
 function Family.CreatePanel(parent, db, current, locale)
-	pages = pages + 1
-	local owner = type(current) == "string" and current ~= "" and current or "Unnamed" .. pages
+	local owner = Owner(current)
 	local panel = CreateFrame("Frame", "ForeverFamilyPanel" .. owner, parent) --[[@as ForeverFamilyPanel]]
 	-- Hidden until the settings panel shows it, so its OnShow always fires.
 	panel:Hide()
@@ -447,10 +468,7 @@ function Family.CreatePanel(parent, db, current, locale)
 	local states = { on = L["On"], off = L["Installed, turned off"], missing = L["Not installed"] }
 	---@return ForeverFamilyDB?
 	local function Saved()
-		if type(db) == "function" then
-			return db()
-		end
-		return db
+		return Resolve(db)
 	end
 	local check
 	local rows = {}
@@ -552,9 +570,68 @@ function Family.CreatePanel(parent, db, current, locale)
 	return panel
 end
 
--- The API bound to one addon's L: ShowLink, ShowSupport and CreatePanel read in that L unless a call names another.
--- Each addon's copy sets `ns.Family` to its own view (of `ns.FamilyL`, else `ns.L`), so no call site can leave it out.
--- The same view comes back for the same L while one is held.
+-- The client's settings navigation enters only a vertical page. From a canvas page it picks the first row of the
+-- vertical settings list, which still holds the previous page's rows, and leaves the cursor on a hidden frame. So
+-- with the gamepad interface on, this registers the page from the client's own rows, which its navigation can enter.
+---@param category table
+---@param db ForeverFamilySaved
+---@param current? string
+---@param locale? ForeverFamilyL
+---@return table
+function Family.Register(category, db, current, locale)
+	local L = Strings(locale)
+	if not (InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()) then
+		return Settings.RegisterCanvasLayoutSubcategory(
+			category,
+			Family.CreatePanel(nil, db, current, locale),
+			L["Forever addons"]
+		)
+	end
+	local subcategory = Settings.RegisterVerticalLayoutSubcategory(category, L["Forever addons"])
+	local setting = Settings.RegisterProxySetting(
+		subcategory,
+		"ForeverFamily_" .. Owner(current) .. "_suggestFamily",
+		Settings.VarType.Boolean,
+		L["Suggest my other Forever addons"],
+		true,
+		function()
+			local saved = Resolve(db)
+			return not (saved and saved.suggestFamily == false)
+		end,
+		function(value)
+			local saved = Resolve(db)
+			if saved then
+				saved.suggestFamily = value and true or false
+			end
+		end
+	)
+	Settings.CreateCheckbox(
+		subcategory,
+		setting,
+		L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."]
+	)
+	for _, addon in ipairs(Family.ADDONS) do
+		if addon.folder ~= current then
+			Settings.RegisterInitializer(
+				subcategory,
+				CreateSettingsButtonInitializer(addon.name, L["Copy link"], function()
+					Family.ShowLink(nil, nil, addon.folder, nil, locale)
+				end, L[addon.line], false)
+			)
+		end
+	end
+	Settings.RegisterInitializer(
+		subcategory,
+		CreateSettingsButtonInitializer(Family.SUPPORT.name, L["Copy link"], function()
+			Family.ShowSupport(locale)
+		end, L[Family.SUPPORT.line], false)
+	)
+	return subcategory
+end
+
+-- The API bound to one addon's L: ShowLink, ShowSupport, CreatePanel and Register read in that L unless a call names
+-- another. Each addon's copy sets `ns.Family` to its own view (of `ns.FamilyL`, else `ns.L`), so no call site can
+-- leave it out. The same view comes back for the same L while one is held.
 local views = setmetatable({}, { __mode = "kv" })
 ---@param locale? ForeverFamilyL
 ---@return ForeverFamilyAPI
@@ -570,6 +647,9 @@ function Family.For(locale)
 			end,
 			CreatePanel = function(parent, db, current, other)
 				return Family.CreatePanel(parent, db, current, other or locale)
+			end,
+			Register = function(category, db, current, other)
+				return Family.Register(category, db, current, other or locale)
 			end,
 			ShowSupport = function(other)
 				return Family.ShowSupport(other or locale)
