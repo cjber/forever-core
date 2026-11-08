@@ -9,7 +9,7 @@ do
 	Client()
 	local env, frames, named = harness.env, harness.frames, harness.named
 	local api = Load()
-	check(api ~= nil and api.VERSION == 4, "the first copy publishes a versioned global")
+	check(api ~= nil and api.VERSION == 5, "the first copy publishes a versioned global")
 	check(env.ForeverLeaderboards == api, "the global is the same table")
 	check(type(api.Register) == "function" and type(api.Open) == "function", "the API is there")
 	check(api.window == nil, "loading builds no window")
@@ -48,7 +48,7 @@ do
 	for _, widget in ipairs(frames) do
 		equal(widget:GetScript("OnUpdate"), nil, "no frame runs an OnUpdate")
 	end
-	equal(named.ForeverLeaderboardsFrame4, window, "the window has its name")
+	equal(named.ForeverLeaderboardsFrame5, window, "the window has its name")
 	equal(window.title, "Forever Leaderboards", "the title")
 	equal(window.portrait.texture, ICON, "the trophy portrait")
 	equal(#window.tabs, 3, "Overall plus both boards")

@@ -10,6 +10,8 @@ local _, ns = ...
 -- Core/LeaderboardsData.lua, loaded first, owns overall points, a player's standing, the per-scope cache and the
 -- tooltip text; this file owns the window and the registration.
 
+-- luacheck: read globals InputUtil
+
 ---@class ForeverLeaderboardsNamespace
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
@@ -73,7 +75,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 4
+local LEADERBOARDS_VERSION = 5
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -376,6 +378,8 @@ end
 ---@class ForeverLeaderboardsDropdown : Frame
 ---@field SetDefaultText fun(self: ForeverLeaderboardsDropdown, text: string)
 ---@field SetupMenu fun(self: ForeverLeaderboardsDropdown, generator: fun(owner: Frame, root: any))
+---@field OpenMenu fun(self: ForeverLeaderboardsDropdown)
+---@field IsEnabled fun(self: ForeverLeaderboardsDropdown): boolean
 
 ---@alias ForeverLeaderboardsTabMouseUp fun(self: Frame, button: string, upInside: boolean)
 
@@ -619,6 +623,20 @@ function Refresh()
 	)
 end
 
+-- The dropdown's four choices, in the order a press steps through them.
+local PERIOD_CHOICES = {
+	{ scope = "week", reach = "group" },
+	{ scope = "all", reach = "group" },
+	{ scope = "week", reach = "met" },
+	{ scope = "all", reach = "met" },
+}
+
+-- The client's gamepad switch, read the way UI/ForeverFamily.lua reads it.
+---@return boolean
+local function GamepadUI()
+	return (InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()) == true
+end
+
 ---@return ForeverLeaderboardsWindow
 local function Window()
 	if api.window then
@@ -687,6 +705,29 @@ local function Window()
 			Refresh()
 		end)
 	end)
+	-- With the gamepad interface on, the client's gamepad frame manager takes every menu that shows into its focus
+	-- in the same call, under the taint of whoever opened it, and the next secure window call then has its protected
+	-- SetPreferredGamepadInteractTarget refused. No addon code can open a Blizzard menu untainted, so a press steps
+	-- to the next choice instead (cjber/forever-core#267, cjber/skillup-forever#398).
+	local openMenu = dropdown.OpenMenu
+	function dropdown:OpenMenu()
+		if not GamepadUI() then
+			return openMenu(self)
+		end
+		if not self:IsEnabled() then
+			return
+		end
+		local index = 1
+		for position, choice in ipairs(PERIOD_CHOICES) do
+			if choice.scope == api.scope and choice.reach == api.reach then
+				index = position % #PERIOD_CHOICES + 1
+				break
+			end
+		end
+		local choice = PERIOD_CHOICES[index]
+		api.scope, api.reach = choice.scope, choice.reach
+		Refresh()
+	end
 	dropdown:SetDefaultText(L["This week"])
 	frame.dropdown = dropdown
 

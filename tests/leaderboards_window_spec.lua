@@ -313,4 +313,99 @@ do
 	equal(manager.includeRelayed, false, "the flag is restored when a board raises")
 end
 
+-- The period dropdown under the gamepad interface: a press steps through the four choices instead of opening a menu,
+-- which would taint the gamepad focus (#267).
+---@param gamepad boolean
+---@return table env
+local function GamepadClient(gamepad)
+	local env = Client()
+	env.InputUtil = {
+		IsGamepadUIEnabled = function()
+			return gamepad
+		end,
+	}
+	return env
+end
+
+---@param api ForeverLeaderboardsAPI
+local function OpenBoard(api)
+	api:Register("one", spec("one", { row("Me", 1, nil, true, "HUNTER") }, {}))
+	api:Open("one")
+	return api.window.dropdown
+end
+
+-- A gamepad press steps to the next choice and opens no menu -----------------------------------------------------
+do
+	GamepadClient(true)
+	local api = Load()
+	local dropdown = OpenBoard(api)
+	local window = api.window
+	equal(api.scope, "week", "a fresh window starts at this week")
+	equal(api.reach, "group", "for the guild and group")
+	equal(dropdown.openedMenus, 0, "no menu opens before a press")
+
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 0, "the first press opens no menu")
+	equal(api.scope, "all", "the first press moves to all time")
+	equal(api.reach, "group", "staying on the guild and group")
+	equal(window.valueHeader.text, "All time", "the header follows the scope")
+	equal(window.subtitle.text, "Your guild and group", "the subtitle follows the reach")
+
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 0, "the second press opens no menu")
+	equal(api.scope, "week", "the second press moves back to this week")
+	equal(api.reach, "met", "and on to the players you've met")
+	equal(window.valueHeader.text, "This week", "the header shows this week")
+	equal(window.subtitle.text, "Players you've met", "the subtitle shows the wider reach")
+
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 0, "the third press opens no menu")
+	equal(api.scope, "all", "the third press moves to all time again")
+	equal(api.reach, "met", "still for the players you've met")
+	equal(window.valueHeader.text, "All time", "the header shows all time")
+	equal(window.subtitle.text, "Players you've met", "the subtitle keeps the reach")
+
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 0, "the fourth press opens no menu")
+	equal(api.scope, "week", "the fourth press wraps to this week")
+	equal(api.reach, "group", "and back to the guild and group")
+	equal(window.valueHeader.text, "This week", "the header is back to this week")
+	equal(window.subtitle.text, "Your guild and group", "the subtitle is back to the guild and group")
+end
+
+-- A disabled dropdown does nothing --------------------------------------------------------------------------------
+do
+	GamepadClient(true)
+	local api = Load()
+	local dropdown = OpenBoard(api)
+	dropdown:SetEnabled(false)
+	check(dropdown:IsEnabled() == false, "the harness can disable the dropdown")
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 0, "a disabled press opens no menu")
+	equal(api.scope, "week", "and keeps the scope")
+	equal(api.reach, "group", "and the reach")
+end
+
+-- With the gamepad interface off the client's own OpenMenu runs ---------------------------------------------------
+do
+	GamepadClient(false)
+	local api = Load()
+	local dropdown = OpenBoard(api)
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 1, "the client's OpenMenu runs once")
+	equal(api.scope, "week", "and the scope is unchanged")
+	equal(api.reach, "group", "and the reach is unchanged")
+end
+
+-- With no InputUtil at all the menu opens as before -----------------------------------------------------------------
+do
+	Client()
+	local api = Load()
+	local dropdown = OpenBoard(api)
+	dropdown:OpenMenu()
+	equal(dropdown.openedMenus, 1, "a press with no gamepad switch opens the menu")
+	equal(api.scope, "week", "and leaves the scope alone")
+	equal(api.reach, "group", "and the reach alone")
+end
+
 print(("leaderboards_window_spec: %d checks passed"):format(harness.checks()))
