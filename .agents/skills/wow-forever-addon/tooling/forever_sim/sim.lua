@@ -33,6 +33,7 @@ Sim.CORE = {
 	"Blizzard_SharedXMLGame",
 	"Blizzard_FrameXMLBase",
 	"Blizzard_UIParent",
+	"Blizzard_UIErrorsFrame",
 	"Blizzard_StaticPopup",
 	"Blizzard_UIPanelTemplates",
 	"Blizzard_UIParentPanelManager",
@@ -47,6 +48,8 @@ Sim.CORE = {
 	-- Single files from addons too large to boot whole: the templates other UI inherits from them, and the alert
 	-- frames the client loads at startup (AlertFrame is a global addons anchor to).
 	"Blizzard_FrameXML/SecureTemplatesBase.xml",
+	"Blizzard_FrameXML/SecureTemplates.lua",
+	"Blizzard_FrameXML/SecureTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",
 	"Blizzard_FrameXML/Mainline/NavigationBar.lua",

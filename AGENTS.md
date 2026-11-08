@@ -121,6 +121,10 @@ tracker spec, StyLua, ruff, the `tools/` unit tests), `typecheck`, `project-rule
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and LuaJIT and luacheck are
 installed at that release's exact apt versions, so a runner image update cannot change them.
+`.github/workflows/suite.yml` runs `tools/suite_load.py` daily and on demand (`gh workflow run suite.yml`): it clones
+every published addon's main and runs `tests/suite/suite_scenario.lua`, which loads them all with ForeverCore in one
+forever_sim client and calls `sim:exercise()`. It reads other repositories' main, so it is not a PR job. Locally,
+`python3 tools/suite_load.py --root ..` runs it over the sibling checkouts as they are.
 
 ## Agent skills
 
