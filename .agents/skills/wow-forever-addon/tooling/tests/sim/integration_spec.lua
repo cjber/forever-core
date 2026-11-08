@@ -257,6 +257,82 @@ test("native map API opens, closes and reopens with visibility callbacks", funct
 	end
 end)
 
+test("the legacy achievement natives answer from sim.world.achievements and nil for an unknown id", function()
+	local sim = Sim.new({ blizzard = {} })
+	sim.world.achievements = {
+		categories = {
+			{
+				id = 1,
+				name = "General",
+				parent = -1,
+				achievements = {
+					{
+						id = 6,
+						name = "Level 60",
+						description = "Reach level 60.",
+						points = 10,
+						completed = true,
+						criteria = {
+							{ text = "Reach level 60", type = 0, completed = true, quantity = 1, required = 1 },
+						},
+					},
+				},
+			},
+			{ id = 2, name = "Quests", parent = 1, achievements = {} },
+		},
+	}
+	local G = sim.G
+	local categories = G.GetCategoryList()
+	eq(#categories, 2, "category count")
+	eq(categories[1], 1, "first category")
+
+	local total, completed, incomplete = G.GetCategoryNumAchievements(1)
+	eq(total, 1, "achievements in the category")
+	eq(completed, 1, "completed")
+	eq(incomplete, 0, "incomplete")
+
+	local info = { G.GetAchievementInfo(1, 1) }
+	eq(info[1], 6, "id by category and index")
+	eq(info[2], "Level 60", "name")
+	eq(info[3], 10, "points")
+	eq(info[4], true, "completed")
+	eq(info[8], "Reach level 60.", "description")
+	eq(info[13], true, "earned by me")
+	eq(select(1, G.GetAchievementInfo(6)), 6, "id by achievement id")
+
+	eq(G.GetAchievementCategory(6), 1, "achievement category")
+	local name, parent = G.GetCategoryInfo(1)
+	eq(name, "General", "category name")
+	eq(parent, -1, "category parent")
+	eq(G.GetAchievementNumCriteria(6), 1, "criteria count")
+
+	local text, criteriaType, done, quantity, required, _, _, _, _, criteriaID, eligible =
+		G.GetAchievementCriteriaInfo(6, 1)
+	eq(text, "Reach level 60", "criteria text")
+	eq(criteriaType, 0, "criteria type")
+	eq(done, true, "criteria completed")
+	eq(quantity, 1, "criteria progress")
+	eq(required, 1, "criteria required")
+	eq(criteriaID, 1, "criteria id")
+	eq(eligible, true, "criteria eligible")
+
+	eq(G.GetAchievementInfo(999), nil, "unknown achievement")
+	eq(G.GetAchievementInfo(1, 99), nil, "unknown achievement index")
+	eq(G.GetAchievementCategory(999), nil, "unknown achievement category")
+	eq(G.GetCategoryNumAchievements(999), nil, "unknown category")
+	eq(G.GetCategoryInfo(999), nil, "unknown category info")
+	eq(G.GetAchievementNumCriteria(999), nil, "unknown achievement criteria")
+	eq(G.GetAchievementCriteriaInfo(999, 1), nil, "unknown criteria")
+end)
+
+test("a frame can inherit SecureActionButtonTemplate", function()
+	local sim = Sim.new()
+	local button = sim.G.CreateFrame("Button", "SimSecureActionButton", sim.G.UIParent, "SecureActionButtonTemplate")
+	assert(button, "frame created")
+	eq(type(button.SetAttribute), "function", "secure button methods")
+	eq(type(sim.G.SecureActionButtonMixin), "table", "the template's mixin")
+end)
+
 test("a map data provider added from addon code is gamepad-interface taint, and blocks the gamepad", function()
 	local sim = mapScenario("SimMapProvider")
 	local found = sim:gamepadTaint("SimMapProvider")
@@ -457,6 +533,15 @@ test("the client's alert frames exist at startup and load again as a no-op", fun
 	sim:loadBlizzard("Blizzard_FrameXML/Mainline/AlertFrames.xml")
 	eq(sim.G.AlertFrame, frame, "the second load changes nothing")
 	eq(#sim.errors, errors, "the second load raises nothing")
+end)
+
+test("the client's error frame exists at startup and takes a message", function()
+	local sim = Sim.new()
+	local frame = sim.G.UIErrorsFrame
+	eq(type(frame), "table", "UIErrorsFrame")
+	local errors = #sim.errors
+	frame:AddMessage("x", 1, 0.1, 0.1)
+	eq(#sim.errors, errors, "AddMessage raises no error")
 end)
 
 test("showing a panel in combat prints the blocked notice and raises no Lua error", function()
