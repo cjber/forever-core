@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Forever addons share one quest log side tab.** `UI/QuestLogTabs.lua` gives an addon panel its tab beside the world map's quest log: registering a key, the panel and an order creates the tab, selecting it shows that panel in place of the quest log's own pages, and the Quests tab puts them back exactly as the client left them. Tabs stack by order, not by load order, and the module never writes `displayMode`, resizes the map or touches a panel's children, so a panel's scroll position survives every switch. (#220)
+
 - **Error journals can be filed without reading BugSack by hand.** `tools/forever_errors.py` reads every Forever addon's journal, BugGrabber's errors and `Logs/taint.log`, groups them by repository and signature, and prints a table or JSON (`--json`). A group last seen before its addon's installed TOC is marked stale: it is hidden, does not fail the gate and is not filed unless `--include-stale` asks for it. `--file` opens one issue per signature labelled `error-report` and only comments again when the count rose; `--dry-run` shows what it would do. `--since` and `--addon` turn it into the release gate. (#205)
 
 - **Errors now survive a reload.** The shared error capture chains the game's error handler, so unwrapped errors from the addon's folder, blocked and forbidden actions and Lua warnings are recorded without hiding anything from BugSack or the default error frame. Once a consumer passes its saved table to `ns.AttachErrorJournal`, the journal keeps up to 50 signatures with their counts, first and last seen times, versions, build, locale and other loaded addons, and the report window lists earlier sessions under their own heading. (#204)

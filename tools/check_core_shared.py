@@ -36,6 +36,8 @@ SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever",)
 SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever",)
 PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
 MAP_CANVAS_CONSUMERS = ("adventure-guide-forever", "legacy-forever")
+# The quest log side tab serves the addon panels that live in the world map's quest log.
+QUEST_LOG_TAB_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
 
 # Consumer path: the repos that carry it. A consumer keeps each file at the same path as core, except where SOURCES
 # names the core file it is copied from.
@@ -63,6 +65,8 @@ VENDORED = {
     "tests/settings_page_spec.lua": SETTINGS_CONSUMERS,
     "Core/MinimapButton.lua": MINIMAP_CONSUMERS,
     "tests/minimap_button_spec.lua": MINIMAP_CONSUMERS,
+    "UI/QuestLogTabs.lua": QUEST_LOG_TAB_CONSUMERS,
+    "tests/quest_log_tabs_spec.lua": QUEST_LOG_TAB_CONSUMERS,
     "UI/TrackerHost.lua": TRACKER_CONSUMERS,
     "UI/TrackerLock.lua": TRACKER_CONSUMERS,
     "UI/TrackerOrder.lua": TRACKER_CONSUMERS,
