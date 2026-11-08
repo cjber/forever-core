@@ -53,8 +53,10 @@ and run anywhere.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which must load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/TrackerQuestie.lua`: Questie's quest list, so the column steps beside it instead of under it.
-- `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order and
-  restoring the client's own pages on demand. `tests/quest_log_tabs_spec.lua` is its contract.
+- `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,
+  restoring the client's own pages on demand and telling a panel through `shown` when it becomes visible or stops
+  being visible, so panels set no OnShow or OnHide script under the map. `tests/quest_log_tabs_spec.lua` is its
+  contract.
 - `Core/LeaderboardsData.lua`: the leaderboards' data half, overall points, standing, the per-scope cache keyed on
   each board's `revision` and the unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one
   cache lookup rather than a board build and sort.

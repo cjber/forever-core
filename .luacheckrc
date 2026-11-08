@@ -63,6 +63,7 @@ read_globals = {
 	"GRAY_FONT_COLOR",
 	"HIGHLIGHT_FONT_COLOR",
 	"hooksecurefunc",
+	"securecallfunction",
 	"IsInGroup",
 	"IsInGuild",
 	"IsInInstance",

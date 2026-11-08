@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **Forever addons share one quest log side tab.** `UI/QuestLogTabs.lua` gives an addon panel its tab beside the world map's quest log: registering a key, the panel and an order creates the tab, selecting it shows that panel in place of the quest log's own pages, and the Quests tab puts them back exactly as the client left them. Tabs stack by order, not by load order, and the module never writes `displayMode`, resizes the map or touches a panel's children, so a panel's scroll position survives every switch. (#220)
+- **Forever addons share one quest log side tab.** `UI/QuestLogTabs.lua` gives an addon panel its tab beside the world map's quest log: registering a key, the panel and an order creates the tab, selecting it shows that panel in place of the quest log's own pages, and the Quests tab puts them back exactly as the client left them. Tabs stack by order, not by load order, and the module never writes `displayMode`, resizes the map or touches a panel's children, so a panel's scroll position survives every switch. A registered panel can pass `shown(visible)` to hear when it becomes visible or stops being visible, so it needs no `OnShow` or `OnHide` script under the map. (#220)
 
 - **The simulator records each error once.** `forever_sim`'s default error handler recorded an error a second time, under the addon's name, when an addon's handler saved it and passed the error on, as the shared error capture and BugGrabber do. It now records only errors that reach it first, and the settings pages' `GetModifiedClick` and `GetBinding` calls have stubs. (#225)
 
