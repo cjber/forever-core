@@ -5,6 +5,23 @@ WoW: Forever client under gamescope's headless backend: the game renders on the 
 nothing appears on the player's desktop and their mouse and keyboard are never touched. Every verb acts on that
 display only.
 
+## Hard rules
+
+The client exists to test the Forever addons' interface. These rules hold for every session, and the tool enforces
+them where it can:
+
+1. **Interface only.** Open and close frames, click addon UI, send slash commands, `/reload`, take screenshots,
+   read SavedVariables and Lua errors. Never move the character, target, fight, loot, quest, trade, chat to other
+   players or use the auction house. `slash` sends only the Forever addons' own commands (read from their `SLASH_`
+   globals) and `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there is no
+   free typing; `click` refuses until a `shot` was taken after the last input, so each click aims at UI you have
+   just read in the frame.
+2. **Short sessions.** Log in, test, log out. Every ending, whether the test returns, fails, is cancelled or hits
+   the 30 minute cap, types `/quit` so the character logs out, then stops the client. Prefer `run -- <script>` so
+   the session lasts only as long as the test.
+3. **Human pace.** Inputs are at least 1.5 s apart across invocations and slash commands type at 120 ms a key.
+   Never loop inputs: take a shot, read it, decide the next action.
+
 ## One client at a time
 
 There is one Battle.net account, so one client. `up` holds an exclusive lock for its session and refuses to start
@@ -18,17 +35,17 @@ waits for them; a PR then lists its `/reload` steps for the player instead.
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
 python3 $FC up            # run in the background; prints READY once in the world (about 1 to 3 min)
 python3 $FC shot          # prints the PNG path; read it to see the frame
-python3 $FC click 960 540 # points in the 1920x1080 frame
-python3 $FC key Return
-python3 $FC slash "/fgf"
+python3 $FC click 960 540 # points in the 1920x1080 frame, on UI from the last shot
+python3 $FC key Escape    # Return, Escape or BackSpace
+python3 $FC slash "/fgf"  # a Forever addon's own command
 python3 $FC reload        # /reload, returns once the world is back
 python3 $FC errors --addon FieldGuideForever   # reload, then this session's Lua errors (exit 1 when any)
 python3 $FC sv FieldGuideForever               # SavedVariables as of the last reload
-python3 $FC down          # stops gamescope and every Wine process, removes the dev addon link
+python3 $FC down          # logs out, stops gamescope and every Wine process, removes the dev addon link
 ```
 
-`run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and stops the client whatever
-the command returns. Stopping `up` with SIGTERM or Ctrl-C tears down the same way.
+`run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
+whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 minute cap, ends it the same way.
 
 ## What it relies on
 
@@ -44,4 +61,4 @@ the command returns. Stopping `up` with SIGTERM or Ctrl-C tears down the same wa
 ## Scope
 
 Scripted input to a logged-in client may count as botting under Blizzard's terms; the player accepted that for
-testing their own addons. Drive the client only to test a Forever addon change, never to play.
+testing their own addons only. The hard rules above are that boundary.

@@ -191,7 +191,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
   the PR says what was checked. Agents run that check themselves in the headless client
-  ([in-game.md](in-game.md)); [debugging.md](debugging.md) covers taint, profiling and reading
+  ([in-game.md](in-game.md), whose hard rules bound every session: interface only, short, human pace); [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.
 
 ### Repository

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **Agents can test the addons in the real client without touching the player's desktop.** `tools/headless/forever_client.py` runs the WoW: Forever client under gamescope's headless backend on the GPU, waits until it is in the world, and gives screenshot, click, key, slash command, `/reload`, SavedVariables and Lua error verbs on that private display. One lock and a check of the Wine prefix keep it to one client, and it will not start while the player is in game. The standard is `wow-forever-addon/in-game.md`.
+- **Agents can test the addons in the real client without touching the player's desktop.** `tools/headless/forever_client.py` runs the WoW: Forever client under gamescope's headless backend on the GPU, waits until it is in the world, and gives screenshot, click, key, slash command, `/reload`, SavedVariables and Lua error verbs on that private display. One lock and a check of the Wine prefix keep it to one client, and it will not start while the player is in game. The tool keeps to the interface (slash commands only from the Forever addons, a fresh screenshot before each click, no free typing), spaces inputs out, caps a session at 30 minutes and logs the character out at every ending. The standard is `wow-forever-addon/in-game.md`.
 
 - **A new tracker setting no longer fails every consumer's typecheck.** The tracker contract's LuaLS classes (`ForeverTrackerSettings`, `ForeverTrackerHostAPI`, the lock, order and namespace fields) now live in `types/ForeverTracker.lua`, vendored with `UI/TrackerHost.lua` to the four tracker consumers, so each one stops keeping a hand copy that a sync could leave behind. `tools/sync_consumers.py` copies a `types/` file without waiting for a TOC line. (#247)
 

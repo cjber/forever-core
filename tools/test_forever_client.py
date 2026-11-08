@@ -67,6 +67,65 @@ class ForeverClientTest(unittest.TestCase):
         with self.assertRaisesRegex(fc.ClientError, r'another agent.*"pid": 7.*--wait'):
             fc.up(args())
 
+    def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
+        addons = self.state / "AddOns"
+        (addons / "FieldGuideForever").mkdir(parents=True)
+        (addons / "FieldGuideForever/Core.lua").write_text('SLASH_FIELDGUIDEFOREVER1 = "/fgf"\n')
+        (addons / "SomeoneElse").mkdir()
+        (addons / "SomeoneElse/Core.lua").write_text('SLASH_OTHER1 = "/other"\n')
+        for ok in ("/fgf", "/FGF reset", "/reload"):
+            fc.allowed_command(ok, addons)
+        for refused in (
+            "/other",
+            "/s hello",
+            "/run print(1)",
+            "/dump x",
+            "/follow",
+            "/cast Fireball",
+            "/fgf\n/s hi",
+            "hello",
+            "",
+        ):
+            with self.subTest(refused), self.assertRaises(fc.ClientError):
+                fc.allowed_command(refused, addons)
+
+    def test_key_sends_only_ui_keys(self):
+        with mock.patch.object(fc, "x") as x, self.assertRaisesRegex(fc.ClientError, "refused w"):
+            fc.press({}, ["Escape", "w"])
+        x.assert_not_called()
+
+    def test_a_click_needs_a_screenshot_since_the_last_input(self):
+        with mock.patch.object(fc, "x") as x, mock.patch.object(fc, "INPUT_GAP", 0):
+            with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
+                fc.click({}, 10, 10, "1")
+            (self.state / "last-shot").touch()
+            fc.click({}, 10, 10, "1")
+            with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
+                fc.click({}, 20, 20, "1")
+        self.assertEqual(x.call_count, 1)
+
+    def test_inputs_are_spaced_out(self):
+        sleeps = []
+        with mock.patch.object(fc, "x"), mock.patch.object(fc.time, "sleep", sleeps.append):
+            fc.send({}, "key", "Escape")
+            fc.send({}, "key", "Escape")
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreater(sleeps[0], fc.INPUT_GAP - 0.5)
+
+    def test_teardown_logs_out_only_from_the_world(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            mock.patch.object(fc, "log_out") as log_out,
+            mock.patch.object(fc, "client_pid", return_value=9),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.os, "killpg"),
+            mock.patch.object(fc.subprocess, "run"),
+        ):
+            fc.teardown(game, {}, None, {"display": ":1"})
+            log_out.assert_not_called()
+            fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
+            log_out.assert_called_once()
+
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
