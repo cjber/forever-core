@@ -182,8 +182,31 @@ def pr_body(sha: str, files: tuple[str, ...]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def open_sync_prs(repo: str) -> list[dict]:
+    return api_json(f"repos/{OWNER}/{repo}/pulls?head={OWNER}:{BRANCH}&state=open")
+
+
+def close_stale_prs(repo: str, sha: str) -> list[int]:
+    """Close the sync PR an earlier run left open once the consumer already matches core, and drop its branch."""
+    closed = []
+    for pull in open_sync_prs(repo):
+        number = pull["number"]
+        api(
+            f"repos/{OWNER}/{repo}/issues/{number}/comments",
+            "--method",
+            "POST",
+            "-f",
+            f"body=main already matches forever-core {sha}; nothing left to sync.",
+        )
+        api(f"repos/{OWNER}/{repo}/pulls/{number}", "--method", "PATCH", "-f", "state=closed")
+        closed.append(number)
+    if closed:
+        api(f"repos/{OWNER}/{repo}/git/refs/heads/{BRANCH}", "--method", "DELETE", check=False)
+    return closed
+
+
 def open_or_update_pr(repo: str, body: str) -> tuple[int, str, str, str | None]:
-    listed = api_json(f"repos/{OWNER}/{repo}/pulls?head={OWNER}:{BRANCH}&state=open")
+    listed = open_sync_prs(repo)
     if listed:
         pull = listed[0]
         number, url = pull["number"], pull["html_url"]
@@ -237,7 +260,8 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Resu
         sync_checkout(root, core_root)
         files = staged_files(root)
         if not files:
-            return Result(repo, "up to date")
+            closed = close_stale_prs(repo, sha)
+            return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         commit(root, sha)
         git(root, "push", "--force", "origin", f"HEAD:refs/heads/{BRANCH}")
         number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files))
