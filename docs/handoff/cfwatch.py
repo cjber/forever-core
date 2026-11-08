@@ -2,8 +2,8 @@
 """Fetch every CurseForge comment and reply (all pages) for the Forever addons.
 
 Seen comment IDs live outside any checkout, under
-${XDG_STATE_HOME:-~/.local/state}/forever-core/cfwatch-seen.json. `--unanswered` lists top-level
-comments with no reply from the owner instead of unseen comments.
+${XDG_STATE_HOME:-~/.local/state}/forever-core/cfwatch-seen.json. `--unanswered` prints instead every
+thread whose latest post is not the owner's: one never answered, or one followed up after the owner's last reply.
 """
 
 import datetime
@@ -80,13 +80,43 @@ def is_owner(comment):
     return OWNER.casefold() in names
 
 
-def unanswered(flat):
-    """Top-level comments with no owner reply whose parentId matches them."""
-    answered = {comment["parentId"] for comment in flat if is_owner(comment) and comment.get("parentId") is not None}
-    return sorted(
-        (comment for comment in flat if not comment.get("parentId") and comment["id"] not in answered),
-        key=lambda comment: comment["datePosted"],
-    )
+def threads(items):
+    """Every thread as its top-level comment and all its posts, oldest first.
+
+    A post belongs to the thread it is nested under; a reply the API returns at the top level joins its thread through
+    `parentId`, followed up to the top-level comment.
+    """
+    parent = {}
+
+    def walk(rows, above):
+        for row in rows:
+            parent[row["id"]] = above if above is not None else row.get("parentId")
+            walk(row.get("replies") or [], row["id"])
+
+    walk(items, None)
+    posts = unique(flatten(items))
+
+    def root(comment_id):
+        seen = set()
+        while parent.get(comment_id) is not None and parent[comment_id] in posts and comment_id not in seen:
+            seen.add(comment_id)
+            comment_id = parent[comment_id]
+        return comment_id
+
+    grouped = {}
+    for comment_id, comment in posts.items():
+        grouped.setdefault(root(comment_id), []).append(comment)
+    return [
+        (posts[top], sorted(rows, key=lambda row: row["datePosted"]))
+        for top, rows in grouped.items()
+        if not posts[top].get("parentId")
+    ]
+
+
+def unanswered(items):
+    """Threads whose latest post is not the owner's: never answered, or followed up after the owner's last reply."""
+    waiting = [(top, rows) for top, rows in threads(items) if not is_owner(rows[-1])]
+    return sorted(waiting, key=lambda thread: thread[1][-1]["datePosted"])
 
 
 def when(comment):
@@ -112,11 +142,11 @@ def main(argv=None, fetch=None):
             seen = json.load(handle)
     else:
         seen = {}
-    comments, totals, new = {}, {}, []
+    raw, totals, new = {}, {}, []
     for slug, mod_id in MODS.items():
         items, total = fetch_mod(fetch, mod_id)
         flat = flatten(items)
-        comments[slug] = flat
+        raw[slug] = items
         fresh = unique(flat)
         totals[slug] = (total, len(items), len(fresh))
         for comment in fresh.values():
@@ -131,12 +161,12 @@ def main(argv=None, fetch=None):
         print(f"# {slug}: totalCount={total} fetched_top={top} with_replies={flat_count}")
 
     if show_unanswered:
-        rows = [
-            (comment["datePosted"], slug, comment) for slug, flat in comments.items() for comment in unanswered(flat)
-        ]
-        for _, slug, comment in sorted(rows, key=lambda row: row[0]):
-            print(format_comment(slug, comment))
-        print(f"\n{len(rows)} unanswered")
+        waiting = [(rows[-1]["datePosted"], slug, rows) for slug, items in raw.items() for _, rows in unanswered(items)]
+        for _, slug, rows in sorted(waiting, key=lambda row: row[0]):
+            print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
+            for comment in rows:
+                print(format_comment(slug, comment))
+        print(f"\n{len(waiting)} unanswered")
     else:
         for _, slug, comment in sorted(new, key=lambda row: row[0]):
             print(format_comment(slug, comment))

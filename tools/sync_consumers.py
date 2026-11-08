@@ -4,6 +4,12 @@ Fixing the column is one change here and one command, instead of four hand-edite
 overwritten only when its content differs, so a run on an up-to-date checkout touches nothing and every change is
 visible in `git status` for the consumer's own PR. A vendored runtime file also needs its consumer wiring (a TOC line
 and the globals luacheck may not know yet), so that is applied even when the copy was already current.
+
+A shared file that is new to a consumer waits until that consumer adopts it. A runtime module is copied only when the
+consumer's own TOC already loads it or WIRING says how this tool loads it, and a test only when every vendored runtime
+module it names is loaded either way; until then the run skips it and says so. Files the consumer already carries keep
+syncing, because their adoption is done. That keeps a sync PR green on its own: the addon's adoption PR adds the TOC
+line and its namespace wiring first, then the next sync carries the module.
 """
 
 import argparse
@@ -56,6 +62,55 @@ def find_toc(root):
     """The single `*.toc` at the consumer repo root, or None when there is not exactly one."""
     tocs = sorted(root.glob("*.toc"))
     return tocs[0] if len(tocs) == 1 else None
+
+
+def toc_entries(toc):
+    """The paths a TOC loads, with its metadata and comment lines left out."""
+    lines, _ = read_lines(toc)
+    return {line.strip().replace("\\", "/") for line in lines if line.strip() and not line.lstrip().startswith("#")}
+
+
+def is_runtime(path):
+    """Whether the client loads `path` as runtime code, which the consumer's TOC must name."""
+    return path.endswith(".lua") and path.split("/", 1)[0] not in {"tests", "tools"}
+
+
+def referenced_modules(path, seen=None):
+    """Every vendored runtime module `path` names, following the vendored tests it names in turn."""
+    seen = set() if seen is None else seen
+    if path in seen:
+        return set()
+    seen.add(path)
+    text = (CORE_ROOT / source(path)).read_text(encoding="utf-8")
+    modules = set()
+    for candidate in VENDORED:
+        if candidate == path or candidate not in text:
+            continue
+        if is_runtime(candidate):
+            modules.add(candidate)
+        elif candidate.startswith("tests/"):
+            modules |= referenced_modules(candidate, seen)
+    return modules
+
+
+def adoption_wait(root, path):
+    """Why a `path` the consumer lacks must wait for adoption, or None when it may be copied."""
+    toc = find_toc(root)
+    name = toc.name if toc is not None else "its TOC"
+    loaded = toc_entries(toc) if toc is not None else set()
+
+    def loads(module):
+        # A WIRING module gets its TOC line from apply_wiring in this same run, so it counts as loaded.
+        return module in WIRING or module in loaded
+
+    if is_runtime(path):
+        return None if loads(path) else f"{name} does not load it yet"
+    if not path.startswith("tests/"):
+        return None
+    missing = sorted(module for module in referenced_modules(path) if not loads(module))
+    if not missing:
+        return None
+    return f"{name} does not load {', '.join(missing)} yet"
 
 
 def declares_read_global(text, name):
@@ -140,6 +195,11 @@ def main(argv=None):
                 print(f"{repo}: not checked out under {arguments.checkouts}, skipped")
                 continue
             content = origin.read_bytes()
+            if not target.exists():
+                wait = adoption_wait(root, path)
+                if wait is not None:
+                    print(f"{repo}: {path}: skipped, {wait}")
+                    continue
             if not (target.exists() and digest(target.read_bytes()) == digest(content)):
                 changed += 1
                 print(f"{repo}: {path}")
