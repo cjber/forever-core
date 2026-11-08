@@ -190,7 +190,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
   commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
-  the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
+  the PR says what was checked. Agents run that check themselves in the headless client
+  ([in-game.md](in-game.md)); [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.
 
 ### Repository

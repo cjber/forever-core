@@ -17,4 +17,4 @@ that order inside a stubbed client.
   is a pure copy. Moving one breaks every consumer's spec.
 - `Expose.lua` publishes the public `ForeverCore` table and `/fcore`, and loads last; `UI/TrackerLock.lua` loads
   before the tracker host.
-- Never launch the game, Battle.net, Lutris or Wine, and never use the network.
+- Never use the network, and never start the game, Battle.net, Lutris or Wine. The headless client (forever-core's `wow-forever-addon/in-game.md`) tests the build linked into the game, not this checkout, so in-game checks belong to the agent that ships a change.
