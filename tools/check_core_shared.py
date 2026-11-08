@@ -34,6 +34,8 @@ TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
 SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever",)
 # This drift check reaches every addon in the suite.
 SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever",)
+# The error journal, debug log and report window go to every addon in the suite.
+ERROR_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "commissions-forever")
 PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
 MAP_CANVAS_CONSUMERS = ("adventure-guide-forever", "legacy-forever")
 # The quest log side tab serves the addon panels that live in the world map's quest log.
@@ -84,11 +86,11 @@ VENDORED = {
     "tests/tracker_questie_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_eqot_spec.lua": TRACKER_CONSUMERS,
     "tools/fetch_tracker_ui.py": TRACKER_CONSUMERS,
-    "Core/SafeCall.lua": ALL_CONSUMERS,
-    "Core/Log.lua": ALL_CONSUMERS,
-    "tests/debug_log_spec.lua": ALL_CONSUMERS,
-    "UI/Report.lua": ALL_CONSUMERS,
-    "tests/report_spec.lua": ALL_CONSUMERS,
+    "Core/SafeCall.lua": ERROR_CONSUMERS,
+    "Core/Log.lua": ERROR_CONSUMERS,
+    "tests/debug_log_spec.lua": ERROR_CONSUMERS,
+    "UI/Report.lua": ERROR_CONSUMERS,
+    "tests/report_spec.lua": ERROR_CONSUMERS,
     "UI/ForeverFamily.lua": ALL_CONSUMERS,
     "tests/forever_family_spec.lua": ALL_CONSUMERS,
 }

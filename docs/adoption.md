@@ -119,7 +119,8 @@ by path, run here unchanged.
 2. Bump `CHANGELOG.md` and the tag when the change is worth a release of its own.
 3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
 4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
-   is the gate. Tracker files go to four addons; report, Forever-family, SafeCall and log files go to all five. Peer
+   is the gate. Tracker files go to four addons; Forever-family files go to five; report, SafeCall and log files go
+   to all seven. Peer
    statistics and the leaderboards go to the six that share a statistics adapter: the four tracker addons, Field Guide
    and Commissions. The checker is green once every mapped consumer has the same bytes. `/forever debug` routes
    through this file's leaderboards copy, so a leaderboard consumer without `Core/Log.lua` yet keeps working and simply

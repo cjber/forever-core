@@ -8,6 +8,8 @@
 
 - **A new tracker setting no longer fails every consumer's typecheck.** The tracker contract's LuaLS classes (`ForeverTrackerSettings`, `ForeverTrackerHostAPI`, the lock, order and namespace fields) now live in `types/ForeverTracker.lua`, vendored with `UI/TrackerHost.lua` to the four tracker consumers, so each one stops keeping a hand copy that a sync could leave behind. `tools/sync_consumers.py` copies a `types/` file without waiting for a TOC line. (#247)
 
+- **Field Guide and Commissions get the error journal.** The vendoring map sends `Core/SafeCall.lua`, `Core/Log.lua`, `UI/Report.lua` and their specs to all seven addons, so the drift checks cover Field Guide's and Commissions' copies once they adopt them (cjber/field-guide-forever#214, cjber/commissions-forever#103).
+
 - **A bench script times 1,000 addon messages and 1,000 tooltip lookups through the leaderboards.** Speedpatrol runs it.
 
 ## [0.5.0] - 2026-11-08
