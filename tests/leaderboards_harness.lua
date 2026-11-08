@@ -400,6 +400,19 @@ function harness.row(name, value, extra, you, class)
 	return { name = name, value = value, extra = extra, you = you, class = class }
 end
 
+-- The menu root a dropdown's SetupMenu generator builds into: it records the radios, in order, and counts dividers.
+function harness.MenuRoot()
+	local root = { radios = {}, dividers = 0 }
+	root.SetScrollMode = function() end
+	root.CreateDivider = function()
+		root.dividers = root.dividers + 1
+	end
+	root.CreateRadio = function(_, text, getter, onClick)
+		root.radios[#root.radios + 1] = { text = text, getter = getter, onClick = onClick }
+	end
+	return root
+end
+
 harness.ICON = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 
 function harness.spec(key, week, all, extra)

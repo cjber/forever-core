@@ -16,10 +16,17 @@ local _, ns = ...
 -- PeerStats.Listen(owner, config) observes config.addon's rows without taking over that addon's sender. Its
 -- registration is private to owner, and it never sends a snapshot, even if one was supplied.
 --
--- Saved layout: db[sender][metric][subject] = { value = n, eventUnix = n }, with the sender's display name saved
--- beside the rows under DISPLAY_KEY. Keys stay compacted, so identity matching and saved data never move.
--- Wire v1 on prefix WFAStats: "1|addon|metric|subject|value|unix", GUILD and the group channel only, and received
--- rows are never re-sent. A foreign addon's rows are ignored, so no suite-wide metric list exists.
+-- Saved layout: db[sender][metric][subject] = { value = n, eventUnix = n, relayed = true? }, with the sender's
+-- display name saved beside the rows under DISPLAY_KEY. Keys stay compacted, so identity matching and saved data
+-- never move.
+--
+-- Wire v1 on prefix WFAStats: "1|addon|metric|subject|value|unix" for the player's own rows, and v2 for rows heard
+-- from a peer and passed on: "2|addon|metric|subject|value|unix|origin". GUILD, PARTY, RAID and INSTANCE_CHAT only.
+-- A relayed row keeps the original player (origin) and its eventUnix: a client re-sends rows it has heard to its own
+-- guild and group on its next Sync, never when a row arrives, so a relay cannot cascade. A relayed row replaces only
+-- an older relayed row and never a row heard directly; a direct row always replaces a relayed one. A relay never
+-- changes a saved identity, and a row from a foreign addon is ignored, so no suite-wide metric list exists. Old copies
+-- match only "^1|" and drop v2 messages, so mixed installs stay compatible.
 --
 -- Every vendored copy shares one manager, the global ForeverPeerStats, which owns the send queue, the transport rate,
 -- the channel epochs and the game events. The first loaded copy creates it, later copies adopt it, and a copy with a
@@ -27,7 +34,8 @@ local _, ns = ...
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
-local MANAGER_VERSION = 6
+local RELAY_VERSION = "2"
+local MANAGER_VERSION = 7
 
 -- Weekly baselines live beside the cumulative rows: `record.week`/`record.weekUnix` hold the first value heard this
 -- week, and the player's own baseline sits under WEEKLY_KEY in the same metric/subject layout. Older saved tables have
@@ -47,6 +55,7 @@ local MAX_VALUE = 1e9
 local FUTURE_SECONDS = 300
 local MAX_METRICS = 64
 local MAX_PEERS = 100
+local MAX_RELAYED_PEERS = 400
 local MAX_SUBJECTS = 256
 local MAX_ROWS = 1024
 local MAX_QUEUE = 512
@@ -55,6 +64,9 @@ local MAX_SCAN_KEYS = 2000
 local MAX_SCAN_SUBJECTS = 4096
 local MAX_RATE_SENDERS = 200
 local STALE_PEER_SECONDS = 30 * 86400
+-- Per Sync: the newest stored rows, no older than a week. A relay is a hint, not a board dump.
+local MAX_RELAY_ROWS = 24
+local RELAY_MAX_AGE = 7 * 86400
 -- Per sender, per instance: room for a whole Field Guide snapshot, then ten rows a second.
 local RECEIVE_BURST = 300
 local RECEIVE_PER_SECOND = 10
@@ -181,6 +193,15 @@ local function LocalRealm()
 	local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
 	if type(realm) == "string" and realm ~= "" then
 		return Compact(realm):lower()
+	end
+end
+
+-- The realm as this client spells it, used to turn a stored key without one back into a sender-shaped origin.
+---@return string|nil
+local function LocalRealmName()
+	local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
+	if type(realm) == "string" and realm ~= "" then
+		return realm
 	end
 end
 
@@ -683,13 +704,24 @@ local function SanitizeStore(self, raw)
 							local value = IntIn(record.value, 0, MAX_VALUE)
 							local unix = IntIn(record.eventUnix, 1, now + FUTURE_SECONDS)
 							local slot = metric .. "|" .. subject
-							if value and unix and Better(config.first, peer.rows[slot], value, unix) then
-								local previous = peer.rows[slot]
+							local previous = peer.rows[slot]
+							local relayed = record.relayed == true
+							local previousRelayed = previous ~= nil and previous.relayed == true
+							local better
+							if previous and previousRelayed ~= relayed then
+								-- A direct row beats a relayed one whatever its value; a relay never overwrites one
+								-- that was heard directly, even when it is newer.
+								better = previousRelayed
+							else
+								better = Better(config.first, previous, value, unix)
+							end
+							if value and unix and better then
 								local row = {
 									metric = metric,
 									subject = subject,
 									value = value,
 									eventUnix = unix,
+									relayed = relayed or nil,
 								}
 								if not config.first then
 									row.week, row.weekUnix =
@@ -754,6 +786,13 @@ local function SanitizeStore(self, raw)
 		end
 		if #kept > 0 then
 			peer.list, peer.latest = kept, kept[1].eventUnix
+			peer.relayOnly = true
+			for _, row in ipairs(kept) do
+				if row.relayed ~= true then
+					peer.relayOnly = false
+					break
+				end
+			end
 			peers[#peers + 1] = peer
 		end
 	end
@@ -763,26 +802,55 @@ local function SanitizeStore(self, raw)
 		end
 		return a.identity < b.identity
 	end)
-	for index = #peers, MAX_PEERS + 1, -1 do
-		peers[index] = nil
+	-- Two caps: players heard directly keep the old 100, players only ever passed on keep 400. A relay-only peer
+	-- never takes the place of one heard directly.
+	local direct, relayed = {}, {}
+	for _, peer in ipairs(peers) do
+		if peer.relayOnly then
+			relayed[#relayed + 1] = peer
+		else
+			direct[#direct + 1] = peer
+		end
+	end
+	for index = #direct, MAX_PEERS + 1, -1 do
+		direct[index] = nil
+	end
+	for index = #relayed, MAX_RELAYED_PEERS + 1, -1 do
+		relayed[index] = nil
 	end
 
 	for key in pairs(raw) do
 		raw[key] = nil
 	end
-	self.index, self.latest, self.peerCount = {}, {}, #peers
-	for _, peer in ipairs(peers) do
+	self.index, self.latest = {}, {}
+	self.peerCount, self.relayedCount = #direct, #relayed
+	self.relayOnly, self.heardOn = {}, {}
+	local function Save(peer)
 		local saved = {}
 		if peer.display then
 			saved[DISPLAY_KEY] = peer.display
 		end
 		for _, row in ipairs(peer.list) do
 			saved[row.metric] = saved[row.metric] or {}
-			saved[row.metric][row.subject] =
-				{ value = row.value, eventUnix = row.eventUnix, week = row.week, weekUnix = row.weekUnix }
+			saved[row.metric][row.subject] = {
+				value = row.value,
+				eventUnix = row.eventUnix,
+				week = row.week,
+				weekUnix = row.weekUnix,
+				relayed = row.relayed == true or nil,
+			}
 		end
 		raw[peer.key] = saved
 		self.index[peer.identity], self.latest[peer.identity] = peer.key, peer.latest
+		if peer.relayOnly then
+			self.relayOnly[peer.identity] = true
+		end
+	end
+	for _, peer in ipairs(direct) do
+		Save(peer)
+	end
+	for _, peer in ipairs(relayed) do
+		Save(peer)
 	end
 	if next(ownWeek) then
 		raw[WEEKLY_KEY] = ownWeek
@@ -824,7 +892,10 @@ end
 ---@field rateCount integer
 ---@field index table<string, string>
 ---@field latest table<string, integer>
----@field peerCount integer
+---@field peerCount integer peers with at least one row heard directly
+---@field relayedCount integer peers whose every row arrived as a relay
+---@field relayOnly table<string, boolean> the identities that count toward MAX_RELAYED_PEERS
+---@field heardOn table<string, table<string, boolean>> channels an origin was heard on directly this session
 ---@field metrics table<string, {subject: string, first: boolean}>
 ---@field metricList string[]
 ---@field store table|nil
@@ -886,93 +957,209 @@ function Instance:RecordSent(entry)
 	end
 end
 
--- Offer the consumer's snapshot to every open channel. Rows unchanged since their last successful send on a channel
--- are skipped. Returns how many sends were queued.
+-- The sender-shaped origin a receiver runs Identity() and DisplayName() on: the stored display name, a hyphen, and
+-- the realm the key leaves out or the relayer's own realm. Nil when no safe origin can be built.
+---@param self ForeverPeerStatsInstance
+---@param key string
+---@return string|nil
+local function RelayOrigin(self, key)
+	local peer = self.store and self.store[key]
+	local name = key:match("^([^%-]+)") or key
+	local display = type(peer) == "table" and SavedDisplay(peer[DISPLAY_KEY]) or nil
+	if not display or display:find("%-") then
+		display = KeyDisplay(name)
+	end
+	local realm = key:match("^[^%-]+%-(.+)$") or LocalRealmName()
+	if not realm then
+		return nil
+	end
+	local origin = display .. "-" .. realm
+	if #origin > MAX_NAME or origin:find("[%c|]") then
+		return nil
+	end
+	return origin
+end
+
+-- Newest first, then the identity, metric and subject, so a capped selection is the same on every client.
+---@param a table
+---@param b table
+---@return boolean
+local function RelayBefore(a, b)
+	if a.unix ~= b.unix then
+		return a.unix > b.unix
+	end
+	if a.identity ~= b.identity then
+		return a.identity < b.identity
+	end
+	if a.metric ~= b.metric then
+		return a.metric < b.metric
+	end
+	return a.subject < b.subject
+end
+
+-- Keep at most MAX_RELAY_ROWS candidates, inserting in order so no sort of the whole store is needed.
+---@param list table[]
+---@param item table
+local function RememberRelay(list, item)
+	local position = #list + 1
+	for index = 1, #list do
+		if RelayBefore(item, list[index]) then
+			position = index
+			break
+		end
+	end
+	if position > MAX_RELAY_ROWS then
+		return
+	end
+	table.insert(list, position, item)
+	if #list > MAX_RELAY_ROWS then
+		list[#list] = nil
+	end
+end
+
+-- Offer the consumer's snapshot, then the newest rows heard from peers, to every open channel. A relayed row skips a
+-- channel the origin was heard on directly this session, since that audience already has it. Rows unchanged since
+-- their last successful send on a channel are skipped. Returns how many sends were queued.
 function Instance:Sync(onlyDeferred)
 	self.deferred = {}
 	local current = Manager()
-	if self.readOnly or not current or not self:IsEnabled() or type(self.config.snapshot) ~= "function" then
+	if self.readOnly or not current or not self:IsEnabled() then
 		return 0
 	end
 	local channels = current.Channels()
 	if #channels == 0 then
 		return 0
 	end
-	local ok, rows = pcall(self.config.snapshot)
-	if not ok or type(rows) ~= "table" then
-		return 0
-	end
 	local now = Now()
 	local list, byKey, observed = {}, {}, {}
-	for index = 1, math.min(#rows, MAX_SNAPSHOT) do
-		local row = rows[index]
-		local config = type(row) == "table" and type(row.metric) == "string" and self.metrics[row.metric]
-		if config and ValidSubject(config.subject, row.subject) then
-			local value = type(row.value) == "number" and row.value == row.value and math.floor(row.value) or nil
-			value = value and IntIn(value, 0, MAX_VALUE)
-			local key = row.metric .. "|" .. row.subject
-			local unix = IntIn(row.eventUnix, 1, now + FUTURE_SECONDS)
-			if not unix and not config.first and (row.eventUnix == nil or type(row.eventUnix) == "number") then
-				local previous = self.observed[key]
-				unix = previous and previous.value == value and previous.unix or now
+	if type(self.config.snapshot) == "function" then
+		local ok, rows = pcall(self.config.snapshot)
+		if ok and type(rows) == "table" then
+			for index = 1, math.min(#rows, MAX_SNAPSHOT) do
+				local row = rows[index]
+				local config = type(row) == "table" and type(row.metric) == "string" and self.metrics[row.metric]
+				if config and ValidSubject(config.subject, row.subject) then
+					local value = type(row.value) == "number" and row.value == row.value and math.floor(row.value)
+						or nil
+					value = value and IntIn(value, 0, MAX_VALUE)
+					local key = row.metric .. "|" .. row.subject
+					local unix = IntIn(row.eventUnix, 1, now + FUTURE_SECONDS)
+					if not unix and not config.first and (row.eventUnix == nil or type(row.eventUnix) == "number") then
+						local previous = self.observed[key]
+						unix = previous and previous.value == value and previous.unix or now
+					end
+					if value and unix then
+						observed[key] = { value = value, unix = unix }
+						local item = { key = key, value = value, unix = unix }
+						item.payload =
+							table.concat({ WIRE_VERSION, self.addon, row.metric, row.subject, value, unix }, "|")
+						if byKey[key] then
+							list[byKey[key]] = item
+						else
+							list[#list + 1] = item
+							byKey[key] = #list
+						end
+					end
+				end
 			end
-			if value and unix then
-				observed[key] = { value = value, unix = unix }
-				local item = { key = key, value = value, unix = unix }
-				item.payload = table.concat({ WIRE_VERSION, self.addon, row.metric, row.subject, value, unix }, "|")
-				if byKey[key] then
-					list[byKey[key]] = item
-				else
-					list[#list + 1] = item
-					byKey[key] = #list
+			-- The player's own snapshot is the other half of a board, so a change there invalidates the same cache
+			-- as a peer row. An unchanged snapshot leaves the revision alone, and with it a hover's single lookup.
+			local changed = false
+			for key, item in pairs(observed) do
+				local old = self.observed[key]
+				if not old or old.value ~= item.value or old.unix ~= item.unix then
+					changed = true
+					break
+				end
+			end
+			if not changed then
+				for key in pairs(self.observed) do
+					if not observed[key] then
+						changed = true
+						break
+					end
+				end
+			end
+			if changed then
+				self.revision = self.revision + 1
+			end
+			self.observed = observed
+		end
+	end
+
+	local relayList, relayKeys = {}, {}
+	for identity, key in pairs(self.index) do
+		local peer = self.store and self.store[key]
+		if type(peer) == "table" then
+			local origin = RelayOrigin(self, key)
+			if origin then
+				for metric, subjects in pairs(peer) do
+					if type(subjects) == "table" and self.metrics[metric] then
+						for subject, record in pairs(subjects) do
+							local unix = type(record) == "table" and record.eventUnix
+							local value = type(record) == "table" and record.value
+							if type(unix) == "number" and unix >= now - RELAY_MAX_AGE and type(value) == "number" then
+								local payload = table.concat(
+									{ RELAY_VERSION, self.addon, metric, subject, value, unix, origin },
+									"|"
+								)
+								if #payload <= MAX_PAYLOAD then
+									RememberRelay(relayList, {
+										key = "r|" .. identity .. "|" .. metric .. "|" .. subject,
+										identity = identity,
+										metric = metric,
+										subject = subject,
+										value = value,
+										unix = unix,
+										payload = payload,
+									})
+								end
+							end
+						end
+					end
 				end
 			end
 		end
 	end
-	-- The player's own snapshot is the other half of a board, so a change there invalidates the same cache as a
-	-- peer row. An unchanged snapshot leaves the revision alone, and with it a hover's single lookup.
-	local changed = false
-	for key, item in pairs(observed) do
-		local old = self.observed[key]
-		if not old or old.value ~= item.value or old.unix ~= item.unix then
-			changed = true
-			break
-		end
+	for _, item in ipairs(relayList) do
+		relayKeys[item.key] = true
 	end
-	if not changed then
-		for key in pairs(self.observed) do
-			if not observed[key] then
-				changed = true
-				break
-			end
-		end
-	end
-	if changed then
-		self.revision = self.revision + 1
-	end
-	self.observed = observed
+
 	for sentKey, entry in pairs(self.sent) do
-		if not byKey[entry.key] then
+		if entry.key:sub(1, 2) == "r|" then
+			if not relayKeys[entry.key] then
+				self.sent[sentKey] = nil
+			end
+		elseif not byKey[entry.key] then
 			self.sent[sentKey] = nil
 		end
 	end
+
 	local queued = 0
-	for _, item in ipairs(list) do
+	local function Offer(item, skip)
 		for _, channel in ipairs(channels) do
-			local sendKey = channel .. "|" .. item.key
-			local last = self.sent[sendKey]
-			local same = last
-				and last.value == item.value
-				and last.unix == item.unix
-				and last.epoch == (current.epoch[channel] or 0)
-			if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
-				if current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
-					queued = queued + 1
-				else
-					self.deferred[sendKey] = true
+			if not (skip and skip[channel]) then
+				local sendKey = channel .. "|" .. item.key
+				local last = self.sent[sendKey]
+				local same = last
+					and last.value == item.value
+					and last.unix == item.unix
+					and last.epoch == (current.epoch[channel] or 0)
+				if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
+					if current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
+						queued = queued + 1
+					else
+						self.deferred[sendKey] = true
+					end
 				end
 			end
 		end
+	end
+	for _, item in ipairs(list) do
+		Offer(item)
+	end
+	for _, item in ipairs(relayList) do
+		Offer(item, self.heardOn[item.identity])
 	end
 	return queued
 end
@@ -1032,25 +1219,77 @@ local function AllowSender(self, identity)
 	return true
 end
 
--- Make room for a new peer by dropping the one with the oldest activity, but only when that is stale.
+-- Drop one peer from every in-memory index, including the channel memory that bounds itself on the peer caps.
+---@param self ForeverPeerStatsInstance
+---@param identity string
+local function DropPeer(self, identity)
+	local key = self.index[identity]
+	if not key then
+		return
+	end
+	if self.relayOnly[identity] then
+		self.relayOnly[identity] = nil
+		self.relayedCount = self.relayedCount - 1
+	else
+		self.peerCount = self.peerCount - 1
+	end
+	self.store[key] = nil
+	self.index[identity], self.latest[identity], self.heardOn[identity] = nil, nil, nil
+end
+
+-- Make room for a directly heard peer by dropping the least recently active direct peer, but only when it is stale.
+-- A relay-only peer never makes room this way.
 ---@param self ForeverPeerStatsInstance
 local function EvictStalePeer(self)
 	local oldest
 	for identity, latest in pairs(self.latest) do
-		if not oldest or latest < self.latest[oldest] or (latest == self.latest[oldest] and identity < oldest) then
+		if
+			not self.relayOnly[identity]
+			and (not oldest or latest < self.latest[oldest] or (latest == self.latest[oldest] and identity < oldest))
+		then
 			oldest = identity
 		end
 	end
 	if oldest and self.latest[oldest] < Now() - STALE_PEER_SECONDS then
-		self.store[self.index[oldest]] = nil
-		self.index[oldest], self.latest[oldest], self.peerCount = nil, nil, self.peerCount - 1
+		DropPeer(self, oldest)
 		return true
 	end
 	return false
 end
 
+-- Make room for a new relay-only peer by dropping the least recently active relay-only one, stale or not.
 ---@param self ForeverPeerStatsInstance
-local function Apply(self, key, identity, display, config, metric, subject, value, unix)
+local function EvictRelayedPeer(self)
+	local oldest
+	for identity in pairs(self.relayOnly) do
+		if
+			not oldest
+			or self.latest[identity] < self.latest[oldest]
+			or (self.latest[identity] == self.latest[oldest] and identity < oldest)
+		then
+			oldest = identity
+		end
+	end
+	if oldest then
+		DropPeer(self, oldest)
+		return true
+	end
+	return false
+end
+
+-- Count a peer as directly heard once one of its rows is stored without the relay mark.
+---@param self ForeverPeerStatsInstance
+---@param identity string
+local function MakeDirect(self, identity)
+	if self.relayOnly[identity] then
+		self.relayOnly[identity] = nil
+		self.relayedCount = self.relayedCount - 1
+		self.peerCount = self.peerCount + 1
+	end
+end
+
+---@param self ForeverPeerStatsInstance
+local function Apply(self, key, identity, display, config, metric, subject, value, unix, relayed)
 	local store = self.store
 	if not store then
 		return false, "disabled"
@@ -1059,31 +1298,54 @@ local function Apply(self, key, identity, display, config, metric, subject, valu
 	local peer = peerKey and store[peerKey]
 	local changed = false
 	if not peer then
-		if self.peerCount >= MAX_PEERS and not EvictStalePeer(self) then
-			return false, "peers"
+		if relayed then
+			if self.relayedCount >= MAX_RELAYED_PEERS and not EvictRelayedPeer(self) then
+				return false, "peers"
+			end
+			peer = {}
+			store[key], self.index[identity] = peer, key
+			self.relayOnly[identity] = true
+			self.relayedCount = self.relayedCount + 1
+		else
+			if self.peerCount >= MAX_PEERS and not EvictStalePeer(self) then
+				return false, "peers"
+			end
+			peer = {}
+			store[key], self.index[identity] = peer, key
+			self.peerCount = self.peerCount + 1
 		end
-		peer = {}
-		store[key], self.index[identity] = peer, key
-		self.peerCount = self.peerCount + 1
 		changed = true
 	end
 	-- The display name is the sender's own spelling, saved beside the compacted key. A stale row still replaces an
-	-- older row's missing or run-together name.
-	if display and peer[DISPLAY_KEY] ~= display then
+	-- older row's missing or run-together name. A relay may only fill a missing name, never change a saved one.
+	if display and (not relayed or peer[DISPLAY_KEY] == nil) and peer[DISPLAY_KEY] ~= display then
 		peer[DISPLAY_KEY] = display
 		changed = true
 	end
 	local subjects = peer[metric]
 	local record = subjects and subjects[subject]
 	if record then
-		if not Better(config.first, record, value, unix) then
+		if relayed and record.relayed ~= true then
+			-- A row heard directly always outranks a passed-on one, whatever the values say.
 			if changed then
 				self.revision = self.revision + 1
-				return true
 			end
-			return false, "stale"
+			return false, "direct"
 		end
-		record.value, record.eventUnix = value, unix
+		if not relayed and record.relayed == true then
+			-- A direct row always replaces a relayed one, even a lower value, and clears the mark.
+			record.value, record.eventUnix, record.relayed = value, unix, nil
+			MakeDirect(self, identity)
+		else
+			if not Better(config.first, record, value, unix) then
+				if changed then
+					self.revision = self.revision + 1
+					return true
+				end
+				return false, "stale"
+			end
+			record.value, record.eventUnix, record.relayed = value, unix, relayed or nil
+		end
 	else
 		local total, inMetric = 0, 0
 		for name, rows in pairs(peer) do
@@ -1103,8 +1365,11 @@ local function Apply(self, key, identity, display, config, metric, subject, valu
 			return false, "rows"
 		end
 		subjects = subjects or {}
-		record = { value = value, eventUnix = unix }
+		record = { value = value, eventUnix = unix, relayed = relayed or nil }
 		peer[metric], subjects[subject] = subjects, record
+		if not relayed then
+			MakeDirect(self, identity)
+		end
 	end
 	-- The first value heard this week is the baseline a weekly board subtracts. A baseline from before the current
 	-- reset is replaced by this observation, which is then the first one heard this week.
@@ -1135,20 +1400,44 @@ function Instance:Receive(prefix, payload, channel, sender)
 	if not ALLOWED_CHANNELS[channel] then
 		return false, "channel"
 	end
-	if payload:match("^" .. WIRE_VERSION .. "|([^|]*)|") ~= self.addon then
+	local version = payload:match("^(%d+)|")
+	if (version ~= WIRE_VERSION and version ~= RELAY_VERSION) or payload:match("^[12]|([^|]*)|") ~= self.addon then
 		return false, "addon"
 	end
 	if not self:IsEnabled() then
 		return false, "disabled"
 	end
 	local key, identity = Identity(sender)
-	if not key or identity == OwnIdentity() then
+	local own = OwnIdentity()
+	if not key or not identity or identity == own then
 		return false, "sender"
 	end
 	if not AllowSender(self, identity) then
 		return false, "rate"
 	end
-	local _, _, metric, subject, valueText, unixText = payload:match("^(%d+)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+	local metric, subject, valueText, unixText, origin
+	if version == RELAY_VERSION then
+		metric, subject, valueText, unixText, origin =
+			payload:match("^2|[^|]*|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+		local originKey, originIdentity
+		if origin then
+			originKey, originIdentity = Identity(origin)
+		end
+		if not originKey or originIdentity == own or originIdentity == identity then
+			return false, "relay"
+		end
+		local config = metric and #metric <= MAX_METRIC and self.metrics[metric]
+		if not config or not ValidSubject(config.subject, subject) then
+			return false, "metric"
+		end
+		local value = ParseInt(valueText, 0, MAX_VALUE)
+		local unix = ParseInt(unixText, 1, Now() + FUTURE_SECONDS)
+		if not value or not unix then
+			return false, "value"
+		end
+		return Apply(self, originKey, originIdentity, DisplayName(origin), config, metric, subject, value, unix, true)
+	end
+	metric, subject, valueText, unixText = payload:match("^1|[^|]*|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
 	local config = metric and #metric <= MAX_METRIC and self.metrics[metric]
 	if not config or not ValidSubject(config.subject, subject) then
 		return false, "metric"
@@ -1158,29 +1447,58 @@ function Instance:Receive(prefix, payload, channel, sender)
 	if not value or not unix then
 		return false, "value"
 	end
-	return Apply(self, key, identity, DisplayName(sender), config, metric, subject, value, unix)
+	local changed, why = Apply(self, key, identity, DisplayName(sender), config, metric, subject, value, unix, false)
+	if self.index[identity] then
+		---@type table<string, boolean>|nil
+		local heard = self.heardOn[identity]
+		if not heard then
+			heard = {}
+			self.heardOn[identity] = heard
+		end
+		heard[channel] = true
+	end
+	return changed, why
 end
 
--- A deep copy of every cached peer's metric tables in the saved layout; empty while disabled.
+-- Whether this call includes rows heard only through a relay. Only Core/LeaderboardsData.lua sets it, and only for
+-- the length of one board call.
+---@return boolean
+local function IncludeRelayed()
+	local current = Manager()
+	return current ~= nil and current.includeRelayed == true
+end
+
+-- A deep copy of every cached peer's metric tables in the saved layout; empty while disabled. Relayed rows stay out
+-- unless the current board call asked for them.
 function Instance:Shared()
 	local copy = {}
 	if not self:IsEnabled() then
 		return copy
 	end
+	local relayed = IncludeRelayed()
 	for peer, metrics in pairs(self.store) do
-		copy[peer] = {}
+		local saved = {}
 		for metric, subjects in pairs(metrics) do
 			if type(subjects) == "table" then
-				copy[peer][metric] = {}
+				local rows = {}
 				for subject, record in pairs(subjects) do
-					copy[peer][metric][subject] = {
-						value = record.value,
-						eventUnix = record.eventUnix,
-						week = record.week,
-						weekUnix = record.weekUnix,
-					}
+					if relayed or record.relayed ~= true then
+						rows[subject] = {
+							value = record.value,
+							eventUnix = record.eventUnix,
+							week = record.week,
+							weekUnix = record.weekUnix,
+							relayed = record.relayed == true or nil,
+						}
+					end
+				end
+				if next(rows) then
+					saved[metric] = rows
 				end
 			end
+		end
+		if next(saved) then
+			copy[peer] = saved
 		end
 	end
 	return copy
@@ -1218,15 +1536,17 @@ function Instance:Board(metric, subject, localValue, localEventUnix)
 		},
 	}
 	if config and ValidSubject(config.subject, subject) and self:IsEnabled() then
+		local relayed = IncludeRelayed()
 		for identity, key in pairs(self.index) do
 			local subjects = self.store[key] and self.store[key][metric]
 			local record = subjects and subjects[subject]
-			if record and identity ~= rows[1].identity then
+			if record and identity ~= rows[1].identity and (relayed or record.relayed ~= true) then
 				rows[#rows + 1] = {
 					name = PeerDisplay(self, key),
 					identity = identity,
 					value = record.value,
 					eventUnix = record.eventUnix,
+					relayed = record.relayed == true or nil,
 				}
 			end
 		end
@@ -1345,10 +1665,11 @@ function Instance:WeekBoard(metric, subject, localValue, localEventUnix)
 		},
 	}
 	if config and ValidSubject(config.subject, subject) and self:IsEnabled() then
+		local relayed = IncludeRelayed()
 		for identity, key in pairs(self.index) do
 			local subjects = self.store[key] and self.store[key][metric]
 			local record = subjects and subjects[subject]
-			if record and identity ~= rows[1].identity then
+			if record and identity ~= rows[1].identity and (relayed or record.relayed ~= true) then
 				local weekly
 				if first then
 					weekly = record.eventUnix and record.eventUnix >= weekStart and 1 or 0
@@ -1361,6 +1682,7 @@ function Instance:WeekBoard(metric, subject, localValue, localEventUnix)
 					identity = identity,
 					value = weekly,
 					eventUnix = record.eventUnix,
+					relayed = record.relayed == true or nil,
 				}
 			end
 		end
@@ -1417,6 +1739,9 @@ local function New(config, owner)
 		index = {},
 		latest = {},
 		peerCount = 0,
+		relayedCount = 0,
+		relayOnly = {},
+		heardOn = {},
 		metrics = {},
 		metricList = {},
 		revision = 0,
