@@ -74,6 +74,7 @@ VENDORED = {
     "UI/TrackerEqot.lua": TRACKER_CONSUMERS,
     "tests/tracker_host_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_host_harness.lua": TRACKER_CONSUMERS,
+    "tests/tracker_backdrop_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_header_menu_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_combat_spec.lua": TRACKER_CONSUMERS,
     "tests/tracker_geometry_spec.lua": TRACKER_CONSUMERS,

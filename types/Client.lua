@@ -138,10 +138,19 @@ QUESTS_LABEL = nil
 ---@class OptionsSliderTemplate : Slider
 ---@class UIPanelButtonTemplate : Button
 
--- Settings: the canvas category the settings page registers itself as.
+-- Settings: the canvas category the settings page registers itself as, and the proxy/slider rows the tracker's
+-- background setting registers.
+---@class ForeverSettingsVarType
+---@field Number any
+---@field Boolean any
 ---@class ForeverSettings
+---@field VarType ForeverSettingsVarType
 ---@field RegisterCanvasLayoutCategory fun(frame: Frame, name: string): table
 ---@field RegisterAddOnCategory fun(category: table)
+---@field RegisterProxySetting fun(...): any
+---@field CreateSliderOptions fun(minimum: number, maximum: number, step: number): any
+---@field CreateSliderInitializer fun(setting: any, options: any, tooltip: string?): any
+---@field RegisterInitializer fun(container: any, initializer: any)
 ---@type ForeverSettings?
 Settings = nil
 

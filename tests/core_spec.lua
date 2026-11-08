@@ -64,8 +64,8 @@ check(ns.isCore == true, "Core.lua marks its namespace")
 check(type(ns.TrackerHostSettings) == "function", "Core.lua publishes the host's settings")
 local settings = ns.TrackerHostSettings()
 check(
-	settings.attached == true and settings.locked == false and settings.scale == 1,
-	"a fresh install docks the column"
+	settings.attached == true and settings.locked == false and settings.scale == 1 and settings.backdropOpacity == 0,
+	"a fresh install docks the column with no backdrop"
 )
 check(ns.TrackerHostSettings() ~= settings, "a table with no saved variables is never kept")
 
@@ -75,6 +75,7 @@ local saved = ns.TrackerHostSettings()
 check(saved.attached == false, "a saved detach survives")
 check(saved.scale == 1, "a broken scale falls back to 1")
 check(saved.locked == false, "a broken Lock switch falls back to off")
+check(saved.backdropOpacity == 0, "a broken backdrop opacity falls back to off")
 check(env.ForeverCoreDB.trackerHost == saved, "the saved table is the one kept")
 
 -- Expose.lua publishes the shared modules the host built, and attaches through them.

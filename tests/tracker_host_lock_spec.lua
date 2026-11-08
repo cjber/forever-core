@@ -113,6 +113,16 @@ local function frame()
 		self.label = fontString
 		return fontString
 	end
+	-- The optional backdrop is the only texture the host makes; the lock spec only needs it not to error.
+	function f.CreateTexture(_)
+		return {
+			SetPoint = noop,
+			SetAtlas = noop,
+			SetVertexColor = noop,
+			SetShown = noop,
+			Hide = noop,
+		}
+	end
 	frames[#frames + 1] = f
 	return f
 end
