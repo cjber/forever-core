@@ -30,6 +30,8 @@ the addon they already have.
 | `tests/debug_log_spec.lua` | the log's ring, levels, persistence, switch and copy contract |
 | `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
 | `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
+| `UI/QuestLogTabs.lua` | the shared world map quest log side tab: one tab and panel per addon |
+| `tests/quest_log_tabs_spec.lua` | the tab's register, select and restore contract |
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
 | `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |
 | `Core/LeaderboardsData.lua` | overall points, standing, the per-scope cache and the unit tooltip |
@@ -145,6 +147,29 @@ and saved angle, and `Destroy(button)` takes one out again. A spec supplies `nam
 `settings.minimapButtonAngle` and the hide flag is read from `settings.minimapButtonHidden`, unless the spec names its
 own `angleKey`/`hiddenKey` or supplies `getShown`. A drag moves the button around the rim and saves the angle it
 stopped on. Nothing here hooks or resizes a Blizzard frame.
+
+## Quest log tabs
+
+List `UI/QuestLogTabs.lua` in the TOC before the addon's panel file, and register from
+`EventUtil.ContinueOnAddOnLoaded("Blizzard_WorldMap", ...)` so `QuestMapFrame` exists:
+
+```lua
+local tab = ns.QuestLogTabs.Register("guide", {
+	name = "AdventureGuideForeverTab", -- the tab frame's global name
+	tooltip = ns.TITLE, -- the tooltip text
+	panel = panel, -- the frame to show while this tab is selected
+	order = 10, -- lowest first; ties sort by key
+})
+Art.Fit(tab.Icon, "islands-queue-prop-compass", 30, 30) -- each addon fits its own icon
+```
+
+`Select(key)` shows that panel, hides the quest log's own content frames and checks only that tab. The replacement
+Quests tab, the client's `QuestLog.SetDisplayMode` callback and the quest details hook bring the stock pages back,
+each content frame restored from its own `displayMode`. The module never writes `displayMode`, never resizes
+`QuestMapFrame` or a panel and never touches a panel's children, so a panel's `ScrollFrame` keeps its offset. The
+replacement Quests tab is created only when `QuestMapFrameOverrides.questTabHidden` says the stock one is hidden;
+without it the first addon tab hangs below the map's legend or Quests tab. One copy publishes
+`ForeverQuestLogTabs` and later copies join it.
 
 ## Peer statistics
 

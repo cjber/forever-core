@@ -99,6 +99,36 @@ ForeverMinimapButtons = nil
 ---@field Refresh fun()
 ---@field SetShown fun(button: ForeverMinimapButton?, shown: boolean)
 
+-- UI/QuestLogTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.
+---@class ForeverQuestLogTab : Button
+---@field SetCustomOnMouseUpHandler fun(self: ForeverQuestLogTab, handler: fun(self: ForeverQuestLogTab, mouseButton: string, upInside: boolean))
+---@field SetChecked fun(self: ForeverQuestLogTab, checked: boolean)
+---@field tooltipText string
+---@field activeAtlas? string
+---@field inactiveAtlas? string
+
+-- The registry every vendored copy of UI/QuestLogTabs.lua shares, published by the first to load.
+---@type ForeverQuestLogTabsAPI?
+ForeverQuestLogTabs = nil
+
+-- Blizzard's quest log, and the Forever override table that says its stock Quests tab is hidden.
+---@class ForeverQuestLogContentFrame : Frame
+---@field displayMode any
+---@class ForeverQuestMapFrame : Frame
+---@field ContentFrames ForeverQuestLogContentFrame[]
+---@field QuestsTab Button
+---@field MapLegendTab Button
+---@field displayMode any
+---@type ForeverQuestMapFrame
+QuestMapFrame = nil
+---@class ForeverQuestMapFrameOverrides
+---@field questTabHidden? boolean
+---@field GetQuestsTabAnchorOffset fun(): number, number
+---@type ForeverQuestMapFrameOverrides
+QuestMapFrameOverrides = nil
+---@type string
+QUESTS_LABEL = nil
+
 -- The templates UI/SettingsPage.lua creates, each the widget its row is: the return type of CreateFrame with a
 -- template is the union of the template class and the widget class.
 ---@class InterfaceOptionsCheckButtonTemplate : CheckButton

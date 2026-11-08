@@ -26,12 +26,25 @@
 ---@class ForeverTrackerOrderAPI
 ---@field Sort fun(modules: ForeverTrackerModule[])
 
+---@class ForeverQuestLogTabSpec
+---@field name string the tab frame's global name
+---@field tooltip string the tab's tooltip text
+---@field panel Frame the panel the tab shows
+---@field order number where the tab sits in the stack, lowest first
+
+---@class ForeverQuestLogTabsAPI
+---@field Register fun(key: string, spec: ForeverQuestLogTabSpec): ForeverQuestLogTab
+---@field Select fun(key: string)
+---@field ShowQuests fun()
+---@field Selected fun(): string?
+
 ---@class ForeverTrackerNamespace
 ---@field MapCanvas? ForeverMapCanvas
 ---@field ContextMenu? fun(owner: Frame, generator: fun(owner: Frame, root: any)): any
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
+---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field SafeCall fun(label: string, fn: function, ...: any): boolean, ...any
 ---@field L table<string, string>
 ---@field TrackerHost? ForeverTrackerHostAPI

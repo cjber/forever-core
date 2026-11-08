@@ -24,4 +24,5 @@ UI\TrackerOrder.lua
 UI\TrackerHost.lua
 Core\LeaderboardsData.lua
 UI\Leaderboards.lua
+UI\QuestLogTabs.lua
 Expose.lua

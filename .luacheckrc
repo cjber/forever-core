@@ -5,6 +5,7 @@ globals = {
 	"ForeverFamily",
 	"ForeverLeaderboards",
 	"ForeverTrackerHost",
+	"ForeverQuestLogTabs",
 	"EventUtil",
 	"ShortestPathForever",
 	"ShortestPathForeverCharDB",
@@ -213,3 +214,7 @@ globals[#globals + 1] = "ForeverMinimapButtons"
 -- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.
 read_globals[#read_globals + 1] = "DEFAULT_CHAT_FRAME"
 globals[#globals + 1] = "SLASH_FOREVERCORE1"
+-- UI/QuestLogTabs.lua: Blizzard's quest log, the Forever override table and the stock Quests label.
+read_globals[#read_globals + 1] = "QuestMapFrame"
+read_globals[#read_globals + 1] = "QuestMapFrameOverrides"
+read_globals[#read_globals + 1] = "QUESTS_LABEL"
