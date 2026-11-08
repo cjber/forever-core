@@ -18,8 +18,6 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["Attach to quest tracker"] = "Attach to quest tracker"
 L["Lock the tracker"] = "Lock the tracker"
 L["Tracker background"] = "Tracker background"
-L["Adds a dark background behind the tracker so its text is easier to read."] =
-	"Adds a dark background behind the tracker so its text is easier to read."
 L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."
 
 -- Forever Leaderboards.

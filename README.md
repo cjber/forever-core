@@ -15,9 +15,9 @@ Forever Core also owns shared error capture (`Core/SafeCall.lua`), the report an
 link box. All five addons vendor those files so error reporting, command handling, selection behavior and link copying
 stay consistent.
 
-The column can wear an optional dark background from the tracker settings, drawn with the game's own tooltip
-background art. Its opacity slider starts at 0 (off), so a player who reads the tracker fine over dark terrain keeps
-the stock look.
+The column can wear an optional dark background from the tracker sections' right-click menu, drawn with the game's
+own tooltip background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker
+fine over dark terrain keeps the stock look.
 
 Forever Core is the one copy. The four addons vendor these files byte for byte (`docs/adoption.md`), and the first
 Forever addon to load publishes the column as `ForeverTrackerHost`; every later one adopts it. A player with three of

@@ -34,18 +34,62 @@ check(lock.isSelected() == false, "the Lock switch reads the saved setting")
 lock.setSelected()
 check(host.IsLocked() == true, "the Lock switch saves the setting")
 
+-- The background is a submenu of that same menu, so every addon gets it without a settings page of its own.
+local background = Entry(menu, "Tracker background")
+check(background ~= nil and background.submenu ~= nil, "the section menu offers the tracker background")
+local off = Entry(background.submenu, "Off")
+check(off ~= nil and off.isSelected() == true, "the background starts off")
+check(
+	Entry(background.submenu, "25%")
+		and Entry(background.submenu, "50%")
+		and Entry(background.submenu, "75%")
+		and Entry(background.submenu, "100%"),
+	"the background offers 25%, 50%, 75% and 100%"
+)
+local half = Entry(background.submenu, "50%")
+check(half.isSelected() == false, "a background choice reads the saved opacity")
+half.setSelected()
+check(t.hostSettings.backdropOpacity == 0.5, "picking 50% saves the opacity")
+check(host.GetBackdropOpacity() == 0.5, "the column reports the saved opacity")
+check(t.textures[1].shown == true, "picking 50% shows the background")
+check(off.isSelected() == false, "the off choice follows the saved opacity")
+off.setSelected()
+check(t.hostSettings.backdropOpacity == 0, "Off saves the opacity as off")
+check(t.textures[1].shown == false, "Off hides the background")
+
 -- An addon that owns its context menu gets that menu, and Blizzard's is never called: Adventure Guide draws its own
 -- because Blizzard_Menu.AcquireMenu can assert in Forever 70009. The generator is the same either way.
 local owned = harness.new({ headerShown = true })
 local ownedMenus, blizzardCalls = {}, 0
 function owned.ns.ContextMenu(owner, generator)
-	local ownedMenu = { owner = owner, entries = {} }
-	local root = {}
-	function root.CreateCheckbox(_, text, isSelected, setSelected)
-		ownedMenu.entries[#ownedMenu.entries + 1] = { text = text, isSelected = isSelected, setSelected = setSelected }
-		return {}
+	local function Description()
+		local descriptionObject = { entries = {} }
+		function descriptionObject.CreateCheckbox(_, text, isSelected, setSelected)
+			descriptionObject.entries[#descriptionObject.entries + 1] =
+				{ text = text, isSelected = isSelected, setSelected = setSelected }
+			return {}
+		end
+		function descriptionObject.CreateRadio(_, text, isSelected, setSelected)
+			descriptionObject.entries[#descriptionObject.entries + 1] =
+				{ text = text, isSelected = isSelected, setSelected = setSelected }
+			return {}
+		end
+		function descriptionObject.CreateButton(_, text, callback)
+			if callback then
+				descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, callback = callback }
+				return {}
+			end
+			local submenu = Description()
+			submenu.text = text
+			descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, submenu = submenu }
+			return submenu
+		end
+		return descriptionObject
 	end
+	local ownedMenu = { owner = owner }
+	local root = Description()
 	generator(owner, root)
+	ownedMenu.entries = root.entries
 	ownedMenus[#ownedMenus + 1] = ownedMenu
 	return ownedMenu
 end
@@ -62,6 +106,7 @@ check(ownedAttach.isSelected() == true, "the addon-owned menu reads the saved se
 ownedAttach.setSelected()
 check(owned.hostSettings.attached == false, "the addon-owned menu saves the setting")
 check(Entry(ownedMenus[1], "Lock the tracker") ~= nil, "the addon-owned menu offers Lock")
+check(Entry(ownedMenus[1], "Tracker background") ~= nil, "the addon-owned menu offers the tracker background")
 
 -- A section's own left click still runs, and a right click runs it too before the shared menu opens.
 local buttons = {}
