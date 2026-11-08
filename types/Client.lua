@@ -8,6 +8,7 @@
 ---@field GetCanvasZoomPercent fun(self: WorldMapFrame): number?
 ---@field GetGlobalPinScale fun(self: WorldMapFrame): number?
 ---@field GetPinFrameLevelsManager? fun(self: WorldMapFrame): ForeverCanvasLevels
+---@field SetQuestLogPanelShown fun(self: WorldMapFrame, shown: boolean)
 ---@class ForeverCanvasLevels
 ---@field GetValidFrameLevel fun(self: ForeverCanvasLevels, levelType: string): number?
 
@@ -121,6 +122,8 @@ ForeverQuestLogTabs = nil
 ---@field displayMode any
 ---@type ForeverQuestMapFrame
 QuestMapFrame = nil
+---@type WorldMapFrame
+WorldMapFrame = nil
 ---@class ForeverQuestMapFrameOverrides
 ---@field questTabHidden? boolean
 ---@field GetQuestsTabAnchorOffset fun(): number, number
