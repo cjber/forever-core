@@ -138,6 +138,23 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-14** Saved variables never assume a key: every default is declared in one place (a
   `DEFAULTS` table, or the feature registry's `default =`), and a missing key reads as its default,
   so a new option and an old save file always agree.
+- **WFA-38** Never touch Blizzard's Lua state. Forever runs its UI through secure delegates, so a hook, a field
+  write or a first call from addon code into a Blizzard object makes Blizzard's own code fail or be blocked later,
+  often only in combat, and the error names this addon. Blizzard allows hooks in general; this rule is ours,
+  because on this client they break.
+  - Allowed: events; `HookScript`; `EventRegistry` or an object's own `RegisterCallback`;
+    `TooltipDataProcessor`; `hooksecurefunc("GlobalFunction", …)`; our own frames and textures, which may be
+    parented or anchored to a Blizzard frame; engine calls on a Blizzard widget (points, size, alpha, shown)
+    after Blizzard has laid it out.
+  - Never: `hooksecurefunc(object, "Method", …)`; a replaced method; a field written on a Blizzard table; a
+    call to a Blizzard object's Lua methods (`frame:UpdateIcon()`); Blizzard layout or lazy-cache functions; the
+    map openers (`ToggleWorldMap`, `OpenWorldMap`: use `C_Map.OpenWorldMap`).
+  - To restyle a Blizzard element, draw our own on top and hide theirs with alpha: a texture of ours parented to
+    the frame, their texture at alpha 0, both refreshed from events. Blizzard does not reset alpha it never set.
+  - An exception only when no allowed route exists: a trailing `-- taint-ok: <reason>` naming why none works
+    and what the line touches, which only reads or restyles (no call into Blizzard Lua, no field write), and a
+    `/reload` test in the PR that covers combat. A hook on a Blizzard object is never an exception.
+    `tools/lint_taint.py` (rules in `forever_tools/taint.py`) enforces this in `tools/typecheck.sh`.
 - **WFA-35** New UI work adds a scenario to `tests/sim/`, the [forever_sim](tooling/forever_sim/README.md) suite (real
   Blizzard UI under LuaJIT, vendored as `tools/forever_sim/` the same way as `forever_tools`). The scenario walks
   the player's way to the feature and adds the states that have broken before: combat, a secret tooltip, the
@@ -170,7 +187,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%.
-- **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack at a full commit SHA. Headless specs pass on builds that are broken in game, so a change
+- **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
+  commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
   the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.
