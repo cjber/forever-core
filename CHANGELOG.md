@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The leaderboards window and `/forever debug` reach players whichever addon loads first.** Every installed Forever addon ships the same `UI/Leaderboards.lua`, but the first copy to load owned the window and `/forever`, so a change stayed invisible unless that copy happened to be new. `LEADERBOARDS_VERSION` is now 2, so a v2 copy takes over a v1 copy's window and `/forever` and `/flb` handlers, keeps every board registered before the takeover and uses the one tooltip hook, which makes `/forever debug` reach the shared log. A new core check pins each shared file whose version gates takeover to its version and exact bytes, so a change without a raised version fails CI. (#235)
+
 - **Errors outside a protected call reach the report with BugGrabber installed.** BugGrabber v12 replaces `seterrorhandler` with a no-op and announces each grabbed error on the client's `EventRegistry`, so the shared error capture now subscribes there and resolves the object with `BugGrabber:GetErrorByID`; previously it waited for a `CallbackHandler` API that BugGrabber does not have. (#232)
 
 - **Mock backpacks show their items.** `tools/wowmock/wowmock.py` drew the empty-slot atlas as a 64-unit overlay over every backpack slot, so item icons, quality borders and counts were hidden. An empty slot's art now fills the 37-unit icon texture, as `SetItemButtonTexture(nil)` does in `ContainerFrameItemButtonMixin`, and a filled slot draws only its item. (#211)
