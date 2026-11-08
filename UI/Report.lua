@@ -147,7 +147,9 @@ local function BugGrabberErrors()
 	return ok and lines or nil
 end
 
--- The errors ns.SafeCall caught this session, newest first, plus recent runtime errors from BugGrabber when present.
+-- The errors ns.SafeCall caught this session, newest first, and earlier sessions kept in the journal under their own
+-- heading. Earlier sessions come first, so a long current session cannot push them out of the message limit; recent
+-- runtime errors from BugGrabber are added when present.
 ---@return string[]
 local function Errors()
 	local caught = ns.CaughtErrors()
@@ -172,10 +174,28 @@ local function Errors()
 			end
 		end
 	end
-	if caught[1] then
-		lines[#lines + 1] = ("Errors (%d):"):format(#caught)
-		for index = #caught, 1, -1 do
-			local entry = caught[index]
+	local current, earlier = {}, {}
+	for _, entry in ipairs(caught) do
+		if entry.fromSession == false then
+			earlier[#earlier + 1] = entry
+		else
+			current[#current + 1] = entry
+		end
+	end
+	if earlier[1] then
+		lines[#lines + 1] = ("Earlier sessions (%d):"):format(#earlier)
+		for index = #earlier, 1, -1 do
+			local entry = earlier[index]
+			lines[#lines + 1] = ("- %s x%d %s"):format(entry.kind or "error", entry.count, entry.message)
+			for line in entry.stack:gmatch("[^\n]+") do
+				lines[#lines + 1] = "    " .. line
+			end
+		end
+	end
+	if current[1] then
+		lines[#lines + 1] = ("Errors (%d):"):format(#current)
+		for index = #current, 1, -1 do
+			local entry = current[index]
 			lines[#lines + 1] = ("- [%s] x%d %s"):format(entry.label, entry.count, entry.message)
 			for line in entry.stack:gmatch("[^\n]+") do
 				lines[#lines + 1] = "    " .. line

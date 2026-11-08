@@ -121,6 +121,7 @@ end
 _G.geterrorhandler = function()
 	return function() end
 end
+_G.seterrorhandler = function() end
 assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
 local chunk = assert(loadfile("UI/Report.lua"))
 chunk("ExampleAddon", ns)
@@ -189,6 +190,25 @@ equal(
 	select(2, distinctText:gsub("Recent Lua errors %(BugGrabber%):", "")),
 	1,
 	"distinct long errors keep one external section"
+)
+
+ns.AttachErrorJournal({
+	{
+		signature = "earlier\n",
+		kind = "error",
+		message = "error from an earlier session",
+		stack = "",
+		count = 2,
+		firstSeen = 1,
+		lastSeen = 2,
+	},
+})
+local earlierText = reportText({})
+equal(earlierText:find("Earlier sessions (1):", 1, true) ~= nil, true, "earlier sessions have their own heading")
+equal(
+	earlierText:find("error from an earlier session", 1, true) ~= nil,
+	true,
+	"earlier sessions are included in the report"
 )
 
 equal(ns.Report.Command("unknown"), false, "unknown command remains for addon handler")

@@ -25,7 +25,7 @@ the addon they already have.
 | `tests/report_spec.lua` | the report and issue contract |
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
-| `Core/SafeCall.lua` | shared error capture used by the report window |
+| `Core/SafeCall.lua` | shared error capture and journal used by the report window |
 | `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
 | `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
 | `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
@@ -46,6 +46,21 @@ button and dead-code files.
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
 `ns.L` carries the player's language, and a section is handed over with `ForeverTrackerHost.Attach(module)`.
+
+## Error journal
+
+`Core/SafeCall.lua` chains the global error handler and listens for this addon's blocked and forbidden actions and
+Lua warnings, so the report window can list errors from earlier sessions as well as this one. It records in memory
+first and keeps what it saw before the saved table arrives. After the addon's saved variables load, pass the table
+that should hold the journal:
+
+```lua
+ns.AttachErrorJournal(AdventureGuideForeverDB.errors)
+```
+
+The addon's defaults should make that table exist before this line runs. The journal keeps at most 50 signatures and
+drops the least recently seen. Nothing else changes: `ns.SafeCall`, `ns.RecordError` and `ns.CaughtErrors` work as
+before, and every error still reaches BugSack or the default error frame.
 
 ## Why the paths are `UI/...` in a repo whose own addon is `ForeverCore`
 

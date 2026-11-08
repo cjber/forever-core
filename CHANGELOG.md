@@ -4,6 +4,8 @@
 
 - **Error journals can be filed without reading BugSack by hand.** `tools/forever_errors.py` reads every Forever addon's journal, BugGrabber's errors and `Logs/taint.log`, groups them by repository and signature, and prints a table or JSON (`--json`). A group last seen before its addon's installed TOC is marked stale: it is hidden, does not fail the gate and is not filed unless `--include-stale` asks for it. `--file` opens one issue per signature labelled `error-report` and only comments again when the count rose; `--dry-run` shows what it would do. `--since` and `--addon` turn it into the release gate. (#205)
 
+- **Errors now survive a reload.** The shared error capture chains the game's error handler, so unwrapped errors from the addon's folder, blocked and forbidden actions and Lua warnings are recorded without hiding anything from BugSack or the default error frame. Once a consumer passes its saved table to `ns.AttachErrorJournal`, the journal keeps up to 50 signatures with their counts, first and last seen times, versions, build, locale and other loaded addons, and the report window lists earlier sessions under their own heading. (#204)
+
 ## [0.4.29] - 2026-11-07
 
 - **A locked tracker grip draws no long sentence.** While Lock is on the grip stays blank until the pointer is over it, and the locked sentence lives only in the tooltip, so a column placed at a screen edge no longer has text running off screen or over the UI below. Unlocked behaviour is unchanged. Thanks to MrFIXlT. (#193)
