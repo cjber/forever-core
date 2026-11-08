@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Error journals can be filed without reading BugSack by hand.** `tools/forever_errors.py` reads every Forever addon's journal, BugGrabber's errors and `Logs/taint.log`, groups them by repository and signature, and prints a table or JSON (`--json`). A group last seen before its addon's installed TOC is marked stale: it is hidden, does not fail the gate and is not filed unless `--include-stale` asks for it. `--file` opens one issue per signature labelled `error-report` and only comments again when the count rose; `--dry-run` shows what it would do. `--since` and `--addon` turn it into the release gate. (#205)
 
 ## [0.4.29] - 2026-11-07
 
