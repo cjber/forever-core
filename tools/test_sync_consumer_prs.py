@@ -103,3 +103,7 @@ class MainTest(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(sync.main(), 0)
         self.assertIn("CONSUMER_SYNC_TOKEN is not set", out.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
