@@ -71,7 +71,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 2
+local LEADERBOARDS_VERSION = 3
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -489,7 +489,8 @@ function BuildTabs(frame)
 	end
 	local last
 	for index, entry in ipairs(list) do
-		local tab = CreateFrame("Frame", nil, frame, "LargeSideTabButtonTemplate") --[[@as ForeverLeaderboardsTab]]
+		-- A Button, so the gamepad's SmartNavigation scan never reads this frame's mouse scripts (cjber/skillup-forever#398).
+		local tab = CreateFrame("Button", nil, frame, "LargeSideTabButtonTemplate") --[[@as ForeverLeaderboardsTab]]
 		if last then
 			tab:SetPoint("TOP", last, "BOTTOM", 0, -3)
 		else
