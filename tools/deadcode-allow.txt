@@ -5,3 +5,4 @@ Core/SafeCall.lua:ClearErrors # Forever Core UI/Report.lua clears the consumer's
 Core/Log.lua:Log # consumer addons call the documented log API from their own Lua
 Core/Log.lua:AttachLog # consumer addons attach their saved table from their own Lua
 Core/Log.lua:DebugEnabled # consumer addons guard expensive debug building behind the shared switch
+Core/Log.lua:DebugCommand # /forever debug subcommand; the slash dispatcher lives in forever-core
