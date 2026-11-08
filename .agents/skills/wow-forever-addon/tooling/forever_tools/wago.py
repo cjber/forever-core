@@ -1,5 +1,8 @@
 """Pinned wago.tools downloads: cached on disk, validated before they are cached, never executed."""
 
+import http.client
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -8,6 +11,30 @@ from .csvtable import Row, parse_csv
 from .fsio import atomic_write
 
 DB2_URL = "https://wago.tools/db2/{name}/csv?build={build}"
+ATTEMPTS = 5
+
+
+# A rate limit, a server fault, a stall or a dropped connection is transient: another attempt usually gets the file.
+def _transient(error: Exception) -> bool:
+    """Whether `error` is worth another attempt."""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code == 429 or error.code >= 500
+    return isinstance(error, (OSError, http.client.IncompleteRead))
+
+
+def _download(url: str, *, user_agent: str, timeout: int) -> bytes:
+    """`url` with its body, retrying transient failures at 2, 4, 8 and 16 seconds; anything else raises at once."""
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    attempt = 0
+    while True:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except (OSError, http.client.IncompleteRead) as error:
+            attempt += 1
+            if attempt >= ATTEMPTS or not _transient(error):
+                raise
+            time.sleep(2**attempt)
 
 
 def read_source(
@@ -18,9 +45,7 @@ def read_source(
         return path.read_bytes(), False
     if offline:
         raise ValueError(f"Missing cached source: {path}")
-    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = response.read()
+    data = _download(url, user_agent=user_agent, timeout=timeout)
     if not data.strip() or data.lstrip().startswith(b"<"):
         raise ValueError(f"Expected data, received empty data or HTML from {url}")
     return data, True
