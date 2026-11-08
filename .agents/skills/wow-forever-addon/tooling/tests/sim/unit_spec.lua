@@ -91,6 +91,22 @@ test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's 
 	eq(table.concat(seen, ","), "enter:nil,leave:Addon")
 end)
 
+test("widgets: a script's setter taint stops when the handler returns", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	local seen
+	Taint.set("Addon")
+	frame:SetScript("OnSizeChanged", function()
+		seen = Taint.current
+	end)
+	Taint.set(nil)
+	frame:SetSize(10, 10)
+	eq(seen, "Addon", "the handler runs tainted")
+	eq(Taint.current, nil, "the caller that triggered it stays secure")
+end)
+
 test("loader: bootstrap markers retain matching game conditions", function()
 	local toc = Loader.parseToc(
 		"Shared.lua [Bootstrap]\nWrong.lua [Bootstrap] [AllowLoadGameType cata]\n"

@@ -171,6 +171,17 @@ function M.build(sim)
 	end
 	G.SetGamePadFreeLook = function() end
 	G.GetChannelList = function() end
+	-- DisplayInterfaceActionBlockedMessage mirrors Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua: it adds
+	-- INTERFACE_ACTION_BLOCKED as a system chat line, once, then replaces itself with a no-op. The sim keeps chat
+	-- output on DEFAULT_CHAT_FRAME, as that file's ChatFrameUtil.AddSystemMessage does. Blizzard_ChatFrameBase
+	-- cannot boot here (it needs the whole chat frame), so the one function the panel manager calls lives here.
+	G.DisplayInterfaceActionBlockedMessage = function()
+		local chat = G.DEFAULT_CHAT_FRAME
+		if chat then
+			chat:AddMessage(G.INTERFACE_ACTION_BLOCKED)
+		end
+		G.DisplayInterfaceActionBlockedMessage = function() end
+	end
 	-- Kiosk (event demo) mode: off. A native table the UI checks everywhere.
 	G.Kiosk = G.Kiosk
 		or setmetatable({}, {

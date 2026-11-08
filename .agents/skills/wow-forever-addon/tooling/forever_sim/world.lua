@@ -40,6 +40,7 @@ function M.build(sim)
 		items = {},
 		maps = {},
 		addons = {},
+		achievements = { categories = {} },
 	}
 	sim.world = W
 	sim.units = setmetatable({}, {
@@ -581,6 +582,114 @@ function M.build(sim)
 	end
 	impl["C_Map.MapHasArt"] = function()
 		return true
+	end
+
+	-- Achievements: the legacy globals the generated documentation leaves out, answered from
+	-- sim.world.achievements in the client's documented shapes.
+	local function achievementCategory(id)
+		for _, c in ipairs(W.achievements.categories or {}) do
+			if c.id == id then
+				return c
+			end
+		end
+	end
+	local function achievement(id)
+		for _, c in ipairs(W.achievements.categories or {}) do
+			for _, a in ipairs(c.achievements or {}) do
+				if a.id == id then
+					return a, c
+				end
+			end
+		end
+	end
+	local function achievementInfo(a)
+		local wasEarnedByMe = a.wasEarnedByMe
+		if wasEarnedByMe == nil then
+			wasEarnedByMe = a.completed == true
+		end
+		return a.id,
+			a.name,
+			a.points or 0,
+			a.completed == true,
+			a.month,
+			a.day,
+			a.year,
+			a.description or "",
+			a.flags or 0,
+			a.icon,
+			a.rewardText,
+			a.isGuild == true,
+			wasEarnedByMe,
+			a.earnedBy,
+			a.isStatistic == true
+	end
+	impl.GetCategoryList = function()
+		local ids = {}
+		for _, c in ipairs(W.achievements.categories or {}) do
+			ids[#ids + 1] = c.id
+		end
+		return ids
+	end
+	impl.GetCategoryNumAchievements = function(id)
+		local c = achievementCategory(id)
+		if not c then
+			return nil
+		end
+		local total, completed = 0, 0
+		for _, a in ipairs(c.achievements or {}) do
+			total = total + 1
+			if a.completed then
+				completed = completed + 1
+			end
+		end
+		return total, completed, total - completed
+	end
+	impl.GetAchievementInfo = function(id, index)
+		local a
+		if index ~= nil then
+			local c = achievementCategory(id)
+			a = c and (c.achievements or {})[index]
+		else
+			a = achievement(id)
+		end
+		if a then
+			return achievementInfo(a)
+		end
+	end
+	impl.GetAchievementCategory = function(id)
+		local _, c = achievement(id)
+		return c and c.id
+	end
+	impl.GetCategoryInfo = function(id)
+		local c = achievementCategory(id)
+		if c then
+			return c.name, c.parent or -1, c.flags or 0
+		end
+	end
+	impl.GetAchievementNumCriteria = function(id)
+		local a = achievement(id)
+		if a then
+			return #(a.criteria or {})
+		end
+	end
+	impl.GetAchievementCriteriaInfo = function(id, index)
+		local a = achievement(id)
+		local c = a and (a.criteria or {})[index]
+		if not c then
+			return nil
+		end
+		local quantity, required = c.quantity or 0, c.required or 0
+		return c.text or "",
+			c.type or 0,
+			c.completed == true,
+			quantity,
+			required,
+			c.charName,
+			c.flags or 0,
+			c.asset or c.assetID,
+			c.quantityString or string.format("%d/%d", quantity, required),
+			c.id or c.criteriaID or index,
+			c.eligible ~= false
 	end
 
 	-- Addons: Blizzard's (load on demand from the UI source) and the scenario's.

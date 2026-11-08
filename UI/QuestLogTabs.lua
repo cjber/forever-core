@@ -35,7 +35,8 @@ local installed = false
 ---@param name string
 ---@return ForeverQuestLogTab
 local function NewTab(name)
-	return CreateFrame("Frame", name, QuestMapFrame, "LargeSideTabButtonTemplate") --[[@as ForeverQuestLogTab]]
+	-- A Button, so the gamepad's SmartNavigation scan never reads this frame's mouse scripts (cjber/skillup-forever#398).
+	return CreateFrame("Button", name, QuestMapFrame, "LargeSideTabButtonTemplate") --[[@as ForeverQuestLogTab]]
 end
 
 ---@return ForeverQuestLogTabEntry[]

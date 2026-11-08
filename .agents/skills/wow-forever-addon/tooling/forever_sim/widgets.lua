@@ -187,10 +187,16 @@ function M.build(sim)
 		local handler = s.scripts[name]
 		if handler then
 			local by = s.scriptTaint[name]
-			if by and not Taint.current then
+			local saved = Taint.current
+			if by and not saved then
 				Taint.set(by)
 			end
 			handler(obj, ...)
+			-- The client calls a script from C: its taint applies inside the handler only, not to the secure
+			-- caller that resumes afterwards.
+			if Taint.current ~= saved then
+				Taint.set(saved)
+			end
 		end
 		if intrinsic and intrinsic.post then
 			intrinsic.post(obj, ...)

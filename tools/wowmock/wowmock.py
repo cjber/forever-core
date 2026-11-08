@@ -1445,10 +1445,12 @@ FONTS.setdefault("GameFontNormalLarge", Font(FRIZQT, 16, NORMAL, (1, -1)))  # Sy
 
 @dataclass
 class TrackerBlock:
-    """One block: a header (may carry markup) and objective lines; dash=False is OBJECTIVE_DASH_STYLE_HIDE."""
+    """One block: a header (may carry markup) and objective lines. A line is a string (stock dash) or
+    (text, dash), where dash=False is OBJECTIVE_DASH_STYLE_HIDE and a string is a mark drawn in the dash
+    column, with the text and its wrapped lines hanging after it."""
 
     header: str
-    lines: list = field(default_factory=list)  # [str] or [(str, dash)]
+    lines: list = field(default_factory=list)  # [str] or [(str, False | True | str)]
 
 
 @dataclass
@@ -1480,8 +1482,13 @@ def objective_tracker(ui, modules, title="All Objectives", container=True):
             lines = []
             for line in block.lines:
                 text, dash = line if isinstance(line, tuple) else (line, True)
-                wrapped = wrap_text(measure, text, line_font, block_w - dash_w, 2)
-                lines.append((wrapped, dash, block_y + height + TRACKER_LINE_SPACING))
+                # The stock line anchors its text to the dash column's right edge. A string dash is an icon or mark
+                # in that column (the client's waypoint line does the same with an Icon texture); False hides the
+                # dash but keeps its width.
+                dash_text = "- " if dash is True else dash if isinstance(dash, str) else ""
+                dash_width = measure.text_width(dash_text, line_font) if dash_text else dash_w
+                wrapped = wrap_text(measure, text, line_font, block_w - dash_width, 2)
+                lines.append((wrapped, dash_text, dash_width, block_y + height + TRACKER_LINE_SPACING))
                 height += len(wrapped) * line_font.height + TRACKER_LINE_SPACING
             blocks.append((header_lines, lines, block_y, height))
             contents += height + (TRACKER_FROM_BLOCK if len(blocks) > 1 else TRACKER_FROM_HEADER)
@@ -1513,11 +1520,13 @@ def objective_tracker(ui, modules, title="All Objectives", container=True):
             bx = ox + TRACKER_BLOCK_X
             for index, text in enumerate(header_lines):
                 canvas.text(bx, oy + block_top + index * line_font.height, text, line_font, header_color)
-            for wrapped, dash, line_top in lines:
-                if dash:
-                    canvas.text(bx, oy + line_top - 1, "- ", line_font, TRACKER_LINE)
+            for wrapped, dash_text, dash_width, line_top in lines:
+                if dash_text:
+                    canvas.text(bx, oy + line_top - 1, dash_text, line_font, TRACKER_LINE)
                 for index, text in enumerate(wrapped):
-                    canvas.text(bx + dash_w, oy + line_top + index * line_font.height, text, line_font, TRACKER_LINE)
+                    canvas.text(
+                        bx + dash_width, oy + line_top + index * line_font.height, text, line_font, TRACKER_LINE
+                    )
             rects["blocks"].append((bx, oy + block_top, TRACKER_WIDTH - TRACKER_BLOCK_X, height))
     return canvas, rects
 

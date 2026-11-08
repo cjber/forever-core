@@ -1,7 +1,8 @@
 """Read the Forever addons' error journals and file or update GitHub issues.
 
 After a reload or a logout the client writes each addon's journal to its SavedVariables, BugGrabber writes its own
-errors to `!BugGrabber.lua`, and the client writes `Logs/taint.log`. This tool reads all three, groups the entries
+errors to `!BugGrabber.lua`, the `!!DevSmoke` dev addon writes each `/forever selftest` run to `!!DevSmoke.lua`, and
+the client writes `Logs/taint.log`. This tool reads all four, groups the entries
 by repository and signature and prints a table. `--file` opens or comments on one issue per signature, with the
 signature hash in the body, so the same error never opens a second issue.
 
@@ -505,6 +506,50 @@ def _buggrabber_entries(root: Path, warnings: list[str]) -> list[Entry]:
     return entries
 
 
+def _smoke_entries(data: dict[object, Any], warnings: list[str]) -> list[Entry]:
+    """Every failed surface in the !!DevSmoke dev addon's runs (`/forever selftest`), one entry per surface.
+
+    A surface is labelled "<AddonFolder> <command>", so its folder is the label's first word; the world map surface
+    belongs to whichever of our folders its error names.
+    """
+    entries: list[Entry] = []
+    for run in table_values(data.get("runs")):
+        if not isinstance(run, dict):
+            continue
+        started = _timestamp(run.get("started"))
+        for result in table_values(run.get("results")):
+            if not isinstance(result, dict) or result.get("ok") is not False:
+                continue
+            surface = _text(result.get("surface"))
+            lines = [_text(line) for line in table_values(result.get("errors"))]
+            message = lines[0] if lines else "failed"
+            stack = "\n".join(lines[1:])
+            first_word = surface.split(" ", 1)[0]
+            folder = first_word if first_word in FOLDERS else folder_in(message) or folder_in(stack)
+            if folder is None:
+                warnings.append(f"DevSmoke: {surface} failed and names none of our folders: {message}")
+                continue
+            kind = "smoke"
+            entries.append(
+                Entry(
+                    source="smoke",
+                    folder=folder,
+                    repo=FOLDERS[folder],
+                    signature=signature_for(kind, f"{surface}: {message}", stack),
+                    kind=kind,
+                    message=f"{surface}: {message}",
+                    stack=stack,
+                    count=1,
+                    first_seen=started,
+                    last_seen=started,
+                    version="",
+                    build=_text(run.get("build")),
+                    locale="",
+                )
+            )
+    return entries
+
+
 def _log_datetime(
     reference: datetime,
     month: int,
@@ -604,6 +649,9 @@ def load_sources(wtf: Path, logs: Path, reference: datetime | None = None) -> Lo
         except (OSError, LuaSyntaxError) as error:
             warnings.append(f"{path}: {error}")
             continue
+        smoke = variables.get("DevSmokeDB")
+        if isinstance(smoke, dict):
+            entries.extend(_smoke_entries(smoke, warnings))
         for name, data in variables.items():
             folder = folder_for_global(name)
             if folder is None or not isinstance(data, dict) or "errors" not in data:

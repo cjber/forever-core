@@ -297,6 +297,121 @@ function M.install(Sim)
 		self:advance(0.5)
 	end
 
+	---------------------------------------------------------------------------
+	-- Slash commands, reload and the shared exercise
+	---------------------------------------------------------------------------
+	-- The slash commands `addon` registered, as each one's first alias: the client keys a command on a
+	-- SlashCmdList entry K, with its aliases in SLASH_K1, SLASH_K2, ..., and the taint tracker knows which addon
+	-- wrote the first alias, so that global alone says whose command it is.
+	function Sim:slashCommands(addon)
+		local out = {}
+		for key in pairs(self.G.SlashCmdList) do
+			local first = self.G["SLASH_" .. key .. "1"]
+			if type(first) == "string" and self.taint.globalTaint["SLASH_" .. key .. "1"] == addon then
+				out[#out + 1] = first
+			end
+		end
+		table.sort(out)
+		return out
+	end
+
+	-- Runs a typed slash command the way the chat box does: "/cmd rest" split on the first space, the command
+	-- found by its aliases in lower case as the client compares them, and the handler called as fresh input.
+	function Sim:slash(text)
+		local cmd, rest = text:match("^(%S+)%s*(.*)$")
+		local wanted = cmd:lower()
+		local G = self.G
+		for key in pairs(G.SlashCmdList) do
+			local n = 1
+			while true do
+				local alias = G["SLASH_" .. key .. n]
+				if alias == nil then
+					break
+				end
+				if type(alias) == "string" and alias:lower() == wanted then
+					self:input(G.SlashCmdList[key], rest, G.ChatFrame1EditBox)
+					self:advance(0.1)
+					return
+				end
+				n = n + 1
+			end
+		end
+		error("no slash command named " .. cmd, 2)
+	end
+
+	-- What /reload does: a fresh client with the same options, the same addons and stubs in the same order, then
+	-- a login carrying what this one would have saved.
+	function Sim:reload()
+		local saved = self:savedState()
+		local sim = Sim.new(self.opts)
+		for _, entry in ipairs(self.registered) do
+			if entry.kind == "stub" then
+				sim:stub(entry.name, entry.options)
+			else
+				sim:addon(entry.dir, entry.name)
+			end
+		end
+		sim:login({ savedVariables = saved })
+		return sim
+	end
+
+	-- Drives every surface a player reaches without addon-specific knowledge: each addon's own slash commands,
+	-- bare (twice, so a toggle opens then closes) and then the scenario's own, the world map, the same in
+	-- combat, and the commands and map again on a fresh client after /reload. Fails on an error either client
+	-- caused, unless opts.allowErrors. Returns the reloaded client.
+	function Sim:exercise(opts)
+		opts = opts or {}
+		local addons = opts.addons
+		if not addons then
+			addons = {}
+			for _, entry in ipairs(self.registered) do
+				if entry.kind == "addon" then
+					addons[#addons + 1] = entry.name
+				end
+			end
+		end
+		if not self.loggedIn then
+			self:login({ savedVariables = opts.savedVariables })
+		end
+		local bare = {}
+		for _, addon in ipairs(addons) do
+			for _, command in ipairs(self:slashCommands(addon)) do
+				bare[#bare + 1] = command
+			end
+		end
+		for _, command in ipairs(bare) do
+			self:slash(command)
+			self:slash(command)
+		end
+		for _, command in ipairs(opts.commands or {}) do
+			self:slash(command)
+		end
+		self:openWorldMap()
+		self:zoomMap(2)
+		self:panMap(0.1, 0.1)
+		self:closeWorldMap()
+		self:enterCombat()
+		for _, command in ipairs(bare) do
+			self:slash(command)
+		end
+		self:openWorldMap()
+		self:closeWorldMap()
+		self:leaveCombat()
+		local sim = self:reload()
+		for _, command in ipairs(bare) do
+			sim:slash(command)
+		end
+		sim:openWorldMap()
+		sim:closeWorldMap()
+		if not opts.allowErrors then
+			for _, addon in ipairs(addons) do
+				self:expectNoErrors(addon)
+				sim:expectNoErrors(addon)
+			end
+		end
+		return sim
+	end
+
 	-- Fires a game event as the client does.
 	function Sim:event(event, ...)
 		self.events.fire(event, ...)

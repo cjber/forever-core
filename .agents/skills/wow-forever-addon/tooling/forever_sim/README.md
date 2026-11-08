@@ -50,14 +50,29 @@ checks off for a scenario that asserts on them itself.
 | `sim:event(name, ...)`, `sim:advance(seconds)` | client events; timers, animations, OnUpdate, OnSizeChanged |
 | `sim:setGamepad(true)`, `sim:gamepadNavigate()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), and one secure pass of its navigation |
 | `sim:stub("Questie", options)` | a third-party stand-in, loaded with the addons |
+| `sim:slashCommands(addon)` | the slash commands `addon` registered, as their first aliases, sorted |
+| `sim:slash("/cmd rest")` | a typed slash command as the chat box runs it: aliases match in any case, the handler gets the remainder as fresh input |
+| `sim:reload()` | a fresh client with the same options, addons and stubs, logged in with what `/reload` would have saved |
+| `sim:exercise{ ... }` | every surface: each addon's own commands in and out of combat, the world map, then the same after a reload; fails on an error either client caused |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | addon writes into the tables the gamepad UI walks |
 | `sim:rect(frame)`, `sim:overlap(a, b)`, `sim:expectNoOverlap(a, b)`, `sim:expectOnScreen(frame)` | layout |
 
 `sim.world` holds what the client reports: `player`, `units` (target, mouseover...), `group`, `professions`,
-`items`, `spells`, `maps`, `waypoint`. `sim.impl["C_Namespace.Function"] = function(...) end` answers any API
-directly; the documented rules (below) still apply to what it returns.
+`items`, `spells`, `maps`, `waypoint`, `achievements`. `sim.impl["C_Namespace.Function"] = function(...) end`
+answers any API directly; the documented rules (below) still apply to what it returns.
+
+An addon repo exercises its own surfaces with one shared step, in `tests/sim/exercise_scenario.lua`:
+
+```lua
+scenario("every surface, in and out of combat and across a reload", function(sim) sim:exercise() end)
+```
+
+`sim:exercise` logs in, runs each registered addon's slash commands twice (a toggle opens then closes) and the
+scenario's own `commands`, opens, zooms, pans and closes the world map, repeats the bare commands and the map in
+combat, then reloads and runs them once more with the map. It fails on an error either client caused; pass
+`addons`, `commands`, `savedVariables` or `allowErrors` to narrow or widen it.
 
 ## What it models
 
