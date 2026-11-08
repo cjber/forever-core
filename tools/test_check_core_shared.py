@@ -24,6 +24,11 @@ CORE = {
     "tests/leaderboards_window_spec.lua": b"core leaderboards window spec\n",
     "tests/leaderboards_harness.lua": b"core leaderboards harness\n",
     "tests/minimap_button_spec.lua": b"core minimap spec\n",
+    "Core/SafeCall.lua": b"core safecall\n",
+    "Core/Log.lua": b"core log\n",
+    "tests/debug_log_spec.lua": b"core debug log spec\n",
+    "UI/Report.lua": b"core report\n",
+    "tests/report_spec.lua": b"core report spec\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/check_client_load.py": b"core client load\n",
     "tools/blizzard_fonts.txt": b"core fonts\n",
@@ -80,7 +85,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("18 vendored files match", out)
+        self.assertIn("23 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
@@ -145,7 +150,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("18 vendored files match", out)
+        self.assertIn("23 vendored files match", out)
 
 
 if __name__ == "__main__":
