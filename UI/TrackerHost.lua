@@ -110,6 +110,7 @@ local Grip = ns.TrackerLock.Grip(host, api)
 local BACKDROP_ATLAS = "Tooltip-NineSlice-Center"
 local BACKDROP_INSET = 6
 local backdrop = host:CreateTexture(nil, "BACKGROUND")
+-- art-ok: the tooltip's own centre fill, a tiling texture stretched to the column by design
 backdrop:SetAtlas(BACKDROP_ATLAS)
 -- No inset at the top: the attached column starts at the native quests' bottom edge, so the backdrop must not reach
 -- up over the last quest line. It pads the sides and the bottom instead.
@@ -642,48 +643,6 @@ function api.SetBackdropOpacity(value)
 	settings.backdropOpacity = opacity
 	ApplyBackdrop(settings)
 end
--- The native Settings row the addons' tracker pages show. Each addon owns its page, so it passes its own proxy
--- prefix; the shared host owns the saved value, the drawing and the phrase. Returns the row when the client has the
--- Settings API, and nil where it does not (a test or a stripped client), so a consumer can call it unconditionally.
----@param container any a Settings vertical layout container
----@param prefix string? the addon's proxy variable prefix
----@return any?
-function api.AddBackdropSetting(container, prefix)
-	local client = _G.Settings
-	if
-		not (
-			client
-			and client.VarType
-			and client.VarType.Number
-			and client.RegisterProxySetting
-			and client.CreateSliderOptions
-			and client.CreateSliderInitializer
-			and client.RegisterInitializer
-		)
-	then
-		return nil
-	end
-	local L = ns.L or {}
-	local label = rawget(L, "SETTING_TRACKER_BACKGROUND") or L["Tracker background"] or "Tracker background"
-	local tooltip = rawget(L, "SETTING_TRACKER_BACKGROUND_TOOLTIP")
-		or L["Adds a dark background behind the tracker so its text is easier to read."]
-		or "Adds a dark background behind the tracker so its text is easier to read."
-	local variable = (prefix or "ForeverCore") .. "_trackerBackground"
-	local setting = client.RegisterProxySetting(container, variable, client.VarType.Number, label, 0, function()
-		return math.floor(api.GetBackdropOpacity() * 100 + 0.5)
-	end, function(value)
-		api.SetBackdropOpacity((tonumber(value) or 0) / 100)
-	end)
-	local options = client.CreateSliderOptions(0, 100, 5)
-	local mixin = rawget(_G, "MinimalSliderWithSteppersMixin")
-	if options.SetLabelFormatter and mixin and mixin.Label then
-		options:SetLabelFormatter(mixin.Label.Right, function(value)
-			return value .. "%"
-		end)
-	end
-	client.RegisterInitializer(container, client.CreateSliderInitializer(setting, options, tooltip))
-	return setting
-end
 ---@return boolean
 function api.IsLocked()
 	return IsLocked()
@@ -743,6 +702,7 @@ local function AddHeaderMenu(module)
 	local L = ns.L
 	local attach = rawget(L, "SETTING_ATTACH_TRACKER") or L["Attach to quest tracker"] or "Attach to quest tracker"
 	local lock = rawget(L, "SETTING_LOCK_TRACKER") or L["Lock the tracker"] or "Lock the tracker"
+	local background = rawget(L, "SETTING_TRACKER_BACKGROUND") or L["Tracker background"] or "Tracker background"
 	header:EnableMouse(true)
 	header:HookScript("OnMouseUp", function(_, button)
 		if button ~= "RightButton" then
@@ -755,6 +715,22 @@ local function AddHeaderMenu(module)
 			if api.IsLocked and api.SetLocked then
 				root:CreateCheckbox(lock, api.IsLocked, function()
 					api.SetLocked(not api.IsLocked())
+				end)
+			end
+			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its
+			-- own. The values are the saved fractions the host draws, and picking one only recolours the texture.
+			local backgroundMenu = root:CreateButton(background)
+			backgroundMenu:CreateRadio(rawget(_G, "OFF") or "Off", function()
+				return api.GetBackdropOpacity() == 0
+			end, function()
+				api.SetBackdropOpacity(0)
+			end)
+			for _, percent in ipairs({ 25, 50, 75, 100 }) do
+				local value = percent / 100
+				backgroundMenu:CreateRadio(percent .. "%", function()
+					return api.GetBackdropOpacity() == value
+				end, function()
+					api.SetBackdropOpacity(value)
 				end)
 			end
 		end)

@@ -14,7 +14,7 @@ the addon they already have.
 | `UI/TrackerQuestie.lua` | Questie's quest list, so the column steps beside it |
 | `tests/tracker_host_spec.lua` | the native integration contract, run against Blizzard's own tracker source |
 | `tests/tracker_host_harness.lua` | the tracker test harness shared by the four tracker consumers |
-| `tests/tracker_backdrop_spec.lua` | the optional background's opacity, tint and settings row |
+| `tests/tracker_backdrop_spec.lua` | the optional background's opacity and tint |
 | `tests/tracker_header_menu_spec.lua` | the section-header menu contract |
 | `tests/tracker_questie_spec.lua` | the Questie placement contract |
 | `tests/tracker_combat_spec.lua` | the column stays still as combat starts and ends |
@@ -52,17 +52,9 @@ Everything addon specific arrives through the namespace, never through an edit t
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
 `ns.L` carries the player's language, and a section is handed over with `ForeverTrackerHost.Attach(module)`.
 
-The host also owns the optional backdrop behind the whole column. An addon's tracker settings section shows the
-shared opacity slider with one line:
-
-```lua
-local host = ns.TrackerHost
-if host and host.AddBackdropSetting then
-	host.AddBackdropSetting(subcategory, "AdventureGuideForever")
-end
-```
-
-The prefix only names the addon's proxy setting; the saved opacity, the art and the label stay in the host.
+The host also owns the optional backdrop behind the whole column. Every section's right-click menu offers it under
+**Tracker background**, with off, 25%, 50%, 75% and 100% choices, so an addon wires nothing: attaching a section
+puts its menu there, and the saved opacity, the art and the label stay in the host.
 
 ## Error journal
 

@@ -20,7 +20,6 @@
 ---@field SetLocked fun(value: boolean)
 ---@field GetBackdropOpacity fun(): number
 ---@field SetBackdropOpacity fun(value: number)
----@field AddBackdropSetting fun(container: any, prefix: string?): any?
 ---@field IsAttachedToQuestTracker fun(): boolean
 ---@field SetAttached fun(value: boolean)
 ---@field OnAttachmentChanged fun(callback: fun(attached: boolean))
