@@ -172,6 +172,8 @@ The owner approved each of these by name. A new use of the same art in another c
 |---|---|---|
 | `islands-queue-prop-compass` | Adventure Guide, Legacy | The client shows it as a standalone prop on the Islands queue screen (`Blizzard_IslandsQueueUI.xml`): an illustrated object with no expansion branding, at high resolution. Allowed only as a standalone navigation icon, never as framing. |
 | `shortest-path-forever/media/Zeppelin.tga` | Shortest Path | The client has no zeppelin icon. |
+| `shortest-path-forever/media/Pin.tga` | Shortest Path goal pin | A sibling of the client's waypoint pin, so a journey's goal can be told apart from the player's own map waypoint (#432). |
+| `shortest-path-forever/media/PinInactive.tga` | Shortest Path untracked goal pin | The bronze twin of `Pin.tga`, for a route that is planned but not guided (#432). |
 | `adventureguide-ring` | Shortest Path route stop ring | The only replacement on offer is a loose pre-Legion file. |
 | `loottoast-sheen` | Field Guide, on shiny creatures | The owner asked for it. |
 | The native target-frame rarity art | Field Guide | The owner asked for it; it is the client's own frame, recoloured. |
