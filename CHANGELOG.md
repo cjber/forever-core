@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **One shared step exercises an addon under the real Blizzard UI.** `forever_sim` adds `sim:exercise()`: it logs in, runs every slash command the addon registered (twice, so a toggle opens and closes), opens, zooms, pans and closes the world map, repeats that in combat, then `/reload`s into a fresh client with the saved variables and runs them again, failing on an error either client caused. `sim:slash`, `sim:slashCommands` and `sim:reload` are the steps it uses. An addon adopts it with a one-line `tests/sim/exercise_scenario.lua`, and ForeverCore exercises itself. (#203)
+
 - **A new tracker setting no longer fails every consumer's typecheck.** The tracker contract's LuaLS classes (`ForeverTrackerSettings`, `ForeverTrackerHostAPI`, the lock, order and namespace fields) now live in `types/ForeverTracker.lua`, vendored with `UI/TrackerHost.lua` to the four tracker consumers, so each one stops keeping a hand copy that a sync could leave behind. `tools/sync_consumers.py` copies a `types/` file without waiting for a TOC line. (#247)
 
 ## [0.5.0] - 2026-11-08
