@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Closing the world map no longer blocks the controller's interact action.** `UI/MapCanvas.lua` heard the map close through an `OnHide` script on its host frame, which runs inside `UIParentPanelManager`'s hide before the gamepad binding stack is cleared, so the addon's taint blocked `SetPreferredGamepadInteractTarget`. It now listens to the panel manager's `HideUIPanel` and `ForcePanelHide` callbacks, the same two the gamepad's own manager uses. (cjber/adventure-guide-forever#493)
+
 - **A quest log tab's panel hears when the player can see it, without a frame script.** A panel under the world map must not set or hook `OnShow` or `OnHide`: the script runs inside the map's close path, before the gamepad binding stack is cleared, and addon taint there blocks the controller's interact action (cjber/shortest-path-forever#158). `Register` now takes an optional `shown(visible)`, called once per change: the selected tab is visible while the world map and its quest log side panel are both shown, followed through the panel manager's `ShowUIPanel`, `HideUIPanel` and `ForcePanelHide` callbacks and a secure post-hook on `WorldMapFrame:SetQuestLogPanelShown`, so collapsing the side panel or maximizing the map counts too. (#220)
 
 - **The CurseForge watch lists every thread still waiting on the owner.** `docs/handoff/cfwatch.py --unanswered` now groups each reply into its thread at any depth and lists a thread when its latest post is not the owner's, printing the whole thread. Before, an owner reply to a reporter's own follow-up still left the thread listed, and a reporter's follow-up after the owner's answer never showed. (#240)

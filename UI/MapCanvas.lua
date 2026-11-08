@@ -20,6 +20,10 @@ local addonName, ns = ...
 -- Its OnUpdate runs only while the map shows and compares a few reads each frame, telling its listeners what changed:
 --   "show"  the map opened    "map"  another map is shown    "size"  the canvas was resized
 --   "scale" the zoom or the map's pin scale                  "hide"  the map closed
+-- The close is heard through the panel manager's own callback, not a script on this frame: a script there runs
+-- inside UIParentPanelManager's hide, before it clears the gamepad binding stack, and this addon's taint blocks
+-- SetPreferredGamepadInteractTarget (cjber/adventure-guide-forever#493). The manager calls its callbacks isolated from the hide, as the gamepad's
+-- FrameControlsManager listens for the same two.
 -- The pins sit on a layer under that frame, so combat hides them all at once.
 --
 -- Pins are plain frames that take the mouse with OnEnter and OnLeave only (the gamepad interface reads a frame with a
@@ -209,6 +213,27 @@ local function Hide(view)
 	end
 end
 
+-- Called by the panel manager after it hides a panel, with the frame as it was passed to HideUIPanel.
+---@param _ table
+---@param frame Frame
+local function PanelHidden(_, frame)
+	local view = views[frame]
+	if view then
+		Hide(view)
+	end
+end
+
+local panelHidden
+local function WatchPanelHides()
+	if panelHidden then
+		return
+	end
+	panelHidden = true
+	-- The same two the gamepad's FrameControlsManager listens for: an explicit hide, and one panel replacing another.
+	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, MapCanvas)
+	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, MapCanvas)
+end
+
 -- A frame made with no parent, then set under `parent`: the gamepad interface follows frames created in an open window.
 ---@param frameType string
 ---@param parent Frame
@@ -246,14 +271,12 @@ function MapCanvas.Watch(map, listener)
 		host:SetScript("OnUpdate", function()
 			Update(view)
 		end)
-		host:SetScript("OnHide", function()
-			Hide(view)
-		end)
 		local layer = MapCanvas.FrameUnder("Frame", host)
 		layer:SetAllPoints(host)
 		layer:EnableMouse(false)
 		view.host, view.layer = host, layer
 		views[map] = view
+		WatchPanelHides()
 	end
 	if listener then
 		view.listeners[#view.listeners + 1] = listener
