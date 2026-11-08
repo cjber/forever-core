@@ -7,6 +7,31 @@ local function check(value, message)
 	checks = checks + 1
 	assert(value, message)
 end
+-- A show or hide script on a frame inside the map runs addon code inside UIParentPanelManager's own show or hide,
+-- and under the gamepad interface that taints the binding stack it clears there (#493). The view hears the close
+-- through the panel manager's callback instead, and clears the hovered pin itself.
+local function UnderMap(frame)
+	while frame do
+		-- The fixture's canvas stands in for the map's own canvas, which the client parents under the map.
+		if frame == Kit.map or frame == Kit.canvas then
+			return true
+		end
+		frame = frame.parent
+	end
+	return false
+end
+local function CheckNoVisibilityScripts(when)
+	for _, frame in ipairs(Kit.frames) do
+		if UnderMap(frame) then
+			for _, script in ipairs({ "OnShow", "OnHide" }) do
+				check(
+					(frame.scripts or {})[script] == nil,
+					when .. ": a frame under the map with an " .. script .. " script"
+				)
+			end
+		end
+	end
+end
 local ns = {
 	SafeCall = function(_, fn, ...)
 		return true, fn(...)
@@ -34,6 +59,7 @@ local mixin = CreateFromMixins(canvas.PinMixin, {
 local pool = canvas.Pool(Kit.map, mixin, { marker = "route" })
 Kit.Tick()
 local pin = pool:Acquire(0.25, 0.5)
+CheckNoVisibilityScripts("the first pin")
 check(pin.point[2] == Kit.canvas and pin.point[4] == 250 and pin.point[5] == -350, "position")
 check(pin.level == 30, "native frame level")
 check(#pin.passThrough == 1 and pin.passThrough[1] == "RightButton", "default right passthrough")
@@ -85,6 +111,7 @@ Kit.canvas:SetSize(800, 600)
 Kit.Tick()
 check(changes[#changes] == "size", "resize notification")
 check(math.abs(pin.point[4] - 200 / 0.6) < 1e-9, "resize repositions pins")
+CheckNoVisibilityScripts("the watch's frames")
 Kit.Close()
 check(changes[#changes] == "hide", "hide notification")
 print(("map_canvas_spec: %d checks passed"):format(checks))

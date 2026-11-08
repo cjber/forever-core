@@ -323,7 +323,7 @@ function Kit.Tick()
 	end
 end
 
--- Closes the map: the view's frame hears its OnHide.
+-- Closes the map: the panel manager tells its callbacks, as the client's HideUIPanel does after hiding it.
 function Kit.Close()
 	Kit.visible = false
 	for _, frame in ipairs(Kit.frames) do
@@ -331,9 +331,22 @@ function Kit.Close()
 			frame:Run("OnHide")
 		end
 	end
+	EventRegistry:TriggerEvent("UIParentPanelManager.HideUIPanel", Kit.map)
 end
 
 function Kit.Install(env)
+	local registry = {}
+	env.EventRegistry = {
+		RegisterCallback = function(_, event, callback, owner)
+			registry[event] = registry[event] or {}
+			table.insert(registry[event], { callback = callback, owner = owner })
+		end,
+		TriggerEvent = function(_, event, ...)
+			for _, entry in ipairs(registry[event] or {}) do
+				entry.callback(entry.owner, ...)
+			end
+		end,
+	}
 	env.WorldMapFrame = Kit.map
 	env.CreateFrame = Kit.CreateFrame
 	env.InCombatLockdown = function()
