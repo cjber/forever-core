@@ -467,11 +467,14 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
 def down() -> int:
     state = load_state()
     os.kill(state["pid"], signal.SIGTERM)
-    for _ in range(60):
+    # Teardown logs out (up to LOGOUT_WAIT), then gives gamescope 20 s and ends Wine.
+    limit = LOGOUT_WAIT + 60
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
         if not state_file().exists():
             return 0
         time.sleep(0.5)
-    raise ClientError(f"session {state['pid']} did not stop within 30 s")
+    raise ClientError(f"session {state['pid']} did not stop within {limit} s")
 
 
 def capture_env() -> int:
