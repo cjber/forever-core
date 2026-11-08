@@ -31,6 +31,7 @@
 ---@field tooltip string the tab's tooltip text
 ---@field panel Frame the panel the tab shows
 ---@field order number where the tab sits in the stack, lowest first
+---@field shown? fun(visible: boolean) told when this panel becomes visible or stops being visible
 
 ---@class ForeverQuestLogTabsAPI
 ---@field Register fun(key: string, spec: ForeverQuestLogTabSpec): ForeverQuestLogTab

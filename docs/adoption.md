@@ -159,6 +159,7 @@ local tab = ns.QuestLogTabs.Register("guide", {
 	tooltip = ns.TITLE, -- the tooltip text
 	panel = panel, -- the frame to show while this tab is selected
 	order = 10, -- lowest first; ties sort by key
+	shown = function(visible) end, -- told when this panel starts and stops being visible
 })
 Art.Fit(tab.Icon, "islands-queue-prop-compass", 30, 30) -- each addon fits its own icon
 ```
@@ -170,6 +171,11 @@ each content frame restored from its own `displayMode`. The module never writes 
 replacement Quests tab is created only when `QuestMapFrameOverrides.questTabHidden` says the stock one is hidden;
 without it the first addon tab hangs below the map's legend or Quests tab. One copy publishes
 `ForeverQuestLogTabs` and later copies join it.
+
+A panel must not set an `OnShow` or `OnHide` script, or hook either, because it lives under the world map: an addon
+script there runs inside the map's close path and its taint blocks the gamepad's interact target. Register `shown`
+instead and start or stop work from it. The module calls it once per change, as the panel becomes visible or stops
+being visible, including when the map opens or closes.
 
 ## Peer statistics
 

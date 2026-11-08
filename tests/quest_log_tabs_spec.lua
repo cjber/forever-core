@@ -8,6 +8,8 @@ local function newFrame(name, parent)
 		checked = false,
 		points = {},
 		sizeCalls = {},
+		scripts = {},
+		scriptHooks = {},
 	}
 	function frame:SetPoint(...)
 		self.points = { ... }
@@ -38,6 +40,13 @@ local function newFrame(name, parent)
 	end
 	function frame:SetCustomOnMouseUpHandler(handler)
 		self.mouseUpHandler = handler
+	end
+	function frame:SetScript(script, handler)
+		self.scripts[script] = handler
+	end
+	function frame:HookScript(script, handler)
+		self.scriptHooks[script] = self.scriptHooks[script] or {}
+		self.scriptHooks[script][#self.scriptHooks[script] + 1] = handler
 	end
 	function frame:SetHeight(value)
 		self.height = value
@@ -74,6 +83,10 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 	local world = { map = map, created = {}, callbacks = {}, hooks = {} }
 
 	_G.QuestMapFrame = map
+	_G.WorldMapFrame = map
+	_G.securecallfunction = function(fn, ...)
+		return pcall(fn, ...)
+	end
 	_G.QuestMapFrameOverrides = {
 		questTabHidden = questTabHidden,
 		GetQuestsTabAnchorOffset = function()
@@ -97,7 +110,7 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 		end,
 		TriggerEvent = function(_, event, ...)
 			for _, entry in ipairs(world.callbacks[event] or {}) do
-				entry.callback(...)
+				entry.callback(entry.owner, ...)
 			end
 		end,
 	}
@@ -244,3 +257,129 @@ assert(not openMap.ContentFrames[1].shown, "Select left a content frame showing"
 api.ShowQuests()
 assert(openMap.ContentFrames[1].shown, "the quests page did not come back")
 assert(not openMap.ContentFrames[2].shown, "the legend page came back in the wrong mode")
+
+-- `shown` reports each visibility change once, and the map's own callbacks tell a panel when it opens or closes,
+-- so no frame under the world map needs an OnShow or OnHide script.
+local eventWorld = newWorld(false)
+local nsE = {}
+local events = load(nsE)
+assert(_G.ForeverQuestLogTabs == events, "the event world did not publish its own API")
+local eventMap = eventWorld.map
+local panelE = newFrame("ForeverPanelE")
+local panelF = newFrame("ForeverPanelF")
+local panelG = newFrame("ForeverPanelG")
+local panelH = newFrame("ForeverPanelH")
+local calls = {}
+local function record(key)
+	return function(visible)
+		calls[#calls + 1] = { key = key, visible = visible }
+	end
+end
+events.Register("e", { name = "AddonETab", tooltip = "E", panel = panelE, order = 10, shown = record("e") })
+events.Register("f", { name = "AddonFTab", tooltip = "F", panel = panelF, order = 20, shown = record("f") })
+assert(#calls == 0, "registering a tab reported a visibility change")
+
+-- Selecting while the map is shown starts the panel's work.
+eventMap:Show()
+events.Select("e")
+assert(#calls == 1 and calls[1].key == "e" and calls[1].visible, "Select did not report the panel visible")
+
+-- Switching stops the old panel before starting the new one, and selecting the same key reports nothing.
+events.Select("f")
+assert(#calls == 3, "switching did not report one change per panel")
+assert(calls[2].key == "e" and not calls[2].visible, "the previous panel was not reported hidden")
+assert(calls[3].key == "f" and calls[3].visible, "the new panel was not reported visible")
+events.Select("f")
+assert(#calls == 3, "Select reported an unchanged panel again")
+
+-- ShowQuests hides the reported panel exactly once.
+events.ShowQuests()
+assert(#calls == 4 and calls[4].key == "f" and not calls[4].visible, "ShowQuests did not report the panel hidden")
+events.ShowQuests()
+assert(#calls == 4, "ShowQuests reported an already hidden panel again")
+
+-- The paths that bring the stock pages back hide it too.
+events.Select("e")
+_G.EventRegistry:TriggerEvent("QuestLog.SetDisplayMode", eventMap.displayMode)
+assert(#calls == 6 and calls[6].key == "e" and not calls[6].visible, "SetDisplayMode did not report the panel hidden")
+events.Select("e")
+assert(eventWorld.hooks.QuestMapFrame_ShowQuestDetails and #eventWorld.hooks.QuestMapFrame_ShowQuestDetails == 1)
+eventWorld.hooks.QuestMapFrame_ShowQuestDetails[1]()
+assert(#calls == 8 and calls[8].key == "e" and not calls[8].visible, "ShowQuestDetails did not report the panel hidden")
+
+-- Closing the map through the panel manager hides the panel, and the same event again reports nothing.
+events.Select("e")
+assert(#calls == 9 and calls[9].key == "e" and calls[9].visible, "Select did not report the panel visible again")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.HideUIPanel", eventMap, false)
+assert(#calls == 10 and calls[10].key == "e" and not calls[10].visible, "HideUIPanel did not report the panel hidden")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.HideUIPanel", eventMap, false)
+assert(#calls == 10, "a second HideUIPanel reported again")
+
+-- Another frame's show or hide says nothing about our panel, but ForcePanelHide on the map does.
+events.Select("e")
+assert(#calls == 11 and calls[11].key == "e" and calls[11].visible, "Select did not report the panel visible again")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.HideUIPanel", {}, false)
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.ForcePanelHide", {})
+assert(#calls == 11, "a panel event for another frame reported")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.ForcePanelHide", eventMap)
+assert(
+	#calls == 12 and calls[12].key == "e" and not calls[12].visible,
+	"ForcePanelHide did not report the panel hidden"
+)
+
+-- Opening the map with the tab still selected starts the panel's work again, once.
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", eventMap, false, nil)
+assert(#calls == 13 and calls[13].key == "e" and calls[13].visible, "ShowUIPanel did not report the panel visible")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", eventMap, false, nil)
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", {})
+assert(#calls == 13, "a second or unrelated ShowUIPanel reported again")
+
+-- Closing the map after returning to the stock pages reports nothing, since no panel is visible.
+events.ShowQuests()
+assert(#calls == 14 and calls[14].key == "e" and not calls[14].visible, "ShowQuests did not report the panel hidden")
+_G.EventRegistry:TriggerEvent("UIParentPanelManager.HideUIPanel", eventMap)
+assert(#calls == 14, "a hide with no panel selected reported")
+
+-- A spec without `shown` registers and switches like any other.
+events.Register("g", { name = "AddonGTab", tooltip = "G", panel = panelG, order = 30 })
+events.Select("g")
+assert(events.Selected() == "g" and panelG.shown, "a spec with no shown did not switch")
+assert(#calls == 14, "a spec with no shown reported a visibility change")
+
+-- A callback that errors does not break the module's own switching.
+events.Register("h", {
+	name = "AddonHTab",
+	tooltip = "H",
+	panel = panelH,
+	order = 40,
+	shown = function()
+		error("panel callback failed")
+	end,
+})
+events.Select("h")
+assert(events.Selected() == "h" and panelH.shown and not panelG.shown, "a failing shown callback broke switching")
+assert(#calls == 14, "a failing shown callback recorded a change")
+
+-- Nothing the module created or was given carries a script under the world map.
+local function assertNoShowScripts(frames)
+	for _, frame in ipairs(frames) do
+		assert(
+			frame.scripts.OnShow == nil and frame.scripts.OnHide == nil,
+			"a map child has a show script: " .. tostring(frame.name)
+		)
+		local hooks = frame.scriptHooks
+		assert(not hooks.OnShow or #hooks.OnShow == 0, "a map child hooked OnShow: " .. tostring(frame.name))
+		assert(not hooks.OnHide or #hooks.OnHide == 0, "a map child hooked OnHide: " .. tostring(frame.name))
+	end
+end
+
+local allFrames = {}
+for _, oneWorld in ipairs({ world, openWorld, eventWorld }) do
+	for _, frame in ipairs(oneWorld.created) do
+		allFrames[#allFrames + 1] = frame
+	end
+end
+for _, frame in ipairs({ panelA, panelB, panelC, panelD, panelE, panelF, panelG, panelH }) do
+	allFrames[#allFrames + 1] = frame
+end
+assertNoShowScripts(allFrames)
