@@ -175,6 +175,43 @@ class RestPrTest(unittest.TestCase):
         with mock.patch.object(sync, "gh", side_effect=listing(None)):
             self.assertEqual(sync.open_or_update_pr("legacy-forever", "body")[3], "PR_7")
 
+    def test_an_up_to_date_consumer_closes_the_stale_sync_pr(self):
+        calls = []
+
+        def fake_gh(*args, check=True):
+            calls.append(args)
+            if args[1].startswith("repos/cjber/legacy-forever/pulls?"):
+                return subprocess.CompletedProcess(args, 0, json.dumps([{"number": 9}]), "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "git"),
+                mock.patch.object(sync, "sync_checkout"),
+                mock.patch.object(sync, "staged_files", return_value=()),
+                mock.patch.object(sync, "gh", side_effect=fake_gh),
+            ):
+                result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+
+        self.assertEqual((result.status, result.detail), ("up to date", "closed #9"))
+        self.assertTrue(any("state=closed" in call and "repos/cjber/legacy-forever/pulls/9" in call for call in calls))
+        self.assertTrue(
+            any(
+                "DELETE" in call and "repos/cjber/legacy-forever/git/refs/heads/forever-core-sync" in call
+                for call in calls
+            )
+        )
+
+    def test_an_up_to_date_consumer_without_a_sync_pr_changes_nothing(self):
+        def fake_gh(*args, check=True):
+            self.assertNotIn("--method", args)
+            return subprocess.CompletedProcess(args, 0, "[]", "")
+
+        with mock.patch.object(sync, "gh", side_effect=fake_gh):
+            self.assertEqual(sync.close_stale_prs("legacy-forever", "abc123"), [])
+
 
 class ToolingTest(unittest.TestCase):
     def test_only_packages_with_a_manifest_are_synced(self):
