@@ -30,6 +30,7 @@ python3 tools/check_consumers.py          # every consumer's copy matches this r
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WFA-36)
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
+python3 tools/check_shared_versions.py    # shared-file versions match their exact bytes
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
@@ -80,6 +81,12 @@ and run anywhere.
   a loop calls `SetScrollMode` in the same function, or the loop says why it stays short (`-- menu-scroll-ok:
   <reason>`). It reads Lua through the skill pack's `forever_tools/lua.py` lexer; `tools/test_check_menu_scroll.py`
   is its spec.
+- `tools/check_shared_versions.py`: the pin on every shared file whose version number gates takeover
+  (`UI/Leaderboards.lua`, `UI/ForeverFamily.lua`, `Core/PeerStats.lua`). It reads the exact `local X = N` line and the
+  file's sha256, and `tools/shared_versions.json` records both. A change without a raised version, a version that goes
+  down or a raise that is not recorded fails; `--record` rewrites the JSON. `tools/test_check_shared_versions.py` is
+  its spec. `Core/Log.lua` and `Core/LeaderboardsData.lua` are not pinned: their version fields do not select a copy in
+  charge.
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data, `.agents/skills/wow-forever-addon/tooling/forever_tools/legacy_chrome.txt`
   (old chrome by FileDataID) and `.agents/skills/wow-forever-addon/tooling/forever_tools/interface_paths.txt` (the known interface-path set), from the
   wago.tools listfile for 1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule
