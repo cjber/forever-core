@@ -22,8 +22,8 @@ local addonName, ns = ...
 --   "scale" the zoom or the map's pin scale                  "hide"  the map closed
 -- The close is heard through the panel manager's own callback, not a script on this frame: a script there runs
 -- inside UIParentPanelManager's hide, before it clears the gamepad binding stack, and this addon's taint blocks
--- SetPreferredGamepadInteractTarget (cjber/adventure-guide-forever#493). The manager calls its callbacks isolated from the hide, as the gamepad's
--- FrameControlsManager listens for the same two.
+-- SetPreferredGamepadInteractTarget (cjber/adventure-guide-forever#493). The manager calls its callbacks isolated
+-- from the hide, as the gamepad's FrameControlsManager listens for the same two.
 -- The pins sit on a layer under that frame, so combat hides them all at once.
 --
 -- Pins are plain frames that take the mouse with OnEnter and OnLeave only (the gamepad interface reads a frame with a
