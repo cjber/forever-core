@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -136,6 +137,48 @@ class WagoTest(unittest.TestCase):
 
         with self.download(b"payload"), self.assertRaises(ValueError):
             wago.fetch("u", self.cache / "f", user_agent="t", validate=reject)
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+    def response(self, body):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = body
+        return response
+
+    def test_a_stalled_download_retries_then_succeeds(self):
+        urlopen = mock.Mock(side_effect=[TimeoutError("stall"), self.response(b"ID,A\n1,2\n")])
+        with (
+            mock.patch("urllib.request.urlopen", urlopen),
+            mock.patch("forever_tools.wago.time.sleep") as sleep,
+        ):
+            rows = wago.db2_rows("T", "1", self.cache, user_agent="t")
+        self.assertEqual(rows, [{"ID": "1", "A": "2"}])
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(sleep.call_args_list, [mock.call(2)])
+
+    def test_a_404_is_not_retried(self):
+        not_found = urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+        self.addCleanup(not_found.close)
+        urlopen = mock.Mock(side_effect=not_found)
+        with (
+            mock.patch("urllib.request.urlopen", urlopen),
+            mock.patch("forever_tools.wago.time.sleep") as sleep,
+            self.assertRaises(urllib.error.HTTPError),
+        ):
+            wago.db2_rows("T", "1", self.cache, user_agent="t", refresh=True)
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertEqual(sleep.call_args_list, [])
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+    def test_five_failures_raise_the_last_error_after_five_calls(self):
+        urlopen = mock.Mock(side_effect=[TimeoutError("stall")] * 5)
+        with (
+            mock.patch("urllib.request.urlopen", urlopen),
+            mock.patch("forever_tools.wago.time.sleep") as sleep,
+            self.assertRaisesRegex(TimeoutError, "stall"),
+        ):
+            wago.db2_rows("T", "1", self.cache, user_agent="t", refresh=True)
+        self.assertEqual(urlopen.call_count, 5)
+        self.assertEqual([call.args for call in sleep.call_args_list], [(2,), (4,), (8,), (16,)])
         self.assertEqual(list(self.cache.iterdir()), [])
 
 
