@@ -8,6 +8,8 @@
 
 - **A new tracker setting no longer fails every consumer's typecheck.** The tracker contract's LuaLS classes (`ForeverTrackerSettings`, `ForeverTrackerHostAPI`, the lock, order and namespace fields) now live in `types/ForeverTracker.lua`, vendored with `UI/TrackerHost.lua` to the four tracker consumers, so each one stops keeping a hand copy that a sync could leave behind. `tools/sync_consumers.py` copies a `types/` file without waiting for a TOC line. (#247)
 
+- **A bench script times 1,000 addon messages and 1,000 tooltip lookups through the leaderboards.** Speedpatrol runs it.
+
 ## [0.5.0] - 2026-11-08
 
 - **Closing the world map no longer blocks the controller's interact action.** `UI/MapCanvas.lua` heard the map close through an `OnHide` script on its host frame, which runs inside `UIParentPanelManager`'s hide before the gamepad binding stack is cleared, so the addon's taint blocked `SetPreferredGamepadInteractTarget`. It now listens to the panel manager's `HideUIPanel` and `ForcePanelHide` callbacks, the same two the gamepad's own manager uses. (cjber/adventure-guide-forever#493)
