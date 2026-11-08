@@ -99,8 +99,9 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 		end,
 	}
 	_G.QUESTS_LABEL = "Quests"
-	_G.CreateFrame = function(_, frameName, parent, template)
+	_G.CreateFrame = function(frameType, frameName, parent, template)
 		local frame = newFrame(frameName, parent)
+		frame.frameType = frameType
 		frame.template = template
 		if frameName then
 			_G[frameName] = frame
@@ -448,3 +449,12 @@ for _, frame in ipairs({ panelA, panelB, panelC, panelD, panelE, panelF, panelG,
 	allFrames[#allFrames + 1] = frame
 end
 assertNoShowScripts(allFrames)
+
+-- Every tab the module builds is a Button, so the gamepad's SmartNavigation scan never reads its mouse scripts.
+for _, oneWorld in ipairs({ world, openWorld, eventWorld }) do
+	for _, frame in ipairs(oneWorld.created) do
+		if frame.template == "LargeSideTabButtonTemplate" then
+			assert(frame.frameType == "Button", "a tab was not created as a Button: " .. tostring(frame.name))
+		end
+	end
+end

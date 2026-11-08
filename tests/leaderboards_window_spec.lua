@@ -57,6 +57,19 @@ do
 	check(api.window.share:GetChecked() == false, "one explicit false unchecks Overall")
 end
 
+-- Tabs are Buttons -----------------------------------------------------------------------------------------------
+do
+	Client()
+	local api = Load()
+	api:Register("guide", spec("guide", { row("Me", 1, nil, true, "HUNTER") }, {}))
+	api:Open("guide")
+	local tabs = api.window.tabs
+	equal(#tabs, 2, "Overall plus the registered board")
+	for _, tab in ipairs(tabs) do
+		equal(tab.kind, "Button", "a side tab was not created as a Button")
+	end
+end
+
 -- The tooltip ----------------------------------------------------------------------------------------------------
 do
 	Client()
