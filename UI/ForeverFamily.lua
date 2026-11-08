@@ -42,7 +42,7 @@ local _, ns = ...
 ---@field SetTitle fun(self: ForeverFamilyLinkWindow, title: string)
 ---@field GetPortrait fun(self: ForeverFamilyLinkWindow): Texture
 
-local VERSION = 5
+local VERSION = 6
 if ForeverFamily and (tonumber(ForeverFamily.VERSION) or 0) >= VERSION then
 	ns.Family = type(ForeverFamily.For) == "function" and ForeverFamily.For(ns.FamilyL or ns.L) or ForeverFamily
 	return
@@ -422,6 +422,10 @@ function Family.ShowSupport(locale)
 end
 
 local ROW_HEIGHT = 52
+-- The page has a global name built from its addon's folder: the templates it uses name their regions from $parent,
+-- so a named page keeps UICheckButtonTemplate's Text at ForeverFamilyPanel<folder>Text instead of the bare global
+-- `Text`. A caller that names no addon still gets its own name, so two pages never share one.
+local pages = 0
 
 -- The "Forever addons" settings page: the hint setting, then a row per addon with its icon, line, state and a Copy link
 -- button, then a last row with the Ko-fi address. `db` is the addon's saved variables, or a function that returns them
@@ -434,7 +438,9 @@ local ROW_HEIGHT = 52
 ---@param locale? ForeverFamilyL
 ---@return ForeverFamilyPanel
 function Family.CreatePanel(parent, db, current, locale)
-	local panel = CreateFrame("Frame", nil, parent) --[[@as ForeverFamilyPanel]]
+	pages = pages + 1
+	local owner = type(current) == "string" and current ~= "" and current or "Unnamed" .. pages
+	local panel = CreateFrame("Frame", "ForeverFamilyPanel" .. owner, parent) --[[@as ForeverFamilyPanel]]
 	-- Hidden until the settings panel shows it, so its OnShow always fires.
 	panel:Hide()
 	local L = Strings(locale)

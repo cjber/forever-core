@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
 -- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "b69618b7ec09353d1b6d57a76e62d7e59b6a6892191db7a5c1cc5bb11dafcef9"
+local PINNED = "8e390202ef02dbb01e9c7e8659ce9e4026a03940d18f9909d4512ed382318331"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -226,6 +226,13 @@ local function Texts(widget)
 	return table.concat(found, "\n")
 end
 
+-- The named regions the Blizzard templates used here make from $parent. The client takes $parent from the nearest
+-- named ancestor, or names the region at a bare global (`Text`) when there is none: what a template does to an
+-- unnamed page (cjber/shortest-path-forever#457).
+local TEMPLATE_GLOBALS = {
+	UICheckButtonTemplate = { "Text" },
+}
+
 local combat = false
 local addons -- folder -> "on" | "off" | nil (missing)
 local env
@@ -247,12 +254,21 @@ local function Client()
 		end,
 		CreateFrame = function(kind, name, parent, template)
 			local widget = Create(kind, parent, template)
+			widget.name = name
 			if template == "PortraitFrameTemplate" then
 				widget.portrait = Create("Texture", widget)
 			end
 			frames[#frames + 1] = widget
 			if name then
 				named[name] = widget
+				env[name] = widget
+			end
+			local owner, ancestor = name, parent
+			while not owner and ancestor do
+				owner, ancestor = rawget(ancestor, "name"), rawget(ancestor, "parent")
+			end
+			for _, suffix in ipairs(TEMPLATE_GLOBALS[template] or {}) do
+				env[(owner or "") .. suffix] = widget
 			end
 			return widget
 		end,
@@ -288,7 +304,7 @@ Client()
 local first = { L = PhraseLocale() }
 local firstView = Load(first)
 local Family = env.ForeverFamily
-check(Family and Family.VERSION == 5, "the first copy sets the shared global")
+check(Family and Family.VERSION == 6, "the first copy sets the shared global")
 check(firstView.State == Family.State and firstView.VERSION == Family.VERSION, "an addon's view is the shared module")
 check(Family.For(first.L) == firstView, "bound to its own L, the same view each time")
 check(Family.For(nil) == Family, "with no L, the module itself")
@@ -302,7 +318,7 @@ local older = { VERSION = Family.VERSION - 1 }
 env.ForeverFamily = older
 local newer = { L = PhraseLocale() }
 Load(newer)
-check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 5, "a newer copy takes over from an older one")
+check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 6, "a newer copy takes over from an older one")
 env.ForeverFamily = Family
 
 -- The five addons, in order, with their store pages.
@@ -421,11 +437,26 @@ check(
 -- CreatePanel: the settings page, built on first show and read again each time.
 local saved = {}
 local parent = Create("Frame")
+-- The page is a named frame: UICheckButtonTemplate's Text takes its name instead of landing on the bare global
+-- `Text`, which addon code would write into _G and taint for the client or another addon (#457).
+local PANEL = "ForeverFamilyPanelLegacyForever"
+local globals = {}
+for name in pairs(env) do
+	globals[name] = true
+end
 local panel = Family.CreatePanel(parent, function()
 	return saved
 end, "LegacyForever")
 check(#panel.children == 0 and not panel.shown, "the page starts hidden and empty until it shows")
 panel:Show()
+for name in pairs(env) do
+	if not globals[name] then
+		check(name:sub(1, #PANEL) == PANEL, "the page creates no global outside its own name: " .. name)
+	end
+end
+check(panel.name == PANEL, "the page is named from its addon's folder")
+check(rawget(env, "Text") == nil, "and its template never lands on the bare global Text")
+check(env[PANEL .. "Text"] ~= nil, "its template's Text is named from the page")
 check(Texts(panel):find("Forever addons", 1, true), "the page has its title")
 local check_ = Children(panel, "CheckButton")[1]
 check(check_ and check_.checked, "Suggest my other Forever addons starts on")
@@ -571,8 +602,8 @@ currentView.ShowLink(nil, nil, "TweaksForever")
 local currentWindow = current.window
 check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
 local served = {}
-local v6 = {
-	VERSION = 6,
+local v7 = {
+	VERSION = 7,
 	ShowLink = function(_, _, folder)
 		served[#served + 1] = folder
 		return true
@@ -582,16 +613,16 @@ local v6 = {
 		return true
 	end,
 	Once = function()
-		return "v6"
+		return "v7"
 	end,
 }
-env.ForeverFamily = v6
+env.ForeverFamily = v7
 check(
 	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
 	"a newer copy serves ShowLink"
 )
 check(currentView.ShowSupport() and served[2] == "Ko-fi", "and ShowSupport")
-check(current.Once("Test.later") == "v6", "and Once, so there is one record")
+check(current.Once("Test.later") == "v7", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
 local olderWindow = Create("Frame")
