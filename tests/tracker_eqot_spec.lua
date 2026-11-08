@@ -417,11 +417,22 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 			check(hostBottom > frameBottom, label .. ": EQOT's box bottom is never treated as the list end")
 
 			-- EQOT can fade its list out while IsShown still answers true: that is hidden too.
+			local frameReads, realGetPoint = 0, f.eqotFrame.GetPoint
+			f.eqotFrame.GetPoint = function(self)
+				frameReads = frameReads + 1
+				return realGetPoint(self)
+			end
 			f.native.shown = true
 			f.eqotFrame.alpha = 0
 			f.tick(1)
 			f.drain()
 			stacked(f, label .. " after EQOT fades out")
+			-- A hidden list keeps nothing to read, so the watcher stops reading its geometry after the change.
+			frameReads = 0
+			f.tick(1)
+			f.tick(1)
+			f.tick(1)
+			check(frameReads == 0, label .. ": a faded EQOT list is not read on every tick")
 
 			-- A detached column the player has not dragged starts beside EQOT's bounds, not the hidden native one.
 			local detachedBounds = { left = 40, right = 440, top = 900, bottom = 100 }
