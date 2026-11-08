@@ -139,12 +139,16 @@ ns.Report.Text = function(lines)
 end
 
 local longError = ("long error "):rep(30)
+-- BugGrabber v12.1.1: the report reads its database directly, and its own error links resolve by table id.
 _G.BugGrabber = {
 	GetDB = function()
 		return { { message = "independent error", counter = 1, session = 1 } }
 	end,
 	GetSessionId = function()
 		return 1
+	end,
+	GetErrorByID = function()
+		return nil
 	end,
 }
 ns.RecordError("test", longError, "stack")
