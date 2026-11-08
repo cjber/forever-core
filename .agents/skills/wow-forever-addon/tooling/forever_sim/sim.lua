@@ -47,8 +47,8 @@ Sim.CORE = {
 	"Blizzard_Settings_Shared",
 	"Blizzard_GamepadSoftCursor",
 	-- Single files from addons too large to boot whole: the templates other UI inherits from them (the secure
-	-- templates and the deprecated settings templates), and the alert frames the client loads at startup (AlertFrame is a global
-	-- addons anchor to).
+	-- templates and the deprecated settings templates), and the alert frames the client loads at startup
+	-- (AlertFrame is a global addons anchor to).
 	"Blizzard_FrameXML/SecureTemplatesBase.xml",
 	"Blizzard_FrameXML/SecureTemplates.lua",
 	"Blizzard_FrameXML/SecureTemplates.xml",
