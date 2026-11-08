@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Errors outside a protected call reach the report with BugGrabber installed.** BugGrabber v12 replaces `seterrorhandler` with a no-op and announces each grabbed error on the client's `EventRegistry`, so the shared error capture now subscribes there and resolves the object with `BugGrabber:GetErrorByID`; previously it waited for a `CallbackHandler` API that BugGrabber does not have. (#232)
+
 - **Mock backpacks show their items.** `tools/wowmock/wowmock.py` drew the empty-slot atlas as a 64-unit overlay over every backpack slot, so item icons, quality borders and counts were hidden. An empty slot's art now fills the 37-unit icon texture, as `SetItemButtonTexture(nil)` does in `ContainerFrameItemButtonMixin`, and a filled slot draws only its item. (#211)
 
 - **The CurseForge watch keeps its place and sees Field Guide.** `docs/handoff/cfwatch.py` stores its seen IDs under `${XDG_STATE_HOME:-~/.local/state}/forever-core/cfwatch-seen.json` instead of inside a checkout, includes `field-guide-forever`, prints each comment's own ID, and adds `--unanswered` to list top-level comments with no `cjber` reply by matching replies to their parentId. (#230)

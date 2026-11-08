@@ -276,42 +276,66 @@ equal(ns.CaughtErrors()[1].label, originalLabel, "callers receive copies")
 equal(ns.CutText(string.rep("a", 301), 300):len(), 300, "text is clipped to the limit")
 equal(ns.CutText(string.rep("é", 200), 300):sub(-3), "...", "text clipping does not split UTF-8")
 
--- BugGrabber replaces seterrorhandler with a no-op, so its callback is then the only route for a grabbed error.
-local bugCallbacks = {}
-_G.BugGrabber = {
-	RegisterCallback = function(_, event, callback)
-		bugCallbacks[event] = callback
-	end,
-}
-local function grabHandler(errorMessage)
-	local errorObject = { message = tostring(errorMessage), stack = debug.traceback("", 2) }
-	local callback = bugCallbacks.BugGrabber_BugGrabbed
-	if callback then
-		callback(nil, "BugGrabber_BugGrabbed", errorObject)
+-- BugGrabber v12.1.1 replaces seterrorhandler with a no-op, keeps each error object, and fires the client's
+-- EventRegistry with tostring(errorObject); GetErrorByID turns that id back into the object for its own links.
+local function newBugGrabber()
+	local callbacks = {}
+	local objects = {}
+	local registry = {}
+	registry.RegisterCallback = function(_, event, callback, owner)
+		callbacks[event] = callbacks[event] or {}
+		callbacks[event][#callbacks[event] + 1] = { callback = callback, owner = owner }
 	end
+	registry.TriggerEvent = function(_, event, ...)
+		for _, entry in ipairs(callbacks[event] or {}) do
+			entry.callback(entry.owner, ...)
+		end
+	end
+	local grabber = {}
+	grabber.GetErrorByID = function(_, tableID)
+		for index = #objects, 1, -1 do
+			if tostring(objects[index]) == tableID then
+				return objects[index]
+			end
+		end
+	end
+	local function grab(errorMessage)
+		local errorObject = { message = tostring(errorMessage), stack = debug.traceback("", 2) }
+		objects[#objects + 1] = errorObject
+		registry:TriggerEvent("BugGrabber.BugGrabbed", tostring(errorObject))
+		return errorObject
+	end
+	return registry, grabber, grab, callbacks
 end
+
+local grabRegistry, grabGrabber, grab, grabCallbacks = newBugGrabber()
+_G.EventRegistry = grabRegistry
+_G.BugGrabber = grabGrabber
 _G.geterrorhandler = function()
-	return grabHandler
+	return grab
 end
 _G.seterrorhandler = function() end
 
 local grabbedNs = {}
 assert(loadfile("Core/SafeCall.lua"))("GrabbyAddon", grabbedNs)
-equal(bugCallbacks.BugGrabber_BugGrabbed ~= nil, true, "a BugGrabber that owns seterrorhandler still gets our callback")
 
-bugCallbacks.BugGrabber_BugGrabbed(nil, {
-	message = "Interface/AddOns/GrabbyAddon/Core/Boom.lua:7: grabbed error",
-	stack = "",
-})
+-- The regression this guards: BugGrabber v12 fires "BugGrabber.BugGrabbed" on EventRegistry, so an error raised
+-- outside ns.SafeCall must still reach the journal exactly once.
+grab("Interface/AddOns/GrabbyAddon/Core/Boom.lua:7: grabbed error")
 local grabbedErrors = grabbedNs.CaughtErrors()
-equal(#grabbedErrors, 1, "a grabbed unwrapped error is journalled")
-equal(grabbedErrors[1].count, 1, "a grabbed unwrapped error is journalled once")
+equal(#grabbedErrors, 1, "an error outside SafeCall is journalled through EventRegistry")
+equal(grabbedErrors[1].count, 1, "an error outside SafeCall is journalled once")
+equal(
+	grabCallbacks["BugGrabber.BugGrabbed"] ~= nil,
+	true,
+	"a BugGrabber that owns seterrorhandler gets our EventRegistry callback at load"
+)
 
-bugCallbacks.BugGrabber_BugGrabbed(nil, {
-	message = "Interface/AddOns/OtherAddon/Other.lua:3: someone else's grabbed error",
-	stack = "",
-})
+grab("Interface/AddOns/OtherAddon/Other.lua:3: someone else's grabbed error")
 equal(#grabbedNs.CaughtErrors(), 1, "another addon's grabbed error is ignored")
+
+grabRegistry:TriggerEvent("BugGrabber.BugGrabbed", "table: unknown")
+equal(#grabbedNs.CaughtErrors(), 1, "a table id BugGrabber cannot resolve is ignored")
 
 local grabbedOk, grabbedMessage = grabbedNs.SafeCall("grabber", function()
 	error("Interface/AddOns/GrabbyAddon/Core/Safe.lua:8: grabbed SafeCall")
@@ -326,20 +350,10 @@ equal(grabbedSafeCall.count, 1, "a grabbed SafeCall error is not double counted"
 
 -- When our Handler is still in the chain ahead of BugGrabber's own handler, the callback fires during delivery and
 -- must not record the same error a second time.
-local chainedCallbacks = {}
-_G.BugGrabber = {
-	RegisterCallback = function(_, event, callback)
-		chainedCallbacks[event] = callback
-	end,
-}
-local function chainedGrabHandler(errorMessage)
-	local errorObject = { message = tostring(errorMessage), stack = debug.traceback("", 2) }
-	local callback = chainedCallbacks.BugGrabber_BugGrabbed
-	if callback then
-		callback(nil, "BugGrabber_BugGrabbed", errorObject)
-	end
-end
-local chainedCurrent = chainedGrabHandler
+local chainedRegistry, chainedGrabber, chainedGrab, chainedCallbacks = newBugGrabber()
+_G.EventRegistry = chainedRegistry
+_G.BugGrabber = chainedGrabber
+local chainedCurrent = chainedGrab
 _G.geterrorhandler = function()
 	return chainedCurrent
 end
@@ -349,10 +363,14 @@ end
 
 local chainedNs = {}
 assert(loadfile("Core/SafeCall.lua"))("ChainedAddon", chainedNs)
-equal(chainedCallbacks.BugGrabber_BugGrabbed, nil, "a handler still in the chain does not attach at load")
+equal(chainedCallbacks["BugGrabber.BugGrabbed"], nil, "a handler still in the chain does not attach at load")
 local chainedFrame = frames[#frames]
 chainedFrame.OnEvent(chainedFrame, "ADDON_LOADED", "BugGrabber")
-equal(chainedCallbacks.BugGrabber_BugGrabbed ~= nil, true, "a BugGrabber below our handler is attached on ADDON_LOADED")
+equal(
+	chainedCallbacks["BugGrabber.BugGrabbed"] ~= nil,
+	true,
+	"a BugGrabber below our handler is attached on ADDON_LOADED"
+)
 chainedCurrent("Interface/AddOns/ChainedAddon/Core/Boom.lua:9: chained error")
 local chainedErrors = chainedNs.CaughtErrors()
 equal(#chainedErrors, 1, "a chained BugGrabber error is one entry")

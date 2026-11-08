@@ -439,25 +439,24 @@ end
 local previousHandler
 local inHandler = false
 
--- BugGrabber replaces seterrorhandler with a no-op so it stays the only handler. When it does, its callback is the
--- only place an unwrapped error reaches us; the error object carries the same message and stack.
+-- BugGrabber replaces seterrorhandler with a no-op so it stays the only handler. When it does, its EventRegistry
+-- callback is the only place an unwrapped error reaches us; it fires the error object's tostring, and
+-- GetErrorByID turns that back into the object, which carries the same message and stack.
 local bugGrabberAttached = false
 local bugGrabberTarget = {}
 
----@param ... any the callback's target, event name and error object, in whichever form BugGrabber sends them
-local function FromBugGrabber(...)
+---@param _ any the target this file registered, as EventRegistry passes it back
+---@param tableID string the error object's tostring, as BugGrabber fires it
+local function FromBugGrabber(_, tableID)
 	if shared.delivering or inHandler then
 		return
 	end
-	local errorObject
-	for index = select("#", ...), 1, -1 do
-		local value = select(index, ...)
-		if type(value) == "table" and value.message ~= nil then
-			errorObject = value
-			break
-		end
+	local grabber = _G["BugGrabber"]
+	if type(grabber) ~= "table" or type(grabber.GetErrorByID) ~= "function" then
+		return
 	end
-	if not errorObject then
+	local ok, errorObject = pcall(grabber.GetErrorByID, grabber, tableID)
+	if not ok or type(errorObject) ~= "table" then
 		return
 	end
 	local message, stack = errorObject.message, errorObject.stack
@@ -466,24 +465,22 @@ local function FromBugGrabber(...)
 	end
 end
 
--- Attach once BugGrabber exists. It may load before us, or after us; calling its setupCallbacks makes RegisterCallback
--- appear on the table when the bundled CallbackHandler has not been set up yet.
+-- Attach once BugGrabber and the client's EventRegistry exist. It may load before us, or after us, so the event
+-- frame retries on ADDON_LOADED and PLAYER_LOGIN until both are there.
 local function AttachBugGrabber()
 	if bugGrabberAttached then
 		return
 	end
 	local grabber = _G["BugGrabber"]
-	if type(grabber) ~= "table" then
+	local registry = _G.EventRegistry
+	if type(grabber) ~= "table" or type(grabber.GetErrorByID) ~= "function" then
 		return
 	end
-	if type(grabber.setupCallbacks) == "function" then
-		pcall(grabber.setupCallbacks)
-	end
-	if type(grabber.RegisterCallback) ~= "function" then
+	if type(registry) ~= "table" or type(registry.RegisterCallback) ~= "function" then
 		return
 	end
 	bugGrabberAttached = true
-	pcall(grabber.RegisterCallback, bugGrabberTarget, "BugGrabber_BugGrabbed", FromBugGrabber)
+	pcall(registry.RegisterCallback, registry, "BugGrabber.BugGrabbed", FromBugGrabber, bugGrabberTarget)
 end
 
 -- The global error handler: keep this addon's errors, then always pass the error on, so BugSack and the default
