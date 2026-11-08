@@ -68,6 +68,7 @@ VENDORED = {
     "UI/QuestLogTabs.lua": QUEST_LOG_TAB_CONSUMERS,
     "tests/quest_log_tabs_spec.lua": QUEST_LOG_TAB_CONSUMERS,
     "UI/TrackerHost.lua": TRACKER_CONSUMERS,
+    "types/ForeverTracker.lua": TRACKER_CONSUMERS,
     "UI/TrackerLock.lua": TRACKER_CONSUMERS,
     "UI/TrackerOrder.lua": TRACKER_CONSUMERS,
     "UI/TrackerQuestie.lua": TRACKER_CONSUMERS,

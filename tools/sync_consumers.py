@@ -71,8 +71,11 @@ def toc_entries(toc):
 
 
 def is_runtime(path):
-    """Whether the client loads `path` as runtime code, which the consumer's TOC must name."""
-    return path.endswith(".lua") and path.split("/", 1)[0] not in {"tests", "tools"}
+    """Whether the client loads `path` as runtime code, which the consumer's TOC must name.
+
+    `types/` holds LuaLS declarations, which only the typecheck reads, so they never wait for a TOC line.
+    """
+    return path.endswith(".lua") and path.split("/", 1)[0] not in {"tests", "tools", "types"}
 
 
 def referenced_modules(path, seen=None):

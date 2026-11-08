@@ -8,6 +8,7 @@ local _, ns = ...
 --
 -- Shared with UI/TrackerHost.lua: TrackerLock.Locked reads the switch through the host's own IsLocked, and the grip's
 -- OnDragStop hands a finished drag to the host's SavePosition.
+---@class ForeverTrackerLock
 local TrackerLock = {}
 ns.TrackerLock = TrackerLock
 

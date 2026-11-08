@@ -10,11 +10,6 @@ local _, ns = ...
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
 
----@class ForeverTrackerHostAPI
----@field Attach fun(module: Frame)
----@field IsAttached fun(module: Frame?): boolean
----@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for /agf tracker
-
 ---@class ForeverNativeTrackerHeader : Frame
 ---@field Text FontString
 ---@field MinimizeButton Button
