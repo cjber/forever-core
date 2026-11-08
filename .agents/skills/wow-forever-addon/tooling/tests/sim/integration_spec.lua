@@ -257,6 +257,42 @@ test("native map API opens, closes and reopens with visibility callbacks", funct
 	end
 end)
 
+test("closing the world map with the quest log shown closes the quest portrait, as the client does", function()
+	local sim = Sim.new()
+	sim.world.maps[1429] = { name = "Elwynn Forest", parent = 1415 }
+	sim.world.maps[1415] = { name = "Eastern Kingdoms", parent = 947, mapType = 2 }
+	orgrimmar(sim)
+	sim:login()
+	eq(type(sim.G.QuestFrame_HideQuestPortrait), "function", "QuestFrame is booted")
+	sim:takeErrors()
+	sim:openWorldMap(1429)
+	sim:input(function()
+		sim.G.WorldMapFrame:SetQuestLogPanelShown(true)
+	end)
+	sim:closeWorldMap()
+	eq(sim.G.WorldMapFrame:IsVisible(), false, "the world map is hidden")
+	sim:expectNoErrors()
+end)
+
+test("an error in a script handler is reported and the code that triggered it carries on", function()
+	local sim = Sim.new()
+	sim:login()
+	local frame = sim.G.CreateFrame("Frame")
+	frame:SetScript("OnHide", function()
+		error("SimHide failed", 0)
+	end)
+	sim:takeErrors()
+	local after = false
+	sim:input(function()
+		frame:Hide()
+		after = true
+	end)
+	eq(frame:IsShown(), false, "the frame is hidden")
+	eq(after, true, "the input after Hide runs")
+	local e = sim:expectError("SimHide failed")
+	assert(e.traceback:find("integration_spec.lua", 1, true), e.traceback)
+end)
+
 test("the legacy achievement natives answer from sim.world.achievements and nil for an unknown id", function()
 	local sim = Sim.new({ blizzard = {} })
 	sim.world.achievements = {
