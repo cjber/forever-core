@@ -175,31 +175,27 @@ function M.build(sim)
 	---------------------------------------------------------------------------
 	-- Runs obj's script `name` as the client does when Lua code triggers it (Show, Click, SetValue...): the
 	-- handler inherits the caller's taint, plus the taint of whoever set it; each HookScript hook runs isolated.
+	-- An error in any of them is reported to the client's error handler, and the caller carries on as it does
+	-- when the client runs a script from C.
 	local function fire(obj, name, ...)
 		local s = S[obj]
 		if not s or not s.scripts then
 			return
 		end
+		local saved = Taint.current
 		local intrinsic = s.intrinsic and s.intrinsic[name]
 		if intrinsic and intrinsic.pre then
-			intrinsic.pre(obj, ...)
+			Taint.dispatch(saved, intrinsic.pre, obj, ...)
 		end
 		local handler = s.scripts[name]
 		if handler then
+			-- The client calls a script from C: its setter's taint applies inside the handler only, and dispatch
+			-- restores the caller's taint afterwards.
 			local by = s.scriptTaint[name]
-			local saved = Taint.current
-			if by and not saved then
-				Taint.set(by)
-			end
-			handler(obj, ...)
-			-- The client calls a script from C: its taint applies inside the handler only, not to the secure
-			-- caller that resumes afterwards.
-			if Taint.current ~= saved then
-				Taint.set(saved)
-			end
+			Taint.dispatch(saved or by, handler, obj, ...)
 		end
 		if intrinsic and intrinsic.post then
-			intrinsic.post(obj, ...)
+			Taint.dispatch(saved, intrinsic.post, obj, ...)
 		end
 		local hooks = s.hooks and s.hooks[name]
 		if hooks then
