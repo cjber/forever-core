@@ -1,14 +1,14 @@
 {
   "Core/PeerStats.lua": {
-    "sha256": "6de2c184e6b99055725142aa0ffc6c7702e073c75e659dc7f3464b2086f67194",
-    "version": 6
+    "sha256": "3b48a1cd630687944b1920aa46c99b3649937b3ac992a99895e4c3b5e8f28c08",
+    "version": 7
   },
   "UI/ForeverFamily.lua": {
     "sha256": "8e390202ef02dbb01e9c7e8659ce9e4026a03940d18f9909d4512ed382318331",
     "version": 6
   },
   "UI/Leaderboards.lua": {
-    "sha256": "1ab722240e9d76d38bb4d5f1226737c3c659e845d894313af776a83524125625",
-    "version": 3
+    "sha256": "43dcb9c37f27bdbcbe2c8a2790813635245f87c3025d01e819374dcb032b25c3",
+    "version": 4
   }
 }
