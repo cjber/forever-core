@@ -25,6 +25,8 @@ local api = {}
 ---@type table<string, ForeverQuestLogTabEntry>
 local tabs = {}
 local selectedKey
+-- The key whose panel was last reported visible through `shown`, so each change is reported exactly once.
+local reportedKey
 ---@type ForeverQuestLogTab?
 local questsTab
 local tabOffsetY = 0
@@ -50,6 +52,70 @@ local function Sorted()
 		return a.key < b.key
 	end)
 	return list
+end
+
+-- Tell a panel whether the player can see it. No panel sets OnShow or OnHide: a script under WorldMapFrame runs
+-- inside the map's close path, where addon taint blocks the gamepad's interact target (shortest-path-forever#158).
+---@param spec ForeverQuestLogTabSpec
+---@param visible boolean
+local function NotifyShown(spec, visible)
+	if not spec.shown then
+		return
+	end
+	if securecallfunction then
+		securecallfunction(spec.shown, visible)
+	else
+		spec.shown(visible)
+	end
+end
+
+-- The one rule for what a panel is told: the selected key is reported visible only while the map and its quest log
+-- side panel are both shown. Everything that can change either frame ends by calling Sync, which reports the
+-- previously visible key hidden and the new one visible, each only once.
+---@param mapShown boolean?
+local function Sync(mapShown)
+	if mapShown == nil then
+		mapShown = WorldMapFrame:IsShown()
+	end
+	local key
+	if mapShown and selectedKey and QuestMapFrame:IsShown() then
+		key = selectedKey
+	end
+	if key == reportedKey then
+		return
+	end
+	local previous = reportedKey
+	reportedKey = nil
+	if previous then
+		local entry = tabs[previous]
+		if entry then
+			NotifyShown(entry.spec, false)
+		end
+	end
+	if key then
+		local entry = tabs[key]
+		if entry then
+			reportedKey = key
+			NotifyShown(entry.spec, true)
+		end
+	end
+end
+
+local function PanelShown(_, frame)
+	if frame == WorldMapFrame then
+		Sync(true)
+	end
+end
+
+local function PanelHidden(_, frame)
+	if frame == WorldMapFrame then
+		Sync(false)
+	end
+end
+
+-- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
+local function QuestLogPanelShown()
+	Sync()
 end
 
 local function Anchor()
@@ -97,6 +163,8 @@ local function Install()
 	EventRegistry:RegisterCallback("QuestLog.SetDisplayMode", function()
 		if selectedKey then
 			api.ShowQuests()
+		else
+			Sync()
 		end
 	end, api)
 	-- Opening a tracked quest asks for Quests mode, but SetDisplayMode returns early when the mode is unchanged,
@@ -104,8 +172,16 @@ local function Install()
 	hooksecurefunc("QuestMapFrame_ShowQuestDetails", function()
 		if selectedKey then
 			api.ShowQuests()
+		else
+			Sync()
 		end
 	end)
+	-- A panel must not set OnShow or OnHide under the world map, so the map's own callbacks tell it instead.
+	EventRegistry:RegisterCallback("UIParentPanelManager.ShowUIPanel", PanelShown, api)
+	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, api)
+	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, api)
+	-- A secure post-hook: the client's own method has returned and this adds no script to any frame.
+	hooksecurefunc(WorldMapFrame, "SetQuestLogPanelShown", QuestLogPanelShown) -- taint-ok: post-hook only; no frame script
 end
 
 ---@param key string
@@ -149,6 +225,7 @@ function api.Select(key)
 	if questsTab then
 		questsTab:SetChecked(false)
 	end
+	Sync()
 end
 
 function api.ShowQuests()
@@ -164,6 +241,7 @@ function api.ShowQuests()
 	if questsTab then
 		questsTab:SetChecked(true)
 	end
+	Sync()
 end
 
 ---@return string?
