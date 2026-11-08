@@ -15,6 +15,7 @@
 - **Field Guide and Commissions get the error journal.** The vendoring map sends `Core/SafeCall.lua`, `Core/Log.lua`, `UI/Report.lua` and their specs to all seven addons, so the drift checks cover Field Guide's and Commissions' copies once they adopt them (cjber/field-guide-forever#214, cjber/commissions-forever#103).
 
 - **A bench script times 1,000 addon messages and 1,000 tooltip lookups through the leaderboards.** Speedpatrol runs it.
+- **The Forever addons page opens with a gamepad.** With the gamepad interface on, `Family.Register` builds the page from the client's own settings rows, which the Options window's navigation can enter; the canvas page left the cursor on a hidden row. Each addon registers the page through it. `VERSION` is 7. (cjber/tweaks-forever#382)
 
 ## [0.5.0] - 2026-11-08
 
