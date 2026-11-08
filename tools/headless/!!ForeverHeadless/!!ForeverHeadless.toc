@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: Forever Headless (dev)
+## Notes: Linked in only for a headless test session by tools/headless/forever_client.py. Takes a screenshot each time the world loads, which tells the launcher the client is in the world.
+## Version: 1
+
+ForeverHeadless.lua
