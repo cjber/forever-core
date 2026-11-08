@@ -124,6 +124,15 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 		function f.CreateFontString(_)
 			return { SetPoint = noop, SetText = noop }
 		end
+		function f.CreateTexture(_)
+			return {
+				SetPoint = noop,
+				SetAtlas = noop,
+				SetVertexColor = noop,
+				SetShown = noop,
+				Hide = noop,
+			}
+		end
 		f.SetMovable, f.RegisterForDrag, f.RegisterEvent = noop, noop, noop
 		frames[#frames + 1] = f
 		return f

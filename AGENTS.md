@@ -49,8 +49,9 @@ and run anywhere.
 - `Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`: shared error capture, report, issue and link UI vendored into all five consumers.
 - `Core/Log.lua`: the shared structured log, its 200-line saved ring, the `/forever debug` switch and the lines the report copies.
 - `tests/report_spec.lua`, `tests/debug_log_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
-- `UI/TrackerHost.lua`: the private tracker column, its layout, combat and Edit Mode handling, and the
-  `ForeverTrackerHost` global the first-loaded Forever addon publishes and the rest adopt.
+- `UI/TrackerHost.lua`: the private tracker column, its optional tooltip-art backdrop and opacity, its layout,
+  combat and Edit Mode handling, and the `ForeverTrackerHost` global the first-loaded Forever addon publishes and the
+  rest adopt.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which must load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/TrackerQuestie.lua`: Questie's quest list, so the column steps beside it instead of under it.

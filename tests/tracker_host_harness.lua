@@ -10,6 +10,7 @@ function harness.new(options)
 	end
 	local function noop() end
 	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
+	local textures = {}
 	local initializationEvents
 	local combat = false
 	local parent
@@ -113,6 +114,32 @@ function harness.new(options)
 		end
 		function f.CreateFontString(_)
 			return { SetPoint = noop, SetText = noop, SetShown = noop }
+		end
+		function f.CreateTexture(_)
+			local texture = { points = {} }
+			function texture:SetPoint(...)
+				self.points[#self.points + 1] = { ... }
+			end
+			function texture:SetAtlas(name)
+				self.atlas = name
+			end
+			function texture:SetVertexColor(r, g, b, a)
+				self.r, self.g, self.b, self.a = r, g, b, a
+			end
+			function texture:SetShown(value)
+				self.shown = value
+			end
+			texture.Show = function(self)
+				self.shown = true
+			end
+			texture.Hide = function(self)
+				self.shown = false
+			end
+			texture.IsShown = function(self)
+				return self.shown ~= false
+			end
+			textures[#textures + 1] = texture
+			return texture
 		end
 		function f:SetShown(value)
 			self.shown = value
@@ -357,6 +384,7 @@ function harness.new(options)
 		ns = ns,
 		hostSettings = hostSettings,
 		frames = frames,
+		textures = textures,
 		releases = releases,
 		native = native,
 		parent = parent,

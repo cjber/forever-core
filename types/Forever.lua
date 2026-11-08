@@ -5,6 +5,7 @@
 ---@field attached boolean the column follows the native quest tracker
 ---@field locked? boolean the Lock switch, which suppresses the grip's drag
 ---@field scale number the player's tracker scale, 0.5 to 2
+---@field backdropOpacity? number the optional backdrop's opacity, 0 (off) to 1
 ---@field x? number the detached position, from UIParent's top left corner
 ---@field y? number
 
@@ -17,6 +18,9 @@
 ---@field IsAttached fun(module: Frame?): boolean
 ---@field IsLocked fun(): boolean
 ---@field SetLocked fun(value: boolean)
+---@field GetBackdropOpacity fun(): number
+---@field SetBackdropOpacity fun(value: number)
+---@field AddBackdropSetting fun(container: any, prefix: string?): any?
 ---@field IsAttachedToQuestTracker fun(): boolean
 ---@field SetAttached fun(value: boolean)
 ---@field OnAttachmentChanged fun(callback: fun(attached: boolean))
