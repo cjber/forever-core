@@ -1,0 +1,29 @@
+name: Sync consumers
+
+# Every consumer carries a copy of this repo's shared files and tooling. A push to main refreshes those copies in one
+# PR per consumer, with squash auto-merge armed so the consumer's own checks decide when it lands.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-consumers
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sync every consumer
+        env:
+          # Fine-grained PAT with Contents, Pull requests and Workflows write on the consumers. When it is unset the
+          # script prints a notice and the job stays green.
+          GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
+        run: python3 tools/sync_consumer_prs.py

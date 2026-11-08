@@ -86,6 +86,11 @@ and run anywhere.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the vendoring gate and its fix, both reading the map above.
   `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
   timing.
+- `tools/sync_consumer_prs.py`: the automatic consumer sync behind `.github/workflows/sync-consumers.yml`. On every push
+  to main it derives the consumers from `VENDORED` plus the live repositories that vendor `tools/forever_tools/` or
+  `tools/forever_sim/`, runs the same three syncs as `sync_consumers.py`, and force-pushes `forever-core-sync` with an
+  auto-merging PR in each consumer. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and
+  stays green. `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.
