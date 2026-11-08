@@ -60,8 +60,8 @@ checks off for a scenario that asserts on them itself.
 | `sim:rect(frame)`, `sim:overlap(a, b)`, `sim:expectNoOverlap(a, b)`, `sim:expectOnScreen(frame)` | layout |
 
 `sim.world` holds what the client reports: `player`, `units` (target, mouseover...), `group`, `professions`,
-`items`, `spells`, `maps`, `waypoint`. `sim.impl["C_Namespace.Function"] = function(...) end` answers any API
-directly; the documented rules (below) still apply to what it returns.
+`items`, `spells`, `maps`, `waypoint`, `achievements`. `sim.impl["C_Namespace.Function"] = function(...) end`
+answers any API directly; the documented rules (below) still apply to what it returns.
 
 An addon repo exercises its own surfaces with one shared step, in `tests/sim/exercise_scenario.lua`:
 

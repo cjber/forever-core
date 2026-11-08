@@ -19,6 +19,7 @@ local _, ns = ...
 ---@field RefreshClasses fun(part?: "guild"|"group")
 ---@field InvalidateClasses fun(part?: "guild"|"group")
 ---@field WeekStart fun(now: number): number
+---@field BoardRows fun(...: any): ForeverLeaderboardsRow[]
 ---@field Overall fun(api: ForeverLeaderboardsAPI, scope: ForeverLeaderboardsScope): ForeverLeaderboardsRow[]
 ---@field Standing fun(api: ForeverLeaderboardsAPI, name: string, scope: any): ForeverLeaderboardsStanding
 ---@field AddTooltip fun(api: ForeverLeaderboardsAPI, tooltip: GameTooltip)
@@ -312,6 +313,30 @@ function Data.WeekStart(now)
 	return start
 end
 
+-- One board's rows, with relayed rows included only while the window's reach is "met". The flag lives on the shared
+-- peer manager, so it is set only when that manager exists and is always restored, even when the board raises.
+---@param api ForeverLeaderboardsAPI
+---@param spec ForeverLeaderboardsSpec
+---@param scope ForeverLeaderboardsScope
+---@return ForeverLeaderboardsRow[]
+function Data.BoardRows(api, spec, scope)
+	local manager = rawget(_G, "ForeverPeerStats")
+	local managed = type(manager) == "table"
+	local previous
+	if managed then
+		previous = manager.includeRelayed
+		manager.includeRelayed = api.reach == "met"
+	end
+	local ok, rows = pcall(spec.board, scope)
+	if managed then
+		manager.includeRelayed = previous
+	end
+	if ok and type(rows) == "table" then
+		return rows
+	end
+	return {}
+end
+
 -- One board's contribution to the cache key. Revising a counter is the consumer's way of saying a stored row or its
 -- own snapshot changed; a board without one contributes nothing and waits for another board to invalidate the cache.
 ---@param api ForeverLeaderboardsAPI
@@ -359,17 +384,15 @@ local function Build(api, scope)
 	local L = Data.Strings()
 	local players, order = {}, {}
 	for _, spec in ipairs(api:Boards()) do
-		local ok, rows = pcall(spec.board, scope)
-		if not ok or type(rows) ~= "table" then
-			rows = {}
-		end
+		local rows = Data.BoardRows(api, spec, scope)
 		local seen = {}
 		for index, row in ipairs(rows) do
-			local name = type(row) == "table" and row.name
+			local name = type(row) == "table" and row.name or nil
 			local identity = type(row) == "table"
-				and type(row.identity) == "string"
-				and row.identity ~= ""
-				and row.identity
+					and type(row.identity) == "string"
+					and row.identity ~= ""
+					and row.identity
+				or nil
 			identity = identity or Data.Identity(name)
 			if identity and not seen[identity] then
 				seen[identity] = true
@@ -430,9 +453,12 @@ local function Build(api, scope)
 	return rows, players
 end
 
--- One cache slot per scope. The window and the tooltip both read the slot, so a hover never sorts or rebuilds a
--- board while nothing changed.
-local cache = { week = {}, all = {} }
+-- One cache slot per scope and reach. The window and the tooltip both read the slot, so a hover never sorts or
+-- rebuilds a board while nothing changed.
+local cache = {
+	week = { group = {}, met = {} },
+	all = { group = {}, met = {} },
+}
 
 ---@param api ForeverLeaderboardsAPI
 ---@param scope ForeverLeaderboardsScope
@@ -440,10 +466,11 @@ local cache = { week = {}, all = {} }
 ---@return table<string, ForeverLeaderboardsPlayer> players
 local function Snapshot(api, scope)
 	scope = scope == "all" and "all" or "week"
+	local reach = api.reach == "met" and "met" or "group"
 	local weekStart = Data.WeekStart(Now())
 	local revisions = Revisions(api)
 	local registration = tonumber(api.registration) or 0
-	local slot = cache[scope]
+	local slot = cache[scope][reach]
 	if
 		slot.rows
 		and slot.revisions == revisions

@@ -10,4 +10,4 @@ order, and `tools/check_consumers.py` compares every consumer's vendored copy ag
 - `tests/tracker_host_spec.lua` needs Blizzard's tracker source, fetched by
   `python3 tools/fetch_tracker_ui.py`; it is not part of the timed suite.
 - Vendor changes out with `python3 tools/sync_consumers.py`, then one PR per consumer.
-- Never launch the game, Battle.net, Lutris or Wine, and never use the network.
+- Never use the network, and never start the game, Battle.net, Lutris or Wine. The headless client (forever-core's `wow-forever-addon/in-game.md`) tests the build linked into the game, not this checkout, so in-game checks belong to the agent that ships a change.

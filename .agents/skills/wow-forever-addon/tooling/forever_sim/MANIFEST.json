@@ -17,7 +17,7 @@
     "natives.lua": "6770fd5a380e24b08c81a01656cd9cf36913a891665e6e4c9a91c140a6260f7c",
     "run.lua": "5a884531bd41c56d04fb4445baa61865e83e9d0deafc19dcbc85e5977d2b166e",
     "scenario.lua": "29ba69bf55d4c9c5b1bd59fcc2bf74b26a9b406ba0fa8eb7dd63eaa8b9a30fe4",
-    "sim.lua": "952c9435011e3d68399e4d203947a89cc940c62ad190f11aa7488b95698a67e9",
+    "sim.lua": "36b5ffb020a35c1cb9e5dce2075f34071df0a5b0a5bcb4e1717ca4e651fff5b7",
     "stubgen.lua": "b995b9445c1260e10349fab60458caee7ca7f2d493e59e01d5143822320dd55c",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
@@ -33,8 +33,8 @@
     "tooltip.lua": "433f3bdd12b2b4a3dee0cfcae9f87d720c5f3d9c1600c2f2235affbf84a052c3",
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",
     "watch.lua": "593154cf8c8fbc3fafbb53f1dc0deb846dc2d114ed4dff6e6ba3e3f5aec1d9a7",
-    "widgets.lua": "8cffa2f34f2a09a877d651e2ce3b8479b6d4282334b0a53100a670eeda47a430",
-    "world.lua": "f8d1637bc7f6a6f66cafec3860ec8690b89c0b8849b842e0e87c551b4bdc3ef3",
+    "widgets.lua": "69a03e0bff99648fdc7d5abfca796b7bcc4df8ba6bb9b95f5700bd87ea77fbec",
+    "world.lua": "beba2ab45333d7ead6067678a1bb1d7b31314d042ea44a72c239a38669ef01ec",
     "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
   }
 }

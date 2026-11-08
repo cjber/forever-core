@@ -183,6 +183,10 @@ local function wire(addon, metric, subject, value, unix)
 	return table.concat({ "1", addon, metric, subject, value, unix }, "|")
 end
 
+local function relayWire(addon, metric, subject, value, unix, origin)
+	return table.concat({ "2", addon, metric, subject, value, unix, origin }, "|")
+end
+
 local function recv(peers, payload, sender, channel)
 	return peers:Receive("WFAStats", payload, channel or "GUILD", sender)
 end
@@ -222,7 +226,7 @@ do
 	rejected(wire("agf", "total", "all", 5, 0), nil, nil, "value", "zero timestamp")
 	rejected(wire("agf", "total", "all", 5, now) .. "|extra", nil, nil, "metric", "seventh field")
 	rejected("1|agf|total|all|5", nil, nil, "metric", "missing field")
-	rejected("2|agf|total|all|5|" .. now, nil, nil, "addon", "wrong version")
+	rejected("3|agf|total|all|5|" .. now, nil, nil, "addon", "wrong version")
 	rejected(wire("agf", "total", "all", 5, now) .. string.rep("x", 130), nil, nil, "payload", "oversized payload")
 	rejected(42, nil, nil, "payload", "non-string payload")
 	rejected(wire("agf", "total", "all", 5, now), "Bad|Name", nil, "sender", "pipe in sender")
@@ -584,7 +588,7 @@ do
 	equal(peers:Revision(), afterReceive, "a refused row leaves it alone")
 
 	state.rows = { { metric = "total", subject = "all", value = 7, eventUnix = now } }
-	equal(peers:Sync(), 1, "the snapshot is queued")
+	equal(peers:Sync(), 1, "the snapshot is queued; the guild row skips the guild it was heard on")
 	local afterSync = peers:Revision()
 	equal(afterSync > afterReceive, true, "a changed snapshot raises the revision")
 	advance(1)
@@ -998,7 +1002,7 @@ do
 	local third = load()
 	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
 	local manager = _G.ForeverPeerStats
-	equal(manager.version, 6, "manager is versioned")
+	equal(manager.version, 7, "manager is versioned")
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -1025,7 +1029,7 @@ do
 		"each addon's row is sent exactly once"
 	)
 
-	-- Events reach every addon, each keeps its own rows and nobody relays.
+	-- Events reach every addon, each keeps its own rows, and receiving queues no relay of its own.
 	resetSent()
 	local frame
 	for _, candidate in ipairs(frames) do
@@ -1041,20 +1045,27 @@ do
 	equal(bs.db["Quin-X"].node["5"].value, 9, "legacy stored its row")
 	equal(bs.db["Quin-X"].total, nil, "legacy did not store agf's row")
 	advance(60)
-	equal(#sent, 0, "received rows are never relayed")
+	equal(#sent, 0, "receiving queues no relay by itself")
 	equal(manager.QueueSize(), 0, "nothing queued by receiving")
 
-	-- Membership events resync every enabled addon after a short delay.
+	-- Membership events resync every enabled addon after a short delay. Each now sends its own row and the row it
+	-- heard from Quin to the new party, but not back to the guild it heard Quin on.
 	groupKind, groupSize = "PARTY", 2
 	frame.handler(frame, "GROUP_ROSTER_UPDATE")
 	frame.handler(frame, "GROUP_ROSTER_UPDATE")
 	advance(0.5)
 	equal(#sent, 0, "membership sync is debounced")
 	advance(5)
-	equal(#sent, 2, "each addon redistributes its unchanged row to the new party once")
+	equal(#sent, 4, "each addon sends its own row and Quin's relay to the new party once")
+	local relayed = 0
 	for _, message in ipairs(sent) do
 		equal(message.channel, "PARTY", "to the party only")
+		if message.payload:sub(1, 2) == "2|" then
+			relayed = relayed + 1
+			equal(message.payload:find("|Quin%-X$") ~= nil, true, "the relay keeps Quin as its origin")
+		end
 	end
+	equal(relayed, 2, "one relay per addon about Quin")
 
 	-- Shared transport: two addons cannot exceed the burst together.
 	resetSent()
@@ -1326,6 +1337,332 @@ do
 			return weekRemaining
 		end,
 	}
+end
+
+-- Relay receive, the reach flag and the two peer caps -----------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 5, now, "Cat-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a relayed row is stored"
+	)
+	equal(state.db["Cat-OtherRealm"].total.all.value, 5, "under the origin's key")
+	equal(state.db["Cat-OtherRealm"].total.all.relayed, true, "marked as relayed")
+	equal(state.db["B-OtherRealm"], nil, "not under the relayer")
+	equal(#peers:Board("total", "all", 0, now), 1, "the default board leaves a relayed row out")
+	equal(peers:Shared()["Cat-OtherRealm"], nil, "Shared leaves it out by default")
+	_G.ForeverPeerStats.includeRelayed = true
+	local board = peers:Board("total", "all", 0, now)
+	equal(#board, 2, "the met reach includes it")
+	local relayedRow
+	for _, candidaterow in ipairs(board) do
+		if not candidaterow.self then
+			relayedRow = candidaterow
+		end
+	end
+	equal(relayedRow.relayed, true, "the row says it is relayed")
+	equal(#peers:WeekBoard("total", "all", 0, now), 2, "WeekBoard includes it for the met reach too")
+	_G.ForeverPeerStats.includeRelayed = false
+	equal(#peers:Board("total", "all", 0, now), 1, "and the default hides it again")
+end
+
+-- A relay may not name the player or its own relayer -------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	local ok, why = recv(peers, relayWire("agf", "total", "all", 5, now, "Me-MyRealm"), "B-OtherRealm")
+	equal(ok, false, "a relay naming the player is dropped")
+	equal(why, "relay", "with the relay reason")
+	ok, why = recv(peers, relayWire("agf", "total", "all", 5, now, "B-OtherRealm"), "B-OtherRealm")
+	equal(ok, false, "a relay naming its own relayer is dropped")
+	equal(why, "relay", "with the relay reason")
+	ok, why = recv(peers, relayWire("agf", "total", "all", 5, now, "Bad|Origin"), "B-OtherRealm")
+	equal(ok, false, "an unreadable origin is dropped")
+	equal(why, "relay", "with the relay reason")
+	equal(count(state.db), 0, "nothing stored")
+end
+
+-- Direct records and relayed records never cross -----------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(recv(peers, wire("agf", "total", "all", 5, now - 10), "Cat-OtherRealm"), true, "a direct row first")
+	local ok, why = recv(peers, relayWire("agf", "total", "all", 99, now, "Cat-OtherRealm"), "B-OtherRealm")
+	equal(ok, false, "a relay never replaces a direct record")
+	equal(why, "direct", "with the direct reason")
+	equal(state.db["Cat-OtherRealm"].total.all.value, 5, "the direct value stays")
+	equal(state.db["Cat-OtherRealm"].total.all.relayed, nil, "and the record stays direct")
+end
+
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 99, now, "Cat-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a relayed row first"
+	)
+	equal(state.db["Cat-OtherRealm"].total.all.relayed, true, "marked relayed")
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 100), "Cat-OtherRealm"), true, "a lower direct row")
+	equal(state.db["Cat-OtherRealm"].total.all.value, 1, "replaces the relayed value")
+	equal(state.db["Cat-OtherRealm"].total.all.relayed, nil, "and clears the mark")
+end
+
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 5, now - 10, "Cat-OtherRealm"), "B-OtherRealm"),
+		true,
+		"first relay"
+	)
+	local ok, why = recv(peers, relayWire("agf", "total", "all", 4, now, "Cat-OtherRealm"), "B-OtherRealm")
+	equal(ok, false, "a lower relay is stale")
+	equal(why, "stale", "with the stale reason")
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 5, now, "Cat-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a better relay replaces it"
+	)
+	equal(state.db["Cat-OtherRealm"].total.all.eventUnix, now, "with its time")
+end
+
+-- A relay fills a missing display name and never changes a saved one ---------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(
+		recv(peers, wire("agf", "total", "all", 5, now - 10), "Dirtyjoke Lovetties-OtherRealm"),
+		true,
+		"a direct row sets the name"
+	)
+	local key = "DirtyjokeLovetties-OtherRealm"
+	equal(state.db[key]["\1name"], "Dirtyjoke Lovetties", "saved")
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 9, now, "DirtyjokeLovetties-OtherRealm"), "B-OtherRealm"),
+		false,
+		"the relay does not replace the direct row"
+	)
+	equal(state.db[key]["\1name"], "Dirtyjoke Lovetties", "a relay never changes a saved display name")
+
+	local db = {
+		["OldPeer-OtherRealm"] = { total = { all = { value = 1, eventUnix = now - 100, relayed = true } } },
+	}
+	local savedPeers, savedState = make(load(), { db = db })
+	equal(savedState.db["OldPeer-OtherRealm"]["\1name"], nil, "an old row has no display name")
+	equal(
+		recv(savedPeers, relayWire("agf", "total", "all", 2, now, "Old Peer-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a relay stores a better row"
+	)
+	equal(savedState.db["OldPeer-OtherRealm"]["\1name"], "Old Peer", "and fills the missing display name")
+end
+
+-- Relay-only peers have their own 400 cap and never displace a direct peer ---------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 1000), "Direct-R"), true, "a direct peer")
+	for index = 1, 400 do
+		local origin = "P" .. index .. "-R"
+		equal(
+			recv(peers, relayWire("agf", "total", "all", 1, now - 500 + index, origin), "Relayer" .. index .. "-R"),
+			true,
+			"relay-only peer " .. index
+		)
+	end
+	equal(count(state.db), 401, "400 relay-only peers and one direct peer")
+	equal(state.db["P1-R"] ~= nil, true, "the oldest relay-only peer is there at the cap")
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 1, now, "P401-R"), "Relayer401-R"),
+		true,
+		"the 401st relay-only peer is accepted"
+	)
+	equal(state.db["P1-R"], nil, "the least recently active relay-only peer is evicted")
+	equal(state.db["P2-R"] ~= nil, true, "the next one stays")
+	equal(state.db["P401-R"] ~= nil, true, "the new one is stored")
+	equal(state.db["Direct-R"] ~= nil, true, "a direct peer is never evicted for a relay")
+
+	for index = 1, 99 do
+		equal(recv(peers, wire("agf", "total", "all", 1, now), "D" .. index .. "-R"), true, "direct peer " .. index)
+	end
+	local rejected, why = recv(peers, wire("agf", "total", "all", 1, now), "D100-R")
+	equal(rejected, false, "the direct cap still stops a new direct peer")
+	equal(why, "peers", "for the peer cap")
+	equal(state.db["P2-R"] ~= nil, true, "and relay-only peers are still not evicted for it")
+end
+
+-- Sync relays the newest rows, skips the channel the origin was heard on, and does nothing twice ------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	groupKind, groupSize = "PARTY", 2
+	state.rows = {}
+	equal(recv(peers, wire("agf", "total", "all", 1, now), "Seen-R", "PARTY"), true, "seen on the party channel")
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 1), "Local"), true, "a peer on the local realm")
+	for index = 2, 26 do
+		equal(recv(peers, wire("agf", "total", "all", 1, now - index), "R" .. index .. "-R"), true, "peer " .. index)
+	end
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 8 * 86400), "Old-R"), true, "an old row")
+	equal(_G.ForeverPeerStats.QueueSize(), 0, "receiving queues nothing")
+	equal(peers:Sync(), 24, "24 relay sends: Seen to the guild, the guild rows to the party")
+	advance(60)
+	local relayed = {}
+	for _, message in ipairs(sent) do
+		if message.payload:sub(1, 2) == "2|" then
+			relayed[#relayed + 1] = message
+		end
+	end
+	equal(#relayed, 24, "exactly the relay cap goes out")
+	equal(
+		relayed[1].payload,
+		table.concat({ "2", "agf", "total", "all", 1, now, "Seen-R" }, "|"),
+		"the newest row is first"
+	)
+	equal(
+		relayed[2].payload,
+		table.concat({ "2", "agf", "total", "all", 1, now - 1, "Local-MyRealm" }, "|"),
+		"a local-realm key is spelled out with the relayer's realm"
+	)
+	equal(relayed[1].channel, "GUILD", "a row heard on the party is not sent back to the party")
+	local sawOld, sawR24 = false, false
+	for _, message in ipairs(relayed) do
+		if message.payload:find("|Old%-R$") then
+			sawOld = true
+		end
+		if message.payload:find("|R24%-R$") then
+			sawR24 = true
+		end
+	end
+	equal(sawOld, false, "a row older than seven days is not relayed")
+	equal(sawR24, false, "the 25th newest row is over the cap")
+	equal(peers:Sync(), 0, "a second Sync with nothing changed queues no relay")
+	equal(recv(peers, wire("agf", "total", "all", 2, now), "Seen-R", "PARTY"), true, "the row changes")
+	equal(peers:Sync(), 1, "and only that relay is offered again")
+end
+
+-- Only a sending New instance relays, and only its own addon's rows -----------------------------------------------
+do
+	local ns = fresh()
+	local observed, enabled = {}, true
+	local reader = ns.PeerStats.Listen("fieldguide", {
+		addon = "agf",
+		enabled = function()
+			return enabled
+		end,
+		db = function()
+			return observed
+		end,
+		metrics = METRICS,
+	})
+	equal(recv(reader, wire("agf", "total", "all", 4, serverTime), "Alice-R"), true, "a reader still receives")
+	equal(reader:Sync(), 0, "a Listen instance relays nothing")
+	advance(1)
+	equal(#sent, 0, "and sends nothing")
+
+	local offDb = { ["Alice-R"] = { total = { all = { value = 4, eventUnix = serverTime } } } }
+	local off = make(ns, { db = offDb, enabled = false })
+	equal(off:Sync(), 0, "a disabled instance relays nothing")
+	advance(1)
+	equal(#sent, 0, "and still sends nothing")
+
+	resetSent()
+	local firstDb, secondDb = {}, {}
+	local first = make(load(), { addon = "agf", db = firstDb })
+	local second = make(load(), { addon = "legacy", db = secondDb })
+	firstDb["First-R"] = { total = { all = { value = 1, eventUnix = serverTime } } }
+	secondDb["Second-R"] = { node = { ["5"] = { value = 1, eventUnix = serverTime } } }
+	equal(first:Sync(), 1, "the first addon relays its own row")
+	equal(second:Sync(), 1, "the second addon relays its own row")
+	advance(1)
+	local byAddon = {}
+	for _, message in ipairs(sent) do
+		if message.payload:sub(1, 2) == "2|" then
+			local addon = message.payload:match("^2|([^|]*)|")
+			byAddon[addon] = (byAddon[addon] or 0) + 1
+		end
+	end
+	equal(byAddon.agf, 1, "agf relays only its own metric rows")
+	equal(byAddon.legacy, 1, "legacy relays only its own metric rows")
+end
+
+-- Receiving a relay queues nothing -------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers = make(ns)
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 5, serverTime, "Cat-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a relay is stored"
+	)
+	equal(_G.ForeverPeerStats.QueueSize(), 0, "and queues no send")
+	advance(10)
+	equal(#sent, 0, "nothing leaves the client")
+
+	-- A later Sync can pass the relayed row on, keeping the origin it arrived with.
+	groupKind, groupSize = "PARTY", 2
+	equal(peers:Sync(), 2, "the next Sync relays it to the open channels")
+	advance(1)
+	local passed = false
+	for _, message in ipairs(sent) do
+		if message.payload:find("|Cat%-OtherRealm$") then
+			passed = true
+		end
+	end
+	equal(passed, true, "the relayed row keeps its origin when passed on")
+end
+
+-- SanitizeStore keeps only relayed = true, and a reload keeps the row out of the default board --------------------
+do
+	local ns = fresh()
+	local now = serverTime
+	local db = {
+		OnlyRelayed = { total = { all = { value = 5, eventUnix = now, relayed = true } } },
+		NotTrue = { total = { all = { value = 6, eventUnix = now, relayed = "yes" } } },
+		FalseFlag = { total = { all = { value = 7, eventUnix = now, relayed = false } } },
+	}
+	local peers = make(ns, { db = db })
+	equal(peers:IsEnabled(), true, "the saved store is read")
+	equal(db.OnlyRelayed.total.all.relayed, true, "relayed = true survives sanitize")
+	equal(db.NotTrue.total.all.relayed, nil, "a non-true mark is dropped")
+	equal(db.FalseFlag.total.all.relayed, nil, "false is dropped")
+	equal(#peers:Board("total", "all", 0, now), 3, "the default board hides the relay-only row")
+	_G.ForeverPeerStats.includeRelayed = true
+	equal(#peers:Board("total", "all", 0, now), 4, "the met reach shows it")
+	_G.ForeverPeerStats.includeRelayed = false
+
+	local reloaded = make(load(), { db = db })
+	equal(#reloaded:Board("total", "all", 0, now), 3, "a reload keeps relayed rows out of the board")
+	_G.ForeverPeerStats.includeRelayed = true
+	equal(#reloaded:Board("total", "all", 0, now), 4, "but the mark survived and the met reach finds it")
+	_G.ForeverPeerStats.includeRelayed = false
+end
+
+-- Manager takeover from a v6 copy --------------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	equal(_G.ForeverPeerStats.version, 7, "this copy is manager version 7")
+	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
+	_G.ForeverPeerStats.version = 6
+	local old = _G.ForeverPeerStats
+	load()
+	equal(_G.ForeverPeerStats ~= old, true, "a v6 manager is replaced")
+	equal(old.retired, true, "and retired")
+	equal(_G.ForeverPeerStats.version, 7, "by version 7")
+	equal(peers:Sync(), 1, "registered instances move to the new manager")
+	advance(1)
+	equal(#sent, 1, "and send through it")
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))

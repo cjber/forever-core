@@ -18,7 +18,7 @@ wago.tools network access. If they truly cannot run here, say so in the PR and i
 ## Rules
 - Read your repo's AGENTS.md first, plus `.sloppatrol/instructions.md` (its live roots) before refactors and the
   `release` skill only if told to release. AGENTS.md overrides this brief on conventions.
-- Lua 5.1, game sandbox, TOC load order. Never launch the game. Never hand-edit generated `Data/`: change the generator.
+- Lua 5.1, game sandbox, TOC load order. Test in game only through `tools/headless/forever_client.py`. Never hand-edit generated `Data/`: change the generator.
   New data sources need a WFA-28 waiver the owner agrees to, so leave the issue open and report it.
 - Follow the taint, art (`Art.*`, `-- art-ok:`), multi-value and copy lints and the pinned `wow-forever-addon` standard
   (/home/user/skills/wow-forever-addon/SKILL.md and voice.md; check the pinned SHA in AGENTS.md).

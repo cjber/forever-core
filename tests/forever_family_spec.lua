@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
 -- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "8e390202ef02dbb01e9c7e8659ce9e4026a03940d18f9909d4512ed382318331"
+local PINNED = "ed72d6e08eaf4e0948af441ca1e7931fbc11c0f26279abc7d51106597bfb3270"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -304,7 +304,7 @@ Client()
 local first = { L = PhraseLocale() }
 local firstView = Load(first)
 local Family = env.ForeverFamily
-check(Family and Family.VERSION == 6, "the first copy sets the shared global")
+check(Family and Family.VERSION == 7, "the first copy sets the shared global")
 check(firstView.State == Family.State and firstView.VERSION == Family.VERSION, "an addon's view is the shared module")
 check(Family.For(first.L) == firstView, "bound to its own L, the same view each time")
 check(Family.For(nil) == Family, "with no L, the module itself")
@@ -318,7 +318,7 @@ local older = { VERSION = Family.VERSION - 1 }
 env.ForeverFamily = older
 local newer = { L = PhraseLocale() }
 Load(newer)
-check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 6, "a newer copy takes over from an older one")
+check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 7, "a newer copy takes over from an older one")
 env.ForeverFamily = Family
 
 -- The five addons, in order, with their store pages.
@@ -518,6 +518,120 @@ plain:Show()
 check(not Children(plain, "CheckButton")[1].checked, "a plain table works as the saved variables too")
 check(not Texts(plain):find("This addon", 1, true), "with no current addon, no row says This addon")
 
+-- Register: the page as a canvas, or as the client's own rows with the gamepad interface on.
+Client()
+local registering = Load({ L = PhraseLocale() })
+local registered = env.ForeverFamily
+local gamepadUI = false
+env.InputUtil = {
+	IsGamepadUIEnabled = function()
+		return gamepadUI
+	end,
+}
+local canvases = {}
+env.Settings = {
+	VarType = { Boolean = "boolean" },
+	RegisterCanvasLayoutSubcategory = function(category, frame, name)
+		canvases[#canvases + 1] = { kind = "canvas", category = category, frame = frame, name = name }
+		return canvases[#canvases]
+	end,
+	RegisterVerticalLayoutSubcategory = function(category, name)
+		return { kind = "vertical", category = category, name = name, rows = {} }
+	end,
+	RegisterProxySetting = function(category, variable, varType, name, default, get, set)
+		return {
+			category = category,
+			variable = variable,
+			varType = varType,
+			name = name,
+			default = default,
+			get = get,
+			set = set,
+		}
+	end,
+	CreateCheckbox = function(category, setting, tooltip)
+		category.rows[#category.rows + 1] = { kind = "check", setting = setting, tooltip = tooltip }
+	end,
+	RegisterInitializer = function(category, initializer)
+		category.rows[#category.rows + 1] = initializer
+	end,
+}
+env.CreateSettingsButtonInitializer = function(name, buttonText, click, tooltip, addSearchTags)
+	return { name = name, buttonText = buttonText, click = click, tooltip = tooltip, addSearchTags = addSearchTags }
+end
+
+local category = { name = "Forever" }
+local mousePage = registering.Register(category, {}, "LegacyForever")
+check(mousePage.kind == "canvas" and mousePage.name == "Forever addons", "the mouse UI gets the canvas page")
+check(type(mousePage.frame.OnRefresh) == "function", "the page CreatePanel builds")
+
+gamepadUI = true
+local before = #frames
+local gamepadPage = registering.Register(category, {}, "LegacyForever")
+check(gamepadPage.kind == "vertical" and gamepadPage.name == "Forever addons", "the gamepad UI gets a vertical page")
+check(#frames == before, "and builds no canvas page")
+
+local checkRow = gamepadPage.rows[1]
+check(checkRow.kind == "check", "its first row is the hint setting")
+check(checkRow.setting.variable == "ForeverFamily_LegacyForever_suggestFamily", "named for the addon")
+check(checkRow.setting.varType == "boolean" and checkRow.setting.default == true, "a boolean, on by default")
+check(checkRow.setting.name == "Suggest my other Forever addons", "with the page's label")
+check(
+	checkRow.tooltip
+		== "Show a quiet line where one of my other Forever addons would help. Only for addons you don't have.",
+	"and its explanation"
+)
+check(checkRow.setting.get() == true, "the hints read on by default")
+local offPage = registering.Register(category, { suggestFamily = false }, "LegacyForever")
+check(offPage.rows[1].setting.get() == false, "and off once the player turned them off")
+
+local written = {}
+local writePage = registering.Register(category, written, "LegacyForever")
+writePage.rows[1].setting.set(false)
+check(written.suggestFamily == false, "the row writes the setting off")
+writePage.rows[1].setting.set(true)
+check(written.suggestFamily == true, "and on")
+
+local lazy = { suggestFamily = true }
+local lazyPage = registering.Register(category, function()
+	return lazy
+end, "LegacyForever")
+check(lazyPage.rows[1].setting.get() == true, "a db function's table is read")
+lazyPage.rows[1].setting.set(false)
+check(lazy.suggestFamily == false, "and written")
+
+-- One row per other addon in order, then Ko-fi last.
+local others = {}
+for _, addon in ipairs(registered.ADDONS) do
+	if addon.folder ~= "LegacyForever" then
+		others[#others + 1] = addon
+	end
+end
+check(#gamepadPage.rows == #others + 2, "a setting, a row per other addon, and Ko-fi")
+for index, addon in ipairs(others) do
+	local row = gamepadPage.rows[index + 1]
+	check(row.name == addon.name, "row " .. index .. " is " .. addon.name)
+	check(row.buttonText == "Copy link" and row.tooltip == addon.line, "with its line and a Copy link button")
+	check(row.addSearchTags == false, "and no search tags")
+end
+local support = gamepadPage.rows[#gamepadPage.rows]
+check(
+	support.name == "Ko-fi" and support.buttonText == "Copy link" and support.tooltip == registered.SUPPORT.line,
+	"Ko-fi comes last"
+)
+gamepadPage.rows[2].click()
+check(named.ForeverFamilyLink:IsShown(), "an addon row opens its link window")
+
+-- A view from Family.For(L) passes its own L to the page.
+local germanL = setmetatable({ ["Copy link"] = "Link kopieren" }, {
+	__index = function(_, phrase)
+		return phrase
+	end,
+})
+local germanView = registered.For(germanL)
+local germanPage = germanView.Register(category, {}, "LegacyForever")
+check(germanPage.rows[2].buttonText == "Link kopieren", "a view's Register reads in its own L")
+
 -- Translations: an addon whose L holds only some phrases, or no metatable at all, still reads every line.
 Client()
 local agf = { L = { ["Not installed"] = "Nicht installiert" } }
@@ -602,8 +716,8 @@ currentView.ShowLink(nil, nil, "TweaksForever")
 local currentWindow = current.window
 check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
 local served = {}
-local v7 = {
-	VERSION = 7,
+local v8 = {
+	VERSION = 8,
 	ShowLink = function(_, _, folder)
 		served[#served + 1] = folder
 		return true
@@ -613,16 +727,16 @@ local v7 = {
 		return true
 	end,
 	Once = function()
-		return "v7"
+		return "v8"
 	end,
 }
-env.ForeverFamily = v7
+env.ForeverFamily = v8
 check(
 	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
 	"a newer copy serves ShowLink"
 )
 check(currentView.ShowSupport() and served[2] == "Ko-fi", "and ShowSupport")
-check(current.Once("Test.later") == "v7", "and Once, so there is one record")
+check(current.Once("Test.later") == "v8", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
 local olderWindow = Create("Frame")

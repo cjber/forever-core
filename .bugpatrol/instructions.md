@@ -1,8 +1,8 @@
 # About the app
 
 ForeverCore is the shared library the WoW: Forever addons vendor: the tracker host, the error report
-and the family files. It is Lua 5.1 and cannot run outside the game client, and you must never start
-the game. What runs here is its headless harness.
+and the family files. It is Lua 5.1 and cannot run outside the game client, and this patrol never starts
+it (see the rules below). What runs here is its headless harness.
 
 - `tests/<name>_spec.lua` stubs the client API and loads the files the TOC lists, in order. Run one
   with `luajit tests/<name>_spec.lua`; a failing spec exits non-zero and prints the failed assertion.
@@ -29,7 +29,7 @@ No sign-in.
 
 ## Never do these things
 
-- Never launch the game, Battle.net, Lutris or Wine.
+- Never start the game, Battle.net, Lutris or Wine. The headless client (forever-core's `wow-forever-addon/in-game.md`) tests the build linked into the game, not this checkout, so in-game checks belong to the agent that ships a change.
 - Never edit, move or delete files.
 - Never use the network.
 - Never copy Blizzard's source into the repo: the fetch tool writes it to an ignored cache.

@@ -117,6 +117,8 @@ read_globals = {
 	"C_Minimap",
 }
 files["tests/"] = { std = "+luajit" }
+-- The headless test client's dev addon (tools/headless): it closes a chat box and takes the ready screenshot.
+files["tools/headless/"] = { read_globals = { "ChatEdit_DeactivateChat", "Screenshot" } }
 
 -- Tracker colours.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"

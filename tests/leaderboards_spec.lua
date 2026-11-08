@@ -9,7 +9,7 @@ do
 	Client()
 	local env, frames, named = harness.env, harness.frames, harness.named
 	local api = Load()
-	check(api ~= nil and api.VERSION == 3, "the first copy publishes a versioned global")
+	check(api ~= nil and api.VERSION == 4, "the first copy publishes a versioned global")
 	check(env.ForeverLeaderboards == api, "the global is the same table")
 	check(type(api.Register) == "function" and type(api.Open) == "function", "the API is there")
 	check(api.window == nil, "loading builds no window")
@@ -48,7 +48,7 @@ do
 	for _, widget in ipairs(frames) do
 		equal(widget:GetScript("OnUpdate"), nil, "no frame runs an OnUpdate")
 	end
-	equal(named.ForeverLeaderboardsFrame3, window, "the window has its name")
+	equal(named.ForeverLeaderboardsFrame4, window, "the window has its name")
 	equal(window.title, "Forever Leaderboards", "the title")
 	equal(window.portrait.texture, ICON, "the trophy portrait")
 	equal(#window.tabs, 3, "Overall plus both boards")
@@ -86,12 +86,13 @@ do
 	local radios = {}
 	local root = {
 		SetScrollMode = noop,
+		CreateDivider = noop,
 		CreateRadio = function(_, text, _, onClick)
 			radios[#radios + 1] = { text = text, onClick = onClick }
 		end,
 	}
 	window.dropdown.menu(window.dropdown, root)
-	equal(#radios, 2, "two scopes")
+	equal(#radios, 4, "two scopes and two reaches")
 	radios[2].onClick()
 	equal(window.valueHeader.text, "All time", "the dropdown changes scope")
 	equal(window.scroll.buttons[1].value.text, "40", "all-time values are not signed")

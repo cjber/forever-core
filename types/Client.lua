@@ -184,12 +184,28 @@ QUESTS_LABEL = nil
 ---@class OptionsSliderTemplate : Slider
 ---@class UIPanelButtonTemplate : Button
 
--- Settings: the canvas category the settings page registers itself as.
+-- Settings: the settings page's canvas category and the Forever addons page's subcategory.
 ---@class ForeverSettings
 ---@field RegisterCanvasLayoutCategory fun(frame: Frame, name: string): table
+---@field RegisterCanvasLayoutSubcategory fun(parent: table, frame: Frame, name: string): table
 ---@field RegisterAddOnCategory fun(category: table)
+---@field RegisterVerticalLayoutSubcategory fun(parent: table, name: string): table
+---@field RegisterProxySetting fun(category: table, variable: string, varType: string, name: string, default: any, get: (fun(): any), set: (fun(value: any))): table
+---@field VarType {Boolean: string}
+---@field CreateCheckbox fun(category: table, setting: table, tooltip?: string): table
+---@field RegisterInitializer fun(category: table, initializer: table)
 ---@type ForeverSettings?
 Settings = nil
+
+-- The client's initializer for a settings row with a button, which the Forever addons page registers.
+---@type fun(name: string, buttonText: string, buttonClick: fun(), tooltip?: string, addSearchTags?: boolean): table
+CreateSettingsButtonInitializer = nil
+
+-- The client's gamepad switch: the Forever addons page is a canvas page without it.
+---@class ForeverInputUtil
+---@field IsGamepadUIEnabled fun(): boolean
+---@type ForeverInputUtil?
+InputUtil = nil
 
 -- The settings page keeps one cursor down its canvas, so every row claims its height.
 ---@class Frame

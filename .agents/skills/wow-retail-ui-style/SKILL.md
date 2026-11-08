@@ -65,7 +65,7 @@ For panel composition and edge ownership, the canonical source is [ui-compositio
 2. Inspect the host template, mixin, atlas and API. Resolve every proposed asset against the registry: approved native use, conditional use in its proper context, or blacklisted. Record names and the selected atlas set in the mockup source or review notes.
 3. Approve one whole-panel lockup before implementation. Confirm edge ownership, artwork clipping, one icon chrome owner, semantic colours and compact spacing, then build the smallest addon-specific layer on top of those conventions.
 4. Render concepts inside their proposed host with representative full, short, empty and unavailable states. Compare against the host at the same UI scale for gaps, texture choice, row density and alignment. Label sample data and proposed behavior clearly.
-5. Present every generated variant for owner review using the owner's preview workflow. A rendered concept establishes design intent, not in-game correctness; list client checks for the user and do not launch or drive the game.
+5. Present every generated variant for owner review using the owner's preview workflow. A rendered concept establishes design intent, not in-game correctness; check it in the headless client (`wow-forever-addon/in-game.md`) and list what waits on the user.
 
 ## Never use (blacklist)
 

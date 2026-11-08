@@ -37,8 +37,7 @@ Everything the old session had in its scratchpad is on **cjber/skills**, branch 
 | Legacy Forever | cjber/legacy-forever | **1705879** | 0.10.1 |
 | Tweaks Forever | cjber/tweaks-forever | **1708506** | 0.14.1 |
 
-Lua 5.1, Interface 16001, Forever build 1.60.1.70450. Agents never launch the game. Every PR lists its in-game `/reload`
-checks for the owner. Check the live versions against each repo's tags before you rely on them.
+Lua 5.1, Interface 16001, Forever build 1.60.1.70450. Agents test in game only through `tools/headless/forever_client.py` (`wow-forever-addon/in-game.md`). Every PR lists what it checked there and its `/reload` checks for the owner. Check the live versions against each repo's tags before you rely on them.
 
 ## Hard rules
 - **Commits.** Signed with `git commit -S`, author `cjberragan@gmail.com`. The global git email is a noreply address, so

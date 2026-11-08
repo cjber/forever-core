@@ -18,6 +18,8 @@ local _, ns = ...
 
 ---@alias ForeverLeaderboardsScope "week"|"all"
 
+---@alias ForeverLeaderboardsReach "group"|"met"
+
 ---@class ForeverLeaderboardsRow
 ---@field name string the player's display name
 ---@field identity? string the compacted key the row was ranked under, when the board supplies one
@@ -71,7 +73,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 3
+local LEADERBOARDS_VERSION = 4
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -106,6 +108,7 @@ end
 ---@field VERSION integer raised with every change to this file
 ---@field LEADERBOARDS_VERSION integer the same version, under the name the file compares
 ---@field scope ForeverLeaderboardsScope the selected scope
+---@field reach ForeverLeaderboardsReach rows heard directly ("group") or every row heard ("met")
 ---@field selected? string the board the window shows
 ---@field window? ForeverLeaderboardsWindow the window once built, for a newer copy to put away
 ---@field tooltipHooked? boolean the one unit-tooltip hook is already installed
@@ -117,6 +120,7 @@ local api = {
 	boards = {},
 	order = {},
 	scope = "week",
+	reach = "group",
 	registration = 0,
 }
 local sequence = 0
@@ -138,6 +142,9 @@ if type(previous) == "table" then
 	api.tooltipHooked = previous.tooltipHooked == true
 	if previous.scope == "all" or previous.scope == "week" then
 		api.scope = previous.scope
+	end
+	if previous.reach == "group" or previous.reach == "met" then
+		api.reach = previous.reach
 	end
 	if type(previous.selected) == "string" then
 		api.selected = previous.selected
@@ -328,8 +335,8 @@ local function Rows(key, scope)
 	if not spec then
 		return rows
 	end
-	local ok, list = pcall(spec.board, scope)
-	if not ok or type(list) ~= "table" then
+	local list = data.BoardRows(api, spec, scope)
+	if type(list) ~= "table" then
 		return rows
 	end
 	local weekly = scope == "week"
@@ -531,7 +538,7 @@ function Refresh()
 	api.selected = key
 	local spec = key ~= OVERALL and api.boards[key] or nil
 	frame.heading:SetText(spec and spec.metric or L["Forever standing"])
-	frame.subtitle:SetText(L["Your guild and group"])
+	frame.subtitle:SetText(api.reach == "met" and L["Players you've met"] or L["Your guild and group"])
 	frame.valueHeader:SetText(api.scope == "week" and L["This week"] or L["All time"])
 	frame.dropdown:SetDefaultText(api.scope == "week" and L["This week"] or L["All time"])
 	RefreshTabs(frame)
@@ -647,7 +654,7 @@ local function Window()
 
 	frame.subtitle = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	frame.subtitle:SetPoint("TOPLEFT", 62, -54)
-	frame.subtitle:SetText(L["Your guild and group"])
+	frame.subtitle:SetText(api.reach == "met" and L["Players you've met"] or L["Your guild and group"])
 
 	local dropdown = CreateFrame("DropdownButton", nil, frame, DROPDOWN_TEMPLATE) --[[@as ForeverLeaderboardsDropdown]]
 	dropdown:SetSize(140, 24)
@@ -664,6 +671,19 @@ local function Window()
 			return api.scope == "all"
 		end, function()
 			api.scope = "all"
+			Refresh()
+		end)
+		root:CreateDivider()
+		root:CreateRadio(L["Your guild and group"], function()
+			return api.reach == "group"
+		end, function()
+			api.reach = "group"
+			Refresh()
+		end)
+		root:CreateRadio(L["Players you've met"], function()
+			return api.reach == "met"
+		end, function()
+			api.reach = "met"
 			Refresh()
 		end)
 	end)
