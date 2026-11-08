@@ -187,7 +187,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%.
-- **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack at a full commit SHA. Headless specs pass on builds that are broken in game, so a change
+- **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
+  commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
   the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.
