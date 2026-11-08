@@ -59,6 +59,7 @@ jobs:
       - run: pip install pillow==12.3.0
       - run: python3 -m unittest discover -s tools/wowmock -p "test_*.py"
       - run: python3 tools/check_assets.py
+      - run: python3 tools/check_shared_versions.py
 
   typecheck:
     runs-on: ubuntu-24.04

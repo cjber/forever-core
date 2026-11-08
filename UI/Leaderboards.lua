@@ -71,7 +71,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 1
+local LEADERBOARDS_VERSION = 2
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30

@@ -203,7 +203,7 @@ do
 	equal(#env.GameTooltip.hooks.OnTooltipSetUnit, 1, "and is not installed twice")
 
 	-- The older copy's own call sites reach the newer window.
-	fresh.VERSION = 2
+	fresh.VERSION = api.LEADERBOARDS_VERSION + 1
 	api:Register("late", spec("late", { row("Me", 1, nil, true, "HUNTER") }, {}))
 	equal(#fresh:Boards(), 2, "an old copy's Register joins the new API")
 	api:Open("late")
@@ -212,7 +212,7 @@ do
 	check(fresh.window:IsShown() == false, "an old copy's Toggle reaches the new window")
 
 	-- A copy older than the published global joins it instead of replacing it.
-	fresh.VERSION = 9
+	fresh.VERSION = api.LEADERBOARDS_VERSION + 8
 	local joined = Load()
 	equal(env.ForeverLeaderboards, fresh, "a newer global is kept")
 	equal(joined, fresh, "the older file adopts it")
