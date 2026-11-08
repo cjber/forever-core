@@ -63,6 +63,9 @@ local docsCache = {}
 function Sim.new(opts)
 	opts = opts or {}
 	local sim = setmetatable({}, Sim)
+	-- Kept so Sim:reload builds the same client; registered holds the addons and stubs in registration order.
+	sim.opts = opts
+	sim.registered = {}
 	sim.cache = opts.cache or os.getenv("FOREVER_SIM_CACHE") or "tools/.cache/forever_sim"
 	sim.ui = opts.ui or (sim.cache .. "/wow-ui-source")
 	sim.build = "1.60.1.70425"
@@ -155,7 +158,9 @@ end
 
 -- Registers an addon under test (a folder holding its TOC). `name` defaults to the TOC's name.
 function Sim:addon(dir, name)
-	return self.loader.addon(dir, name)
+	local entry = self.loader.addon(dir, name)
+	self.registered[#self.registered + 1] = { kind = "addon", dir = dir, name = entry.name }
+	return entry
 end
 
 -- Adds a third-party stand-in from stubs/ (Questie, TomTom, Auctionator, Polestar), with its options; it loads
@@ -164,6 +169,7 @@ function Sim:stub(name, options)
 	self.G.FOREVER_SIM_STUBS = self.G.FOREVER_SIM_STUBS or {}
 	self.G.FOREVER_SIM_STUBS[name] = options or {}
 	self.taint.globalTaint.FOREVER_SIM_STUBS = nil
+	self.registered[#self.registered + 1] = { kind = "stub", name = name, options = options or {} }
 	return self.loader.addon(Sim.dir .. "stubs/" .. name, name)
 end
 
