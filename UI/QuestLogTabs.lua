@@ -69,46 +69,53 @@ local function NotifyShown(spec, visible)
 	end
 end
 
----@param key string
-local function ReportHidden(key)
-	if reportedKey ~= key then
+-- The one rule for what a panel is told: the selected key is reported visible only while the map and its quest log
+-- side panel are both shown. Everything that can change either frame ends by calling Sync, which reports the
+-- previously visible key hidden and the new one visible, each only once.
+---@param mapShown boolean?
+local function Sync(mapShown)
+	if mapShown == nil then
+		mapShown = WorldMapFrame:IsShown()
+	end
+	local key
+	if mapShown and selectedKey and QuestMapFrame:IsShown() then
+		key = selectedKey
+	end
+	if key == reportedKey then
 		return
 	end
+	local previous = reportedKey
 	reportedKey = nil
-	local entry = tabs[key]
-	if entry then
-		NotifyShown(entry.spec, false)
+	if previous then
+		local entry = tabs[previous]
+		if entry then
+			NotifyShown(entry.spec, false)
+		end
 	end
-end
-
----@param key string
-local function ReportVisible(key)
-	if reportedKey == key then
-		return
+	if key then
+		local entry = tabs[key]
+		if entry then
+			reportedKey = key
+			NotifyShown(entry.spec, true)
+		end
 	end
-	if reportedKey then
-		ReportHidden(reportedKey)
-	end
-	local entry = tabs[key]
-	if not entry then
-		return
-	end
-	reportedKey = key
-	NotifyShown(entry.spec, true)
 end
 
 local function PanelShown(_, frame)
-	if frame ~= WorldMapFrame or not selectedKey then
-		return
+	if frame == WorldMapFrame then
+		Sync(true)
 	end
-	ReportVisible(selectedKey)
 end
 
 local function PanelHidden(_, frame)
-	if frame ~= WorldMapFrame or not reportedKey then
-		return
+	if frame == WorldMapFrame then
+		Sync(false)
 	end
-	ReportHidden(reportedKey)
+end
+
+-- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
+local function QuestLogPanelShown()
+	Sync()
 end
 
 local function Anchor()
@@ -156,6 +163,8 @@ local function Install()
 	EventRegistry:RegisterCallback("QuestLog.SetDisplayMode", function()
 		if selectedKey then
 			api.ShowQuests()
+		else
+			Sync()
 		end
 	end, api)
 	-- Opening a tracked quest asks for Quests mode, but SetDisplayMode returns early when the mode is unchanged,
@@ -163,12 +172,16 @@ local function Install()
 	hooksecurefunc("QuestMapFrame_ShowQuestDetails", function()
 		if selectedKey then
 			api.ShowQuests()
+		else
+			Sync()
 		end
 	end)
 	-- A panel must not set OnShow or OnHide under the world map, so the map's own callbacks tell it instead.
 	EventRegistry:RegisterCallback("UIParentPanelManager.ShowUIPanel", PanelShown, api)
 	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, api)
 	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, api)
+	-- A secure post-hook: the client's own method has returned and this adds no script to any frame.
+	hooksecurefunc(WorldMapFrame, "SetQuestLogPanelShown", QuestLogPanelShown) -- taint-ok: post-hook only; no frame script
 end
 
 ---@param key string
@@ -212,9 +225,7 @@ function api.Select(key)
 	if questsTab then
 		questsTab:SetChecked(false)
 	end
-	if QuestMapFrame:IsShown() then
-		ReportVisible(key)
-	end
+	Sync()
 end
 
 function api.ShowQuests()
@@ -230,9 +241,7 @@ function api.ShowQuests()
 	if questsTab then
 		questsTab:SetChecked(true)
 	end
-	if reportedKey then
-		ReportHidden(reportedKey)
-	end
+	Sync()
 end
 
 ---@return string?

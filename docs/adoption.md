@@ -175,7 +175,8 @@ without it the first addon tab hangs below the map's legend or Quests tab. One c
 A panel must not set an `OnShow` or `OnHide` script, or hook either, because it lives under the world map: an addon
 script there runs inside the map's close path and its taint blocks the gamepad's interact target. Register `shown`
 instead and start or stop work from it. The module calls it once per change, as the panel becomes visible or stops
-being visible, including when the map opens or closes.
+being visible, including when the map opens or closes, its quest log side panel collapses or expands, or the map
+maximizes or minimizes.
 
 ## Peer statistics
 
