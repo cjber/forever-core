@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **A sync PR no longer carries a shared module before its addon can load it.** `tools/sync_consumers.py` now copies a new runtime module into a consumer only once that consumer's own TOC already loads it or the tool wires it itself (as it does `Core/Log.lua`), and copies a shared test only once the modules it names are loaded too; until then it skips them and says so, so a sync PR carrying the rest of the shared files passes that addon's checks. Files an addon already carries keep syncing. (#237)
+
 - **The leaderboards window and `/forever debug` reach players whichever addon loads first.** Every installed Forever addon ships the same `UI/Leaderboards.lua`, but the first copy to load owned the window and `/forever`, so a change stayed invisible unless that copy happened to be new. `LEADERBOARDS_VERSION` is now 2, so a v2 copy takes over a v1 copy's window and `/forever` and `/flb` handlers, keeps every board registered before the takeover and uses the one tooltip hook, which makes `/forever debug` reach the shared log. A new core check pins each shared file whose version gates takeover to its version and exact bytes, so a change without a raised version fails CI. (#235)
 
 - **Errors outside a protected call reach the report with BugGrabber installed.** BugGrabber v12 replaces `seterrorhandler` with a no-op and announces each grabbed error on the client's `EventRegistry`, so the shared error capture now subscribes there and resolves the object with `BugGrabber:GetErrorByID`; previously it waited for a `CallbackHandler` API that BugGrabber does not have. (#232)
