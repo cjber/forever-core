@@ -202,6 +202,48 @@ BugGrabberDB = {
             self.assertEqual(ours[0].last_seen, 300.0)
 
 
+class SmokeTest(unittest.TestCase):
+    def test_a_failed_selftest_surface_is_an_entry_for_its_addon(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            saved = root / "WTF" / "Account" / "1" / "SavedVariables"
+            write(
+                saved / "!!DevSmoke.lua",
+                """
+DevSmokeDB = {
+["runs"] = {
+{
+["started"] = 500,
+["build"] = "1.60.1.70862",
+["results"] = {
+{ ["surface"] = "AdventureGuideForever /agf", ["ok"] = true, ["errors"] = {} },
+{
+["surface"] = "LegacyForever /lf",
+["ok"] = false,
+["errors"] = { "bad open", "Interface/AddOns/LegacyForever/UI.lua:3" },
+},
+{ ["surface"] = "world map", ["ok"] = false, ["errors"] = { "Interface/AddOns/TweaksForever/Map.lua:9: nil" } },
+{ ["surface"] = "world map", ["ok"] = false, ["errors"] = { "someone else's" } },
+},
+},
+{ ["started"] = 400, ["result"] = "skipped: in combat", ["results"] = {} },
+},
+}
+""",
+            )
+            loaded = errors.load_sources(root / "WTF", root / "Logs", REFERENCE)
+            smoke = sorted((e.folder, e.message, e.last_seen) for e in loaded.entries if e.source == "smoke")
+            self.assertEqual(
+                smoke,
+                [
+                    ("LegacyForever", "LegacyForever /lf: bad open", 500.0),
+                    ("TweaksForever", "world map: Interface/AddOns/TweaksForever/Map.lua:9: nil", 500.0),
+                ],
+            )
+            self.assertEqual(len(loaded.warnings), 1)
+            self.assertIn("someone else's", loaded.warnings[0])
+
+
 class TaintLogTest(unittest.TestCase):
     def test_reads_lines_naming_our_folders(self):
         with tempfile.TemporaryDirectory() as directory:
