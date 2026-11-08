@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# PyPI answers 502/504 under load; pip's own retries cover it.
+env:
+  PIP_RETRIES: 5
+  PIP_DEFAULT_TIMEOUT: 60
+
 jobs:
   check:
     runs-on: ubuntu-24.04

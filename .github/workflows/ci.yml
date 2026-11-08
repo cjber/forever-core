@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# PyPI answers 502/504 under load; pip's own retries cover it.
+env:
+  PIP_RETRIES: 5
+  PIP_DEFAULT_TIMEOUT: 60
+
 jobs:
   deadcode:
     runs-on: ubuntu-24.04
@@ -63,7 +68,7 @@ jobs:
           persist-credentials: false
       - name: Install LuaLS 3.19.1
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/luals.tar.gz" https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua-language-server-3.19.1-linux-x64.tar.gz
+          curl --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 300 -sSfL -o "$RUNNER_TEMP/luals.tar.gz" https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua-language-server-3.19.1-linux-x64.tar.gz
           echo "e9235d2d72ef55bc41cf8c99cda2ed64777682024b4bb81f5dea425060c5cbb8  $RUNNER_TEMP/luals.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/luals"
           tar -xzf "$RUNNER_TEMP/luals.tar.gz" -C "$RUNNER_TEMP/luals"
@@ -115,7 +120,7 @@ jobs:
           GITLEAKS_VERSION: 8.30.1
           GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          curl -fsSLo gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 300 -fsSLo gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP" gitleaks && rm gitleaks.tar.gz
           "$RUNNER_TEMP/gitleaks" git --redact --no-banner .
