@@ -32,6 +32,8 @@ python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WF
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
 python3 tools/check_shared_versions.py    # shared-file versions match their exact bytes
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
+python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
+python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/sync_consumers.py ..        # copy this repo's shared files into local checkouts
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"
