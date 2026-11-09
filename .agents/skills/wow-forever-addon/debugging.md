@@ -63,6 +63,9 @@ blocked. Find the read, not the call.
 - Hot loops over provider data: key tables by number, not by concatenated strings; hoist constant
   tables out of the loop; check the clock once per batch, not per item.
 - The headless clock in the specs is a stub, so a spec proves slicing and never speed.
+- Profile a whole session instead of one call: link `!!DevPerf`, play the action or run
+  `tools/headless/perf_run.sh`, mark around it with `/forever perf <label>` (zoom, hover with comparison,
+  a fight), `/reload`, then `python3 tools/forever_perf.py`. `/devperf watch` shows garbage churn.
 
 ## Reading results without a screenshot
 

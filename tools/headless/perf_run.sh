@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Profile one headless session. Link !!DevPerf and !!DevSmoke in the client's Interface/AddOns first.
+# The /forever command belongs to a consumer addon; forever_client.py checks its SLASH_ registration before sending.
+set -euo pipefail
+
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+python3 "$here/forever_client.py" slash "/forever selftest"
+command sleep 30
+python3 "$here/forever_client.py" slash "/forever perf after-selftest"
+command sleep 60
+python3 "$here/forever_client.py" slash "/forever perf idle"
+python3 "$here/forever_client.py" reload
+python3 "$here/../forever_perf.py"
