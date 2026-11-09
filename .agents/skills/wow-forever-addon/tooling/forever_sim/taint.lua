@@ -435,11 +435,10 @@ function M.callSecure(f, ...)
 end
 
 -- A table-valued global can be named in a failure report.
-local function named(t, k, v)
+local function named(k, v)
 	if type(v) == "table" and M.current == nil then
 		M.globalObjects[v] = M.globalObjects[v] or k
 	end
-	local _ = t
 end
 
 -- The global environment every chunk runs in: an empty proxy over the real table G that records which addon wrote
@@ -462,7 +461,7 @@ function M.environment(G)
 		__newindex = function(_, k, v)
 			G[k] = v
 			gt[k] = M.current
-			named(env, k, v)
+			named(k, v)
 			if M.current then
 				local file, line = externalSite()
 				M.globalInfo[k] = {
