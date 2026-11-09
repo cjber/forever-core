@@ -7,7 +7,7 @@
   },
   "files": {
     "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "client.lua": "554601d7bf1664144a7c431764d0df687f748188d29304a00721e0f613f29842",
+    "client.lua": "b34b810d31c7bea91ba6d2150c0a3fbe34b11087b3078ae3220a3dbfec429371",
     "clientdata.lua": "e93b0c0d133d2f4384cce58e9b4f119ca2b7be3b9de95817e0351f245b6aa927",
     "docs.lua": "2316ff8a87a2526d3d3fd1066be87c2aadac440d978659d89c7e3bf0849ddc30",
     "fetch.py": "8640547529339b0e27d4d0fdb30c2ce853e0ea43d21754251743dc03bc8f8cd6",
@@ -18,7 +18,7 @@
     "run.lua": "5a884531bd41c56d04fb4445baa61865e83e9d0deafc19dcbc85e5977d2b166e",
     "scenario.lua": "2ec9a0cf78297331a331f679e451d379329bd8ac2c3294550d8e0f92e7f79d9f",
     "sim.lua": "2f16b6f5262035c5735109db761ba16c3d208e1059deeb0ed26d46dda96a505e",
-    "stubgen.lua": "1b1a90551f05a413e7fa1ff22bac19da38bc190588064c8d9cbbe67c152dc84f",
+    "stubgen.lua": "b3b3cf1acbaf4ec468aac082abf5338370263256e1a61dca87def66dfbb79c7e",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
     "stubs/Polestar/Polestar.lua": "3dbb87a7003637ca11d16d4c5e101ba44a3226129437046a2622a4dfd1de206f",
@@ -34,7 +34,7 @@
     "transform.lua": "ce87d51b7067bbeef4382ff617de7dbc5a035dbff55341a6db10db09bc9a54fe",
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",
     "watch.lua": "2023fec311f100a85ee757a2c2bc2b59e9982cb6182d8546d4dd55f682b6e536",
-    "widgets.lua": "e9b48a607aa20e9e5ff04b853f32778e979dc298b17056667f8ecbca0882131f",
+    "widgets.lua": "365132dc923abe21a41a138c88deab701542048389af38557826be858c89b06f",
     "world.lua": "361317b0b7fc2e49ee10a3deb29b820c5c6fb464dd9e0d1b7caebcfff3377888",
     "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
   }

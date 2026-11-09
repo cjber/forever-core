@@ -177,7 +177,7 @@ test("securecallfunction keeps a tainted caller tainted inside the call", functi
 	check("SimTaintSecureCall")
 end)
 
-test("a documented HasRestrictions function blocks a tainted caller and does nothing else", function()
+test("an observed always-restricted HasRestrictions function blocks a tainted caller and does nothing else", function()
 	local sim = fixtureSim("SimTaintRestrictedOpenWorldMap")
 	local err = sim:expectError(
 		"[ADDON_ACTION_BLOCKED] AddOn 'SimTaintRestrictedOpenWorldMap' tried to call the protected function "

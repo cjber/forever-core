@@ -357,8 +357,8 @@ function M.build(sim)
 		actionEvent("ADDON_ACTION_BLOCKED", func .. "()")
 	end
 	-- Global functions the documentation does not mark protected (FrameXML-era API), plus the documented
-	-- HasRestrictions function this client has been observed refusing to tainted code even out of combat.
-	-- The issue-tagged entry is observed client behaviour; a new such entry needs an issue.
+	-- HasRestrictions function this client has been observed refusing to tainted code even out of combat. An
+	-- issue-tagged entry is observed client behaviour with the citing issue; a new such entry needs one.
 	sim.protectedGlobals = {
 		"SetPreferredGamepadInteractTarget",
 		"CastSpellByName",
