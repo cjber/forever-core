@@ -33,9 +33,13 @@ TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
 # The settings canvas and the dead-code gate go to every addon with a settings page, Field Guide included.
 SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever",)
 # This drift check reaches every addon in the suite.
-SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever",)
+SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever", "macro-assist-forever")
+# The dead-code gate also goes to Macro Assist, which has no settings page.
+DEADCODE_CONSUMERS = SETTINGS_CONSUMERS + ("macro-assist-forever",)
+# The family links go to the published addons and Macro Assist.
+FAMILY_CONSUMERS = ALL_CONSUMERS + ("macro-assist-forever",)
 # The error journal, debug log and report window go to every addon in the suite.
-ERROR_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "commissions-forever")
+ERROR_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "commissions-forever", "macro-assist-forever")
 PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
 MAP_CANVAS_CONSUMERS = ("adventure-guide-forever", "legacy-forever")
 # The quest log side tab serves the addon panels that live in the world map's quest log.
@@ -52,8 +56,8 @@ VENDORED = {
     "tools/blizzard_fonts.txt": SUITE_CONSUMERS,
     "tools/check_menu_scroll.py": SUITE_CONSUMERS,
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
-    "tools/deadcode.py": SETTINGS_CONSUMERS,
-    "tools/deadcode-allow.txt": SETTINGS_CONSUMERS,
+    "tools/deadcode.py": DEADCODE_CONSUMERS,
+    "tools/deadcode-allow.txt": DEADCODE_CONSUMERS,
     "Core/Text.lua": TEXT_CONSUMERS,
     "Core/PeerStats.lua": PEER_CONSUMERS,
     "tests/peer_stats_spec.lua": PEER_CONSUMERS,
@@ -91,8 +95,8 @@ VENDORED = {
     "tests/debug_log_spec.lua": ERROR_CONSUMERS,
     "UI/Report.lua": ERROR_CONSUMERS,
     "tests/report_spec.lua": ERROR_CONSUMERS,
-    "UI/ForeverFamily.lua": ALL_CONSUMERS,
-    "tests/forever_family_spec.lua": ALL_CONSUMERS,
+    "UI/ForeverFamily.lua": FAMILY_CONSUMERS,
+    "tests/forever_family_spec.lua": FAMILY_CONSUMERS,
 }
 # Core keeps the consumers' workflow out of its own .github/workflows, where it would run against core itself.
 SOURCES = {".github/workflows/core-shared-drift.yml": "tools/core-shared-drift.yml"}
