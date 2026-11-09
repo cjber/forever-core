@@ -295,9 +295,13 @@ function harness.new(options)
 					end
 					function descriptionObject.CreateButton(_, text, callback)
 						if callback then
-							descriptionObject.entries[#descriptionObject.entries + 1] =
-								{ text = text, callback = callback }
-							return {}
+							local entry = { text = text, callback = callback }
+							descriptionObject.entries[#descriptionObject.entries + 1] = entry
+							return {
+								SetTooltip = function(_, tooltip)
+									entry.tooltip = tooltip
+								end,
+							}
 						end
 						local submenu = Description()
 						submenu.text = text
@@ -461,7 +465,7 @@ function harness.new(options)
 		setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", namespace) -- the section order
 		setfenv(assert(loadfile(path)), env)("Test", namespace)
 	end
-	function ctx.module(order, headerClick)
+	function ctx.module(order, headerClick, show)
 		local m = frame()
 		m.uiOrder, m.ContentsFrame, m.lineTemplate = order, frame(), "Line"
 		m.contentHeight = 80
@@ -492,7 +496,7 @@ function harness.new(options)
 		function m.IsTruncated(self)
 			return self.contentHeight > (self.availableHeight or math.huge)
 		end
-		ctx.ns.TrackerHost.Attach(m)
+		ctx.ns.TrackerHost.Attach(m, show)
 		return m
 	end
 	function ctx.probe()

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **Right-click a tracker section to hide it.** A section whose addon has its own show switch now offers **Hide this section** in its header menu, and the entry's tooltip says where to turn it back on. SkillUp's profession reagents or Shortest Path's journey steps can be removed without hunting through settings, and a section without a switch keeps the menu it has. Thanks to _spada for the report. (#292)
+
+### For addon authors
+
+- `ForeverTrackerHost.Attach(module, show)` takes an optional show setting: `get`, `set` and the `where` phrase naming the place the player turns it back on. The host adds **Hide this section** to that section's header menu and writes only the addon's own setting.
+
 
 ## [0.5.2] - 2026-11-09
 
