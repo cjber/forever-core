@@ -189,7 +189,8 @@ function M.build(sim)
 		end
 		G.Constants[name] = t
 	end
-	-- The client exposes the documented QuestInfoLuaConsts table as Constants.QuestConsts, read by Blizzard_FrameXMLUtil/Camelot/QuestUtilsOverrides.lua.
+	-- The client exposes the documented QuestInfoLuaConsts table as Constants.QuestConsts, read by
+	-- Blizzard_FrameXMLUtil/Camelot/QuestUtilsOverrides.lua.
 	G.Constants.QuestConsts = G.Constants.QuestInfoLuaConsts
 
 	local zero
