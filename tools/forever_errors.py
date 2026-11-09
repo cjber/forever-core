@@ -41,6 +41,8 @@ FOLDERS: dict[str, str] = {
     "LegacyForever": "cjber/legacy-forever",
     "CommissionsForever": "cjber/commissions-forever",
     "FieldGuideForever": "cjber/field-guide-forever",
+    "MacroAssistForever": "cjber/macro-assist-forever",
+    "KilnForever": "cjber/kiln-forever",
     "ForeverCore": "cjber/forever-core",
     "LibAHTab": "cjber/tweaks-forever",
 }
