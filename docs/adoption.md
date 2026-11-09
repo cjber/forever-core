@@ -131,6 +131,17 @@ Suite convention is flat Lua at the repo root, and this repo is the deliberate e
 every consumer keeps them makes vendoring a pure copy, and lets a consumer's spec, which loads `UI/TrackerHost.lua`
 by path, run here unchanged.
 
+## A consumer whose addon lives in a subfolder
+
+Kiln Forever also carries a Node bridge, so its addon lives in `addon/KilnForever/` and keeps each vendored file at
+`addon/KilnForever/<core path>`. `CONSUMER_ROOT` in `tools/check_core_shared.py` records that folder, and the drift
+check, `tools/check_consumers.py` and `tools/sync_consumers.py` all build the consumer's path through it. Kiln Forever
+runs the drift check from its repository root:
+
+    python3 addon/KilnForever/tools/check_core_shared.py --base origin/main
+
+It takes `tools/check_core_shared.py` but not the reusable `core-shared-drift.yml`, because its own CI owns the check.
+
 ## Changing a shared file
 
 1. Change it here. Both specs and `luacheck` and `stylua` must pass; the host spec needs
@@ -138,10 +149,11 @@ by path, run here unchanged.
 2. Bump `CHANGELOG.md` and the tag when the change is worth a release of its own.
 3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
 4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
-   is the gate. Tracker files go to four addons; Forever-family files go to five; report, SafeCall and log files go
-   to all seven. Peer
-   statistics and the leaderboards go to the six that share a statistics adapter: the four tracker addons, Field Guide
-   and Commissions. The checker is green once every mapped consumer has the same bytes. `/forever debug` routes
+   is the gate. Tracker files go to the four published tracker addons and Kiln Forever; Forever-family files go to
+   the five published addons; report, SafeCall and log files go to every addon in the suite, Kiln Forever included.
+   Peer statistics and the leaderboards go to the six that share a statistics adapter: the four published tracker
+   addons, Field Guide and Commissions. The checker is green once every mapped consumer has the same bytes.
+   `/forever debug` routes
    through this file's leaderboards copy, so a leaderboard consumer without `Core/Log.lua` yet keeps working and simply
    has no debug switch until it adopts the log.
 

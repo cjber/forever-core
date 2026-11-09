@@ -1,11 +1,17 @@
 """Consumer sync and drift checks use the producer even when launched elsewhere."""
 
+import contextlib
+import io
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest import mock
+
+import check_consumers
 
 
 class ConsumerSourceRootTest(unittest.TestCase):
@@ -20,7 +26,9 @@ class ConsumerSourceRootTest(unittest.TestCase):
         for name in ("sync_consumers.py", "check_consumers.py"):
             shutil.copyfile(Path(__file__).parent / name, self.tools / name)
         (self.tools / "check_core_shared.py").write_text(
-            'VENDORED = {"UI/Shared.lua": ("consumer",)}\ndef source(path): return "UI/Canonical.lua"\n'
+            'VENDORED = {"UI/Shared.lua": ("consumer",)}\n'
+            "CONSUMER_ROOT = {}\n"
+            'def source(path): return "UI/Canonical.lua"\n'
         )
         for directory in (self.producer, self.consumer):
             (directory / "UI").mkdir(parents=True)
@@ -54,6 +62,52 @@ class ConsumerSourceRootTest(unittest.TestCase):
         self.target.write_bytes(b"producer\n")
         result = self.run_tool("check_consumers.py", "--local", "..")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_a_prefixed_consumer_is_checked_below_its_addon_folder(self):
+        self.prefixed_consumer()
+        target = self.consumer / "addon/Consumer/UI/Shared.lua"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"stale\n")
+        result = self.run_tool("check_consumers.py", "--local", "..")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("consumer: addon/Consumer/UI/Shared.lua", result.stdout)
+        target.write_bytes(b"producer\n")
+        result = self.run_tool("check_consumers.py", "--local", "..")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_a_missing_prefixed_consumer_file_is_reported_not_raised(self):
+        self.prefixed_consumer()
+        result = self.run_tool("check_consumers.py", "--local", "..")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("consumer: addon/Consumer/UI/Shared.lua: missing here", result.stdout)
+
+    def prefixed_consumer(self):
+        (self.tools / "check_core_shared.py").write_text(
+            'VENDORED = {"UI/Shared.lua": ("consumer",)}\n'
+            'CONSUMER_ROOT = {"consumer": "addon/Consumer"}\n'
+            'def source(path): return "UI/Canonical.lua"\n'
+        )
+
+
+class MissingRemoteTest(unittest.TestCase):
+    def test_a_private_or_unpublished_prefixed_consumer_reports_missing_paths(self):
+        def missing(*args):
+            error = urllib.error.HTTPError("https://example.test", 404, "Not Found", {}, None)
+            error.close()
+            raise error
+
+        out = io.StringIO()
+        with (
+            mock.patch.object(check_consumers, "VENDORED", {"UI/TrackerHost.lua": ("kiln-forever",)}),
+            mock.patch.object(check_consumers, "source", lambda path: path),
+            mock.patch.object(check_consumers, "remote", side_effect=missing),
+            contextlib.redirect_stdout(out),
+        ):
+            code = check_consumers.main([])
+
+        self.assertEqual(code, 1)
+        self.assertIn("kiln-forever: addon/KilnForever/UI/TrackerHost.lua: missing", out.getvalue())
+        self.assertIn("private repo without a token", out.getvalue())
 
 
 if __name__ == "__main__":

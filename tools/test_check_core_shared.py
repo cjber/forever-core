@@ -15,6 +15,23 @@ CORE = {
     "tools/deadcode-allow.txt": b"core allow\n",
     "UI/SettingsPage.lua": b"core settings\n",
     "tests/settings_page_spec.lua": b"core settings spec\n",
+    "UI/TrackerHost.lua": b"core tracker host\n",
+    "types/ForeverTracker.lua": b"core tracker types\n",
+    "UI/TrackerLock.lua": b"core tracker lock\n",
+    "UI/TrackerOrder.lua": b"core tracker order\n",
+    "UI/TrackerQuestie.lua": b"core tracker questie\n",
+    "UI/TrackerEqot.lua": b"core tracker eqot\n",
+    "tests/tracker_host_spec.lua": b"core tracker host spec\n",
+    "tests/tracker_host_harness.lua": b"core tracker harness\n",
+    "tests/tracker_backdrop_spec.lua": b"core tracker backdrop spec\n",
+    "tests/tracker_header_menu_spec.lua": b"core tracker menu spec\n",
+    "tests/tracker_combat_spec.lua": b"core tracker combat spec\n",
+    "tests/tracker_geometry_spec.lua": b"core tracker geometry spec\n",
+    "tests/tracker_host_lock_spec.lua": b"core tracker host lock spec\n",
+    "tests/tracker_lock_spec.lua": b"core tracker lock spec\n",
+    "tests/tracker_questie_spec.lua": b"core tracker questie spec\n",
+    "tests/tracker_eqot_spec.lua": b"core tracker eqot spec\n",
+    "tools/fetch_tracker_ui.py": b"core fetch tracker\n",
     "Core/MinimapButton.lua": b"core minimap\n",
     "Core/PeerStats.lua": b"core peer stats\n",
     "tests/peer_stats_spec.lua": b"core peer stats spec\n",
@@ -151,6 +168,49 @@ class CheckCoreSharedTest(unittest.TestCase):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
         self.assertIn("23 vendored files match", out)
+
+    def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
+        git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")
+        paths = check_core_shared.paths_for("kiln-forever")
+        for path in paths:
+            self.write(check_core_shared.consumer_path("kiln-forever", path), self.fetch(path))
+        self.commit("kiln files")
+
+        code, out = self.run_check()
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"{len(paths)} vendored files match", out)
+
+        self.write("addon/KilnForever/UI/TrackerHost.lua", b"edited here\n")
+        self.commit("hand edit")
+        code, out = self.run_check("--base", "base")
+        self.assertEqual(code, 1)
+        self.assertIn("addon/KilnForever/UI/TrackerHost.lua: consumer", out)
+        self.assertNotIn("UI/SettingsPage.lua", out)
+
+    def test_kiln_forever_takes_only_the_shared_ui_it_adopted(self):
+        paths = set(check_core_shared.paths_for("kiln-forever"))
+        for path in (
+            "UI/TrackerHost.lua",
+            "UI/TrackerEqot.lua",
+            "Core/MinimapButton.lua",
+            "UI/SettingsPage.lua",
+            "Core/SafeCall.lua",
+            "Core/Log.lua",
+            "UI/Report.lua",
+            "tools/check_core_shared.py",
+        ):
+            self.assertIn(path, paths)
+        for path in (
+            "UI/ForeverFamily.lua",
+            "Core/PeerStats.lua",
+            "UI/Leaderboards.lua",
+            "UI/QuestLogTabs.lua",
+            "UI/MapCanvas.lua",
+            "Core/Text.lua",
+            "tools/deadcode.py",
+            ".github/workflows/core-shared-drift.yml",
+        ):
+            self.assertNotIn(path, paths)
 
 
 if __name__ == "__main__":

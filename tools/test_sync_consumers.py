@@ -10,6 +10,7 @@ from unittest import mock
 import sync_consumers as sync
 
 LOG = b"-- shared log\n"
+TRACKER = b"-- shared tracker\n"
 TOC = "## Interface: 16001\nCore\\SafeCall.lua\nCore\\Own.lua\n"
 TOC_WITH_LOG = TOC.replace("Core\\Own.lua", "Core\\Log.lua\nCore\\Own.lua")
 LUACHECK = 'read_globals = { "CreateFrame" }\n'
@@ -24,6 +25,7 @@ class SyncConsumersTest(unittest.TestCase):
         base = Path(self.tmp.name)
         self.core = base / "forever-core"
         self.write(self.core, "Core/Log.lua", LOG)
+        self.write(self.core, "UI/TrackerHost.lua", TRACKER)
         self.write(self.core, "UI/QuestLogTabs.lua", QUEST_TABS)
         self.write(self.core, "tests/quest_log_tabs_spec.lua", QUEST_SPEC)
         self.write(self.core, "tools/deadcode.py", b"# deadcode\n")
@@ -46,6 +48,12 @@ class SyncConsumersTest(unittest.TestCase):
     def quest_consumer(self, toc=TOC):
         root = self.checkouts / "adventure-guide-forever"
         self.write(root, "AdventureGuideForever.toc", toc.encode())
+        self.write(root, ".luacheckrc", LUACHECK.encode())
+        return root
+
+    def kiln_consumer(self, toc=TOC):
+        root = self.checkouts / "kiln-forever"
+        self.write(root, "addon/KilnForever/KilnForever.toc", toc.encode())
         self.write(root, ".luacheckrc", LUACHECK.encode())
         return root
 
@@ -168,6 +176,33 @@ class SyncConsumersTest(unittest.TestCase):
         code, out = self.run_sync(only=("types/ForeverTracker.lua",))
         self.assertEqual(code, 0, out)
         self.assertEqual((root / "types/ForeverTracker.lua").read_bytes(), b"---@meta\n")
+
+    def test_a_consumer_with_an_addon_folder_syncs_below_it_and_wires_its_toc(self):
+        root = self.kiln_consumer()
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "addon/KilnForever/Core/Log.lua").read_bytes(), LOG)
+        self.assertFalse((root / "Core/Log.lua").exists())
+        toc = (root / "addon/KilnForever/KilnForever.toc").read_text()
+        lines = toc.splitlines()
+        self.assertEqual(lines[lines.index("Core\\SafeCall.lua") + 1], "Core\\Log.lua")
+        self.assertIn('read_globals[#read_globals + 1] = "date"', (root / ".luacheckrc").read_text())
+        self.assertIn("kiln-forever: KilnForever.toc: Core\\Log.lua", out)
+
+    def test_a_new_tracker_module_waits_for_a_prefixed_consumer_toc(self):
+        root = self.kiln_consumer()
+        code, out = self.run_sync(only=("UI/TrackerHost.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertFalse((root / "addon/KilnForever/UI/TrackerHost.lua").exists())
+        self.assertIn("kiln-forever: UI/TrackerHost.lua: skipped", out)
+        self.assertIn("KilnForever.toc does not load it yet", out)
+
+    def test_a_new_tracker_module_is_copied_once_the_prefixed_toc_loads_it(self):
+        root = self.kiln_consumer(toc=TOC.replace("Core\\Own.lua", "UI\\TrackerHost.lua\nCore\\Own.lua"))
+        code, out = self.run_sync(only=("UI/TrackerHost.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "addon/KilnForever/UI/TrackerHost.lua").read_bytes(), TRACKER)
+        self.assertFalse((root / "UI/TrackerHost.lua").exists())
 
 
 if __name__ == "__main__":

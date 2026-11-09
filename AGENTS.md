@@ -8,11 +8,14 @@ addon, `ForeverCore`.
 ## The two rules that matter
 
 1. **The shared files are the source of truth, and nothing here is addon specific.** Tracker files are vendored byte
-   for byte into adventure-guide-forever, legacy-forever, shortest-path-forever and skillup-forever. Error capture,
-   report, Forever-family and log files are vendored into all five consumer addons at the same paths
-   (`Core/SafeCall.lua`, `Core/Log.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`; see `docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it out. Never edit a copy in a
-   consumer repo and never bend these files toward one addon's needs: they read everything addon specific through the
-   namespace (`ns.TrackerHostSettings`, `ns.ReportTitle`, `ns.L`), by design.
+   for byte into adventure-guide-forever, legacy-forever, shortest-path-forever, skillup-forever and kiln-forever.
+   Error capture, report and log files are vendored into every consumer addon, and Forever-family files into the five
+   published addons, at the same paths (`Core/SafeCall.lua`, `Core/Log.lua`, `UI/Report.lua` and
+   `UI/ForeverFamily.lua`; see `docs/adoption.md`). A fix lands here first, then `tools/sync_consumers.py` copies it
+   out. Never edit a copy in a consumer repo and never bend these files toward one addon's needs: they read everything
+   addon specific through the namespace (`ns.TrackerHostSettings`, `ns.ReportTitle`, `ns.L`), by design. Kiln Forever
+   also keeps a Node bridge in its repository, so its addon mirrors core under `addon/KilnForever/`; `CONSUMER_ROOT`
+   in `tools/check_core_shared.py` records that folder for every path the tools build.
 2. **The paths mirror a consumer repo.** Suite convention is flat Lua at the repo root, and this repo is the one
    deliberate exception: keeping `UI/TrackerHost.lua` where the consumers keep it makes the vendored copy a pure
    copy, and lets their specs (`tests/tracker_host_spec.lua`, which loads `UI/TrackerHost.lua` by path) run here
@@ -72,9 +75,10 @@ and run anywhere.
 - The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in
   `docs/handoff/` (handoff briefs, audit notes, the ledger). Read `docs/handoff/boundaries.md` before assigning a
   feature or moving code between addons.
-- `tools/check_core_shared.py`: the vendoring map (`VENDORED`, which consumer carries which file) and the consumer-side
-  check, vendored into every consumer. In a consumer it compares its copies with core main; with `--base REF` it
-  checks only the vendored files `REF...HEAD` changes, so a hand edit fails a PR while a lag behind core does not.
+- `tools/check_core_shared.py`: the vendoring map (`VENDORED`, which consumer carries which file), the per-consumer
+  addon folder `CONSUMER_ROOT` (kiln-forever keeps its copies under `addon/KilnForever/`) and the consumer-side check,
+  vendored into every consumer. In a consumer it compares its copies with core main; with `--base REF` it checks only
+  the vendored files `REF...HEAD` changes, so a hand edit fails a PR while a lag behind core does not.
 - `tools/check_client_load.py`: the client load rule, vendored into every consumer with its font list
   `tools/blizzard_fonts.txt`: every font object the addon's Lua or XML inherits is one the client's UI or the addon
   defines, and no TOC lists Bindings.xml. Regenerate the list from the pinned Blizzard UI source with

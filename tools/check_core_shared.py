@@ -7,6 +7,10 @@ repository is inferred from its Git origin:
     python3 tools/check_core_shared.py             every file this repo vendors must match core main
     python3 tools/check_core_shared.py --base REF  only the vendored files that REF...HEAD changes
 
+A consumer whose addon lives below its repo root, beside a non-addon project, keeps every vendored file under the
+folder CONSUMER_ROOT names for it. Kiln Forever's CI therefore runs this script from the repository root with
+`python3 addon/KilnForever/tools/check_core_shared.py`, and it still finds `addon/KilnForever/<core path>`.
+
 The `--base` form runs on pull requests: a PR that edits a vendored copy by hand fails, while a consumer that only
 lags behind core does not block unrelated work. The full form runs on a schedule and reports the lag.
 """
@@ -20,27 +24,39 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-TRACKER_CONSUMERS = (
+# A consumer with its addon below its repo root keeps each vendored file at `<folder>/<core path>`. Every other
+# consumer mirrors core's paths from its repository root.
+CONSUMER_ROOT = {"kiln-forever": "addon/KilnForever"}
+
+# The four published addons that carry the tracker. Kiln Forever is private and adopts the same tracker files, so it
+# joins TRACKER_CONSUMERS below but not the sets that go to every published addon.
+PUBLISHED_TRACKER_CONSUMERS = (
     "adventure-guide-forever",
     "legacy-forever",
     "shortest-path-forever",
     "skillup-forever",
 )
-ALL_CONSUMERS = TRACKER_CONSUMERS + ("tweaks-forever",)
-MINIMAP_CONSUMERS = ("adventure-guide-forever", "field-guide-forever")
+KILN_CONSUMERS = ("kiln-forever",)
+TRACKER_CONSUMERS = PUBLISHED_TRACKER_CONSUMERS + KILN_CONSUMERS
+ALL_CONSUMERS = PUBLISHED_TRACKER_CONSUMERS + ("tweaks-forever",)
+MINIMAP_CONSUMERS = ("adventure-guide-forever", "field-guide-forever") + KILN_CONSUMERS
 # Core/Text.lua goes to the addons that search by name.
 TEXT_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
-# The settings canvas and the dead-code gate go to every addon with a settings page, Field Guide included.
-SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever",)
-# This drift check reaches every addon in the suite.
-SUITE_CONSUMERS = SETTINGS_CONSUMERS + ("commissions-forever", "macro-assist-forever")
+# The settings canvas goes to every addon with a settings page, Field Guide and Kiln Forever included.
+SETTINGS_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever",) + KILN_CONSUMERS
+# This drift check tooling reaches every published addon in the suite. Kiln Forever runs the checker from its own CI,
+# so it takes tools/check_core_shared.py but not the reusable workflow or the other project rules.
+SUITE_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "commissions-forever", "macro-assist-forever")
+CHECKER_CONSUMERS = SUITE_CONSUMERS + KILN_CONSUMERS
 # The dead-code gate also goes to Macro Assist, which has no settings page.
-DEADCODE_CONSUMERS = SETTINGS_CONSUMERS + ("macro-assist-forever",)
+DEADCODE_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "macro-assist-forever")
 # The family links go to the published addons and Macro Assist.
 FAMILY_CONSUMERS = ALL_CONSUMERS + ("macro-assist-forever",)
 # The error journal, debug log and report window go to every addon in the suite.
-ERROR_CONSUMERS = ALL_CONSUMERS + ("field-guide-forever", "commissions-forever", "macro-assist-forever")
-PEER_CONSUMERS = TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
+ERROR_CONSUMERS = (
+    ALL_CONSUMERS + ("field-guide-forever", "commissions-forever", "macro-assist-forever") + KILN_CONSUMERS
+)
+PEER_CONSUMERS = PUBLISHED_TRACKER_CONSUMERS + ("field-guide-forever", "commissions-forever")
 MAP_CANVAS_CONSUMERS = ("adventure-guide-forever", "legacy-forever")
 # The quest log side tab serves the addon panels that live in the world map's quest log.
 QUEST_LOG_TAB_CONSUMERS = ("adventure-guide-forever", "shortest-path-forever")
@@ -51,7 +67,7 @@ VENDORED = {
     "UI/MapCanvas.lua": MAP_CANVAS_CONSUMERS,
     "tests/strict_map.lua": MAP_CANVAS_CONSUMERS,
     "tests/map_canvas_spec.lua": MAP_CANVAS_CONSUMERS,
-    "tools/check_core_shared.py": SUITE_CONSUMERS,
+    "tools/check_core_shared.py": CHECKER_CONSUMERS,
     "tools/check_client_load.py": SUITE_CONSUMERS,
     "tools/blizzard_fonts.txt": SUITE_CONSUMERS,
     "tools/check_menu_scroll.py": SUITE_CONSUMERS,
@@ -101,10 +117,19 @@ VENDORED = {
 # Core keeps the consumers' workflow out of its own .github/workflows, where it would run against core itself.
 SOURCES = {".github/workflows/core-shared-drift.yml": "tools/core-shared-drift.yml"}
 
+# Every repository this map governs, prefixed consumers included.
+KNOWN_CONSUMERS = frozenset(repo for consumers in VENDORED.values() for repo in consumers)
+
 
 def source(path):
     """The path in forever-core that the consumer's `path` is copied from."""
     return SOURCES.get(path, path)
+
+
+def consumer_path(repo, path):
+    """Where `repo` keeps the vendored `path`, relative to that consumer repo's root."""
+    folder = CONSUMER_ROOT.get(repo)
+    return f"{folder}/{path}" if folder else path
 
 
 def paths_for(repo):
@@ -129,7 +154,7 @@ def repo_from_git():
         name = name[:-4]
     owner, separator, repo = name.partition("/")
     repo = repo.lower()
-    return repo if separator and owner.lower() == "cjber" and repo in SUITE_CONSUMERS else None
+    return repo if separator and owner.lower() == "cjber" and repo in KNOWN_CONSUMERS else None
 
 
 def changed_since(base):
@@ -151,22 +176,23 @@ def core_main(path):
         return response.read()
 
 
-def compare(root, paths, fetch=core_main):
+def compare(root, repo, paths, fetch=core_main):
     failures = []
     for path in paths:
+        display = consumer_path(repo, path)
         try:
             expected = fetch(path)
         except (OSError, urllib.error.URLError, TimeoutError) as error:
-            failures.append(f"{path}: could not read core main: {error}")
+            failures.append(f"{display}: could not read core main: {error}")
             continue
-        target = root / path
+        target = root / display
         if not target.is_file():
-            failures.append(f"{path}: missing here, core {hashlib.sha256(expected).hexdigest()[:12]}")
+            failures.append(f"{display}: missing here, core {hashlib.sha256(expected).hexdigest()[:12]}")
             continue
         actual = target.read_bytes()
         if actual != expected:
             failures.append(
-                f"{path}: consumer {hashlib.sha256(actual).hexdigest()[:12]} "
+                f"{display}: consumer {hashlib.sha256(actual).hexdigest()[:12]} "
                 f"core {hashlib.sha256(expected).hexdigest()[:12]}"
             )
     return failures
@@ -179,7 +205,7 @@ def main(argv=None, fetch=core_main):
     arguments = parser.parse_args(argv)
 
     root = Path.cwd()
-    if arguments.repo and arguments.repo not in SUITE_CONSUMERS:
+    if arguments.repo and arguments.repo not in KNOWN_CONSUMERS:
         raise SystemExit(f"Unknown consumer repo: {arguments.repo}")
     repo = arguments.repo or repo_from_git()
     if repo is None:
@@ -187,11 +213,11 @@ def main(argv=None, fetch=core_main):
     paths = paths_for(repo)
     if arguments.base:
         touched = changed_since(arguments.base)
-        paths = [path for path in paths if path in touched]
+        paths = [path for path in paths if consumer_path(repo, path) in touched]
         if not paths:
             print(f"No vendored file changed since {arguments.base}.")
             return 0
-    failures = compare(root, paths, fetch)
+    failures = compare(root, repo, paths, fetch)
     if failures:
         print("Vendored files differ from forever-core main:\n  " + "\n  ".join(failures))
         print("Change the file in cjber/forever-core, then copy it here with its tools/sync_consumers.py.")
