@@ -95,6 +95,10 @@ function Widget:SetEnabled(enabled)
 	self.enabled = enabled
 end
 
+function Widget:IsEnabled()
+	return self.enabled ~= false
+end
+
 function Widget:SetWidth(width)
 	self.width = width
 end
@@ -149,6 +153,11 @@ end
 
 function Widget:SetupMenu(generator)
 	self.menu = generator
+end
+
+-- A dropdown's own OpenMenu: the window's gamepad wrapper calls it with the interface off, and records the call.
+function Widget:OpenMenu()
+	self.openedMenus = self.openedMenus + 1
 end
 
 function Widget:SetCustomOnMouseUpHandler(handler)
@@ -211,6 +220,7 @@ function Create(kind, parent, template)
 		children = {},
 		points = {},
 		shown = true,
+		openedMenus = 0,
 	}, Widget)
 	if parent then
 		parent.children[#parent.children + 1] = widget

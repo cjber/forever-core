@@ -144,12 +144,23 @@ local function Watch(frame, onChange)
 	frame:HookScript("OnSizeChanged", Moved)
 	ticker = ticker or CreateFrame("Frame")
 	lastPlace = Place(frame)
+	-- A faded or hidden list keeps nothing to read: the ticker notices the change once, then stops reading
+	-- the geometry until the list is shown again. Its OnShow/OnHide hooks still reflow at once.
+	local hidden = not Visible(frame)
 	ticker:SetScript("OnUpdate", function(_, elapsed)
 		sinceTick = (sinceTick or 0) + (elapsed or 0)
 		if sinceTick < WATCH_INTERVAL or frame.isMoving or frame.isSizing then
 			return
 		end
 		sinceTick = 0
+		if not Visible(frame) then
+			if not hidden then
+				hidden = true
+				onChange()
+			end
+			return
+		end
+		hidden = false
 		local place = Place(frame)
 		if place ~= lastPlace then
 			lastPlace = place
