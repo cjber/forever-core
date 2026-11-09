@@ -248,10 +248,10 @@ test("native map API opens, closes and reopens with visibility callbacks", funct
 	end)
 	for cycle = 1, 2 do
 		local mapID = cycle == 1 and 1454 or 1411
-		sim.taint.dispatch("MapCaller", function()
+		sim.run(function()
 			G.C_Map.OpenWorldMap(mapID)
 			eq(opened[cycle], mapID, "API dispatches synchronous map event")
-			eq(sim.taint.current, "MapCaller", "API restores caller taint")
+			eq(sim.taint.current, nil, "API restores a secure caller's state")
 		end)
 		sim:advance(0.1)
 		eq(G.WorldMapFrame:IsVisible(), true, "API opens map")
@@ -376,18 +376,17 @@ test("a frame can inherit SecureActionButtonTemplate", function()
 	eq(type(sim.G.SecureActionButtonMixin), "table", "the template's mixin")
 end)
 
-test("a map data provider added from addon code is gamepad-interface taint", function()
+test("a map data provider added from addon code taints the map's walk of it", function()
 	local sim = mapScenario("SimMapProvider")
-	local found = sim:gamepadTaint("SimMapProvider")
-	assert(#found > 0, "no finding")
-	assert(found[1].write.file:find("SimMapProvider", 1, true), found[1].write.file)
-	assert(found[1].read.file:find("Blizzard_", 1, true), found[1].read.file)
-	for _, hit in ipairs(found) do
-		local path = sim.taint.tablePath(hit.table)
-		if path then
-			assert(hit.key ~= nil, "a named table read has a key")
-		end
-	end
+	local provider = sim.G.SimMapProvider
+	assert(provider, "the fixture registered its provider")
+	local slot = sim.taint.slotInfo(sim.G.WorldMapFrame.dataProviders, provider)
+	assert(slot and slot.addon == "SimMapProvider", "the provider's slot carries the addon's taint")
+	local method = sim.taint.slotInfo(provider, "RefreshAllData")
+	assert(method and method.addon == "SimMapProvider", "the provider's method slot carries the addon's taint")
+	-- secureexecuterange runs the pair tainted by that slot, so Blizzard's map walk is not laundered; the gate
+	-- no longer reports a secure read of the provider, because there is none.
+	sim:expectNoGamepadTaint("SimMapProvider")
 end)
 
 test("an addon's own overlay frame on the map leaves no gamepad-interface taint", function()

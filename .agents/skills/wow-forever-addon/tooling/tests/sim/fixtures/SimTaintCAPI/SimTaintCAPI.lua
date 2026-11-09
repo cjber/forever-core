@@ -1,6 +1,6 @@
 -- luacheck: ignore
--- A C API that runs Blizzard's Lua runs it secure: a timer the addon schedules calls a Blizzard function, and
--- the state that function writes carries no taint.
+-- A C API that runs Blizzard Lua keeps the caller's taint: an addon scheduling a Blizzard function through
+-- C_Timer.After leaves the fields that function writes tainted by the addon, before and after the frame boundary.
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function()

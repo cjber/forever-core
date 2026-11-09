@@ -148,14 +148,14 @@ test("clean fixture passes the gate", function()
 	sim:expectNoGamepadTaint("SimTaintClean")
 end)
 
-test("a C API that runs Blizzard Lua runs it secure", function()
-	local sim = expectNoFieldTaint("SimTaintCAPI", function(client)
+test("a C API keeps the caller's taint across its deferred callback", function()
+	local sim = check("SimTaintCAPI", function(client)
 		client:advance(0.2)
 	end)
 	assert(sim.G.WorldMapFrame:IsShown(), "the timer ran Blizzard's map opener")
 end)
 
-test("secureexecuterange walks a callback table without tainting the dispatcher", function()
+test("secureexecuterange restores a secure caller after an addon callback", function()
 	local sim = fixtureSim("SimTaintCallbackRange")
 	sim.run(function()
 		sim.G.EventRegistry:TriggerEvent("SimTaintCallbackRange")
@@ -165,11 +165,26 @@ test("secureexecuterange walks a callback table without tainting the dispatcher"
 	sim:expectNoGamepadTaint("SimTaintCallbackRange")
 end)
 
-test("securecallfunction starts the called Blizzard function secure", function()
-	local sim = fixtureSim("SimTaintSecureCall")
-	local slot = sim.taint.slotInfo(sim.G.EventRegistry.executingEvents, "SimTaintSecureCall")
-	assert(slot == nil, "the secured call's writes stayed secure")
-	sim:expectNoGamepadTaint("SimTaintSecureCall")
+test("secureexecuterange does not launder a tainted caller", function()
+	local sim = fixtureSim("SimTaintCallbackRange")
+	sim.G.SimTaintCallbackRangeTrigger()
+	local slot = sim.taint.slotInfo(sim.G.EventRegistry.executingEvents, "SimTaintCallbackRange")
+	assert(slot and slot.addon == "SimTaintCallbackRange", "the dispatcher's later write kept the caller's taint")
+	sim:expectNoGamepadTaint("SimTaintCallbackRange")
+end)
+
+test("securecallfunction keeps a tainted caller tainted inside the call", function()
+	check("SimTaintSecureCall")
+end)
+
+test("an observed always-restricted HasRestrictions function blocks a tainted caller and does nothing else", function()
+	local sim = fixtureSim("SimTaintRestrictedOpenWorldMap")
+	local err = sim:expectError(
+		"[ADDON_ACTION_BLOCKED] AddOn 'SimTaintRestrictedOpenWorldMap' tried to call the protected function "
+			.. "'C_Map.OpenWorldMap()'"
+	)
+	assert(err, "the restricted call was refused")
+	assert(not sim.G.WorldMapFrame:IsShown(), "the restricted call did not open the map")
 end)
 
 test("an addon's Show of a Blizzard frame taints its OnShow", function()

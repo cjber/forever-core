@@ -1,9 +1,10 @@
 -- luacheck: ignore
--- securecallfunction runs its function from secure execution, not the caller's taint: a secure Blizzard function
--- called from addon code does not carry the addon into the state it writes.
+-- securecallfunction runs its function in the caller's execution taint: an addon that secures a Blizzard menu open
+-- still writes the menu's Blizzard fields tainted by the addon.
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function()
-	EventRegistry:RegisterCallback("SimTaintSecureCall", function() end, events)
-	securecallfunction(EventRegistry.TriggerEvent, EventRegistry, "SimTaintSecureCall")
+	SimTaintSecureCall = securecallfunction(MenuUtil.CreateContextMenu, UIParent, function(_, rootDescription)
+		rootDescription:CreateTitle("SimTaintSecureCall")
+	end)
 end)

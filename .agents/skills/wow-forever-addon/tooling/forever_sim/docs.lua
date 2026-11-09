@@ -1,5 +1,6 @@
 -- Reads Blizzard_APIDocumentationGenerated: every system (C_* namespaces and global functions), every widget API
 -- (ScriptObject systems), enumerations, constants and events, with the client's secret and protection flags.
+-- Function tables keep the documented flags whole, including IsProtectedFunction and HasRestrictions.
 local M = {}
 
 local function readFile(path)

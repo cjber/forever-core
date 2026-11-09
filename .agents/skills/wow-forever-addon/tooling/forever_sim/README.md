@@ -87,12 +87,15 @@ either client caused; pass `addons`, `commands`, `savedVariables` or `allowError
   addon code runs carries that addon's taint; a secure read of it taints execution, and the next protected call
   is refused with the field, the writer's addon and file:line, and the Blizzard file:line of the read. Method
   calls, `rawget`, `rawset`, `next`, `pairs`, `ipairs` and the table-mutating library functions follow the same
-  slot rule. The boundaries match the client: a C API runs the Blizzard Lua it triggers secure; `securecall`,
-  `securecallfunction` and `secureexecuterange` start each call secure and restore execution afterwards;
-  client-dispatched events, timers, OnUpdate and scripts start secure (an addon handler still taints its own
-  body); and a `hooksecurefunc` or `HookScript` post-hook runs isolated from its caller. A frame's script is not
-  a table slot, so secure code reading an OnMouseUp does not taint itself, though running the script does.
-  Protected functions and protected frames in combat raise ADDON_ACTION_BLOCKED for tainted callers.
+  slot rule. The boundaries match the client: a C API's synchronous Lua runs in the caller's taint, and only an
+  engine boundary it really has (an event it fires, a callback it defers to the next frame) is modelled in that
+  native; `securecall`, `securecallfunction` and `secureexecuterange` keep a tainted caller tainted and restore a
+  secure caller afterwards; client-dispatched events, timers, OnUpdate and scripts keep the taint of what set them
+  (an addon handler still taints its own body); and a `hooksecurefunc` or `HookScript` post-hook runs isolated from
+  its caller. A frame's script is not a table slot, so secure code reading an OnMouseUp does not taint itself,
+  though running the script does. A documented function with `HasRestrictions` raises ADDON_ACTION_BLOCKED for a
+  tainted caller in combat, as protected functions do; the few such functions this client refuses at all times
+  are listed (with the issue that observed each) beside the global and widget rules.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region
