@@ -96,6 +96,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes.sha256` records each
   image's hash beside its scene dump's (`forever_tools.screens`); CI recomputes the dumps headlessly
   (`tools/check_screenshots.py`) and fails when a dump moved but its image did not.
+  Every PR body shows every image in `docs/screenshots/`, linked at the head commit's SHA: the changed
+  ones in full under `## Screenshots`, the rest in `<details>` blocks.
   A screenshot is evidence only after its whole-panel composition, native tab edge and icon chrome
   ownership meet the rules in [ui-composition.md](../../../docs/ui-composition.md).
 
