@@ -122,7 +122,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   No invented teams, credits, personal experiences or origin stories. Remove preambles and
   filler; retain useful instructions and real limitations. [voice.md](voice.md) is the rule set;
   `python3 <this skill>/check_copy.py docs/curseforge.md README.md` must pass before a store paste or post.
-- **WFA-25** No two images stacked without words between them, in the README or the store page. Each
+- **WFA-25** No two screenshots (images under `docs/screenshots/`) stacked without words between
+  them, in the README or the store page. Badges and support buttons are not screenshots. Each
   image, or row of images in one `<p>`, gets a line under it saying what to look at in plain words,
   not a copy of its alt text. `check_copy.py` flags a stacked pair. Two things that belong side by side
   are one image, composed in `tools/screenshots.py` as one `scene()` with both widgets as layers.

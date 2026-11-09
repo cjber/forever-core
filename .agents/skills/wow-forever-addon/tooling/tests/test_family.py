@@ -144,6 +144,42 @@ class ProseWordsTest(unittest.TestCase):
             path.write_text(family.BLOCK + "\n", encoding="utf-8")
             self.assertEqual(self.copy.hits(path) + self.copy.stacked(path), [])
 
+    def test_screenshots_with_no_words_between_are_flagged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            path.write_text("![one](docs/screenshots/a.png)\n![two](docs/screenshots/b.png)\n", encoding="utf-8")
+            self.assertEqual(len(self.copy.stacked(path)), 1)
+
+    def test_screenshots_with_a_sentence_between_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            path.write_text(
+                "![one](docs/screenshots/a.png)\nThis shows the thing.\n![two](docs/screenshots/b.png)\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.copy.stacked(path), [])
+
+    def test_support_buttons_are_not_screenshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            path.write_text(
+                '<a href="https://github.com/sponsors/x"><img src="docs/github-sponsors-button.png" '
+                'width="223" alt="Sponsor"></a> <a href="https://ko-fi.com/x">'
+                '<img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Ko-fi"></a>\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(self.copy.stacked(path), [])
+
+    def test_raw_github_screenshot_row_is_flagged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "README.md"
+            path.write_text(
+                "[![a](https://raw.githubusercontent.com/cjber/r/main/docs/screenshots/a.png)](u) "
+                "[![b](https://raw.githubusercontent.com/cjber/r/main/docs/screenshots/b.png)](u)\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(len(self.copy.stacked(path)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

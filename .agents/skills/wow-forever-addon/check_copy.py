@@ -63,18 +63,20 @@ def hits(path: Path) -> list[str]:
 
 
 IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)|<img\b[^>]*\bsrc=\"([^\"]*)\"[^>]*>", re.IGNORECASE)
-BADGE = re.compile(r"badge\.svg|img\.shields\.io", re.IGNORECASE)
+SCREENSHOT = re.compile(r"docs/screenshots/", re.IGNORECASE)
 TAG = re.compile(r"<[^>]+>")
 
 
 def stacked(path: Path) -> list[str]:
-    """Two screenshots with no words between them (WFA-25), one above the other or in one row. A row that
-    belongs together is one image composed by tools/screenshots.py; CI badges are not screenshots."""
+    """Two screenshots with no words between them (WFA-25), one above the other or in one row. A screenshot
+    is an image whose src contains docs/screenshots/, which tools/screenshots.py writes both as a relative
+    path and as a raw GitHub URL. A row that belongs together is one image composed by tools/screenshots.py;
+    badges and support buttons are not screenshots."""
     found = []
     last_image = 0  # line of the last screenshot since any words
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         for match in IMAGE.finditer(line):
-            if BADGE.search(match.group(1) or match.group(2)):
+            if not SCREENSHOT.search(match.group(1) or match.group(2)):
                 continue
             if last_image:
                 found.append(f"{path}:{number}: screenshot next to the one on line {last_image} with no text between")
