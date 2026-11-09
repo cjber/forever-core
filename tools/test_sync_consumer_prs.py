@@ -1,5 +1,6 @@
 """Tests for tools/sync_consumer_prs.py: consumer derivation, PR text and summaries, no network."""
 
+import base64
 import contextlib
 import io
 import json
@@ -144,8 +145,11 @@ class RestPrTest(unittest.TestCase):
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
                 mock.patch.object(sync, "git"),
                 mock.patch.object(sync, "sync_checkout"),
-                mock.patch.object(sync, "staged_files", return_value=("UI/TrackerHost.lua",)),
-                mock.patch.object(sync, "commit"),
+                mock.patch.object(
+                    sync, "staged_changes", return_value=([{"path": "UI/TrackerHost.lua", "contents": "eA=="}], [])
+                ),
+                mock.patch.object(sync, "point_branch"),
+                mock.patch.object(sync, "create_commit"),
                 mock.patch.object(
                     sync,
                     "open_or_update_pr",
@@ -190,7 +194,7 @@ class RestPrTest(unittest.TestCase):
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
                 mock.patch.object(sync, "git"),
                 mock.patch.object(sync, "sync_checkout"),
-                mock.patch.object(sync, "staged_files", return_value=()),
+                mock.patch.object(sync, "staged_changes", return_value=([], [])),
                 mock.patch.object(sync, "gh", side_effect=fake_gh),
             ):
                 result = sync.sync_consumer("legacy-forever", root, root, "abc123")
@@ -211,6 +215,85 @@ class RestPrTest(unittest.TestCase):
 
         with mock.patch.object(sync, "gh", side_effect=fake_gh):
             self.assertEqual(sync.close_stale_prs("legacy-forever", "abc123"), [])
+
+
+class SignedCommitTest(unittest.TestCase):
+    def test_sync_consumer_sends_one_create_commit_on_branch_and_never_pushes(self):
+        api_calls = []
+        run_calls = []
+        diff = "M\tUI/TrackerHost.lua\nD\tUI/Gone.lua\nR100\tCore/Old.lua\tCore/New.lua\n"
+
+        def fake_run(command, cwd=None, check=True):
+            run_calls.append(command)
+            if "rev-parse" in command:
+                return subprocess.CompletedProcess(command, 0, "mainoid\n", "")
+            if "diff" in command:
+                return subprocess.CompletedProcess(command, 0, diff, "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        requests = []
+
+        def fake_api(path, *args, check=True):
+            api_calls.append((path, args, check))
+            if path == "graphql" and "--input" in args:
+                requests.append(json.loads(Path(args[args.index("--input") + 1]).read_text(encoding="utf-8")))
+            if path.startswith("repos/cjber/legacy-forever/pulls?"):
+                return subprocess.CompletedProcess((path, *args), 0, "[]", "")
+            if path == "repos/cjber/legacy-forever/pulls":
+                created = {"number": 9, "html_url": "https://example.test/pull/9", "node_id": "PR_9"}
+                return subprocess.CompletedProcess((path, *args), 0, json.dumps(created), "")
+            return subprocess.CompletedProcess((path, *args), 0, "{}", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            root = workspace / "legacy-forever"
+            (root / "UI").mkdir(parents=True)
+            (root / "Core").mkdir()
+            (root / "UI" / "TrackerHost.lua").write_bytes(b"shared tracker\n")
+            (root / "Core" / "New.lua").write_bytes(b"new core\n")
+            with (
+                mock.patch.object(sync, "run", side_effect=fake_run),
+                mock.patch.object(sync, "api", side_effect=fake_api),
+            ):
+                result = sync.sync_consumer("legacy-forever", workspace, workspace, "abc123")
+
+        self.assertEqual(result.status, "opened")
+        commits = [request for request in requests if "createCommitOnBranch" in request["query"]]
+        self.assertEqual(len(commits), 1)
+        given = commits[0]["variables"]["input"]
+        self.assertEqual(
+            given["branch"], {"repositoryNameWithOwner": "cjber/legacy-forever", "branchName": "forever-core-sync"}
+        )
+        self.assertEqual(given["expectedHeadOid"], "mainoid")
+        self.assertEqual(given["message"], {"headline": sync.TITLE, "body": "Core commit: abc123"})
+        tracker = base64.b64encode(b"shared tracker\n").decode()
+        new_core = base64.b64encode(b"new core\n").decode()
+        self.assertCountEqual(
+            given["fileChanges"]["additions"],
+            [{"path": "UI/TrackerHost.lua", "contents": tracker}, {"path": "Core/New.lua", "contents": new_core}],
+        )
+        self.assertEqual(given["fileChanges"]["deletions"], [{"path": "UI/Gone.lua"}, {"path": "Core/Old.lua"}])
+        self.assertFalse(any(len(arg) > 4096 for call in api_calls for arg in call[1]), "file contents stay off argv")
+        self.assertFalse(any("push" in " ".join(command) for command in run_calls))
+        self.assertFalse(any("commit" in " ".join(command) for command in run_calls))
+
+    def test_a_missing_branch_ref_is_created_after_the_patch_fails(self):
+        calls = []
+
+        def fake_api(path, *args, check=True):
+            calls.append((path, args, check))
+            code = 1 if "PATCH" in args else 0
+            return subprocess.CompletedProcess((path, *args), code, "", "")
+
+        with mock.patch.object(sync, "api", side_effect=fake_api):
+            sync.point_branch("legacy-forever", "mainoid")
+
+        self.assertIn("PATCH", calls[0][1])
+        self.assertIn("force=true", calls[0][1])
+        self.assertEqual(calls[1][0], "repos/cjber/legacy-forever/git/refs")
+        self.assertIn("POST", calls[1][1])
+        self.assertIn("ref=refs/heads/forever-core-sync", calls[1][1])
+        self.assertIn("sha=mainoid", calls[1][1])
 
 
 class ToolingTest(unittest.TestCase):

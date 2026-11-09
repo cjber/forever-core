@@ -6,8 +6,10 @@ edit: the first comes from the vendoring map, the second from the repositories t
 
 For each consumer this clones `main`, runs the same three syncs a maintainer would (`tools/sync_consumers.py` for this
 repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`), and, if anything
-changed, force-pushes `forever-core-sync` and opens or refreshes the PR with squash auto-merge enabled. The consumer's
-own checks remain the gate: a sync that breaks one stays open as a red PR and is named in the run summary.
+changed, points `forever-core-sync` at that `main` HEAD and creates the commit through the GraphQL
+`createCommitOnBranch` mutation, then opens or refreshes the PR with squash auto-merge enabled. GitHub signs commits
+made through the API, so the consumer's `required_signatures` ruleset accepts the sync. The consumer's own checks
+remain the gate: a sync that breaks one stays open as a red PR and is named in the run summary.
 
     python3 tools/sync_consumer_prs.py
 
@@ -16,6 +18,7 @@ write on the consumer repositories (Workflows because `.github/workflows/core-sh
 it the script prints a notice and exits 0, so the workflow stays green until the owner adds the secret.
 """
 
+import base64
 import json
 import os
 import subprocess
@@ -31,8 +34,6 @@ CORE_REPO = "forever-core"
 BRANCH = "forever-core-sync"
 TITLE = "chore: sync shared files from forever-core"
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
-COMMIT_NAME = "github-actions[bot]"
-COMMIT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 PER_PAGE = 100
 REPOSITORY_PAGES = 2
 AUTO_MERGE_QUERY = """
@@ -149,23 +150,77 @@ def sync_checkout(root: Path, core_root: Path) -> None:
         )
 
 
-def staged_files(root: Path) -> tuple[str, ...]:
+def staged_changes(root: Path) -> tuple[list[dict], list[dict]]:
+    """The staged additions (path and base64 contents) and deletions, with a rename as delete plus add."""
     git(root, "add", "-A")
-    return tuple(sorted(filter(None, git(root, "diff", "--cached", "--name-only").stdout.splitlines())))
+    additions = []
+    deletions = []
+    for line in git(root, "diff", "--cached", "--name-status").stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status, path = parts[0], parts[1]
+        if status.startswith(("R", "C")) and len(parts) >= 3:
+            if status.startswith("R"):
+                deletions.append({"path": path})
+            path = parts[2]
+        elif status.startswith("D"):
+            deletions.append({"path": path})
+            continue
+        contents = base64.b64encode((root / path).read_bytes()).decode("ascii")
+        additions.append({"path": path, "contents": contents})
+    return additions, deletions
 
 
-def commit(root: Path, sha: str) -> None:
-    git(
-        root,
-        "-c",
-        f"user.name={COMMIT_NAME}",
-        "-c",
-        f"user.email={COMMIT_EMAIL}",
-        "commit",
-        "--quiet",
-        "-m",
-        f"{TITLE}\n\nCore commit: {sha}",
+CREATE_COMMIT_MUTATION = """
+mutation($input: CreateCommitOnBranchInput!) {
+  createCommitOnBranch(input: $input) {
+    commit { oid }
+  }
+}
+"""
+
+
+def create_commit_input(repo: str, oid: str, sha: str, additions: list[dict], deletions: list[dict]) -> dict:
+    """The createCommitOnBranch input: the branch, the head it must still be at, the message and the file changes."""
+    return {
+        "branch": {"repositoryNameWithOwner": f"{OWNER}/{repo}", "branchName": BRANCH},
+        "expectedHeadOid": oid,
+        "message": {"headline": TITLE, "body": f"Core commit: {sha}"},
+        "fileChanges": {"additions": additions, "deletions": deletions},
+    }
+
+
+def point_branch(repo: str, oid: str) -> None:
+    """Point the sync branch at the consumer's main HEAD, creating the ref when it does not exist yet."""
+    path = f"repos/{OWNER}/{repo}/git/refs/heads/{BRANCH}"
+    patched = api(path, "--method", "PATCH", "-f", f"sha={oid}", "-F", "force=true", check=False)
+    if patched.returncode == 0:
+        return
+    api(
+        f"repos/{OWNER}/{repo}/git/refs",
+        "--method",
+        "POST",
+        "-f",
+        f"ref=refs/heads/{BRANCH}",
+        "-f",
+        f"sha={oid}",
     )
+
+
+def create_commit(repo: str, oid: str, sha: str, additions: list[dict], deletions: list[dict], workspace: Path) -> None:
+    """Create the sync commit through GraphQL, so GitHub signs it and required_signatures accepts it.
+
+    The request goes in a file through `--input`: the base64 file contents can pass the kernel's 128 KiB limit on one
+    command-line argument.
+    """
+    body = workspace / f"{repo}-commit.json"
+    request = {
+        "query": CREATE_COMMIT_MUTATION,
+        "variables": {"input": create_commit_input(repo, oid, sha, additions, deletions)},
+    }
+    body.write_text(json.dumps(request), encoding="utf-8")
+    api("graphql", "--input", str(body))
 
 
 def pr_body(sha: str, files: tuple[str, ...]) -> str:
@@ -240,7 +295,7 @@ def open_or_update_pr(repo: str, body: str) -> tuple[int, str, str, str | None]:
 
 
 def enable_auto_merge(node_id: str) -> None:
-    """The one GraphQL call left: auto-merge has no REST endpoint."""
+    """Auto-merge has no REST endpoint, so it is a GraphQL call too."""
     api("graphql", "-f", f"query={AUTO_MERGE_QUERY}", "-f", f"pullRequestId={node_id}")
 
 
@@ -256,14 +311,16 @@ def auto_merge_warning(node_id: str) -> str | None:
 def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Result:
     try:
         root = clone(repo, workspace)
+        head = git(root, "rev-parse", "HEAD").stdout.strip()
         git(root, "checkout", "-B", BRANCH)
         sync_checkout(root, core_root)
-        files = staged_files(root)
-        if not files:
+        additions, deletions = staged_changes(root)
+        if not additions and not deletions:
             closed = close_stale_prs(repo, sha)
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
-        commit(root, sha)
-        git(root, "push", "--force", "origin", f"HEAD:refs/heads/{BRANCH}")
+        point_branch(repo, head)
+        create_commit(repo, head, sha, additions, deletions, workspace)
+        files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files))
         warning = auto_merge_warning(node_id) if node_id else None
         return Result(repo, status, files, url, warning)
