@@ -97,6 +97,21 @@ class ForeverClientTest(unittest.TestCase):
             with self.subTest(refused), self.assertRaises(fc.ClientError):
                 fc.allowed_command(refused, addons)
 
+    def test_slash_reads_a_conditional_and_a_plain_slash_assignment(self):
+        addons = self.state / "AddOns"
+        (addons / "TweaksForever").mkdir(parents=True)
+        (addons / "TweaksForever/UI").mkdir()
+        (addons / "TweaksForever/UI/Leaderboards.lua").write_text(
+            'local foreverTaken = false\nSLASH_FOREVERLEADERBOARDS1 = not foreverTaken and "/forever" or nil\n'
+        )
+        (addons / "SkillUpForever").mkdir()
+        (addons / "SkillUpForever/Core.lua").write_text('SLASH_SKILLUPFOREVER1 = "/path"\n')
+        for ok in ("/forever", "/forever selftest", "/path", "/path reset"):
+            fc.allowed_command(ok, addons)
+        for refused in ("/run print(1)", "/dump x", "/fgf"):
+            with self.subTest(refused), self.assertRaises(fc.ClientError):
+                fc.allowed_command(refused, addons)
+
     def test_slash_releases_an_addon_edit_box_before_it_opens_chat(self):
         calls = []
         with (
@@ -119,6 +134,25 @@ class ForeverClientTest(unittest.TestCase):
         with mock.patch.object(fc, "x") as x, self.assertRaisesRegex(fc.ClientError, "refused w"):
             fc.press({}, ["Escape", "w"])
         x.assert_not_called()
+
+    def test_press_play_moves_in_window_pixels_not_window_relative(self):
+        state = {"display": ":1"}
+        found = mock.Mock(stdout="12345\n")
+        geometry = mock.Mock(stdout="WINDOW=12345\nX=181\nY=328\nWIDTH=1266\nHEIGHT=684\nSCREEN=0\n")
+        with (
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, geometry]),
+            mock.patch.object(fc, "x") as x,
+            mock.patch.object(fc.time, "sleep"),
+        ):
+            fc.press_play(state)
+        self.assertEqual(
+            x.call_args_list,
+            [
+                mock.call(state, "mousemove", "921", "367"),
+                mock.call(state, "click", "1"),
+            ],
+        )
+        self.assertNotIn("--window", x.call_args_list[0].args)
 
     def test_a_click_needs_a_screenshot_since_the_last_input(self):
         with mock.patch.object(fc, "x") as x, mock.patch.object(fc, "INPUT_GAP", 0):

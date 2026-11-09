@@ -54,7 +54,8 @@ CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
 LAUNCHER = PREFIX / "drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
 LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # Battle.net ignores --exec once it is logged in, so the session presses Play: its centre on the WoW: Forever page
-# that --exec opens, in the launcher window gamescope gives it. Another window size means another layout.
+# that --exec opens, in the launcher window gamescope gives it. Another window size means another layout. The point
+# is in the focused window's pixels, which is also the screenshot's pixels, whatever the window's X position.
 LAUNCHER_WINDOW = (1266, 684)
 PLAY_BUTTON = (921, 367)
 # The account's Battle.net region: the launcher logs in here before it can start the game.
@@ -78,7 +79,8 @@ FOREVER_ADDONS = (
 )
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
-SLASH_GLOBAL = re.compile(r'SLASH_\w+\s*=\s*"(/[^"\s]+)"')
+SLASH_ASSIGN = re.compile(r"SLASH_\w+\s*=(.*)$", re.MULTILINE)
+SLASH_WORD = re.compile(r'"(/[^"\s]+)"')
 
 # The Wine environment Lutris gives the client, minus what belongs to one run or to the desktop. DISPLAY and
 # WAYLAND_DISPLAY above all: the session's own come from gamescope, and an inherited Wayland socket would let Wine
@@ -205,6 +207,9 @@ def shot(state: Mapping, path: Path) -> Path:
     raise ClientError(f"gamescope wrote no screenshot to {path}")
 
 
+# Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
+# here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
+# X position to the point and must never be used.
 def click(state: Mapping, px: int, py: int, button: str) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
@@ -224,12 +229,17 @@ def press(state: Mapping, keys: Sequence[str]) -> None:
 
 
 def addon_commands(addons: Path | None = None) -> set[str]:
-    """The slash commands the Forever addons register, read from the `SLASH_` globals in their installed files."""
+    """The slash commands the Forever addons register, read from the `SLASH_` globals in their installed files.
+
+    Every `"/word"` literal on the right-hand side of a `SLASH_<KEY><n> =` assignment counts, so a plain
+    `SLASH_X = "/x"` and the `SLASH_X = cond and "/x" or nil` form both register their command."""
     addons = addons or CLIENT / "Interface/AddOns"
     found: set[str] = set()
     for name in FOREVER_ADDONS:
         for lua in (addons / name).rglob("*.lua"):
-            found.update(c.lower() for c in SLASH_GLOBAL.findall(lua.read_text(errors="replace")))
+            text = lua.read_text(errors="replace")
+            for assignment in SLASH_ASSIGN.finditer(text):
+                found.update(c.lower() for c in SLASH_WORD.findall(assignment.group(1)))
     return found
 
 
@@ -283,7 +293,7 @@ def press_play(state: Mapping) -> None:
         ).stdout
         size = dict(line.split("=", 1) for line in geometry.split())
         if (int(size.get("WIDTH", 0)), int(size.get("HEIGHT", 0))) == LAUNCHER_WINDOW:
-            x(state, "mousemove", "--window", window, *map(str, PLAY_BUTTON))
+            x(state, "mousemove", *map(str, PLAY_BUTTON))
             time.sleep(0.5)
             x(state, "click", "1")
             return
