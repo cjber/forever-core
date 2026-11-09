@@ -83,8 +83,8 @@ order, keep the longest tail of the gallery that is already in order, delete eve
 upload the rest again in reverse. Delete on the public `addons.wago.io/addons/<slug>/gallery` page:
 each image is an `li` holding one `img` and one `button.text-wago-red-500`, and the button asks
 through a native `confirm()`, so set `window.confirm = () => true` first or the dialog blocks the tab.
-Delete one image per click and read the list after each. `/gallery/<id>/edit` edits only the caption; it cannot swap the image, so a
-stale image means uploading a new one and deleting the old one.
+Delete one image per click and read the list after each. `/gallery/<id>/edit` edits only the
+caption; it cannot swap the image, so a stale image means uploading a new one and deleting the old one.
 
 ## Store updates
 
