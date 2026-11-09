@@ -1675,6 +1675,28 @@ def filter_dropdown(canvas, right, top, text="Filter"):
     return x, top, w, h
 
 
+def dropdown(canvas, x, y, w, text, h=25):
+    """WowStyle1DropdownTemplate (Blizzard_Menu/Mainline/MenuTemplates.xml:3-37): common-dropdown-textholder
+    from TOPLEFT (-8, 7) to BOTTOMRIGHT (8, -9), so w+16 by h+16 around the button (BACKGROUND);
+    common-dropdown-a-button at its atlas size at RIGHT (1, -3), its right edge at x+w+1 and its centre 3 below
+    the middle (OVERLAY); Text (GameFontHighlight, 10 high, justifyH LEFT) from TOPLEFT (8, -8) to the arrow's
+    LEFT, cut with '...' before it. Returns its rect."""
+    ui = canvas.ui
+    canvas.draw(ui.atlas("common-dropdown-textholder"), x - 8, y - 7, w + 16, h + 16)
+    arrow = ui.atlas("common-dropdown-a-button")
+    arrow_x, arrow_y = x + w + 1 - arrow.width, y + h / 2 + 3 - arrow.height / 2
+    canvas.draw(arrow, arrow_x, arrow_y)
+    font = FONTS["GameFontHighlight"]
+    room = arrow_x - x - 8
+    shown = text
+    if canvas.text_width(text, font) > room:
+        while shown and canvas.text_width(shown + "...", font) > room:
+            shown = shown[:-1]
+        shown += "..."
+    canvas.text(x + 8, y + 8, shown, font, box_height=10)
+    return x, y, w, h
+
+
 def minimal_scrollbar(canvas, x, y, h, visible=1.0, offset=0.0):
     """MinimalScrollBar: the 8-wide track (19 in from each end) and both steppers. With `visible` < 1 (the
     shown fraction of the content) it draws the small thumb, `minThumbExtent` 23, `offset` along the track."""
