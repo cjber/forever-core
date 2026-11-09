@@ -54,7 +54,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   fonts or colours, except that chat prefixes use the family's mint `|cff33ff99`; addon-drawn art
   only where no atlas exists, in the atlas's palette.
 - **WFA-5** Objective tracker sections sit above quests with a unique negative `uiOrder`. Registry:
-  Legacy Forever `0` and `-1`, SkillUp Forever `-2`, Shortest Path Forever `-3`, Adventure Guide Forever `-4`. A new addon takes the
+  Legacy Forever `0` and `-1`, SkillUp Forever `-2`, Shortest Path Forever `-3`, Adventure Guide Forever `-4`, Kiln Forever `-5`. A new addon takes the
   next free number and adds it here. Attach by hooking `ObjectiveTrackerManager:AddContainer`.
 - **WFA-6** Copy talks to the player in the game's voice: short, plain, no jargon or internal names.
   After an update, tell them to `/reload`, never to restart the game.

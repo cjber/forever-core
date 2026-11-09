@@ -14,8 +14,10 @@ remain the gate: a sync that breaks one stays open as a red PR and is named in t
     python3 tools/sync_consumer_prs.py
 
 Set `GH_TOKEN` to the `CONSUMER_SYNC_TOKEN` secret, a fine-grained PAT with Contents, Pull requests and Workflows
-write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` is vendored). Without
-it the script prints a notice and exits 0, so the workflow stays green until the owner adds the secret.
+write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` is vendored). The
+token must also reach the private `kiln-forever` repository, which is in the vendoring map; without access its sync is
+reported as failed in the run summary rather than silently leaving that consumer behind. Without a token at all the
+script prints a notice and exits 0, so the workflow stays green until the owner adds the secret.
 """
 
 import base64

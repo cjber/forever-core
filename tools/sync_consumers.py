@@ -5,6 +5,9 @@ overwritten only when its content differs, so a run on an up-to-date checkout to
 visible in `git status` for the consumer's own PR. A vendored runtime file also needs its consumer wiring (a TOC line
 and the globals luacheck may not know yet), so that is applied even when the copy was already current.
 
+A consumer whose addon lives below its repo root (kiln-forever, whose repository also carries a bridge) gets every file
+under the addon folder CONSUMER_ROOT names, and its TOC is read from there.
+
 A shared file that is new to a consumer waits until that consumer adopts it. A runtime module is copied only when the
 consumer's own TOC already loads it or WIRING says how this tool loads it, and a test only when every vendored runtime
 module it names is loaded either way; until then the run skips it and says so. Files the consumer already carries keep
@@ -20,9 +23,21 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from check_core_shared import VENDORED, source
+from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
+
+
+def consumer_path(repo, path):
+    """Where `repo` keeps the vendored `path`, relative to that consumer repo's root."""
+    folder = CONSUMER_ROOT.get(repo)
+    return f"{folder}/{path}" if folder else path
+
+
+def addon_root(root, repo):
+    """The folder inside the consumer checkout that mirrors core's layout."""
+    folder = CONSUMER_ROOT.get(repo)
+    return root / folder if folder else root
 
 
 class Wiring(NamedTuple):
@@ -59,7 +74,7 @@ def write_lines(path, lines, trailing):
 
 
 def find_toc(root):
-    """The single `*.toc` at the consumer repo root, or None when there is not exactly one."""
+    """The single `*.toc` in the folder that mirrors core's layout, or None when there is not exactly one."""
     tocs = sorted(root.glob("*.toc"))
     return tocs[0] if len(tocs) == 1 else None
 
@@ -97,7 +112,10 @@ def referenced_modules(path, seen=None):
 
 
 def adoption_wait(root, path):
-    """Why a `path` the consumer lacks must wait for adoption, or None when it may be copied."""
+    """Why a `path` the consumer lacks must wait for adoption, or None when it may be copied.
+
+    `root` is the folder that mirrors core's layout, so a prefixed consumer's TOC is found there.
+    """
     toc = find_toc(root)
     name = toc.name if toc is not None else "its TOC"
     loaded = toc_entries(toc) if toc is not None else set()
@@ -166,9 +184,11 @@ def apply_wiring(root, repo, path, dry_run):
     if wiring is None:
         return 0
     changed = 0
-    toc = find_toc(root)
+    toc = find_toc(addon_root(root, repo))
     if toc is None:
-        print(f"{repo}: warning: no single *.toc at its root, cannot add {path}")
+        folder = CONSUMER_ROOT.get(repo)
+        where = f"under {folder}" if folder else "at its root"
+        print(f"{repo}: warning: no single *.toc {where}, cannot add {path}")
     else:
         changed += wire_toc(toc, repo, path, wiring, dry_run)
     luacheck = root / ".luacheckrc"
@@ -193,13 +213,13 @@ def main(argv=None):
         origin = CORE_ROOT / source(path)
         for repo in consumers:
             root = arguments.checkouts / repo
-            target = root / path
+            target = root / consumer_path(repo, path)
             if not root.is_dir():
                 print(f"{repo}: not checked out under {arguments.checkouts}, skipped")
                 continue
             content = origin.read_bytes()
             if not target.exists():
-                wait = adoption_wait(root, path)
+                wait = adoption_wait(addon_root(root, repo), path)
                 if wait is not None:
                     print(f"{repo}: {path}: skipped, {wait}")
                     continue
