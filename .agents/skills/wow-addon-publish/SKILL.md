@@ -78,9 +78,10 @@ sometimes does nothing):
    submit with an empty caption still uploads.
 4. Check with `get_page_text` on the gallery page.
 
-Wago lists the newest first, so upload in reverse display order. `/gallery/<id>/edit` edits only the
-caption; it cannot swap the image, so a stale image means uploading a new one and the user deleting
-the old one.
+Wago lists the newest first and has no reorder, so upload in reverse display order. To fix the
+order, delete every image on the public `addons.wago.io/addons/<slug>/gallery` page and upload them
+all again in reverse. `/gallery/<id>/edit` edits only the caption; it cannot swap the image, so a
+stale image means uploading a new one and deleting the old one.
 
 ## Store updates
 
@@ -90,7 +91,9 @@ does not outlast the tool call. Confirm every change after a reload or on the pu
 **Descriptions.** Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
 "Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
 press `ctrl+End`, type a newline and click Save with real input. Wago's settings page takes the same
-paste in its `textarea`, a real keypress in it, then "Save changes".
+paste in its `textarea`, a real keypress in it, then the "Save changes" button in that textarea's
+own form. Read the result back after a reload: Wago trims the trailing newline and CurseForge
+rewrites the markdown, so compare words and links, not lengths.
 
 **CurseForge gallery.** The `file_upload` tool cannot reach this page: its file input is created
 detached on click, and a real click opens a native picker that blocks the tab. Instead:
@@ -108,14 +111,17 @@ To reorder, open "Reorder gallery" after a full page load: the dialog can keep a
 after in-app navigation. A mouse drag does nothing, so `focus()` the `li.sortable-screenshot-element`,
 press real keys (space, arrows, space), wait 4 s, read the order and click Done. Up does not move exactly
 one row, so check after each move. The author site's order can flip between reloads even after a good
-save: confirm on the public `curseforge.com/wow/addons/<slug>/gallery` page.
+save: confirm on the public `curseforge.com/wow/addons/<slug>/gallery` page. That page can serve
+a replaced file from cache for hours; when only the public copy is stale, check it again later.
 
 ## Keep galleries in sync
 
 A gallery image that no longer matches the addon is a defect of the change that made it stale.
 Whenever a visible feature changes, regenerate its mocks in the same PR (`wow-mock-screenshots`),
-and after the release upload the new images to both stores and list the stale ones, by caption,
-for the user to delete.
+and after the release upload the new images to both stores. Delete duplicates, older renders of an
+image the repo now renders differently, and images neither `docs/curseforge.md` nor `docs/gallery.md`
+shows: every image can be rebuilt from the repo. Order each gallery as `docs/curseforge.md` shows its
+images, then the rest of `docs/gallery.md`.
 
 ## 4. TOC and release
 
