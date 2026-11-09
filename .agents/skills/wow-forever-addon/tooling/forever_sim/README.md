@@ -93,8 +93,9 @@ either client caused; pass `addons`, `commands`, `savedVariables` or `allowError
   secure caller afterwards; client-dispatched events, timers, OnUpdate and scripts keep the taint of what set them
   (an addon handler still taints its own body); and a `hooksecurefunc` or `HookScript` post-hook runs isolated from
   its caller. A frame's script is not a table slot, so secure code reading an OnMouseUp does not taint itself,
-  though running the script does. Every documented function with `HasRestrictions` raises ADDON_ACTION_BLOCKED
-  for a tainted caller, and protected functions and protected frames in combat do too.
+  though running the script does. A documented function with `HasRestrictions` raises ADDON_ACTION_BLOCKED for a
+  tainted caller in combat, as protected functions do; the few such functions this client refuses at all times
+  are listed (with the issue that observed each) beside the global and widget rules.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region

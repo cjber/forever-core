@@ -2221,7 +2221,11 @@ function M.build(sim)
 		local protected = fdoc.IsProtectedFunction
 		local restricted = fdoc.HasRestrictions
 		local nargs = fdoc.Arguments and #fdoc.Arguments or 0
-		local plainBody = not addAspects and not returnAspects and not whenAnchoring and not protected and not restricted
+		local plainBody = not addAspects
+			and not returnAspects
+			and not whenAnchoring
+			and not protected
+			and not restricted
 		if plainBody and secretArgs ~= "NotAllowed" and secretArgs ~= "AllowedWhenUntainted" then
 			return body
 		end

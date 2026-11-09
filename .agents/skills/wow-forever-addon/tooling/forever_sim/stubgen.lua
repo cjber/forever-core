@@ -384,7 +384,7 @@ function M.build(sim)
 			local out
 			if impl then
 				out = { n = 0 }
-				-- Blizzard Lua the C function runs synchronously runs in the caller's taint (Taint.callSecure).
+				-- The C function's synchronous Blizzard Lua runs in the caller's taint (Taint.callSecure).
 				local r = { Taint.callSecure(impl, ...) }
 				out.n = table.maxn(r)
 				for i = 1, out.n do
