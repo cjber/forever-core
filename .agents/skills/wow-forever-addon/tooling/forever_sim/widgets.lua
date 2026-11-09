@@ -206,10 +206,11 @@ function M.build(sim)
 	---------------------------------------------------------------------------
 	-- Scripts
 	---------------------------------------------------------------------------
-	-- Runs obj's script `name` as the client does when Lua code triggers it (Show, Click, SetValue...): the
-	-- handler inherits the caller's taint, plus the taint of whoever set it; each HookScript hook runs isolated.
-	-- An error in any of them is reported to the client's error handler, and the caller carries on as it does
-	-- when the client runs a script from C.
+	-- Runs obj's script `name` as the client does when Lua code triggers it (Show, Click, SetValue...): a script
+	-- fired synchronously by a Lua call runs in the caller's execution taint, plus its setter's, as the client
+	-- does; only engine-fired scripts start secure. Each HookScript hook runs isolated. An error in any of them is
+	-- reported to the client's error handler, and the caller carries on as it does when the client runs a script
+	-- from C.
 	-- The addon frame that set the script, so a handler the client fires with no addon frame on the stack still
 	-- names the addon line its taint entered from.
 	local function scriptSite(s, name)
@@ -221,21 +222,22 @@ function M.build(sim)
 		if not s or not s.scripts then
 			return
 		end
+		local saved = Taint.current
 		local intrinsic = s.intrinsic and s.intrinsic[name]
 		if intrinsic and intrinsic.pre then
-			-- A template handler is Blizzard's own code, dispatched by the client, so it starts secure.
-			Taint.dispatch(nil, intrinsic.pre, obj, ...)
+			-- A template handler is Blizzard's own code, but this call is synchronous, so it runs in the caller's
+			-- execution taint; only an engine-fired script starts secure.
+			Taint.dispatch(saved, intrinsic.pre, obj, ...)
 		end
 		local handler = s.scripts[name]
 		if handler then
-			-- The client calls a script from C: the handler starts secure unless an addon set it, and dispatch
-			-- restores the caller's taint afterwards. A Blizzard handler triggered by an addon's widget call does
-			-- not inherit that addon's execution taint.
+			-- A synchronous call: the handler runs in the caller's execution taint, plus its setter's, and
+			-- dispatch restores the caller's taint afterwards. Only an engine-fired script starts secure.
 			local by = s.scriptTaint[name]
-			Taint.dispatchFrom(by, scriptSite(s, name), handler, obj, ...)
+			Taint.dispatchFrom(saved or by, scriptSite(s, name), handler, obj, ...)
 		end
 		if intrinsic and intrinsic.post then
-			Taint.dispatch(nil, intrinsic.post, obj, ...)
+			Taint.dispatch(saved, intrinsic.post, obj, ...)
 		end
 		local hooks = s.hooks and s.hooks[name]
 		if hooks then
@@ -820,7 +822,7 @@ function M.build(sim)
 	impl.ScriptRegion.IsMouseMotionFocus = function(self)
 		return sim.mouseFocus == self
 	end
-	-- Gamepad focus (SmartNavigation) runs the region's OnEnter / OnLeave as a client dispatch, secure.
+	-- Gamepad focus (SmartNavigation) runs the region's OnEnter / OnLeave in the caller's taint.
 	impl.ScriptRegion.FocusEnter = function(self)
 		fire(self, "OnEnter")
 	end
@@ -1257,7 +1259,12 @@ function M.build(sim)
 			return
 		end
 		s.attributes[name] = value
-		fire(self, "OnAttributeChanged", name, value)
+		-- An attribute change is reported by the engine, not run as a Lua-triggered script. Blizzard's inbound
+		-- bridges rely on it: "safe to call by tainted code... communicate with secure code via SetAttribute"
+		-- (Blizzard_CatalogShop_Inbound.lua), and CallbackRegistry's insert-secure-event is a taint barrier. So
+		-- OnAttributeChanged starts a client dispatch, as an event does, rather than inheriting the caller's
+		-- taint the way Show's OnShow does.
+		W.dispatch(self, "OnAttributeChanged", name, value)
 	end
 	impl.Frame.SetAttributeNoHandler = function(self, name, value)
 		st(self).attributes[name] = value

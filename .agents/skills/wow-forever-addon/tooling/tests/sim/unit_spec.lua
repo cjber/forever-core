@@ -72,7 +72,7 @@ test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on
 	eq(region:GetNumPoints(), 0, "anchors cleared")
 end)
 
-test("widgets: FocusEnter and FocusExit dispatch OnEnter and OnLeave secure", function()
+test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's taint", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
 	widgets.finalize()
@@ -88,7 +88,7 @@ test("widgets: FocusEnter and FocusExit dispatch OnEnter and OnLeave secure", fu
 	Taint.set("Addon")
 	frame:FocusExit()
 	Taint.set(nil)
-	eq(table.concat(seen, ","), "enter:nil,leave:nil")
+	eq(table.concat(seen, ","), "enter:nil,leave:Addon")
 end)
 
 test("widgets: a script's setter taint stops when the handler returns", function()

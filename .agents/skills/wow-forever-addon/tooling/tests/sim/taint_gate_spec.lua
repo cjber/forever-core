@@ -172,8 +172,8 @@ test("securecallfunction starts the called Blizzard function secure", function()
 	sim:expectNoGamepadTaint("SimTaintSecureCall")
 end)
 
-test("a script the client dispatches starts secure", function()
-	expectNoFieldTaint("SimTaintClientScript")
+test("an addon's Show of a Blizzard frame taints its OnShow", function()
+	check("SimTaintClientScript")
 end)
 
 test("a hooksecurefunc post-hook starts secure", function()
