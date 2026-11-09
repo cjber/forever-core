@@ -143,7 +143,7 @@ if type(previous) == "table" then
 	end
 end
 
-ForeverLeaderboards = api -- taint-ok: addon-owned registry shared by the Forever addons
+ForeverLeaderboards = api
 ns.Leaderboards = api
 
 -- The copy now in charge when a newer version has taken over the global since this one loaded: an addon still holding

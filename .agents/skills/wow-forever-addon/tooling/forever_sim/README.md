@@ -33,8 +33,8 @@ end)
 
 The runner registers the repository's addon (its TOC), runs each scenario on a fresh client and fails it on an
 error in the scenario, on any client error the addon caused (raised in its code, or in Blizzard code its
-taint reached), and on any gamepad-interface taint it left. `allowErrors` and `allowGamepadTaint` options turn those
-checks off for a scenario that asserts on them itself.
+taint reached), and on any protected call refused because of a field the addon wrote. `allowErrors` and
+`allowGamepadTaint` options turn those checks off for a scenario that asserts on them itself.
 
 ## Steps and checks
 
@@ -48,15 +48,15 @@ checks off for a scenario that asserts on them itself.
 | `sim:joinGroup{ ... }`, `sim:leaveGroup()` | party members and GROUP_ROSTER_UPDATE |
 | `sim:hover(frame)`, `sim:leave()`, `sim:click(frame)`, `sim:hoverUnit(unit)` | input, as fresh secure dispatches |
 | `sim:event(name, ...)`, `sim:advance(seconds)` | client events; timers, animations, OnUpdate, OnSizeChanged |
-| `sim:setGamepad(true)`, `sim:gamepadNavigate()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), and one secure pass of its navigation |
+| `sim:setGamepad(true)`, `sim:gamepadNavigate()`, `sim:bindingSetChange()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), one secure pass of its navigation, and a binding-set change through the client's `InputBindingManager` |
 | `sim:stub("Questie", options)` | a third-party stand-in, loaded with the addons |
 | `sim:slashCommands(addon)` | the slash commands `addon` registered, as their first aliases, sorted |
 | `sim:slash("/cmd rest")` | a typed slash command as the chat box runs it: aliases match in any case, the handler gets the remainder as fresh input |
 | `sim:reload()` | a fresh client with the same options, addons and stubs, logged in with what `/reload` would have saved |
-| `sim:exercise{ ... }` | every surface: each addon's own commands in and out of combat, the world map, then the same after a reload; fails on an error either client caused |
+| `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, and a target, soft-interact and binding-set change after each; then the same after a reload |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
-| `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | addon writes into the tables the gamepad UI walks |
+| `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
 | `sim:rect(frame)`, `sim:overlap(a, b)`, `sim:expectNoOverlap(a, b)`, `sim:expectOnScreen(frame)` | layout |
 
 `sim.world` holds what the client reports: `player`, `units` (target, mouseover...), `group`, `professions`,
@@ -70,9 +70,11 @@ scenario("every surface, in and out of combat and across a reload", function(sim
 ```
 
 `sim:exercise` logs in, runs each registered addon's slash commands twice (a toggle opens then closes) and the
-scenario's own `commands`, opens, zooms, pans and closes the world map, repeats the bare commands and the map in
-combat, then reloads and runs them once more with the map. It fails on an error either client caused; pass
-`addons`, `commands`, `savedVariables` or `allowErrors` to narrow or widen it.
+scenario's own `commands`, opens Professions with every side tab and a selected recipe, the trainer, merchant
+tabs, bags, character tabs, the objective tracker, the quest log and the world map, and fires a target change,
+a soft-interact change and a binding-set change after each. It does that with the gamepad interface off and then
+on, repeats the commands and map in combat, then reloads and runs both interfaces again. It fails on an error
+either client caused; pass `addons`, `commands`, `savedVariables` or `allowErrors` to narrow or widen it.
 
 ## What it models
 
@@ -80,16 +82,25 @@ combat, then reloads and runs them once more with the map. It fails on an error 
   `Blizzard_APIDocumentationGenerated`, with the documented arguments, return shapes and flags. Functions
   Blizzard's own Lua calls that the documentation omits exist and answer nothing. Every widget method the
   documentation lists exists on its widget type.
-- **Taint**: addon code is instrumented when it loads (each function reports its addon as it runs; line numbers are kept),
-  globals and Blizzard table fields record their writer, `securecall`, `securecallfunction`,
-  `secureexecuterange`, `hooksecurefunc` and `HookScript` isolate taint as in game, and protected functions
-  and protected frames in combat raise ADDON_ACTION_BLOCKED for tainted callers.
+- **Taint**: every table field read and write in Blizzard's and the addon's Lua is instrumented at load with a
+  real Lua 5.1 parser (line numbers kept, Blizzard's rewritten source cached per build). A field written while
+  addon code runs carries that addon's taint; a secure read of it taints execution, and the next protected call
+  is refused with the field, the writer's addon and file:line, and the Blizzard file:line of the read. Method
+  calls, `rawget`, `rawset`, `next`, `pairs`, `ipairs` and the table-mutating library functions follow the same
+  slot rule. The boundaries match the client: a C API runs the Blizzard Lua it triggers secure; `securecall`,
+  `securecallfunction` and `secureexecuterange` start each call secure and restore execution afterwards;
+  client-dispatched events, timers, OnUpdate and scripts start secure (an addon handler still taints its own
+  body); and a `hooksecurefunc` or `HookScript` post-hook runs isolated from its caller. A frame's script is not
+  a table slot, so secure code reading an OnMouseUp does not taint itself, though running the script does.
+  Protected functions and protected frames in combat raise ADDON_ACTION_BLOCKED for tainted callers.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region
   with that aspect, or anchored to one, return secrets.
-- **Gamepad-interface taint**: map data providers, pin pools and overlay frames, the tracker's containers and modules,
-  and the input binding stack are watched. Each addon write is reported with the addon and where it ran.
+- **Gamepad-interface taint**: the gamepad UI is booted (`Blizzard_GamepadSharedUtility`,
+  `Blizzard_GamepadActionBars`, `Blizzard_GamepadSmartNavigation`), so `UpdateInteractIcons` runs on a target
+  change, a soft-interact change and a binding-set change and makes its protected call as in the client. Any
+  field an addon wrote that secure Blizzard code reads is reported with the writer, the reader and the field.
 
 ## Limits
 
@@ -99,8 +110,7 @@ combat, then reloads and runs them once more with the map. It fails on an error 
   Placeholders that Blizzard code reads for undocumented enums, constants, CVars and LE_* values are listed in
   `sim.gaps`.
 - FrameXML proper, action bars, unit frames, chat and the shop are not booted (`loader.lua` SKIP_DEPS); a scenario
-  can load one by name.
-- Table-field taint is tracked for the watched gamepad tables only. `secret == x` is always false, and a secret used
-  as a table key is not caught.
+  can load one by name. The gamepad action bars and the action-button templates they inherit are booted.
+- `secret == x` is always false, and a secret used as a table key is not caught.
 - Units, recipes, items and maps are scenario data, not the game's databases.
-- A client boots in about 7-9 s of CPU time. A suite belongs in its own CI job, not the fast gate.
+- A client boots in about 2-4 s of CPU time. A suite belongs in its own CI job, not the fast gate.

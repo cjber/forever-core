@@ -866,7 +866,7 @@ function api.Debug()
 	)
 end
 
-ForeverTrackerHost = api -- taint-ok: addon-owned companion tracker registry
+ForeverTrackerHost = api
 ns.TrackerHost = api
 
 EventUtil.ContinueAfterAllEvents(function()

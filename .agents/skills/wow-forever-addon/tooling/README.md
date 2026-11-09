@@ -14,7 +14,6 @@ the producer commit the copy came from.
 | `lua` | Lua 5.1 lexer (`tokenize`, `Token`, `LuaSyntaxError`) |
 | `toc` | TOC and nested XML traversal, orphan Lua check per addon `runtime_dirs`, LuaLS coverage gate |
 | `multivalue` | `select()` and multi-return expansion lint; `Rules` carries the addon's policy |
-| `taint` | Taint lint; `Policy` carries the map openers, frames and getters (`C_Map.OpenWorldMap` is the safe call) |
 | `art` | Art lint (WFA-27): raw texture, atlas and markup calls outside the addon's art helper files need an `art-ok` reason |
 | `readable` | Secret-value lint (WFA-30): `UnitGUID`, `UnitName` and tooltip data reads go through the `Readable` guard, tooltip hooks check `IsForbidden`; `Policy` names the guard and safe units |
 | `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Ideas and contributors` ship with text under them, specs pass on the packaged files |
@@ -30,7 +29,7 @@ the producer commit the copy came from.
 | `generated` | The fresh-then-offline generated-data gate and `data_report` |
 | `sync` | `check`, `update`, `pin`, `manifest` |
 
-A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_taint.py`, `lint_art.py`,
+A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_art.py`,
 `lint_multivalue.py`, `lint_secret.py`, `typecheck_coverage.py`, `check_package.py`, `check_screenshots.py`,
 `check_editorconfig.py`, `check_family.py`, `check_locales.py`, `doctor.py`) and add only per-addon policy such as `RUNTIME_DIRS`.
 

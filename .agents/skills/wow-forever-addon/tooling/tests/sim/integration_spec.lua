@@ -124,25 +124,32 @@ test("an addon's loadstring chunk runs under its own setfenv and still reports t
 	eq(by, "SimData", "a loadstring function still reports its addon")
 end)
 
-test("the gamepad binding stack is watched, and backing out of a panel under the gamepad raises nothing", function()
+test("the gamepad binding stack is watched, and a tainted read blocks the gamepad", function()
 	local sim = Sim.new()
 	sim:login()
 	local stack = sim.G.GamepadSharedUtility.InputBindingManager.bindingSetStack
 	sim:runAs("SimBinder", "table.insert(GamepadSharedUtility.InputBindingManager.bindingSetStack, {})")
+	local info = sim.taint.slotInfo(stack, #stack)
+	assert(info and info.addon == "SimBinder", "binding stack slot carries the addon's taint")
+	sim:setGamepad(true)
+	sim:takeErrors()
+	sim:gamepadNavigate()
 	local found = sim:gamepadTaint("SimBinder")
-	eq(#found, 1, "binding stack write recorded")
-	eq(found[1].table, "GamepadSharedUtility.InputBindingManager.bindingSetStack", "watched table")
+	assert(#found > 0, "no finding")
+	eq(found[1].key, #stack, "the tainted binding-set slot")
+	local e = sim:expectError("Tainted field GamepadSharedUtility.InputBindingManager.bindingSetStack")
+	assert(e.message:find("written by SimBinder", 1, true), e.message)
+	assert(e.message:find("read by secure code", 1, true), e.message)
 	table.remove(stack)
 	sim:takeErrors()
-	sim:setGamepad(true)
 	sim:input(function()
 		sim.G.ShowUIPanel(sim.G.SettingsPanel)
 	end)
 	sim:input(function()
 		sim.G.SettingsPanel:Close()
 	end)
-	for _, e in ipairs(sim:takeErrors()) do
-		assert(not e.message:find("Spell%a+Target%a+"), e.message)
+	for _, err in ipairs(sim:takeErrors()) do
+		assert(not err.message:find("Spell%a+Target%a+"), err.message)
 	end
 end)
 
@@ -369,17 +376,18 @@ test("a frame can inherit SecureActionButtonTemplate", function()
 	eq(type(sim.G.SecureActionButtonMixin), "table", "the template's mixin")
 end)
 
-test("a map data provider added from addon code is gamepad-interface taint, and blocks the gamepad", function()
+test("a map data provider added from addon code is gamepad-interface taint", function()
 	local sim = mapScenario("SimMapProvider")
 	local found = sim:gamepadTaint("SimMapProvider")
 	assert(#found > 0, "no finding")
-	eq(found[1].table, "WorldMapFrame.dataProviders")
-	sim:expectError(
-		"[ADDON_ACTION_BLOCKED] AddOn 'SimMapProvider' tried to call the protected function"
-			.. " 'SetPreferredGamepadInteractTarget()'."
-	)
-	local ok = pcall(sim.expectNoGamepadTaint, sim, "SimMapProvider")
-	eq(ok, false, "expectNoGamepadTaint fails")
+	assert(found[1].write.file:find("SimMapProvider", 1, true), found[1].write.file)
+	assert(found[1].read.file:find("Blizzard_", 1, true), found[1].read.file)
+	for _, hit in ipairs(found) do
+		local path = sim.taint.tablePath(hit.table)
+		if path then
+			assert(hit.key ~= nil, "a named table read has a key")
+		end
+	end
 end)
 
 test("an addon's own overlay frame on the map leaves no gamepad-interface taint", function()
@@ -591,8 +599,8 @@ test("exercise drives an addon's commands in and out of combat and across a relo
 	local sim = Sim.new()
 	sim:addon(fixtures .. "SimSlash", "SimSlash")
 	local reloaded = sim:exercise()
-	eq(sim.G.SimSlashDB.calls, 3, "twice, then once in combat")
-	eq(reloaded.G.SimSlashDB.calls, 4, "the reload carried the count forward")
+	eq(sim.G.SimSlashDB.calls, 6, "twice and once in combat, for each interface")
+	eq(reloaded.G.SimSlashDB.calls, 12, "the reload carried the count forward and ran both interfaces")
 end)
 
 test("exercise fails on an error only the reloaded client raises", function()

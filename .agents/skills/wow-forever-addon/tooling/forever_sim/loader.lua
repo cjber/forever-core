@@ -31,6 +31,11 @@ for _, name in ipairs({
 	"Blizzard_Statistics",
 	"Blizzard_ZoneAbility",
 	"Blizzard_IME",
+	-- The gamepad action bars pull MicroMenu, which pulls Communities and the guild panel; no gamepad surface
+	-- a scenario exercises reads them, and they drag in most of the social UI.
+	"Blizzard_Communities",
+	"Blizzard_GuildControlUI",
+	"Blizzard_TimerunningUtil",
 }) do
 	M.SKIP_DEPS[name] = true
 end

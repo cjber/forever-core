@@ -1,86 +1,91 @@
--- Marks every function an addon defines so the sim knows when the addon's code runs: after each function's
--- parameter list it inserts `__fst("Addon");` on the same line, so line numbers and error messages stay the
--- client's. Blizzard code is never rewritten and runs at full speed; only addon functions pay for the marker.
+-- Marks every function an addon defines so the sim knows when the addon's code runs, and instruments every
+-- table field read and write so taint follows the slot (transform.lua parses the source; this module only
+-- caches the rewrite and the disk copy of Blizzard's files).
+--
+-- Addon chunks get `__fst("Addon");` after each function's parameter list and at the chunk start; Blizzard
+-- chunks get the field calls only and run with the writer taint at the time. Line numbers are the client's.
+local Transform = require("transform")
+
 local M = {}
 
 M.MARKER = "__fst"
 
-local function longBracket(src, i)
-	-- At "[", returns the closing position of a long bracket ([[...]], [==[...]==]) or nil.
-	local eq = src:match("^%[(=*)%[", i)
-	if not eq then
-		return nil
+local cache = {}
+
+local function hash(text)
+	-- Two mod-2^32 hashes side by side; the arithmetic stays exact in a double for these multipliers.
+	local a, b = 5381, 52711
+	for i = 1, #text do
+		local byte = text:byte(i)
+		a = (a * 33 + byte) % 4294967296
+		b = (b * 65599 + byte) % 4294967296
 	end
-	local close = "]" .. eq .. "]"
-	local _, e = src:find(close, i + #eq + 2, true)
-	return e or #src
+	return string.format("%08x%08x", a, b)
+end
+M.hash = hash
+
+-- The rewriter's own source names the Blizzard rewrite cache, so a change to the rewrite never serves output the
+-- old code made.
+local REWRITER = (function()
+	local dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
+	local parts = {}
+	for _, name in ipairs({ "transform.lua", "instrument.lua" }) do
+		local file = assert(io.open(dir .. name, "rb"))
+		parts[#parts + 1] = file:read("*a")
+		file:close()
+	end
+	return hash(table.concat(parts, "\0"))
+end)()
+
+-- Rewrites a chunk; `addon` names the addon (addon code) or is nil for Blizzard's.
+function M.rewrite(src, addon)
+	local key = (addon or "-") .. "\0" .. src
+	local hit = cache[key]
+	if hit then
+		return hit
+	end
+	local out = Transform.rewrite(src, addon)
+	cache[key] = out
+	return out
 end
 
--- Returns src with the marker inserted into every function body.
-function M.rewrite(src, addon)
-	local out = {}
-	local i, n = 1, #src
-	local marker = " " .. M.MARKER .. "(" .. string.format("%q", addon) .. ");"
-	local pendingFunction = false
-	local depth = 0
-	local last = 1
-	while i <= n do
-		local c = src:sub(i, i)
-		if c == "-" and src:sub(i, i + 1) == "--" then
-			local e = src:sub(i + 2, i + 2) == "[" and longBracket(src, i + 2)
-			if e then
-				i = e + 1
-			else
-				local nl = src:find("\n", i, true)
-				i = nl and nl or n + 1
-			end
-		elseif c == '"' or c == "'" then
-			local j = i + 1
-			while j <= n do
-				local d = src:sub(j, j)
-				if d == "\\" then
-					j = j + 2
-				elseif d == c or d == "\n" then
-					break
-				else
-					j = j + 1
-				end
-			end
-			i = j + 1
-		elseif c == "[" and (src:sub(i + 1, i + 1) == "[" or src:sub(i + 1, i + 1) == "=") then
-			local e = longBracket(src, i)
-			i = e and e + 1 or i + 1
-		elseif c:match("[%a_]") then
-			local word = src:match("^[%w_]+", i)
-			if word == "function" then
-				pendingFunction = true
-				depth = 0
-			end
-			i = i + #word
-		elseif c:match("%d") then
-			local num = src:match("^0[xX]%x+", i)
-				or src:match("^%d+%.?%d*[eE][%+%-]?%d+", i)
-				or src:match("^%d+%.?%d*", i)
-			i = i + #num
-		elseif pendingFunction and c == "(" then
-			depth = depth + 1
-			i = i + 1
-		elseif pendingFunction and c == ")" then
-			depth = depth - 1
-			i = i + 1
-			if depth == 0 then
-				out[#out + 1] = src:sub(last, i - 1)
-				out[#out + 1] = marker
-				last = i
-				pendingFunction = false
-			end
-		else
-			i = i + 1
-		end
+local madeDirs = {}
+
+local function ensureDir(path)
+	if madeDirs[path] then
+		return
 	end
-	out[#out + 1] = src:sub(last)
-	-- The main chunk itself runs as the addon too.
-	return marker:sub(2) .. table.concat(out)
+	os.execute("mkdir -p '" .. path:gsub("'", "'\\''") .. "'")
+	madeDirs[path] = true
+end
+
+-- Rewrites Blizzard source, caching the result under `<cacheDir>/<rewriter hash>/<build>/<source hash>.lua` so a
+-- pinned build parses once per machine and rewriter rather than once per client.
+function M.rewriteBlizzard(src, cacheDir, build)
+	local dir = string.format("%s/%s/%s", cacheDir, REWRITER, build)
+	local path = dir .. "/" .. hash(src) .. ".lua"
+	local file = io.open(path, "rb")
+	if file then
+		local text = file:read("*a")
+		file:close()
+		return text
+	end
+	local out = M.rewrite(src, nil)
+	ensureDir(dir)
+	local write = io.open(path, "wb")
+	if write then
+		write:write(out)
+		write:close()
+	end
+	return out
+end
+
+M.cacheStats = function()
+	local n = 0
+	for _ in pairs(cache) do
+		n = n + 1
+	end
+	return n
 end
 
 return M

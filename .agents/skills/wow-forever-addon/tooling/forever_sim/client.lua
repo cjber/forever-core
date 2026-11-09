@@ -244,7 +244,7 @@ function M.build(sim)
 		end
 		sim.reportError(msg, debug.traceback("", 2), Taint.current)
 	end
-	function sim.reportError(message, traceback, taint)
+	function sim.reportError(message, traceback, taint, origin, event)
 		message = tostring(Secret.unwrap(message))
 		if taint and message:find("attempt to compare %a+ with %a+") and message:find("userdata") then
 			-- A secret on one side of an ordering comparison: Lua 5.1 reports the types, the client the secret.
@@ -253,7 +253,14 @@ function M.build(sim)
 				string.format("attempt to compare a secret value (execution tainted by '%s')", taint)
 			)
 		end
-		local entry = { message = message, traceback = traceback or "", taint = taint, time = sim.time }
+		local entry = {
+			message = message,
+			traceback = traceback or "",
+			taint = taint,
+			time = sim.time,
+			origin = origin,
+			event = event,
+		}
 		table.insert(sim.errors, entry)
 		if handler then
 			local wasDispatching = dispatching
@@ -286,15 +293,56 @@ function M.build(sim)
 	-- Protected actions
 	---------------------------------------------------------------------------
 	sim.actions = {}
+	local function entered(origin)
+		local site = sim.taint.originSite(origin)
+		if not site then
+			return ""
+		end
+		return string.format(" (entered from %s:%s)", tostring(site.file or "?"), tostring(site.line or "?"))
+	end
+	local function describeOrigin(origin)
+		if not origin then
+			return nil
+		end
+		local Taint_ = sim.taint
+		if origin.kind == "field" and origin.write then
+			local path = Taint_.tablePath and Taint_.tablePath(origin.table) or nil
+			return string.format(
+				"Tainted field %s[%s] was written by %s at %s:%s%s and read by secure code at %s:%s.",
+				path or "<table>",
+				tostring(origin.key),
+				tostring(origin.write.addon),
+				tostring(origin.write.file or "?"),
+				tostring(origin.write.line or "?"),
+				entered(origin),
+				tostring(origin.read and origin.read.file or "?"),
+				tostring(origin.read and origin.read.line or "?")
+			)
+		elseif origin.kind == "global" and origin.write then
+			return string.format(
+				"Tainted global %s was written by %s at %s:%s%s.",
+				tostring(origin.global),
+				tostring(origin.write.addon),
+				tostring(origin.write.file or "?"),
+				tostring(origin.write.line or "?"),
+				entered(origin)
+			)
+		end
+		return nil
+	end
+	sim.describeOrigin = describeOrigin
 	local function actionEvent(event, what)
 		local addon = Taint.current
-		local entry = { event = event, addon = addon, func = what, traceback = debug.traceback("", 3) }
+		local origin = Taint.origin
+		local entry = { event = event, addon = addon, func = what, traceback = debug.traceback("", 3), origin = origin }
 		table.insert(sim.actions, entry)
-		sim.reportError(
-			string.format("[%s] AddOn '%s' tried to call the protected function '%s'.", event, tostring(addon), what),
-			entry.traceback,
-			addon
-		)
+		local message =
+			string.format("[%s] AddOn '%s' tried to call the protected function '%s'.", event, tostring(addon), what)
+		local detail = describeOrigin(origin)
+		if detail then
+			message = message .. "\n" .. detail
+		end
+		sim.reportError(message, entry.traceback, addon, origin, event)
 		if sim.events then
 			sim.events.queue(event, addon, what)
 		end
@@ -445,6 +493,7 @@ function M.build(sim)
 			iterations = iterations,
 			seq = timerSeq,
 			taint = Taint.current,
+			site = Taint.current and Taint.addonSite(Taint.current) or nil,
 			handle = handle,
 		}
 		table.insert(sim.timers, timer)
@@ -505,7 +554,9 @@ function M.build(sim)
 			sim.timers = keep
 			for _, timer in ipairs(due) do
 				if not (timer.handle and timer.handle._cancelled) then
-					Taint.dispatch(timer.taint, timer.callback)
+					-- The client fires a timer from C: the callback starts secure, and an addon callback taints
+					-- only its own body.
+					Taint.dispatch(nil, timer.callback)
 					if timer.iterations ~= 1 and not (timer.handle and timer.handle._cancelled) then
 						timer.iterations = timer.iterations and timer.iterations - 1
 						timer.due = sim.time + math.max(timer.interval, 0.001)
@@ -659,6 +710,8 @@ function M.build(sim)
 		GamepadMapZoomSpeed = "1",
 		GamepadMapEdgePanDistance = "40",
 		GamepadTargetingModifierVisualDelay = "0.5",
+		GamepadPossessBarOverride = "1",
+		GamepadStanceBarOverride = "1",
 	}
 	sim.cvars = {}
 	for name, value in pairs(cvarDefaults) do

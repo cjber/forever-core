@@ -182,7 +182,7 @@ local function Install()
 	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, api)
 	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, api)
 	-- A secure post-hook: the client's own method has returned and this adds no script to any frame.
-	hooksecurefunc(WorldMapFrame, "SetQuestLogPanelShown", QuestLogPanelShown) -- taint-ok: post-hook only; no frame script
+	hooksecurefunc(WorldMapFrame, "SetQuestLogPanelShown", QuestLogPanelShown)
 end
 
 ---@param key string
@@ -250,5 +250,5 @@ function api.Selected()
 	return selectedKey
 end
 
-ForeverQuestLogTabs = api -- taint-ok: addon-owned quest log tab registry
+ForeverQuestLogTabs = api
 ns.QuestLogTabs = api

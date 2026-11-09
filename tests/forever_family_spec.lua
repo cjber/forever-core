@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
 -- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "ed72d6e08eaf4e0948af441ca1e7931fbc11c0f26279abc7d51106597bfb3270"
+local PINNED = "3a6d44f505766b8518f961929ab11e7fc0a73fce849b39704271de956c26d4d4"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -304,7 +304,7 @@ Client()
 local first = { L = PhraseLocale() }
 local firstView = Load(first)
 local Family = env.ForeverFamily
-check(Family and Family.VERSION == 7, "the first copy sets the shared global")
+check(Family and Family.VERSION == 8, "the first copy sets the shared global")
 check(firstView.State == Family.State and firstView.VERSION == Family.VERSION, "an addon's view is the shared module")
 check(Family.For(first.L) == firstView, "bound to its own L, the same view each time")
 check(Family.For(nil) == Family, "with no L, the module itself")
@@ -318,7 +318,7 @@ local older = { VERSION = Family.VERSION - 1 }
 env.ForeverFamily = older
 local newer = { L = PhraseLocale() }
 Load(newer)
-check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 7, "a newer copy takes over from an older one")
+check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 8, "a newer copy takes over from an older one")
 env.ForeverFamily = Family
 
 -- The five addons, in order, with their store pages.
@@ -716,8 +716,8 @@ currentView.ShowLink(nil, nil, "TweaksForever")
 local currentWindow = current.window
 check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
 local served = {}
-local v8 = {
-	VERSION = 8,
+local v9 = {
+	VERSION = 9,
 	ShowLink = function(_, _, folder)
 		served[#served + 1] = folder
 		return true
@@ -727,16 +727,16 @@ local v8 = {
 		return true
 	end,
 	Once = function()
-		return "v8"
+		return "v9"
 	end,
 }
-env.ForeverFamily = v8
+env.ForeverFamily = v9
 check(
 	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
 	"a newer copy serves ShowLink"
 )
 check(currentView.ShowSupport() and served[2] == "Ko-fi", "and ShowSupport")
-check(current.Once("Test.later") == "v8", "and Once, so there is one record")
+check(current.Once("Test.later") == "v9", "and Once, so there is one record")
 -- And from the other side: a copy taking over from an older one hides the older one's window.
 Client()
 local olderWindow = Create("Frame")
