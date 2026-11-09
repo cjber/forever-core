@@ -74,6 +74,7 @@ FOREVER_ADDONS = (
     "FieldGuideForever",
     "KilnForever",
     "LegacyForever",
+    "MacroAssistForever",
     "ShortestPathForever",
     "SkillUpForever",
     "TweaksForever",
