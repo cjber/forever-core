@@ -97,6 +97,24 @@ class ForeverClientTest(unittest.TestCase):
             with self.subTest(refused), self.assertRaises(fc.ClientError):
                 fc.allowed_command(refused, addons)
 
+    def test_slash_releases_an_addon_edit_box_before_it_opens_chat(self):
+        calls = []
+        with (
+            mock.patch.object(fc, "send", side_effect=lambda _state, *args: calls.append(args)),
+            mock.patch.object(fc, "allowed_command"),
+        ):
+            fc.slash({}, "/reload")
+        self.assertEqual(
+            calls,
+            [
+                ("key", "Return"),
+                ("key", "Escape"),
+                ("key", "Return"),
+                ("type", "--delay", fc.TYPE_DELAY_MS, "/reload"),
+                ("key", "Return"),
+            ],
+        )
+
     def test_key_sends_only_ui_keys(self):
         with mock.patch.object(fc, "x") as x, self.assertRaisesRegex(fc.ClientError, "refused w"):
             fc.press({}, ["Escape", "w"])

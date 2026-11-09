@@ -26,7 +26,8 @@ The client is for testing the Forever addons' interface, never for playing, and 
 
 - Interface only. There is no free typing: `slash` sends only the Forever addons' own commands (read from their
   `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` needs a
-  screenshot taken since the last input, so every click aims at UI the agent has just seen.
+  screenshot taken since the last input, so every click aims at UI the agent has just seen. `slash` puts the
+  keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
 - Short sessions. A session ends after MAX_SESSION at the latest, and every ending (the test returning, a failure,
   a signal, the cap) logs the character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
@@ -243,9 +244,22 @@ def allowed_command(command: str, addons: Path | None = None) -> None:
         )
 
 
+def focus_chat(state: Mapping) -> None:
+    """Put keyboard focus in the chat edit box, whichever frame held it.
+
+    From a clean frame, Return opens chat, Escape closes it and Return opens it again. When an addon EditBox
+    has focus and no OnEnterPressed (the Forever copy-link box), the first Return stays in that
+    box, Escape runs its OnEscapePressed, which closes its window, and the second Return opens chat. A box
+    whose OnEnterPressed clears its own focus lets the Escape through to the game, which closes the topmost
+    window or opens the game menu, so `reload` then times out as before."""
+    send(state, "key", "Return")
+    send(state, "key", "Escape")
+    send(state, "key", "Return")
+
+
 def slash(state: Mapping, command: str) -> None:
     allowed_command(command)
-    send(state, "key", "Return")
+    focus_chat(state)
     send(state, "type", "--delay", TYPE_DELAY_MS, command)
     send(state, "key", "Return")
 
