@@ -52,6 +52,25 @@ Everything addon specific arrives through the namespace, never through an edit t
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
 `ns.L` carries the player's language, and a section is handed over with `ForeverTrackerHost.Attach(module)`.
 
+A section with its own show switch passes it as the second argument, so its header menu offers **Hide this section**,
+whose tooltip says where to turn it back on:
+
+```lua
+ForeverTrackerHost.Attach(module, {
+	get = function()
+		return ns.db.showTracker
+	end,
+	set = function(shown)
+		ns.db.showTracker = shown
+	end,
+	where = L["Turn it back on with /skillup, under Route and trainer."],
+})
+```
+
+`set` must do what the addon's settings checkbox does, including hiding the section, and the host writes nothing
+else. A section without one keeps the menu it
+already has.
+
 The host also owns the optional backdrop behind the whole column. Every section's right-click menu offers it under
 **Tracker background**, with off, 25%, 50%, 75% and 100% choices, so an addon wires nothing: attaching a section
 puts its menu there, and the saved opacity, the art and the label stay in the host.
