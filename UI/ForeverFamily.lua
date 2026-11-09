@@ -45,7 +45,7 @@ local _, ns = ...
 ---@field SetTitle fun(self: ForeverFamilyLinkWindow, title: string)
 ---@field GetPortrait fun(self: ForeverFamilyLinkWindow): Texture
 
-local VERSION = 7
+local VERSION = 8
 if ForeverFamily and (tonumber(ForeverFamily.VERSION) or 0) >= VERSION then
 	ns.Family = type(ForeverFamily.For) == "function" and ForeverFamily.For(ns.FamilyL or ns.L) or ForeverFamily
 	return
@@ -660,5 +660,5 @@ function Family.For(locale)
 	return view --[[@as ForeverFamilyAPI]]
 end
 
-ForeverFamily = Family -- taint-ok: addon-owned registry shared by the Forever addons
+ForeverFamily = Family
 ns.Family = Family.For(ns.FamilyL or ns.L)

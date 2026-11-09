@@ -72,7 +72,7 @@ test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on
 	eq(region:GetNumPoints(), 0, "anchors cleared")
 end)
 
-test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's taint", function()
+test("widgets: FocusEnter and FocusExit dispatch OnEnter and OnLeave secure", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
 	widgets.finalize()
@@ -88,7 +88,7 @@ test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's 
 	Taint.set("Addon")
 	frame:FocusExit()
 	Taint.set(nil)
-	eq(table.concat(seen, ","), "enter:nil,leave:Addon")
+	eq(table.concat(seen, ","), "enter:nil,leave:nil")
 end)
 
 test("widgets: a script's setter taint stops when the handler returns", function()
@@ -235,6 +235,74 @@ test("taint: hooksecurefunc keeps the field secure and runs the hook isolated", 
 	eq(t.f(), 1)
 	eq(seen, true)
 	eq(Taint.current, nil, "the hook's taint does not leak")
+end)
+
+test("taint: a cause groups the field, the writer line and the origin line", function()
+	local table_ = {}
+	local write = {
+		addon = "Addon",
+		file = "Blizzard_X/File.lua",
+		line = 7,
+		origin = { addon = "Addon", file = "Addon/Main.lua", line = 11 },
+	}
+	local first = {
+		kind = "field",
+		addon = "Addon",
+		key = "flag",
+		table = table_,
+		write = write,
+		read = { file = "Blizzard_X/File.lua", line = 7 },
+	}
+	local moved = {
+		addon = "Addon",
+		file = "Blizzard_X/File.lua",
+		line = 7,
+		origin = { addon = "Addon", file = "Addon/Main.lua", line = 12 },
+	}
+	local second = {
+		kind = "field",
+		addon = "Addon",
+		key = "flag",
+		table = table_,
+		write = write,
+		read = { file = "Blizzard_X/File.lua", line = 9 },
+	}
+	eq(Taint.causeKey(first), Taint.causeKey(second), "the read line is not part of the cause")
+	assert(
+		Taint.causeKey(first)
+			~= Taint.causeKey({ kind = "field", addon = "Addon", key = "flag", table = table_, write = moved }),
+		"a different origin is a different cause"
+	)
+end)
+
+test("sim: a report lists one entry per distinct taint cause, with a count", function()
+	local Sim = require("sim")
+	local table_ = {}
+	local write = {
+		addon = "Addon",
+		file = "Blizzard_X/File.lua",
+		line = 7,
+		origin = { addon = "Addon", file = "Addon/Main.lua", line = 11 },
+	}
+	local function blocked(readLine)
+		return {
+			message = "blocked",
+			traceback = "",
+			origin = {
+				kind = "field",
+				addon = "Addon",
+				key = "flag",
+				table = table_,
+				write = write,
+				read = { file = "Blizzard_X/File.lua", line = readLine },
+			},
+		}
+	end
+	local text = Sim.describe({ blocked(7), blocked(9), { message = "other", traceback = "" } })
+	assert(text:find("2x blocked", 1, true), text)
+	local _, grouped = text:gsub("2x blocked", "")
+	eq(grouped, 1, "one entry for the two blocked reads")
+	assert(text:find("other", 1, true), text)
 end)
 
 test("client: a handler forwarding to the saved default records one error, at its raise site", function()

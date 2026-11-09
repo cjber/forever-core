@@ -1,0 +1,10 @@
+-- luacheck: ignore
+local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
+events:SetScript("OnEvent", function()
+	SimTaintMouseFrame = CreateFrame("Frame", "SimTaintMouseFrame", UIParent)
+	SimTaintMouseFrame:SetSize(40, 40)
+	SimTaintMouseFrame:SetPoint("CENTER")
+	SimTaintMouseFrame:SetScript("OnMouseUp", function() end)
+	SimTaintMouseFrame:SetScript("OnMouseDown", function() end)
+end)

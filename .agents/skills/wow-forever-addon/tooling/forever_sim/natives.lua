@@ -146,13 +146,18 @@ function M.build(sim)
 	sim.modules = {}
 	G.import = function(name)
 		local source = debug.getinfo(2, "S").source
-		local folder = source:match("^@([^/]+)/") or ""
+		local folder, dir = source:match("^@([^/]+)/(.*/)[^/]*$")
+		folder = folder or source:match("^@([^/]+)/")
 		local module = name:gsub("^%.", "")
-		local loaded = sim.modules[folder] and sim.modules[folder][module]
-		if loaded == nil then
-			error(string.format("import(): module '%s' not found in %s", name, folder), 2)
+		local loaded = sim.modules[folder or ""] or {}
+		local value = loaded[module]
+		if value == nil and dir and dir ~= "" then
+			value = loaded[dir:gsub("/", ".") .. module]
 		end
-		return loaded
+		if value == nil then
+			error(string.format("import(): module '%s' not found in %s", name, folder or ""), 2)
+		end
+		return value
 	end
 
 	-- Chat's slash command tables (native in the client) and gamepad cursor natives.
@@ -191,7 +196,485 @@ function M.build(sim)
 				end
 			end,
 		})
+	-- Legacy action-bar natives the gamepad action bars' OnLoad reads; the sim has no spells or actions.
+	for _, entry in ipairs({
+		{
+			"GetActionInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetActionTexture",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetActionText",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetActionCooldown",
+			function()
+				return 0, 0
+			end,
+		},
+		{
+			"GetActionCharges",
+			function()
+				return 0, 0
+			end,
+		},
+		{
+			"GetActionCount",
+			function()
+				return 0
+			end,
+		},
+		{
+			"IsActionInRange",
+			function()
+				return 1
+			end,
+		},
+		{
+			"IsUsableAction",
+			function()
+				return 1
+			end,
+		},
+		{
+			"HasAction",
+			function()
+				return false
+			end,
+		},
+		{
+			"ActionHasRange",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetActionBarPage",
+			function()
+				return 1
+			end,
+		},
+		{
+			"GetBonusBarOffset",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetNumActionBars",
+			function()
+				return 1
+			end,
+		},
+		{
+			"GetActionLossOfControlCooldown",
+			function()
+				return 0, 0
+			end,
+		},
+		{
+			"GetPetActionInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetPetActionCooldown",
+			function()
+				return 0, 0, 0
+			end,
+		},
+		{
+			"GetPetActionSlotUsable",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetNumPetActionSlots",
+			function()
+				return 0
+			end,
+		},
+		{
+			"HasPetUI",
+			function()
+				return false, false
+			end,
+		},
+		{
+			"GetPetActionsEnabled",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetFlyoutInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetFlyoutSlotInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetNumFlyouts",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetNumBindings",
+			function()
+				return 0
+			end,
+		},
+		{
+			"IsModifiedClick",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetMerchantNumItems",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetNumSpecializations",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetTrainerServiceStepIndex",
+			function()
+				return 0
+			end,
+		},
+		{
+			"InRepairMode",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetPlayerTradeMoney",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetTargetTradeMoney",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetNumQuestLogEntries",
+			function()
+				return 0
+			end,
+		},
+		{
+			"CanAffordMerchantItem",
+			function()
+				return true
+			end,
+		},
+		{
+			"GetMerchantFilter",
+			function()
+				return nil
+			end,
+		},
+		{
+			"CloseMerchant",
+			function() end,
+		},
+		{
+			"GetNumTrainerServices",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetTrainerServiceInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetTrainerServiceCost",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetTrainerServiceSkillReq",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetTrainerServiceDescription",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetTrainerServiceTypeFilter",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetTrainerServiceNumAbilityReq",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetTrainerServiceAbilityReq",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SetTrainerServiceTypeFilter",
+			function() end,
+		},
+		{
+			"ExpandTrainerSkillLine",
+			function() end,
+		},
+		{
+			"GetTrainerTradeskillRankValues",
+			function()
+				return 0, 0, 0
+			end,
+		},
+		{
+			"GetTrainerSkillLineFilter",
+			function()
+				return false
+			end,
+		},
+		{
+			"SetTrainerSkillLineFilter",
+			function() end,
+		},
+		{
+			"GetTrainerServiceIcon",
+			function()
+				return nil
+			end,
+		},
+		{
+			"CloseTrainer",
+			function() end,
+		},
+		{
+			"BuyTrainerService",
+			function() end,
+		},
+		{
+			"ActionBarController_UpdateAllSpellHighlights",
+			function() end,
+		},
+		{
+			"SecureButton_GetEffectiveButton",
+			function()
+				return "LeftButton"
+			end,
+		},
+		{
+			"SecureButton_GetModifiedUnit",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetModifierPrefix",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetButtonSuffix",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetAttribute",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetModifiedAttribute",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetUnit",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetAction",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetSpell",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetItem",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetTarget",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureButton_GetMacro",
+			function()
+				return nil
+			end,
+		},
+		{
+			"SecureCmdOptionParse",
+			function()
+				return nil
+			end,
+		},
+		{
+			"StoreFrame_IsShown",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetGuildLogoInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetGuildLogoTexture",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetGuildInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetGuildRosterMOTD",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetGuildRosterInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"HasCompletedAnyAchievement",
+			function()
+				return false
+			end,
+		},
+		{
+			"HasCompletedAnyAchievementForAccount",
+			function()
+				return false
+			end,
+		},
+		{
+			"IsAchievementEligible",
+			function()
+				return false
+			end,
+		},
+		{
+			"GetNumGuildMembers",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetGuildRosterShowOffline",
+			function()
+				return false
+			end,
+		},
+		{
+			"IsCommunitiesUIDisabledByTrialAccount",
+			function()
+				return false
+			end,
+		},
+	}) do
+		if G[entry[1]] == nil then
+			G[entry[1]] = entry[2]
+		end
+	end
 	G.addframetext = function() end
+	-- FrameXML's movie frames are not booted; Blizzard_Gamepad's cinematic setup assigns handler methods to them.
+	G.MovieFrame = G.MovieFrame or {}
+	G.CinematicFrame = G.CinematicFrame or {}
+	-- Unit frames are not booted; the character panel's OnHide clears a flag on these bars.
+	G.PlayerFrameHealthBar = G.PlayerFrameHealthBar or {}
+	G.PlayerFrameManaBar = G.PlayerFrameManaBar or {}
+	G.PlayerFrameAlternatePowerBar = G.PlayerFrameAlternatePowerBar or {}
+	G.PetFrameHealthBar = G.PetFrameHealthBar or {}
+	G.PetFrameManaBar = G.PetFrameManaBar or {}
+	G.PlayerFrame_GetHealthBar = function()
+		return G.PlayerFrameHealthBar
+	end
+	G.PlayerFrame_GetManaBar = function()
+		return G.PlayerFrameManaBar
+	end
+	G.PlayerFrame_GetAlternatePowerBar = function()
+		return G.PlayerFrameAlternatePowerBar
+	end
+	-- FunctionUtil's next-frame helper: callbacks run after the current frame, as C_Timer.After(0) does.
+	G.RunNextFrame = function(callback)
+		sim.impl["C_Timer.After"](0, callback)
+	end
+	G.RunOnNextFrame = G.RunNextFrame
 	-- Empty quest fixtures still use the native quest-map refresh and sorting entry points.
 	G.SortQuestSortTypes = function() end
 	G.SortQuests = function() end

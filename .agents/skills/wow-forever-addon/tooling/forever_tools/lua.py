@@ -1,4 +1,4 @@
-"""Lua 5.1 lexer shared by the taint and multi-value lints."""
+"""Lua 5.1 lexer shared by the multi-value lint."""
 
 import re
 from dataclasses import dataclass

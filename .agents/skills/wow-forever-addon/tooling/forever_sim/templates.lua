@@ -195,6 +195,9 @@ function M.build(sim)
 		else
 			if addon then
 				code = Instrument.rewrite(code, addon)
+			else
+				-- Blizzard code carries field taint too; its rewritten source is cached per pinned build.
+				code = Instrument.rewriteBlizzard(code, sim.cache .. "/taint", sim.build)
 			end
 			local err
 			chunk, err = loadstring(code, "@" .. chunkName)
@@ -224,7 +227,8 @@ function M.build(sim)
 			return function(self, ...)
 				local m = self[method]
 				if type(m) ~= "function" then
-					error(string.format("%s: method %s not found on %s", node.tag, method, tostring(self)), 2)
+					local name = self.GetDebugName and self:GetDebugName() or tostring(self)
+					error(string.format("%s: method %s not found on %s", node.tag, method, tostring(name)), 2)
 				end
 				return m(self, ...)
 			end
@@ -975,11 +979,13 @@ function M.build(sim)
 		local ok = sim.run(function()
 			local result = chunk(unpack(args, 1, n))
 			if result ~= nil then
-				-- A file that returns a value is a module import() can find.
+				-- A file that returns a value is a module import() can find, by its file name and by the path
+				-- the client's import(".Dir.File") uses.
 				local folder, file = chunkName:match("^([^/]+)/(.-)%.lua$")
 				if folder then
 					sim.modules[folder] = sim.modules[folder] or {}
 					sim.modules[folder][file:match("([^/]+)$")] = result
+					sim.modules[folder][file:gsub("/", ".")] = result
 				end
 			end
 		end)

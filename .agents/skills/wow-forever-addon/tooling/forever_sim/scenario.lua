@@ -36,6 +36,16 @@ function M.install(Sim)
 		local E = self.events
 		E.fire("SPELLS_CHANGED")
 		E.fire("VARIABLES_LOADED")
+		-- The client's EventUtil.TriggerOnVariablesLoaded: Blizzard_Game calls it on VARIABLES_LOADED, and the
+		-- gamepad action bars finish their setup there.
+		if self.G.EventUtil and self.G.EventUtil.TriggerOnVariablesLoaded then
+			self.run(function()
+				self.G.EventUtil.TriggerOnVariablesLoaded()
+			end)
+		end
+		if self.watch and self.watch.ensureGamepad then
+			self.watch.ensureGamepad()
+		end
 		self.loggedIn = true
 		E.fire("PLAYER_LOGIN")
 		E.fire("PLAYER_ENTERING_WORLD", true, false)
@@ -298,6 +308,232 @@ function M.install(Sim)
 	end
 
 	---------------------------------------------------------------------------
+	-- Panels other than Professions and the map: trainer, merchant, bags, character, tracker, quest log
+	---------------------------------------------------------------------------
+	local function dispatchTab(sim, tab)
+		if tab then
+			sim.widgets.dispatch(tab, "OnMouseUp", "LeftButton", true)
+			sim:advance(0.02)
+		end
+	end
+
+	-- The bag bar's token tracker comes from the currency UI; the sim has no currency frame, so give the bag
+	-- settings manager a plain tracker to own (the fields the client's container code reads).
+	local function ensureBagTracker(sim)
+		local G = sim.G
+		local manager = G.ContainerFrameSettingsManager
+		if not manager or manager.TokenTracker then
+			return
+		end
+		local tracker = G.CreateFrame("Frame", "SimContainerTokenTracker", G.UIParent)
+		tracker.SetIsCombinedInventory = function() end
+		tracker.MarkDirty = function() end
+		manager.TokenTracker = tracker
+	end
+
+	-- The Professions window's right-hand profession tabs, then a selected recipe.
+	function Sim:professionTabs()
+		local pf = self.G.ProfessionsFrame
+		local out = {}
+		if not pf then
+			return out
+		end
+		local named = { "ProfessionsOverviewTab" }
+		for i = 1, 7 do
+			named[#named + 1] = "Professions" .. i .. "Tab"
+		end
+		for _, key in ipairs(named) do
+			if pf[key] then
+				out[#out + 1] = pf[key]
+			end
+		end
+		if #out == 0 then
+			for _, tab in ipairs(pf.rightProfessionTabs or {}) do
+				out[#out + 1] = tab
+			end
+		end
+		return out
+	end
+
+	function Sim:selectProfessionTabs()
+		for _, tab in ipairs(self:professionTabs()) do
+			dispatchTab(self, tab)
+		end
+		return self
+	end
+
+	function Sim:openTrainer()
+		local G = self.G
+		self.run(function()
+			G.C_AddOns.LoadAddOn("Blizzard_TrainerUI")
+		end)
+		local frame = G.ClassTrainerFrame or G.TrainerFrame
+		if frame then
+			self:showPanel(frame)
+			self.events.fire("TRAINER_SHOW")
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:closeTrainer()
+		local frame = self.G.ClassTrainerFrame or self.G.TrainerFrame
+		if frame then
+			self.events.fire("TRAINER_CLOSED")
+			self.run(function()
+				self.G.HideUIPanel(frame)
+			end)
+			self:advance(0.1)
+		end
+	end
+
+	function Sim:openMerchant()
+		ensureBagTracker(self)
+		local G = self.G
+		local frame = G.MerchantFrame
+		if frame then
+			self:showPanel(frame)
+			self.events.fire("MERCHANT_SHOW")
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:selectMerchantTabs()
+		local frame = self.G.MerchantFrame
+		if frame then
+			for _, tab in ipairs(frame.Tabs or {}) do
+				dispatchTab(self, tab)
+			end
+		end
+		return self
+	end
+
+	function Sim:closeMerchant()
+		local frame = self.G.MerchantFrame
+		if frame then
+			self.events.fire("MERCHANT_CLOSED")
+			self.run(function()
+				self.G.HideUIPanel(frame)
+			end)
+			self:advance(0.1)
+		end
+	end
+
+	function Sim:openBags()
+		ensureBagTracker(self)
+		local frame = self.G.ContainerFrame1
+		if frame then
+			-- The client generates the bag's item buttons before showing it; a panel shown directly has none yet.
+			self.run(function()
+				if frame.UpdateItemSlots then
+					frame:UpdateItemSlots()
+				end
+			end)
+			self:showPanel(frame)
+			self.events.fire("BAG_UPDATE", 0)
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:closeBags()
+		local frame = self.G.ContainerFrame1
+		if frame then
+			self.run(function()
+				self.G.HideUIPanel(frame)
+			end)
+			self:advance(0.1)
+		end
+	end
+
+	function Sim:openCharacter()
+		local frame = self.G.CharacterFrame
+		if frame then
+			self:showPanel(frame)
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:selectCharacterTabs()
+		local frame = self.G.CharacterFrame
+		if frame then
+			for _, tab in ipairs(frame.ModeTabs or {}) do
+				local button = type(tab) == "table" and tab.Tab or tab
+				if type(button) == "table" then
+					dispatchTab(self, button)
+				end
+			end
+			if frame.SetSelectedModeTabByFrame and frame.ModeTabs then
+				for _, tab in ipairs(frame.ModeTabs) do
+					if type(tab) == "table" then
+						self.run(function()
+							frame:SetSelectedModeTabByFrame(tab)
+						end)
+					end
+				end
+			end
+		end
+		return self
+	end
+
+	function Sim:closeCharacter()
+		local frame = self.G.CharacterFrame
+		if frame then
+			self.run(function()
+				self.G.HideUIPanel(frame)
+			end)
+			self:advance(0.1)
+		end
+	end
+
+	function Sim:openObjectiveTracker()
+		local frame = self.G.ObjectiveTrackerFrame
+		if frame then
+			self.run(function()
+				frame:Show()
+			end)
+			self.events.fire("QUEST_LOG_UPDATE")
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:closeObjectiveTracker()
+		local frame = self.G.ObjectiveTrackerFrame
+		if frame then
+			self.run(function()
+				frame:Hide()
+			end)
+			self:advance(0.1)
+		end
+	end
+
+	-- The world map's quest log panel; Camelot has no separate QuestLogFrame.
+	function Sim:openQuestLog()
+		self:openWorldMap()
+		local frame = self.G.WorldMapFrame
+		if frame and frame.SetQuestLogPanelShown then
+			self.run(function()
+				frame:SetQuestLogPanelShown(true)
+			end)
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	function Sim:closeQuestLog()
+		local frame = self.G.WorldMapFrame
+		if frame and frame.SetQuestLogPanelShown then
+			self.run(function()
+				frame:SetQuestLogPanelShown(false)
+			end)
+		end
+		self:closeWorldMap()
+	end
+
+	---------------------------------------------------------------------------
 	-- Slash commands, reload and the shared exercise
 	---------------------------------------------------------------------------
 	-- The slash commands `addon` registered, as each one's first alias: the client keys a command on a
@@ -355,10 +591,11 @@ function M.install(Sim)
 		return sim
 	end
 
-	-- Drives every surface a player reaches without addon-specific knowledge: each addon's own slash commands,
-	-- bare (twice, so a toggle opens then closes) and then the scenario's own, the world map, the same in
-	-- combat, and the commands and map again on a fresh client after /reload. Fails on an error either client
-	-- caused, unless opts.allowErrors. Returns the reloaded client.
+	-- Drives every surface a player reaches without addon-specific knowledge, with the gamepad interface off and
+	-- then on: each addon's own slash commands, Professions with every side tab and a selected recipe, the trainer,
+	-- merchant tabs, bags, the character panel and its tabs, the objective tracker, the quest log, the world map,
+	-- and a target change, a soft-interact change and a binding-set change after each. The same runs in combat for
+	-- the commands and map, then again on a fresh client after /reload. Fails on an error either client caused.
 	function Sim:exercise(opts)
 		opts = opts or {}
 		local addons = opts.addons
@@ -370,6 +607,18 @@ function M.install(Sim)
 				end
 			end
 		end
+		if #self.world.professions == 0 then
+			self.world.professions = {
+				{
+					skillLineID = 164,
+					name = "Blacksmithing",
+					skill = 30,
+					max = 75,
+					categories = { { id = 1, name = "Materials" } },
+					recipes = { { id = 2660, name = "Rough Sharpening Stone", category = 1, itemID = 2862 } },
+				},
+			}
+		end
 		if not self.loggedIn then
 			self:login({ savedVariables = opts.savedVariables })
 		end
@@ -379,30 +628,86 @@ function M.install(Sim)
 				bare[#bare + 1] = command
 			end
 		end
-		for _, command in ipairs(bare) do
-			self:slash(command)
-			self:slash(command)
-		end
 		for _, command in ipairs(opts.commands or {}) do
-			self:slash(command)
+			bare[#bare + 1] = command
 		end
-		self:openWorldMap()
-		self:zoomMap(2)
-		self:panMap(0.1, 0.1)
-		self:closeWorldMap()
-		self:enterCombat()
-		for _, command in ipairs(bare) do
-			self:slash(command)
+
+		local function touch(sim)
+			sim:event("PLAYER_TARGET_CHANGED")
+			sim:event("PLAYER_SOFT_INTERACT_CHANGED")
+			sim:bindingSetChange()
 		end
-		self:openWorldMap()
-		self:closeWorldMap()
-		self:leaveCombat()
+
+		local function surfaces(sim)
+			for _, command in ipairs(bare) do
+				sim:slash(command)
+				sim:slash(command)
+			end
+			sim:openProfessions()
+			sim:selectProfessionTabs()
+			if #sim:recipeRows() > 0 then
+				sim:hoverRecipe(1)
+			end
+			sim:closeProfessions()
+			touch(sim)
+			sim:openTrainer()
+			touch(sim)
+			sim:closeTrainer()
+			touch(sim)
+			sim:openMerchant()
+			sim:selectMerchantTabs()
+			touch(sim)
+			sim:closeMerchant()
+			touch(sim)
+			sim:openBags()
+			touch(sim)
+			sim:closeBags()
+			touch(sim)
+			sim:openCharacter()
+			sim:selectCharacterTabs()
+			touch(sim)
+			sim:closeCharacter()
+			touch(sim)
+			sim:openObjectiveTracker()
+			touch(sim)
+			sim:closeObjectiveTracker()
+			touch(sim)
+			sim:openQuestLog()
+			touch(sim)
+			sim:closeQuestLog()
+			touch(sim)
+			sim:openWorldMap()
+			sim:zoomMap(2)
+			sim:panMap(0.1, 0.1)
+			touch(sim)
+			sim:closeWorldMap()
+			touch(sim)
+		end
+
+		local function combat(sim)
+			sim:enterCombat()
+			for _, command in ipairs(bare) do
+				sim:slash(command)
+			end
+			sim:openWorldMap()
+			sim:closeWorldMap()
+			sim:leaveCombat()
+		end
+
+		for _, gamepad in ipairs({ false, true }) do
+			self:setGamepad(gamepad)
+			surfaces(self)
+			combat(self)
+		end
 		local sim = self:reload()
-		for _, command in ipairs(bare) do
-			sim:slash(command)
+		sim.world.professions = self.world.professions
+		sim.world.maps = self.world.maps
+		sim.world.items = self.world.items
+		for _, gamepad in ipairs({ false, true }) do
+			sim:setGamepad(gamepad)
+			surfaces(sim)
+			combat(sim)
 		end
-		sim:openWorldMap()
-		sim:closeWorldMap()
 		if not opts.allowErrors then
 			for _, addon in ipairs(addons) do
 				self:expectNoErrors(addon)

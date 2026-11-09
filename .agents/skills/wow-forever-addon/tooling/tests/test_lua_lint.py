@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forever_tools import multivalue, taint
+from forever_tools import multivalue
 from forever_tools.lua import LuaSyntaxError, tokenize
 
 
@@ -52,32 +52,6 @@ class MultivalueTest(unittest.TestCase):
         self.assertTrue(multivalue.check("print(GetThing())\n", rules))
         self.assertEqual(multivalue.check("print(GetThing())\n"), [])
         self.assertEqual(multivalue.check("print((GetThing()))\n", rules), [])
-
-
-class TaintTest(unittest.TestCase):
-    def test_unsafe_map_openers_are_flagged_and_the_safe_contract_is_not(self):
-        for call in ("OpenWorldMap()", "OpenQuestLog()", "ToggleWorldMap()", "QuestMapFrame_ShowQuestDetails(1)"):
-            with self.subTest(call=call):
-                self.assertTrue(taint.check(f"{call}\n"), call)
-                self.assertTrue(taint.check(f"_G.{call}\n"), call)
-        self.assertEqual(taint.check("C_Map.OpenWorldMap(1)\n"), [])
-        self.assertEqual(taint.check('hooksecurefunc("QuestMapFrame_ShowQuestDetails", f)\n'), [])
-
-    def test_escape_comment_clears_a_call(self):
-        self.assertEqual(taint.check("OpenWorldMap() -- taint-ok: protected path\n"), [])
-
-    def test_set_map_id_depends_on_the_receiver(self):
-        flagged = (
-            "WorldMapFrame:SetMapID(1)\n",
-            "local map = WorldMapFrame:GetMap()\nmap:SetMapID(1)\n",
-            "WorldMapFrame:GetMap():SetMapID(1)\n",
-        )
-        for source in flagged:
-            with self.subTest(source=source):
-                self.assertTrue(taint.check(source))
-        for source in ("scrollBox:SetMapID(1)\n", "probe:SetMapID(1)\n"):
-            with self.subTest(source=source):
-                self.assertEqual(taint.check(source), [])
 
 
 if __name__ == "__main__":

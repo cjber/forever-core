@@ -210,25 +210,32 @@ function M.build(sim)
 	-- handler inherits the caller's taint, plus the taint of whoever set it; each HookScript hook runs isolated.
 	-- An error in any of them is reported to the client's error handler, and the caller carries on as it does
 	-- when the client runs a script from C.
+	-- The addon frame that set the script, so a handler the client fires with no addon frame on the stack still
+	-- names the addon line its taint entered from.
+	local function scriptSite(s, name)
+		local info = s.scriptInfo and s.scriptInfo[name]
+		return info and (info.origin or info) or nil
+	end
 	local function fire(obj, name, ...)
 		local s = S[obj]
 		if not s or not s.scripts then
 			return
 		end
-		local saved = Taint.current
 		local intrinsic = s.intrinsic and s.intrinsic[name]
 		if intrinsic and intrinsic.pre then
-			Taint.dispatch(saved, intrinsic.pre, obj, ...)
+			-- A template handler is Blizzard's own code, dispatched by the client, so it starts secure.
+			Taint.dispatch(nil, intrinsic.pre, obj, ...)
 		end
 		local handler = s.scripts[name]
 		if handler then
-			-- The client calls a script from C: its setter's taint applies inside the handler only, and dispatch
-			-- restores the caller's taint afterwards.
+			-- The client calls a script from C: the handler starts secure unless an addon set it, and dispatch
+			-- restores the caller's taint afterwards. A Blizzard handler triggered by an addon's widget call does
+			-- not inherit that addon's execution taint.
 			local by = s.scriptTaint[name]
-			Taint.dispatch(saved or by, handler, obj, ...)
+			Taint.dispatchFrom(by, scriptSite(s, name), handler, obj, ...)
 		end
 		if intrinsic and intrinsic.post then
-			Taint.dispatch(saved, intrinsic.post, obj, ...)
+			Taint.dispatch(nil, intrinsic.post, obj, ...)
 		end
 		local hooks = s.hooks and s.hooks[name]
 		if hooks then
@@ -249,7 +256,7 @@ function M.build(sim)
 		if not s.scripts[name] and not (s.hooks and s.hooks[name]) and not (s.intrinsic and s.intrinsic[name]) then
 			return
 		end
-		return Taint.dispatch(s.scriptTaint[name], fire, obj, name, ...)
+		return Taint.dispatchFrom(s.scriptTaint[name], scriptSite(s, name), fire, obj, name, ...)
 	end
 
 	---------------------------------------------------------------------------
@@ -721,15 +728,21 @@ function M.build(sim)
 	impl.ScriptRegion.SetScript = function(self, name, handler)
 		local s = st(self)
 		if not s.scripts then
-			s.scripts, s.scriptTaint, s.hooks = {}, {}, {}
+			s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
+		end
+		if not s.scriptInfo then
+			s.scriptInfo = {}
 		end
 		s.scripts[name] = handler
 		s.scriptTaint[name] = Taint.current
+		s.scriptInfo[name] = Taint.writer()
 		s.hooks[name] = nil
 	end
 	impl.ScriptRegion.GetScript = function(self, name)
-		local s = st(self)
-		return s.scripts and s.scripts[name]
+		-- Reading a script does not taint the reader: the client keeps scripts outside the table-slot rule, and
+		-- secure code checks for an addon's OnMouseUp all the time when it enumerates frames. Executing the
+		-- addon's script still runs as that addon (W.dispatch sets its taint).
+		return st(self).scripts and st(self).scripts[name]
 	end
 	impl.ScriptRegion.HasScript = function()
 		return true
@@ -737,12 +750,16 @@ function M.build(sim)
 	impl.ScriptRegion.HookScript = function(self, name, hook)
 		local s = st(self)
 		if not s.scripts then
-			s.scripts, s.scriptTaint, s.hooks = {}, {}, {}
+			s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
+		end
+		if not s.scriptInfo then
+			s.scriptInfo = {}
 		end
 		if not s.scripts[name] then
 			-- Hooking an empty script sets it, as the client does.
 			s.scripts[name] = hook
 			s.scriptTaint[name] = Taint.current
+			s.scriptInfo[name] = Taint.writer()
 			return true
 		end
 		s.hooks[name] = s.hooks[name] or {}
@@ -751,7 +768,7 @@ function M.build(sim)
 	end
 	impl.ScriptRegion.ClearScripts = function(self)
 		local s = st(self)
-		s.scripts, s.scriptTaint, s.hooks = {}, {}, {}
+		s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
 	end
 	impl.ScriptRegion.Show = function(self)
 		setShown(self, true)
@@ -803,7 +820,7 @@ function M.build(sim)
 	impl.ScriptRegion.IsMouseMotionFocus = function(self)
 		return sim.mouseFocus == self
 	end
-	-- Gamepad focus (SmartNavigation) runs the region's OnEnter / OnLeave in the caller's taint.
+	-- Gamepad focus (SmartNavigation) runs the region's OnEnter / OnLeave as a client dispatch, secure.
 	impl.ScriptRegion.FocusEnter = function(self)
 		fire(self, "OnEnter")
 	end

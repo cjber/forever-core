@@ -151,10 +151,11 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
     map openers (`ToggleWorldMap`, `OpenWorldMap`: use `C_Map.OpenWorldMap`).
   - To restyle a Blizzard element, draw our own on top and hide theirs with alpha: a texture of ours parented to
     the frame, their texture at alpha 0, both refreshed from events. Blizzard does not reset alpha it never set.
-  - An exception only when no allowed route exists: a trailing `-- taint-ok: <reason>` naming why none works
-    and what the line touches, which only reads or restyles (no call into Blizzard Lua, no field write), and a
-    `/reload` test in the PR that covers combat. A hook on a Blizzard object is never an exception.
-    `tools/lint_taint.py` (rules in `forever_tools/taint.py`) enforces this in `tools/typecheck.sh`.
+  - The gate is `forever_sim`, not a list: every table field read and write in Blizzard's and the addon's Lua is
+    instrumented, a field written by addon code carries that addon's taint, and a secure read of it taints
+    execution and reports the field, the writer and the reader at the refused call. WFA-35's scenario runs it
+    with the gamepad interface off and on over every panel, and `tests/sim/taint_gate_spec.lua` proves the
+    known-bad shapes fail. There is no `taint-ok` exception.
 - **WFA-35** New UI work adds a scenario to `tests/sim/`, the [forever_sim](tooling/forever_sim/README.md) suite (real
   Blizzard UI under LuaJIT, vendored as `tools/forever_sim/` the same way as `forever_tools`). The scenario walks
   the player's way to the feature and adds the states that have broken before: combat, a secret tooltip, the

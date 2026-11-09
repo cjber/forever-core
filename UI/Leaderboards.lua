@@ -73,7 +73,7 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 6
+local LEADERBOARDS_VERSION = 7
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -151,7 +151,7 @@ if type(previous) == "table" then
 	end
 end
 
-ForeverLeaderboards = api -- taint-ok: addon-owned registry shared by the Forever addons
+ForeverLeaderboards = api
 ns.Leaderboards = api
 
 -- The copy now in charge when a newer version has taken over the global since this one loaded: an addon still holding

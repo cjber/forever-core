@@ -24,7 +24,7 @@ function core.Attach(module)
 	return true
 end
 
-ForeverCore = core -- taint-ok: addon-owned registry of the shared primitives
+ForeverCore = core
 
 if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE1 = "/fcore"

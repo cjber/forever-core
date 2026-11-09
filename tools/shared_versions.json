@@ -4,11 +4,11 @@
     "version": 7
   },
   "UI/ForeverFamily.lua": {
-    "sha256": "ed72d6e08eaf4e0948af441ca1e7931fbc11c0f26279abc7d51106597bfb3270",
-    "version": 7
+    "sha256": "3a6d44f505766b8518f961929ab11e7fc0a73fce849b39704271de956c26d4d4",
+    "version": 8
   },
   "UI/Leaderboards.lua": {
-    "sha256": "006b65cad7b0c48433ee88d9c743fee91671bff047b1a37787a88331542ec062",
-    "version": 6
+    "sha256": "b7f827937ede569d322fc065da268041c8e351d491b47fad80818fcbffca08cf",
+    "version": 7
   }
 }

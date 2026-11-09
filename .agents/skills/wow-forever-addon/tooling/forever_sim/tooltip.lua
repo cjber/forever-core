@@ -235,10 +235,10 @@ function M.build(sim)
 	-- The secure delegate the client builds: runs untainted, then restores the caller's taint.
 	G.CreateSecureDelegate = function(f)
 		return function(...)
-			local saved = Taint.current
+			local saved, savedOrigin = Taint.current, Taint.origin
 			Taint.set(nil)
 			local result = { pcall(f, ...) }
-			Taint.set(saved)
+			Taint.set(saved, savedOrigin)
 			if not result[1] then
 				error(result[2], 0)
 			end

@@ -17,7 +17,11 @@ blocked. Find the read, not the call.
 - Blizzard iterates map data providers through `secureexecuterange`, so registering a provider does
   not taint the others. What taints Blizzard's own code is state an addon wrote that it later reads:
   a field written by calling a Blizzard method from addon code, or a lazy cache first filled during
-  an addon's call. `tools/lint_taint.py` lists the calls already known to do this; add each new one.
+  an addon's call. `forever_sim` now follows the client's field taint exactly; run
+  `luajit tools/forever_sim/run.lua tests/sim` and its failure names the field, the write line (often a
+  Blizzard line, because Blizzard code ran under the addon's taint), the addon line the taint entered
+  from (the nearest addon frame at the write, or the addon frame that last called into Blizzard code)
+  and the Blizzard line whose secure read picked it up. Repeated causes are listed once with a count.
 - A provider's inherited `RegisterEvent` goes through the map (`AddDataProviderEvent`) and writes the
   addon's taint into the event counts every provider shares. Blizzard's quest provider then runs
   tainted and its pins hit `ADDON_ACTION_BLOCKED ... SetPassThroughButtons()` in combat, blamed on the
