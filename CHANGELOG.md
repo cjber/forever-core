@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [0.5.1] - 2026-11-09
+
 - **`/reload` and `errors` reach the chat box when the Forever copy-link box has focus.** The Return and the typed command used to go into that box, so the world never reloaded and the verb timed out after 120 s. `slash` now sends Return, Escape, Return before typing: from a clean frame that opens, closes and reopens chat, and with a focused box the Escape closes its window first. (#266)
 - **An optional Forever quest list in the tracker column.** Turn on "Forever quest list" in Forever Core's settings or type `/fcore quests`: your tracked quests then show at the top of the Forever column in the game's own tracker style, quests ready to turn in first, then the ones in this zone, then every other zone, each nearest first with its distance in yards from the game's quest data. Left-click super-tracks a quest, right-click opens the game's quest menu. The game's own quest and campaign lists are collapsed while it is on, and it stays off while Questie's tracker, Kaliel's Tracker or EQOT show the quests. (#177)
 - **A hidden EQ Objective Tracker list is no longer read on every tick.** The tracker's EQOT watcher reports the list hiding or fading out once, then reads no geometry until it shows again; its show and hide hooks still reflow at once. (#268, cjber/skillup-forever#412)
