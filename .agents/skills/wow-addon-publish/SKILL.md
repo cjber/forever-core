@@ -79,8 +79,11 @@ sometimes does nothing):
 4. Check with `get_page_text` on the gallery page.
 
 Wago lists the newest first and has no reorder, so upload in reverse display order. To fix the
-order, delete every image on the public `addons.wago.io/addons/<slug>/gallery` page and upload them
-all again in reverse. `/gallery/<id>/edit` edits only the caption; it cannot swap the image, so a
+order, keep the longest tail of the gallery that is already in order, delete everything above it and
+upload the rest again in reverse. Delete on the public `addons.wago.io/addons/<slug>/gallery` page:
+each image is an `li` holding one `img` and one `button.text-wago-red-500`, and the button asks
+through a native `confirm()`, so set `window.confirm = () => true` first or the dialog blocks the tab.
+Delete one image per click and read the list after each. `/gallery/<id>/edit` edits only the caption; it cannot swap the image, so a
 stale image means uploading a new one and deleting the old one.
 
 ## Store updates
@@ -109,10 +112,20 @@ detached on click, and a real click opens a native picker that blocks the tab. I
 
 To reorder, open "Reorder gallery" after a full page load: the dialog can keep another project's list
 after in-app navigation. A mouse drag does nothing, so `focus()` the `li.sortable-screenshot-element`,
-press real keys (space, arrows, space), wait 4 s, read the order and click Done. Up does not move exactly
-one row, so check after each move. The author site's order can flip between reloads even after a good
-save: confirm on the public `curseforge.com/wow/addons/<slug>/gallery` page. That page can serve
-a replaced file from cache for hours; when only the public copy is stale, check it again later.
+press real keys, wait 4 s, read the order and click Done. The list is a grid three cards wide and
+the arrows move by position on screen: Left and Right move one place within a row, Up and Down move a
+whole row, and Left does nothing from the first column. Send space, the arrow (with `repeat` for more
+than one) and space as separate key calls: several keys in one string drop presses, and a dropped
+space leaves the sorter stuck until Done and a reload. Read the order after each move. The author
+site's order can flip between reloads even after a good save: confirm on the public
+`curseforge.com/wow/addons/<slug>/gallery` page. That page can serve a replaced file from cache for
+hours; when only the public copy is stale, check it again later.
+
+To delete, hover the card so its pencil and trash buttons render, click the trash and then OK in
+the "Delete media" dialog, one card at a time with a screenshot before each click. The buttons exist
+only on the hovered card, so a script that walks up from an image to "the last button" lands on a
+different card's trash. Screenshot coordinates differ from `getBoundingClientRect`; take positions
+from the screenshot.
 
 ## Keep galleries in sync
 
@@ -163,5 +176,6 @@ then silently skips that site while the run stays green.
 
 ## Things only the user can do
 
-Uploading the CurseForge logo, setting the API-token secrets, permanently deleting store files or
-gallery images, and anything needing a login. Say exactly which, with the command or page to use.
+Uploading the CurseForge logo, setting the API-token secrets, and anything needing a login. Say
+exactly which, with the command or page to use. Deleting store files or gallery images is permanent:
+list each one by caption and position per store, and delete only after the user approves that list.
