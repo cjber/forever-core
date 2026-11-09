@@ -1,8 +1,9 @@
 """Read the !!DevPerf profiler and !!DevSmoke timing runs from the client's SavedVariables.
 
 The private dev addon `!!DevPerf` writes `DevPerfDB` into the account's SavedVariables. Each session holds the load
-timeline, the marks taken with `/forever perf <label>`, the combat summary and, when the heap watch was on, the heap
-range. `!!DevSmoke` writes `DevSmokeDB` beside it, with the slowest and cold time of every `/forever selftest` surface.
+timeline, the marks taken with `/forever perf <label>`, the hover scenarios, the combat summary and, when the heap
+watch was on, the heap range. `!!DevSmoke` writes `DevSmokeDB` beside it, with the slowest and cold time of every
+`/forever selftest` surface.
 
     python3 tools/forever_perf.py
     python3 tools/forever_perf.py --session 2
@@ -86,6 +87,32 @@ class Mark:
 
 
 @dataclass(frozen=True)
+class KindCost:
+    count: int | None
+    total_ms: float | None
+    max_ms: float | None
+
+
+@dataclass(frozen=True)
+class ScenarioAddon:
+    metrics: dict[str, float]
+    peak_raised: bool
+    over: dict[str, float]
+    memory_delta_kb: float | None
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    at: float | None
+    frames: int | None
+    wall_ms: float | None
+    skipped: str | None
+    kinds: dict[str, KindCost]
+    addons: dict[str, ScenarioAddon]
+
+
+@dataclass(frozen=True)
 class Combat:
     fights: int
     seconds: float
@@ -114,6 +141,7 @@ class Session:
     load: Load
     context: Context
     marks: tuple[Mark, ...]
+    scenarios: tuple[Scenario, ...]
     combat: Combat
     heap: Heap | None
 
@@ -159,6 +187,19 @@ class MarkRow:
     over5_ms: float | None
     over10_ms: float | None
     over50_ms: float | None
+    memory_mb: float | None
+
+
+@dataclass(frozen=True)
+class ScenarioRow:
+    name: str
+    ours: bool
+    recent_ms: float | None
+    peak_ms: float | None
+    peak_raised: bool
+    over1_ms: float | None
+    over5_ms: float | None
+    over10_ms: float | None
     memory_mb: float | None
 
 
@@ -340,6 +381,46 @@ def parse_heap(value: object) -> Heap | None:
     )
 
 
+def parse_kind_cost(value: object) -> KindCost:
+    table = _table(value)
+    return KindCost(
+        count=_integer(table.get("count")),
+        total_ms=_number(table.get("totalMs")),
+        max_ms=_number(table.get("maxMs")),
+    )
+
+
+def parse_scenario_addon(value: object) -> ScenarioAddon:
+    table = _table(value)
+    return ScenarioAddon(
+        metrics=_metrics(table),
+        peak_raised=_flag(table.get("peakRaised")),
+        over=_metrics(table.get("over")),
+        memory_delta_kb=_number(table.get("memoryDeltaKB")),
+    )
+
+
+def parse_scenario(value: object) -> Scenario:
+    table = _table(value)
+    kinds: dict[str, KindCost] = {}
+    for name, cost in _table(table.get("kinds")).items():
+        if isinstance(name, str):
+            kinds[name] = parse_kind_cost(cost)
+    addons: dict[str, ScenarioAddon] = {}
+    for name, stats in _table(table.get("addons")).items():
+        if isinstance(name, str):
+            addons[name] = parse_scenario_addon(stats)
+    return Scenario(
+        name=_text(table.get("name")),
+        at=_number(table.get("at")),
+        frames=_integer(table.get("frames")),
+        wall_ms=_number(table.get("wallMs")),
+        skipped=_text(table.get("skipped")) or None,
+        kinds=kinds,
+        addons=addons,
+    )
+
+
 def parse_session(value: object) -> Session:
     table = _table(value)
     addons: list[Addon] = []
@@ -350,6 +431,9 @@ def parse_session(value: object) -> Session:
         if name:
             addons.append(Addon(name=name, version=_text(entry.get("version")), ours=_flag(entry.get("ours"))))
     marks = [parse_mark(mark) for mark in table_values(table.get("marks")) if isinstance(mark, dict)]
+    scenarios = [
+        parse_scenario(scenario) for scenario in table_values(table.get("scenarios")) if isinstance(scenario, dict)
+    ]
     return Session(
         started=_number(table.get("started")),
         build=_text(table.get("build")),
@@ -362,6 +446,7 @@ def parse_session(value: object) -> Session:
         load=parse_load(table.get("load")),
         context=parse_context(table.get("context")),
         marks=tuple(marks),
+        scenarios=tuple(scenarios),
         combat=parse_combat(table.get("combat")),
         heap=parse_heap(table.get("heap")),
     )
@@ -494,6 +579,25 @@ def mark_rows(mark: Mark, session: Session) -> list[MarkRow]:
     return rows
 
 
+def scenario_rows(scenario: Scenario, session: Session) -> list[ScenarioRow]:
+    rows = [
+        ScenarioRow(
+            name=name,
+            ours=is_ours(session, name),
+            recent_ms=stats.metrics.get("RecentAverageTime"),
+            peak_ms=stats.metrics.get("PeakTime"),
+            peak_raised=stats.peak_raised,
+            over1_ms=stats.over.get("CountTimeOver1Ms"),
+            over5_ms=stats.over.get("CountTimeOver5Ms"),
+            over10_ms=stats.over.get("CountTimeOver10Ms"),
+            memory_mb=None if stats.memory_delta_kb is None else stats.memory_delta_kb / 1024,
+        )
+        for name, stats in scenario.addons.items()
+    ]
+    rows.sort(key=lambda row: (not row.ours, -(row.recent_ms or 0.0), row.name.lower()))
+    return rows
+
+
 def _metric_delta(before: Stats | None, after: Stats | None, metric: str) -> float | None:
     old = before.metrics.get(metric) if before is not None else None
     new = after.metrics.get(metric) if after is not None else None
@@ -559,8 +663,32 @@ def compare_rows(session: Session, mark: Mark, other_mark: Mark) -> list[Compare
     return rows
 
 
+def _scenario_findings(session: Session) -> list[str]:
+    """Our addons over the recent or peak budget in a scenario, and every kind whose worst call was over it."""
+    findings: list[str] = []
+    for scenario in session.scenarios:
+        if scenario.skipped:
+            continue
+        for name, stats in sorted(scenario.addons.items()):
+            if not is_ours(session, name):
+                continue
+            recent = stats.metrics.get("RecentAverageTime")
+            peak = stats.metrics.get("PeakTime")
+            reasons: list[str] = []
+            if recent is not None and recent > 1.0:
+                reasons.append(f"recent {recent:.1f} ms")
+            if stats.peak_raised and peak is not None and peak > BUDGET_MS:
+                reasons.append(f"peak {peak:.1f} ms raised")
+            if reasons:
+                findings.append(f"scenario {scenario.name!r}: {name} {', '.join(reasons)}")
+        for kind, cost in sorted(scenario.kinds.items()):
+            if cost.max_ms is not None and cost.max_ms > BUDGET_MS:
+                findings.append(f"scenario {scenario.name!r}: kind {kind!r} max {cost.max_ms:.1f} ms")
+    return findings
+
+
 def wfa13_findings(session: Session, smoke: SmokeRun | None) -> list[str]:
-    """Ours over the per-frame budget at a mark, and every smoke surface over it.
+    """Ours over the per-frame budget at a mark, in a scenario or at a kind, and every smoke surface over it.
 
     PeakTime and the over-budget counts are cumulative for the client session, so an addon repeats the same peak
     at every later mark. Report each of ours once, from the newest mark that has it.
@@ -584,6 +712,7 @@ def wfa13_findings(session: Session, smoke: SmokeRun | None) -> list[str]:
             ]
             if slow:
                 findings.append(f"smoke {result.surface!r}: {', '.join(slow)}")
+    findings.extend(_scenario_findings(session))
     return findings
 
 
@@ -755,6 +884,50 @@ def _mark_text(report: Report) -> list[str]:
     return lines
 
 
+def _scenario_text(report: Report) -> list[str]:
+    lines = ["", "Scenarios"]
+    if not report.session.scenarios:
+        lines.append("  (none)")
+        return lines
+    for scenario in report.session.scenarios:
+        detail = f"  Scenario {scenario.name!r} at {_time_text(scenario.at)}"
+        if scenario.frames is not None:
+            detail += f", {scenario.frames} frame(s)"
+        if scenario.wall_ms is not None:
+            detail += f", {_ms(scenario.wall_ms)} ms"
+        lines.append(detail)
+        if scenario.skipped:
+            lines.append(f"    skipped: {scenario.skipped}")
+            continue
+        kind_rows = []
+        for kind, cost in sorted(scenario.kinds.items(), key=lambda item: (-(item[1].max_ms or 0.0), item[0].lower())):
+            mean = None if cost.total_ms is None or not cost.count else cost.total_ms / cost.count
+            over = cost.max_ms is not None and cost.max_ms > BUDGET_MS
+            kind_rows.append((kind, _count(cost.count), _ms(mean), _ms(cost.max_ms), "yes" if over else "-"))
+        lines.extend(_table_text(("KIND", "COUNT", "MEAN MS", "MAX MS", "OVER 3MS"), kind_rows))
+        rows = [
+            (
+                row.name,
+                _ms(row.recent_ms),
+                _ms(row.peak_ms),
+                "yes" if row.peak_raised else "-",
+                _count(row.over1_ms),
+                _count(row.over5_ms),
+                _count(row.over10_ms),
+                _mb(row.memory_mb),
+                "yes" if row.ours else "-",
+            )
+            for row in scenario_rows(scenario, report.session)
+        ]
+        lines.extend(
+            _table_text(
+                ("ADDON", "RECENT MS", "PEAK MS", "PEAK RAISED", "OVER 1", "OVER 5", "OVER 10", "MEM MB", "OURS"),
+                rows,
+            )
+        )
+    return lines
+
+
 def _combat_rows(session: Session) -> list[tuple[str, str, str, str, str, str, str, str]]:
     names = set(session.combat.over) | set(session.combat.peak_raised)
     rows = []
@@ -856,6 +1029,7 @@ def render_text(report: Report) -> str:
     lines.extend(_load_text(report))
     lines.extend(_saved_variables_text(report))
     lines.extend(_mark_text(report))
+    lines.extend(_scenario_text(report))
     lines.extend(_combat_text(report))
     lines.extend(_heap_text(report))
     lines.extend(_smoke_text(report))
