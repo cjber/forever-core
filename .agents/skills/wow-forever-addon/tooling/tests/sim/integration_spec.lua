@@ -479,9 +479,7 @@ test("implicit protection blocks a tainted Hide in combat, as the client does", 
 	sim.inCombat = true
 	sim.combatLockdown = true
 	sim:runAs("SimImplicit", "SimPlain:Hide()")
-	sim:expectError(
-		"[ADDON_ACTION_BLOCKED] AddOn 'SimImplicit' tried to call the protected function 'SimPlain:Hide()'"
-	)
+	sim:expectError("[ADDON_ACTION_BLOCKED] AddOn 'SimImplicit' tried to call the protected function 'SimPlain:Hide()'")
 	sim:takeErrors()
 	sim:runAs("SimImplicit", "SimPlainNoChild:Hide()")
 	eq(#sim.errors, 0, "a frame with no protected descendant is not blocked")
