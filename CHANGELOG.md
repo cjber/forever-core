@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [0.5.2] - 2026-11-09
+
 - forever_sim: frames answer `GetHighestFrameLevel`, the highest level of a frame and its children (or every descendant with `true`), as the client does.
 
 ## [0.5.1] - 2026-11-09
