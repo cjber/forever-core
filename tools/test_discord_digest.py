@@ -226,7 +226,7 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(embed["thumbnail"]["url"], digest.icon_url(digest.ADDONS[3]))
         self.assertEqual(
             embed["image"]["url"],
-            "https://raw.githubusercontent.com/cjber/tweaks-forever/main/docs/screenshots/feature.png",
+            "https://raw.githubusercontent.com/cjber/tweaks-forever/v1.1.0/docs/screenshots/feature.png",
         )
         self.assertIn("• The first feature.", embed["description"])
         self.assertIn("• The second feature.", embed["description"])

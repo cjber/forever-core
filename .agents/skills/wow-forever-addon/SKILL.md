@@ -128,6 +128,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   `## [x.y.z] - YYYY-MM-DD`, bullets led by a bold sentence then why it matters, in player terms.
   A version that changes a public API puts those notes under an optional `### For addon authors` subsection
   after the player bullets, so players read their changes first; the release notes carry it as written.
+  A feature release, one that raises the major or minor over the newest tag, names its hero at the top of
+  its section with `<!-- discord-image: docs/screenshots/<file>.png -->`: one of the repo's own rendered
+  screenshots that shows the new feature, at its native size. `tools/changelog.py --check x.y.z` fails a
+  feature release without one.
 
 ### Code and performance
 
