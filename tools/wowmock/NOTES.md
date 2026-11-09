@@ -67,8 +67,9 @@ horizontally, BL vertically, BR both, BottomEdge vertically, RightEdge horizonta
 ## Fonts and text
 
 - FRIZQT__ fdid 615960, ARIALN 615958 (paths `fonts/frizqt__.ttf`, `fonts/arialn.ttf`).
-- Pillow `truetype(size=height x scale)` matches a WoW font object's height. Lay out a line box `height` tall
-  and draw with the default 'la' anchor at its top.
+- Pillow `truetype(size=height x scale)` matches a WoW font object's height. Lay out a line box `height` tall,
+  then draw with the default 'la' anchor at `line_top - ((ascent + descent) / scale - height) / 2`, so the font's
+  whole ascent + descent (its glyph block) is centred in the line box as the client does.
 - Font objects (Blizzard_Fonts_Shared FontStyles.xml): GameFontNormal/Highlight = Friz 12, shadow (1, -1),
   gold/white; GameTooltipHeaderText Friz 14 no shadow; GameTooltipText Friz 12 no shadow; NumberFontNormal =
   ARIALN 14 with outline (stroke 1 unit); GameFontDisableSmall Friz 10 grey 808080.
@@ -117,6 +118,8 @@ replaced (`git show <rev>:<path> > /tmp/x.png`):
 - skillup-forever `be11638:docs/screenshots/tooltip.png`: tooltip border and centre colour (this caught the
   c60-centre mistake: ours was near-black, the real one blue-grey ~(19, 18, 28)).
 - skillup-forever `be11638:docs/screenshots/window.png`: c60 portrait frame, Professions window, side tabs.
+  At scale 1.2 its text is centred on the font's full ascent + descent: "Create" caps are rows 763-772 in an
+  inner 757-780, and "Filter" caps 185-194 in an inner 182-197.
 
 Blizzard's UI source for layout numbers: `~/drive/proj/wow-handoff/blizzard-ui/Interface/AddOns`.
 
@@ -165,8 +168,9 @@ that repo's git history.
   changes every scene's text widths slightly; regenerate older scenes before comparing them.
 - **Tooltip double lines**: with correct widths, the real capture puts a line's left and right texts 40 units
   apart when that line sets the width, so `TOOLTIP_COLUMN_GAP` is now 40 (it was 20).
-- **Inline textures sit on the glyphs**, not the line box: Friz's ascent puts the digits ~1.5 units below the
-  box centre, and real coins are level with the digits. `Canvas.text` now centres icons on the ink of "0".
+- **Inline textures sit on the glyphs**, not the line box: the client centres a font's whole ascent + descent in
+  the line box, so the digits' ink lands near the box centre and real coins are level with them. `Canvas.text`
+  draws each run at that centred glyph block and centres icons on the ink of "0" from the same draw origin.
 - `|T` offsets were ignored; `InlineTexture.offset` now carries (offsetX, offsetY) and moves the icon without
   taking space. Coins in a tooltip or recipe row come out at the text's 12 units even though
   GetCoinTextureString asks for 14 (coin ink 11 px at scale 1.2), so the SkillUp script passes 12.
