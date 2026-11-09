@@ -15,8 +15,13 @@
 ---@field Show fun(value: boolean) shows or hides the grip, which the host keeps hidden while attached
 ---@field SetLabel fun(value: boolean) redraws the label from the switch, without waiting for a hover
 
+---@class ForeverTrackerShowSetting
+---@field get fun(): boolean whether the section is currently shown
+---@field set fun(shown: boolean) the addon's own switch, which hides the section as its settings checkbox does
+---@field where string the place the player turns it back on, in the addon's own words
+
 ---@class ForeverTrackerHostAPI
----@field Attach fun(module: Frame)
+---@field Attach fun(module: Frame, show?: ForeverTrackerShowSetting) the section's optional show switch, offered as Hide this section
 ---@field IsAttached fun(module: Frame?): boolean
 ---@field GetSettings fun(): ForeverTrackerSettings
 ---@field GetScale fun(): number

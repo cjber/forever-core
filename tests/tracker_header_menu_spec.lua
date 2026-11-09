@@ -57,6 +57,44 @@ off.setSelected()
 check(t.hostSettings.backdropOpacity == 0, "Off saves the opacity as off")
 check(t.textures[1].shown == false, "Off hides the background")
 
+-- A section that hands over its own show switch gets a hide entry whose tooltip says where to turn it back on, and
+-- the entry writes that switch rather than a host setting. A section without one keeps the menu without any hide entry.
+check(Entry(menu, "Hide this section") == nil, "a section without a show switch has no hide entry")
+local shown, writes = true, 0
+local hideModule = t.module(4, nil, {
+	get = function()
+		return shown
+	end,
+	set = function(value)
+		writes = writes + 1
+		shown = value
+	end,
+	where = "Turn it back on in A Test Addon's settings.",
+})
+local hideMenu = Menu(hideModule)
+local hide = Entry(hideMenu, "Hide this section")
+check(hide ~= nil, "a section with a show switch offers to hide itself")
+local lines = {}
+hide.tooltip({
+	SetText = function(_, text)
+		lines[#lines + 1] = text
+	end,
+	AddLine = function(_, text)
+		lines[#lines + 1] = text
+	end,
+})
+check(
+	lines[1] == "Hide this section" and lines[2] == "Turn it back on in A Test Addon's settings.",
+	"the hide entry's tooltip says where to turn the section back on"
+)
+check(hide.callback ~= nil, "the hide entry acts when clicked")
+hide.callback()
+check(shown == false and writes == 1, "the hide entry writes the addon's own switch")
+check(host.IsAttached(hideModule), "hiding the section leaves it attached to the column")
+local hiddenMenu = Menu(hideModule)
+Entry(hiddenMenu, "Hide this section").callback()
+check(writes == 1, "a hidden section is not written again")
+
 -- An addon that owns its context menu gets that menu, and Blizzard's is never called: Adventure Guide draws its own
 -- because Blizzard_Menu.AcquireMenu can assert in Forever 70009. The generator is the same either way.
 local owned = harness.new({ headerShown = true })
