@@ -338,6 +338,7 @@ function M.build(sim)
 	local function stub(qualified, fdoc)
 		local nargs = #(fdoc.Arguments or {})
 		local protected = fdoc.IsProtectedFunction or protectedNames[qualified]
+		local restricted = fdoc.HasRestrictions
 		local secretArgs = fdoc.SecretArguments
 		local returns = fdoc.Returns or {}
 		local f = function(...)
@@ -372,7 +373,10 @@ function M.build(sim)
 					end
 				end
 			end
-			if protected and tainted then
+			-- HasRestrictions alone is a combat-time restriction; a documented function this client refuses at all
+			-- times is in protectedNames instead.
+			local refused = protected or (restricted and sim.combatLockdown)
+			if refused and tainted then
 				sim.forbidden(qualified)
 				return
 			end
@@ -380,8 +384,7 @@ function M.build(sim)
 			local out
 			if impl then
 				out = { n = 0 }
-				-- The client's C function is secure: any Blizzard Lua it runs starts secure, and the caller's
-				-- taint returns when the API returns.
+				-- Blizzard Lua the C function runs synchronously runs in the caller's taint (Taint.callSecure).
 				local r = { Taint.callSecure(impl, ...) }
 				out.n = table.maxn(r)
 				for i = 1, out.n do

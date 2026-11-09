@@ -28,8 +28,9 @@ local addonName, ns = ...
 --
 -- Pins are plain frames that take the mouse with OnEnter and OnLeave only (the gamepad interface reads a frame with a
 -- click script as a button of the window it scans). A click is a press and release over the hovered pin, seen through
--- GLOBAL_MOUSE_DOWN and GLOBAL_MOUSE_UP on a frame of ours. By default the right button goes through to the canvas
--- (zoom out); a pin may override it. Under the gamepad interface the nearest pin shows its tooltip.
+-- GLOBAL_MOUSE_DOWN and GLOBAL_MOUSE_UP on a frame of ours. A pin that takes clicks takes every press and acts only on
+-- the buttons ShouldMouseButtonBePassthrough does not pass; a pin that takes no clicks lets every press through.
+-- Under the gamepad interface the nearest pin shows its tooltip.
 
 ---@alias ForeverCanvasMap WorldMapFrame
 
@@ -391,21 +392,17 @@ function Pin:ApplyPosition()
 	self:SetPoint("CENTER", view.canvas, "TOPLEFT", view.width * x / scale, -view.height * y / scale)
 end
 
--- Clicking pins choose which buttons pass through to the canvas; non-clicking pins let every press through.
+-- A non-clicking pin lets every press through; a clicking pin takes the press and the shared listener below acts on
+-- every button ShouldMouseButtonBePassthrough does not pass. The engine's own per-button passthrough is
+-- SetPassThroughButtons, which the API docs mark HasRestrictions (and IsProtectedFunction): a pin acquired under addon
+-- taint hit that refusal in cjber/adventure-guide-forever#534, and the checker refuses every restricted call from
+-- tainted code, so the pin never calls it. That is why a clicking pin takes the passthrough buttons too, instead of
+-- handing them to the canvas.
 function Pin:ApplyClicks()
 	if not self.takesMouse then
 		return
 	end
 	self:SetMouseClickEnabled(self.clicks == true)
-	if self.clicks then
-		local through = {}
-		for _, button in ipairs({ "LeftButton", "RightButton" }) do
-			if self:ShouldMouseButtonBePassthrough(button) then
-				through[#through + 1] = button
-			end
-		end
-		self:SetPassThroughButtons(unpack(through))
-	end
 end
 
 --[[ Pools ]]

@@ -62,7 +62,8 @@ local pin = pool:Acquire(0.25, 0.5)
 CheckNoVisibilityScripts("the first pin")
 check(pin.point[2] == Kit.canvas and pin.point[4] == 250 and pin.point[5] == -350, "position")
 check(pin.level == 30, "native frame level")
-check(#pin.passThrough == 1 and pin.passThrough[1] == "RightButton", "default right passthrough")
+check(pin.passThrough == nil, "the pin never calls the restricted SetPassThroughButtons")
+check(pin.mouseClicks == true, "a clicking pin takes mouse clicks")
 local function Click(button)
 	Kit.mouseOver = pin
 	pin:Run("OnEnter")
@@ -83,10 +84,10 @@ pool:ReleaseAll()
 mixin.ShouldMouseButtonBePassthrough = function()
 	return false
 end
--- New frames receive the consumer's right-button policy when mixed in.
+-- New frames take both clicks when the consumer's policy passes neither.
 pool = canvas.Pool(Kit.map, mixin, { marker = "route" })
 pin = pool:Acquire(0.25, 0.5)
-check(#pin.passThrough == 0, "right action takes both buttons")
+check(pin.passThrough == nil and pin.mouseClicks == true, "right action takes both buttons")
 Click("RightButton")
 check(#actions == 2 and actions[2] == "RightButton", "right action fires")
 local count = 0

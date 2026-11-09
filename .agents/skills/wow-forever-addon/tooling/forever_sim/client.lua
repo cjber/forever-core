@@ -356,7 +356,9 @@ function M.build(sim)
 	function sim.forbidden(func)
 		actionEvent("ADDON_ACTION_BLOCKED", func .. "()")
 	end
-	-- Global protected functions the documentation does not mark (FrameXML-era API).
+	-- Global functions the documentation does not mark protected (FrameXML-era API), plus the documented
+	-- HasRestrictions function this client has been observed refusing to tainted code even out of combat.
+	-- The issue-tagged entry is observed client behaviour; a new such entry needs an issue.
 	sim.protectedGlobals = {
 		"SetPreferredGamepadInteractTarget",
 		"CastSpellByName",
@@ -379,6 +381,13 @@ function M.build(sim)
 		"ToggleRun",
 		"Logout",
 		"Quit",
+		"C_Map.OpenWorldMap", -- cjber/adventure-guide-forever#411
+	}
+	-- Widget methods the documentation marks HasRestrictions but this client has been observed refusing to
+	-- tainted code at all times, not only in combat. Each entry is observed client behaviour with the issue that
+	-- saw it; a new entry needs one (cjber/forever-core#297 tracks the full classes).
+	sim.alwaysRestrictedMethods = {
+		SetPassThroughButtons = "cjber/adventure-guide-forever#534",
 	}
 
 	---------------------------------------------------------------------------
@@ -554,9 +563,10 @@ function M.build(sim)
 			sim.timers = keep
 			for _, timer in ipairs(due) do
 				if not (timer.handle and timer.handle._cancelled) then
-					-- The client fires a timer from C: the callback starts secure, and an addon callback taints
-					-- only its own body.
-					Taint.dispatch(nil, timer.callback)
+					-- The deferred dispatch is the conservative assumption, not a measured client rule: a timer
+					-- callback keeps the taint of the code that scheduled it, so it is not a secure starting point.
+					-- That has not been confirmed in game, and the stricter choice is the safe one here.
+					Taint.dispatchFrom(timer.taint, timer.site, timer.callback)
 					if timer.iterations ~= 1 and not (timer.handle and timer.handle._cancelled) then
 						timer.iterations = timer.iterations and timer.iterations - 1
 						timer.due = sim.time + math.max(timer.interval, 0.001)

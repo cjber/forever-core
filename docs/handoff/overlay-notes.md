@@ -59,8 +59,11 @@ file `UI/MapCanvas.lua`, with spec `tests/map_canvas_spec.lua`. Copy the approac
   same button, still `IsVisible()` and `IsMouseOver()`, then dispatch.
 - Dispatch: if the pin passes the button through, nothing happens. Otherwise click filters run first (Shift-click to plan
   a journey), then `pin:OnMouseClickAction(button)`.
-- Right button to zoom out: `pin:SetPassThroughButtons("RightButton")` unless the pin wants its right click
-  (`SetPassThroughButtons()` to clear). Above-zone flight points: `SetPropagateMouseClicks(true)` (stock behaviour).
+- Right button to zoom out: not available to addon pin code. `SetPassThroughButtons` (and `SetPropagateMouseClicks`)
+  are `HasRestrictions`, and the client refuses them from tainted code (cjber/adventure-guide-forever#534), so the
+  shared pin never calls them: a clicking pin takes every press and `ShouldMouseButtonBePassthrough` only decides which
+  presses it acts on, while a non-clicking pin lets every press through. Above-zone flight points lose the stock click
+  propagation for the same reason.
 - Super-tracking (flight points): call `C_SuperTrack.SetSuperTrackedMapPin` / `ClearAllSuperTracked` yourself and
   listen for the `SUPER_TRACKING_CHANGED` event on your own frame (not `EventRegistry "Supertracking.OnChanged"`).
 - Gamepad: if the gamepad UI is on (`C_InputInterfaceStyle.GetCurrentStyle() == Enum.InputDeviceInterfaceType.Gamepad`,

@@ -87,6 +87,48 @@ test("widgets: GetHighestFrameLevel reads direct children, or every descendant w
 	eq(grandchild:GetHighestFrameLevel(), 9, "a frame with no children")
 end)
 
+test("widgets: a HasRestrictions method is refused to tainted code in combat, unless always refused", function()
+	Taint.current = nil
+	local blocked = {}
+	local sim = {
+		G = {},
+		env = {},
+		taint = Taint,
+		alwaysRestrictedMethods = { SetPassThroughButtons = "cjber/adventure-guide-forever#534" },
+		docs = {
+			enums = {},
+			widgets = {
+				SimpleFrameAPI = {
+					Functions = { { Name = "SetPropagateKeyboardInput", HasRestrictions = true, Arguments = {} } },
+				},
+				SimpleScriptRegionAPI = {
+					Functions = {
+						{
+							Name = "SetPassThroughButtons",
+							IsProtectedFunction = true,
+							HasRestrictions = true,
+							Arguments = {},
+						},
+					},
+				},
+			},
+		},
+	}
+	sim.blocked = function(_, name)
+		blocked[#blocked + 1] = name
+	end
+	local widgets = require("widgets").build(sim)
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	Taint.set("Addon")
+	frame:SetPropagateKeyboardInput(true)
+	frame:SetPassThroughButtons("RightButton")
+	sim.combatLockdown = true
+	frame:SetPropagateKeyboardInput(true)
+	Taint.set(nil)
+	eq(table.concat(blocked, ","), "SetPassThroughButtons,SetPropagateKeyboardInput")
+end)
+
 test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's taint", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
@@ -229,6 +271,39 @@ test("taint: securecall restores the caller's state; globals carry their writer'
 	local _ = env.SomeGlobal
 	eq(Taint.current, "Addon", "reading a tainted global taints")
 	Taint.set(nil)
+end)
+
+test("taint: securecall keeps a tainted caller tainted", function()
+	local G = {}
+	Taint.globalTaint = {}
+	local env = Taint.environment(G)
+	Taint.install(G, env)
+	Taint.set("Addon")
+	G.securecall(function()
+		eq(Taint.current, "Addon", "the callee runs in the caller's taint")
+		Taint.set(nil)
+	end)
+	eq(Taint.current, "Addon", "a tainted caller is not laundered")
+	Taint.set(nil)
+end)
+
+test("taint: secureexecuterange taints a pair from an addon-written slot, not the next pair", function()
+	local G = {}
+	Taint.globalTaint = {}
+	local env = Taint.environment(G)
+	Taint.install(G, env)
+	local seen = {}
+	local t = {}
+	Taint.set("Addon")
+	t.a = true
+	Taint.writeSlot(t, "a", Taint.writer())
+	Taint.set(nil)
+	G.secureexecuterange(t, function(key)
+		seen[#seen + 1] = { key = key, taint = Taint.current }
+	end)
+	eq(seen[1].key, "a")
+	eq(seen[1].taint, "Addon", "the addon-written slot taints its pair")
+	eq(Taint.current, nil, "a secure caller is restored")
 end)
 
 test("taint: hooksecurefunc keeps the field secure and runs the hook isolated", function()

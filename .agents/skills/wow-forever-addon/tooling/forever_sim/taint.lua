@@ -404,10 +404,25 @@ function M.dispatch(taint, f, ...)
 	return M.dispatchFrom(taint, nil, f, ...)
 end
 
--- securecall / securecallfunction: the client runs the call itself, so the function starts secure whatever the
--- caller's execution taint is. An addon function still taints its own body; when it returns execution is secure
--- again, and the caller's taint is restored only after that.
+-- securecall / securecallfunction: the callee runs in the caller's execution taint. It protects a secure caller
+-- from its callee, never upgrades a tainted caller: a secure caller is secure again after the call even if the
+-- callee tainted itself, and a tainted caller stays tainted. Errors go to the error handler, not the caller.
 function M.securecall(f, ...)
+	local saved, savedOrigin = M.current, M.origin
+	local result = { xpcall(f, traceback, ...) }
+	if not result[1] then
+		local e = result[2]
+		M.onError(e.message, e.traceback, e.taint)
+	end
+	M.current, M.origin = saved, savedOrigin
+	if result[1] then
+		return unpack(result, 2, table.maxn(result))
+	end
+end
+
+-- A post-hook (hooksecurefunc, HookScript) is isolated from the execution that runs the original: it starts
+-- secure and the caller's state returns afterwards, whatever the hook taints.
+function M.securecallIsolated(f, ...)
 	local saved, savedOrigin = M.current, M.origin
 	M.current, M.origin = nil, nil
 	local result = { xpcall(f, traceback, ...) }
@@ -421,11 +436,12 @@ function M.securecall(f, ...)
 	end
 end
 
--- A C API that runs Blizzard Lua: the native function starts that Lua secure, then the caller's taint returns.
--- Errors go back to the caller, unlike securecall, because the client raises them from the API call itself.
+-- A C API that runs Blizzard Lua synchronously: that Lua runs in the caller's execution taint, as a script
+-- fired by a Lua call does. There is no blanket secure start; an engine boundary that really starts secure is
+-- modelled by the native that has it. Errors go back to the caller, unlike securecall, because the client
+-- raises them from the API call itself.
 function M.callSecure(f, ...)
 	local saved, savedOrigin = M.current, M.origin
-	M.current, M.origin = nil, nil
 	local result = { pcall(f, ...) }
 	M.current, M.origin = saved, savedOrigin
 	if not result[1] then
@@ -636,17 +652,33 @@ function M.install(G, env)
 		return M.securecall(f, ...)
 	end
 	G.secureexecuterange = function(t, f, ...)
-		-- secureexecuterange walks the table in C and calls each function through securecallfunction. The walk
-		-- itself is secure: reading a slot the caller's addon wrote does not taint the loop, and every callback
-		-- starts secure (an addon callback taints only its own body). This is what keeps a secure registry's
-		-- later writes secure after addon callbacks have run.
+		-- secureexecuterange walks the table in C and calls each pair the way securecallfunction does from the
+		-- caller's state. A pair is also tainted when its slot was written by an addon or `f` itself is addon
+		-- code, so a secure registry read of an addon callback taints only that pair; taint from one pair never
+		-- carries to the next, and the caller is restored afterwards.
 		local saved, savedOrigin = M.current, M.origin
-		M.current, M.origin = nil, nil
+		local fInfo = getinfo(f, "S")
+		local fAddon = fInfo and classify(fInfo.source) or false
 		local keys = {}
 		for k in next, t do
 			keys[#keys + 1] = k
 		end
+		local readFile, readLine = externalSite()
 		for _, k in ipairs(keys) do
+			M.current, M.origin = saved, savedOrigin
+			local slot = M.slotInfo(t, k)
+			if slot and slot.addon then
+				M.set(slot.addon, {
+					addon = slot.addon,
+					kind = "field",
+					write = slot,
+					read = { file = readFile, line = readLine },
+					key = k,
+					table = t,
+				})
+			elseif fAddon then
+				M.set(fAddon, { addon = fAddon, kind = "execution" })
+			end
 			M.securecall(f, k, t[k], ...)
 		end
 		M.current, M.origin = saved, savedOrigin
@@ -677,7 +709,7 @@ function M.install(G, env)
 		local hooked = function(...)
 			local result = { original(...) }
 			local after = M.current
-			M.securecall(post, ...)
+			M.securecallIsolated(post, ...)
 			M.set(after, M.origin)
 			return unpack(result, 1, table.maxn(result))
 		end

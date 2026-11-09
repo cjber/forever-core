@@ -242,7 +242,7 @@ function M.build(sim)
 		local hooks = s.hooks and s.hooks[name]
 		if hooks then
 			for _, hook in ipairs(hooks) do
-				Taint.securecall(hook, obj, ...)
+				Taint.securecallIsolated(hook, obj, ...)
 			end
 		end
 	end
@@ -2219,8 +2219,9 @@ function M.build(sim)
 		local whenAnchoring = fdoc.SecretWhenAnchoringSecret
 		local secretArgs = fdoc.SecretArguments
 		local protected = fdoc.IsProtectedFunction
+		local restricted = fdoc.HasRestrictions
 		local nargs = fdoc.Arguments and #fdoc.Arguments or 0
-		local plainBody = not addAspects and not returnAspects and not whenAnchoring and not protected
+		local plainBody = not addAspects and not returnAspects and not whenAnchoring and not protected and not restricted
 		if plainBody and secretArgs ~= "NotAllowed" and secretArgs ~= "AllowedWhenUntainted" then
 			return body
 		end
@@ -2245,6 +2246,10 @@ function M.build(sim)
 				end
 			end
 			if protected and protection(self) and Taint.current and sim.combatLockdown then
+				sim.blocked(self, name)
+				return
+			end
+			if restricted and Taint.current and ((sim.alwaysRestrictedMethods or {})[name] or sim.combatLockdown) then
 				sim.blocked(self, name)
 				return
 			end
