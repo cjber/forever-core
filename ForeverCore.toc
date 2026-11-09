@@ -22,6 +22,8 @@ UI\TrackerEqot.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
 UI\TrackerHost.lua
+Core\QuestOrder.lua
+UI\TrackerQuests.lua
 Core\LeaderboardsData.lua
 UI\Leaderboards.lua
 UI\QuestLogTabs.lua

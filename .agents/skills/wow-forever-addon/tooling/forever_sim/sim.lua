@@ -38,6 +38,7 @@ Sim.CORE = {
 	"Blizzard_UIPanelTemplates",
 	"Blizzard_UIParentPanelManager",
 	"Blizzard_GameTooltip",
+	"Blizzard_SplashFrame",
 	"Blizzard_ItemButton",
 	"Blizzard_FrameXMLUtil",
 	"Blizzard_Flyout",
@@ -45,11 +46,13 @@ Sim.CORE = {
 	"Blizzard_ObjectAPI",
 	"Blizzard_Settings_Shared",
 	"Blizzard_GamepadSoftCursor",
-	-- Single files from addons too large to boot whole: the templates other UI inherits from them, and the alert
-	-- frames the client loads at startup (AlertFrame is a global addons anchor to).
+	-- Single files from addons too large to boot whole: the templates other UI inherits from them (the secure
+	-- templates and the deprecated settings templates), and the alert frames the client loads at startup
+	-- (AlertFrame is a global addons anchor to).
 	"Blizzard_FrameXML/SecureTemplatesBase.xml",
 	"Blizzard_FrameXML/SecureTemplates.lua",
 	"Blizzard_FrameXML/SecureTemplates.xml",
+	"Blizzard_FrameXML/DeprecatedTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",
 	"Blizzard_FrameXML/Mainline/NavigationBar.lua",
@@ -67,6 +70,7 @@ Sim.CORE = {
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	"Blizzard_WorldMap",
 	"Blizzard_ObjectiveTracker",
+	"Blizzard_ContentTracking",
 }
 
 local docsCache = {}

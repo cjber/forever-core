@@ -171,6 +171,39 @@ function M.build(sim)
 	W.st = st
 
 	---------------------------------------------------------------------------
+	-- Protection
+	---------------------------------------------------------------------------
+	-- The client's rule is explicit protection (XML protected="true", which templates.lua records as s.protected)
+	-- or implicit protection: a frame is protected when any descendant is. IsProtected reports the pair.
+	local function explicitProtection(obj)
+		local s = S[obj]
+		if not s then
+			return false
+		end
+		if s.protected == true then
+			return true
+		end
+		for _, child in ipairs(s.children or {}) do
+			if explicitProtection(child) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function protection(obj)
+		local s = S[obj]
+		if not s then
+			return false, false
+		end
+		if s.protected == true then
+			return true, true
+		end
+		return explicitProtection(obj), false
+	end
+	W.protection = protection
+
+	---------------------------------------------------------------------------
 	-- Scripts
 	---------------------------------------------------------------------------
 	-- Runs obj's script `name` as the client does when Lua code triggers it (Show, Click, SetValue...): the
@@ -796,8 +829,7 @@ function M.build(sim)
 		dirty()
 	end
 	impl.ScriptRegion.IsProtected = function(self)
-		local s = st(self)
-		return s.protected == true, s.protected == true
+		return protection(self)
 	end
 	impl.ScriptRegion.CanChangeProtectedState = function()
 		return not Taint.current and not sim.combatLockdown
@@ -1203,7 +1235,7 @@ function M.build(sim)
 	end
 	impl.Frame.SetAttribute = function(self, name, value)
 		local s = st(self)
-		if s.protected and Taint.current and sim.combatLockdown then
+		if protection(self) and Taint.current and sim.combatLockdown then
 			sim.blocked(self, "SetAttribute")
 			return
 		end
@@ -2173,7 +2205,7 @@ function M.build(sim)
 					end
 				end
 			end
-			if protected and s.protected and Taint.current and sim.combatLockdown then
+			if protected and protection(self) and Taint.current and sim.combatLockdown then
 				sim.blocked(self, name)
 				return
 			end
