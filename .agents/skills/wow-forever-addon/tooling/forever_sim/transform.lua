@@ -921,8 +921,34 @@ function Emitter:assign(statement)
 		self:expressionList(exprs)
 		return
 	end
-	-- A multiple assignment with a field target: keep Lua's evaluate-then-assign order through locals.
+	-- A multiple assignment with a field target: Lua evaluates every target's table and key before any write,
+	-- so hold them in locals too. Writing each index as it is reached lets `t[#t + 1], t[#t + 2] = 1, 2`
+	-- count the first append in the second index and leave a nil hole.
 	self:raw("do")
+	local places = {}
+	local slot = 0
+	for i, target in ipairs(targets) do
+		if target.tag == "Index" then
+			slot = slot + 1
+			local place = { obj = "__fsi_o" .. slot }
+			self:raw("local")
+			self:raw(place.obj)
+			if target.keyTok then
+				self:raw("=")
+				self:expression(target.obj)
+			else
+				place.key = "__fsi_k" .. slot
+				self:raw(",")
+				self:raw(place.key)
+				self:raw("=")
+				self:expression(target.obj)
+				self:raw(",")
+				self:expression(target.key)
+			end
+			self:raw(";")
+			places[i] = place
+		end
+	end
 	self:raw("local")
 	local temps = {}
 	for i = 1, #targets do
@@ -937,14 +963,15 @@ function Emitter:assign(statement)
 	for i, target in ipairs(targets) do
 		self:raw(";")
 		if target.tag == "Index" then
+			local place = places[i]
 			self:raw("__fsi_set(")
-			self:expression(target.obj)
+			self:raw(place.obj)
 			self:raw(",")
 			if target.keyTok then
 				self:at(target.keyTok.line)
 				self:raw(quoted(target.keyTok.text))
 			else
-				self:expression(target.key)
+				self:raw(place.key)
 			end
 			self:raw(",")
 			self:raw(temps[i])
