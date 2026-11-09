@@ -60,8 +60,9 @@ def icon_url(addon):
     return f"https://raw.githubusercontent.com/{OWNER}/{addon.repo}/main/media/icon-400.png"
 
 
-def image_url(addon, path):
-    return f"https://raw.githubusercontent.com/{OWNER}/{addon.repo}/main/{path.removeprefix('./').lstrip('/')}"
+def image_url(addon, version, path):
+    """A hero image at the release tag, so a later commit never changes a post already made."""
+    return f"https://raw.githubusercontent.com/{OWNER}/{addon.repo}/v{version}/{path.removeprefix('./').lstrip('/')}"
 
 
 def notes_url(addon, version):
@@ -358,7 +359,7 @@ def build_features(datasets, since, now):
                 lines=tuple(f"• {headline}" for headline in entry.headlines),
                 links=links_line(data.store, notes_url(data.addon, release.version)),
                 thumbnail=icon_url(data.addon),
-                image=image_url(data.addon, entry.image) if entry.image else None,
+                image=image_url(data.addon, release.version, entry.image) if entry.image else None,
             )
             fit_embeds([spec])
             payloads.append(

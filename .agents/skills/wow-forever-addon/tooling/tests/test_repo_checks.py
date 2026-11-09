@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -62,6 +64,76 @@ class ChangelogTest(unittest.TestCase):
     def test_empty_section_fails(self):
         with self.assertRaisesRegex(SystemExit, "empty"):
             changelog.section("## [1.0.0] - 2026-01-01\n\n## [0.9.0] - 2025-01-01\n- y\n", "1.0.0")
+
+    def feature_repo(self, body, tags=("1.0.0",), files=()):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / "CHANGELOG.md").write_text(f"# Changelog\n\n## [Unreleased]\n\n{body}")
+        for name in files:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(b"\x89PNG\r\n\x1a\n")
+        git = ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-c", "user.email=t@example.com"]
+        run = lambda *args: subprocess.run([*git, *args], cwd=root, check=True, capture_output=True)  # noqa: E731
+        run("init", "-q")
+        run("add", "CHANGELOG.md")
+        run("-c", "user.name=t", "commit", "-q", "-m", "x")
+        for tag in tags:
+            run("tag", f"v{tag}")
+        return root
+
+    def test_feature_release_without_a_hero_image_fails(self):
+        root = self.feature_repo("## [1.1.0] - 2026-02-01\n- **A feature.** It matters.\n")
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(SystemExit, "feature release with no hero image"),
+        ):
+            changelog.main(root, ["--check", "1.1.0"])
+
+    def test_feature_release_with_a_missing_hero_image_fails(self):
+        root = self.feature_repo(
+            "## [1.1.0] - 2026-02-01\n\n<!-- discord-image: docs/screenshots/new.png -->\n\n"
+            "- **A feature.** It matters.\n"
+        )
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(SystemExit, "not a PNG in this repository"),
+        ):
+            changelog.main(root, ["--check", "1.1.0"])
+
+    def test_feature_release_with_an_existing_png_passes(self):
+        root = self.feature_repo(
+            "## [1.1.0] - 2026-02-01\n\n<!-- discord-image: docs/screenshots/new.png -->\n\n"
+            "- **A feature.** It matters.\n",
+            files=("docs/screenshots/new.png",),
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            changelog.main(root, ["--check", "1.1.0"])
+
+    def test_patch_release_needs_no_hero_image(self):
+        root = self.feature_repo("## [1.0.1] - 2026-02-01\n- **A fix.** It matters.\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            changelog.main(root, ["--check", "1.0.1"])
+
+    def test_first_release_is_a_feature_only_on_patch_zero(self):
+        feature = self.feature_repo("## [0.1.0] - 2026-02-01\n- **A feature.** It matters.\n", tags=())
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(SystemExit, "feature release with no hero image"),
+        ):
+            changelog.main(feature, ["--check", "0.1.0"])
+        patch = self.feature_repo("## [0.1.1] - 2026-02-01\n- **A fix.** It matters.\n", tags=())
+        with contextlib.redirect_stdout(io.StringIO()):
+            changelog.main(patch, ["--check", "0.1.1"])
+
+    def test_plain_check_over_released_history_needs_no_hero_image(self):
+        root = self.feature_repo(
+            "## [1.1.0] - 2026-02-01\n- **A feature.** It matters.\n\n"
+            "## [1.0.0] - 2026-01-01\n- **The first release.** It matters.\n",
+            tags=("1.0.0", "1.1.0"),
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            changelog.main(root, ["--check"])
 
 
 class ReleaseCheckTest(unittest.TestCase):

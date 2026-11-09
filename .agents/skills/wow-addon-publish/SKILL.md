@@ -143,6 +143,11 @@ when the player is not playing (a deskpilot screenshot first):
    BugGrabber, `taint.log` and the selftest's failed surfaces. Exit 1 blocks the release: fix the error first.
 4. Point the link back at `test-artifacts/<repo>-dev` and `/reload`.
 
+Before the tag, check the changelog entry: a feature release (major or minor bump) names its hero, one of
+the repo's own rendered screenshots showing the new feature at its native size, at the top of its section
+with `<!-- discord-image: docs/screenshots/<file>.png -->`; `tools/changelog.py --check X.Y.Z` fails without
+one.
+
 Then move `## [Unreleased]` to `## [x.y.z] - <today UTC>`, signed commit (personal email for these
 repos), push, `git tag -s vX.Y.Z -m vX.Y.Z`, push the tag, and watch the run:
 
