@@ -8,7 +8,7 @@ tag (a merge that moved new bullets under it), since those words already shipped
 
     python3 tools/changelog.py 0.2.0           # that version's entry (a leading v is fine)
     python3 tools/changelog.py --check         # every v* tag has an entry, the newest as at its tag
-    python3 tools/changelog.py --check 0.3.0   # that version has an entry, before it is tagged
+    python3 tools/changelog.py --check 0.3.0   # that version has an entry, and its hero when it is a feature
 """
 
 import argparse
@@ -19,6 +19,8 @@ from pathlib import Path
 
 HEADING = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]? - \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
 UNRELEASED = re.compile(r"^## \[Unreleased\]\s*$", re.MULTILINE)
+VERSION = re.compile(r"^v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
+IMAGE = re.compile(r"<!--\s*discord-image:\s*(\S+)\s*-->")
 
 
 def find(text: str, version: str) -> str | None:
@@ -58,6 +60,46 @@ def released(root: Path) -> list[str]:
     return sorted(versions, key=lambda version: tuple(map(int, version.split("."))))
 
 
+def _version_key(version: str) -> tuple[int, int, int]:
+    match = VERSION.match(version)
+    return (int(match["major"]), int(match["minor"]), int(match["patch"])) if match else (0, 0, 0)
+
+
+def is_feature(version: str, versions: list[str]) -> bool:
+    """Whether `version` raises the major or minor over the newest of `versions` (oldest first).
+
+    With no released version yet, the first release is a feature when it starts a patch line (patch 0),
+    the same rule `classify_releases` uses in `tools/discord_digest.py`.
+    """
+    key = _version_key(version)
+    if not versions:
+        return key[2] == 0
+    previous = _version_key(versions[-1])
+    return key[0] > previous[0] or (key[0] == previous[0] and key[1] > previous[1])
+
+
+def check_image(root: Path, text: str, version: str, versions: list[str]) -> None:
+    """A feature release names a hero image, and every named image is a PNG in this repository."""
+    images = IMAGE.findall(section(text, version))
+    for path in images:
+        target = (root / path.removeprefix("./").lstrip("/")).resolve()
+        try:
+            target.relative_to(root.resolve())
+        except ValueError:
+            raise SystemExit(
+                f"CHANGELOG.md's section for {version} names {path}, which is outside this repository"
+            ) from None
+        if target.suffix.lower() != ".png" or not target.is_file():
+            raise SystemExit(
+                f"CHANGELOG.md's section for {version} names {path}, which is not a PNG in this repository"
+            )
+    if not images and is_feature(version, versions):
+        raise SystemExit(
+            f"CHANGELOG.md's section for {version} is a feature release with no hero image; add"
+            " `<!-- discord-image: docs/screenshots/<file>.png -->` naming a screenshot in this repository"
+        )
+
+
 def check(text: str, versions: list[str], tagged: Callable[[str], str | None] | None = None) -> None:
     """Every version in `versions` (oldest first) has a section. With `tagged` (a version's changelog at its tag),
     the newest one must also read as it did at its tag: a branch that merges main after a release lands its
@@ -88,7 +130,11 @@ def main(root: Path, argv: list[str] | None = None) -> None:
     text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if args.check is not None:
         if args.check:
-            check(text, [args.check.removeprefix("v")])
+            version = args.check.removeprefix("v")
+            check(text, [version])
+            # Only versions before this one: once it is tagged, it is not its own predecessor.
+            before = [v for v in released(root) if _version_key(v) < _version_key(version)]
+            check_image(root, text, version, before)
         else:
             check(text, released(root), lambda version: at_tag(root, version))
         return

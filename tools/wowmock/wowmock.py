@@ -552,8 +552,12 @@ class Canvas:
         draw = ImageDraw.Draw(layer)
         stroke = max(1, round(self.ui.scale)) if font.outline else 0
         icons = []
-        # The client centres an inline texture on the glyphs, not on the line box: Friz's ascent puts the
-        # digits' ink ~1.5 units below the box centre, and a real capture's coins sit level with the digits.
+        # The client centres a font's whole ascent + descent (the glyph block) in the line box, not just
+        # its em, so draw each line from the block's centred top rather than Pillow's ascender at line_top.
+        ascent, descent = face.getmetrics()
+        metric_shift = -((ascent + descent) / self.ui.scale - line_height) / 2
+        # Inline textures sit on the glyphs: a real capture's coins are level with the digits, so centre an
+        # icon on the ink of "0" taken from the same shifted draw origin.
         _, ink_top, _, ink_bottom = face.getbbox("0")
         ink_centre = (ink_top + ink_bottom) / 2 / self.ui.scale
         for line_index, (line, line_width) in enumerate(zip(line_runs, line_widths, strict=True)):
@@ -563,13 +567,14 @@ class Canvas:
             elif justify == "RIGHT":
                 cursor += width - line_width
             line_top = top + line_height * line_index
+            draw_top = line_top + metric_shift
             for run, run_color in line:
                 if not isinstance(run, str):
                     w, h = inline_texture_size(self.ui, run, font)
-                    icons.append((run, cursor + run.offset[0], line_top + ink_centre - h / 2 - run.offset[1], w, h))
+                    icons.append((run, cursor + run.offset[0], draw_top + ink_centre - h / 2 - run.offset[1], w, h))
                     cursor += w
                     continue
-                position = (self.px(cursor), self.px(line_top))
+                position = (self.px(cursor), self.px(draw_top))
                 if font.shadow:
                     offset = (self.px(font.shadow[0]), -self.px(font.shadow[1]))
                     draw.text((position[0] + offset[0], position[1] + offset[1]), run, font=face, fill=(0, 0, 0, 255))
@@ -1118,6 +1123,7 @@ def context_menu(ui, entries):
                     canvas.draw(
                         check, x + (tick.width - check.width) / 2 + 2, tick_top + (tick.height - check.height) / 2 - 1
                     )
+                # Real capture legacy-forever 8afee98 menu.png: a checkbox label sits ~1 unit above a plain row's.
                 canvas.text(x + tick.width + 7, y - 1, entry.text, text_font, box_height=MENU_ROW)
             else:
                 canvas.text(x, y, entry.text, text_font, box_height=MENU_ROW)
@@ -1673,6 +1679,28 @@ def filter_dropdown(canvas, right, top, text="Filter"):
     canvas.draw(ui.atlas("common-dropdown-b-button"), x - 4, top - 4, w + 8, h + 8)
     canvas.text(x, top, text, font, justify="CENTER", width=w, box_height=20)
     return x, top, w, h
+
+
+def dropdown(canvas, x, y, w, text, h=25):
+    """WowStyle1DropdownTemplate (Blizzard_Menu/Mainline/MenuTemplates.xml:3-37): common-dropdown-textholder
+    from TOPLEFT (-8, 7) to BOTTOMRIGHT (8, -9), so w+16 by h+16 around the button (BACKGROUND);
+    common-dropdown-a-button at its atlas size at RIGHT (1, -3), its right edge at x+w+1 and its centre 3 below
+    the middle (OVERLAY); Text (GameFontHighlight, 10 high, justifyH LEFT) from TOPLEFT (8, -8) to the arrow's
+    LEFT, cut with '...' before it. Returns its rect."""
+    ui = canvas.ui
+    canvas.draw(ui.atlas("common-dropdown-textholder"), x - 8, y - 7, w + 16, h + 16)
+    arrow = ui.atlas("common-dropdown-a-button")
+    arrow_x, arrow_y = x + w + 1 - arrow.width, y + h / 2 + 3 - arrow.height / 2
+    canvas.draw(arrow, arrow_x, arrow_y)
+    font = FONTS["GameFontHighlight"]
+    room = arrow_x - x - 8
+    shown = text
+    if canvas.text_width(text, font) > room:
+        while shown and canvas.text_width(shown + "...", font) > room:
+            shown = shown[:-1]
+        shown += "..."
+    canvas.text(x + 8, y + 8, shown, font, box_height=10)
+    return x, y, w, h
 
 
 def minimal_scrollbar(canvas, x, y, h, visible=1.0, offset=0.0):

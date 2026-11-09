@@ -40,6 +40,15 @@ class TextLayoutTest(unittest.TestCase):
         self.assertAlmostEqual(rows[0][2], 120, delta=2)
         self.assertAlmostEqual(rows[1][2], 120, delta=2)
 
+    def test_box_height_centres_the_glyph_block(self):
+        # The client centres a font's whole ascent + descent; drawing from the ascender put text low (#283).
+        canvas = Canvas(FakeUi(), 80, 40)
+        font = SimpleNamespace(height=16, color=(1, 1, 1), shadow=None, outline=False)
+        self.assertGreater(FakeUi.font(None).getmetrics()[1], 0)
+        canvas.text(20, 4, "H", font, box_height=32)
+        ink = canvas.image.getchannel("A").getbbox()
+        self.assertAlmostEqual((ink[1] + ink[3]) / 2, 4 + 32 / 2, delta=1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -72,6 +72,21 @@ test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on
 	eq(region:GetNumPoints(), 0, "anchors cleared")
 end)
 
+test("widgets: GetHighestFrameLevel reads direct children, or every descendant when asked", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local parent = widgets.new("Frame")
+	local child = widgets.new("Frame", nil, parent)
+	local grandchild = widgets.new("Frame", nil, child)
+	parent:SetFrameLevel(2)
+	child:SetFrameLevel(5)
+	grandchild:SetFrameLevel(9)
+	eq(parent:GetHighestFrameLevel(), 5, "direct children by default")
+	eq(parent:GetHighestFrameLevel(true), 9, "every descendant")
+	eq(grandchild:GetHighestFrameLevel(), 9, "a frame with no children")
+end)
+
 test("widgets: FocusEnter and FocusExit run OnEnter and OnLeave in the caller's taint", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })

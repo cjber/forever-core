@@ -34,4 +34,6 @@ name a specific frame or control only when that helps the player understand the 
 - Rhetorical questions ("Tired of...?"), exclamation marks in store copy, emoji bullets, bolded
   words mid-sentence for emphasis, "Key Features" style Title Case headings.
 - Tricolon rhythm everywhere ("fast, simple and beautiful"), and every paragraph the same length.
+- Internals: protected functions, taint, GUID hashes, client APIs, what the client hides from
+  addons. Say what the player sees and gets, or cut it.
 - Closing summaries ("In short, ...", "Overall, ...").

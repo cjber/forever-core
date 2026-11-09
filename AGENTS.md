@@ -101,7 +101,8 @@ and run anywhere.
   timing.
 - `tools/sync_consumer_prs.py`: the automatic consumer sync behind `.github/workflows/sync-consumers.yml`. On every push
   to main it derives the consumers from `VENDORED` plus the live repositories that vendor `tools/forever_tools/` or
-  `tools/forever_sim/`, runs the same three syncs as `sync_consumers.py`, and force-pushes `forever-core-sync` with an
+  `tools/forever_sim/`, runs the same three syncs as `sync_consumers.py`, and points `forever-core-sync` at the
+  consumer's main HEAD before creating a signed commit through the GraphQL `createCommitOnBranch` mutation, with an
   auto-merging PR in each consumer. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and
   stays green. `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
