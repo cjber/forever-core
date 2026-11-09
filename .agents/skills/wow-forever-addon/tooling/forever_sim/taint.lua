@@ -24,6 +24,8 @@ M.listeners = { taint = {}, untaint = {} }
 -- nothing is written into the table itself: next, # and pairs see exactly what they did without the sim.
 M.slots = setmetatable({}, { __mode = "k" })
 M.owners = setmetatable({}, { __mode = "k" }) -- table -> "blizzard" or "addon", from its first field write
+M.parents = setmetatable({}, { __mode = "k" }) -- table -> { parent table, key } it was first stored under
+M.globalObjects = setmetatable({}, { __mode = "k" }) -- table-valued global -> its global name
 M.hits = {} -- secure reads of an addon-tainted slot, for the scenario gate
 
 local MAX_HITS = 5000
@@ -66,6 +68,7 @@ function M.reset()
 	M.globalTaint, M.globalInfo = {}, {}
 	M.addonFolders, M.secureFolders = {}, {}
 	M.slots, M.owners = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+	M.parents, M.globalObjects = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 	M.hits = {}
 	M.listeners = { taint = {}, untaint = {} }
 	classified = {}
@@ -192,45 +195,79 @@ function M.slotInfo(t, k)
 	return map and map[k] or nil
 end
 
--- Field names for a report: the global path to `t` when one can be found (a bounded walk, only on a hit).
-function M.tablePath(t, maxDepth)
-	local G = M.globalTable
-	if type(t) ~= "table" or not G then
-		return nil
-	end
-	local seen = { [t] = true }
-	local queue = {}
-	for k, v in next, G do
-		if type(k) == "string" then
-			if v == t then
-				return k
-			end
-			if type(v) == "table" and not seen[v] then
-				seen[v] = true
-				queue[#queue + 1] = { v, k, 1 }
-			end
+-- The known depth of `t` from a global name, or nil when it has no path yet: used to keep the shortest of two
+-- names for the same table, as the walk did. A cycle ends the chain.
+local function pathDepth(t)
+	local seen = {}
+	local depth = 0
+	local current = t
+	while current do
+		if seen[current] then
+			return nil
 		end
-	end
-	local head = 1
-	while head <= #queue and head <= 20000 do
-		local item = queue[head]
-		head = head + 1
-		local value, path, depth = item[1], item[2], item[3]
-		if depth < (maxDepth or 3) then
-			for k, v in next, value do
-				if type(k) == "string" or type(k) == "number" then
-					if v == t then
-						return path .. "." .. tostring(k)
-					end
-					if type(v) == "table" and not seen[v] and head + #queue < 20000 then
-						seen[v] = true
-						queue[#queue + 1] = { v, path .. "." .. tostring(k), depth + 1 }
-					end
-				end
-			end
+		seen[current] = true
+		if M.globalObjects[current] then
+			return depth
 		end
+		local parent = M.parents[current]
+		if not parent then
+			return nil
+		end
+		depth = depth + 1
+		current = parent[1]
 	end
 	return nil
+end
+
+-- Records where a table value is stored, so a report can name it without walking the globals. The first name
+-- wins, unless a later store gives the table a shorter path (the walk preferred the shortest one).
+local function recordParent(t, k, v)
+	if type(v) ~= "table" or (type(k) ~= "string" and type(k) ~= "number") then
+		return
+	end
+	if M.globalObjects[v] then
+		return
+	end
+	if M.parents[v] == nil then
+		M.parents[v] = { t, k }
+		return
+	end
+	local oldDepth = pathDepth(v)
+	local newDepth = pathDepth(t)
+	if newDepth and (not oldDepth or newDepth + 1 < oldDepth) then
+		M.parents[v] = { t, k }
+	end
+end
+
+-- Field names for a report: the recorded global path to `t`, with no walk of the globals, so it is the same on
+-- every LuaJIT. nil when no recorded name reaches a global.
+function M.tablePath(t)
+	if type(t) ~= "table" then
+		return nil
+	end
+	local parts, seen = {}, {}
+	local current = t
+	while true do
+		if seen[current] then
+			return nil
+		end
+		seen[current] = true
+		local name = M.globalObjects[current]
+		if name then
+			parts[#parts + 1] = tostring(name)
+			local path = {}
+			for i = #parts, 1, -1 do
+				path[#path + 1] = parts[i]
+			end
+			return table.concat(path, ".")
+		end
+		local parent = M.parents[current]
+		if not parent then
+			return nil
+		end
+		parts[#parts + 1] = tostring(parent[2])
+		current = parent[1]
+	end
 end
 
 -- The identity of one protected-action cause: (field, writer line, origin line), so a report lists each
@@ -290,6 +327,7 @@ end
 
 -- t.k = v / t[k] = v / rawset.
 function M.fieldSet(t, k, v)
+	recordParent(t, k, v)
 	M.writeSlot(t, k, M.writer())
 	t[k] = v
 end
@@ -396,6 +434,14 @@ function M.callSecure(f, ...)
 	return unpack(result, 2, table.maxn(result))
 end
 
+-- A table-valued global can be named in a failure report.
+local function named(t, k, v)
+	if type(v) == "table" and M.current == nil then
+		M.globalObjects[v] = M.globalObjects[v] or k
+	end
+	local _ = t
+end
+
 -- The global environment every chunk runs in: an empty proxy over the real table G that records which addon wrote
 -- each global and taints whoever reads a tainted one.
 function M.environment(G)
@@ -416,6 +462,7 @@ function M.environment(G)
 		__newindex = function(_, k, v)
 			G[k] = v
 			gt[k] = M.current
+			named(env, k, v)
 			if M.current then
 				local file, line = externalSite()
 				M.globalInfo[k] = {
@@ -431,15 +478,6 @@ function M.environment(G)
 		__metatable = false,
 	})
 	return env
-end
-
--- A table-valued global can be named in a failure report.
-local function named(t, k, v)
-	if type(v) == "table" and M.current == nil then
-		M.globalObjects = M.globalObjects or setmetatable({}, { __mode = "k" })
-		M.globalObjects[v] = M.globalObjects[v] or k
-	end
-	local _ = t
 end
 
 -- Installs securecall, issecure and friends into G; `env` is the proxy from M.environment.
@@ -463,6 +501,7 @@ function M.install(G, env)
 			env[k] = v
 			return t
 		end
+		recordParent(t, k, v)
 		M.writeSlot(t, k, M.writer())
 		return rawset_(t, k, v)
 	end
@@ -650,7 +689,6 @@ function M.install(G, env)
 			rawset_(t, name, hooked)
 		end
 	end
-	local _ = named
 	M.installHelpers(G)
 end
 

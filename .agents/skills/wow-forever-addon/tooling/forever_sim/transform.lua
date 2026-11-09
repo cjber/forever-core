@@ -970,9 +970,7 @@ function M.rewrite(text, mark)
 	if mark then
 		emitter:raw("__fst(" .. quoted(mark) .. ");")
 	end
-	if #body > 0 then
-		emitter:raw(";")
-	end
+	-- No separator here: the marker already ends in `;`, and Lua 5.1 rejects an empty statement.
 	emitter:block(body)
 	return table.concat(emitter.out)
 end

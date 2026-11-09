@@ -9,7 +9,6 @@ local Transform = require("transform")
 local M = {}
 
 M.MARKER = "__fst"
-M.VERSION = 2
 
 local cache = {}
 
@@ -24,6 +23,19 @@ local function hash(text)
 	return string.format("%08x%08x", a, b)
 end
 M.hash = hash
+
+-- The rewriter's own source names the Blizzard rewrite cache, so a change to the rewrite never serves output the
+-- old code made.
+local REWRITER = (function()
+	local dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
+	local parts = {}
+	for _, name in ipairs({ "transform.lua", "instrument.lua" }) do
+		local file = assert(io.open(dir .. name, "rb"))
+		parts[#parts + 1] = file:read("*a")
+		file:close()
+	end
+	return hash(table.concat(parts, "\0"))
+end)()
 
 -- Rewrites a chunk; `addon` names the addon (addon code) or is nil for Blizzard's.
 function M.rewrite(src, addon)
@@ -47,10 +59,10 @@ local function ensureDir(path)
 	madeDirs[path] = true
 end
 
--- Rewrites Blizzard source, caching the result under `<cacheDir>/v<version>/<build>/<hash>.lua` so a pinned
--- build parses once per machine rather than once per client.
+-- Rewrites Blizzard source, caching the result under `<cacheDir>/<rewriter hash>/<build>/<source hash>.lua` so a
+-- pinned build parses once per machine and rewriter rather than once per client.
 function M.rewriteBlizzard(src, cacheDir, build)
-	local dir = string.format("%s/v%d/%s", cacheDir, M.VERSION, build)
+	local dir = string.format("%s/%s/%s", cacheDir, REWRITER, build)
 	local path = dir .. "/" .. hash(src) .. ".lua"
 	local file = io.open(path, "rb")
 	if file then
