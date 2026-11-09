@@ -922,6 +922,9 @@ function Emitter:assign(statement)
 		return
 	end
 	-- A multiple assignment with a field target: keep Lua's evaluate-then-assign order through locals.
+	-- Lua evaluates every target object and key and every right-hand side before the first write, and a key
+	-- may depend on the table's length (`t[#t+1], t[#t+2] = a, b`): hoisting only the right hand sides lets
+	-- the first write change `#t`, so the second lands in the wrong slot and leaves a nil hole.
 	self:raw("do")
 	self:raw("local")
 	local temps = {}
@@ -934,18 +937,46 @@ function Emitter:assign(statement)
 	end
 	self:raw("=")
 	self:expressionList(exprs)
+	local objs, keys, indexed = {}, {}, {}
+	for i, target in ipairs(targets) do
+		if target.tag == "Index" then
+			objs[i] = "__fsi_o" .. i
+			keys[i] = "__fsi_k" .. i
+			indexed[#indexed + 1] = i
+		end
+	end
+	self:raw(";")
+	self:raw("local")
+	for n, i in ipairs(indexed) do
+		if n > 1 then
+			self:raw(",")
+		end
+		self:raw(objs[i])
+		self:raw(",")
+		self:raw(keys[i])
+	end
+	self:raw("=")
+	for n, i in ipairs(indexed) do
+		if n > 1 then
+			self:raw(",")
+		end
+		local target = targets[i]
+		self:expression(target.obj)
+		self:raw(",")
+		if target.keyTok then
+			self:at(target.keyTok.line)
+			self:raw(quoted(target.keyTok.text))
+		else
+			self:expression(target.key)
+		end
+	end
 	for i, target in ipairs(targets) do
 		self:raw(";")
 		if target.tag == "Index" then
 			self:raw("__fsi_set(")
-			self:expression(target.obj)
+			self:raw(objs[i])
 			self:raw(",")
-			if target.keyTok then
-				self:at(target.keyTok.line)
-				self:raw(quoted(target.keyTok.text))
-			else
-				self:expression(target.key)
-			end
+			self:raw(keys[i])
 			self:raw(",")
 			self:raw(temps[i])
 			self:raw(")")

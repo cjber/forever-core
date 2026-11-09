@@ -409,5 +409,33 @@ test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function(
 	eq(G.Constants.QuestConsts, G.Constants.QuestInfoLuaConsts, "the alias")
 end)
 
+test("transform: a multi-assignment evaluates every key before it writes", function()
+	-- `t[#t+1], t[#t+2] = a, b` must write both slots: hoisting only the right hand sides would let the
+	-- first write change `#t` and send the second one past a nil hole.
+	local Transform = require("transform")
+	local src = table.concat({
+		"local a = {}",
+		'local x, y = "x", "y"',
+		"a[#a + 1], a[#a + 2] = x, y",
+		"return #a, a[1], a[2]",
+	}, "\n")
+	local out = Transform.rewrite(src)
+	local env = {
+		__fsi_set = function(t, k, v)
+			t[k] = v
+		end,
+		__fsi_get = function(t, k)
+			return t[k]
+		end,
+	}
+	local chunk = assert(loadstring(out, "@multiassign.lua"))
+	setfenv(chunk, env)
+	local length, first, second = chunk()
+	eq(length, 2, "a tail-length key sees the table before the writes")
+	eq(first, "x", "first slot")
+	eq(second, "y", "second slot")
+	assert(out:find("__fsi_k2", 1, true), "the second key is hoisted into its own local")
+end)
+
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
