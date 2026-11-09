@@ -1177,6 +1177,21 @@ function M.build(sim)
 	impl.Frame.GetFrameLevel = function(self)
 		return st(self).level or 0
 	end
+	-- The client's rule: the highest level of the frame and its direct children, or of every descendant when asked.
+	impl.Frame.GetHighestFrameLevel = function(self, iterateAllChildren)
+		local function highest(frame, deep)
+			local s = st(frame)
+			local level = s.level or 0
+			for _, child in ipairs(s.children or {}) do
+				local childLevel = deep and highest(child, true) or (st(child).level or 0)
+				if childLevel > level then
+					level = childLevel
+				end
+			end
+			return level
+		end
+		return highest(self, iterateAllChildren == true)
+	end
 	impl.Frame.SetFixedFrameLevel = function(self, on)
 		st(self).fixedLevel = on
 	end
