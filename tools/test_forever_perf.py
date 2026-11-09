@@ -106,6 +106,48 @@ def old_session() -> str:
 },
 },
 },
+["scenarios"] = {
+{
+["name"] = "tooltips",
+["at"] = 425,
+["frames"] = 120,
+["wallMs"] = 240,
+["kinds"] = {
+["tooltip set"] = { ["count"] = 120, ["totalMs"] = 96, ["maxMs"] = 3.6 },
+["pin enter"] = { ["count"] = 10, ["totalMs"] = 5, ["maxMs"] = 0.8 },
+},
+["addons"] = {
+["AdventureGuideForever"] = {
+["RecentAverageTime"] = 1.4,
+["PeakTime"] = 4.2,
+["peakRaised"] = true,
+["over"] = { ["CountTimeOver1Ms"] = 12, ["CountTimeOver5Ms"] = 1 },
+["memoryDeltaKB"] = 2048,
+},
+["TweaksForever"] = {
+["RecentAverageTime"] = 0.4,
+["PeakTime"] = 0.9,
+["peakRaised"] = false,
+["over"] = { ["CountTimeOver1Ms"] = 2 },
+["memoryDeltaKB"] = 128,
+},
+["Questie"] = {
+["RecentAverageTime"] = 2.2,
+["PeakTime"] = 5.5,
+["peakRaised"] = false,
+["over"] = { ["CountTimeOver1Ms"] = 20 },
+["memoryDeltaKB"] = 512,
+},
+},
+},
+{
+["name"] = "mappins",
+["at"] = 430,
+["frames"] = 0,
+["wallMs"] = 0,
+["skipped"] = "no world map",
+},
+},
 ["combat"] = {
 ["fights"] = 1,
 ["seconds"] = 30,
@@ -392,6 +434,39 @@ class PerfReportTest(unittest.TestCase):
         self.assertEqual(findings, ["mark 'idle': AdventureGuideForever peak 4.5 ms"])
         self.assertEqual(sum("AdventureGuideForever" in finding for finding in findings), 1)
 
+    def test_scenarios_parse_with_kinds_and_addon_costs(self):
+        scenarios = self.session(2).scenarios
+        self.assertEqual([scenario.name for scenario in scenarios], ["tooltips", "mappins"])
+        tooltips, mappins = scenarios
+        self.assertEqual(tooltips.frames, 120)
+        self.assertEqual(tooltips.wall_ms, 240.0)
+        self.assertIsNone(tooltips.skipped)
+        self.assertEqual(tooltips.kinds["tooltip set"].count, 120)
+        self.assertEqual(tooltips.kinds["tooltip set"].total_ms, 96.0)
+        self.assertEqual(tooltips.kinds["tooltip set"].max_ms, 3.6)
+        self.assertTrue(tooltips.addons["AdventureGuideForever"].peak_raised)
+        self.assertEqual(tooltips.addons["AdventureGuideForever"].over["CountTimeOver1Ms"], 12.0)
+        self.assertEqual(tooltips.addons["AdventureGuideForever"].memory_delta_kb, 2048.0)
+        self.assertEqual(mappins.skipped, "no world map")
+        self.assertEqual(mappins.kinds, {})
+        rows = perf.scenario_rows(tooltips, self.session(2))
+        self.assertEqual([row.name for row in rows], ["AdventureGuideForever", "TweaksForever", "Questie"])
+        self.assertTrue(rows[0].ours)
+        self.assertFalse(rows[-1].ours)
+        self.assertEqual(rows[0].over1_ms, 12.0)
+        self.assertEqual(rows[0].memory_mb, 2.0)
+
+    def test_scenario_findings_cover_our_addons_and_kinds(self):
+        findings = perf.wfa13_findings(self.session(2), None)
+        self.assertIn(
+            "scenario 'tooltips': AdventureGuideForever recent 1.4 ms, peak 4.2 ms raised",
+            findings,
+        )
+        self.assertIn("scenario 'tooltips': kind 'tooltip set' max 3.6 ms", findings)
+        self.assertFalse(any("TweaksForever" in finding for finding in findings))
+        self.assertFalse(any("Questie" in finding for finding in findings))
+        self.assertFalse(any("mappins" in finding for finding in findings))
+
     def test_compare_uses_the_last_common_mark_label(self):
         report = perf.build_report(
             session=self.session(),
@@ -422,6 +497,30 @@ class PerfReportTest(unittest.TestCase):
         self.assertIn("LegacyForever /lf", output)
         self.assertIn("Compare session 2", output)
         self.assertIn("AdventureGuideForever", output)
+
+    def test_text_names_scenarios_and_skips_the_one_without_a_map(self):
+        status, output, error = run_main("--wtf", str(self.wtf), "--session", "2")
+        self.assertEqual(status, 0)
+        self.assertEqual(error, "")
+        self.assertIn("Scenarios", output)
+        self.assertIn("Scenario 'tooltips'", output)
+        self.assertIn("Scenario 'mappins'", output)
+        self.assertIn("skipped: no world map", output)
+        self.assertIn("tooltip set", output)
+        self.assertIn("PEAK RAISED", output)
+        self.assertIn("OVER 3MS", output)
+
+    def test_json_includes_scenarios(self):
+        status, output, error = run_main("--wtf", str(self.wtf), "--session", "2", "--json")
+        self.assertEqual(status, 0)
+        self.assertEqual(error, "")
+        scenarios = json.loads(output)["session"]["scenarios"]
+        self.assertEqual([scenario["name"] for scenario in scenarios], ["tooltips", "mappins"])
+        self.assertEqual(scenarios[0]["frames"], 120)
+        self.assertEqual(scenarios[0]["kinds"]["tooltip set"]["max_ms"], 3.6)
+        self.assertTrue(scenarios[0]["addons"]["AdventureGuideForever"]["peak_raised"])
+        self.assertEqual(scenarios[0]["addons"]["AdventureGuideForever"]["memory_delta_kb"], 2048.0)
+        self.assertEqual(scenarios[1]["skipped"], "no world map")
 
     def test_json_is_one_object_with_every_section(self):
         status, output, error = run_main("--wtf", str(self.wtf), "--json")

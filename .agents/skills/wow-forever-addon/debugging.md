@@ -66,6 +66,7 @@ blocked. Find the read, not the call.
 - Profile a whole session instead of one call: link `!!DevPerf`, play the action or run
   `tools/headless/perf_run.sh`, mark around it with `/forever perf <label>` (zoom, hover with comparison,
   a fight), `/reload`, then `python3 tools/forever_perf.py`. `/devperf watch` shows garbage churn.
+- `/forever perf scenario tooltips|mappins` measures each hover path as its own timed scenario.
 
 ## Reading results without a screenshot
 
