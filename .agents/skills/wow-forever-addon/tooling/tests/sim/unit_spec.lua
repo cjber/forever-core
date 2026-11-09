@@ -170,6 +170,21 @@ test("instrument: every function body and the chunk start report the addon, line
 	assert(loadstring(out))
 end)
 
+test("instrument: a multiple assignment computes every target index before the first write", function()
+	-- Writing each index as it is reached would make the second `#t` count the first append and leave a hole.
+	local out = Instrument.rewrite("local t = {} t[#t + 1], t[#t + 2] = 1, 2 return #t", "Addon")
+	local _, newlines = out:gsub("\n", "")
+	eq(newlines, 0, "newlines")
+	local chunk = assert(loadstring(out))
+	setfenv(chunk, {
+		__fst = function() end,
+		__fsi_set = function(t, k, v)
+			t[k] = v
+		end,
+	})
+	eq(chunk(), 2, "#t")
+end)
+
 test("veil: secrets error for tainted arithmetic, compare, length; pass through untainted", function()
 	local tainted
 	Veil.taintedBy = function()
