@@ -104,7 +104,7 @@ for the client and one column's settings move every section together.
 - `ForeverCore.MinimapButton.Create(spec)` draws the addon's minimap button on the one shared ring. Pass `spec.safeCall`
   (the `SafeCall` from `ForeverCore.Register`) so its click and refresh failures land in the addon's own journal.
 - `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as
-  `MenuUtil.CreateContextMenu`. Under the gamepad interface it shows one line and opens nothing.
+  `MenuUtil.CreateContextMenu`.
 - `ForeverCore.QuestLogTabs.Register(key, spec)` adds a panel tab to the world map's quest log. A `spec.safeCall` keeps
   the panel's `shown` callback in the addon's journal.
 - `ForeverCore.SettingsPage.Register(name, build, L, safeCall)` draws a settings page with the caller's L for every

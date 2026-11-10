@@ -73,8 +73,8 @@ local function NewReport(name, spec)
 	spec = spec or {}
 	local Report = {}
 	local ICON = "Interface\\AddOns\\" .. name .. "\\media\\Icon"
-	local safe = spec.safe or (assert(ns.SafeCallFor)(name))
-	local log = spec.log or (assert(ns.LogFor)(name))
+	local safe = spec.safe or ns.SafeCallFor(name)
+	local log = spec.log or ns.LogFor(name)
 
 	---@type ForeverReportWindow?
 	local window

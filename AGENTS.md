@@ -63,7 +63,7 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `UI/TrackerHost.lua`: the private tracker column, its optional tooltip-art backdrop and opacity, its layout, combat
   and Edit Mode handling, and the one-time migration from a consumer's old tracker settings.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on
-  this client build, with the gamepad guard that says a menu needs mouse and keyboard.
+  this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/TrackerQuestie.lua` and `UI/TrackerEqot.lua`: another tracker's quest list, so the column steps beside it.

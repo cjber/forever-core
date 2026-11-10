@@ -97,16 +97,6 @@ local Draw
 ---@type table<Frame, boolean>
 local watchedOwners = setmetatable({}, { __mode = "k" })
 
----@return boolean
-local function GamepadUI()
-	local input = rawget(_G, "InputUtil")
-	return type(input) == "table"
-		and type(input.IsGamepadUIEnabled) == "function"
-		and input.IsGamepadUIEnabled() == true
-end
-
--- Under the gamepad interface a Blizzard menu would taint the gamepad's focus, so the player gets a line instead and
--- no menu opens. The suite's own frames follow the same rule so every Forever addon behaves alike.
 ---@param owner Frame
 local function OwnerHidden(owner)
 	if popup and popup.owner == owner then
@@ -292,19 +282,12 @@ function Draw(root)
 	frame.scroll:SetVerticalScroll(0)
 end
 
--- The suite's one context menu. Under the gamepad interface it says why and opens nothing; otherwise `generator`
--- fills the root just as it would for MenuUtil.CreateContextMenu.
+-- The suite's one context menu: `generator` fills the root just as it would for MenuUtil.CreateContextMenu. It is
+-- drawn in our own frames, so unlike Blizzard's menu it does not taint the gamepad interface's focus.
 ---@param owner Region
 ---@param generator fun(owner: Region, root: ForeverMenuDescription)
----@return ForeverMenuDescription?
+---@return ForeverMenuDescription
 function ns.ContextMenu(owner, generator)
-	if GamepadUI() then
-		local errors = rawget(_G, "UIErrorsFrame")
-		if type(errors) == "table" and type(errors.AddMessage) == "function" then
-			errors:AddMessage(ns.L["This menu needs mouse and keyboard."], 1, 1, 0)
-		end
-		return nil
-	end
 	local root = New("root")
 	generator(owner, root)
 	local frame = Ensure()

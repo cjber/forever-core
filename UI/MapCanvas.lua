@@ -60,16 +60,10 @@ View.__index = View
 
 ---@type table<ForeverCanvasMap, ForeverCanvasView>
 local views = {}
--- The context a listener or click runs in when the client has no error capture loaded (a bare spec).
-local fallbackSafe = {
-	SafeCall = function(_, _, fn, ...)
-		return pcall(fn, ...)
-	end,
-}
-
----@return table
+-- Core's own error capture, for a pool or listener registered without an owner. SafeCall.lua loads first.
+---@return ForeverSafeCallContext
 local function Safe()
-	return (ns.SafeCallFor and ns.SafeCallFor("ForeverCore")) or fallbackSafe
+	return ns.SafeCallFor("ForeverCore")
 end
 ---@type ForeverCanvasPin?, ForeverCanvasPin?, string?
 local hovered, pressed, pressedButton
@@ -625,7 +619,7 @@ end
 ---@return ForeverCanvasAPI
 function ns.MapCanvasFor(owner)
 	owner = tostring(owner or "?")
-	local safe = (ns.SafeCallFor and ns.SafeCallFor(owner)) or fallbackSafe
+	local safe = ns.SafeCallFor(owner)
 	return {
 		Pool = function(map, mixin, options)
 			options = options or {}

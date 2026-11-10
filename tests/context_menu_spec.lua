@@ -1,5 +1,5 @@
 -- UI/ContextMenu.lua against a mocked client: the suite's own menu opens instead of Blizzard's, navigates nested
--- entries, scrolls a long level, follows an owner's hide, and refuses to open under the gamepad interface.
+-- entries, scrolls a long level, and follows an owner's hide.
 local checks = 0
 local function check(value, message)
 	checks = checks + 1
@@ -225,18 +225,6 @@ env.EventRegistry = {
 		end
 	end,
 }
-local gamepad = false
-local errors = {}
-env.InputUtil = {
-	IsGamepadUIEnabled = function()
-		return gamepad
-	end,
-}
-env.UIErrorsFrame = {
-	AddMessage = function(_, message)
-		errors[#errors + 1] = message
-	end,
-}
 
 local ns = {
 	L = setmetatable({}, {
@@ -394,16 +382,5 @@ ns.ContextMenu(owner, function(_, root)
 end)
 popup.rows[1].scripts.OnEnter(popup.rows[1])
 equal(env.GameTooltip.title, "Own tip", "a row with its own tooltip keeps it")
-
--- Under the gamepad interface no menu opens: the player gets one line in the error frame.
-gamepad = true
-local opened = 0
-local result = ns.ContextMenu(owner, function()
-	opened = opened + 1
-end)
-equal(result, nil, "the gamepad guard opens no menu")
-equal(opened, 0, "the gamepad guard does not build entries")
-equal(errors[#errors], "This menu needs mouse and keyboard.", "the gamepad guard says why")
-gamepad = false
 
 print(("context_menu_spec: %d checks passed"):format(checks))
