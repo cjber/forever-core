@@ -8,19 +8,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IGNORED = ("types/", "tests/", "tools/", "docs/", ".agents/", "Nav/", ".types/", "reference/")
-SCRATCH_ROOTS = {".git", ".venv", "scratch", ".release"}
+# forever-core/ is the ForeverCore checkout a consumer's specs and CI load (FOREVER_CORE), not the consumer's source.
+SCRATCH_ROOTS = {".git", ".venv", "scratch", ".release", "forever-core"}
 SCRATCH_RUNS = {".bugpatrol", ".sloppatrol", ".speedpatrol"}
 # A patrol tool's own fixtures and checkouts are scratch, not the addon's source: `runs/` holds working copies and
 # `script-tests/` holds deliberately broken Lua a script-test asserts on.
 SCRATCH_SUBTREES = {"runs", "script-tests"}
-# Consumer-only shared modules are stored here as source for sync_consumers.py.
-CORE_SOURCE_ONLY = {
-    "Core/OpenMap.lua",
-    "Core/OpenSettings.lua",
-    "UI/Report.lua",
-    "UI/ForeverFamily.lua",
-    "UI/MapCanvas.lua",
-}
 
 
 def rel(path):
@@ -65,8 +58,6 @@ def scan():
 
     definitions = []
     for path, content in texts.items():
-        if (ROOT / "ForeverCore.toc").is_file() and rel(path) in CORE_SOURCE_ONLY:
-            continue
         for match in re.finditer(
             r"\bfunction\s+ns\.([A-Za-z_]\w*)\s*\(|\bns\.([A-Za-z_]\w*)\s*=\s*function\b", content
         ):
@@ -87,7 +78,7 @@ def scan():
                 toc_entries.add(entry)
     for path in source_files("*.lua"):
         name = rel(path)
-        if ignored(path) or ((ROOT / "ForeverCore.toc").is_file() and name in CORE_SOURCE_ONLY):
+        if ignored(path):
             continue
         if not any(name == entry or name.endswith("/" + entry) for entry in toc_entries):
             errors.append((name, 1, "Lua file is not named by any TOC"))
@@ -106,8 +97,6 @@ def scan():
     media_pattern = re.compile(r"\bmedia/+([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)", re.IGNORECASE)
     for source in reference_sources:
         if ignored(source):
-            continue
-        if (ROOT / "ForeverCore.toc").is_file() and rel(source) in CORE_SOURCE_ONLY:
             continue
         content = source.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
         if source.suffix == ".lua":

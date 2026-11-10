@@ -47,8 +47,8 @@ required-dependencies:
   - ForeverCore
 ```
 
-CurseForge's slug is `forevercore`; Wago resolves the dependency from its own project page (see
-`addons.wago.io/addons/forevercore`). Do not list ForeverCore under `OptionalDeps` and do not ship its runtime files.
+CurseForge's slug is `forevercore` (project 1796337; `forever-core` belongs to someone else); Wago resolves the dependency from its own project page (see
+`addons.wago.io/addons/forever-core`, project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not ship its runtime files.
 
 ## 2. CurseForge project (authors.curseforge.com)
 

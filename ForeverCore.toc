@@ -7,6 +7,8 @@
 ## IconTexture: Interface\AddOns\ForeverCore\media\Icon
 ## X-License: GPL-3.0-or-later
 ## X-Website: https://github.com/cjber/forever-core
+## X-Curse-Project-ID: 1796337
+## X-Wago-ID: RNL4RQNo
 ## SavedVariables: ForeverCoreDB
 
 Core.lua
