@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-11-10
+
 - **Guild members keep their class on the Forever Leaderboards window.** `GetNumGuildMembers` returns the member count and the online count, and the second value reached `tonumber`'s base argument, so building the guild part raised "base out of range" and no guild row got a class colour or icon. (#587)
 
 ## [0.5.3] - 2026-11-10
