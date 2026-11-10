@@ -558,21 +558,30 @@ local function LayoutAttached()
 	MatchNativeScale()
 	local layoutScale = host:GetEffectiveScale()
 	local layoutScreenScale = UIParent:GetEffectiveScale()
-	-- The user's scale enlarges the column; keep it on screen the way the detached column already is.
-	host:SetWidth(math.min(ObjectiveTrackerFrame:GetWidth(), UIParent:GetWidth() * layoutScreenScale / layoutScale))
+	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
+	-- The column takes the native tracker's own left and right edges, converted into the host's units, so every
+	-- Forever section lines up with the game's sections at any scale. The width is clamped to the screen the way the
+	-- detached column's already is.
+	local width = ObjectiveTrackerFrame:GetWidth() * nativeScale / layoutScale
+	host:SetWidth(math.min(width, UIParent:GetWidth() * layoutScreenScale / layoutScale))
 	host:ClearAllPoints()
 	-- The column hangs from the bottom of the native content region (NineSlice, which Blizzard anchors to its last
 	-- module), so it follows the quests as they grow or shrink with no reflow of ours. A native tracker with nothing to
-	-- show hides itself, and Questie hides it too: then the column takes its slot from the top.
+	-- show hides itself, and Questie hides it too: then the column takes its slot from the top. Blizzard anchors the
+	-- NineSlice's top corners to the tracker asymmetrically, so its centre is not the tracker's: the anchor's x offset is
+	-- the measured gap between the two centres, in the host's units, which puts the column on the tracker's own edges.
 	---@type Frame, FramePoint
 	local edge, edgePoint = ObjectiveTrackerFrame, "TOP"
 	if ObjectiveTrackerFrame:IsShown() then
 		edge, edgePoint = ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOM"
 	end
-	host:SetPoint("TOP", edge, edgePoint, 0, 0)
+	local nativeCentre = ObjectiveTrackerFrame:GetCenter() or 0
+	local edgeCentre = edge:GetCenter() or 0
+	local offsetX = (nativeCentre * nativeScale - edgeCentre * edge:GetEffectiveScale()) / layoutScale
+	host:SetPoint("TOP", edge, edgePoint, offsetX, 0)
 	local contentBottom = edgePoint == "TOP" and edge:GetTop() or edge:GetBottom()
 	local layoutMargin = 24 * layoutScreenScale / layoutScale
-	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / host:GetEffectiveScale()
+	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / layoutScale
 	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
 	-- column elsewhere.
 	if LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0) then
@@ -590,7 +599,6 @@ local function LayoutAttached()
 	host:ClearAllPoints()
 	local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
 	local screenTop = UIParent:GetHeight() or nativeTop
-	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
 	local room = screenTop * layoutScreenScale - nativeTop * nativeScale
 	if room >= math.max(host:GetHeight() or 0, 1) * layoutScale then
 		host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)

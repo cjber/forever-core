@@ -1,6 +1,8 @@
 -- The attached column on a geometry that resolves anchors recursively in screen pixels, native screen clamping
--- included, across tracker anchors and scales: the protected native tracker keeps its slot and the column reads below
--- its quests, in combat and out. Nominal GetPoint anchors remain unchanged when Blizzard clamps a frame.
+-- included, across tracker anchors and scales: the protected native tracker keeps its slot, the column reads below
+-- its quests, in combat and out, and it takes the tracker's own left and right edges even though the NineSlice below
+-- it is anchored with Blizzard's asymmetric -30 and +5 corners. Nominal GetPoint anchors remain unchanged when
+-- Blizzard clamps a frame.
 local checks = 0
 local function check(value, message)
 	assert(value, message)
@@ -12,6 +14,8 @@ local function fraction(point)
 	local y = point:find("BOTTOM", 1, true) and 0 or point:find("TOP", 1, true) and 1 or 0.5
 	return x, y
 end
+-- Every anchor a frame has: two horizontal pins give its left and right (the client's own dimensions), a single
+-- one gives an edge and the frame's width fills in the other side, and the same for the vertical pair.
 local function bounds(frame, seen)
 	if frame.root then
 		local scale = frame:GetEffectiveScale()
@@ -20,16 +24,38 @@ local function bounds(frame, seen)
 	seen = seen or {}
 	assert(not seen[frame], "anchor dependency cycle")
 	seen[frame] = true
-	local point, relative, relativePoint, x, y = unpack((assert(frame.point, "missing anchor")))
-	local left, top, rw, _, relativeBottom = bounds(relative, seen)
-	local rx, ry = fraction(relativePoint)
-	local fx, fy = fraction(point)
 	local scale = frame:GetEffectiveScale()
 	local width, height = frame.width * scale, frame.height * scale
-	left = left + rx * rw + (x or 0) * scale - fx * width
-	local anchorY = ry == 0 and relativeBottom or ry == 1 and top or (top + relativeBottom) / 2
-	local bottom = anchorY + (y or 0) * scale - fy * height
-	top = fy == 1 and anchorY + (y or 0) * scale or bottom + height
+	local points = frame.points or { assert(frame.point, "missing anchor") }
+	local left, top, right, bottom
+	for _, anchor in ipairs(points) do
+		local point, relative, relativePoint, x, y = unpack(anchor)
+		local relativeLeft, relativeTop, relativeWidth, _, relativeBottom = bounds(relative, seen)
+		local rx, ry = fraction(relativePoint)
+		local fx, fy = fraction(point)
+		local anchorX = relativeLeft + rx * relativeWidth + (x or 0) * scale
+		local anchorY = ry == 0 and relativeBottom or ry == 1 and relativeTop or (relativeTop + relativeBottom) / 2
+		anchorY = anchorY + (y or 0) * scale
+		if fx == 0 then
+			left = anchorX
+		elseif fx == 1 then
+			right = anchorX
+		else
+			left, right = anchorX - width / 2, anchorX + width / 2
+		end
+		if fy == 0 then
+			bottom = anchorY
+		elseif fy == 1 then
+			top = anchorY
+		else
+			top, bottom = anchorY + height / 2, anchorY - height / 2
+		end
+	end
+	left = left or (right or 0) - width
+	right = right or left + width
+	top = top or (bottom or 0) + height
+	bottom = bottom or top - height
+	width, height = right - left, top - bottom
 	if frame.clamped then
 		left = math.max(0, math.min(left, frame.screen.width * frame.screen:GetEffectiveScale() - width))
 		local clampedTop = math.max(height, math.min(top, frame.screen.height * frame.screen:GetEffectiveScale()))
@@ -61,13 +87,16 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 			self.scale = value
 		end
 		function f:SetPoint(...)
-			self.point = { ... }
+			local recorded = { ... }
+			self.points = self.points or {}
+			self.points[#self.points + 1] = recorded
+			self.point = recorded
 		end
 		function f:GetPoint()
 			return unpack(self.point or {})
 		end
 		function f:ClearAllPoints()
-			self.point = nil
+			self.points, self.point = nil, nil
 		end
 		function f:SetWidth(value)
 			self.width = value
@@ -96,6 +125,11 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 		function f:GetBottom()
 			local _, _, _, _, bottom = bounds(self)
 			return bottom / self:GetEffectiveScale()
+		end
+		function f:GetCenter()
+			local left, top, width, _, bottom = bounds(self)
+			local effective = self:GetEffectiveScale()
+			return (left + width / 2) / effective, (top + bottom) / 2 / effective
 		end
 		function f:SetClampedToScreen(value)
 			self.clamped, self.screen = value, screen
@@ -146,8 +180,11 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	local y = anchor:find("BOTTOM", 1, true) and 180 or -100
 	native:SetPoint(anchor, screen, anchor, x, y)
 	local nineSlice = frame(nil, "nineSlice", native)
-	nineSlice.width, nineSlice.height, nineSlice.scale = 250, 1, 1
-	nineSlice:SetPoint("TOP", native, "TOP", 0, -300)
+	nineSlice.width, nineSlice.height, nineSlice.scale = 250, 300, 1
+	-- Blizzard anchors the NineSlice's top corners to the tracker at -30 on the left and +5 on the right, so its
+	-- centre is 12.5 UI px left of the tracker's. The bottom edge is the native content's bottom.
+	nineSlice:SetPoint("TOPLEFT", native, "TOPLEFT", -30, 0)
+	nineSlice:SetPoint("TOPRIGHT", native, "TOPRIGHT", 5, 0)
 	native.NineSlice = nineSlice
 	-- The host never writes the protected native tracker; Blizzard's own moves below go through the raw methods.
 	local rawPoint, rawHeight = native.SetPoint, native.SetHeight
@@ -239,8 +276,9 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	end
 	check(inSlot(), "the native tracker keeps its Edit Mode slot: " .. label)
 	local top, contentBottom = below()
-	-- Only the off-screen fallback, for quests ending too low to fit the column below them, places it elsewhere.
-	local fits = host.point[2] == nineSlice
+	-- Only the off-screen fallback, for quests ending too low to fit the column below them, places it elsewhere; then
+	-- the column starts at the tracker's top or beside it, never at the content's bottom.
+	local fits = math.abs(top - contentBottom) < 0.01
 	if fill and used > 0 then
 		-- A section that fills the room below the quests shrinks to it: it never sends the column to the side.
 		check(fits, "a section filling the room stays below the quests: " .. label)
@@ -249,6 +287,15 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	end
 	if fits then
 		check(math.abs(top - contentBottom) < 0.01, "the column starts where the native quests end: " .. label)
+		-- The NineSlice's asymmetric anchors move its own centre left of the tracker's: the column must still take the
+		-- tracker's own left and right, at every user scale and every native scale.
+		local hostLeft, _, hostWidth = bounds(host)
+		local nativeLeft, _, nativeWidth = bounds(native)
+		check(math.abs(hostLeft - nativeLeft) < 0.01, "the column's left edge is the tracker's: " .. label)
+		check(
+			math.abs(hostLeft + hostWidth - (nativeLeft + nativeWidth)) < 0.01,
+			"the column's right edge is the tracker's: " .. label
+		)
 	end
 	local before = { bounds(host) }
 	local function still(message)
@@ -272,21 +319,21 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	drain()
 	still("a native restore in combat leaves the column still")
 	-- Quests grow in combat: the column follows the native content down.
-	nineSlice.point = { "TOP", native, "TOP", 0, -320 }
+	nineSlice.height = 320
 	host:MarkDirty()
 	drain()
 	top, contentBottom = below()
 	if fits then
 		check(math.abs(top - contentBottom) < 0.01, "the column follows growing quests in combat: " .. label)
 	end
-	nineSlice.point = { "TOP", native, "TOP", 0, -300 }
+	nineSlice.height = 300
 	rawHeight(native, 300)
 	combat = false
 	host.scripts.OnEvent(host, "PLAYER_REGEN_ENABLED")
 	drain()
 	still("leaving combat leaves the column still")
-	-- When the column would run off the bottom of the screen, the fallback still clears the native content.
-	nineSlice.point = { "BOTTOM", native, "BOTTOM", 0, 0 }
+	-- When the quests run to the tracker's own bottom, the column still starts at that edge.
+	nineSlice.height = native.height
 	host:MarkDirty()
 	drain()
 	below()

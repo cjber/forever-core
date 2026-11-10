@@ -94,6 +94,11 @@ local function scenario(options)
 		function f:GetBottom()
 			return select(5, bounds(self)) / self:GetEffectiveScale()
 		end
+		function f:GetCenter()
+			local left, top, width, _, bottom = bounds(self)
+			local scale = self:GetEffectiveScale()
+			return (left + width / 2) / scale, (top + bottom) / 2 / scale
+		end
 		function f:SetClampedToScreen(value)
 			self.clamped = value
 		end

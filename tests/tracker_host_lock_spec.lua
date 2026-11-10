@@ -64,6 +64,9 @@ local function frame()
 	function f.GetBottom(self)
 		return self:GetTop() - self:GetHeight()
 	end
+	function f.GetCenter(self)
+		return (self:GetLeft() + self:GetRight()) / 2, (self:GetTop() + self:GetBottom()) / 2
+	end
 	function f:IsShown()
 		return self.shown ~= false
 	end
@@ -136,6 +139,9 @@ native.height = 300
 native.NineSlice = {
 	GetBottom = function()
 		return 0
+	end,
+	GetCenter = function()
+		return native:GetCenter()
 	end,
 	GetEffectiveScale = function()
 		return 1
