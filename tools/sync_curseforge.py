@@ -1,20 +1,21 @@
 """Publish each addon's `docs/curseforge.md` from `origin/main` as its CurseForge project description.
 
 CurseForge's upload API covers files only, so the description is set through the author site in the user's own
-signed-in Chrome, driven by fastbrowse's extension. Each push is then read back from CurseForge's Core API, because the
-author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only when the
-stored description links exactly the URLs the markdown links.
+signed-in Chrome, driven by fastbrowse's extension. Each push is then read back from CurseForge's Core API, because
+the author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only
+when the stored description links exactly the URLs the markdown links.
 
 A state file remembers the hash of the markdown last published per project, so a plain run pushes only addons whose
 description changed on `main`. Run it after merging a PR that touches `docs/curseforge.md`:
 
+    export CURSEFORGE_CORE_API_KEY=$(pass show dev/CURSEFORGE_CORE_API_KEY)
     python3 tools/sync_curseforge.py ~/drive/proj/wow            # changed descriptions only
     python3 tools/sync_curseforge.py ~/drive/proj/wow --all      # every addon
     python3 tools/sync_curseforge.py ~/drive/proj/wow --check    # verify the stored descriptions, push nothing
 
 fastbrowse reads `OPENROUTER_API_KEY` from the environment; the user's Chrome must have the fastbrowse extension and a
-CurseForge sign-in. The read-back needs `CURSEFORGE_CORE_API_KEY`, a key from https://console.curseforge.com/; without
-it a push is reported unverified and pushed again on the next run.
+CurseForge sign-in. The read-back needs `CURSEFORGE_CORE_API_KEY` (pass `dev/CURSEFORGE_CORE_API_KEY`), a key from
+https://console.curseforge.com/. cfwidget is not used for it: it serves a cached copy that lags a fresh save.
 """
 
 import argparse
@@ -24,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -104,27 +106,24 @@ class _Urls(HTMLParser):
                 self.urls.add(normalise(value))
 
 
-def stored_links(addon: Addon) -> set[str] | None:
+def stored_links(addon: Addon, key: str) -> set[str]:
     """Every link and image URL in the description CurseForge stored, read from its Core API."""
-    key = os.environ.get("CURSEFORGE_CORE_API_KEY")
-    if not key:
-        return None
     request = Request(
         f"https://api.curseforge.com/v1/mods/{addon.project_id}/description",
-        headers={"x-api-key": key, "Accept": "application/json"},
+        # CloudFront caches this endpoint for minutes, keyed partly on User-Agent and not on the query string, so a
+        # User-Agent of its own per request is what reads the description as stored now.
+        headers={"x-api-key": key, "Accept": "application/json", "User-Agent": f"forever-core/{uuid.uuid4()}"},
     )
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=60) as response:
         html = json.load(response)["data"]
     parser = _Urls()
     parser.feed(html)
     return parser.urls
 
 
-def verify(addon: Addon, markdown: str) -> tuple[bool, str]:
-    live = stored_links(addon)
-    if live is None:
-        return False, "unverified: set CURSEFORGE_CORE_API_KEY to read the stored description"
+def verify(addon: Addon, markdown: str, key: str) -> tuple[bool, str]:
     want = expected_links(markdown)
+    live = stored_links(addon, key)
     missing, extra = want - live, live - want
     if missing or extra:
         return False, f"missing {sorted(missing)} extra {sorted(extra)}"
@@ -139,6 +138,9 @@ def main() -> int:
     parser.add_argument("--only", nargs="*", default=[], help="repo folder names to limit the run to")
     args = parser.parse_args()
 
+    key = os.environ.get("CURSEFORGE_CORE_API_KEY")
+    if not key:
+        parser.error("set CURSEFORGE_CORE_API_KEY: a CurseForge Core API key reads each description back")
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     failed = []
     for addon in addons(args.root):
@@ -152,7 +154,7 @@ def main() -> int:
         if not args.check:
             result = push(addon, markdown)
             print(f"{addon.name}: push {result.get('status')}")
-        ok, detail = verify(addon, markdown)
+        ok, detail = verify(addon, markdown, key)
         print(f"{addon.name}: {'ok' if ok else 'FAILED'}, {detail}")
         if ok:
             state[addon.project_id] = digest
