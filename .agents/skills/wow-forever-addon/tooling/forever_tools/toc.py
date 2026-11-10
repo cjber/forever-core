@@ -11,7 +11,8 @@ PRELOAD_BYTES = 10 * 1024 * 1024
 NON_RUNTIME_TOC_ROOTS = {"tools", "tests", "forever-core"}
 
 
-def _toc_files(root: Path) -> list[Path]:
+def toc_files(root: Path) -> list[Path]:
+    """Every addon TOC under `root`, excluding development tooling checkouts."""
     return [
         toc
         for toc in sorted(root.rglob("*.toc"))
@@ -20,12 +21,10 @@ def _toc_files(root: Path) -> list[Path]:
     ]
 
 
-def runtime_files(root: Path, runtime_dirs: tuple[str, ...] = ()) -> list[Path]:
-    """Every Lua file a TOC loads, through nested XML. Lua under `root` or `runtime_dirs` that none loads is an error.
-
-    `runtime_dirs` are the addon's folders of shipped Lua, never checker fixtures; they differ per addon.
-    """
-    root = root.resolve()
+def loaded_files(toc_path: Path, root: Path | None = None) -> list[Path]:
+    """Every file one TOC loads, through nested XML; `root` bounds the paths it may name."""
+    toc_path = toc_path.resolve()
+    root = (root or toc_path.parent).resolve()
     files: set[Path] = set()
 
     def visit(path: Path) -> None:
@@ -41,11 +40,22 @@ def runtime_files(root: Path, runtime_dirs: tuple[str, ...] = ()) -> list[Path]:
                 if element.tag.rsplit("}", 1)[-1] in LOAD_TAGS and "file" in element.attrib:
                     visit(path.parent / element.attrib["file"].replace("\\", "/"))
 
-    for toc in _toc_files(root):
-        for line in toc.read_text(encoding="utf-8-sig").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                visit(toc.parent / line.replace("\\", "/"))
+    for line in toc_path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            visit(toc_path.parent / line.replace("\\", "/"))
+    return sorted(files)
+
+
+def runtime_files(root: Path, runtime_dirs: tuple[str, ...] = ()) -> list[Path]:
+    """Every Lua file a TOC loads, through nested XML. Lua under `root` or `runtime_dirs` that none loads is an error.
+
+    `runtime_dirs` are the addon's folders of shipped Lua, never checker fixtures; they differ per addon.
+    """
+    root = root.resolve()
+    files: set[Path] = set()
+    for toc_path in toc_files(root):
+        files.update(loaded_files(toc_path, root))
     for folder in (root, *(root / name for name in runtime_dirs)):
         for path in folder.glob("*.lua") if folder == root else folder.rglob("*.lua"):
             if path.resolve() not in files:

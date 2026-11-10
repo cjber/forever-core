@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **One client icon per addon.** Every Forever addon now declares its in-game identity icon once, in `## X-Forever-Icon`, so its minimap button, Professions or side tab, window portrait, leaderboard tab and addon compartment cannot drift apart. The shared check fails an addon TOC that omits the field, a value the pinned client build does not have, or the same path repeated in shipped Lua. (#331)
+
+### For addon authors
+
+- Add `## X-Forever-Icon: Interface\Icons\<name>` to the TOC, read it with `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`, and pass that value to every identity surface. `forever_tools.identity` runs in the assets check, and `docs/asset-registry.md` records each addon's icon. The TOC `## IconTexture` stays the drawn `media/Icon`.
+
 ## [1.1.0] - 2026-11-10
 
 - **One tracker column again.** With an older Forever addon still installed, its tracker section no longer draws on top of the others.
