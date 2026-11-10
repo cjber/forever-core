@@ -164,6 +164,57 @@ test("widgets: a script's setter taint stops when the handler returns", function
 	eq(Taint.current, nil, "the caller that triggered it stays secure")
 end)
 
+test("widgets: a Frame refuses OnClick, as the client does", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	eq(frame:HasScript("OnClick"), false, "HasScript OnClick on a Frame")
+	local ok, err = pcall(function()
+		frame:SetScript("OnClick", function() end)
+	end)
+	eq(ok, false, "SetScript OnClick")
+	assert(
+		tostring(err):find(
+			"Frame:SetScript(): Cannot assign script handler for 'onclick' (script type not supported by this object)",
+			1,
+			true
+		),
+		err
+	)
+	ok, err = pcall(function()
+		frame:HookScript("OnClick", function() end)
+	end)
+	eq(ok, false, "HookScript OnClick")
+	assert(
+		tostring(err):find(
+			"Frame:HookScript(): Cannot assign script handler for 'onclick' (script type not supported by this object)",
+			1,
+			true
+		),
+		err
+	)
+	ok = pcall(function()
+		frame:SetScript("OnClick", nil)
+	end)
+	eq(ok, false, "SetScript OnClick nil")
+end)
+
+test("widgets: a Button supports OnClick and the scripts it inherits, in any case", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local button = widgets.new("Button")
+	eq(button:HasScript("OnClick"), true, "OnClick")
+	eq(button:HasScript("onclick"), true, "OnClick lower-case")
+	eq(button:HasScript("ONSHOW"), true, "OnShow inherited from Frame, upper-case")
+	eq(button:HasScript("onloop"), false, "OnLoop belongs to an AnimationGroup")
+	local handler = function() end
+	button:SetScript("onclick", handler)
+	eq(button:GetScript("OnClick"), handler, "SetScript stores the client's spelling")
+	eq(button:GetScript("ONCLICK"), handler, "GetScript is case-insensitive too")
+end)
+
 test("loader: bootstrap markers retain matching game conditions", function()
 	local toc = Loader.parseToc(
 		"Shared.lua [Bootstrap]\nWrong.lua [Bootstrap] [AllowLoadGameType cata]\n"
