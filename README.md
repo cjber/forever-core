@@ -28,6 +28,7 @@ feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. I
 through `ForeverCore.Register` and the modules on the `ForeverCore` table; see [`docs/adoption.md`](docs/adoption.md).
 The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).
+A third-party addon reads the members it may rely on, and the suite's published APIs, in [`docs/api.md`](docs/api.md).
 
 ## Install
 

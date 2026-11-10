@@ -98,6 +98,8 @@
 
 -- Core/APIKit.lua, the shape every addon's own API follows (docs/api-conventions.md).
 ---@alias ForeverCoreAPIReason "loading"|"disabled"|"none"
+---@alias ForeverCoreAPIInvalid "invalid"
+---@alias ForeverCoreAPIAnswer ForeverCoreAPIReason|ForeverCoreAPIInvalid
 ---@alias ForeverCoreAPIChannel fun(): string|number|boolean|false
 ---@alias ForeverCoreAPIChannels table<string, ForeverCoreAPIChannel>
 ---@alias ForeverCoreAPIChanges table<string, true>
@@ -106,10 +108,19 @@
 ---@field Subscribe fun(callback: fun(changes: ForeverCoreAPIChanges)): fun() unsubscribes, safe to call twice
 ---@field Queue fun() asks for one dispatch on the next frame
 
+---@class ForeverCoreAPIEntry
+---@field name string the addon name it published under
+---@field version integer the api table's version, read at call time
+---@field minor integer the api table's minor, read at call time; 0 when it has none
+---@field api table the addon's own table, not a copy: it is the callable API
+
 ---@class ForeverCoreAPIKit
 ---@field minor integer raised with each addition, so a caller can check a member before using it
 ---@field Hub fun(addonName: string, channels: ForeverCoreAPIChannels, ready?: fun(): boolean): ForeverCoreAPIHub
 ---@field NotReady fun(reason: ForeverCoreAPIReason): nil, ForeverCoreAPIReason
+---@field Invalid fun(): nil, ForeverCoreAPIInvalid
+---@field Publish fun(addonName: string, api: table)
+---@field Addons fun(): ForeverCoreAPIEntry[]
 
 ---@class ForeverCoreAPI
 ---@field API integer the interface version; 1 is the first

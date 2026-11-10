@@ -140,7 +140,7 @@ local function WatchPanels()
 end
 
 -- Whether the owner sits under the world map, where the panel manager rather than a frame script closes the menu.
----@param frame Frame
+---@param frame Frame?
 ---@return boolean
 local function UnderMap(frame)
 	local map = WorldMapFrame

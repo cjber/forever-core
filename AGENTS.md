@@ -76,8 +76,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one cache lookup rather than a board
   build and sort.
 - `Core/APIKit.lua`: the shape every addon's own public API follows, published as `ForeverCore.APIKit`: `Hub` for a
-  next-frame change dispatch and `NotReady` for the `nil, reason` answer. `docs/api-conventions.md` is the convention
-  and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its `docs/api.md`.
+  next-frame change dispatch, `NotReady` and `Invalid` for the two `nil, reason` answers, and `Publish` and `Addons`
+  for the suite's published API list. `docs/api-conventions.md` is the convention, `docs/api.md` is ForeverCore's own
+  page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
+  `docs/api.md`.
 - `UI/Leaderboards.lua`: the one Forever Leaderboards window, its registration and tabs; each addon registers one board
   and nothing there knows an addon.
 - `Core/PeerStats.lua`: bounded guild and group statistics transport and ranking behind the leaderboards.
