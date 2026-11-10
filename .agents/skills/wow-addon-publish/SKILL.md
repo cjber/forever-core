@@ -1,6 +1,6 @@
 ---
 name: wow-addon-publish
-description: "Use in a WoW addon repo (a .toc at the root; cjber's WoW: Forever addons such as tweaks-forever, skillup-forever, legacy-forever, shortest-path-forever) to publish it on CurseForge and Wago, create the store project, set its description/logo/gallery, or cut a release that uploads to both. Not for non-WoW repos."
+description: "Use in a WoW addon repo (a .toc at the root; cjber's WoW: Forever addons such as tweaks-forever, skillup-forever, legacy-forever, shortest-path-forever) to publish it on CurseForge and Wago, create the store project, set its description/logo/gallery (CurseForge; Wago gets a stub), or cut a release that uploads to both. Not for non-WoW repos."
 ---
 
 # Publish a WoW addon to CurseForge and Wago
@@ -64,27 +64,25 @@ A new project stays hidden until a moderator approves it; uploaded files appear 
 
 ## 3. Wago project (addons.wago.io)
 
+Wago is an upload mirror for the few players on the Wago app or WowUp's Wago source: CurseForge
+carries well over 95% of downloads, so the full store page lives there and Wago gets only what the
+packager and a short pointer give it.
+
 `https://addons.wago.io/developers/projects/create`, create from the GitHub repo. Settings: name,
 summary, categories, thumbnail. The project ID is the slug in `addons.wago.io/addons/<ID>`.
 
-Gallery, one image per submit, in page script at
-`https://addons.wago.io/developers/projects/<slug>/gallery/create` (the "New Gallery Image" link
-sometimes does nothing):
+Its description is this stub, set once on the settings page (paste in the `textarea`, a real keypress
+in it, then "Save changes" in that textarea's own form) and left alone afterwards:
 
-1. Fetch the image from `raw.githubusercontent.com` and set the file input from a `DataTransfer`, then
-   dispatch `input` and `change`.
-2. Wait about 2.5 s: attaching re-renders the form and wipes an earlier caption.
-3. Set `input[name=description]` with the native value setter, dispatch `input`, click "Add Image". A
-   submit with an empty caption still uploads.
-4. Check with `get_page_text` on the gallery page.
+```
+<Addon name> for WoW: Forever. <The summary line from the TOC.>
 
-Wago lists the newest first and has no reorder, so upload in reverse display order. To fix the
-order, keep the longest tail of the gallery that is already in order, delete everything above it and
-upload the rest again in reverse. Delete on the public `addons.wago.io/addons/<slug>/gallery` page:
-each image is an `li` holding one `img` and one `button.text-wago-red-500`, and the button asks
-through a native `confirm()`, so set `window.confirm = () => true` first or the dialog blocks the tab.
-Delete one image per click and read the list after each. `/gallery/<id>/edit` edits only the
-caption; it cannot swap the image, so a stale image means uploading a new one and deleting the old one.
+Screenshots, the full feature list and the changelog are on CurseForge: <CurseForge project URL>
+Source and issues: <GitHub repo URL>
+```
+
+Wago has no gallery to maintain. When a Wago gallery still holds images, list their captions for the
+user to delete on `addons.wago.io/addons/<slug>/gallery`.
 
 ## Store updates
 
@@ -93,10 +91,8 @@ does not outlast the tool call. Confirm every change after a reload or on the pu
 
 **Descriptions.** Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
 "Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
-press `ctrl+End`, type a newline and click Save with real input. Wago's settings page takes the same
-paste in its `textarea`, a real keypress in it, then the "Save changes" button in that textarea's
-own form. Read the result back after a reload: Wago trims the trailing newline and CurseForge
-rewrites the markdown, so compare words and links, not lengths.
+press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
+CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).
 
 **CurseForge gallery.** The `file_upload` tool cannot reach this page: its file input is created
 detached on click, and a real click opens a native picker that blocks the tab. Instead:
