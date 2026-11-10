@@ -1,12 +1,13 @@
 -- The shared shape of an addon's own public API (docs/api-conventions.md): a hub that tells callers the frame after a
--- change, and the not-ready answer a read gives while there is nothing to answer. Each addon publishes its own table
--- and builds its hub here, so every Forever addon is subscribed to the same way.
+-- change, the not-ready answer a read gives while there is nothing to answer, the error answer a read gives for a wrong
+-- argument, and the one list of every addon's published API. Each addon publishes its own table and builds its hub
+-- here, so every Forever addon is subscribed to and discovered the same way.
 
 local _, ns = ...
 
 local APIKit = {}
 -- Raised with each addition to the kit, so a caller can check a member before using it.
-APIKit.minor = 1
+APIKit.minor = 2
 
 -- A hub for `addonName`. `channels` maps a change name to a function returning a comparable key, and the optional
 -- `ready` returns false while the addon is still working, so no key is read until it settles.
@@ -130,6 +131,62 @@ end
 ---@return nil, ForeverCoreAPIReason
 function APIKit.NotReady(reason)
 	return nil, reason
+end
+
+-- A read that refuses its argument returns `nil, "invalid"`. The argument is wrong, not missing: asking again with it
+-- cannot help, so this is an error answer rather than a not-ready one. It is separate from the not-ready reasons so
+-- NotReady keeps taking only those.
+---@return nil, ForeverCoreAPIInvalid
+function APIKit.Invalid()
+	return nil, "invalid"
+end
+
+-- Every published API by addon name, the table the addon handed Publish.
+---@type table<string, table>
+local published = {}
+
+-- An integer as this client's Lua has it: it has no math.type, so a number with no fractional part and no infinity.
+---@param value any
+---@return boolean
+local function IsInteger(value)
+	return type(value) == "number" and value == math.floor(value) and value > -math.huge and value < math.huge
+end
+
+-- An addon hands core its own public API table once at load, so a suite-wide reader can find it. Publishing the same
+-- name again replaces the entry rather than adding a second one. A bad name or an api without an integer `version` is a
+-- programming error, raised at the caller.
+---@param addonName string
+---@param api table
+function APIKit.Publish(addonName, api)
+	if type(addonName) ~= "string" or addonName == "" then
+		error("ForeverCore.APIKit.Publish: addonName must be a non-empty string", 2)
+	end
+	if type(api) ~= "table" then
+		error("ForeverCore.APIKit.Publish: api must be a table", 2)
+	end
+	if not IsInteger(api.version) then
+		error("ForeverCore.APIKit.Publish: api.version must be an integer", 2)
+	end
+	published[addonName] = api
+end
+
+-- Every published addon, sorted by name, with `version` and `minor` read from its api table now (minor 0 when it has
+-- none) and `api` the addon's own table, not a copy: it is the callable API. The list is fresh on every call, so a
+-- caller may keep or change it.
+---@return ForeverCoreAPIEntry[]
+function APIKit.Addons()
+	local names = {}
+	for name in pairs(published) do
+		names[#names + 1] = name
+	end
+	table.sort(names)
+	---@type ForeverCoreAPIEntry[]
+	local entries = {}
+	for index, name in ipairs(names) do
+		local api = published[name]
+		entries[index] = { name = name, version = api.version, minor = api.minor or 0, api = api }
+	end
+	return entries
 end
 
 ns.APIKit = APIKit

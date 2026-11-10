@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- `ForeverCore.APIKit` (minor 2) gains the error answer and suite discovery. `Invalid()` returns `nil, "invalid"` for a read that refuses its argument, so `NotReady` keeps taking only `"loading"`, `"disabled"` and `"none"`; `ForeverCoreAPIAnswer` is the type for a read that can answer either. `Publish(addonName, api)` hands core an addon's public API table once at load (a non-empty name and an integer `version`, or a programming error), and `Addons()` returns a fresh list sorted by name of `{ name, version, minor, api }` with `version` and `minor` read at call time. `docs/api-conventions.md` documents the new members and `docs/api.md` is ForeverCore's own page for third-party authors: the members they may rely on and the examples that list and subscribe to every published API. Check a minor 2 member with `(ForeverCore.APIKit.minor or 1) >= 2`. (#392, #398)
+
 ## [1.2.0] - 2026-11-10
 
 <!-- discord-image: docs/screenshots/tracker.png -->

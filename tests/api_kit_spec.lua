@@ -1,5 +1,6 @@
 -- Core/APIKit.lua, loaded from the TOC the way the client loads it: one next-frame dispatch per burst of channel
--- changes, only the changed names sent, and every callback under its addon's SafeCall.
+-- changes, only the changed names sent, every callback under its addon's SafeCall, the two answers a read can give,
+-- and the suite's published API list.
 local checks = 0
 local function check(value, message)
 	assert(value, message)
@@ -594,9 +595,12 @@ local ForeverCore = env.ForeverCore
 local kit = ForeverCore.APIKit
 check(kit ~= nil, "the TOC publishes the API kit")
 check(kit == ns.APIKit, "and it is the module Core/APIKit.lua built")
-equal(kit.minor, 1, "the kit's minor is 1")
+equal(kit.minor, 2, "the kit's minor is 2")
 check(type(kit.Hub) == "function", "Hub builds an addon's hub")
 check(type(kit.NotReady) == "function", "NotReady answers a read with nothing to say")
+check(type(kit.Invalid) == "function", "Invalid answers a read that refuses its argument")
+check(type(kit.Publish) == "function", "Publish takes an addon's own API table")
+check(type(kit.Addons) == "function", "Addons lists every published API")
 
 -- NotReady ------------------------------------------------------------------------------------------------------
 do
@@ -607,6 +611,93 @@ do
 	equal(disabled, "disabled", "a disabled feature says so")
 	local _, none = kit.NotReady("none")
 	equal(none, "none", "an empty answer says so")
+end
+
+-- Invalid -------------------------------------------------------------------------------------------------------
+do
+	local value, reason = kit.Invalid()
+	check(value == nil, "Invalid returns nil first")
+	equal(reason, "invalid", "and says the argument is wrong")
+	local again, stillInvalid = kit.Invalid()
+	check(again == nil and stillInvalid == "invalid", "the answer is the same every time")
+end
+
+-- Publish and Addons --------------------------------------------------------------------------------------------
+do
+	equal(#kit.Addons(), 0, "nothing is published before an addon hands its table over")
+	local api = { version = 1, minor = 3 }
+	kit.Publish("ZetaForever", api)
+	kit.Publish("AlphaForever", { version = 2 })
+	local entries = kit.Addons()
+	equal(#entries, 2, "both published addons are listed")
+	equal(entries[1].name, "AlphaForever", "the list is sorted by name")
+	equal(entries[2].name, "ZetaForever", "however they were published")
+	equal(entries[1].version, 2, "the version is read from the api table")
+	equal(entries[1].minor, 0, "a table with no minor reads as 0")
+	equal(entries[2].version, 1, "each entry carries its own version")
+	equal(entries[2].minor, 3, "and its own minor")
+	check(entries[2].api == api, "api is the addon's own table, not a copy")
+
+	-- The fields are read at call time, not captured when published.
+	api.minor = 7
+	api.version = 3
+	local later = kit.Addons()
+	equal(later[2].minor, 7, "a changed minor is seen by the next call")
+	equal(later[2].version, 3, "and so is a changed version")
+
+	-- A second publish of the same name replaces the entry rather than adding one.
+	kit.Publish("AlphaForever", { version = 4, minor = 1 })
+	local replaced = kit.Addons()
+	equal(#replaced, 2, "publishing a name twice keeps one entry")
+	equal(replaced[1].version, 4, "and the later table is the one listed")
+	equal(replaced[1].minor, 1, "with the later minor")
+
+	-- The list is fresh on every call, so changing it changes nothing else.
+	table.remove(replaced, 1)
+	replaced[1].name = "Changed"
+	equal(#kit.Addons(), 2, "removing from a returned list leaves the next call whole")
+	equal(kit.Addons()[1].name, "AlphaForever", "and the entries are rebuilt, not shared")
+end
+
+-- Publish refuses a programming error ---------------------------------------------------------------------------
+do
+	local badNames = { "", 7, {} }
+	for _, name in ipairs(badNames) do
+		local ok, message = pcall(kit.Publish, name, { version = 1 })
+		check(ok == false, "a bad addon name is refused")
+		check(
+			tostring(message):find("APIKit.Publish: addonName must be a non-empty string", 1, true) ~= nil,
+			"and the message names the argument"
+		)
+	end
+	local missingName, missingNameMessage = pcall(kit.Publish, nil, { version = 1 })
+	check(missingName == false, "a missing addon name is refused")
+	check(
+		tostring(missingNameMessage):find("addonName must be a non-empty string", 1, true) ~= nil,
+		"with the same message"
+	)
+
+	local badApis = { "not a table", 5 }
+	for _, api in ipairs(badApis) do
+		local ok, message = pcall(kit.Publish, "SomeForever", api)
+		check(ok == false, "an api that is not a table is refused")
+		check(tostring(message):find("APIKit.Publish: api must be a table", 1, true) ~= nil, "and the message says so")
+	end
+	local missingApi, missingApiMessage = pcall(kit.Publish, "SomeForever", nil)
+	check(missingApi == false, "a missing api is refused")
+	check(tostring(missingApiMessage):find("api must be a table", 1, true) ~= nil, "with the same message")
+
+	for _, version in ipairs({ 1.5, "1", true }) do
+		local ok, message = pcall(kit.Publish, "SomeForever", { version = version })
+		check(ok == false, "an api without an integer version is refused")
+		check(
+			tostring(message):find("APIKit.Publish: api.version must be an integer", 1, true) ~= nil,
+			"and the message names the field"
+		)
+	end
+	local noVersion, noVersionMessage = pcall(kit.Publish, "SomeForever", {})
+	check(noVersion == false, "an api with no version is refused")
+	check(tostring(noVersionMessage):find("api.version must be an integer", 1, true) ~= nil, "for the same reason")
 end
 
 -- A hub, its channels and its own state. A fresh hub per scenario keeps each baseline out of the next.
