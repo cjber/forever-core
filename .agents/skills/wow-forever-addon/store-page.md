@@ -41,7 +41,7 @@ These images are generated previews of the <short name> UI.
 
 For a bug report, paste `/<command> report`.
 
-Translated into German, French, Spanish, Brazilian Portuguese, Russian, Korean and Chinese (machine translated; corrections welcome through the [translation form](https://github.com/cjber/<repo>/issues/new?template=translation.yml)).
+<Only when Locales/ holds a file other than enUS.lua:> Translated into German, French, Spanish, Brazilian Portuguese, Russian, Korean and Chinese (machine translated; corrections welcome through the [translation form](https://github.com/cjber/<repo>/issues/new?template=translation.yml)).
 
 <!-- forever-family:start -->
 <The family block, written by tools/check_family.py --fix (WFA-32).>
@@ -63,7 +63,7 @@ Built with AI assistance.
 - **Images.** Three to six, the first above `## Features`, every one under `docs/screenshots/` at a `main` raw URL,
   every file present in the repo, each followed by its caption (WFA-25). The lead image shows the main feature
   in the stock UI (WFA-23).
-- **Fixed lines.** The sponsor sentence, the "generated previews" line, the report line, the translation line, the
+- **Fixed lines.** The sponsor sentence, the "generated previews" line, the report line, the translation line (required when the addon ships a locale other than enUS), the
   source line, the AI line and the button row (Discord, GitHub Sponsors, Ko-fi, in that order, each image present
   in the repo), each exactly as above with only the placeholders filled.
 - **Features.** Three to eight bullets, each led by a bold name ending in a full stop.
@@ -72,8 +72,9 @@ Built with AI assistance.
 
 ## The gallery
 
-The CurseForge gallery holds exactly the page's images, in page order, each titled with its alt text. Every image
-can be rebuilt from the repo, so a gallery image the page no longer shows is deleted. `tools/sync_curseforge.py`
+The CurseForge gallery holds the page's images in page order, each titled with its alt text, then the rest of
+`docs/gallery.md` where a repo has one. Every image can be rebuilt from the repo, so a gallery image neither file shows
+is deleted. `tools/sync_curseforge.py`
 in forever-core compares each gallery with its page through the CurseForge API; CI cannot, as it holds no API key.
 
 ## The buttons

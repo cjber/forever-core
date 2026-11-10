@@ -170,8 +170,11 @@ def check(root: Path) -> list[str]:
         if not any(re.match(r"For a bug report, paste `/\S+ report`\.", line) for line in lines):
             problems.append(f"{FILE}: `## Usage` needs the line: For a bug report, paste `/<command> report`.")
         form = f"https://github.com/cjber/{repo}/issues/new?template=translation.yml"
-        if not any(line.startswith("Translated into") and form in line for line in lines):
-            problems.append(f"{FILE}: `## Usage` needs the translation line linking {form}")
+        translated = any(p.stem != "enUS" for p in (root / "Locales").glob("*.lua"))
+        if translated and not any(line.startswith("Translated into") and form in line for line in lines):
+            problems.append(
+                f"{FILE}: the addon ships translations, so `## Usage` needs the translation line linking {form}"
+            )
 
     tail = [source_line(repo), AI_LINE, buttons(repo)]
     if blocks[-3:] != tail:

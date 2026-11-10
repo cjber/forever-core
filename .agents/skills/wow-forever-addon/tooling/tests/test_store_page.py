@@ -40,6 +40,9 @@ class StorePageTest(unittest.TestCase):
             (self.root / f"docs/screenshots/s{n}.png").write_bytes(b"")
         for name in ("discord-button.png", "github-sponsors-button.png", "kofi-button.png"):
             (self.root / "docs" / name).write_bytes(b"")
+        (self.root / "Locales").mkdir()
+        for locale in ("enUS", "deDE"):
+            (self.root / f"Locales/{locale}.lua").write_text("", encoding="utf-8")
         (self.root / "Demo.toc").write_text(
             f"## Interface: 16001\n## Title: |cff00ff00Demo Forever|r\n## X-Website: https://github.com/cjber/{REPO}\n",
             encoding="utf-8",
@@ -74,6 +77,12 @@ class StorePageTest(unittest.TestCase):
         problems = self.check(text)
         self.assertTrue(any("`## Usage` missing" in p for p in problems))
         self.assertTrue(any("must end with" in p for p in problems))
+
+    def test_translation_line_only_when_translated(self):
+        text = "\n\n".join(b for b in page().split("\n\n") if not b.startswith("Translated into"))
+        self.assertTrue(any("translation line" in p for p in self.check(text)))
+        (self.root / "Locales/deDE.lua").unlink()
+        self.assertEqual(self.check(text), [])
 
     def test_pitch_opens_with_toc_title(self):
         text = page().replace("Demo Forever shows", "Shows")
