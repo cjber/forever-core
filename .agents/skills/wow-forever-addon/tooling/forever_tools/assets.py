@@ -91,19 +91,6 @@ LEGACY_CHROME_TEMPLATES = frozenset(
         "WowTokenButtonTemplate",
     }
 )
-LEGACY_BACKDROPS = frozenset(
-    {
-        "BACKDROP_CHARACTER_CREATE_TOOLTIP_32_32",
-        "BACKDROP_DARK_DIALOG_32_32",
-        "BACKDROP_DIALOG_32_32",
-        "BACKDROP_DIALOG_EDGE_32",
-        "BACKDROP_GOLD_DIALOG_32_32",
-        "BACKDROP_MISTS_CHARACTER_CREATE_TOOLTIP_32_32",
-        "BACKDROP_TUTORIAL_16_16",
-        "BACKDROP_WATERMARK_DIALOG_0_16",
-        "BACKDROP_WRATH_CHARACTER_CREATE_TOOLTIP_32_32",
-    }
-)
 # These are loose pre-atlas chrome families, not content icons in Interface/Icons.
 LEGACY_LOOSE = re.compile(
     r"^interface/(?:buttons/ui-(?:panel-button|silverbuttonlg|dialogbox-(?:button|goldbutton))"
@@ -135,8 +122,6 @@ def _old_problem(value: str) -> str | None:
             return "legacy button template; use SharedButtonSmallTemplate (Forever atlas set 1)"
         if template.strip() in LEGACY_CHROME_TEMPLATES:
             return "legacy chrome template; use the approved Forever atlas/template family"
-    if normal in LEGACY_BACKDROPS:
-        return "legacy backdrop global; use the approved Forever atlas/template family"
     if re.match(r"^_?128-GoldRedButton|^(?:SharedGoldRed|BigGoldRedThreeSlice)", normal, re.I):
         return "shop button family; use SharedButtonSmallTemplate and the set-1 128-RedButton atlas"
     if LEGACY_LOOSE.match(normal) or re.match(
@@ -183,7 +168,11 @@ def _client_findings(value: str) -> list[tuple[str, str]]:
 def findings(value: str) -> list[tuple[str, str]]:
     """(subject, reason) for every forbidden thing in one literal. A client path gets the age rule's
     answer first, even when a named family would also match; the age rule names the path so an inline
-    `|T...|t` reports the path, not the whole markup."""
+    `|T...|t` reports the path, not the whole markup. A backdrop global is the client files it names,
+    so each of those gets the same age rule."""
+    backdrop = legacy_chrome.backdrop_paths(value)
+    if backdrop:
+        return [(path, reason) for path in backdrop if (reason := legacy_chrome.reason(path))]
     found = _client_findings(value)
     if found:
         return found
@@ -211,7 +200,7 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
         values.extend(
             (node.lineno, node.id)
             for node in ast.walk(tree)
-            if isinstance(node, ast.Name) and node.id in LEGACY_BACKDROPS
+            if isinstance(node, ast.Name) and node.id in legacy_chrome.backdrops()
         )
 
         def constant(node):
@@ -257,7 +246,7 @@ def references(source: str, suffix: str) -> list[tuple[int, str]]:
     values = []
     tokens = tokenize(source)[0]
     for index, token in enumerate(tokens):
-        if token.kind == "name" and token.text in LEGACY_BACKDROPS:
+        if token.kind == "name" and token.text in legacy_chrome.backdrops():
             values.append((token.line, token.text))
         if token.kind != "string":
             continue

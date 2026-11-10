@@ -1,9 +1,10 @@
 """The generated pre-Legion chrome set and the few chrome paths it keeps.
 
-`legacy_chrome.txt` and `interface_paths.txt` are produced by `tools/gen_legacy_chrome.py` in
-forever-core and vendored with the rest of `forever_tools`. The age rule itself lives in `assets.py`;
-this module only answers "is this path old chrome?", "is it in the pinned build at all?" and "is it
-one of the few pieces of old chrome that has no modern replacement?".
+`legacy_chrome.txt`, `interface_paths.txt` and `backdrops.txt` are produced by
+`tools/gen_legacy_chrome.py` in forever-core and vendored with the rest of `forever_tools`. The age
+rule itself lives in `assets.py`; this module only answers "is this path old chrome?", "is it in the
+pinned build at all?", "which client files does this backdrop global name?" and "is it one of the few
+pieces of old chrome that has no modern replacement?".
 """
 
 import base64
@@ -77,6 +78,17 @@ def _data_lines(name: str) -> list[str]:
 @lru_cache(maxsize=1)
 def legacy_paths() -> frozenset[str]:
     return frozenset(_data_lines("legacy_chrome.txt"))
+
+
+@lru_cache(maxsize=1)
+def backdrops() -> dict[str, tuple[str, ...]]:
+    """Each client backdrop global and the bgFile/edgeFile paths it names, from the pinned source."""
+    return {name: tuple(paths) for name, *paths in (line.split() for line in _data_lines("backdrops.txt"))}
+
+
+def backdrop_paths(name: str) -> tuple[str, ...]:
+    """The client paths a backdrop global draws, or none when it is not one the pinned build defines."""
+    return backdrops().get(name.strip(), ())
 
 
 @lru_cache(maxsize=1)

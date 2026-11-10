@@ -95,8 +95,9 @@ and run anywhere.
   its spec. `Core/Log.lua` and `Core/LeaderboardsData.lua` are not pinned: their version fields do not select a copy in
   charge.
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data, `.agents/skills/wow-forever-addon/tooling/forever_tools/legacy_chrome.txt`
-  (old chrome by FileDataID) and `.agents/skills/wow-forever-addon/tooling/forever_tools/interface_paths.txt` (the known interface-path set), from the
-  wago.tools listfile for 1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule
+  (old chrome by FileDataID), `.agents/skills/wow-forever-addon/tooling/forever_tools/interface_paths.txt` (the known interface-path set) and
+  `.agents/skills/wow-forever-addon/tooling/forever_tools/backdrops.txt` (each `BACKDROP_*` global and the files it names, from the build's
+  `Blizzard_SharedXML/Backdrop.lua`), from the wago.tools listfile for 1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule
   itself lives in `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, which runs the client load
   rule, the menu rule and that check on every PR (`--base`) and on a schedule (the full check). Its `core-shared` job is required in

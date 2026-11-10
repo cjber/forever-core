@@ -66,8 +66,12 @@ no network:
   banned chrome (6,772 paths, 317 KB).
 - `forever_tools/interface_paths.txt` — every `interface/` path in the build, as a
   sorted zlib-compressed base64 set used for the fallback (144,998 paths, 731 KB).
+- `forever_tools/backdrops.txt`: each `BACKDROP_*` global from the build's
+  `Blizzard_SharedXML/Backdrop.lua` and the `bgFile`/`edgeFile` paths it names (17
+  globals). A backdrop constant is expanded to those paths and each gets the same
+  age rule, so `SetBackdrop(BACKDROP_TOAST_12_12)` fails on the two loose toast files.
 
-Regenerate both after a client art pin change:
+Regenerate all three after a client art pin change:
 
 ```sh
 python3 tools/gen_legacy_chrome.py            # cached listfile under tools/.cache/legacy-chrome/
@@ -76,9 +80,11 @@ python3 tools/gen_legacy_chrome.py --refresh  # download the pinned build's list
 
 The generator reads the pinned build's listfile from wago.tools with both `version=`
 and `build=1.60.1.70124`; its unpaged CSV export times out, so it asks for the
-listfile's `interface/` slice through the search API. The generated files live in
-`forever_tools/`, so `tools/forever_tools/sync.py` vendors them into every consumer
-with the checker.
+listfile's `interface/` slice through the search API. That same listfile names the
+build's `Blizzard_SharedXML/Backdrop.lua`, whose FileDataID the generator fetches
+from wago.tools and parses for its backdrop tables and their `bgFile`/`edgeFile`.
+The generated files live in `forever_tools/`, so `tools/forever_tools/sync.py`
+vendors them into every consumer with the checker.
 
 | Layer | What it is | Size / reach | Where |
 |---|---|---|---|

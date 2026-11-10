@@ -196,6 +196,7 @@ class SyncTest(unittest.TestCase):
         names = {path.name for path in sync.sources(PACKAGE)}
         self.assertIn("legacy_chrome.txt", names)
         self.assertIn("interface_paths.txt", names)
+        self.assertIn("backdrops.txt", names)
 
     def test_manifest_refuses_a_module_gitleaks_would_flag(self):
         (self.copy / "secret_store.py").write_text("")
