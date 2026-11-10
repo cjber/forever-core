@@ -50,7 +50,7 @@ local LINK_NAME = "ForeverFamilyLink"
 local NO_STRINGS = {}
 
 ---@class ForeverFamilyAPI
----@field ADDONS ForeverFamilyAddon[] the five addons, in order
+---@field ADDONS ForeverFamilyAddon[] the eight addons, in order
 ---@field SUPPORT ForeverFamilyLink where a player can support the addons
 ---@field window? ForeverFamilyLinkWindow the link window once built
 ---@field Register fun(category: table, db: ForeverFamilySaved, current?: string, safeCall?: ForeverSafeCall): table
@@ -115,6 +115,24 @@ local function List()
 			"TweaksForever",
 			"tweaks-forever",
 			"Quest automation, rare alerts and merchant handling for the default UI."
+		),
+		Addon(
+			"Field Guide Forever",
+			"FieldGuideForever",
+			"field-guide-forever",
+			"Keeps a cosmetic journal of the creatures you kill, zone by zone."
+		),
+		Addon(
+			"Commissions Forever",
+			"CommissionsForever",
+			"commissions-forever",
+			"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
+		),
+		Addon(
+			"Macro Assist Forever",
+			"MacroAssistForever",
+			"macro-assist-forever",
+			"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 		),
 	}
 end

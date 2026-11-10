@@ -66,9 +66,9 @@ Steps and what trips agents up:
    blocks the tab). Ask the user to click "Upload image" and pick the repo's 400×400 PNG
    (`media/icon-400.png` in cjber's addons), either here or later at `#/projects/<ID>/general`.
 3. **Description**: set the textarea with `form_input` to `docs/curseforge.md`, then **type** a little
-   text at the end (click the textarea, `ctrl+End`, type the footer). `form_input` alone does not update
-   React state, so the step validates as empty. cjber's footer:
-   `Made by Cillian Berragan · [cillian.dev](https://cillian.dev/) · [GitHub](https://github.com/cjber) · [Twitter](https://twitter.com/cjberragan)`
+   text at the end (click the textarea, `ctrl+End`, type a newline). `form_input` alone does not update
+   React state, so the step validates as empty. The description ends with the support buttons; add no
+   author footer.
 4. **License**: the dropdowns are custom comboboxes whose list often does not show in screenshots. Open
    with a click, then `find` the option by its text (e.g. "GNU General Public License version 3 (GPLv3)")
    and click the returned ref. Close an open list by clicking empty page space before the next field.
@@ -107,7 +107,7 @@ user to delete on `addons.wago.io/addons/<slug>/gallery`.
 Run the browser work in the user's logged-in Chrome, in batches of about three images, so a slow page
 does not outlast the tool call. Confirm every change after a reload or on the public page.
 
-**Descriptions.** After a PR that changes `docs/curseforge.md` merges, run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it publishes every changed description through the user's Chrome and reads each back from CurseForge's Core API (`CURSEFORGE_CORE_API_KEY`, in pass as `dev/CURSEFORGE_CORE_API_KEY`). By hand: paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
+**Descriptions.** After a PR that changes `docs/curseforge.md` merges, paste it on CurseForge, then run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it reads each stored description back from CurseForge's Core API and fails on any link that differs from `main`. Its `--push` publishes through fastbrowse but is unreliable until agent-labs-dev/fastbrowse#939 is fixed. It needs `CURSEFORGE_CORE_API_KEY`, in pass as `dev/CURSEFORGE_CORE_API_KEY`. Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
 "Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
 press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
 CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).

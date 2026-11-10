@@ -16,8 +16,16 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parent.parent
+TOOLING = ROOT / ".agents/skills/wow-forever-addon/tooling"
+if str(TOOLING) not in sys.path:
+    sys.path.insert(0, str(TOOLING))
+
+from forever_tools import family  # noqa: E402
 
 OWNER = "cjber"
 USER_AGENT = "forever-core-discord-digest"
@@ -39,15 +47,21 @@ class Addon:
     accent: int
 
 
-# The table order is the order the digest lists addons in.
-ADDONS = (
-    Addon("adventure-guide-forever", "Adventure Guide Forever", 0xE8A33A),
-    Addon("shortest-path-forever", "Shortest Path Forever", 0x3DA5E8),
-    Addon("skillup-forever", "SkillUp Forever", 0xF0743C),
-    Addon("tweaks-forever", "Tweaks Forever", 0x46C06A),
-    Addon("legacy-forever", "Legacy Forever", 0xA77BE8),
-    Addon("field-guide-forever", "Field Guide Forever", 0xD3577F),
-)
+# The accent each digest embed draws in, by repository. The names, order and repositories are from family.ADDONS, so
+# this table adds only the colour and never a second list to keep in step.
+ACCENTS = {
+    "shortest-path-forever": 0x3DA5E8,
+    "adventure-guide-forever": 0xE8A33A,
+    "skillup-forever": 0xF0743C,
+    "legacy-forever": 0xA77BE8,
+    "tweaks-forever": 0x46C06A,
+    "field-guide-forever": 0xD3577F,
+    "commissions-forever": 0xD9A441,
+    "macro-assist-forever": 0xF2C14E,
+}
+
+# The family's order is the digest's order.
+ADDONS = tuple(Addon(slug, name, ACCENTS[slug]) for name, slug, _line in family.ADDONS)
 
 
 def emblem_url(addon):

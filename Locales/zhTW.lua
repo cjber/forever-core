@@ -18,6 +18,8 @@ L["5th"] = "第 5 名"
 L["6th"] = "第 6 名"
 L["7th"] = "第 7 名"
 L["8th"] = "第 8 名"
+L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
+	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 L["All time"] = "全部時間"
 L["Attach to quest tracker"] = "附著於任務追蹤器"
 L["Bug"] = "錯誤"
@@ -48,6 +50,10 @@ L["Forever: %s overall"] = "Forever：總排名 %s"
 L["Forever: %s overall this week"] = "Forever：本週總排名 %s"
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "已安裝，已停用"
+L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
+	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
+L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
+	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
 L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "鎖定追蹤器"

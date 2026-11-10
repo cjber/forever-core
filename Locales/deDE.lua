@@ -18,6 +18,8 @@ L["5th"] = "5."
 L["6th"] = "6."
 L["7th"] = "7."
 L["8th"] = "8."
+L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
+	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 L["All time"] = "Gesamte Zeit"
 L["Attach to quest tracker"] = "An die Questverfolgung anheften"
 L["Bug"] = "Fehler"
@@ -50,6 +52,10 @@ L["Forever: %s overall"] = "Forever: %s insgesamt"
 L["Forever: %s overall this week"] = "Forever: %s insgesamt diese Woche"
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "Installiert, deaktiviert"
+L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
+	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
+L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
+	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
 L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "Verfolgung sperren"

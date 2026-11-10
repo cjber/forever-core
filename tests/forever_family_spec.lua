@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua now loads once, in ForeverCore, and reads core's own L. A change to the module is made here
 -- with this spec; no consumer keeps a copy.
-local PINNED = "5690389a0dfc6957492588db197e7b70237a89b78259efc2585c3e30a9c0a124"
+local PINNED = "c02ed2999c36035cd3e8220dfe0e6bebdf45ec06041b2f17eee5bf40ded9eddd"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -303,15 +303,18 @@ check(Family and type(Family.Register) == "function", "loading returns the one f
 check(env.ForeverFamily == nil, "no ForeverFamily global is published")
 check(#frames == 0, "loading builds no frames; the window and page wait until they're needed")
 
--- The five addons, in order, with their store pages.
+-- The eight addons, in order, with their store pages.
 local expected = {
 	{ "Shortest Path Forever", "ShortestPathForever", "shortest-path-forever" },
 	{ "Adventure Guide Forever", "AdventureGuideForever", "adventure-guide-forever" },
 	{ "SkillUp Forever", "SkillUpForever", "skillup-forever" },
 	{ "Legacy Forever", "LegacyForever", "legacy-forever" },
 	{ "Tweaks Forever", "TweaksForever", "tweaks-forever" },
+	{ "Field Guide Forever", "FieldGuideForever", "field-guide-forever" },
+	{ "Commissions Forever", "CommissionsForever", "commissions-forever" },
+	{ "Macro Assist Forever", "MacroAssistForever", "macro-assist-forever" },
 }
-check(#Family.ADDONS == #expected, "five addons")
+check(#Family.ADDONS == #expected, "eight addons")
 for index, row in ipairs(expected) do
 	local addon = Family.ADDONS[index]
 	check(addon.name == row[1] and addon.folder == row[2], "addon " .. index .. " is " .. row[1])
@@ -451,7 +454,7 @@ check_:Click()
 check(saved.suggestFamily == true, "ticking turns them on")
 local copies = Children(panel, "Button", "SharedButtonSmallTemplate")
 local icons = Children(panel, "Texture")
-check(#copies == 6 and #icons == 6, "a row per addon, then the Ko-fi row")
+check(#copies == 9 and #icons == 9, "a row per addon, then the Ko-fi row")
 local text = Texts(panel)
 check(text:find("This addon", 1, true), "the addon's own row says so")
 check(text:find("On", 1, true) and text:find("Not installed", 1, true), "the others show their state")
@@ -464,10 +467,10 @@ check(Texts(panel):find("Installed, turned off", 1, true), "the states are read 
 check(icons[3].texture == "Interface\\AddOns\\SkillUpForever\\media\\Icon", "and the icons")
 copies[3]:Click()
 check(window:IsShown() and window.title == "SkillUp Forever", "Copy link opens that addon's address")
-check(icons[6].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row has a coin")
-check(text:find(Family.SUPPORT.line, 1, true) and copies[6].shown, "its line and Copy link button")
+check(icons[9].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row has a coin")
+check(text:find(Family.SUPPORT.line, 1, true) and copies[9].shown, "its line and Copy link button")
 never:Show()
-copies[6]:Click()
+copies[9]:Click()
 check(window:IsShown() and window.title == "Ko-fi" and edit.text == "https://ko-fi.com/cjber", "Ko-fi's address")
 check(edit.focused and edit.highlighted and not never:IsShown(), "selected, with no hint to dismiss")
 check(window.portrait.texture == "Interface\\Icons\\INV_Misc_Coin_01", "and the coin in the portrait")

@@ -34,7 +34,7 @@ python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinne
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
-python3 tools/sync_curseforge.py ..       # publish changed docs/curseforge.md files as CurseForge descriptions
+python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
 python3 tools/check_package.py            # .release/ForeverCore holds every TOC file and no development folder
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"

@@ -42,6 +42,8 @@ class FamilyTest(unittest.TestCase):
                 "Legacy Forever",
                 "Tweaks Forever",
                 "Field Guide Forever",
+                "Commissions Forever",
+                "Macro Assist Forever",
             ],
         )
         for name, slug, line, issues in ((row[1], row[2], row[3], row[4]) for row in rows):

@@ -5,13 +5,15 @@ signed-in Chrome, driven by fastbrowse's extension. Each push is then read back 
 the author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only
 when the stored description links exactly the URLs the markdown links.
 
-A state file remembers the hash of the markdown last published per project, so a plain run pushes only addons whose
-description changed on `main`. Run it after merging a PR that touches `docs/curseforge.md`:
+A plain run only reads each stored description back and compares it with `main`. Pushing is opt-in with `--push`,
+because the fastbrowse extension run saves wrong text for some pages (agent-labs-dev/fastbrowse#939): until that is
+fixed, paste failing descriptions by hand and rerun the check. A state file remembers the hash of the markdown last
+published per project, so `--push` pushes only addons whose description changed on `main`:
 
     export CURSEFORGE_CORE_API_KEY=$(pass show dev/CURSEFORGE_CORE_API_KEY)
-    python3 tools/sync_curseforge.py ~/drive/proj/wow            # changed descriptions only
-    python3 tools/sync_curseforge.py ~/drive/proj/wow --all      # every addon
-    python3 tools/sync_curseforge.py ~/drive/proj/wow --check    # verify the stored descriptions, push nothing
+    python3 tools/sync_curseforge.py ~/drive/proj/wow                 # verify every stored description
+    python3 tools/sync_curseforge.py ~/drive/proj/wow --push          # push changed descriptions, then verify
+    python3 tools/sync_curseforge.py ~/drive/proj/wow --push --all    # push every addon
 
 fastbrowse reads `OPENROUTER_API_KEY` from the environment; the user's Chrome must have the fastbrowse extension and a
 CurseForge sign-in. The read-back needs `CURSEFORGE_CORE_API_KEY` (pass `dev/CURSEFORGE_CORE_API_KEY`), a key from
@@ -133,8 +135,8 @@ def verify(addon: Addon, markdown: str, key: str) -> tuple[bool, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("root", type=Path, help="folder holding the addon checkouts")
-    parser.add_argument("--all", action="store_true", help="push every addon, not only changed descriptions")
-    parser.add_argument("--check", action="store_true", help="verify the stored descriptions only")
+    parser.add_argument("--push", action="store_true", help="push descriptions through fastbrowse before verifying")
+    parser.add_argument("--all", action="store_true", help="with --push, push every addon, not only changed ones")
     parser.add_argument("--only", nargs="*", default=[], help="repo folder names to limit the run to")
     args = parser.parse_args()
 
@@ -148,10 +150,10 @@ def main() -> int:
             continue
         markdown = addon.markdown()
         digest = hashlib.sha256(markdown.encode()).hexdigest()
-        if not (args.check or args.all) and state.get(addon.project_id) == digest:
+        if args.push and not args.all and state.get(addon.project_id) == digest:
             print(f"{addon.name}: unchanged")
             continue
-        if not args.check:
+        if args.push:
             result = push(addon, markdown)
             print(f"{addon.name}: push {result.get('status')}")
         ok, detail = verify(addon, markdown, key)
