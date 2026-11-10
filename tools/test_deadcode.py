@@ -1,4 +1,4 @@
-"""Core's source-only modules remain valid in arbitrarily named worktrees."""
+"""What the dead-code scan counts as source, and what it skips."""
 
 import tempfile
 import unittest
@@ -9,17 +9,15 @@ import deadcode
 
 
 class CoreWorktreeTest(unittest.TestCase):
-    def test_source_only_modules_use_toc_identity(self):
-        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+    def test_forever_core_checkout_is_not_scanned(self):
+        with tempfile.TemporaryDirectory(prefix="cb-addon-") as directory:
             root = Path(directory)
-            (root / "UI").mkdir()
-            (root / "ForeverCore.toc").write_text("## Interface: 16001\n")
-            (root / "UI/Report.lua").write_text('local icon = "media/Icon"\n')
+            (root / "Addon.toc").write_text("Main.lua\n")
+            (root / "Main.lua").write_text("local value = true\n")
+            (root / "forever-core/UI").mkdir(parents=True)
+            (root / "forever-core/UI/Report.lua").write_text('local icon = "media/Icon"\n')
             with patch.object(deadcode, "ROOT", root):
                 self.assertEqual(deadcode.scan(), [])
-            (root / "ForeverCore.toc").unlink()
-            with patch.object(deadcode, "ROOT", root):
-                self.assertEqual(len(deadcode.scan()), 2)
 
     def test_scratch_checkouts_are_not_scanned_as_source(self):
         with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
