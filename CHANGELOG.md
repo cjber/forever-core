@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **The Forever sections line up with the quest tracker.** Their headers and bars no longer start a little to the left of the game's own sections: they now begin and end on the tracker's edges at any scale. Thanks to iPulse for the report. (#335)
 - **One client icon per addon.** Every Forever addon now declares its in-game identity icon once, in `## X-Forever-Icon`, so its minimap button, Professions or side tab, window portrait, leaderboard tab and addon compartment cannot drift apart. The shared check fails an addon TOC that omits the field, a value the pinned client build does not have, or the same path repeated in shipped Lua. (#331)
 
 ### For addon authors

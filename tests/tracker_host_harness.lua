@@ -59,6 +59,9 @@ function harness.new(options)
 		function f.GetBottom(self)
 			return self.bottom or self:GetTop() - self:GetHeight()
 		end
+		function f.GetCenter(self)
+			return (self:GetLeft() + self:GetRight()) / 2, (self:GetTop() + self:GetBottom()) / 2
+		end
 		function f:IsShown()
 			return self.shown ~= false
 		end
@@ -182,6 +185,9 @@ function harness.new(options)
 		bottom = 540,
 		GetBottom = function(self)
 			return self.bottom
+		end,
+		GetCenter = function()
+			return native:GetCenter()
 		end,
 		GetEffectiveScale = function()
 			return native:GetEffectiveScale()
