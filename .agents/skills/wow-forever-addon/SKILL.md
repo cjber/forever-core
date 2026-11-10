@@ -122,8 +122,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   CurseForge users; a generic thanks for the rest). THIRD_PARTY.md (WFA-31) holds the full list. The WFA-32 family block is not
   counted; `check_copy.py --words` gives the count every repo uses.
 - **WFA-11** `docs/curseforge.md` is the store description and follows [store-page.md](store-page.md): the pitch,
-  three to six captioned screenshots, Features, Usage, the source and AI lines and the Discord, Sponsors and Ko-fi
-  button row; under 1,000 words; no Install or Development sections. `forever_tools.store_page` fails CI on a page
+  the sponsor sentence with the Discord, Sponsors and Ko-fi button row under it, three to six captioned
+  screenshots, Features, Usage, the source and AI lines; under 1,000 words; no Install or Development sections. `forever_tools.store_page` fails CI on a page
   that leaves a part out. It is pasted into CurseForge by hand after it changes; Wago carries a fixed stub (`wow-addon-publish`). The WFA-32 block is
   not counted here either.
 - **WFA-23** The addon fits the game's own UI. Show this in the lead image, against the stock UI

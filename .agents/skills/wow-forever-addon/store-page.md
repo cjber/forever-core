@@ -14,6 +14,8 @@ game's UI.>
 
 Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help and each day's release notes, [join me on Discord](https://discord.gg/FpHugGxRJY).
 
+[![Join me on Discord](https://raw.githubusercontent.com/cjber/<repo>/main/docs/discord-button.png)](https://discord.gg/FpHugGxRJY) [![Sponsor me on GitHub](https://raw.githubusercontent.com/cjber/<repo>/main/docs/github-sponsors-button.png)](https://github.com/sponsors/cjber) [![Support me on Ko-fi](https://raw.githubusercontent.com/cjber/<repo>/main/docs/kofi-button.png)](https://ko-fi.com/cjber)
+
 ![<alt text>](https://raw.githubusercontent.com/cjber/<repo>/main/docs/screenshots/<lead>.<gif|png>)
 
 <Caption: what to look at in the lead image, in plain words, not its alt text.>
@@ -52,20 +54,18 @@ For a bug report, paste `/<command> report`.
 Source code and issues: [github.com/cjber/<repo>](https://github.com/cjber/<repo>). Licence: GPL-3.0-or-later.
 
 Built with AI assistance.
-
-[![Join me on Discord](https://raw.githubusercontent.com/cjber/<repo>/main/docs/discord-button.png)](https://discord.gg/FpHugGxRJY) [![Sponsor me on GitHub](https://raw.githubusercontent.com/cjber/<repo>/main/docs/github-sponsors-button.png)](https://github.com/sponsors/cjber) [![Support me on Ko-fi](https://raw.githubusercontent.com/cjber/<repo>/main/docs/kofi-button.png)](https://ko-fi.com/cjber)
 ```
 
 ## What the check enforces
 
-- **Order.** Pitch, sponsor line, images, `## Features`, at most one optional `##` section, `## Usage`, the family
-  block, source line, AI line, the button row. No other `##` headings: Install, Development and Credits live in the README.
+- **Order.** Pitch, sponsor line, the button row, images, `## Features`, at most one optional `##` section,
+  `## Usage`, the family block, source line, AI line. No other `##` headings: Install, Development and Credits live in the README.
 - **Images.** Three to six, the first above `## Features`, every one under `docs/screenshots/` at a `main` raw URL,
   every file present in the repo, each followed by its caption (WFA-25). The lead image shows the main feature
   in the stock UI (WFA-23).
 - **Fixed lines.** The sponsor sentence, the "generated previews" line, the report line, the translation line (required when the addon ships a locale other than enUS), the
-  source line, the AI line and the button row (Discord, GitHub Sponsors, Ko-fi, in that order, each image present
-  in the repo), each exactly as above with only the placeholders filled.
+  source line, the AI line and the button row (Discord, GitHub Sponsors, Ko-fi, in that order, directly under the
+  sponsor sentence, each image present in the repo), each exactly as above with only the placeholders filled.
 - **Features.** Three to eight bullets, each led by a bold name ending in a full stop.
 - **Pitch.** Starts with the addon's `## Title` from the TOC, without colour codes.
 - **Length.** Under 1,000 prose words by `check_copy.py --words`, the family block not counted (WFA-11).

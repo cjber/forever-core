@@ -68,7 +68,7 @@ def _raw(repo: str, path: str) -> str:
 
 
 def buttons(repo: str) -> str:
-    """The button row that ends every page: Discord, GitHub Sponsors, Ko-fi."""
+    """The button row under the sponsor sentence on every page: Discord, GitHub Sponsors, Ko-fi."""
     return " ".join(
         f"[![{alt}]({_raw(repo, 'docs/' + image)})]({target})"
         for alt, image, target in (
@@ -176,9 +176,11 @@ def check(root: Path) -> list[str]:
                 f"{FILE}: the addon ships translations, so `## Usage` needs the translation line linking {form}"
             )
 
-    tail = [source_line(repo), AI_LINE, buttons(repo)]
-    if blocks[-3:] != tail:
-        problems.append(f"{FILE}: the page must end with these three lines, exactly:\n" + "\n".join(tail))
+    if sponsor is not None and blocks[sponsor + 1 : sponsor + 2] != [buttons(repo)]:
+        problems.append(f"{FILE}: the button row must follow the sponsor sentence, exactly:\n{buttons(repo)}")
+    tail = [source_line(repo), AI_LINE]
+    if blocks[-2:] != tail:
+        problems.append(f"{FILE}: the page must end with these two lines, exactly:\n" + "\n".join(tail))
     for image_name in ("discord-button.png", "github-sponsors-button.png", "kofi-button.png"):
         if not (root / "docs" / image_name).is_file():
             problems.append(f"docs/{image_name}: missing; run forever-core's tools/sync_consumers.py")
