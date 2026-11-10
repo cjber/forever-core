@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forever_tools import art, assets
+from forever_tools import art, assets, legacy_chrome
 
 
 class AssetsTest(unittest.TestCase):
@@ -29,14 +29,19 @@ class AssetsTest(unittest.TestCase):
             with self.subTest(template=name):
                 self.assertTrue(assets.check(f'CreateFrame("Frame", nil, p, "{name}")'))
                 self.assertTrue(assets.check(f'<Frame inherits="OtherTemplate, {name}"/>', ".xml"))
-        for name in assets.LEGACY_BACKDROPS:
+        for name, paths in legacy_chrome.backdrops().items():
             with self.subTest(backdrop=name):
-                self.assertTrue(assets.check(f"f:SetBackdrop({name})"))
-                self.assertTrue(assets.check(f"local backdrop = _G.{name}"))
-                self.assertTrue(assets.check(f'<KeyValue key="backdropInfo" value="{name}" type="global"/>', ".xml"))
-                self.assertTrue(assets.check(f"backdrop = {name}", ".py"))
+                expected = any(legacy_chrome.reason(path) for path in paths)
+                self.assertEqual(bool(assets.check(f"f:SetBackdrop({name})")), expected)
+                self.assertEqual(bool(assets.check(f"local backdrop = _G.{name}")), expected)
+                self.assertEqual(
+                    bool(assets.check(f'<KeyValue key="backdropInfo" value="{name}" type="global"/>', ".xml")), expected
+                )
+                self.assertEqual(bool(assets.check(f"backdrop = {name}", ".py")), expected)
                 self.assertEqual(assets.check(f"-- {name}"), [])
                 self.assertEqual(assets.check(f"# {name}", ".py"), [])
+        self.assertTrue(assets.check("f:SetBackdrop(BACKDROP_TOAST_12_12)"))
+        self.assertEqual(assets.check("f:SetBackdrop(BACKDROP_WATERMARK_DIALOG_0_16)"), [])
         self.assertEqual(assets.check('CreateFrame("Frame", nil, p, "BackdropTemplate")'), [])
         self.assertEqual(assets.check("f:SetBackdrop(customBackdrop)"), [])
         self.assertEqual(assets.check('CreateFrame("Frame", nil, p, "DialogBorderOpaqueTemplate")'), [])

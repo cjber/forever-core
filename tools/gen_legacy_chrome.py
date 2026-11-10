@@ -1,4 +1,4 @@
-"""Generate forever_tools' pre-Legion UI-chrome data from the pinned client listfile.
+"""Generate forever_tools' pre-Legion UI-chrome data from the pinned client listfile and UI source.
 
 The rule is age based, not name based: a loose texture under `interface/` whose FileDataID is below
 1,000,000 is pre-Legion chrome. FileDataIDs were assigned roughly in the order art was added: about
@@ -7,15 +7,19 @@ The rule is age based, not name based: a loose texture under `interface/` whose 
 Run from the repository root when the pinned build's art changes:
 
     python3 tools/gen_legacy_chrome.py             # uses tools/.cache/legacy-chrome/
-    python3 tools/gen_legacy_chrome.py --refresh   # download the listfile again
+    python3 tools/gen_legacy_chrome.py --refresh   # download the listfile and Backdrop.lua again
 
 The wago.tools endpoint is the pinned build's own file list (`version=`, plus `build=` so the
 build is always explicit). Its unpaged CSV export times out, so this asks for the listfile's
-`interface/` slice through the search API instead. Both data files are committed:
+`interface/` slice through the search API instead. The same listfile names the build's copy of
+`Blizzard_SharedXML/Backdrop.lua`, whose FileDataID fetches its bytes from wago.tools, so the
+backdrop globals and the paths they name come from the client itself. The data files are committed:
 
 * `legacy_chrome.txt` -- the banned set, one lowercase extensionless path per line.
 * `interface_paths.txt` -- a compact sorted, zlib-compressed set of every `interface/` path in the
   build, used for the "unverifiable client path" fallback.
+* `backdrops.txt` -- each `BACKDROP_*` global and the `bgFile`/`edgeFile` paths it names, so the
+  checker can follow a backdrop constant to the art it draws.
 """
 
 import argparse
@@ -29,13 +33,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / ".agents/skills/wow-forever-addon/tooling"))
-from forever_tools import fsio, wago  # noqa: E402
+from forever_tools import fsio, lua, wago  # noqa: E402
 
 BUILD = "1.60.1.70124"
 USER_AGENT = "ForeverCore/1.0 (+https://github.com/cjber/forever-core)"
 DATA = ROOT / ".agents/skills/wow-forever-addon/tooling/forever_tools"
 CACHE = ROOT / "tools/.cache/legacy-chrome" / f"listfile-{BUILD}.json"
 URL = f"https://wago.tools/api/files?search=interface%2F&version={BUILD}&build={BUILD}"
+BACKDROP_SOURCE = "interface/addons/blizzard_sharedxml/backdrop.lua"
+BACKDROP_CACHE = CACHE.with_name(f"backdrop-{BUILD}.lua")
+CASC_URL = f"https://wago.tools/api/casc/{{fdid}}?download&build={BUILD}"
+BACKDROP_FIELDS = frozenset({"bgFile", "edgeFile"})
 
 # --- category rules: data, not a path list -------------------------------------------------------
 LEGACY_FDID_LIMIT = 1_000_000
@@ -130,6 +138,81 @@ def load(refresh: bool) -> dict[str, str]:
     return json.loads(data)
 
 
+def validate_backdrop(data: bytes) -> None:
+    """Reject an HTML error page or anything that is not the client's backdrop definitions."""
+    if b"BACKDROP_" not in data or b"bgFile" not in data:
+        raise ValueError("wago.tools returned something other than Blizzard_SharedXML/Backdrop.lua")
+
+
+def load_backdrop(rows: dict[str, str], refresh: bool) -> str:
+    """The pinned build's Backdrop.lua, found by path in the same listfile and fetched by FileDataID."""
+    fdid = next((fdid for fdid, raw in rows.items() if raw.replace("\\", "/").lower() == BACKDROP_SOURCE), None)
+    if fdid is None:
+        raise SystemExit(f"the pinned listfile does not name {BACKDROP_SOURCE}")
+    data = wago.fetch(
+        CASC_URL.format(fdid=fdid),
+        BACKDROP_CACHE,
+        user_agent=USER_AGENT,
+        refresh=refresh,
+        timeout=900,
+        validate=validate_backdrop,
+    )
+    return data.decode("utf-8")
+
+
+def _symbol(token, text: str) -> bool:
+    return token.kind == "symbol" and token.text == text
+
+
+def parse_backdrops(source: str) -> dict[str, list[str]]:
+    """Each global table with a `bgFile` or `edgeFile`, and the client paths that field names.
+
+    Reads the definitions rather than trusting the global's name: a table is a backdrop because of its
+    fields, and a path is normalised exactly as `legacy_chrome.txt` stores one.
+    """
+    tokens, _ = lua.tokenize(source)
+    backdrops: dict[str, list[str]] = {}
+    depth, at = 0, 0
+    while at < len(tokens):
+        token = tokens[at]
+        if _symbol(token, "{"):
+            depth += 1
+        elif _symbol(token, "}"):
+            depth -= 1
+        elif (
+            depth == 0
+            and token.kind == "name"
+            and at + 2 < len(tokens)
+            and _symbol(tokens[at + 1], "=")
+            and _symbol(tokens[at + 2], "{")
+        ):
+            name, files, inner_depth, cursor = token.text, [], 0, at + 2
+            while cursor < len(tokens):
+                current = tokens[cursor]
+                if _symbol(current, "{"):
+                    inner_depth += 1
+                elif _symbol(current, "}"):
+                    inner_depth -= 1
+                    if inner_depth == 0:
+                        break
+                elif (
+                    inner_depth == 1
+                    and current.kind == "name"
+                    and current.text in BACKDROP_FIELDS
+                    and cursor + 2 < len(tokens)
+                    and _symbol(tokens[cursor + 1], "=")
+                    and tokens[cursor + 2].kind == "string"
+                ):
+                    files.append(normalise(tokens[cursor + 2].text[1:-1]))
+                cursor += 1
+            if files:
+                backdrops[name] = sorted(set(files))
+            at = cursor + 1
+            continue
+        at += 1
+    return backdrops
+
+
 def legacy_text(paths: list[str]) -> str:
     lines = [
         "# Pre-Legion UI chrome: interface/ textures with FileDataID < 1,000,000.",
@@ -155,9 +238,23 @@ def known_text(paths: set[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def backdrop_text(backdrops: dict[str, list[str]]) -> str:
+    lines = [
+        "# The client's own backdrop globals, from Blizzard_SharedXML/Backdrop.lua.",
+        f"# Pinned client build {BUILD}. Each line is the global, then the bgFile and edgeFile it names,",
+        "# lowercased with forward slashes and no .blp/.tga suffix.",
+        "# Generated by tools/gen_legacy_chrome.py; do not edit by hand.",
+        "",
+        *[f"{name} {' '.join(paths)}" for name, paths in sorted(backdrops.items())],
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--refresh", action="store_true", help="download the listfile again instead of using the cache")
+    parser.add_argument(
+        "--refresh", action="store_true", help="download the listfile and Backdrop.lua again instead of using the cache"
+    )
     arguments = parser.parse_args()
 
     rows = load(arguments.refresh)
@@ -172,14 +269,17 @@ def main() -> int:
         if raw_path.endswith(TEXTURE_EXTENSIONS) and int(fdid) < LEGACY_FDID_LIMIT and not exempt(path):
             legacy.add(path)
 
+    backdrops = parse_backdrops(load_backdrop(rows, arguments.refresh))
+
     outputs = {
         DATA / "legacy_chrome.txt": legacy_text(sorted(legacy)),
         DATA / "interface_paths.txt": known_text(known),
+        DATA / "backdrops.txt": backdrop_text(backdrops),
     }
     fsio.publish(outputs)
     for path, text in outputs.items():
         print(f"{path.relative_to(ROOT)}: {len(text.encode('utf-8')):,} bytes")
-    print(f"{len(legacy):,} legacy chrome paths, {len(known):,} known interface paths")
+    print(f"{len(legacy):,} legacy chrome paths, {len(known):,} known interface paths, {len(backdrops)} backdrops")
     return 0
 
 

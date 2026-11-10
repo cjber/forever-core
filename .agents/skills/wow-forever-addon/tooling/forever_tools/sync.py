@@ -29,7 +29,7 @@ UNPINNED = "UNPINNED"
 MANIFEST = "MANIFEST.json"
 # The generated data assets.py reads. They are vendored byte for byte with the modules, so a consumer
 # gets the age rule and its pinned-build data in one update.
-DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt")
+DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt", "backdrops.txt")
 
 
 def digest(path: Path) -> str:
