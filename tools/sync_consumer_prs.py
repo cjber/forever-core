@@ -5,11 +5,14 @@ vendors `tools/forever_tools/MANIFEST.json` or `tools/forever_sim/MANIFEST.json`
 edit: the first comes from the vendoring map, the second from the repositories themselves.
 
 For each consumer this clones `main`, runs the same three syncs a maintainer would (`tools/sync_consumers.py` for this
-repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`), and, if anything
-changed, points `forever-core-sync` at that `main` HEAD and creates the commit through the GraphQL
-`createCommitOnBranch` mutation, then opens or refreshes the PR with squash auto-merge enabled. GitHub signs commits
-made through the API, so the consumer's `required_signatures` ruleset accepts the sync. The consumer's own checks
-remain the gate: a sync that breaks one stays open as a red PR and is named in the run summary.
+repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`), regenerates the
+consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and, if anything changed, creates the commit on a
+scratch branch through the GraphQL `createCommitOnBranch` mutation from that `main` HEAD, then moves
+`forever-core-sync` to it in one ref update and opens or refreshes the PR with squash auto-merge enabled. Building the
+commit on a scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR
+empty and have GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures`
+ruleset accepts the sync. The consumer's own checks remain the gate: a sync that breaks one stays open as a red PR and
+is named in the run summary.
 
     python3 tools/sync_consumer_prs.py
 
@@ -34,6 +37,7 @@ from check_core_shared import VENDORED
 OWNER = "cjber"
 CORE_REPO = "forever-core"
 BRANCH = "forever-core-sync"
+SCRATCH_BRANCH = f"{BRANCH}-commit"
 TITLE = "chore: sync shared files from forever-core"
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
 PER_PAGE = 100
@@ -60,8 +64,10 @@ class Result:
     detail: str | None = None
 
 
-def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
+def run(
+    command: list[str], cwd: Path | None = None, check: bool = True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False, env=env)
     if check and result.returncode:
         detail = (result.stderr or result.stdout).strip()
         raise SyncError(f"{' '.join(command)} failed: {detail}")
@@ -143,6 +149,24 @@ def clone(repo: str, workspace: Path) -> Path:
     return destination
 
 
+def regenerate_phrases(root: Path) -> None:
+    """Refresh the consumer's phrase template from its own extractor.
+
+    `Locales/phrases.txt` is `tools/phrases.py`'s output and the consumer's locale spec asserts that, so the shared
+    files' new or changed `L[...]` phrases would leave the sync PR red without this. The template is written only
+    when the checkout carries both the extractor and the template, as the addons that have translations do.
+    """
+    script = root / "tools" / "phrases.py"
+    template = root / "Locales" / "phrases.txt"
+    if not script.is_file() or not template.is_file():
+        return
+    # Run by path, so a script importing its siblings in tools/ finds them, and with the root importable, so one
+    # importing `tools.forever_tools` as a package (tweaks-forever documents `python3 -m tools.phrases`) does too.
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
+    generated = run([sys.executable, str(script)], cwd=root, env=env)
+    template.write_text(generated.stdout, encoding="utf-8")
+
+
 def sync_checkout(root: Path, core_root: Path) -> None:
     run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent)])
     for package in tooling_packages(root):
@@ -150,6 +174,7 @@ def sync_checkout(root: Path, core_root: Path) -> None:
             [sys.executable, str(root / "tools" / package / "sync.py"), "update", "--source", str(core_root)],
             cwd=root,
         )
+    regenerate_phrases(root)
 
 
 def staged_changes(root: Path) -> tuple[list[dict], list[dict]]:
@@ -183,20 +208,25 @@ mutation($input: CreateCommitOnBranchInput!) {
 """
 
 
-def create_commit_input(repo: str, oid: str, sha: str, additions: list[dict], deletions: list[dict]) -> dict:
+def create_commit_input(
+    repo: str, branch: str, oid: str, sha: str, additions: list[dict], deletions: list[dict]
+) -> dict:
     """The createCommitOnBranch input: the branch, the head it must still be at, the message and the file changes."""
     return {
-        "branch": {"repositoryNameWithOwner": f"{OWNER}/{repo}", "branchName": BRANCH},
+        "branch": {"repositoryNameWithOwner": f"{OWNER}/{repo}", "branchName": branch},
         "expectedHeadOid": oid,
         "message": {"headline": TITLE, "body": f"Core commit: {sha}"},
         "fileChanges": {"additions": additions, "deletions": deletions},
     }
 
 
-def point_branch(repo: str, oid: str) -> None:
-    """Point the sync branch at the consumer's main HEAD, creating the ref when it does not exist yet."""
-    path = f"repos/{OWNER}/{repo}/git/refs/heads/{BRANCH}"
-    patched = api(path, "--method", "PATCH", "-f", f"sha={oid}", "-F", "force=true", check=False)
+def branch_ref(repo: str, branch: str) -> str:
+    return f"repos/{OWNER}/{repo}/git/refs/heads/{branch}"
+
+
+def point_branch(repo: str, branch: str, oid: str) -> None:
+    """Point `branch` at `oid`, force-moving an existing ref and creating it when it does not exist yet."""
+    patched = api(branch_ref(repo, branch), "--method", "PATCH", "-f", f"sha={oid}", "-F", "force=true", check=False)
     if patched.returncode == 0:
         return
     api(
@@ -204,13 +234,27 @@ def point_branch(repo: str, oid: str) -> None:
         "--method",
         "POST",
         "-f",
-        f"ref=refs/heads/{BRANCH}",
+        f"ref=refs/heads/{branch}",
         "-f",
         f"sha={oid}",
     )
 
 
-def create_commit(repo: str, oid: str, sha: str, additions: list[dict], deletions: list[dict], workspace: Path) -> None:
+def delete_branch(repo: str, branch: str) -> None:
+    api(branch_ref(repo, branch), "--method", "DELETE", check=False)
+
+
+def created_oid(result: subprocess.CompletedProcess) -> str:
+    """The commit `createCommitOnBranch` made, or a SyncError when the response carries none."""
+    try:
+        return json.loads(result.stdout)["data"]["createCommitOnBranch"]["commit"]["oid"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise SyncError(f"createCommitOnBranch returned no commit: {error}") from error
+
+
+def create_commit(
+    repo: str, branch: str, oid: str, sha: str, additions: list[dict], deletions: list[dict], workspace: Path
+) -> str:
     """Create the sync commit through GraphQL, so GitHub signs it and required_signatures accepts it.
 
     The request goes in a file through `--input`: the base64 file contents can pass the kernel's 128 KiB limit on one
@@ -219,10 +263,10 @@ def create_commit(repo: str, oid: str, sha: str, additions: list[dict], deletion
     body = workspace / f"{repo}-commit.json"
     request = {
         "query": CREATE_COMMIT_MUTATION,
-        "variables": {"input": create_commit_input(repo, oid, sha, additions, deletions)},
+        "variables": {"input": create_commit_input(repo, branch, oid, sha, additions, deletions)},
     }
     body.write_text(json.dumps(request), encoding="utf-8")
-    api("graphql", "--input", str(body))
+    return created_oid(api("graphql", "--input", str(body)))
 
 
 def pr_body(sha: str, files: tuple[str, ...]) -> str:
@@ -258,7 +302,7 @@ def close_stale_prs(repo: str, sha: str) -> list[int]:
         api(f"repos/{OWNER}/{repo}/pulls/{number}", "--method", "PATCH", "-f", "state=closed")
         closed.append(number)
     if closed:
-        api(f"repos/{OWNER}/{repo}/git/refs/heads/{BRANCH}", "--method", "DELETE", check=False)
+        delete_branch(repo, BRANCH)
     return closed
 
 
@@ -320,8 +364,13 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Resu
         if not additions and not deletions:
             closed = close_stale_prs(repo, sha)
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
-        point_branch(repo, head)
-        create_commit(repo, head, sha, additions, deletions, workspace)
+        point_branch(repo, SCRATCH_BRANCH, head)
+        try:
+            commit = create_commit(repo, SCRATCH_BRANCH, head, sha, additions, deletions, workspace)
+            # Move the sync branch while the scratch ref still holds the commit, so it is never unreferenced.
+            point_branch(repo, BRANCH, commit)
+        finally:
+            delete_branch(repo, SCRATCH_BRANCH)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files))
         warning = auto_merge_warning(node_id) if node_id else None

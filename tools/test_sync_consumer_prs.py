@@ -217,6 +217,99 @@ class RestPrTest(unittest.TestCase):
             self.assertEqual(sync.close_stale_prs("legacy-forever", "abc123"), [])
 
 
+class CheckoutTest(unittest.TestCase):
+    def test_a_synced_phrase_is_written_to_the_phrase_template(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "shortest-path-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "Locales").mkdir()
+            (root / "UI").mkdir()
+            (root / "Locales" / "phrases.txt").write_text("", encoding="utf-8")
+            (root / "tools" / "phrases.py").write_text(
+                "from pathlib import Path\n"
+                "text = Path('UI/TrackerHost.lua').read_text()\n"
+                "for phrase in sorted({part.split('\"')[0] for part in text.split('L[\"')[1:]}):\n"
+                '    print(f\'L["{phrase}"] = "{phrase}"\')\n',
+                encoding="utf-8",
+            )
+            real_run = sync.run
+
+            def fake_run(command, cwd=None, check=True, env=None):
+                if command[-1].endswith("phrases.py"):
+                    return real_run(command, cwd=cwd, check=check, env=env)
+                (root / "UI" / "TrackerHost.lua").write_text('L["new phrase"] = "new phrase"\n', encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(sync, "run", side_effect=fake_run):
+                sync.sync_checkout(root, root.parent)
+
+            self.assertEqual(
+                (root / "Locales" / "phrases.txt").read_text(encoding="utf-8"),
+                'L["new phrase"] = "new phrase"\n',
+            )
+
+    def test_a_phrase_extractor_importing_the_tools_package_runs(self):
+        # tweaks-forever's extractor imports `tools.forever_tools`, as `python3 -m tools.phrases` allows, while
+        # skillup-forever's imports a sibling module in tools/. One run must serve both.
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            core = workspace / "core"
+            (core / "tools").mkdir(parents=True)
+            (core / "tools" / "sync_consumers.py").write_text("", encoding="utf-8")
+            root = workspace / "tweaks-forever"
+            (root / "tools" / "forever_tools").mkdir(parents=True)
+            (root / "Locales").mkdir()
+            (root / "tools" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tools" / "forever_tools" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tools" / "forever_tools" / "lua.py").write_text("WORD = 'package'\n", encoding="utf-8")
+            (root / "tools" / "sibling.py").write_text("WORD = 'sibling'\n", encoding="utf-8")
+            (root / "tools" / "phrases.py").write_text(
+                "from tools.forever_tools.lua import WORD as A\nfrom sibling import WORD as B\nprint(A, B)\n",
+                encoding="utf-8",
+            )
+            (root / "Locales" / "phrases.txt").write_text("stale\n", encoding="utf-8")
+
+            sync.sync_checkout(root, core)
+
+            self.assertEqual((root / "Locales" / "phrases.txt").read_text(encoding="utf-8"), "package sibling\n")
+
+    def test_a_consumer_without_a_phrase_template_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "legacy-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "tools" / "phrases.py").write_text("# extractor\n", encoding="utf-8")
+            calls = []
+
+            def fake_run(command, cwd=None, check=True, env=None):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(sync, "run", side_effect=fake_run):
+                sync.sync_checkout(root, root.parent)
+
+            self.assertFalse(any(command[-1].endswith("phrases.py") for command in calls))
+
+    def test_a_failing_phrase_generator_fails_the_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            core = workspace / "core"
+            (core / "tools").mkdir(parents=True)
+            (core / "tools" / "sync_consumers.py").write_text("", encoding="utf-8")
+            root = workspace / "shortest-path-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "Locales").mkdir()
+            (root / "tools" / "phrases.py").write_text(
+                "import sys\nprint('no TOC', file=sys.stderr)\nraise SystemExit(3)\n", encoding="utf-8"
+            )
+            (root / "Locales" / "phrases.txt").write_text("stale\n", encoding="utf-8")
+
+            with self.assertRaises(sync.SyncError) as raised:
+                sync.sync_checkout(root, core)
+
+            self.assertIn("no TOC", str(raised.exception))
+            self.assertEqual((root / "Locales" / "phrases.txt").read_text(encoding="utf-8"), "stale\n")
+
+
 class SignedCommitTest(unittest.TestCase):
     def test_sync_consumer_sends_one_create_commit_on_branch_and_never_pushes(self):
         api_calls = []
@@ -236,7 +329,11 @@ class SignedCommitTest(unittest.TestCase):
         def fake_api(path, *args, check=True):
             api_calls.append((path, args, check))
             if path == "graphql" and "--input" in args:
-                requests.append(json.loads(Path(args[args.index("--input") + 1]).read_text(encoding="utf-8")))
+                request = json.loads(Path(args[args.index("--input") + 1]).read_text(encoding="utf-8"))
+                requests.append(request)
+                if "createCommitOnBranch" in request["query"]:
+                    made = {"data": {"createCommitOnBranch": {"commit": {"oid": "commitoid"}}}}
+                    return subprocess.CompletedProcess((path, *args), 0, json.dumps(made), "")
             if path.startswith("repos/cjber/legacy-forever/pulls?"):
                 return subprocess.CompletedProcess((path, *args), 0, "[]", "")
             if path == "repos/cjber/legacy-forever/pulls":
@@ -262,7 +359,8 @@ class SignedCommitTest(unittest.TestCase):
         self.assertEqual(len(commits), 1)
         given = commits[0]["variables"]["input"]
         self.assertEqual(
-            given["branch"], {"repositoryNameWithOwner": "cjber/legacy-forever", "branchName": "forever-core-sync"}
+            given["branch"],
+            {"repositoryNameWithOwner": "cjber/legacy-forever", "branchName": sync.SCRATCH_BRANCH},
         )
         self.assertEqual(given["expectedHeadOid"], "mainoid")
         self.assertEqual(given["message"], {"headline": sync.TITLE, "body": "Core commit: abc123"})
@@ -277,6 +375,59 @@ class SignedCommitTest(unittest.TestCase):
         self.assertFalse(any("push" in " ".join(command) for command in run_calls))
         self.assertFalse(any("commit" in " ".join(command) for command in run_calls))
 
+    def test_the_sync_branch_only_ever_moves_to_the_new_commit(self):
+        api_calls = []
+
+        def fake_git(root, *args, check=True):
+            if "rev-parse" in args:
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            api_calls.append((path, args, check))
+            if path == "graphql" and "--input" in args:
+                made = {"data": {"createCommitOnBranch": {"commit": {"oid": "commitoid"}}}}
+                return subprocess.CompletedProcess((path, *args), 0, json.dumps(made), "")
+            if path.startswith("repos/cjber/legacy-forever/pulls?"):
+                return subprocess.CompletedProcess((path, *args), 0, "[]", "")
+            if path == "repos/cjber/legacy-forever/pulls":
+                created = {"number": 9, "html_url": "https://example.test/pull/9", "node_id": "PR_9"}
+                return subprocess.CompletedProcess((path, *args), 0, json.dumps(created), "")
+            return subprocess.CompletedProcess((path, *args), 0, "{}", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "git", side_effect=fake_git),
+                mock.patch.object(sync, "sync_checkout"),
+                mock.patch.object(
+                    sync, "staged_changes", return_value=([{"path": "UI/TrackerHost.lua", "contents": "eA=="}], [])
+                ),
+                mock.patch.object(sync, "api", side_effect=fake_api),
+            ):
+                result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+
+        self.assertEqual(result.status, "opened")
+        sync_path = f"repos/cjber/legacy-forever/git/refs/heads/{sync.BRANCH}"
+        moves = [call for call in api_calls if call[0] == sync_path and any(arg.startswith("sha=") for arg in call[1])]
+        self.assertEqual(len(moves), 1)
+        self.assertIn("PATCH", moves[0][1])
+        self.assertIn("sha=commitoid", moves[0][1])
+        self.assertFalse(
+            any("sha=mainoid" in call[1] for call in moves),
+            "the sync branch must never point at main",
+        )
+        scratch_path = f"repos/cjber/legacy-forever/git/refs/heads/{sync.SCRATCH_BRANCH}"
+        scratch_deletes = [call for call in api_calls if call[0] == scratch_path and "DELETE" in call[1]]
+        self.assertEqual(len(scratch_deletes), 1)
+        commit_index = next(
+            index for index, call in enumerate(api_calls) if call[0] == "graphql" and "--input" in call[1]
+        )
+        # The commit, then the sync branch moves onto it, then the scratch ref goes: the commit is never unreferenced.
+        self.assertLess(commit_index, api_calls.index(moves[0]))
+        self.assertLess(api_calls.index(moves[0]), api_calls.index(scratch_deletes[0]))
+
     def test_a_missing_branch_ref_is_created_after_the_patch_fails(self):
         calls = []
 
@@ -286,7 +437,7 @@ class SignedCommitTest(unittest.TestCase):
             return subprocess.CompletedProcess((path, *args), code, "", "")
 
         with mock.patch.object(sync, "api", side_effect=fake_api):
-            sync.point_branch("legacy-forever", "mainoid")
+            sync.point_branch("legacy-forever", sync.BRANCH, "mainoid")
 
         self.assertIn("PATCH", calls[0][1])
         self.assertIn("force=true", calls[0][1])
