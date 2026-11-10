@@ -186,57 +186,18 @@ do
 	calls[1].handler(tip)
 	equal(#tip.lines, 2, "the processor handler reaches the board")
 	check(tip.lines[1].text:find("Forever: 1st overall this week", 1, true), "with the place")
-
-	api.VERSION = 0
-	local fresh = Load()
-	equal(#calls, 1, "a newer copy takes the hook without installing another")
-	check(fresh.tooltipHooked, "the flag is handed over")
-end
-
--- Version takeover -----------------------------------------------------------------------------------------------
-do
-	Client()
-	local env = harness.env
-	local api = Load()
-	api:Register("guide", spec("guide", { row("Me", 1, nil, true, "HUNTER") }, {}))
-	api:Open("guide")
-	local oldWindow = api.window
-	check(oldWindow:IsShown(), "the old window is open")
-
-	-- An older copy in the same environment is replaced by this one, which keeps its registrations.
-	api.VERSION = 0
-	local fresh = Load()
-	check(fresh ~= api, "a newer copy replaces an older global")
-	equal(env.ForeverLeaderboards, fresh, "the new global is published")
-	equal(api.window, oldWindow, "the old API keeps its own window reference")
-	check(oldWindow:IsShown() == false, "the old window is put away")
-	equal(#fresh:Boards(), 1, "registrations survive the takeover")
-	equal(fresh:Boards()[1].key, "guide", "with their keys")
-	check(fresh.tooltipHooked, "the one tooltip hook is handed over")
-	equal(#env.GameTooltip.hooks.OnTooltipSetUnit, 1, "and is not installed twice")
-
-	-- The older copy's own call sites reach the newer window.
-	fresh.VERSION = api.LEADERBOARDS_VERSION + 1
-	api:Register("late", spec("late", { row("Me", 1, nil, true, "HUNTER") }, {}))
-	equal(#fresh:Boards(), 2, "an old copy's Register joins the new API")
-	api:Open("late")
-	equal(fresh.window.heading.text, "Metric late", "an old copy's Open reaches the new window")
-	api:Toggle()
-	check(fresh.window:IsShown() == false, "an old copy's Toggle reaches the new window")
-
-	-- A copy older than the published global joins it instead of replacing it.
-	fresh.VERSION = api.LEADERBOARDS_VERSION + 8
-	local joined = Load()
-	equal(env.ForeverLeaderboards, fresh, "a newer global is kept")
-	equal(joined, fresh, "the older file adopts it")
 end
 
 -- The reach choice includes relayed peers -------------------------------------------------------------------------
 do
 	Client()
-	local env = harness.env
 	local manager = { includeRelayed = false }
-	env.ForeverPeerStats = manager
+	local api, ns = Load()
+	ns.PeerStats = {
+		Manager = function()
+			return manager
+		end,
+	}
 	local function board()
 		local include = manager.includeRelayed == true
 		local list = { row("Abe", 10, nil, false, "MAGE"), row("Me", 1, nil, true, "HUNTER") }
@@ -245,7 +206,6 @@ do
 		end
 		return list
 	end
-	local api = Load()
 	api:Register("guide", { title = "guide", metric = "Metric guide", icon = ICON, board = board })
 	api:Open("guide")
 	local window = api.window

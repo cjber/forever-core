@@ -95,57 +95,6 @@ local hiddenMenu = Menu(hideModule)
 Entry(hiddenMenu, "Hide this section").callback()
 check(writes == 1, "a hidden section is not written again")
 
--- An addon that owns its context menu gets that menu, and Blizzard's is never called: Adventure Guide draws its own
--- because Blizzard_Menu.AcquireMenu can assert in Forever 70009. The generator is the same either way.
-local owned = harness.new({ headerShown = true })
-local ownedMenus, blizzardCalls = {}, 0
-function owned.ns.ContextMenu(owner, generator)
-	local function Description()
-		local descriptionObject = { entries = {} }
-		function descriptionObject.CreateCheckbox(_, text, isSelected, setSelected)
-			descriptionObject.entries[#descriptionObject.entries + 1] =
-				{ text = text, isSelected = isSelected, setSelected = setSelected }
-			return {}
-		end
-		function descriptionObject.CreateRadio(_, text, isSelected, setSelected)
-			descriptionObject.entries[#descriptionObject.entries + 1] =
-				{ text = text, isSelected = isSelected, setSelected = setSelected }
-			return {}
-		end
-		function descriptionObject.CreateButton(_, text, callback)
-			if callback then
-				descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, callback = callback }
-				return {}
-			end
-			local submenu = Description()
-			submenu.text = text
-			descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, submenu = submenu }
-			return submenu
-		end
-		return descriptionObject
-	end
-	local ownedMenu = { owner = owner }
-	local root = Description()
-	generator(owner, root)
-	ownedMenu.entries = root.entries
-	ownedMenus[#ownedMenus + 1] = ownedMenu
-	return ownedMenu
-end
-owned.env.MenuUtil.CreateContextMenu = function()
-	blizzardCalls = blizzardCalls + 1
-end
-owned.first.Header.scripts.OnMouseUp(owned.first.Header, "RightButton")
-check(#ownedMenus == 1, "the addon-owned menu opens on a right click")
-check(blizzardCalls == 0, "the addon-owned menu replaces Blizzard's")
-check(ownedMenus[1].owner == owned.host, "the addon-owned menu opens on the shared column")
-local ownedAttach = Entry(ownedMenus[1], "Attach to quest tracker")
-check(ownedAttach ~= nil, "the addon-owned menu gets the same generator")
-check(ownedAttach.isSelected() == true, "the addon-owned menu reads the saved setting")
-ownedAttach.setSelected()
-check(owned.hostSettings.attached == false, "the addon-owned menu saves the setting")
-check(Entry(ownedMenus[1], "Lock the tracker") ~= nil, "the addon-owned menu offers Lock")
-check(Entry(ownedMenus[1], "Tracker background") ~= nil, "the addon-owned menu offers the tracker background")
-
 -- A section's own left click still runs, and a right click runs it too before the shared menu opens.
 local buttons = {}
 local third = t.module(3, function(_, button)
@@ -171,5 +120,35 @@ t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 drain()
 check(t.host.point[2] == t.parent, "combat's end applies the switch")
+
+-- A section's own show switch and menu entries run in its SafeCall, so a failure is recorded for that addon rather
+-- than propagating through the shared column.
+local safeCalls = {}
+local function safe(label, fn, ...)
+	safeCalls[#safeCalls + 1] = label
+	return pcall(fn, ...)
+end
+local safeModule = t.module(5, nil, {
+	get = function()
+		return true
+	end,
+	set = function()
+		error("the section's own setter failed")
+	end,
+	where = "Turn it back on in A Test Addon's settings.",
+	safeCall = safe,
+})
+local safeMenu = Menu(safeModule)
+Entry(safeMenu, "Hide this section").callback()
+check(safeCalls[1] == "tracker section show", "a section's show switch runs in its own SafeCall")
+local ownEntries = 0
+safeModule.safeCall = safe
+safeModule.AddHeaderMenuEntries = function(_, root)
+	ownEntries = ownEntries + 1
+	root:CreateButton("Own entry", function() end)
+end
+local ownMenu = Menu(safeModule)
+check(ownEntries == 1 and Entry(ownMenu, "Own entry") ~= nil, "a section's own menu entries are added")
+check(safeCalls[#safeCalls] == "tracker section menu", "and they run in its SafeCall")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")

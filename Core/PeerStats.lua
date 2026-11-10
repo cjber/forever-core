@@ -1,5 +1,4 @@
 local _, ns = ...
--- rule-ignore: file-size-no-growth - vendored byte for byte from forever-core
 
 -- Bounded guild and group peer statistics for the Forever addons. ns.PeerStats.New(config) returns one instance per
 -- addon: it sends that addon's own snapshot rows, stores validated rows from peers, and ranks a board. Nothing here
@@ -28,14 +27,12 @@ local _, ns = ...
 -- changes a saved identity, and a row from a foreign addon is ignored, so no suite-wide metric list exists. Old copies
 -- match only "^1|" and drop v2 messages, so mixed installs stay compatible.
 --
--- Every vendored copy shares one manager, the global ForeverPeerStats, which owns the send queue, the transport rate,
--- the channel epochs and the game events. The first loaded copy creates it, later copies adopt it, and a copy with a
--- newer MANAGER_VERSION takes it over together with the registered instances.
+-- Every addon in the client shares one manager, which owns the send queue, the transport rate, the channel epochs and
+-- the game events. The manager is module state: it is made once, when this file loads.
 
 local PREFIX = "WFAStats"
 local WIRE_VERSION = "1"
 local RELAY_VERSION = "2"
-local MANAGER_VERSION = 7
 
 -- Weekly baselines live beside the cumulative rows: `record.week`/`record.weekUnix` hold the first value heard this
 -- week, and the player's own baseline sits under WEEKLY_KEY in the same metric/subject layout. Older saved tables have
@@ -380,7 +377,7 @@ end
 -- Manager
 
 local function CreateManager()
-	local m = { version = MANAGER_VERSION, order = {}, instances = {}, epoch = {} }
+	local m = { order = {}, instances = {}, epoch = {} }
 	local queue, queueIndex = {}, {}
 	local timerPending, timerToken, syncPending = false, 0, false
 	local available, groupSize, roster = {}, 0, ""
@@ -645,30 +642,11 @@ local function CreateManager()
 	return m
 end
 
-local manager = _G.ForeverPeerStats
-if type(manager) ~= "table" or type(manager.version) ~= "number" or type(manager.Register) ~= "function" then
-	manager = CreateManager()
-	_G.ForeverPeerStats = manager
-elseif manager.version < MANAGER_VERSION then
-	local old = manager
-	manager = CreateManager()
-	old.Retire()
-	for _, addon in ipairs(old.order) do
-		local inst = old.instances[addon]
-		if inst then
-			inst:Cancel()
-			manager.Register(inst)
-		end
-	end
-	_G.ForeverPeerStats = manager
-end
+local manager = CreateManager()
 
 -- The manager now published, which a newer copy may have replaced since this file ran.
 local function Manager()
-	local current = _G.ForeverPeerStats
-	if type(current) == "table" and type(current.Enqueue) == "function" then
-		return current
-	end
+	return manager
 end
 
 --------------------------------------------------------------------------------------------------------------------
@@ -858,10 +836,26 @@ local function SanitizeStore(self, raw)
 	self.revision = self.revision + 1
 end
 
+-- A consumer callback runs in the registering addon's SafeCall, so a failure lands in that addon's journal.
+---@param config table
+---@param label string
+---@param fn function
+---@return boolean ok, any ...
+local function RunSafe(config, label, fn, ...)
+	local safe = type(config) == "table" and config.safeCall
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
+end
+
 -- The caller's peer table, sanitized the first time it is seen; nil while there is none.
 ---@param self ForeverPeerStatsInstance
 local function EnsureStore(self)
-	local ok, store = pcall(self.config.db)
+	local ok, store = RunSafe(self.config, "peer stats database", self.config.db)
 	if not ok or type(store) ~= "table" then
 		return nil
 	end
@@ -928,7 +922,7 @@ function Instance:IsEnabled()
 	if not self.dead and self.override ~= false then
 		local allowed = true
 		if type(self.config.enabled) == "function" then
-			local ok, value = pcall(self.config.enabled)
+			local ok, value = RunSafe(self.config, "peer stats enabled", self.config.enabled)
 			allowed = not ok or value ~= false
 		end
 		on = allowed and EnsureStore(self) ~= nil or false
@@ -1033,7 +1027,7 @@ function Instance:Sync(onlyDeferred)
 	local now = Now()
 	local list, byKey, observed = {}, {}, {}
 	if type(self.config.snapshot) == "function" then
-		local ok, rows = pcall(self.config.snapshot)
+		local ok, rows = RunSafe(self.config, "peer stats snapshot", self.config.snapshot)
 		if ok and type(rows) == "table" then
 			for index = 1, math.min(#rows, MAX_SNAPSHOT) do
 				local row = rows[index]
@@ -1774,6 +1768,12 @@ end
 ---@return ForeverPeerStatsInstance
 function PeerStats.Listen(owner, config)
 	return New(config, owner or "")
+end
+
+-- The one manager this file made, for Core/LeaderboardsData.lua's reach switch and for a spec.
+---@return table
+function PeerStats.Manager()
+	return manager
 end
 
 ns.PeerStats = PeerStats

@@ -1,10 +1,10 @@
-"""Check every consuming Forever addon's vendored copy against this repo.
+"""Check every consuming Forever addon's copy of core's development tooling against this repo.
 
-Each consumer carries a byte-identical copy of the files tools/check_core_shared.py lists in VENDORED: that is what
-lets them work alone, with no dependency to install. This gate is what stops the copies drifting: it compares each
-repo's main branch (or a local checkout) with this repo's copy and names every mismatch. Consumers are compared from
-this repo (a private one needs `GH_TOKEN` to be readable, and is otherwise reported as missing rather than crashing);
-`--local` supports an offline check against local clones.
+Each consumer carries a byte-identical copy of the files tools/check_core_shared.py lists in VENDORED: the project
+rules and the dead-code gate. This gate is what stops the copies drifting: it compares each repo's main branch (or a
+local checkout) with this repo's copy and names every mismatch. Consumers are compared from this repo (a private one
+needs `GH_TOKEN` to be readable, and is otherwise reported as missing rather than crashing); `--local` supports an
+offline check against local clones.
 """
 
 import argparse
@@ -76,7 +76,7 @@ def main(argv=None):
                 failures.append(f"{repo}: {target}: {digest(theirs)[:12]} here {digest(mine)[:12]}")
 
     if failures:
-        print("Vendored copies drifted from this repo's shared files:")
+        print("Vendored tooling drifted from this repo's copies:")
         for failure in failures:
             print(f"  {failure}")
         print("Fix with tools/sync_consumers.py, then commit the copies in the consumer repos.")

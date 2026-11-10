@@ -30,14 +30,10 @@ function TrackerLock.Grip(host, source)
 	grip:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
 	grip:SetHeight(24)
 	grip:RegisterForDrag("LeftButton")
-	-- Read with rawget: the host is shared with the companion addons, whose ns.L carries no tracker keys at all. A
-	-- constant a translation file sets wins; otherwise the English is the addon's own L phrase, so a translation of
-	-- that phrase reaches the grip as it reaches Settings.
 	local L = ns.L
-	local title = rawget(L, "TRACKER_DRAG_TITLE") or L["Forever tracker"]
-	local drag = rawget(L, "TRACKER_DRAG_TOOLTIP") or L["Drag to move"]
-	local locked = rawget(L, "TRACKER_LOCKED_TOOLTIP")
-		or L["The tracker is locked. Turn off Lock the tracker to move it."]
+	local title = L["Forever tracker"]
+	local drag = L["Drag to move"]
+	local locked = L["The tracker is locked. Turn off Lock the tracker to move it."]
 	local label = grip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	label:SetPoint("CENTER", grip, "CENTER", 0, 0)
 	label:SetText(title)

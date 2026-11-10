@@ -1,17 +1,16 @@
-local addonName, ns = ...
+local coreName, ns = ...
 
--- Shared error capture for the report window. ns.SafeCall runs a callback as pcall does and keeps the last few
--- errors; the journal beneath it also records this addon's unwrapped errors, blocked and forbidden actions and Lua
--- warnings, so a report can include them after a reload. The journal stays in memory until a consumer hands it its
--- saved table with ns.AttachErrorJournal(store). Nothing here knows about the rest of the addon: an error belongs
--- to us when its message or stack names this addon's folder, "AddOns/<addonName>/".
+-- Shared error capture for the report window. SafeCall runs a callback as pcall does and keeps the last few errors;
+-- the journal beneath it also records an addon's unwrapped errors, blocked and forbidden actions and Lua warnings, so
+-- a report can include them after a reload. One copy of this file loads, in ForeverCore, so it installs one global
+-- error handler for every addon that registers. An error belongs to an addon when its message or stack names that
+-- addon's folder, "AddOns/<addonName>/"; ForeverCore's own files are registered like any addon.
 
 local MAX_ERRORS = 5
 local MAX_MESSAGE = 300
 local STACK_LINES = 4
 local MAX_SIGNATURES = 50
 local MAX_ADDONS = 60
-local OWN = "AddOns/" .. tostring(addonName) .. "/"
 
 ---@class ForeverCaughtError
 ---@field label? string where it was caught, e.g. "route listener"
@@ -28,18 +27,6 @@ local OWN = "AddOns/" .. tostring(addonName) .. "/"
 ---@field build? string the client build at first sight
 ---@field locale? string the client locale at first sight
 ---@field addons? string[] the other addons loaded at first sight
-
--- Oldest first; a repeat moves to the end with its count raised.
----@type ForeverCaughtError[]
-local caught = {}
-
--- Every signature recorded this session, so a journal entry from this session is never shown as an earlier one.
----@type table<string, boolean>
-local session = {}
-
--- The journal, oldest first. It is this copy's memory until ns.AttachErrorJournal gives it the saved table.
----@type ForeverCaughtError[]
-local journal = {}
 
 ---@param text string
 ---@param limit integer
@@ -74,12 +61,6 @@ local function ToString(value)
 	return ok and text or "?"
 end
 
----@param text? string
----@return boolean
-local function Own(text)
-	return type(text) == "string" and text:find(OWN, 1, true) ~= nil
-end
-
 -- Numbers and addresses move between sessions, so the signature keeps only their shape.
 ---@param text string
 ---@return string
@@ -102,32 +83,13 @@ local function StackLines(stack)
 	return lines
 end
 
--- The first stack frame in this addon's folder separates two errors with the same message.
----@param stack? string
----@return string
-local function OwnFrame(stack)
-	for line in (stack or ""):gmatch("[^\n]+") do
-		line = strtrim(line)
-		if Own(line) then
-			return line
-		end
-	end
-	return ""
-end
-
----@param message string
----@param stack? string
----@return string
-local function Signature(message, stack)
-	return Normalize(message) .. "\n" .. OwnFrame(stack)
-end
-
+---@param name string
 ---@return string?
-local function AddonVersion()
+local function AddonVersion(name)
 	if not (C_AddOns and C_AddOns.GetAddOnMetadata) then
 		return nil
 	end
-	local ok, version = pcall(C_AddOns.GetAddOnMetadata, addonName, "Version")
+	local ok, version = pcall(C_AddOns.GetAddOnMetadata, name, "Version")
 	return ok and version or nil
 end
 
@@ -150,8 +112,9 @@ local function ClientLocale()
 end
 
 -- The other addons loaded when a signature is first seen, capped so one entry cannot bloat the saved table.
+---@param name string
 ---@return string[]?
-local function LoadedAddons()
+local function LoadedAddons(name)
 	local addOns = C_AddOns
 	if not (addOns and addOns.GetNumAddOns and addOns.GetAddOnInfo and addOns.IsAddOnLoaded) then
 		return nil
@@ -162,9 +125,9 @@ local function LoadedAddons()
 			if #result >= MAX_ADDONS then
 				break
 			end
-			local name = addOns.GetAddOnInfo(index)
-			if type(name) == "string" and name ~= addonName and addOns.IsAddOnLoaded(index) then
-				result[#result + 1] = name
+			local addon = addOns.GetAddOnInfo(index)
+			if type(addon) == "string" and addon ~= name and addOns.IsAddOnLoaded(index) then
+				result[#result + 1] = addon
 			end
 		end
 		return result
@@ -283,12 +246,61 @@ local function Merge(into, entry)
 	end
 end
 
+-- One addon's journal, caught list and session set.
+---@class ForeverSafeCallContext
+---@field name string
+---@field own string this addon's folder as it appears in a stack, "AddOns/<name>/"
+---@field caught ForeverCaughtError[]
+---@field session table<string, boolean>
+---@field journal ForeverCaughtError[]
+local Context = {}
+Context.__index = Context
+
+---@param name string
+---@return ForeverSafeCallContext
+local function NewContext(name)
+	name = tostring(name)
+	return setmetatable({
+		name = name,
+		own = "AddOns/" .. name .. "/",
+		caught = {},
+		session = {},
+		journal = {},
+	}, Context)
+end
+
+---@param text? string
+---@return boolean
+function Context:Own(text)
+	return type(text) == "string" and text:find(self.own, 1, true) ~= nil
+end
+
+-- The first stack frame in this addon's folder separates two errors with the same message.
+---@param stack? string
+---@return string
+function Context:OwnFrame(stack)
+	for line in (stack or ""):gmatch("[^\n]+") do
+		line = strtrim(line)
+		if self:Own(line) then
+			return line
+		end
+	end
+	return ""
+end
+
+---@param message string
+---@param stack? string
+---@return string
+function Context:Signature(message, stack)
+	return Normalize(message) .. "\n" .. self:OwnFrame(stack)
+end
+
 ---@param signature string
 ---@param kind string
 ---@param message string
 ---@param stack? string
-local function Journal(signature, kind, message, stack)
-	local entry = Find(journal, signature)
+function Context:Journal(signature, kind, message, stack)
+	local entry = Find(self.journal, signature)
 	local now = Now()
 	local lines = table.concat(StackLines(stack), "\n")
 	if entry then
@@ -297,7 +309,7 @@ local function Journal(signature, kind, message, stack)
 		entry.message = Cut(message, MAX_MESSAGE)
 		entry.stack = lines
 	else
-		journal[#journal + 1] = {
+		self.journal[#self.journal + 1] = {
 			signature = signature,
 			kind = kind,
 			message = Cut(message, MAX_MESSAGE),
@@ -305,13 +317,13 @@ local function Journal(signature, kind, message, stack)
 			count = 1,
 			firstSeen = now,
 			lastSeen = now,
-			version = AddonVersion(),
+			version = AddonVersion(self.name),
 			build = ClientBuild(),
 			locale = ClientLocale(),
-			addons = LoadedAddons(),
+			addons = LoadedAddons(self.name),
 		}
 	end
-	Trim(journal)
+	Trim(self.journal)
 end
 
 ---@param signature string
@@ -319,13 +331,13 @@ end
 ---@param kind string
 ---@param message string
 ---@param stack? string
-local function Session(signature, label, kind, message, stack)
-	session[signature] = true
-	local entry, index = Find(caught, signature)
+function Context:Session(signature, label, kind, message, stack)
+	self.session[signature] = true
+	local entry, index = Find(self.caught, signature)
 	local now = Now()
 	local lines = table.concat(StackLines(stack), "\n")
 	if entry then
-		table.remove(caught, index)
+		table.remove(self.caught, index)
 	else
 		entry = {
 			signature = signature,
@@ -343,9 +355,9 @@ local function Session(signature, label, kind, message, stack)
 	entry.rawMessage = message
 	entry.stack = lines
 	entry.count = entry.count + 1
-	caught[#caught + 1] = entry
-	if #caught > MAX_ERRORS then
-		table.remove(caught, 1)
+	self.caught[#self.caught + 1] = entry
+	if #self.caught > MAX_ERRORS then
+		table.remove(self.caught, 1)
 	end
 end
 
@@ -353,27 +365,27 @@ end
 ---@param label string
 ---@param message any
 ---@param stack? string
-local function Record(kind, label, message, stack)
+function Context:Record(kind, label, message, stack)
 	local text = ToString(message)
-	local signature = Signature(text, stack)
-	Journal(signature, kind, text, stack)
-	Session(signature, label, kind, text, stack)
+	local signature = self:Signature(text, stack)
+	self:Journal(signature, kind, text, stack)
+	self:Session(signature, label, kind, text, stack)
 end
 
 -- Keep `message` from `label`, with `stack` (a traceback) cut to its first lines that name a file.
 ---@param label string
 ---@param message any
 ---@param stack? string
-function ns.RecordError(label, message, stack)
-	Record("error", label, message, stack)
+function Context:RecordError(label, message, stack)
+	self:Record("error", label, message, stack)
 end
 
 -- This session's errors first, then earlier sessions' from the journal, each marked with whether it is from this
 -- session, as copies.
 ---@return ForeverCaughtError[]
-function ns.CaughtErrors()
+function Context:CaughtErrors()
 	local copies = {}
-	for _, entry in ipairs(caught) do
+	for _, entry in ipairs(self.caught) do
 		copies[#copies + 1] = {
 			label = entry.label,
 			kind = entry.kind,
@@ -387,8 +399,8 @@ function ns.CaughtErrors()
 			lastSeen = entry.lastSeen,
 		}
 	end
-	for _, entry in ipairs(journal) do
-		if not session[entry.signature] then
+	for _, entry in ipairs(self.journal) do
+		if not self.session[entry.signature] then
 			copies[#copies + 1] = {
 				label = entry.kind or "error",
 				kind = entry.kind,
@@ -412,43 +424,66 @@ end
 
 -- Use `store`, a table from the addon's saved variables, for the journal and merge what was recorded before it loaded.
 ---@param store table
-function ns.AttachErrorJournal(store)
-	if type(store) ~= "table" or store == journal then
+function Context:Attach(store)
+	if type(store) ~= "table" or store == self.journal then
 		return
 	end
 	Sanitize(store)
-	for _, entry in ipairs(journal) do
+	for _, entry in ipairs(self.journal) do
 		Merge(store, entry)
 	end
 	Trim(store)
-	journal = store
+	self.journal = store
 end
 
--- The labels of the SafeCalls under way, innermost last: the message handler names the call it runs in.
----@type string[]
+-- The labels of the SafeCalls under way, innermost last, with the context each belongs to.
+---@type { ctx: ForeverSafeCallContext, label: string }[]
 local labels = {}
-
--- Every vendored copy shares this registry: one install per addon name, and one flag that suppresses recording while
--- ns.SafeCall hands an error to the game's handler. It is addon state; nothing of Blizzard's reads it.
-local shared = _G.ForeverErrorJournal
-if type(shared) ~= "table" then
-	shared = { installed = {}, delivering = false }
-	_G.ForeverErrorJournal = shared
-end
 
 local previousHandler
 local inHandler = false
+-- Set while a caught error is handed to the game's handler, so that handler does not record it a second time.
+local delivering = false
+
+---@type table<string, ForeverSafeCallContext>
+local registered = {}
+
+-- The context for `name`, made on first use and always the same table afterwards.
+---@param name string
+---@return ForeverSafeCallContext
+function ns.SafeCallFor(name)
+	name = tostring(name or "?")
+	local context = registered[name]
+	if not context then
+		context = NewContext(name)
+		registered[name] = context
+	end
+	return context
+end
 
 -- BugGrabber replaces seterrorhandler with a no-op so it stays the only handler. When it does, its EventRegistry
--- callback is the only place an unwrapped error reaches us; it fires the error object's tostring, and
--- GetErrorByID turns that back into the object, which carries the same message and stack.
+-- callback is the only place an unwrapped error reaches us; it fires the error object's tostring, and GetErrorByID
+-- turns that back into the object, which carries the same message and stack.
 local bugGrabberAttached = false
 local bugGrabberTarget = {}
+
+-- Every registered addon whose folder the text names records it.
+---@param kind string
+---@param label string
+---@param message string
+---@param stack? string
+local function RecordMatching(kind, label, message, stack)
+	for _, context in pairs(registered) do
+		if context:Own(message) or context:Own(stack) then
+			context:Record(kind, label, message, stack)
+		end
+	end
+end
 
 ---@param _ any the target this file registered, as EventRegistry passes it back
 ---@param tableID string the error object's tostring, as BugGrabber fires it
 local function FromBugGrabber(_, tableID)
-	if shared.delivering or inHandler then
+	if delivering or inHandler then
 		return
 	end
 	local grabber = _G["BugGrabber"]
@@ -459,10 +494,7 @@ local function FromBugGrabber(_, tableID)
 	if not ok or type(errorObject) ~= "table" then
 		return
 	end
-	local message, stack = errorObject.message, errorObject.stack
-	if Own(message) or Own(stack) then
-		Record("error", "Lua error", message, stack)
-	end
+	RecordMatching("error", "Lua error", ToString(errorObject.message), errorObject.stack)
 end
 
 -- Attach once BugGrabber and the client's EventRegistry exist. It may load before us, or after us, so the event
@@ -483,15 +515,15 @@ local function AttachBugGrabber()
 	pcall(registry.RegisterCallback, registry, "BugGrabber.BugGrabbed", FromBugGrabber, bugGrabberTarget)
 end
 
--- The global error handler: keep this addon's errors, then always pass the error on, so BugSack and the default
--- error frame still see exactly what they saw before.
+-- The global error handler: keep every registered addon's errors, then always pass the error on, so BugSack and the
+-- default error frame still see exactly what they saw before.
 ---@param message any
 ---@return any
 local function Handler(message)
 	local text = ToString(message)
 	local stack = debugstack and debugstack(2) or debug.traceback("", 2)
-	if not shared.delivering and (Own(text) or Own(stack)) then
-		Record("error", "Lua error", text, stack)
+	if not delivering then
+		RecordMatching("error", "Lua error", text, stack)
 	end
 	if not previousHandler then
 		return nil
@@ -504,16 +536,23 @@ local function Handler(message)
 	end
 end
 
--- xpcall's message handler, at the error, before the stack unwinds: keep it for the report, then hand it to the
--- game's error handler here, so BugSack and the error frame capture the stack and locals where it happened.
+-- xpcall's message handler, at the error, before the stack unwinds: keep it for the caller's report, then hand it to
+-- the game's error handler here, so BugSack and the error frame capture the stack and locals where it happened.
+---@param message any
 local function Trace(message)
-	ns.RecordError(labels[#labels] or "?", message, debugstack and debugstack(2) or debug.traceback())
-	local delivering = shared.delivering
-	shared.delivering = true
+	-- The addon that wrapped the call owns its failure. The stack always passes through this file, so matching
+	-- folders would also file every wrapped error under ForeverCore.
+	local entry = labels[#labels]
+	local stack = debugstack and debugstack(2) or debug.traceback()
+	if entry then
+		entry.ctx:Record("error", entry.label, ToString(message), stack)
+	end
+	local wasDelivering = delivering
+	delivering = true
 	pcall(function()
 		return geterrorhandler()(message)
 	end)
-	shared.delivering = delivering
+	delivering = wasDelivering
 	return message
 end
 
@@ -522,56 +561,63 @@ local function Finish(...)
 	return ... -- multi-value: xpcall's answers, as pcall gives them
 end
 
--- Run fn(...) as pcall would: true and its results, or false and the error. A failure is kept for the report and
--- passed on to the game's error handler, never swallowed.
+-- Run fn(...) as pcall would: true and its results, or false and the error. A failure is kept for this addon's report
+-- and passed on to the game's error handler, never swallowed.
 ---@param label string where this call is made from, as the report names it
 ---@param fn function
 ---@return boolean ok, any ...
-function ns.SafeCall(label, fn, ...)
-	labels[#labels + 1] = label
+function Context:SafeCall(label, fn, ...)
+	labels[#labels + 1] = { ctx = self, label = label }
 	return Finish(xpcall(fn, Trace, ...))
 end
 
--- Install the handler and event frame once per addon. Each Forever addon's copy wraps the chain once and records
--- only errors that name its own folder, so several installed addons never record the same error twice.
-if addonName and not shared.installed[addonName] then
-	shared.installed[addonName] = true
-	previousHandler = type(geterrorhandler) == "function" and geterrorhandler() or nil
-	local set = _G.seterrorhandler
-	if type(set) == "function" then
-		set(Handler)
-	end
-	if type(geterrorhandler) == "function" and geterrorhandler() ~= Handler then
-		AttachBugGrabber()
-	end
-	if type(CreateFrame) == "function" then
-		local frame = CreateFrame("Frame")
-		frame:RegisterEvent("ADDON_ACTION_BLOCKED")
-		frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
-		frame:RegisterEvent("LUA_WARNING")
-		frame:RegisterEvent("ADDON_LOADED")
-		frame:RegisterEvent("PLAYER_LOGIN")
-		frame:SetScript("OnEvent", function(_, event, ...)
-			if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
-				AttachBugGrabber()
-			elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-				local blockedAddon, functionName = ...
-				if blockedAddon == addonName then
-					local blocked = event == "ADDON_ACTION_BLOCKED"
-					local kind = blocked and "blocked" or "forbidden"
-					local action = ToString(functionName)
-					Record(kind, kind .. " action", (blocked and "Blocked: " or "Forbidden: ") .. action, nil)
-				end
-			elseif event == "LUA_WARNING" then
-				local parts = {}
-				for index = 1, select("#", ...) do
-					parts[index] = ToString((select(index, ...)))
-				end
-				local text = table.concat(parts, " ")
-				if Own(text) then
-					Record("warning", "Lua warning", text, nil)
-				end
+-- The markers on a name the client may hold secret cannot be read; that is not this addon's error.
+---@param name string
+---@return boolean
+local function IsRegisteredName(name)
+	return registered[name] ~= nil
+end
+
+-- Install the handler and event frame once for the whole client. Every registered addon shares it.
+previousHandler = type(geterrorhandler) == "function" and geterrorhandler() or nil
+local set = _G.seterrorhandler
+if type(set) == "function" then
+	set(Handler)
+end
+if type(geterrorhandler) == "function" and geterrorhandler() ~= Handler then
+	AttachBugGrabber()
+end
+if type(CreateFrame) == "function" then
+	local frame = CreateFrame("Frame")
+	frame:RegisterEvent("ADDON_ACTION_BLOCKED")
+	frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+	frame:RegisterEvent("LUA_WARNING")
+	frame:RegisterEvent("ADDON_LOADED")
+	frame:RegisterEvent("PLAYER_LOGIN")
+	frame:SetScript("OnEvent", function(_, event, ...)
+		if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
+			AttachBugGrabber()
+		elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+			local blockedAddon, functionName = ...
+			local context = IsRegisteredName(blockedAddon) and registered[blockedAddon] or nil
+			if context then
+				local blocked = event == "ADDON_ACTION_BLOCKED"
+				local kind = blocked and "blocked" or "forbidden"
+				local action = ToString(functionName)
+				context:Record(kind, kind .. " action", (blocked and "Blocked: " or "Forbidden: ") .. action, nil)
 			end
-		end)
-	end
+		elseif event == "LUA_WARNING" then
+			local parts = {}
+			for index = 1, select("#", ...) do
+				parts[index] = ToString((select(index, ...)))
+			end
+			RecordMatching("warning", "Lua warning", table.concat(parts, " "), nil)
+		end
+	end)
+end
+
+-- Core's own context: errors in ForeverCore's files are recorded under ForeverCore.
+local core = ns.SafeCallFor(coreName or "ForeverCore")
+ns.SafeCall = function(...)
+	return core:SafeCall(...)
 end

@@ -11,13 +11,8 @@ local _, ns = ...
 ---@field spec ForeverQuestLogTabSpec
 ---@field tab ForeverQuestLogTab
 
--- Each Forever addon with a quest log panel vendors this file, so each loads its own copy. They share one
--- registry, published by the first copy to load, so every addon's tab stacks in the one column. The registry is
--- addon state: nothing of Blizzard's reads it.
-if ForeverQuestLogTabs then
-	ns.QuestLogTabs = ForeverQuestLogTabs
-	return
-end
+-- Each Forever addon registers its panel here; every addon's tab stacks in the one column. The registry is addon
+-- state: nothing of Blizzard's reads it.
 
 ---@class ForeverQuestLogTabsAPI
 local api = {}
@@ -57,13 +52,20 @@ end
 
 -- Tell a panel whether the player can see it. No panel sets OnShow or OnHide: a script under WorldMapFrame runs
 -- inside the map's close path, where addon taint blocks the gamepad's interact target (shortest-path-forever#158).
----@param spec ForeverQuestLogTabSpec
+-- The panel's callback runs in its addon's SafeCall when one was registered, so a failure lands in that journal.
+---@param entry ForeverQuestLogTabEntry
 ---@param visible boolean
-local function NotifyShown(spec, visible)
+local function NotifyShown(entry, visible)
+	local spec = entry.spec
 	if not spec.shown then
 		return
 	end
-	if securecallfunction then
+	local safe = spec.safeCall
+	if safe then
+		safe("quest log tab shown", spec.shown, visible)
+	elseif ns.SafeCall then
+		ns.SafeCall("quest log tab shown", spec.shown, visible)
+	elseif securecallfunction then
 		securecallfunction(spec.shown, visible)
 	else
 		spec.shown(visible)
@@ -90,14 +92,14 @@ local function Sync(mapShown)
 	if previous then
 		local entry = tabs[previous]
 		if entry then
-			NotifyShown(entry.spec, false)
+			NotifyShown(entry, false)
 		end
 	end
 	if key then
 		local entry = tabs[key]
 		if entry then
 			reportedKey = key
-			NotifyShown(entry.spec, true)
+			NotifyShown(entry, true)
 		end
 	end
 end
@@ -190,10 +192,10 @@ end
 ---@return ForeverQuestLogTab
 function api.Register(key, spec)
 	if type(key) ~= "string" or key == "" then
-		error("ForeverQuestLogTabs.Register: key must be a non-empty string", 2)
+		error("ForeverCore.QuestLogTabs.Register: key must be a non-empty string", 2)
 	end
 	if tabs[key] then
-		error("ForeverQuestLogTabs.Register: key already registered: " .. key, 2)
+		error("ForeverCore.QuestLogTabs.Register: key already registered: " .. key, 2)
 	end
 	Install()
 	local tab = NewTab(spec.name)
@@ -250,5 +252,4 @@ function api.Selected()
 	return selectedKey
 end
 
-ForeverQuestLogTabs = api
 ns.QuestLogTabs = api

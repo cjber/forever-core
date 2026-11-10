@@ -153,8 +153,7 @@ local function load()
 	assert(loadfile("Core/MinimapButton.lua"))("Addon", ns)
 	return ns.MinimapButton
 end
-local first, second = load(), load()
-assert(first ~= second)
+local first = load()
 
 local clicked = {}
 local function spec(name, settings)
@@ -225,11 +224,11 @@ assert(a.icon.points[1] == "CENTER" and #a.icon.points == 1, "nudge stayed")
 
 -- A second addon gets the next free angle rather than landing on the first one.
 local settingsB2 = {}
-local b = second.Create(spec("SecondMinimapButton", settingsB2))
+local b = first.Create(spec("SecondMinimapButton", settingsB2))
 assert(b, "no second button")
 assert(settingsB2.minimapButtonAngle == 195, settingsB2.minimapButtonAngle)
 assert(math.abs(a.angle - b.angle) >= 25, "two buttons on one angle")
-assert(#_G.ForeverMinimapButtons.buttons == 2, "registry")
+assert(#first.Buttons() == 2, "registry")
 
 -- The angle is an offset from the Minimap's centre, not a screen position.
 local point, relativeTo, relativePoint, x, y = a:GetPoint()
@@ -266,23 +265,58 @@ settingsA.minimapButtonHidden = true
 first.Refresh()
 assert(not a:IsShown(), "hide flag ignored")
 settingsB2.minimapButtonHidden = true
-second.Refresh()
+first.Refresh()
 assert(not b:IsShown(), "second hide flag ignored")
 settingsA.minimapButtonHidden = false
 settingsB2.minimapButtonHidden = false
 first.Refresh()
-second.Refresh()
 assert(a:IsShown() and b:IsShown(), "buttons stayed hidden")
 assert(math.abs(a.angle - 90) < 0.01, "angle lost while hidden")
 
 -- Destroy takes the button out of the shared ring and clears the host's reference.
 first.Destroy(a)
-assert(#_G.ForeverMinimapButtons.buttons == 1, "destroyed button stayed in the registry")
+assert(#first.Buttons() == 1, "destroyed button stayed in the registry")
 assert(aSpec.host.minimapButton == nil, "host still points at the destroyed button")
+
+-- A button records its callbacks under the addon that registered it, not under ForeverCore.
+local ownerNs = newNs()
+local coreCalls, ownerCalls = {}, {}
+ownerNs.SafeCall = function(label, fn, ...)
+	coreCalls[#coreCalls + 1] = label
+	return pcall(fn, ...)
+end
+assert(loadfile("Core/MinimapButton.lua"))("OwnerAddon", ownerNs)
+local ownerModule = ownerNs.MinimapButton
+local ownerSpec = spec("OwnerMinimapButton", {})
+ownerSpec.safeCall = function(label, fn, ...)
+	ownerCalls[#ownerCalls + 1] = label
+	return pcall(fn, ...)
+end
+ownerSpec.onClick = function()
+	error("the addon's click failed")
+end
+local ownerButton = ownerModule.Create(ownerSpec)
+assert(ownerButton, "no owner button")
+ownerCalls = {}
+ownerButton.scripts.OnClick(ownerButton, "LeftButton")
+assert(#ownerCalls == 1 and ownerCalls[1] == "minimap button click", "the click did not run in the owner's SafeCall")
+assert(#coreCalls == 0, "the click was recorded under ForeverCore")
+ownerModule.Refresh()
+assert(#ownerCalls == 2 and ownerCalls[2] == "minimap button refresh", "the refresh did not use the owner's SafeCall")
+assert(#coreCalls == 0, "the refresh was recorded under ForeverCore")
+
+-- Without an addon SafeCall, core's is the fallback.
+local fallbackSpec = spec("FallbackMinimapButton", {})
+fallbackSpec.onClick = function() end
+local fallbackButton = ownerModule.Create(fallbackSpec)
+ownerCalls, coreCalls = {}, {}
+fallbackButton.scripts.OnClick(fallbackButton, "LeftButton")
+assert(#coreCalls == 1 and coreCalls[1] == "minimap button click", "the fallback did not use core's SafeCall")
+assert(#ownerCalls == 0, "the fallback called an addon SafeCall")
 
 -- Without the client's Minimap the module says so and skips the button instead of erroring.
 local saved = _G.Minimap
 _G.Minimap = nil
-assert(second.Create(spec("MissingMinimapButton", {})) == nil, "made a button with no Minimap")
+assert(first.Create(spec("MissingMinimapButton", {})) == nil, "made a button with no Minimap")
 assert(messages[#messages] == "MINIMAP_UNAVAILABLE", messages[#messages])
 _G.Minimap = saved

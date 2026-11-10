@@ -1,7 +1,6 @@
 ---@meta
 
--- The tracker contract's classes, declared once here and vendored to every addon that ships the shared
--- UI/Tracker*.lua files, so a new setting or host method is declared in one place instead of a hand copy per addon.
+-- The tracker contract's classes, declared once here for core's own UI/Tracker*.lua files.
 
 ---@class ForeverTrackerSettings
 ---@field attached boolean the column follows the native quest tracker
@@ -9,6 +8,17 @@
 ---@field scale? number the player's tracker scale, 0.5 to 2; the host reads a missing one as 1
 ---@field backdropOpacity? number the optional backdrop's opacity, 0 (off) to 1
 ---@field x? number the detached position, from UIParent's top left corner
+---@field y? number
+---@field migrated? boolean the one-time copy from a consumer's old tracker settings is done
+
+-- A Forever addon's old tracker table, offered once with its first attached section so its saved scale, lock and
+-- position carry over into ForeverCoreDB.
+---@class ForeverTrackerLegacySettings
+---@field attached? boolean
+---@field locked? boolean
+---@field scale? number
+---@field backdropOpacity? number
+---@field x? number
 ---@field y? number
 
 ---@class ForeverTrackerGrip
@@ -19,9 +29,10 @@
 ---@field get fun(): boolean whether the section is currently shown
 ---@field set fun(shown: boolean) the addon's own switch, which hides the section as its settings checkbox does
 ---@field where string the place the player turns it back on, in the addon's own words
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own getter and setter
 
 ---@class ForeverTrackerHostAPI
----@field Attach fun(module: Frame, show?: ForeverTrackerShowSetting) the section's optional show switch, offered as Hide this section
+---@field Attach fun(module: ForeverTrackerModule, show?: ForeverTrackerShowSetting) the section's optional show switch, offered as Hide this section
 ---@field IsAttached fun(module: Frame?): boolean
 ---@field GetSettings fun(): ForeverTrackerSettings
 ---@field GetScale fun(): number
@@ -39,6 +50,11 @@
 ---@class ForeverTrackerOrderAPI
 ---@field Sort fun(modules: ForeverTrackerModule[]) orders the shared column's sections in place
 
+-- Reopened here for the one field core's own host reads from the section it is handed.
+---@class ForeverTrackerModule : Frame
+---@field legacySettings? ForeverTrackerLegacySettings the addon's old tracker table, copied once by the host
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own menu entries
+
 ---@class ForeverTrackerLock
 ---@field Locked fun(): boolean reads the saved switch through the host
 ---@field Grip fun(host: Frame, source: ForeverTrackerHostAPI): ForeverTrackerGrip draws the grip on the column it drags
@@ -50,8 +66,12 @@
 ---@field TrackerQuestie? ForeverTrackerQuestie
 ---@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerHostSettings? fun(): ForeverTrackerSettings
+---@field AttachCoreDb? fun()
+---@field MigrateTrackerSettings? fun()
 ---@field L table<string, string>
----@field ContextMenu? fun(owner: Frame, generator: fun(owner: Frame, root: any)): any
-
----@type ForeverTrackerHostAPI?
-ForeverTrackerHost = nil
+---@field SafeCall? fun(label: string, fn: function, ...: any): boolean, ...any
+---@field SafeCallFor? fun(name: string): ForeverSafeCallContext
+---@field LogFor? fun(name: string): ForeverDebugLogContext
+---@field ReportFor? fun(name: string, spec?: ForeverReportSpec): ForeverReportModule
+---@field MapCanvasFor? fun(name: string): ForeverCanvasAPI
+---@field ReportLines? fun(): string[]

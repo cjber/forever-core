@@ -6,14 +6,8 @@ local _, ns = ...
 local MinimapButton = {}
 ns.MinimapButton = MinimapButton
 
--- Every Forever addon vendors this file, so each loads its own copy. They share one registry, published by the first
--- copy to load, so the buttons of every addon share one ring and never take the same default angle. The registry is
--- addon state: nothing of Blizzard's reads it.
-local shared = _G.ForeverMinimapButtons
-if type(shared) ~= "table" then
-	shared = { buttons = {} }
-	_G.ForeverMinimapButtons = shared
-end
+-- One ring of buttons for every Forever addon. The registry is module state: nothing of Blizzard's reads it.
+local shared = { buttons = {} }
 
 local ANGLE_KEY = "minimapButtonAngle"
 local HIDDEN_KEY = "minimapButtonHidden"
@@ -29,7 +23,10 @@ local OVERLAY_SIZE = 50
 local BACKGROUND_SIZE = 24
 local ICON_SIZE = 18
 
-local function Safe(label, fn, ...)
+local function Safe(button, label, fn, ...)
+	if button and button.safeCall then
+		return button.safeCall(label, fn, ...)
+	end
 	if ns.SafeCall then
 		return ns.SafeCall(label, fn, ...)
 	end
@@ -158,6 +155,7 @@ function MinimapButton.Create(spec)
 	end
 	local button = CreateFrame("Button", spec.name, Minimap) --[[@as ForeverMinimapButton]]
 	button.minimapButtonSpec = spec
+	button.safeCall = type(spec.safeCall) == "function" and spec.safeCall or nil
 	if spec.host then
 		spec.host.minimapButton = button
 	end
@@ -195,7 +193,7 @@ function MinimapButton.Create(spec)
 	end)
 	button:SetScript("OnClick", function(self, mouseButton)
 		if spec.onClick then
-			Safe("minimap button click", spec.onClick, self, mouseButton)
+			Safe(self, "minimap button click", spec.onClick, self, mouseButton)
 		end
 	end)
 	button:SetScript("OnEnter", function(self)
@@ -228,7 +226,7 @@ function MinimapButton.Create(spec)
 	end
 	button.angle = angle
 	shared.buttons[#shared.buttons + 1] = button
-	Apply(button)
+	Safe(button, "minimap button create", Apply, button)
 	return button
 end
 
@@ -249,10 +247,16 @@ function MinimapButton.Destroy(button)
 	end
 end
 
+-- The live buttons, oldest first, for a spec that reads the ring back.
+---@return ForeverMinimapButton[]
+function MinimapButton.Buttons()
+	return shared.buttons
+end
+
 -- Re-reads every button's hide flag and saved angle, for a settings checkbox that has just written one.
 function MinimapButton.Refresh()
 	for _, button in ipairs(shared.buttons) do
-		Safe("minimap button refresh", Apply, button)
+		Safe(button, "minimap button refresh", Apply, button)
 	end
 end
 

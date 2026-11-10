@@ -1,6 +1,6 @@
 name: Sync consumers
 
-# Every consumer carries a copy of this repo's shared files and tooling. A push to main refreshes those copies in one
+# Every consumer carries a copy of this repo's development tooling. A push to main refreshes those copies in one
 # PR per consumer, with squash auto-merge armed so the consumer's own checks decide when it lands.
 on:
   push:

@@ -16,8 +16,6 @@
 C_InputInterfaceStyle = nil
 ---@type Frame
 SoftCursor = nil
----@type table<string, fun(map: ForeverCanvasMap): {x: number, y: number, kind: string}[]>
-ForeverMapMarkers = nil
 ---@param value number
 ---@return number
 function Saturate(value) end
@@ -41,14 +39,13 @@ UISpecialFrames = {}
 ---@type {ContinueOnAddOnLoaded: fun(name: string, callback: fun()), ContinueAfterAllEvents: fun(callback: fun(), ...: string)}
 EventUtil = {}
 function GameTooltip_Hide() end
+---@param tooltip GameTooltip
+---@param text string
+function GameTooltip_SetTitle(tooltip, text) end
 
 -- ForeverCore's own saved variables, from ForeverCore.toc.
 ---@type {trackerHost?: ForeverTrackerSettings, questList?: boolean}?
 ForeverCoreDB = nil
-
--- UI/Leaderboards.lua publishes the shared window every Forever addon registers into.
----@type ForeverLeaderboardsAPI?
-ForeverLeaderboards = nil
 
 ---@class EditModeManagerFrame : Frame
 ---@field IsEditModeActive fun(self: EditModeManagerFrame): boolean
@@ -125,17 +122,17 @@ function CreateFramePoolCollection() end
 ---@field angleKey? string the settings key holding the angle, default "minimapButtonAngle"
 ---@field hiddenKey? string the settings key whose true value hides the button, default "minimapButtonHidden"
 ---@field getShown? fun(): boolean an addon-owned visibility rule, which wins over the hide flag
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
 ---@field host? table receives the frame as its minimapButton
 
--- The registry every vendored copy of Core/MinimapButton.lua shares, published by the first to load.
+-- The registry Core/MinimapButton.lua shares across the suite, one button per addon.
 ---@class ForeverMinimapButtonRegistry
 ---@field buttons ForeverMinimapButton[] every addon button, in creation order
----@type ForeverMinimapButtonRegistry?
-ForeverMinimapButtons = nil
 
 -- The frame Core/MinimapButton.lua builds: LibDBIcon's minimap button, the addon's icon and the angle on the rim.
 ---@class ForeverMinimapButton : Button
 ---@field minimapButtonSpec ForeverMinimapButtonSpec the spec the consumer passed to Create
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall, when it gave one
 ---@field icon Texture the addon's icon drawn inside LibDBIcon's border
 ---@field angle number the angle around the Minimap, in degrees
 ---@field dragging boolean? true while the player drags the button around the rim
@@ -154,9 +151,7 @@ ForeverMinimapButtons = nil
 ---@field activeAtlas? string
 ---@field inactiveAtlas? string
 
--- The registry every vendored copy of UI/QuestLogTabs.lua shares, published by the first to load.
----@type ForeverQuestLogTabsAPI?
-ForeverQuestLogTabs = nil
+-- The registry UI/QuestLogTabs.lua shares across the suite, one tab per addon.
 
 -- Blizzard's quest log, and the Forever override table that says its stock Quests tab is hidden.
 ---@class ForeverQuestLogContentFrame : Frame

@@ -110,19 +110,6 @@ host:MarkDirty()
 check(t.pending() == 1, "dirty updates coalesce")
 drain()
 check(first.updates == updatesBeforeDuplicateAttach + 1, "duplicate attach must not duplicate sections")
-local other = {}
-t.loadHost(other)
-check(other.TrackerHost == t.ns.TrackerHost, "addons share a single private host")
-local hostPaths = {}
-for path in (os.getenv("AGF_TRACKER_HOSTS") or "UI/TrackerHost.lua"):gmatch("[^\n]+") do
-	hostPaths[#hostPaths + 1] = path
-end
-for index = 2, #hostPaths do
-	local joining, count = {}, #t.frames
-	t.loadHost(joining, hostPaths[index])
-	check(joining.TrackerHost == t.ns.TrackerHost, "companion joins the first loaded host")
-	check(#t.frames == count, "companion must not create a second host")
-end
 check(first:GetContextMenuParent() == host, "menus use private container")
 check(grip ~= nil, "the grip is shown by the detached layout")
 first.contentHeight, second.contentHeight = 0, 0

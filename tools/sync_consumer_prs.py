@@ -296,7 +296,7 @@ def create_commit(
 
 def pr_body(sha: str, files: tuple[str, ...]) -> str:
     lines = [
-        "Syncs this addon's copy of the shared Forever Core files.",
+        "Syncs this addon's copy of Forever Core's development tooling.",
         "",
         f"Core commit: https://github.com/{OWNER}/{CORE_REPO}/commit/{sha}",
         "",

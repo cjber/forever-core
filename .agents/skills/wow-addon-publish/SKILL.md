@@ -32,6 +32,24 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
   `wow-mock-screenshots` skill.
 - Check secrets exist: `gh secret list -R <owner>/<repo>` (names only; that is enough).
 
+## Requiring ForeverCore
+
+Every Forever addon depends on ForeverCore, the suite's shared library. In the TOC:
+
+```toc
+## Dependencies: ForeverCore
+```
+
+and in `.pkgmeta`, so CurseForge and Wago install it automatically:
+
+```yaml
+required-dependencies:
+  - ForeverCore
+```
+
+CurseForge's slug is `forevercore`; Wago resolves the dependency from its own project page (see
+`addons.wago.io/addons/forevercore`). Do not list ForeverCore under `OptionalDeps` and do not ship its runtime files.
+
 ## 2. CurseForge project (authors.curseforge.com)
 
 Use the create wizard at `https://authors.curseforge.com/#/projects/create/choose-game`. Its internal

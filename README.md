@@ -1,47 +1,42 @@
-# Forever Core
+<p align="center"><img src="media/icon-400.png" width="96" height="96" alt="Forever Core icon"></p>
 
-The shared floor under the WoW: Forever addon suite: one objective-tracker column, the grip and Lock switch that move
-it, the section order that stacks it, and the Questie bridge that keeps it clear of Questie's own quest list.
+<h1 align="center">Forever Core</h1>
+
+<p align="center">The shared library every Forever addon needs: one tracker column, its Lock switch, the report window and the suite's shared UI.</p>
+
+<p align="center">
+  <a href="https://github.com/cjber/forever-core/actions/workflows/ci.yml"><img src="https://github.com/cjber/forever-core/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/cjber/forever-core/releases"><img src="https://img.shields.io/github/v/release/cjber/forever-core" alt="Latest release"></a>
+</p>
 
 **Interface:** 16001 (WoW: Forever, live client folder `_forever_`, beta `_classic_beta_`)
 
 ## What it is for
 
-Adventure Guide, Legacy, Shortest Path and SkillUp each draw sections into the same floating column beside the quest
-tracker. Before this addon, each one carried its own copy of that column, so a layout fix or a Lock toggle meant four
-identical pull requests and four copies that could drift apart between releases.
+Every Forever addon requires ForeverCore with `## Dependencies: ForeverCore`, so the game loads it first and exactly one
+copy of each shared file runs. A tracker scale, lock or position set in one addon is the same column in all of them,
+and a fix released here reaches every addon without a second pull request.
 
-Forever Core also owns shared error capture (`Core/SafeCall.lua`), the report and issue window, and the Forever-family
-link box. All five addons vendor those files so error reporting, command handling, selection behavior and link copying
-stay consistent.
-
-The column can wear an optional dark background from the tracker sections' right-click menu, drawn with the game's
-own tooltip background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker
-fine over dark terrain keeps the stock look.
-
-Forever Core is the one copy. The four addons vendor these files byte for byte (`docs/adoption.md`), and the first
-Forever addon to load publishes the column as `ForeverTrackerHost`; every later one adopts it. A player with three of
-them installed still gets one column, and a player with one installed gets the same column with no extra dependency.
-
-Installing Forever Core itself is optional. It is there so the shared code has a home, so a fix can be developed,
-tested and released on its own, and so a future addon can adopt the column without copying it.
-
-The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md). It centralizes
-client asset extraction, BLP decoding, font and atlas lookup, native widgets and frame compositing. Addon scene
-scripts remain specific to the feature each repo owns.
-
-The Discord release digest lives in [`tools/discord_digest.py`](tools/discord_digest.py) and runs hourly from
-`.github/workflows/discord-digest.yml`.
+The column can wear an optional dark background from any section's right-click menu, drawn with the game's own tooltip
+background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker fine over dark
+terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no sections of its own and knows nothing about quests, routes, professions, challenges or creatures. Sections
-belong to the addon that owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`.
+It draws no quest, route, profession or challenge sections of its own. Sections belong to the addon that owns the
+feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon
+through `ForeverCore.Register` and the modules on the `ForeverCore` table; see [`docs/adoption.md`](docs/adoption.md).
 
 ## Install
 
-Drop the `ForeverCore` folder in `Interface/AddOns`. `/fcore` prints the column's anchors, heights and combat state,
-which is the same diagnostic the addons print from their own slash commands.
+Players never install it by hand: CurseForge, Wago and every Forever addon bring it in. For a manual install, drop the
+`ForeverCore` folder in `Interface/AddOns`. `/fcore` prints the column's anchors, heights and combat state, which is
+the same diagnostic the addons print from their own slash commands.
+
+## Development
+
+The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md) and the Discord
+release digest in [`tools/discord_digest.py`](tools/discord_digest.py).
 
 ## Licence
 

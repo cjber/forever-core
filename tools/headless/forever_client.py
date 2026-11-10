@@ -74,6 +74,7 @@ FOREVER_ADDONS = (
     "AdventureGuideForever",
     "CommissionsForever",
     "FieldGuideForever",
+    "ForeverCore",
     "KilnForever",
     "LegacyForever",
     "MacroAssistForever",

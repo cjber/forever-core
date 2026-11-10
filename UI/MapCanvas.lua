@@ -36,7 +36,6 @@ local addonName, ns = ...
 
 ---@class ForeverMapCanvas
 local MapCanvas = {}
-ns.MapCanvas = MapCanvas
 
 -- How near the gamepad's map cursor comes to a pin to point at it, in UI units (the map's MIN_PIN_DISTANCE_SQUARED).
 local CURSOR_REACH = 12
@@ -53,13 +52,25 @@ local CURSOR_REACH = 12
 ---@field scale number
 ---@field zoom number
 ---@field pinScale number
----@field listeners fun(view: ForeverCanvasView, what: string)[]
+---@field ownerShown table<string, boolean> each addon's own SetShown state
+---@field listeners { fn: fun(view: ForeverCanvasView, what: string), safe: table }[]
 ---@field pools ForeverCanvasPool[]
 local View = {}
 View.__index = View
 
 ---@type table<ForeverCanvasMap, ForeverCanvasView>
 local views = {}
+-- The context a listener or click runs in when the client has no error capture loaded (a bare spec).
+local fallbackSafe = {
+	SafeCall = function(_, _, fn, ...)
+		return pcall(fn, ...)
+	end,
+}
+
+---@return table
+local function Safe()
+	return (ns.SafeCallFor and ns.SafeCallFor("ForeverCore")) or fallbackSafe
+end
 ---@type ForeverCanvasPin?, ForeverCanvasPin?, string?
 local hovered, pressed, pressedButton
 -- Whether the gamepad's map cursor, not the mouse, hovered the pin.
@@ -95,7 +106,7 @@ local function Fire(view, what)
 		end
 	end
 	for _, listener in ipairs(view.listeners) do
-		ns.SafeCall("map canvas " .. what, listener, view, what)
+		listener.safe:SafeCall("map canvas " .. what, listener.fn, view, what)
 	end
 end
 
@@ -246,11 +257,12 @@ function MapCanvas.FrameUnder(frameType, parent, template)
 	return frame
 end
 
--- The view of `map`, made the first time it is asked for; `listener`, when given, hears what changes.
+-- The view of `map`, made the first time it is asked for; `listener`, when given through `safe`, hears what changes.
 ---@param map ForeverCanvasMap
 ---@param listener? fun(view: ForeverCanvasView, what: string)
+---@param safe? table the SafeCall context the listener runs in
 ---@return ForeverCanvasView
-function MapCanvas.Watch(map, listener)
+function MapCanvas.Watch(map, listener, safe)
 	local view = views[map]
 	if not view then
 		local canvas = map:GetCanvas()
@@ -265,6 +277,7 @@ function MapCanvas.Watch(map, listener)
 			pinScale = 1,
 			listeners = {},
 			pools = {},
+			ownerShown = {},
 		}, View)
 		local host = MapCanvas.FrameUnder("Frame", canvas)
 		host:SetAllPoints(canvas)
@@ -280,22 +293,58 @@ function MapCanvas.Watch(map, listener)
 		WatchPanelHides()
 	end
 	if listener then
-		view.listeners[#view.listeners + 1] = listener
+		view.listeners[#view.listeners + 1] = { fn = listener, safe = safe or Safe() }
 	end
 	return view
 end
 
--- Shows or hides every pin of ours on `map`: combat hides them.
+-- Whether `owner`'s pins show. An owner that never called SetShown is shown, as before the per-owner switch existed.
+---@param view ForeverCanvasView
+---@param owner? string
+---@return boolean
+local function OwnerShown(view, owner)
+	return owner == nil or view.ownerShown[owner] ~= false
+end
+
+-- Shows or hides only `owner`'s pins on `map`: combat and one addon hiding its markers leave every other addon's
+-- drawing alone. The shared layer hides only once no owner is shown.
 ---@param map ForeverCanvasMap
 ---@param shown boolean
-function MapCanvas.SetShown(map, shown)
+---@param owner? string
+function MapCanvas.SetShown(map, shown, owner)
 	local view = views[map]
-	if view then
-		if not shown and hovered and hovered.view == view then
-			SetHovered(nil)
-		end
-		view.layer:SetShown(shown)
+	if not view then
+		return
 	end
+	owner = owner or "?"
+	view.ownerShown[owner] = shown == true
+	for _, pool in ipairs(view.pools) do
+		if pool.owner == owner then
+			for _, pin in ipairs(pool.active) do
+				pin:SetShown(shown == true)
+			end
+		end
+	end
+	-- A pool whose owner never asked for a change is shown by default, so it keeps the shared layer up.
+	local any = false
+	for _, pool in ipairs(view.pools) do
+		if OwnerShown(view, pool.owner) then
+			any = true
+			break
+		end
+	end
+	if not any then
+		for _, state in pairs(view.ownerShown) do
+			if state then
+				any = true
+				break
+			end
+		end
+	end
+	if not any and hovered and hovered.view == view then
+		SetHovered(nil)
+	end
+	view.layer:SetShown(any)
 end
 
 --[[ Pins ]]
@@ -305,6 +354,7 @@ end
 -- A pin with no limits that ignores the pin scale grows with the terrain.
 ---@class ForeverCanvasPin : Frame
 ---@field view ForeverCanvasView
+---@field safe table the SafeCall context its click action runs in
 ---@field mapX? number
 ---@field mapY? number
 ---@field scaleFactor? number
@@ -412,6 +462,8 @@ end
 ---@field mixin table
 ---@field template? string
 ---@field marker? string
+---@field owner? string the addon whose markers this pool lists
+---@field safe table the SafeCall context its click actions run in
 ---@field active ForeverCanvasPin[]
 ---@field free ForeverCanvasPin[]
 local Pool = {}
@@ -435,6 +487,7 @@ function Pool:Acquire(...)
 		pin = MapCanvas.FrameUnder("Frame", self.view.layer, self.template) --[[@as ForeverCanvasPin]]
 		Mixin(pin, self.mixin)
 		pin.view = self.view
+		pin.safe = self.safe
 		pin:OnLoad()
 		pin:EnableMouse(pin.takesMouse == true)
 		if pin.takesMouse then
@@ -443,7 +496,7 @@ function Pool:Acquire(...)
 		end
 	end
 	self.active[#self.active + 1] = pin
-	pin:Show()
+	pin:SetShown(OwnerShown(self.view, self.owner))
 	pin:OnAcquired(...)
 	pin:SetFrameLevel(self.view:Level(pin.levelType))
 	pin:ApplyScale()
@@ -477,19 +530,22 @@ function Pool:ReleaseAll()
 end
 
 -- A pool of pins on `map`'s view: frames from `template` wearing `mixin`, which builds on MapCanvas.PinMixin. A pool
--- with a `marker` kind lists its shown pins for the other Forever addons (ForeverMapMarkers, below).
+-- with a `marker` kind lists its shown pins for the other Forever addons under `options.owner`.
 ---@param map ForeverCanvasMap
 ---@param mixin table
----@param options? {template?: string, marker?: string}
+---@param options? {template?: string, marker?: string, owner?: string, safe?: table}
 ---@return ForeverCanvasPool
 function MapCanvas.Pool(map, mixin, options)
 	local view = MapCanvas.Watch(map)
 	options = options or {}
+	local safe = options.safe or Safe()
 	local pool = setmetatable({
 		view = view,
 		mixin = mixin,
 		template = options.template,
 		marker = options.marker,
+		owner = options.owner,
+		safe = safe,
 		active = {},
 		free = {},
 	}, Pool)
@@ -519,27 +575,31 @@ clicks:SetScript("OnEvent", function(_, event, button)
 	local pin = pressed
 	pressed = nil
 	if pin and pin == hovered and button == pressedButton and pin:IsVisible() and pin:IsMouseOver() then
-		ns.SafeCall("map pin click", Click, pin, button)
+		pin.safe:SafeCall("map pin click", Click, pin, button)
 	end
 end)
 
---[[ ForeverMapMarkers ]]
+--[[ Markers ]]
 
--- The Forever addons' markers on the world map, for each other (Tweaks Forever keeps its dungeon entrances clear of
--- them): with every addon drawing on frames of its own, none can find another's through the map's pin pools. The
--- first addon to load makes the global table, and each sets one function under its folder name:
---   ForeverMapMarkers[addonName] = function(map) -> { { x = number, y = number, kind = string }... }
--- x and y are the shown markers' fractions on map:GetMapID(), in a fresh table; it never errors.
--- Published as a copy with our entry added, never a field written into the table another addon made; readers look
--- the global up each time, since a later addon replaces it.
-local function OurMarkers(map)
+-- Every Forever addon's markers on the world map, for each other (Tweaks Forever keeps its dungeon entrances clear of
+-- them): with each addon drawing on frames of its own, none can find another's through the map's pin pools. The
+-- registry is module state keyed by addon name, and each entry answers a map with the shown markers' fractions:
+--   MapCanvas.Markers(addonName, map) -> { { x = number, y = number, kind = string }... }
+-- x and y are fractions on map:GetMapID(), in a fresh table; it never errors.
+---@param owner string
+---@param map ForeverCanvasMap
+---@return { x: number, y: number, kind: string }[]
+local function MarkersFor(owner, map)
 	local markers, view = {}, views[map]
-	-- Shown, not hidden for combat, and drawn for the map it shows now (a map just turned redraws on its next frame).
-	if not (view and view.shown and view.layer:IsShown() and view.mapID == map:GetMapID()) then
+	-- Shown, not hidden for combat, drawn for the map it shows now (a map just turned redraws on its next frame), and
+	-- not hidden by this owner's own SetShown.
+	if
+		not (view and view.shown and view.layer:IsShown() and OwnerShown(view, owner) and view.mapID == map:GetMapID())
+	then
 		return markers
 	end
 	for _, pool in ipairs(view.pools) do
-		if pool.marker then
+		if pool.marker and pool.owner == owner then
 			for _, pin in ipairs(pool.active) do
 				local x, y = pin:GetPosition()
 				if x and pin:IsShown() then
@@ -551,9 +611,40 @@ local function OurMarkers(map)
 	return markers
 end
 
-local published = {}
-for addon, markers in pairs(ForeverMapMarkers or {}) do
-	published[addon] = markers
+-- One addon's view of the canvas: its own pools, and the markers they draw, nothing else's.
+---@class ForeverCanvasAPI
+---@field Pool fun(map: ForeverCanvasMap, mixin: table, options?: { template?: string, marker?: string }): ForeverCanvasPool
+---@field Watch fun(map: ForeverCanvasMap, listener?: fun(view: ForeverCanvasView, what: string)): ForeverCanvasView
+---@field Markers fun(map: ForeverCanvasMap): { x: number, y: number, kind: string }[]
+---@field PinMixin table
+---@field SetShown fun(map: ForeverCanvasMap, shown: boolean)
+---@field FrameUnder fun(frameType: string, parent: Frame, template?: string): Frame
+---@field Gamepad fun(): boolean
+
+---@param owner string
+---@return ForeverCanvasAPI
+function ns.MapCanvasFor(owner)
+	owner = tostring(owner or "?")
+	local safe = (ns.SafeCallFor and ns.SafeCallFor(owner)) or fallbackSafe
+	return {
+		Pool = function(map, mixin, options)
+			options = options or {}
+			local pooled = { template = options.template, marker = options.marker, owner = owner, safe = safe }
+			return MapCanvas.Pool(map, mixin, pooled)
+		end,
+		Watch = function(map, listener)
+			return MapCanvas.Watch(map, listener, safe)
+		end,
+		Markers = function(map)
+			return MarkersFor(owner, map)
+		end,
+		PinMixin = MapCanvas.PinMixin,
+		SetShown = function(map, shown)
+			MapCanvas.SetShown(map, shown, owner)
+		end,
+		FrameUnder = MapCanvas.FrameUnder,
+		Gamepad = MapCanvas.Gamepad,
+	}
 end
-published[addonName] = OurMarkers
-ForeverMapMarkers = published
+
+ns.MapCanvas = ns.MapCanvasFor(addonName or "ForeverCore")

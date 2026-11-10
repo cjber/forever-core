@@ -1,30 +1,22 @@
-local addonName, ns = ...
+local _, ns = ...
 
--- Shared structured log for the Forever addons. ns.Log remembers the last 200 lines, oldest dropped, so a bug report
+-- Shared structured log for the Forever addons. A log remembers the last 200 lines, oldest dropped, so a bug report
 -- can say what led to the error instead of only the error. Info, warn and error are always kept; debug is kept only
 -- while the switch is on, and a dropped debug line costs no formatting at all. Nothing goes to chat: /forever debug
 -- answers in the client's error frame, /forever debug show opens the report window with every attached addon's latest
 -- lines selected for copying, and the report's own copy carries the last lines that fit after the error journal.
 --
--- Lines stay in memory until a consumer hands the addon's saved table to ns.AttachLog(store), the same way the error
--- journal is attached, so earlier sessions survive a reload. The debug switch is one state every loaded Forever copy
--- shares for the character: the first copy publishes it and later copies join it, as ForeverLeaderboards does.
+-- One copy of this file loads, in ForeverCore. Each registered addon gets its own ring and saved table through
+-- ns.LogFor(name); the debug switch is one state for the character that every ring shares.
 
 local L = ns.L
 local MAX_LINES = 200
 local MAX_LINE = 300
 local MAX_SHOWN = 50
-local LOG_VERSION = 1
 local LEVELS = { debug = true, info = true, warn = true, error = true }
-local NAME = addonName or "?"
 
--- Oldest first. This copy's memory until ns.AttachLog gives it the addon's saved table.
----@type string[]
-local lines = {}
-
--- The saved table this copy writes to, once AttachLog has it.
----@type ForeverDebugLogStore?
-local attached
+-- The one switch every registered addon shares for the character.
+local switch = { enabled = false, pinned = false }
 
 ---@class ForeverDebugLogStore
 ---@field lines string[] the saved ring, oldest first
@@ -33,29 +25,20 @@ local attached
 ---@class ForeverDebugLogAttachment
 ---@field name string the addon that attached the store
 ---@field store ForeverDebugLogStore
+---@field context? ForeverDebugLogContext
+---@field listed? boolean true once it holds a store and is in the show list
 
--- The state every loaded copy shares for the character. A pin is written to every attached addon's saved table, so it
--- survives whichever of them loads next, and `show` reads every attached ring, not only this copy's.
----@class ForeverDebugLogState
----@field VERSION integer
----@field enabled boolean
----@field pinned boolean
----@field stores ForeverDebugLogAttachment[]
+-- The attached rings, in registration order, and the same by addon name so a second attach replaces its own.
+---@type ForeverDebugLogAttachment[]
+local stores = {}
+---@type table<string, ForeverDebugLogAttachment>
+local byName = {}
 
-local published = _G.ForeverDebugLog
-if type(published) ~= "table" then
-	published = { VERSION = LOG_VERSION, enabled = false, pinned = false, stores = {} }
-	_G.ForeverDebugLog = published
-elseif (tonumber(published.VERSION) or 0) < LOG_VERSION then
-	published.VERSION = LOG_VERSION
-end
-if type(published.stores) ~= "table" then
-	published.stores = {}
-end
-published.enabled = published.enabled == true
-published.pinned = published.pinned == true
----@type ForeverDebugLogState
-local shared = published --[[@as ForeverDebugLogState]]
+---@class ForeverDebugLogContext
+---@field name string
+---@field lines string[]
+local Context = {}
+Context.__index = Context
 
 ---@param value any
 ---@return string
@@ -95,10 +78,10 @@ local function Newest(list, count)
 	return result
 end
 
----@param line string
-local function Append(line)
-	lines[#lines + 1] = line
-	Trim(lines, MAX_LINES)
+---@param text string
+---@return string
+local function Line(text)
+	return ns.CutText(text, MAX_LINE)
 end
 
 -- One line: the client's clock, this session's seconds, the level, the caller's topic and the message. The level is
@@ -107,8 +90,8 @@ end
 ---@param topic string the part of the addon the line came from
 ---@param message any the line, or a string.format template when arguments follow
 ---@param ... any
-function ns.Log(level, topic, message, ...)
-	if level == "debug" and shared.enabled ~= true then
+function Context:Log(level, topic, message, ...)
+	if level == "debug" and switch.enabled ~= true then
 		return
 	end
 	if not LEVELS[level] then
@@ -121,30 +104,26 @@ function ns.Log(level, topic, message, ...)
 	else
 		text = ToString(message)
 	end
-	Append(ns.CutText(("%s %s %s: %s"):format(Stamp(), level, ToString(topic), text), MAX_LINE))
+	self.lines[#self.lines + 1] = Line(("%s %s %s: %s"):format(Stamp(), level, ToString(topic), text))
+	Trim(self.lines, MAX_LINES)
 end
 
 -- The newest `count` lines, oldest first, as copies.
 ---@param count? integer
 ---@return string[]
-function ns.LogLines(count)
+function Context:LogLines(count)
 	local limit = tonumber(count) or MAX_SHOWN
 	if limit < 0 then
 		limit = 0
 	end
-	return Newest(lines, limit)
-end
-
----@return boolean
-function ns.DebugEnabled()
-	return shared.enabled == true
+	return Newest(self.lines, limit)
 end
 
 -- Keep or drop the pin in every attached addon's saved table.
 ---@param value boolean
 local function SavePin(value)
-	shared.pinned = value
-	for _, entry in ipairs(shared.stores) do
+	switch.pinned = value
+	for _, entry in ipairs(stores) do
 		entry.store.pinned = value
 	end
 end
@@ -166,10 +145,10 @@ end
 
 ---@return string
 local function State()
-	if not shared.enabled then
+	if not switch.enabled then
 		return L["Debug log is off."]
 	end
-	return shared.pinned and L["Debug log is on and pinned for this character."]
+	return switch.pinned and L["Debug log is on and pinned for this character."]
 		or L["Debug log is on for this session."]
 end
 
@@ -177,11 +156,11 @@ end
 ---@return string
 local function ShowText()
 	local parts = { State() }
-	if not shared.stores[1] then
+	if not stores[1] then
 		parts[#parts + 1] = L["No addon has attached its log yet."]
 		return table.concat(parts, "\n")
 	end
-	for _, entry in ipairs(shared.stores) do
+	for _, entry in ipairs(stores) do
 		local kept = Newest(entry.store.lines, MAX_SHOWN)
 		if kept[1] then
 			parts[#parts + 1] = (L["%s (last %d):"]):format(entry.name, #kept)
@@ -210,36 +189,56 @@ local function Prepare(store)
 	store.pinned = store.pinned == true
 end
 
--- Use `store`, a table from the addon's saved variables, for the ring and the pin, and keep what was logged before it
--- arrived. The addon's defaults should make the table exist before this line runs.
----@param store table
-function ns.AttachLog(store)
-	if type(store) ~= "table" or store == attached then
+-- Use `db`, the addon's saved table, for the ring and the pin, and keep what was logged before it arrived.
+---@param db table the addon's saved table; the ring lives under its `log` key
+function Context:Attach(db)
+	if type(db) ~= "table" then
+		return
+	end
+	local store = db.log
+	if type(store) ~= "table" then
+		store = { lines = {}, pinned = false }
+		db.log = store
+	end
+	if store == self.store then
 		return
 	end
 	Prepare(store)
-	for _, line in ipairs(lines) do
+	---@cast store ForeverDebugLogStore
+	for _, line in ipairs(self.lines) do
 		store.lines[#store.lines + 1] = line
 	end
 	Trim(store.lines, MAX_LINES)
-	lines = store.lines
-	attached = store --[[@as ForeverDebugLogStore]]
-	local known = false
-	for _, entry in ipairs(shared.stores) do
-		if entry.name == NAME then
-			entry.store = attached
-			known = true
-			break
-		end
+	self.lines = store.lines
+	self.store = store
+	local entry = byName[self.name]
+	if not entry then
+		entry = { name = self.name, store = self.store }
+		byName[self.name] = entry
 	end
-	if not known then
-		shared.stores[#shared.stores + 1] = { name = NAME, store = attached }
+	entry.store = self.store
+	if not entry.listed then
+		entry.listed = true
+		stores[#stores + 1] = entry
 	end
 	-- A pin from an earlier session turns the switch on; a store that has never seen a pin never turns it off.
-	if attached.pinned then
-		shared.pinned = true
-		shared.enabled = true
+	if self.store.pinned then
+		switch.pinned = true
+		switch.enabled = true
 	end
+end
+
+-- The context for `name`, made on first use and always the same table afterwards.
+---@param name string
+---@return ForeverDebugLogContext
+function ns.LogFor(name)
+	name = tostring(name or "?")
+	local context = byName[name] and byName[name].context or nil
+	if not context then
+		context = setmetatable({ name = name, lines = {} }, Context)
+		byName[name] = { name = name, store = { lines = context.lines, pinned = false }, context = context }
+	end
+	return context
 end
 
 -- `/forever debug` routes here: no argument toggles the session, "pin" keeps it, "off" turns it off and unpins, and
@@ -250,22 +249,22 @@ end
 function ns.DebugCommand(argument)
 	local command = type(argument) == "string" and argument:match("^%s*(.-)%s*$") or ""
 	if command == "" then
-		shared.enabled = not shared.enabled
-		if shared.enabled then
+		switch.enabled = not switch.enabled
+		if switch.enabled then
 			Notify(
-				shared.pinned and L["Debug log is on and pinned for this character."]
+				switch.pinned and L["Debug log is on and pinned for this character."]
 					or L["Debug log is on for this session."]
 			)
 		else
 			Notify(
-				shared.pinned and L["Debug log is off for this session; it is still pinned."] or L["Debug log is off."]
+				switch.pinned and L["Debug log is off for this session; it is still pinned."] or L["Debug log is off."]
 			)
 		end
 		return true
 	end
 	if command == "pin" then
-		local already = shared.enabled and shared.pinned
-		shared.enabled = true
+		local already = switch.enabled and switch.pinned
+		switch.enabled = true
 		SavePin(true)
 		Notify(
 			already and L["Debug log is already on and pinned for this character."]
@@ -274,7 +273,7 @@ function ns.DebugCommand(argument)
 		return true
 	end
 	if command == "off" then
-		shared.enabled = false
+		switch.enabled = false
 		SavePin(false)
 		Notify(L["Debug log is off and unpinned."])
 		return true
@@ -285,4 +284,9 @@ function ns.DebugCommand(argument)
 	end
 	Notify(L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"])
 	return false
+end
+
+---@return boolean
+function ns.DebugEnabled()
+	return switch.enabled == true
 end

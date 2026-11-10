@@ -1,11 +1,10 @@
 ---@type string, ForeverLeaderboardsNamespace
 local _, ns = ...
 
--- One Forever Leaderboards window for every Forever addon. This file is byte-identical in every consumer: each addon
--- registers its own board with ForeverLeaderboards:Register, and this file draws them. The first copy to load publishes
--- the `ForeverLeaderboards` global; later copies join it unless one is newer (a higher VERSION), which takes over with
--- the registrations already made. Nothing here is protected, hooks Blizzard frames beyond one unit-tooltip hook, or
--- writes to chat: a board is a callback, a row is a table, and the window is made of the client's own templates.
+-- One Forever Leaderboards window for every Forever addon. This file loads once, in ForeverCore: each addon registers
+-- its own board with ns.Leaderboards:Register, and this file draws them. Nothing here is protected, hooks Blizzard
+-- frames beyond one unit-tooltip hook, or writes to chat: a board is a callback, a row is a table, and the window is
+-- made of the client's own templates.
 --
 -- Core/LeaderboardsData.lua, loaded first, owns overall points, a player's standing, the per-scope cache and the
 -- tooltip text; this file owns the window and the registration.
@@ -13,7 +12,9 @@ local _, ns = ...
 ---@class ForeverLeaderboardsNamespace
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
+---@field PeerStats? ForeverPeerStatsNamespace
 ---@field DebugCommand? fun(argument?: string): boolean
+---@field SafeCall? ForeverSafeCall
 ---@field L? table<string, string>
 
 ---@alias ForeverLeaderboardsScope "week"|"all"
@@ -39,6 +40,7 @@ local _, ns = ...
 ---@field revision? fun(): number a counter bumped when the board's data changes; the cache rebuilds when it moves
 ---@field sharing? fun(): boolean the addon's saved sharing switch; only an explicit false means off
 ---@field setSharing? fun(shared: boolean) saves the switch and syncs the addon's rows
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
 
 ---@class ForeverLeaderboardsPlace
 ---@field key string the board's registered key
@@ -73,7 +75,6 @@ local _, ns = ...
 ---@field rank integer
 ---@field weekly boolean
 
-local LEADERBOARDS_VERSION = 7
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
@@ -83,40 +84,21 @@ local VISIBLE_ROWS = 12
 local FRAME_NAME = "ForeverLeaderboardsFrame"
 local DROPDOWN_TEMPLATE = "WowStyle1DropdownTemplate"
 
--- A newer copy builds its own window rather than reusing the name an older copy's hidden window still holds, so a
--- takeover never leaves two layouts on one frame.
----@return string
-local function WindowName()
-	if LEADERBOARDS_VERSION == 1 then
-		return FRAME_NAME
-	end
-	return FRAME_NAME .. LEADERBOARDS_VERSION
-end
 local data = ns.LeaderboardsData
 if type(data) ~= "table" or type(data.Overall) ~= "function" then
 	return
 end
 local MEDALS = data.MEDALS
 
-local previous = ForeverLeaderboards
-if type(previous) == "table" and (tonumber(previous.VERSION) or 0) >= LEADERBOARDS_VERSION then
-	ns.Leaderboards = previous
-	return
-end
-
 ---@class ForeverLeaderboardsAPI
----@field VERSION integer raised with every change to this file
----@field LEADERBOARDS_VERSION integer the same version, under the name the file compares
 ---@field scope ForeverLeaderboardsScope the selected scope
 ---@field reach ForeverLeaderboardsReach rows heard directly ("group") or every row heard ("met")
 ---@field selected? string the board the window shows
----@field window? ForeverLeaderboardsWindow the window once built, for a newer copy to put away
+---@field window? ForeverLeaderboardsWindow the window once built
 ---@field tooltipHooked? boolean the one unit-tooltip hook is already installed
 ---@field ClassOf fun(name: string): string? the client's class token for a player name, when it knows one
 ---@field registration integer raised with every successful Register, so the data cache notices the board list
 local api = {
-	VERSION = LEADERBOARDS_VERSION,
-	LEADERBOARDS_VERSION = LEADERBOARDS_VERSION,
 	boards = {},
 	order = {},
 	scope = "week",
@@ -126,46 +108,22 @@ local api = {
 local sequence = 0
 local BuildTabs, Refresh
 
-if type(previous) == "table" then
-	for _, key in ipairs(previous.order or {}) do
-		local spec = type(previous.boards) == "table" and previous.boards[key]
-		if type(spec) == "table" then
-			sequence = sequence + 1
-			spec.seq = type(spec.seq) == "number" and spec.seq == spec.seq and spec.seq or sequence
-			sequence = math.max(sequence, spec.seq)
-			api.boards[key], api.order[#api.order + 1] = spec, key
-		end
-	end
-	if type(previous.window) == "table" and previous.window.Hide then
-		previous.window:Hide()
-	end
-	api.tooltipHooked = previous.tooltipHooked == true
-	if previous.scope == "all" or previous.scope == "week" then
-		api.scope = previous.scope
-	end
-	if previous.reach == "group" or previous.reach == "met" then
-		api.reach = previous.reach
-	end
-	if type(previous.selected) == "string" then
-		api.selected = previous.selected
-	end
-end
-
-ForeverLeaderboards = api
 ns.Leaderboards = api
-
--- The copy now in charge when a newer version has taken over the global since this one loaded: an addon still holding
--- this copy is then served by the newer one, so there is only ever one window and one tooltip hook.
----@return ForeverLeaderboardsAPI?
-local function Newer()
-	local current = ForeverLeaderboards
-	if current ~= api and type(current) == "table" and (tonumber(current.VERSION) or 0) > LEADERBOARDS_VERSION then
-		return current --[[@as ForeverLeaderboardsAPI]]
-	end
-end
 
 local function Strings()
 	return data.Strings()
+end
+
+-- A board's callback runs in the registering addon's SafeCall, so its failure lands in that addon's journal.
+local function RunSafe(spec, label, fn, ...)
+	local safe = spec and spec.safeCall
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
 end
 
 local function Identity(name, realm)
@@ -200,10 +158,6 @@ end
 ---@param spec ForeverLeaderboardsSpec
 ---@return boolean registered
 function api:Register(key, spec)
-	local newer = Newer()
-	if newer then
-		return newer:Register(key, spec)
-	end
 	if type(key) ~= "string" or key == "" or #key > 32 or key == OVERALL or not key:find("^[%w_%-]+$") then
 		return false
 	end
@@ -239,6 +193,7 @@ function api:Register(key, spec)
 		revision = type(spec.revision) == "function" and spec.revision or nil,
 		sharing = type(spec.sharing) == "function" and spec.sharing or nil,
 		setSharing = type(spec.setSharing) == "function" and spec.setSharing or nil,
+		safeCall = type(spec.safeCall) == "function" and spec.safeCall or nil,
 	}
 	self.registration = (tonumber(self.registration) or 0) + 1
 	if self.window then
@@ -253,10 +208,6 @@ end
 ---@param scope? ForeverLeaderboardsScope
 ---@return ForeverLeaderboardsRow[]
 function api:Overall(scope)
-	local newer = Newer()
-	if newer then
-		return newer:Overall(scope)
-	end
 	return data.Overall(self, scope or self.scope)
 end
 
@@ -264,10 +215,6 @@ end
 ---@param scope? ForeverLeaderboardsScope
 ---@return ForeverLeaderboardsStanding
 function api:Standing(name, scope)
-	local newer = Newer()
-	if newer then
-		return newer:Standing(name, scope)
-	end
 	return data.Standing(self, name, scope or self.scope)
 end
 
@@ -276,10 +223,6 @@ end
 ---@param name string
 ---@return string?
 function api.ClassOf(name)
-	local newer = Newer()
-	if newer then
-		return newer.ClassOf(name)
-	end
 	return data.ClassOf(name)
 end
 
@@ -594,7 +537,7 @@ function Refresh()
 		if #shareable > 0 then
 			sharing = function()
 				for _, board in ipairs(shareable) do
-					local ok, shared = pcall(board.sharing)
+					local ok, shared = RunSafe(board, "leaderboard sharing", board.sharing)
 					if ok and shared == false then
 						return false
 					end
@@ -603,7 +546,7 @@ function Refresh()
 			end
 			setSharing = function(value)
 				for _, board in ipairs(shareable) do
-					pcall(board.setSharing, value)
+					RunSafe(board, "leaderboard sharing", board.setSharing, value)
 				end
 			end
 		end
@@ -613,7 +556,7 @@ function Refresh()
 	frame.shareLabel:SetShown(sharing ~= nil and setSharing ~= nil)
 	if sharing then
 		-- Sharing is opt-out: only an explicit false unchecks it, so a missing saved setting reads as on.
-		local ok, shared = pcall(sharing)
+		local ok, shared = RunSafe(spec, "leaderboard sharing", sharing)
 		frame.share:SetChecked(not ok or shared ~= false)
 	end
 	frame.note:SetText(
@@ -644,12 +587,8 @@ local function Window()
 	if api.window then
 		return api.window
 	end
-	local older = type(previous) == "table" and previous.window
-	if type(older) == "table" and type(older.Hide) == "function" then
-		older:Hide()
-	end
 	local L = Strings()
-	local name = WindowName()
+	local name = FRAME_NAME
 	local frame = CreateFrame("Frame", name, UIParent, "PortraitFrameTemplate") --[[@as ForeverLeaderboardsWindow]]
 	if not tContains(UISpecialFrames, name) then
 		-- Escape closes it like any panel (an addon-owned frame).
@@ -820,10 +759,6 @@ end
 ---@param key? string
 ---@return boolean opened
 function api:Open(key)
-	local newer = Newer()
-	if newer then
-		return newer:Open(key)
-	end
 	local frame = Window()
 	if type(key) == "string" and key ~= "" then
 		local found = key == OVERALL and OVERALL or self.boards[key]
@@ -839,10 +774,6 @@ end
 
 ---@param key string
 function api:Select(key)
-	local newer = Newer()
-	if newer then
-		return newer:Select(key)
-	end
 	if key ~= OVERALL and not self.boards[key] then
 		key = OVERALL
 	end
@@ -851,10 +782,6 @@ function api:Select(key)
 end
 
 function api:Toggle()
-	local newer = Newer()
-	if newer then
-		return newer:Toggle()
-	end
 	if self.window and self.window:IsShown() then
 		self.window:Hide()
 	else
@@ -864,10 +791,6 @@ end
 
 ---@return boolean shown
 function api:IsShown()
-	local newer = Newer()
-	if newer then
-		return newer:IsShown()
-	end
 	return self.window ~= nil and self.window:IsShown() == true
 end
 
@@ -881,10 +804,6 @@ local rosterEvents = CreateFrame("Frame")
 rosterEvents:RegisterEvent("GUILD_ROSTER_UPDATE")
 rosterEvents:RegisterEvent("GROUP_ROSTER_UPDATE")
 rosterEvents:SetScript("OnEvent", function(_, event)
-	local newer = Newer()
-	if newer then
-		return
-	end
 	local part = event == "GUILD_ROSTER_UPDATE" and "guild" or "group"
 	if api:IsShown() then
 		data.RefreshClasses(part)
@@ -897,26 +816,18 @@ end)
 --------------------------------------------------------------------------------------------------------------------
 -- Tooltip
 
--- The tooltip's two lines live in Core/LeaderboardsData.lua beside the standing they read; this wrapper keeps one
--- hook and hands a newer copy the call.
+-- The tooltip's two lines live in Core/LeaderboardsData.lua beside the standing they read; this wrapper keeps the
+-- one hook's call.
 ---@param tooltip GameTooltip
 function api:AddTooltip(tooltip)
-	local current = ForeverLeaderboards
-	if current ~= self and type(current) == "table" and type(current.AddTooltip) == "function" then
-		return current:AddTooltip(tooltip)
-	end
 	return data.AddTooltip(self, tooltip)
 end
 
--- One hook, installed by the copy that publishes the global. The modern client delivers unit tooltips through
--- TooltipDataProcessor; the widget script remains the fallback. A newer copy takes the hook's flag and the handler
--- follows the published global, so an addon updated first never runs two tooltip hooks.
+-- One hook, installed when this file loads. The modern client delivers unit tooltips through TooltipDataProcessor;
+-- the widget script remains the fallback.
 ---@param tooltip GameTooltip
 local function TooltipHandler(tooltip)
-	local current = ForeverLeaderboards
-	if type(current) == "table" and type(current.AddTooltip) == "function" then
-		current:AddTooltip(tooltip)
-	end
+	api:AddTooltip(tooltip)
 end
 
 if not api.tooltipHooked then

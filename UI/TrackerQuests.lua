@@ -58,7 +58,7 @@ local function RegisterSettings()
 	settingsRegistered = true
 	ns.SettingsPage.Register(L["Forever Core"], function(panel, page)
 		page.AddCheck(panel, L["Forever quest list"], TrackerQuests.Enabled, TrackerQuests.SetEnabled, L[TOOLTIP])
-	end)
+	end, L)
 end
 
 if not ObjectiveTrackerFrame then

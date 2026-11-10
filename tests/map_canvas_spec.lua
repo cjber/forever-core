@@ -36,10 +36,18 @@ local ns = {
 	SafeCall = function(_, fn, ...)
 		return true, fn(...)
 	end,
+	SafeCallFor = function()
+		return {
+			SafeCall = function(_, _, fn, ...)
+				return true, fn(...)
+			end,
+		}
+	end,
 }
 assert(loadfile("UI/MapCanvas.lua"))("CanvasSpec", ns)
 local changes = {}
 local canvas = ns.MapCanvas
+local otherCanvas = ns.MapCanvasFor("OtherAddon")
 canvas.Watch(Kit.map, function(_, what)
 	changes[#changes + 1] = what
 end)
@@ -96,16 +104,35 @@ for _, active in ipairs(pool:Active()) do
 	check(active == pin, "active iterator returns pin")
 end
 check(count == 1, "active count")
-local markers = ForeverMapMarkers.CanvasSpec(Kit.map)
+local markers = canvas.Markers(Kit.map)
 check(#markers == 1 and markers[1].kind == "route" and markers[1].x == 0.25, "addon-keyed markers")
+-- Visibility is per owner: one addon hiding its markers leaves another addon's pins and markers alone.
+local otherMixin = CreateFromMixins(canvas.PinMixin, {
+	OnAcquired = function(self, x, y)
+		self:SetPosition(x, y)
+	end,
+})
+local otherPool = otherCanvas.Pool(Kit.map, otherMixin, { marker = "other" })
+local otherPin = otherPool:Acquire(0.75, 0.5)
+check(#otherCanvas.Markers(Kit.map) == 1, "the second addon draws its own marker")
+canvas.SetShown(Kit.map, false)
+check(#canvas.Markers(Kit.map) == 0, "the first addon's markers are hidden")
+check(#otherCanvas.Markers(Kit.map) == 1, "the second addon's markers still show")
+check(pin:IsShown() == false and otherPin:IsShown() == true, "each addon's pins follow its own switch")
+otherCanvas.SetShown(Kit.map, false)
+check(#otherCanvas.Markers(Kit.map) == 0, "the second addon can hide its own markers too")
+otherCanvas.SetShown(Kit.map, true)
+check(#otherCanvas.Markers(Kit.map) == 1, "and show them again")
+canvas.SetShown(Kit.map, true)
+check(#canvas.Markers(Kit.map) == 1, "the first addon shows its markers again")
 Kit.scale, Kit.zoom = 2, 1
 Kit.Tick()
 check(math.abs(pin.scale - 0.6) < 1e-9 and math.abs(pin.point[4] - 250 / 0.6) < 1e-9, "zoom preserves position")
 canvas.SetShown(Kit.map, false)
-check(#ForeverMapMarkers.CanvasSpec(Kit.map) == 0, "hidden markers omitted")
+check(#canvas.Markers(Kit.map) == 0, "hidden markers omitted")
 canvas.SetShown(Kit.map, true)
 Kit.mapID = 1415
-check(#ForeverMapMarkers.CanvasSpec(Kit.map) == 0, "stale map markers omitted")
+check(#canvas.Markers(Kit.map) == 0, "stale map markers omitted")
 Kit.Tick()
 check(changes[#changes] == "map", "map change")
 Kit.canvas:SetSize(800, 600)

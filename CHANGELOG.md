@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **Forever Core is now its own addon on CurseForge and Wago.** Every Forever addon requires it, and the stores install it automatically, so there is nothing to choose or configure. It is the one copy of the shared code: the tracker column, the report window, the leaderboards, the error journal and debug log, the minimap button, the quest log tabs and the settings chrome.
+- **Every Forever addon shares one tracker column.** Scale, Lock and position are one setting for the whole suite: change the tracker in one addon and every section moves together, instead of one addon's slider moving only its own part.
+- **Your tracker settings carry over.** The first Forever addon to load offers its old saved tracker table, and Forever Core copies the scale, lock, attachment, background and position into its own settings once. Nothing needs setting up again.
 - **The world map and the settings panel open through the client, not through the addon.** `C_Map.OpenWorldMap` and `C_SettingsUtil.OpenSettingsPanel` are restricted client functions: called directly from addon code, the client refuses them and blames the addon, which is what the nightly Suite load saw in Shortest Path, Legacy, Tweaks and SkillUp. The shared `Core/OpenMap.lua` and `Core/OpenSettings.lua` run each request through `CreateSecureDelegate`, so it executes as the client, never in combat, and reports false when nothing opened so the caller can say why. On a build without the delegate both stay closed instead of erroring. (#333)
 - **The asset check follows a `BACKDROP_*` global to the art it draws.** A backdrop constant was only an identifier to the checker, so `SetBackdrop(BACKDROP_TOAST_12_12)` passed while the two loose toast files it names are pre-Legion chrome. Each backdrop's `bgFile` and `edgeFile` now comes from the pinned build's `Blizzard_SharedXML/Backdrop.lua` through a generated `backdrops.txt` beside `legacy_chrome.txt`, and those paths get the same FileDataID age rule as a literal path. (#320)
 - **`run --wait` queues until the Wine prefix is free.** The waiter took the session lock and checked the prefix once, so a wineserver still winding down from the previous session, or another waiter taking the lock first, made it give up without running its command. It now holds the lock and keeps checking until the prefix is empty, or exits non-zero with a message when `--timeout` passes. (#317)
@@ -10,6 +13,9 @@
 
 ### For addon authors
 
+- ForeverCore is now a required addon: declare `## Dependencies: ForeverCore` in the TOC and list it under `required-dependencies` in `.pkgmeta`. Do not vendor a runtime file any more.
+- The public surface is `ForeverCore` with `API = 1`, its modules, and `ForeverCore.Register(addonName, spec)`. `Register` returns the addon's `SafeCall`, `RecordError`, `CaughtErrors`, `CutText`, `Log`, `LogLines`, `DebugEnabled`, `DebugCommand`, `Report`, `MapCanvas` and `Attach(db)`. The old `ns.AttachErrorJournal`, `ns.AttachLog`, `ForeverTrackerHost`, `ForeverFamily`, `ForeverLeaderboards`, `ForeverPeerStats`, `ForeverQuestLogTabs`, `ForeverErrorJournal`, `ForeverDebugLog`, `ForeverMinimapButtons` and `ForeverMapMarkers` globals are gone.
+- `UI/SettingsPage.lua`'s `Register(name, build, L)` takes the caller's L. A tracker section offers its old settings with `module.legacySettings`.
 - `Core/OpenMap.lua` adds `ns.OpenMap(mapID?)` and `Core/OpenSettings.lua` adds `ns.OpenSettingsPanel(categoryID?, element?)`. Each returns true when the client opened it, and false in combat, without `CreateSecureDelegate`, or when the client function is missing. Load each after `Core/SafeCall.lua`; the sync tool adds its TOC line and the globals luacheck reads. Call these instead of `C_Map.OpenWorldMap` and `C_SettingsUtil.OpenSettingsPanel`.
 
 ## [0.5.4] - 2026-11-10

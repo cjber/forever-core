@@ -135,7 +135,6 @@ local function resetSent()
 end
 
 local function fresh()
-	_G.ForeverPeerStats = nil
 	timers, sent, frames, groupNames = {}, {}, {}, {}
 	clock, serverTime = 1000, 1700000000
 	sendResult, inGuild, groupKind, groupSize = 0, true, nil, 0
@@ -175,6 +174,7 @@ local function make(ns, overrides)
 			return state.rows
 		end,
 		metrics = METRICS,
+		safeCall = state.safeCall,
 	})
 	return peers, state
 end
@@ -575,6 +575,33 @@ do
 	equal(count(ns.PeerStats.New():Shared()), 0, "missing config is safe")
 end
 
+-- A config's callbacks run in the registering addon's SafeCall, so a failure lands in its own journal.
+do
+	local ns = fresh()
+	local calls = {}
+	local peers = make(ns, {
+		safeCall = function(label, fn, ...)
+			calls[#calls + 1] = label
+			return pcall(fn, ...)
+		end,
+	})
+	equal(peers:IsEnabled(), true, "the instance enables")
+	local seenEnabled, seenDb = false, false
+	for _, label in ipairs(calls) do
+		seenEnabled = seenEnabled or label == "peer stats enabled"
+		seenDb = seenDb or label == "peer stats database"
+	end
+	equal(seenEnabled, true, "the enabled switch runs in the addon's SafeCall")
+	equal(seenDb, true, "the saved table runs in the addon's SafeCall")
+	calls = {}
+	peers:Sync()
+	local seenSnapshot = false
+	for _, label in ipairs(calls) do
+		seenSnapshot = seenSnapshot or label == "peer stats snapshot"
+	end
+	equal(seenSnapshot, true, "the snapshot runs in the addon's SafeCall")
+end
+
 -- Revision: the cache key the leaderboards read ----------------------------------------------------------------
 do
 	local ns = fresh()
@@ -841,7 +868,7 @@ do
 	p2:Sync()
 	advance(1000)
 	equal(attempts, 6, "initial try plus five retries, then dropped")
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "throttled entry is dropped after the retries")
+	equal(n2.PeerStats.Manager().QueueSize(), 0, "throttled entry is dropped after the retries")
 	sendResult = 0
 	equal(p2:Sync(), 1, "dropped entry is offered by the next Sync")
 	advance(5)
@@ -856,7 +883,7 @@ do
 		s3.rows[index] = { metric = "node", subject = tostring(index), value = 1, eventUnix = serverTime }
 	end
 	equal(p3:Sync(), 512, "queue holds at most 512")
-	equal(_G.ForeverPeerStats.QueueSize(), 512, "queue size")
+	equal(n3.PeerStats.Manager().QueueSize(), 512, "queue size")
 	advance(400)
 	equal(#sent, 600, "overflow rows drain without another consumer event")
 	equal(p3:Sync(), 0, "the complete snapshot was sent once")
@@ -879,7 +906,7 @@ do
 	sendResult = 1
 	p4:Sync()
 	advance(400)
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "failed batches drain without starving overflow")
+	equal(n4.PeerStats.Manager().QueueSize(), 0, "failed batches drain without starving overflow")
 	equal(#timers, 0, "permanent failures do not leave an automatic retry loop")
 end
 
@@ -893,7 +920,7 @@ do
 	peers:Sync()
 	state.rows[1].value = 3
 	peers:Sync()
-	equal(_G.ForeverPeerStats.QueueSize(), 1, "one queued entry per row and channel")
+	equal(ns.PeerStats.Manager().QueueSize(), 1, "one queued entry per row and channel")
 	advance(1)
 	equal(#sent, 1, "one send")
 	equal(sent[1].payload, wire("agf", "total", "all", 3, serverTime), "the latest value is sent")
@@ -909,10 +936,10 @@ do
 		state.rows[index] = { metric = "node", subject = tostring(index), value = 1, eventUnix = now }
 	end
 	peers:Sync()
-	equal(_G.ForeverPeerStats.QueueSize(), 5, "queued")
+	equal(ns.PeerStats.Manager().QueueSize(), 5, "queued")
 	state.enabled = false
 	equal(peers:SetEnabled(false), false, "SetEnabled(false)")
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "queued sends cancelled at once")
+	equal(ns.PeerStats.Manager().QueueSize(), 0, "queued sends cancelled at once")
 	advance(10)
 	equal(#sent, 0, "the old timer sends nothing")
 	equal(peers:Sync(), 0, "no sync while off")
@@ -922,7 +949,7 @@ do
 	-- Off then on before the old timer fires: nothing slips out early or twice.
 	state.enabled = true
 	equal(peers:SetEnabled(true), true, "re-enabled")
-	equal(_G.ForeverPeerStats.QueueSize(), 5, "re-enable resyncs everything")
+	equal(ns.PeerStats.Manager().QueueSize(), 5, "re-enable resyncs everything")
 	advance(10)
 	equal(#sent, 5, "each row sent once after re-enable")
 
@@ -943,7 +970,7 @@ do
 	state.enabled = false
 	advance(10)
 	equal(#sent, 0, "a saved-setting change stops queued sends at the next tick")
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "and empties the queue")
+	equal(ns.PeerStats.Manager().QueueSize(), 0, "and empties the queue")
 	state.enabled = true
 	equal(peers:Sync(), 5, "turning it back on resends everything, sent cache was reset")
 	advance(10)
@@ -966,7 +993,7 @@ end
 do
 	local ns = fresh()
 	local peers, state = make(ns)
-	local manager = _G.ForeverPeerStats
+	local manager = ns.PeerStats.Manager()
 	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
 	inCombatNow = true
 	manager.OnEvent("PLAYER_REGEN_DISABLED")
@@ -990,19 +1017,15 @@ do
 	advance(30)
 	equal(#sent, 0, "the live combat check holds the row")
 	inCombatNow = false
-	_G.ForeverPeerStats.OnEvent("PLAYER_REGEN_ENABLED")
+	otherNs.PeerStats.Manager().OnEvent("PLAYER_REGEN_ENABLED")
 	advance(1)
 	equal(#sent, 1, "and releases it when the fight ends")
 end
 
--- Several copies and addons --------------------------------------------------------------------------------------
+-- Several addons on one manager ----------------------------------------------------------------------------------
 do
-	local first = fresh()
-	local second = load()
-	local third = load()
-	equal(_G.ForeverPeerStats ~= nil, true, "global manager published")
-	local manager = _G.ForeverPeerStats
-	equal(manager.version, 7, "manager is versioned")
+	local ns = fresh()
+	local manager = ns.PeerStats.Manager()
 	equal(count(frames) >= 1, true, "one event frame")
 	local live = 0
 	for _, frame in ipairs(frames) do
@@ -1010,16 +1033,16 @@ do
 			live = live + 1
 		end
 	end
-	equal(live, 1, "all copies share one event registration")
+	equal(live, 1, "one event registration")
 
 	local now = serverTime
-	local a, as = make(first, { addon = "agf" })
-	local b, bs = make(second, { addon = "legacy" })
-	local c, cs = make(third, { addon = "agf" })
+	local a, as = make(ns, { addon = "agf" })
+	local b, bs = make(ns, { addon = "legacy" })
+	local c, cs = make(ns, { addon = "agf" })
 	as.rows = { { metric = "total", subject = "all", value = 3, eventUnix = now } }
 	bs.rows = { { metric = "node", subject = "5", value = 1, eventUnix = now } }
 	cs.rows = as.rows
-	equal(a:Sync(), 0, "an instance replaced by a second copy of the same addon is inert")
+	equal(a:Sync(), 0, "an instance replaced by a second instance of the same addon is inert")
 	equal(c:Sync(), 1, "the replacing instance sends")
 	equal(b:Sync(), 1, "another addon sends its own row")
 	advance(1)
@@ -1095,21 +1118,6 @@ do
 	equal(legacy <= 10, true, "the opted-out addon stopped")
 end
 
--- A newer manager takes over registered instances -----------------------------------------------------------------
-do
-	local ns = fresh()
-	local peers, state = make(ns)
-	state.rows = { { metric = "total", subject = "all", value = 1, eventUnix = serverTime } }
-	_G.ForeverPeerStats.version = 2
-	local old = _G.ForeverPeerStats
-	load()
-	equal(_G.ForeverPeerStats ~= old, true, "a newer copy replaces an older manager")
-	equal(old.retired, true, "the old manager is retired")
-	equal(peers:Sync(), 1, "registered instances move to the new manager")
-	advance(1)
-	equal(#sent, 1, "and send through it")
-end
-
 -- Read-only subscriptions preserve foreign-addon reads without replacing its sender or relaying reports.
 do
 	local ns = fresh()
@@ -1127,14 +1135,14 @@ do
 			return { { metric = "total", subject = "all", value = 999, eventUnix = serverTime } }
 		end,
 	})
-	local sender, state = make(load())
+	local sender, state = make(ns)
 	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
 	equal(reader:Sync(), 0, "a reader cannot send even with a snapshot")
 	equal(sender:Sync(), 1, "the actual addon still sends after a reader registered first")
 	advance(1)
 	equal(#sent, 1, "the subscriber adds no sends")
 	resetSent()
-	local manager = _G.ForeverPeerStats
+	local manager = ns.PeerStats.Manager()
 	manager.OnEvent("CHAT_MSG_ADDON", "WFAStats", wire("agf", "total", "all", 8, serverTime), "GUILD", "Alice-X")
 	equal(observed["Alice-X"].total.all.value, 8, "the reader receives its configured source")
 	equal(state.db["Alice-X"].total.all.value, 8, "the actual addon receives the same report independently")
@@ -1166,13 +1174,6 @@ do
 	equal(ns.PeerStats.Listen(nil, { addon = "agf" }).dead, true, "a reader needs a valid owner")
 	equal(ns.PeerStats.Listen("bad owner", { addon = "agf" }).dead, true, "invalid reader owners are rejected")
 	equal(ns.PeerStats.Listen("fieldguide", { addon = "bad source" }).dead, true, "invalid reader sources are rejected")
-	local old = _G.ForeverPeerStats
-	old.version = 2
-	load()
-	equal(_G.ForeverPeerStats ~= old, true, "a manager upgrade keeps subscriptions separate")
-	equal(sender.dead, false, "manager takeover preserves the source sender")
-	equal(replacement.dead, false, "manager takeover preserves the first owner subscription")
-	equal(another.dead, false, "manager takeover preserves the second owner subscription")
 end
 
 -- Existing node/difficulty subjects stay valid alongside explicit aggregate subjects.
@@ -1354,7 +1355,7 @@ do
 	equal(state.db["B-OtherRealm"], nil, "not under the relayer")
 	equal(#peers:Board("total", "all", 0, now), 1, "the default board leaves a relayed row out")
 	equal(peers:Shared()["Cat-OtherRealm"], nil, "Shared leaves it out by default")
-	_G.ForeverPeerStats.includeRelayed = true
+	ns.PeerStats.Manager().includeRelayed = true
 	local board = peers:Board("total", "all", 0, now)
 	equal(#board, 2, "the met reach includes it")
 	local relayedRow
@@ -1365,7 +1366,7 @@ do
 	end
 	equal(relayedRow.relayed, true, "the row says it is relayed")
 	equal(#peers:WeekBoard("total", "all", 0, now), 2, "WeekBoard includes it for the met reach too")
-	_G.ForeverPeerStats.includeRelayed = false
+	ns.PeerStats.Manager().includeRelayed = false
 	equal(#peers:Board("total", "all", 0, now), 1, "and the default hides it again")
 end
 
@@ -1514,7 +1515,7 @@ do
 		equal(recv(peers, wire("agf", "total", "all", 1, now - index), "R" .. index .. "-R"), true, "peer " .. index)
 	end
 	equal(recv(peers, wire("agf", "total", "all", 1, now - 8 * 86400), "Old-R"), true, "an old row")
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "receiving queues nothing")
+	equal(ns.PeerStats.Manager().QueueSize(), 0, "receiving queues nothing")
 	equal(peers:Sync(), 24, "24 relay sends: Seen to the guild, the guild rows to the party")
 	advance(60)
 	local relayed = {}
@@ -1605,7 +1606,7 @@ do
 		true,
 		"a relay is stored"
 	)
-	equal(_G.ForeverPeerStats.QueueSize(), 0, "and queues no send")
+	equal(ns.PeerStats.Manager().QueueSize(), 0, "and queues no send")
 	advance(10)
 	equal(#sent, 0, "nothing leaves the client")
 
@@ -1637,32 +1638,16 @@ do
 	equal(db.NotTrue.total.all.relayed, nil, "a non-true mark is dropped")
 	equal(db.FalseFlag.total.all.relayed, nil, "false is dropped")
 	equal(#peers:Board("total", "all", 0, now), 3, "the default board hides the relay-only row")
-	_G.ForeverPeerStats.includeRelayed = true
+	ns.PeerStats.Manager().includeRelayed = true
 	equal(#peers:Board("total", "all", 0, now), 4, "the met reach shows it")
-	_G.ForeverPeerStats.includeRelayed = false
+	ns.PeerStats.Manager().includeRelayed = false
 
-	local reloaded = make(load(), { db = db })
+	local reloadNs = load()
+	local reloaded = make(reloadNs, { db = db })
 	equal(#reloaded:Board("total", "all", 0, now), 3, "a reload keeps relayed rows out of the board")
-	_G.ForeverPeerStats.includeRelayed = true
+	reloadNs.PeerStats.Manager().includeRelayed = true
 	equal(#reloaded:Board("total", "all", 0, now), 4, "but the mark survived and the met reach finds it")
-	_G.ForeverPeerStats.includeRelayed = false
-end
-
--- Manager takeover from a v6 copy --------------------------------------------------------------------------------
-do
-	local ns = fresh()
-	local peers, state = make(ns)
-	equal(_G.ForeverPeerStats.version, 7, "this copy is manager version 7")
-	state.rows = { { metric = "total", subject = "all", value = 3, eventUnix = serverTime } }
-	_G.ForeverPeerStats.version = 6
-	local old = _G.ForeverPeerStats
-	load()
-	equal(_G.ForeverPeerStats ~= old, true, "a v6 manager is replaced")
-	equal(old.retired, true, "and retired")
-	equal(_G.ForeverPeerStats.version, 7, "by version 7")
-	equal(peers:Sync(), 1, "registered instances move to the new manager")
-	advance(1)
-	equal(#sent, 1, "and send through it")
+	reloadNs.PeerStats.Manager().includeRelayed = false
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))

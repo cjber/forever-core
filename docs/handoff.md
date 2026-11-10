@@ -1,22 +1,23 @@
-# Publishing shared Forever Core changes
+# Publishing Forever Core changes
 
-Forever Core is the authority for every byte-identical file listed in `adoption.md`. Shared changes land here first;
-consumer copies are updated with `tools/sync_consumers.py` and shipped by the consumer addons so standalone installs
-continue to work without a dependency.
+ForeverCore is the one copy of the suite's shared runtime. Runtime changes land here and ship with ForeverCore's own
+release; every consumer requires it, so no consumer carries a copy to update. The development tooling in
+`tools/check_core_shared.py`'s `VENDORED` map is still copied to the consumers with `tools/sync_consumers.py`.
 
 ## Release order
 
 1. Open the core change against `main`. Run core CI and merge when it is green.
-2. Sync the five consumer checkouts from core and open one PR per changed consumer. Each consumer's CI is the gate.
-3. Merge green consumer PRs, then release Forever Core and each consumer whose packaged files changed.
-4. The scheduled core drift workflow checks consumers after they adopt. Each consumer's scheduled drift workflow checks
-   its own files against `forever-core/main`.
+2. Release ForeverCore. The stores install it with the addons that require it, so players receive the change with the
+   addon they already have.
+3. Sync the consumers' development tooling from core and open one PR per changed consumer. Each consumer's CI is the
+   gate.
+4. The consumer drift workflows check their tooling against `forever-core/main` after they adopt.
 
 Publish commits and releases through Nebula's GitHub flow, which supplies the linked user's verified identity and
 canonical attribution. Do not add manual signing flags or signoff trailers.
 
 ## What stays true
 
-- Consumers remain standalone and vendor the shared files; Forever Core stays optional.
-- `ForeverCore.toc` keeps all five consumers in `OptionalDeps` so core adopts the tracker column they load first.
-- Core's scheduled check does not run on push, because consumers adopt on their own release schedules.
+- Every Forever addon declares `## Dependencies: ForeverCore`; ForeverCore loads first and no runtime file is copied.
+- `.pkgmeta` lists ForeverCore under `required-dependencies`, so CurseForge and Wago install it automatically.
+- Core's scheduled check does not run on push, because consumers adopt tooling changes on their own release schedules.
