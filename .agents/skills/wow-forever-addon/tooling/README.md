@@ -23,6 +23,7 @@ the producer commit the copy came from.
 | `locales` | The translation check (WFA-34): every `Locales/<locale>.lua` parses, is loaded by the TOC, uses only the template's keys and keeps English's placeholders and escapes; prints each locale's coverage |
 | `family` | The shared "The Forever addons" block and its check in `README.md` and `docs/curseforge.md` |
 | `changelog`, `release_check`, `latest_build` | Release gates and the newest Forever build |
+| `docs_contract` | The API docs check: every function `Core/API.lua` publishes is named in `docs/api.md` as `Name(`, and the API table's `minor` appears in its history |
 | `csvtable`, `wago` | Strict DB2 CSV parsing and cached, validated downloads |
 | `fsio` | `atomic_write`, and `publish` for multi-output generators (stage all, replace, roll back on failure) |
 | `luadata`, `report` | Read generated Lua tables; the semantic change report |

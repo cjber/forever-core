@@ -29,6 +29,7 @@ bash tools/typecheck.sh                   # LuaLS 3.19.1 over the Lua, with the 
 python3 tools/check_consumers.py          # every consumer's development tooling matches this repo
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WFA-36)
+python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
@@ -74,6 +75,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/LeaderboardsData.lua`: overall points, standing, the per-scope cache keyed on each board's `revision` and the
   unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one cache lookup rather than a board
   build and sort.
+- `Core/APIKit.lua`: the shape every addon's own public API follows, published as `ForeverCore.APIKit`: `Hub` for a
+  next-frame change dispatch and `NotReady` for the `nil, reason` answer. `docs/api-conventions.md` is the convention
+  and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its `docs/api.md`.
 - `UI/Leaderboards.lua`: the one Forever Leaderboards window, its registration and tabs; each addon registers one board
   and nothing there knows an addon.
 - `Core/PeerStats.lua`: bounded guild and group statistics transport and ranking behind the leaderboards.

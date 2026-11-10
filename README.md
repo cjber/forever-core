@@ -26,6 +26,8 @@ terrain keeps the stock look.
 It draws no quest, route, profession or challenge sections of its own. Sections belong to the addon that owns the
 feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon
 through `ForeverCore.Register` and the modules on the `ForeverCore` table; see [`docs/adoption.md`](docs/adoption.md).
+The shape every addon's own public API follows is in
+[`docs/api-conventions.md`](docs/api-conventions.md).
 
 ## Install
 
