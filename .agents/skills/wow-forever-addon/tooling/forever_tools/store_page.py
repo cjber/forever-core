@@ -135,7 +135,7 @@ def check(root: Path) -> list[str]:
     family = where(lambda b: b == FAMILY_TOKEN, "the forever-family block")
 
     image = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
-    shots = [(i, image.fullmatch(b)) for i, b in enumerate(blocks) if image.fullmatch(b)]
+    shots = [(i, match) for i, b in enumerate(blocks) if (match := image.fullmatch(b))]
     if not MIN_IMAGES <= len(shots) <= MAX_IMAGES:
         problems.append(f"{FILE}: {len(shots)} screenshots; want {MIN_IMAGES} to {MAX_IMAGES}")
     for i, match in shots:
