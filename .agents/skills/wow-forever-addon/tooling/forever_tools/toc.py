@@ -6,7 +6,9 @@ from pathlib import Path
 
 LOAD_TAGS = {"Include", "Script"}
 PRELOAD_BYTES = 10 * 1024 * 1024
-NON_RUNTIME_TOC_ROOTS = {"tools", "tests"}
+# forever-core is the ForeverCore checkout an addon's specs and CI load (FOREVER_CORE): its TOC is the dependency's, not
+# the addon's.
+NON_RUNTIME_TOC_ROOTS = {"tools", "tests", "forever-core"}
 
 
 def _toc_files(root: Path) -> list[Path]:
