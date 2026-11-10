@@ -20,7 +20,8 @@ only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
-queues behind another agent's session instead of failing.
+queues behind another agent's session instead of failing, and keeps waiting until the lock is free and the
+previous session's Wine processes have gone, or `--timeout` passes.
 
 The client is for testing the Forever addons' interface, never for playing, and the verbs hold to that:
 
@@ -65,6 +66,7 @@ CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "for
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
 WIDTH, HEIGHT = 1920, 1080
 MAX_SESSION = 30 * 60
+WAIT_POLL = 1.0  # how often a `--wait` queue checks the lock and the Wine prefix
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
@@ -363,26 +365,70 @@ def teardown(
     state_file().unlink(missing_ok=True)
 
 
+def lock_holder() -> str:
+    """The state of the session that holds the lock, for a waiter's message."""
+    return state_file().read_text() if state_file().exists() else "{}"
+
+
+def prefix_who(users: Sequence[int]) -> str:
+    """Who is using the Wine prefix, for the sentence `up` prints when it refuses to start."""
+    game = client_pid()
+    return (
+        f"the player's client is running (Wow.exe, pid {game})"
+        if game
+        else f"{len(users)} Wine processes still run in it"
+    )
+
+
+def wait_for_session(lock, timeout: float) -> None:
+    """Wait until this process holds the session lock and no process uses the Wine prefix.
+
+    The lock is taken first and held while the prefix empties, so another waiter cannot slip in between the two
+    checks. The previous session's wineserver can outlive it for a moment, so the prefix is checked again until it
+    is empty rather than once.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise ClientError(
+                    f"another agent's session still holds the client after waiting {timeout:.0f} s: "
+                    f"{lock_holder()}; pass a longer --timeout to queue"
+                ) from None
+            time.sleep(WAIT_POLL)
+    while True:
+        users = prefix_users()
+        if not users:
+            return
+        if time.monotonic() >= deadline:
+            raise ClientError(
+                f"the Wine prefix {PREFIX} is still in use after waiting {timeout:.0f} s: {prefix_who(users)}. "
+                "A second client would log the first one out, so no session starts; pass a longer --timeout to queue"
+            )
+        time.sleep(WAIT_POLL)
+
+
 def up(args: argparse.Namespace, after_ready=None) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock = open(STATE_DIR / "lock", "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | (0 if args.wait else fcntl.LOCK_NB))
-    except BlockingIOError:
-        held = state_file().read_text() if state_file().exists() else "{}"
-        raise ClientError(f"another agent's session holds the client: {held}; pass --wait to queue") from None
-    users = prefix_users()
-    if users:
-        game = client_pid()
-        who = (
-            f"the player's client is running (Wow.exe, pid {game})"
-            if game
-            else f"{len(users)} Wine processes still run in it"
-        )
-        raise ClientError(
-            f"the Wine prefix {PREFIX} is in use: {who}. "
-            "A second client would log the first one out, so no session starts."
-        )
+    if args.wait:
+        wait_for_session(lock, args.timeout)
+    else:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ClientError(
+                f"another agent's session holds the client: {lock_holder()}; pass --wait to queue"
+            ) from None
+        users = prefix_users()
+        if users:
+            raise ClientError(
+                f"the Wine prefix {PREFIX} is in use: {prefix_who(users)}. "
+                "A second client would log the first one out, so no session starts."
+            )
     try:
         socket.create_connection(BATTLE_NET, timeout=10).close()
     except OSError as error:
@@ -529,7 +575,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in ("up", "run"):
         p = sub.add_parser(name)
         p.add_argument("--wait", action="store_true", help="queue behind another agent's session")
-        p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
+        p.add_argument(
+            "--timeout",
+            type=float,
+            default=600,
+            help="seconds to wait behind another session and to reach the world",
+        )
         if name == "run":
             p.add_argument("command", nargs=argparse.REMAINDER)
     sub.add_parser("down")

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **`run --wait` queues until the Wine prefix is free.** The waiter took the session lock and checked the prefix once, so a wineserver still winding down from the previous session, or another waiter taking the lock first, made it give up without running its command. It now holds the lock and keeps checking until the prefix is empty, or exits non-zero with a message when `--timeout` passes. (#317)
+
 ## [0.5.4] - 2026-11-10
 
 - **Guild members keep their class on the Forever Leaderboards window.** `GetNumGuildMembers` returns the member count and the online count, and the second value reached `tonumber`'s base argument, so building the guild part raised "base out of range" and no guild row got a class colour or icon. (#587)

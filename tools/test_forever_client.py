@@ -23,6 +23,19 @@ def args() -> argparse.Namespace:
     return argparse.Namespace(wait=False, timeout=5)
 
 
+class FakeClock:
+    """A monotonic clock that moves only when something sleeps, so a wait runs without real time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
 class ForeverClientTest(unittest.TestCase):
     def setUp(self):
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -74,6 +87,60 @@ class ForeverClientTest(unittest.TestCase):
         fcntl.flock(holder, fcntl.LOCK_EX)
         with self.assertRaisesRegex(fc.ClientError, r'another agent.*"pid": 7.*--wait'):
             fc.up(args())
+
+    def test_wait_queues_until_the_session_lock_is_free(self):
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc.fcntl, "flock", side_effect=[BlockingIOError(), None]),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection", side_effect=OSError("Network is unreachable")),
+            self.assertRaisesRegex(fc.ClientError, "cannot reach Battle.net"),
+        ):
+            fc.up(argparse.Namespace(wait=True, timeout=600))
+        self.assertGreater(clock.now, 0)
+
+    def test_wait_queues_until_the_prefix_is_empty(self):
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], []]),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc.socket, "create_connection", side_effect=OSError("Network is unreachable")),
+            self.assertRaisesRegex(fc.ClientError, "cannot reach Battle.net"),
+        ):
+            fc.up(argparse.Namespace(wait=True, timeout=600))
+        self.assertGreater(clock.now, 0)
+
+    def test_wait_times_out_while_the_prefix_stays_in_use(self):
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            self.assertRaisesRegex(fc.ClientError, r"still in use after waiting 5 s"),
+        ):
+            fc.up(argparse.Namespace(wait=True, timeout=5))
+        self.assertGreaterEqual(clock.now, 5)
+
+    def test_a_run_that_waits_out_its_timeout_exits_non_zero(self):
+        (self.state / "session.json").write_text('{"pid": 7}')
+        clock = FakeClock()
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc.fcntl, "flock", side_effect=BlockingIOError()),
+            mock.patch.object(fc.subprocess, "run") as ran,
+            contextlib.redirect_stderr(err),
+        ):
+            code = fc.main(["run", "--wait", "--timeout", "5", "--", "true"])
+        self.assertEqual(code, 2)
+        ran.assert_not_called()
+        self.assertIn("after waiting 5 s", err.getvalue())
 
     def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
         addons = self.state / "AddOns"
