@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-10
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
 - **The Forever addons lists cover all eight published addons.** The README and store family block, the Discord digest and the in-game Forever addons page now name Field Guide, Commissions and Macro Assist too, the digest takes its addon order and names from the one family table, and a test fails when the lists disagree. The digest also has emblems for Commissions and Macro Assist. (#363)
 - **Forever Core is now its own addon on CurseForge and Wago.** Every Forever addon requires it, and the stores install it automatically, so there is nothing to choose or configure. It is the one copy of the shared code: the tracker column, the report window, the leaderboards, the error journal and debug log, the minimap button, the quest log tabs and the settings chrome.
 - **Every Forever addon shares one tracker column.** Scale, Lock and position are one setting for the whole suite: change the tracker in one addon and every section moves together, instead of one addon's slider moving only its own part.
