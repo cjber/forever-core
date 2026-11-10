@@ -1,9 +1,9 @@
 """Publish each addon's `docs/curseforge.md` from `origin/main` as its CurseForge project description.
 
 CurseForge's upload API covers files only, so the description is set through the author site in the user's own
-signed-in Chrome, driven by fastbrowse's extension. Each push is then read back from CurseForge's Core API, because the
-author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only when the
-stored description links exactly the URLs the markdown links.
+signed-in Chrome, driven by fastbrowse's extension. Each push is then read back through cfwidget (api.cfwidget.com),
+because the author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only
+when the stored description links exactly the URLs the markdown links.
 
 A state file remembers the hash of the markdown last published per project, so a plain run pushes only addons whose
 description changed on `main`. Run it after merging a PR that touches `docs/curseforge.md`:
@@ -13,8 +13,7 @@ description changed on `main`. Run it after merging a PR that touches `docs/curs
     python3 tools/sync_curseforge.py ~/drive/proj/wow --check    # verify the stored descriptions, push nothing
 
 fastbrowse reads `OPENROUTER_API_KEY` from the environment; the user's Chrome must have the fastbrowse extension and a
-CurseForge sign-in. The read-back needs `CURSEFORGE_CORE_API_KEY`, a key from https://console.curseforge.com/; without
-it a push is reported unverified and pushed again on the next run.
+CurseForge sign-in. A failed read-back is retried with `--check` and pushed again by the next plain run.
 """
 
 import argparse
@@ -104,17 +103,11 @@ class _Urls(HTMLParser):
                 self.urls.add(normalise(value))
 
 
-def stored_links(addon: Addon) -> set[str] | None:
-    """Every link and image URL in the description CurseForge stored, read from its Core API."""
-    key = os.environ.get("CURSEFORGE_CORE_API_KEY")
-    if not key:
-        return None
-    request = Request(
-        f"https://api.curseforge.com/v1/mods/{addon.project_id}/description",
-        headers={"x-api-key": key, "Accept": "application/json"},
-    )
-    with urlopen(request, timeout=30) as response:
-        html = json.load(response)["data"]
+def stored_links(addon: Addon) -> set[str]:
+    """Every link and image URL in the description CurseForge stored, read through cfwidget, which needs no key."""
+    request = Request(f"https://api.cfwidget.com/wow/addons/{addon.project_id}", headers={"User-Agent": "forever-core"})
+    with urlopen(request, timeout=60) as response:
+        html = json.load(response)["description"]
     parser = _Urls()
     parser.feed(html)
     return parser.urls
@@ -122,8 +115,6 @@ def stored_links(addon: Addon) -> set[str] | None:
 
 def verify(addon: Addon, markdown: str) -> tuple[bool, str]:
     live = stored_links(addon)
-    if live is None:
-        return False, "unverified: set CURSEFORGE_CORE_API_KEY to read the stored description"
     want = expected_links(markdown)
     missing, extra = want - live, live - want
     if missing or extra:
