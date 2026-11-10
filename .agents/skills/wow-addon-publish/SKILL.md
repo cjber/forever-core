@@ -66,9 +66,9 @@ Steps and what trips agents up:
    blocks the tab). Ask the user to click "Upload image" and pick the repo's 400×400 PNG
    (`media/icon-400.png` in cjber's addons), either here or later at `#/projects/<ID>/general`.
 3. **Description**: set the textarea with `form_input` to `docs/curseforge.md`, then **type** a little
-   text at the end (click the textarea, `ctrl+End`, type the footer). `form_input` alone does not update
-   React state, so the step validates as empty. cjber's footer:
-   `Made by Cillian Berragan · [cillian.dev](https://cillian.dev/) · [GitHub](https://github.com/cjber) · [Twitter](https://twitter.com/cjberragan)`
+   text at the end (click the textarea, `ctrl+End`, type a newline). `form_input` alone does not update
+   React state, so the step validates as empty. The description ends with the support buttons; add no
+   author footer.
 4. **License**: the dropdowns are custom comboboxes whose list often does not show in screenshots. Open
    with a click, then `find` the option by its text (e.g. "GNU General Public License version 3 (GPLv3)")
    and click the returned ref. Close an open list by clicking empty page space before the next field.
