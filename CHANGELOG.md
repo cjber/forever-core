@@ -2,7 +2,12 @@
 
 ## [Unreleased]
 
+- **The world map and the settings panel open through the client, not through the addon.** `C_Map.OpenWorldMap` and `C_SettingsUtil.OpenSettingsPanel` are restricted client functions: called directly from addon code, the client refuses them and blames the addon, which is what the nightly Suite load saw in Shortest Path, Legacy, Tweaks and SkillUp. The shared `Core/Open.lua` runs both through `CreateSecureDelegate`, so the request executes as the client, never in combat, and reports false when nothing opened so the caller can say why. On a build without the delegate both stay closed instead of erroring. (#333)
 - **A consumer sync PR no longer closes itself, and carries its phrase template.** `tools/sync_consumer_prs.py` pointed `forever-core-sync` at the consumer's `main` head before creating the sync commit, so between the two calls the PR's head equalled its base and GitHub closed it; the commit is now built on a scratch branch from `main` and the sync branch moves once to that commit. A consumer with `tools/phrases.py` also gets its `Locales/phrases.txt` regenerated in the same commit, so its locale spec passes. (#330)
+
+### For addon authors
+
+- `Core/Open.lua` adds `ns.OpenMap(mapID?)` and `ns.OpenSettingsPanel(categoryID?, element?)`. Each returns true when the client opened it, and false in combat, without `CreateSecureDelegate`, or when the client function is missing. Load it after `Core/SafeCall.lua`; the sync tool adds the TOC line and the globals luacheck reads. Call these instead of `C_Map.OpenWorldMap` and `C_SettingsUtil.OpenSettingsPanel`.
 
 ## [0.5.4] - 2026-11-10
 

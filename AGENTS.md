@@ -52,6 +52,7 @@ and run anywhere.
 - `Expose.lua`: the public `ForeverCore` table and `/fcore`; the last file the TOC loads, because it publishes what
   the shared modules built.
 - `Core/SafeCall.lua`, `UI/Report.lua` and `UI/ForeverFamily.lua`: shared error capture, report, issue and link UI vendored into all five consumers.
+- `Core/Open.lua`: the shared opener for the client's restricted world map and settings panel functions, run through `CreateSecureDelegate`, never in combat, vendored to the five addons that open either.
 - `Core/Log.lua`: the shared structured log, its 200-line saved ring, the `/forever debug` switch and the lines the report copies.
 - `tests/report_spec.lua`, `tests/debug_log_spec.lua` and `tests/forever_family_spec.lua`: their contract specs.
 - `UI/TrackerHost.lua`: the private tracker column, its optional tooltip-art backdrop and opacity, its layout,

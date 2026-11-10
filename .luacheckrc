@@ -40,6 +40,7 @@ read_globals = {
 	"Saturate",
 	"C_InputInterfaceStyle",
 	"C_Map",
+	"C_SettingsUtil",
 	"C_Texture",
 	"C_Timer",
 	"date",
@@ -157,6 +158,8 @@ read_globals[#read_globals + 1] = "OpenMapAPI"
 
 read_globals[#read_globals + 1] = "IsPlayerMoving"
 read_globals[#read_globals + 1] = "InCombatLockdown"
+-- Core/Open.lua: the client's secure delegate for its restricted map and settings openers.
+read_globals[#read_globals + 1] = "CreateSecureDelegate"
 read_globals[#read_globals + 1] = "C_AddOnProfiler"
 read_globals[#read_globals + 1] = "UpdateAddOnMemoryUsage"
 read_globals[#read_globals + 1] = "GetAddOnMemoryUsage"
