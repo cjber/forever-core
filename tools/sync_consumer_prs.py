@@ -5,7 +5,8 @@ vendors `tools/forever_tools/MANIFEST.json` or `tools/forever_sim/MANIFEST.json`
 edit: the first comes from the vendoring map, the second from the repositories themselves.
 
 For each consumer this clones `main`, runs the same three syncs a maintainer would (`tools/sync_consumers.py` for this
-repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`), regenerates the
+repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`, each preceded by a
+copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the
 consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and, if anything changed, creates the commit on a
 scratch branch through the GraphQL `createCommitOnBranch` mutation from that `main` HEAD, then moves
 `forever-core-sync` to it in one ref update and opens or refreshes the PR with squash auto-merge enabled. Building the
@@ -26,6 +27,7 @@ script prints a notice and exits 0, so the workflow stays green until the owner 
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,6 +42,8 @@ BRANCH = "forever-core-sync"
 SCRATCH_BRANCH = f"{BRANCH}-commit"
 TITLE = "chore: sync shared files from forever-core"
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
+# Where this checkout keeps each tooling package's producer, the PRODUCER_PATH both sync.py files carry.
+TOOLING_PRODUCER_ROOT = ".agents/skills/wow-forever-addon/tooling"
 PER_PAGE = 100
 REPOSITORY_PAGES = 2
 AUTO_MERGE_QUERY = """
@@ -167,9 +171,30 @@ def regenerate_phrases(root: Path) -> None:
     template.write_text(generated.stdout, encoding="utf-8")
 
 
+def copy_preserving_mode(source: Path, target: Path) -> None:
+    """Copy a file and carry its mode across, as the tooling's own sync.py does, so an executable stays one."""
+    shutil.copyfile(source, target)
+    shutil.copymode(source, target)
+
+
+def install_updater(root: Path, core_root: Path, package: str) -> None:
+    """Put the producer's own `sync.py` in the consumer before running it.
+
+    The updater that runs is the one being installed. A release that adds a vendored file (backdrops.txt in #339) would
+    otherwise be checked by the consumer's older copy, whose DATA_FILES does not list it, so it hashes fewer files than
+    the producer's manifest names and every sync fails with "the producer's MANIFEST.json is stale".
+    """
+    source = core_root / TOOLING_PRODUCER_ROOT / package / "sync.py"
+    target = root / "tools" / package / "sync.py"
+    if not source.is_file():
+        raise SyncError(f"{source} is missing: this checkout has no producer for {package}")
+    copy_preserving_mode(source, target)
+
+
 def sync_checkout(root: Path, core_root: Path) -> None:
     run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent)])
     for package in tooling_packages(root):
+        install_updater(root, core_root, package)
         run(
             [sys.executable, str(root / "tools" / package / "sync.py"), "update", "--source", str(core_root)],
             cwd=root,
