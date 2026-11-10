@@ -89,7 +89,7 @@ user to delete on `addons.wago.io/addons/<slug>/gallery`.
 Run the browser work in the user's logged-in Chrome, in batches of about three images, so a slow page
 does not outlast the tool call. Confirm every change after a reload or on the public page.
 
-**Descriptions.** After a PR that changes `docs/curseforge.md` merges, run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it publishes every changed description through the user's Chrome and reads each back through cfwidget. By hand: paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
+**Descriptions.** After a PR that changes `docs/curseforge.md` merges, run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it publishes every changed description through the user's Chrome and reads each back from CurseForge's Core API (`CURSEFORGE_CORE_API_KEY`, in pass as `dev/CURSEFORGE_CORE_API_KEY`). By hand: paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
 "Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
 press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
 CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).
