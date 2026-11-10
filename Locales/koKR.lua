@@ -18,6 +18,8 @@ L["5th"] = "5위"
 L["6th"] = "6위"
 L["7th"] = "7위"
 L["8th"] = "8위"
+L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
+	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 L["All time"] = "전체 기간"
 L["Attach to quest tracker"] = "퀘스트 추적기에 붙이기"
 L["Bug"] = "오류"
@@ -50,6 +52,10 @@ L["Forever: %s overall"] = "Forever: 종합 %s"
 L["Forever: %s overall this week"] = "Forever: 이번 주 종합 %s"
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "설치됨, 사용 안 함"
+L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
+	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
+L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
+	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
 L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "추적기 잠금"

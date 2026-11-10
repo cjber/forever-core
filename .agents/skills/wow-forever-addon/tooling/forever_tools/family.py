@@ -1,6 +1,6 @@
 """The shared "The Forever addons" block in every addon's README.md and docs/curseforge.md (WFA-32).
 
-`BLOCK` is the one copy: a heading, a sentence and a table of the six addons in the family's order, each name linked to
+`BLOCK` is the one copy: a heading, a sentence and a table of the eight addons in the family's order, each name linked to
 its CurseForge page and its row to the addon's GitHub issues. A line under the table invites bug reports, feature
 requests and pull requests, and says that everyone whose report or idea ships is thanked by name, and a last line links
 the suite's Discord. Each repo places it once per file, between `START` and `END`, where it fits that page; `check`
@@ -56,6 +56,16 @@ ADDONS = (
         "Field Guide Forever",
         "field-guide-forever",
         "Keeps a cosmetic journal of the creatures you kill, zone by zone.",
+    ),
+    (
+        "Commissions Forever",
+        "commissions-forever",
+        "Lists your commission turn-ins, the materials in your bags and the next NPC to visit.",
+    ),
+    (
+        "Macro Assist Forever",
+        "macro-assist-forever",
+        "Adds a macro window with every macro in one list, a mono editor with live checks, and history.",
     ),
 )
 
