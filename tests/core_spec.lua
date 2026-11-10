@@ -38,6 +38,7 @@ for _, path in ipairs({
 	"Core/PeerStats.lua",
 	"Core/MinimapButton.lua",
 	"Core/LeaderboardsData.lua",
+	"Core/APIKit.lua",
 	"Core/QuestOrder.lua",
 	"UI/Art.lua",
 	"UI/Report.lua",

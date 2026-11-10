@@ -23,6 +23,7 @@ core.MinimapButton = ns.MinimapButton
 core.SettingsPage = ns.SettingsPage
 core.Text = ns.Text
 core.QuestOrder = ns.QuestOrder
+core.APIKit = ns.APIKit
 core.OpenMap = ns.OpenMap
 core.OpenSettingsPanel = ns.OpenSettingsPanel
 core.Family = ns.Family

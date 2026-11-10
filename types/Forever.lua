@@ -96,6 +96,21 @@
 ---@field MapCanvas ForeverCanvasAPI
 ---@field Attach fun(db: table) the addon's saved table, once it loads
 
+-- Core/APIKit.lua, the shape every addon's own API follows (docs/api-conventions.md).
+---@alias ForeverCoreAPIReason "loading"|"disabled"|"none"
+---@alias ForeverCoreAPIChannel fun(): string|number|boolean|false
+---@alias ForeverCoreAPIChannels table<string, ForeverCoreAPIChannel>
+---@alias ForeverCoreAPIChanges table<string, true>
+
+---@class ForeverCoreAPIHub
+---@field Subscribe fun(callback: fun(changes: ForeverCoreAPIChanges)): fun() unsubscribes, safe to call twice
+---@field Queue fun() asks for one dispatch on the next frame
+
+---@class ForeverCoreAPIKit
+---@field minor integer raised with each addition, so a caller can check a member before using it
+---@field Hub fun(addonName: string, channels: ForeverCoreAPIChannels, ready?: fun(): boolean): ForeverCoreAPIHub
+---@field NotReady fun(reason: ForeverCoreAPIReason): nil, ForeverCoreAPIReason
+
 ---@class ForeverCoreAPI
 ---@field API integer the interface version; 1 is the first
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
@@ -113,6 +128,7 @@
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field Text? table
 ---@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
+---@field APIKit? ForeverCoreAPIKit
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field Family? ForeverFamilyAPI

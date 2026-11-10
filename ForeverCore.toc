@@ -43,6 +43,7 @@ Core\QuestOrder.lua
 UI\TrackerQuests.lua
 UI\MapCanvas.lua
 Core\LeaderboardsData.lua
+Core\APIKit.lua
 UI\Leaderboards.lua
 UI\QuestLogTabs.lua
 Expose.lua

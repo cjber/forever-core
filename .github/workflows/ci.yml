@@ -84,6 +84,7 @@ jobs:
           persist-credentials: false
       - run: python3 tools/check_client_load.py
       - run: python3 tools/check_menu_scroll.py
+      - run: python3 tools/check_api_docs.py
 
   packaged:
     runs-on: ubuntu-24.04
