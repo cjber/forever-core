@@ -188,9 +188,12 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 - **WFA-15** CI covers at least the skillup-forever baseline: actions pinned to full SHAs with a
   version comment, `persist-credentials: false`, `permissions: contents: read`; luacheck, every
-  `tests/*_spec.lua` under LuaJIT (a glob, so a new spec cannot be left out), StyLua `--check`,
+  `tests/*_spec.lua` under LuaJIT (a glob, so a new spec cannot be left out; `python3 -m
+  tools.forever_tools.specs` runs them in parallel and names every failure), StyLua `--check`,
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
-  history. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. A job
+  history. Every pull-request workflow cancels a PR's superseded runs (top-level `concurrency` grouped on
+  the PR number, `cancel-in-progress` only for `pull_request`, so `main` keeps a run per commit) and every
+  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. A job
   named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
   one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
   hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,

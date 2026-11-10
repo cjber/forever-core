@@ -28,7 +28,8 @@ the producer commit the copy came from.
 | `csvtable`, `wago` | Strict DB2 CSV parsing and cached, validated downloads |
 | `fsio` | `atomic_write`, and `publish` for multi-output generators (stage all, replace, roll back on failure) |
 | `luadata`, `report` | Read generated Lua tables; the semantic change report |
-| `generated` | The fresh-then-offline generated-data gate and `data_report` |
+| `generated` | The fresh-then-offline generated-data gate, its two passes run at once, and `data_report` |
+| `specs` | Every `tests/*_spec.lua` under LuaJIT in parallel, reported in glob order with each spec's time |
 | `sync` | `check`, `update`, `pin`, `manifest` |
 
 A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_art.py`,

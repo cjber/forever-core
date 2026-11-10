@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -72,6 +73,30 @@ class GeneratedTest(unittest.TestCase):
     def test_gate_rejects_a_generator_whose_second_pass_differs(self):
         with self.assertRaisesRegex(SystemExit, "not byte-for-byte reproducible"):
             self.run_gate(DRIFT, offline=False)
+
+    def test_the_two_passes_run_at_the_same_time(self):
+        both = threading.Barrier(2, timeout=10)
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository(directory, {"Data/X.lua": "same"})
+            generated.check_generated(
+                root,
+                outputs=lambda r: {"Data/X.lua": (r / "Data/X.lua").read_bytes()},
+                regenerate=lambda scratch, offline: both.wait(),
+                offline=True,
+                success="ok",
+            )
+
+    def test_inputs_the_online_pass_downloads_feed_a_second_pass_after_it(self):
+        fetch = """import sys
+from pathlib import Path
+
+source = Path("tools/.cache/input.txt")
+if "--offline" not in sys.argv:
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("ns.A = {\\n\\t[1] = true,\\n}\\n")
+Path("Data/X.lua").write_text(source.read_text())
+"""
+        self.run_gate(fetch, offline=False)
 
     def test_gate_rejects_stale_committed_output(self):
         with self.assertRaisesRegex(SystemExit, "Stale generated files"):
