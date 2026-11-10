@@ -3,7 +3,8 @@
 CurseForge's upload API covers files only, so the description is set through the author site in the user's own
 signed-in Chrome, driven by fastbrowse's extension. Each push is then read back from CurseForge's Core API, because
 the author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only
-when the stored description links exactly the URLs the markdown links.
+when the stored description has exactly the markdown's words, in order, and links exactly its URLs. Links alone are
+not enough, since a description stored twice over carries the same URLs.
 
 A plain run only reads each stored description back and compares it with `main`. Pushing is opt-in with `--push`,
 because the fastbrowse extension run saves wrong text for some pages (agent-labs-dev/fastbrowse#939): until that is
@@ -21,6 +22,7 @@ https://console.curseforge.com/. cfwidget is not used for it: it serves a cached
 """
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -28,6 +30,7 @@ import re
 import subprocess
 import sys
 import uuid
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -97,19 +100,34 @@ def push(addon: Addon, markdown: str) -> dict:
     return fastbrowse(task, f"https://authors.curseforge.com/#/projects/{addon.project_id}/description")
 
 
-class _Urls(HTMLParser):
+def words(text: str) -> list[str]:
+    """The words a reader sees, lower case: markdown comments, images, link targets and markup characters go."""
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"[#*_`|>\-]+", " ", unescape(text))
+    return re.findall(r"\w+", text.replace("\u2019", "").replace("'", "").lower())
+
+
+class _Stored(HTMLParser):
+    """The link and image URLs and the visible text of a stored description."""
+
     def __init__(self):
         super().__init__()
         self.urls: set[str] = set()
+        self.text: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         for name, value in attrs:
             if (tag, name) in (("a", "href"), ("img", "src")) and value:
                 self.urls.add(normalise(value))
 
+    def handle_data(self, data):
+        self.text.append(data)
 
-def stored_links(addon: Addon, key: str) -> set[str]:
-    """Every link and image URL in the description CurseForge stored, read from its Core API."""
+
+def stored(addon: Addon, key: str) -> _Stored:
+    """The description CurseForge stored, read from its Core API."""
     request = Request(
         f"https://api.curseforge.com/v1/mods/{addon.project_id}/description",
         # CloudFront caches this endpoint for minutes, keyed partly on User-Agent and not on the query string, so a
@@ -118,18 +136,29 @@ def stored_links(addon: Addon, key: str) -> set[str]:
     )
     with urlopen(request, timeout=60) as response:
         html = json.load(response)["data"]
-    parser = _Urls()
+    parser = _Stored()
     parser.feed(html)
-    return parser.urls
+    return parser
+
+
+def compare(markdown: str, live: _Stored) -> tuple[bool, str]:
+    want, got = words(markdown), words(" ".join(live.text))
+    if want != got:
+        matcher = difflib.SequenceMatcher(None, want, got, autojunk=False)
+        _, i1, i2, j1, j2 = next(op for op in matcher.get_opcodes() if op[0] != "equal")
+        return False, (
+            f"words differ ({len(want)} expected, {len(got)} stored), first at word {i1}: "
+            f"expected {' '.join(want[i1:i2])[:200]!r}, stored {' '.join(got[j1:j2])[:200]!r}"
+        )
+    links = expected_links(markdown)
+    missing, extra = links - live.urls, live.urls - links
+    if missing or extra:
+        return False, f"missing {sorted(missing)} extra {sorted(extra)}"
+    return True, "stored description matches word for word"
 
 
 def verify(addon: Addon, markdown: str, key: str) -> tuple[bool, str]:
-    want = expected_links(markdown)
-    live = stored_links(addon, key)
-    missing, extra = want - live, live - want
-    if missing or extra:
-        return False, f"missing {sorted(missing)} extra {sorted(extra)}"
-    return True, "stored description links match"
+    return compare(markdown, stored(addon, key))
 
 
 def main() -> int:
