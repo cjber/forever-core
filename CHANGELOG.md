@@ -8,6 +8,7 @@
 
 - Add `## X-Forever-Icon: Interface\Icons\<name>` to the TOC, read it with `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`, and pass that value to every identity surface. `forever_tools.identity` runs in the assets check, and `docs/asset-registry.md` records each addon's icon. The TOC `## IconTexture` stays the drawn `media/Icon`.
 - `ForeverCore.TrackerSection.Create(name, mixin, opts)` builds and attaches a tracker section, with `UpdateText`, `Room` and `AddMore` for its lines. `ForeverCore.TrackerLine.SetInteractive` and `SetHeaderTooltip` wire clickable objective lines and block header tooltips through `ForeverTrackerInteractiveLineTemplate`. The column now records one section's layout error in its own journal and still lays out the sections below it, and calls `module.OnHeaderClick(button)` for a header click other than the right-click menu. `docs/adoption.md` names each call.
+- `forever_tools.specs` runs every `tests/*_spec.lua` in parallel, prints each spec's output in glob order with its time, and names every failure; `python3 -m tools.forever_tools.specs` replaces the shell loop in `check`. The generated-data gate (`forever_tools.generated`) now runs its fresh and offline passes at the same time, rerunning the offline pass after the first only when that pass changed its inputs. Pull-request workflows cancel a PR's superseded runs and every job sets `timeout-minutes` (WFA-15).
 
 ## [1.1.0] - 2026-11-10
 

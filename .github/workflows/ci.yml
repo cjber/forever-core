@@ -14,9 +14,14 @@ env:
   PIP_RETRIES: 5
   PIP_DEFAULT_TIMEOUT: 60
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   deadcode:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,6 +30,7 @@ jobs:
 
   check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +45,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends --allow-downgrades \
             "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT" "lua-check=$LUACHECK"
       - run: luacheck .
-      - run: for spec in tests/*_spec.lua; do luajit "$spec" || exit 1; done
+      - run: python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py
       # The host spec runs Blizzard's own tracker source, fetched at a pinned revision.
       - name: Native tracker integration
         run: |
@@ -62,6 +68,7 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,6 +85,7 @@ jobs:
   # The rules no linter covers, which every addon vendors (WFA-36, WFA-37).
   project-rules:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,6 +96,7 @@ jobs:
 
   packaged:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,6 +120,7 @@ jobs:
 
   secrets:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,6 +138,7 @@ jobs:
 
   workflows:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

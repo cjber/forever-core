@@ -1,9 +1,10 @@
 """The generated-data gate: regenerate in a disposable tree, require fresh and byte-stable output, report what moved.
 
 Each addon supplies which files its generators own and how to run them; this runs them twice (the second pass
-offline from the first pass's downloads, never from its outputs), so a pass proves freshness and the next proves
-the bytes do not depend on the run. A stale file comes with a semantic report of what the new data adds, removes
-and changes, not only its name.
+offline from the first pass's inputs, never from its outputs), so a pass proves freshness and the next proves
+the bytes do not depend on the run. The two passes run at the same time in separate scratch trees; when the first
+pass changes its inputs, the second is run again afterwards from those inputs. A stale file comes with a semantic
+report of what the new data adds, removes and changes, not only its name.
 """
 
 import argparse
@@ -12,7 +13,9 @@ import os
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 from .report import Hint, Subset, build_report
@@ -92,30 +95,21 @@ def compare(
         )
 
 
-def check_generated(
-    root: Path,
-    *,
-    outputs: Callable[[Path], Outputs],
-    regenerate: Callable[[Path, bool], None],
-    offline: bool,
-    success: str,
-    hints: Mapping[str, Hint] | None = None,
-    subsets: Iterable[Subset] = (),
-    cache: str = "tools/.cache",
-    prefix: str = "regenerate-",
-) -> None:
-    """Regenerate twice in a scratch copy of the tracked tree, seeded with the shared input cache.
+def same_tree(left: Path, right: Path) -> bool:
+    """Whether two directories hold the same files with the same bytes; two missing directories are the same."""
+    if not left.is_dir() or not right.is_dir():
+        return left.is_dir() == right.is_dir()
 
-    `regenerate(scratch, offline)` removes the generated files and runs every generator. An online first pass
-    copies the inputs it downloaded or changed back into the shared cache (`copy_back`), so the second pass and
-    later runs work offline. Scratch lives in the ignored shared cache, avoiding limited system tmpfs. An explicit
-    TMPDIR, TEMP or TMP keeps the platform's temporary-directory selection. Cache inputs remain independent copies.
-    """
-    shared = input_cache(root, cache)
-    temporary_root = None
-    if not any(os.environ.get(name) for name in ("TMPDIR", "TEMP", "TMP")):
-        temporary_root = shared / ".scratch"
-        temporary_root.mkdir(parents=True, exist_ok=True)
+    def files(top: Path) -> set[Path]:
+        return {Path(folder, name).relative_to(top) for folder, _, names in os.walk(top) for name in names}
+
+    names = files(left)
+    return names == files(right) and all(filecmp.cmp(left / name, right / name, shallow=True) for name in names)
+
+
+@contextmanager
+def scratch_tree(root: Path, shared: Path, cache: str, prefix: str, temporary_root: Path | None) -> Iterator[Path]:
+    """A disposable copy of the tracked tree, seeded with an independent copy of the shared input cache."""
     with tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_root) as temporary:
         scratch = Path(temporary)
         try:
@@ -128,14 +122,64 @@ def check_generated(
                 f"Cannot prepare generated-data scratch at {scratch}: {reason}\n"
                 f"Input cache: {shared}\nSet TMPDIR to a writable filesystem with room for an independent cache copy."
             ) from error
-        expected = outputs(scratch)
-        regenerate(scratch, offline)
-        if not offline and (scratch / cache).is_dir():
-            copy_back(scratch / cache, shared)
-        generated = outputs(scratch)
+        yield scratch
+
+
+def check_generated(
+    root: Path,
+    *,
+    outputs: Callable[[Path], Outputs],
+    regenerate: Callable[[Path, bool], None],
+    offline: bool,
+    success: str,
+    hints: Mapping[str, Hint] | None = None,
+    subsets: Iterable[Subset] = (),
+    cache: str = "tools/.cache",
+    prefix: str = "regenerate-",
+) -> None:
+    """Regenerate twice in scratch copies of the tracked tree, seeded with the shared input cache.
+
+    `regenerate(scratch, offline)` removes the generated files and runs every generator; it must touch nothing outside
+    `scratch`, because the two passes run at the same time. The first pass (online unless `offline`) proves the
+    committed files are fresh. The second, offline, runs in its own tree from the same cache. It counts only when the
+    first pass left the inputs byte-identical, so both read the same inputs; otherwise, or when it fails, it runs again
+    after the first pass, from that pass's inputs, as a serial gate would. An online first pass copies the inputs it
+    downloaded or changed back into the shared cache (`copy_back`), so later runs work offline. Scratch lives in the
+    ignored shared cache, avoiding limited system tmpfs. An explicit TMPDIR, TEMP or TMP keeps the platform's
+    temporary-directory selection.
+    """
+    shared = input_cache(root, cache)
+    temporary_root = None
+    if not any(os.environ.get(name) for name in ("TMPDIR", "TEMP", "TMP")):
+        temporary_root = shared / ".scratch"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+
+    def replay(scratch: Path) -> bool:
+        try:
+            regenerate(scratch, True)
+        except (subprocess.CalledProcessError, OSError, SystemExit):
+            return False
+        return True
+
+    with (
+        scratch_tree(root, shared, cache, prefix, temporary_root) as fresh,
+        scratch_tree(root, shared, cache, prefix, temporary_root) as second,
+    ):
+        expected = outputs(fresh)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            replayed = pool.submit(replay, second)
+            regenerate(fresh, offline)
+            replayed_ok = replayed.result()
+        if not offline and (fresh / cache).is_dir():
+            copy_back(fresh / cache, shared)
+        generated = outputs(fresh)
         compare(expected, generated, "Stale generated files; run the canonical generators", hints, subsets)
-        regenerate(scratch, True)
-        compare(generated, outputs(scratch), "Regeneration is not byte-for-byte reproducible", hints, subsets)
+        if replayed_ok and same_tree(fresh / cache, second / cache):
+            again = outputs(second)
+        else:
+            regenerate(fresh, True)
+            again = outputs(fresh)
+        compare(generated, again, "Regeneration is not byte-for-byte reproducible", hints, subsets)
     print(success)
 
 

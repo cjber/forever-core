@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   sim:
     runs-on: ubuntu-24.04
@@ -38,9 +42,7 @@ jobs:
           key: forever-sim-${{ hashFiles('.agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py') }}
       - run: python3 forever_sim/fetch.py --locale deDE
       - run: luacheck forever_sim tests/sim
-      - run: luajit tests/sim/unit_spec.lua
-      - run: luajit tests/sim/integration_spec.lua
-      - run: luajit tests/sim/taint_gate_spec.lua
+      - run: python3 forever_tools/specs.py --pattern 'tests/sim/*_spec.lua'
       - name: Shared map canvas scenario
         working-directory: .
         run: luajit .agents/skills/wow-forever-addon/tooling/forever_sim/run.lua tests/sim

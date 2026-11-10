@@ -25,6 +25,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write # the packager creates the GitHub release; a manual release creates its tag
       actions: read # release_check.py reads the commit's CI runs

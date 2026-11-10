@@ -23,7 +23,7 @@ and the Forever addons page. It is GPL-3.0-or-later.
 ```sh
 luacheck .
 stylua --check .
-for s in tests/*_spec.lua; do luajit "$s" || exit 1; done
+python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py   # every spec, in parallel
 python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
 bash tools/typecheck.sh                   # LuaLS 3.19.1 over the Lua, with the pinned WoW API annotations
 python3 tools/check_consumers.py          # every consumer's development tooling matches this repo
