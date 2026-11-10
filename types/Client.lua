@@ -55,6 +55,11 @@ EditModeManagerFrame = nil
 ---@type ForeverNativeTrackerFrame
 ObjectiveTrackerFrame = nil
 
+-- The companion tracker registry a store build's vendored host still uses. ForeverCore adopts the column when it is
+-- already there, and publishes its own so a vendored host loaded later reuses it instead of drawing another.
+---@type ForeverTrackerHostAPI?
+ForeverTrackerHost = nil
+
 -- Blizzard's own quest tracker mixins, read by UI/TrackerQuests.lua so its section behaves like the game's.
 ---@class ForeverQuestObjectiveTrackerMixin
 ---@field ShouldDisplayQuest fun(self: any, quest: any): boolean

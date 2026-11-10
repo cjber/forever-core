@@ -106,13 +106,16 @@ for _, name in ipairs({
 	"ForeverPeerStats",
 	"ForeverErrorJournal",
 	"ForeverDebugLog",
-	"ForeverTrackerHost",
 }) do
 	check(
 		not clientTypes:find("\n" .. name .. " = nil", 1, true),
 		"types/Client.lua still declares the deleted global " .. name
 	)
 end
+check(
+	clientTypes:find("\nForeverTrackerHost = nil", 1, true) ~= nil,
+	"types/Client.lua declares the companion tracker registry"
+)
 local foreverTypes = readFile("types/Forever.lua")
 check(
 	foreverTypes:find("---@type ForeverCoreAPI", 1, true) ~= nil

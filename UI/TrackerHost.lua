@@ -27,6 +27,99 @@ if not ObjectiveTrackerFrame then
 	return
 end
 
+-- A consumer's old tracker settings, offered once by the first module that attaches with a `legacySettings` table.
+-- Saved variables are not there while the files load, so the copy waits for ForeverCore's ADDON_LOADED.
+local pendingLegacy
+
+-- Copy the first legacy table offered into ForeverCoreDB.trackerHost, once. Each field is taken only when it has the
+-- shape the host reads; the rest keep the fresh defaults. Later offers are ignored. True when it copied.
+---@return boolean
+local function CopyLegacy()
+	if type(ForeverCoreDB) ~= "table" or pendingLegacy == nil then
+		return false
+	end
+	local legacy = pendingLegacy
+	pendingLegacy = nil
+	local settings = ns.TrackerHostSettings()
+	if settings.migrated == true then
+		return false
+	end
+	for field, kind in pairs({
+		attached = "boolean",
+		locked = "boolean",
+		scale = "number",
+		backdropOpacity = "number",
+		x = "number",
+		y = "number",
+	}) do
+		if type(legacy[field]) == kind then
+			settings[field] = legacy[field]
+		end
+	end
+	settings.migrated = true
+	return true
+end
+ns.MigrateTrackerSettings = CopyLegacy
+
+---@param module ForeverTrackerModule
+local function OfferLegacy(module)
+	if pendingLegacy == nil and type(module.legacySettings) == "table" then
+		pendingLegacy = module.legacySettings
+		return true
+	end
+	return false
+end
+
+-- A store build that still vendors UI/TrackerHost.lua can load before ForeverCore (Adventure Guide, Commissions and
+-- Field Guide load before it alphabetically). That copy registers the one companion column in ForeverTrackerHost and
+-- reuses whatever is already there, so adopt the existing column instead of drawing a second one over it: every call
+-- the old API has is forwarded, and the backdrop calls it predates answer without drawing anything.
+local existing = ForeverTrackerHost
+if type(existing) == "table" then
+	local api = {}
+	for _, name in ipairs({
+		"Attach",
+		"Debug",
+		"GetScale",
+		"GetSettings",
+		"IsAttached",
+		"IsAttachedToQuestTracker",
+		"IsLocked",
+		"OnAttachmentChanged",
+		"SavePosition",
+		"SetAttached",
+		"SetLocked",
+		"SetScale",
+	}) do
+		local method = existing[name]
+		if type(method) == "function" then
+			api[name] = method
+		end
+	end
+	if type(api.GetBackdropOpacity) ~= "function" then
+		function api.GetBackdropOpacity()
+			return 0
+		end
+	end
+	if type(api.SetBackdropOpacity) ~= "function" then
+		function api.SetBackdropOpacity(_) end
+	end
+	-- The consumer drops its own tracker table once it attaches, so keep the first one offered for ForeverCoreDB,
+	-- the same as core's own host does: the settings are not lost while the older column is the one drawing.
+	local attach = api.Attach
+	function api.Attach(module, show)
+		if OfferLegacy(module) then
+			CopyLegacy()
+		end
+		return attach(module, show)
+	end
+	---@cast api ForeverTrackerHostAPI
+	ns.TrackerHost = api
+	-- Core's own tracker files must not run against a column core did not build; UI/TrackerQuests.lua reads this.
+	ns.TrackerHostForeign = true
+	return
+end
+
 local host = CreateFrame("Frame", "ForeverTrackerCompanion", UIParent)
 ---@class ForeverTrackerHostAPI
 local api = {}
@@ -752,44 +845,12 @@ local function AddHeaderMenu(module)
 	end)
 end
 
--- A consumer's old tracker settings, offered once by the first module that attaches with a `legacySettings` table.
--- Saved variables are not there while the files load, so the copy waits for ForeverCore's ADDON_LOADED.
-local pendingLegacy
-
--- Copy the first legacy table offered into ForeverCoreDB.trackerHost, once. Each field is taken only when it has the
--- shape the host reads; the rest keep the fresh defaults. Later offers are ignored.
 local function Migrate()
-	if type(ForeverCoreDB) ~= "table" or pendingLegacy == nil then
-		return
+	if CopyLegacy() then
+		-- The host's own repair settles a bad scale, opacity or coordinate the way every other read does.
+		Settings()
+		host:MarkDirty()
 	end
-	local legacy = pendingLegacy
-	pendingLegacy = nil
-	local settings = ns.TrackerHostSettings()
-	if settings.migrated == true then
-		return
-	end
-	if type(legacy.attached) == "boolean" then
-		settings.attached = legacy.attached
-	end
-	if type(legacy.locked) == "boolean" then
-		settings.locked = legacy.locked
-	end
-	if type(legacy.scale) == "number" then
-		settings.scale = legacy.scale
-	end
-	if type(legacy.backdropOpacity) == "number" then
-		settings.backdropOpacity = legacy.backdropOpacity
-	end
-	if type(legacy.x) == "number" then
-		settings.x = legacy.x
-	end
-	if type(legacy.y) == "number" then
-		settings.y = legacy.y
-	end
-	settings.migrated = true
-	-- The host's own repair settles a bad scale, opacity or coordinate the way every other read does.
-	Settings()
-	host:MarkDirty()
 end
 
 -- Core.lua's one ADDON_LOADED handler calls this after ForeverCoreDB exists, so a first install completes the copy.
@@ -802,8 +863,7 @@ function api.Attach(module, show)
 	if show ~= nil then
 		module.show = show
 	end
-	if pendingLegacy == nil and type(module.legacySettings) == "table" then
-		pendingLegacy = module.legacySettings
+	if OfferLegacy(module) then
 		Migrate()
 	end
 	if module.parentContainer == host then
@@ -941,4 +1001,5 @@ EventUtil.ContinueAfterAllEvents(function()
 	TrackerQuestie.Await(host.MarkDirty)
 end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
 
+ForeverTrackerHost = api -- taint-ok: addon-owned companion tracker registry
 ns.TrackerHost = api
