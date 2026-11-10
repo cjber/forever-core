@@ -234,9 +234,9 @@ class CheckoutTest(unittest.TestCase):
             )
             real_run = sync.run
 
-            def fake_run(command, cwd=None, check=True):
+            def fake_run(command, cwd=None, check=True, env=None):
                 if command[-1].endswith("phrases.py"):
-                    return real_run(command, cwd=cwd, check=check)
+                    return real_run(command, cwd=cwd, check=check, env=env)
                 (root / "UI" / "TrackerHost.lua").write_text('L["new phrase"] = "new phrase"\n', encoding="utf-8")
                 return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -248,6 +248,31 @@ class CheckoutTest(unittest.TestCase):
                 'L["new phrase"] = "new phrase"\n',
             )
 
+    def test_a_phrase_extractor_importing_the_tools_package_runs(self):
+        # tweaks-forever's extractor imports `tools.forever_tools`, as `python3 -m tools.phrases` allows, while
+        # skillup-forever's imports a sibling module in tools/. One run must serve both.
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            core = workspace / "core"
+            (core / "tools").mkdir(parents=True)
+            (core / "tools" / "sync_consumers.py").write_text("", encoding="utf-8")
+            root = workspace / "tweaks-forever"
+            (root / "tools" / "forever_tools").mkdir(parents=True)
+            (root / "Locales").mkdir()
+            (root / "tools" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tools" / "forever_tools" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tools" / "forever_tools" / "lua.py").write_text("WORD = 'package'\n", encoding="utf-8")
+            (root / "tools" / "sibling.py").write_text("WORD = 'sibling'\n", encoding="utf-8")
+            (root / "tools" / "phrases.py").write_text(
+                "from tools.forever_tools.lua import WORD as A\nfrom sibling import WORD as B\nprint(A, B)\n",
+                encoding="utf-8",
+            )
+            (root / "Locales" / "phrases.txt").write_text("stale\n", encoding="utf-8")
+
+            sync.sync_checkout(root, core)
+
+            self.assertEqual((root / "Locales" / "phrases.txt").read_text(encoding="utf-8"), "package sibling\n")
+
     def test_a_consumer_without_a_phrase_template_is_left_alone(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "legacy-forever"
@@ -255,7 +280,7 @@ class CheckoutTest(unittest.TestCase):
             (root / "tools" / "phrases.py").write_text("# extractor\n", encoding="utf-8")
             calls = []
 
-            def fake_run(command, cwd=None, check=True):
+            def fake_run(command, cwd=None, check=True, env=None):
                 calls.append(command)
                 return subprocess.CompletedProcess(command, 0, "", "")
 
