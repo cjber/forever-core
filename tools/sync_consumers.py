@@ -135,12 +135,15 @@ def adoption_wait(root, path):
 
 
 def declares_read_global(text, name):
-    """Whether a luacheck config already reads global `name` from a table or an append line."""
+    """Whether a luacheck config already reads global `name` from a table or an append line.
+
+    luacheck lets code read every name in `globals` as well as `read_globals`, so both count.
+    """
     quoted = rf"""["']{re.escape(name)}["']"""
-    for match in re.finditer(r"read_globals\s*=\s*\{([^}]*)\}", text, re.S):
+    for match in re.finditer(r"\b(?:read_)?globals\s*=\s*\{([^}]*)\}", text, re.S):
         if re.search(quoted, match.group(1)):
             return True
-    appended = rf"read_globals\[#read_globals \+ 1\]\s*=\s*{quoted}"
+    appended = rf"\b((?:read_)?globals)\[#\1 \+ 1\]\s*=\s*{quoted}"
     return re.search(appended, text) is not None
 
 
@@ -168,6 +171,8 @@ def wire_luacheck(luacheck, repo, path, wiring, dry_run):
     if not missing:
         return False
     lines = [f"-- {wiring.comment}"]
+    if not re.search(r"^read_globals\s*=", text, re.M):
+        lines.append("read_globals = read_globals or {}")
     lines.extend(f'read_globals[#read_globals + 1] = "{name}"' for name in missing)
     addition = "\n".join(lines) + "\n"
     if text and not text.endswith("\n"):

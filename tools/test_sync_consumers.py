@@ -92,6 +92,19 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertIn('read_globals[#read_globals + 1] = "date"', text)
         self.assertIn("legacy-forever: .luacheckrc: date", out)
 
+    def test_name_in_globals_table_is_not_appended(self):
+        root = self.consumer(luacheck='globals = { "date" }\n')
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / ".luacheckrc").read_text(), 'globals = { "date" }\n')
+
+    def test_config_without_read_globals_table_gets_one(self):
+        root = self.consumer(luacheck='globals = { "CreateFrame" }\n')
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        text = (root / ".luacheckrc").read_text()
+        self.assertIn('read_globals = read_globals or {}\nread_globals[#read_globals + 1] = "date"', text)
+
     def test_second_run_leaves_luacheckrc_unchanged(self):
         root = self.consumer()
         self.run_sync()
