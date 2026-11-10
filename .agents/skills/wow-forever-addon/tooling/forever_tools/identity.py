@@ -5,7 +5,8 @@ side tab, window portrait, leaderboard tab and addon compartment. The value live
 `## X-Forever-Icon: Interface\\Icons\\<name>`, and the runtime reads it with
 `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`. This check fails an addon TOC (every TOC except
 ForeverCore's) that omits the field, a value that is not a client icon in the pinned build, or the declared
-path repeated in the addon's shipped Lua.
+path repeated in the addon's shipped Lua. A Forever addon is a TOC whose dependencies name ForeverCore; a library
+shipped beside it, such as Tweaks' LibAHTab, has no identity of its own.
 """
 
 import argparse
@@ -16,6 +17,19 @@ from . import assets, legacy_chrome, toc
 
 FIELD = "X-Forever-Icon"
 ICON = re.compile(r"(?i)^interface[\\/]+icons[\\/]+[^\\/]+$")
+
+
+DEPENDENCY_FIELDS = {"## dependencies", "## requireddeps"}
+
+
+def forever_addon(toc_path: Path) -> bool:
+    """True when the TOC requires ForeverCore, which makes it a Forever addon with an identity."""
+    for line in toc_path.read_text(encoding="utf-8-sig").splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name.strip().lower() in DEPENDENCY_FIELDS:
+            if "forevercore" in (part.strip().lower() for part in value.split(",")):
+                return True
+    return False
 
 
 def declared(toc_path: Path) -> str | None:
@@ -33,7 +47,7 @@ def check(root: Path) -> list[str]:
     root = root.resolve()
     problems = []
     for toc_path in toc.toc_files(root):
-        if toc_path.stem == "ForeverCore":
+        if not forever_addon(toc_path):
             continue
         relative = toc_path.resolve().relative_to(root).as_posix()
         icon = declared(toc_path)
@@ -78,7 +92,7 @@ def run(root: Path) -> int:
     for problem in problems:
         print(problem)
     if not problems:
-        count = sum(toc_path.stem != "ForeverCore" for toc_path in toc.toc_files(root))
+        count = sum(forever_addon(toc_path) for toc_path in toc.toc_files(root))
         print(f"Identity icon check: {count} addon TOC{'s' if count != 1 else ''} checked")
     return int(bool(problems))
 
