@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -308,6 +309,43 @@ class CheckoutTest(unittest.TestCase):
 
             self.assertIn("no TOC", str(raised.exception))
             self.assertEqual((root / "Locales" / "phrases.txt").read_text(encoding="utf-8"), "stale\n")
+
+    def test_the_updater_that_runs_is_the_one_being_installed(self):
+        # A release that adds a vendored data file (#339's backdrops.txt) reaches a consumer whose older sync.py does
+        # not list it: the producer's sync.py is copied over the vendored one before `update` runs.
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            core = workspace / "core"
+            (core / "tools").mkdir(parents=True)
+            (core / "tools" / "sync_consumers.py").write_text("", encoding="utf-8")
+            producer = core / sync.TOOLING_PRODUCER_ROOT / "forever_tools"
+            producer.mkdir(parents=True)
+            (producer / "sync.py").write_text('FILES = ("backdrops.txt",)\n', encoding="utf-8")
+            (producer / "backdrops.txt").write_text("new data\n", encoding="utf-8")
+            (producer / "MANIFEST.json").write_text("{}", encoding="utf-8")
+            (producer / "sync.py").chmod(0o755)
+
+            root = workspace / "legacy-forever"
+            vendored = root / "tools" / "forever_tools"
+            vendored.mkdir(parents=True)
+            (vendored / "MANIFEST.json").write_text("{}", encoding="utf-8")
+            (vendored / "sync.py").write_text("FILES = ()\n", encoding="utf-8")
+
+            def fake_run(command, cwd=None, check=True, env=None):
+                # The vendored updater copies the data files it lists, and refuses a manifest it cannot account for.
+                script = Path(command[1])
+                if script.name == "sync.py" and "update" in command:
+                    if "backdrops.txt" not in script.read_text(encoding="utf-8"):
+                        raise sync.SyncError("the producer's MANIFEST.json is stale")
+                    shutil.copyfile(producer / "backdrops.txt", script.parent / "backdrops.txt")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(sync, "run", side_effect=fake_run):
+                sync.sync_checkout(root, core)
+
+            self.assertEqual((vendored / "sync.py").read_text(encoding="utf-8"), 'FILES = ("backdrops.txt",)\n')
+            self.assertEqual((vendored / "backdrops.txt").read_text(encoding="utf-8"), "new data\n")
+            self.assertEqual((vendored / "sync.py").stat().st_mode & 0o777, 0o755)
 
 
 class SignedCommitTest(unittest.TestCase):
