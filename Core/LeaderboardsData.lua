@@ -204,7 +204,8 @@ end
 
 local function BuildGuild()
 	local map = {}
-	local total = GetNumGuildMembers and tonumber(GetNumGuildMembers()) or 0
+	-- GetNumGuildMembers returns (numMembers, numOnline); the extra value must not reach tonumber's base argument (#587).
+	local total = GetNumGuildMembers and tonumber((GetNumGuildMembers())) or 0
 	local get = GetGuildRosterInfo
 	if type(get) == "function" and total and total > 0 then
 		for index = 1, math.min(total, MAX_GUILD_MEMBERS) do

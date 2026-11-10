@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Guild members keep their class on the Forever Leaderboards window.** `GetNumGuildMembers` returns the member count and the online count, and the second value reached `tonumber`'s base argument, so building the guild part raised "base out of range" and no guild row got a class colour or icon. (#587)
+
 ## [0.5.3] - 2026-11-10
 
 - **Right-click a tracker section to hide it.** A section whose addon has its own show switch now offers **Hide this section** in its header menu, and the entry's tooltip says where to turn it back on. SkillUp's profession reagents or Shortest Path's journey steps can be removed without hunting through settings, and a section without a switch keeps the menu it has. Thanks to _spada for the report. (#292)
