@@ -9,7 +9,7 @@ RAW = f"https://raw.githubusercontent.com/cjber/{REPO}/main"
 
 
 def page(shots=3, features=3, extra_heading=False):
-    parts = ["Demo Forever shows things in the stock UI.", store_page.SPONSOR]
+    parts = ["Demo Forever shows things in the stock UI.", store_page.SPONSOR, store_page.buttons(REPO)]
     for n in range(shots):
         parts += [f"![Shot {n}]({RAW}/docs/screenshots/s{n}.png)", f"Caption {n}."]
     parts += ["These images are generated previews of the Demo UI.", "## Features"]
@@ -25,7 +25,6 @@ def page(shots=3, features=3, extra_heading=False):
         family.BLOCK,
         store_page.source_line(REPO),
         store_page.AI_LINE,
-        store_page.buttons(REPO),
     ]
     return "\n\n".join(parts) + "\n"
 
@@ -76,6 +75,13 @@ class StorePageTest(unittest.TestCase):
         text = page().replace("## Usage", "## Help").replace(store_page.buttons(REPO), "")
         problems = self.check(text)
         self.assertTrue(any("`## Usage` missing" in p for p in problems))
+        self.assertTrue(any("button row must follow" in p for p in problems))
+
+    def test_buttons_at_the_end_fail(self):
+        row = store_page.buttons(REPO)
+        text = page().replace(row + "\n\n", "").rstrip("\n") + "\n\n" + row + "\n"
+        problems = self.check(text)
+        self.assertTrue(any("button row must follow" in p for p in problems))
         self.assertTrue(any("must end with" in p for p in problems))
 
     def test_translation_line_only_when_translated(self):
