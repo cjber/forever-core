@@ -12,7 +12,7 @@ Field Guide knows where every creature spawns and shows the player nothing about
 `spawns = row.spawns`, line ~127) and the code only reads the AreaId keys to decide which zone a species belongs
 to - the coordinate lists are never touched. The addon draws no map markers at all.
 
-The value is not another map overlay (boundaries §3 reserves the shared `ForeverMapMarkers` contract, which does
+The value is not another map overlay (boundaries §3 reserves the shared `ForeverCore.Register(...).MapCanvas` marker contract, which does
 not exist yet). It is the route decision: "there are three uncatalogued rares within a minute of your route -
 hunt them on the way?". Field Guide picks the targets, Shortest Path does the travel. That split is boundaries
 rule 1 and rule 10: Shortest Path never chooses pickups, Field Guide never predicts spawns.

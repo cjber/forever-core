@@ -1,21 +1,18 @@
 ---@type string, ForeverFamilyNamespace
 local _, ns = ...
 
--- The Forever addons, and the quiet hints one shows for another the player doesn't have. This file is
--- byte-identical in all five addons (tests/forever_family_spec.lua pins it): the first copy to load sets the
--- `ForeverFamily` global and later copies use it, unless a later copy is newer (a higher VERSION), which takes over
--- so an addon updated first never runs on an older copy. It holds no addon's own code: each addon passes in its
--- saved variables (`db`) and its own folder, and `ns.Family` is a view bound to the addon's own L (VERSION 4), so
--- its page and window read in its translations and nowhere else's. Nothing here is protected, hooks Blizzard code,
--- runs in combat or reaches the network: a hint is a grey line, a menu entry or a settings row that shows a link. The
--- settings page ends with one more row, the Ko-fi address, shown only when the player clicks its Copy link button.
+-- The Forever addons, and the quiet hints one shows for another the player doesn't have. This file loads once, in
+-- ForeverCore, and reads core's own L for every word it draws. It holds no addon's own code: each addon passes in its
+-- saved variables (`db`) and its own folder. Nothing here is protected, hooks Blizzard code, runs in combat or
+-- reaches the network: a hint is a grey line, a menu entry or a settings row that shows a link. The settings page
+-- ends with one more row, the Ko-fi address, shown only when the player clicks its Copy link button.
 
 -- The client's gamepad switch, read by Family.Register.
 -- luacheck: read globals InputUtil
 
 ---@class ForeverFamilyNamespace
 ---@field L? ForeverFamilyL
----@field FamilyL? ForeverFamilyL an English-keyed L for this file, for an addon whose own L uses other keys
+---@field SafeCall? ForeverSafeCall
 ---@field Family? ForeverFamilyAPI
 
 ---@class ForeverFamilyDB
@@ -39,65 +36,41 @@ local _, ns = ...
 ---@field Refresh fun(self: ForeverFamilyPanel)
 ---@field OnRefresh fun(self: ForeverFamilyPanel)
 ---@field OnDefault fun(self: ForeverFamilyPanel)
+---@field foreverSafeCall? ForeverSafeCall|false
 
 -- PortraitFrameTemplate's own members this file uses (Mainline/SharedUIPanelTemplates.xml).
 ---@class ForeverFamilyLinkWindow : Frame
 ---@field SetTitle fun(self: ForeverFamilyLinkWindow, title: string)
 ---@field GetPortrait fun(self: ForeverFamilyLinkWindow): Texture
 
-local VERSION = 8
-if ForeverFamily and (tonumber(ForeverFamily.VERSION) or 0) >= VERSION then
-	ns.Family = type(ForeverFamily.For) == "function" and ForeverFamily.For(ns.FamilyL or ns.L) or ForeverFamily
-	return
-end
-
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COIN = "Interface\\Icons\\INV_Misc_Coin_01"
--- One window name for every copy and version, so Escape always knows it.
+-- One window name for every client, so Escape always knows it.
 local LINK_NAME = "ForeverFamilyLink"
 local NO_STRINGS = {}
--- The copy this one takes over, if an older version loaded first: its window is put away when this one opens.
-local previous = ForeverFamily
 
 ---@class ForeverFamilyAPI
----@field VERSION integer raised with every change to this file
 ---@field ADDONS ForeverFamilyAddon[] the five addons, in order
 ---@field SUPPORT ForeverFamilyLink where a player can support the addons
----@field window? ForeverFamilyLinkWindow the link window once built, for a newer copy to put away
----@field Register fun(category: table, db: ForeverFamilySaved, current?: string, locale?: ForeverFamilyL): table
-local Family = { VERSION = VERSION }
+---@field window? ForeverFamilyLinkWindow the link window once built
+---@field Register fun(category: table, db: ForeverFamilySaved, current?: string, safeCall?: ForeverSafeCall): table
+local Family = {}
 
--- The copy now in charge when a newer version has taken over the global since this one loaded: an addon still
--- holding this copy's view is then served by the newer one, so there is only ever one window and one record.
----@return ForeverFamilyAPI?
-local function Newer()
-	local current = ForeverFamily
-	if current ~= Family and type(current) == "table" and (tonumber(current.VERSION) or 0) > VERSION then
-		return current
-	end
-end
-
--- Every addon's L takes English phrases as keys. A phrase reads from one L only, the calling addon's (or, for a
--- caller that names none, the L of the addon whose copy is in use), and as itself where that L has no string for
--- it, so a line is never half in one language and half in another. A phrase counts only as the L's own entry
--- (rawget), never through its metatable. One lookup table per L, rebuilt if the collector takes it.
-local strings = setmetatable({}, { __mode = "kv" })
----@param locale? ForeverFamilyL
+-- Every phrase reads from core's L, and as itself where that L has no entry, so a line is never half translated.
+-- A phrase counts only as the L's own entry (rawget), never through its metatable.
+local strings
 ---@return ForeverFamilyL
-local function Strings(locale)
-	local own = ns.FamilyL or ns.L
-	local source = type(locale) == "table" and locale or type(own) == "table" and own or NO_STRINGS
-	local found = strings[source]
-	if not found then
-		found = setmetatable({}, {
+local function Strings()
+	if not strings then
+		local source = type(ns.L) == "table" and ns.L or NO_STRINGS
+		strings = setmetatable({}, {
 			__index = function(_, phrase)
 				local text = rawget(source, phrase)
 				return type(text) == "string" and text or phrase
 			end,
 		})
-		strings[source] = found
 	end
-	return found
+	return strings
 end
 
 ---@param name string
@@ -109,57 +82,54 @@ local function Addon(name, folder, slug, line)
 	return { name = name, folder = folder, url = "https://www.curseforge.com/wow/addons/" .. slug, line = line }
 end
 
--- The addons in order. Written through an L that answers each phrase with itself, so the lines stay English keys
--- and tools/phrases.py in each addon lists them for translators.
----@param L ForeverFamilyL
+-- The addons in order, with the English phrase as each line's key in every locale.
 ---@return ForeverFamilyAddon[]
-local function List(L)
+local function List()
 	return {
 		Addon(
 			"Shortest Path Forever",
 			"ShortestPathForever",
 			"shortest-path-forever",
-			L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."]
+			"Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."
 		),
 		Addon(
 			"Adventure Guide Forever",
 			"AdventureGuideForever",
 			"adventure-guide-forever",
-			L["Picks quests for your level and plans them into one journey."]
+			"Picks quests for your level and plans them into one journey."
 		),
 		Addon(
 			"SkillUp Forever",
 			"SkillUpForever",
 			"skillup-forever",
-			L["Plans the cheapest route to your next profession rank."]
+			"Plans the cheapest route to your next profession rank."
 		),
 		Addon(
 			"Legacy Forever",
 			"LegacyForever",
 			"legacy-forever",
-			L["Shows the Legacy challenges you can advance in each zone."]
+			"Shows the Legacy challenges you can advance in each zone."
 		),
 		Addon(
 			"Tweaks Forever",
 			"TweaksForever",
 			"tweaks-forever",
-			L["Quest automation, rare alerts and merchant handling for the default UI."]
+			"Quest automation, rare alerts and merchant handling for the default UI."
 		),
 	}
 end
-Family.ADDONS = List(Strings(NO_STRINGS))
+Family.ADDONS = List()
 
--- The Ko-fi page, written through the same English L as the addons' lines.
----@param L ForeverFamilyL
+-- The Ko-fi page, written through the same English phrase keys.
 ---@return ForeverFamilyLink
-local function Support(L)
+local function Support()
 	return {
 		name = "Ko-fi",
 		url = "https://ko-fi.com/cjber",
-		line = L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."],
+		line = "The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee.",
 	}
 end
-Family.SUPPORT = Support(Strings(NO_STRINGS))
+Family.SUPPORT = Support()
 
 -- An installed addon's own icon; files load from a folder whether or not its addon is switched on.
 ---@param folder string
@@ -246,10 +216,6 @@ local claimed = {}
 ---@param key string
 ---@return boolean
 function Family.Once(key)
-	local newer = Newer()
-	if newer and type(newer.Once) == "function" then
-		return newer.Once(key)
-	end
 	if claimed[key] then
 		return false
 	end
@@ -261,7 +227,7 @@ end
 local window
 local parts = {}
 local shownURL = ""
----@type { db?: ForeverFamilyDB, key?: string, onDismiss?: fun() }
+---@type { db?: ForeverFamilyDB, key?: string, onDismiss?: fun(), safeCall?: ForeverSafeCall }
 local showing = {}
 
 ---@param edit EditBox
@@ -270,15 +236,25 @@ local function Select(edit)
 	edit:HighlightText()
 end
 
+-- A consumer callback runs in that addon's SafeCall, so its failure lands in its own journal.
+---@param safe? ForeverSafeCall
+---@param label string
+---@param fn function
+---@return boolean ok, any ...
+local function RunSafe(safe, label, fn, ...)
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
+end
+
 ---@return ForeverFamilyLinkWindow
 local function Window()
 	if window then
 		return window
-	end
-	-- The copy this one took over keeps its window on its own table; this one takes the name, and Escape with it.
-	local older = type(previous) == "table" and previous.window
-	if type(older) == "table" and type(older.Hide) == "function" then
-		older:Hide()
 	end
 	local frame = CreateFrame("Frame", LINK_NAME, UIParent, "PortraitFrameTemplate") --[[@as ForeverFamilyLinkWindow]]
 	if not tContains(UISpecialFrames, LINK_NAME) then
@@ -343,7 +319,7 @@ local function Window()
 		end
 		frame:Hide()
 		if onDismiss then
-			onDismiss()
+			RunSafe(showing.safeCall, "family dismiss", onDismiss)
 		end
 	end)
 
@@ -359,11 +335,11 @@ end
 ---@param db? ForeverFamilyDB
 ---@param key? string
 ---@param onDismiss? fun()
----@param locale? ForeverFamilyL
-local function Open(link, icon, db, key, onDismiss, locale)
+---@param safeCall? ForeverSafeCall
+local function Open(link, icon, db, key, onDismiss, safeCall)
 	local frame = Window()
-	local L = Strings(locale)
-	showing.db, showing.key, showing.onDismiss = db, key, onDismiss
+	local L = Strings()
+	showing.db, showing.key, showing.onDismiss, showing.safeCall = db, key, onDismiss, safeCall
 	shownURL = link.url
 	frame:SetTitle(link.name)
 	-- art-ok: a square icon in the template's round portrait
@@ -389,39 +365,30 @@ end
 
 -- A small window with `folder`'s name, line and store address, selected for Ctrl+C. With a hint `key` it also
 -- offers "Don't suggest this again", which dismisses that hint in `db` and then calls `onDismiss`. Never opens in
--- combat; returns whether it opened. Its text reads from `locale` (an addon's view passes its own L).
+-- combat; returns whether it opened.
 ---@param db? ForeverFamilyDB
 ---@param key? string
 ---@param folder string
 ---@param onDismiss? fun()
----@param locale? ForeverFamilyL
+---@param safeCall? ForeverSafeCall
 ---@return boolean
-function Family.ShowLink(db, key, folder, onDismiss, locale)
-	local newer = Newer()
-	if newer and type(newer.ShowLink) == "function" then
-		return newer.ShowLink(db, key, folder, onDismiss, locale)
-	end
+function Family.ShowLink(db, key, folder, onDismiss, safeCall)
 	local addon = Find(folder)
 	if not addon or InCombatLockdown() then
 		return false
 	end
-	Open(addon, Icon(folder, Family.State(folder)), db, key, onDismiss, locale)
+	Open(addon, Icon(folder, Family.State(folder)), db, key, onDismiss, safeCall)
 	return true
 end
 
 -- The same window with the Ko-fi address, for the settings page's last row. Never opens in combat; returns whether
 -- it opened.
----@param locale? ForeverFamilyL
 ---@return boolean
-function Family.ShowSupport(locale)
-	local newer = Newer()
-	if newer and type(newer.ShowSupport) == "function" then
-		return newer.ShowSupport(locale)
-	end
+function Family.ShowSupport()
 	if InCombatLockdown() then
 		return false
 	end
-	Open(Family.SUPPORT, COIN, nil, nil, nil, locale)
+	Open(Family.SUPPORT, COIN, nil, nil, nil)
 	return true
 end
 
@@ -449,26 +416,37 @@ local function Resolve(db)
 	return db
 end
 
+-- The addon's saved table, read through its SafeCall, or nil when it is not loaded or its reader failed.
+---@param safe? ForeverSafeCall
+---@param db ForeverFamilySaved
+---@return ForeverFamilyDB?
+local function ReadDb(safe, db)
+	local ok, saved = RunSafe(safe, "family saved variables", Resolve, db)
+	if ok and type(saved) == "table" then
+		return saved
+	end
+end
+
 -- The "Forever addons" settings page: the hint setting, then a row per addon with its icon, line, state and a Copy link
 -- button, then a last row with the Ko-fi address. `db` is the addon's saved variables, or a function that returns them
 -- once they load; `current` is the addon's own folder, whose row says "This addon". The rows are built the first time
--- it shows and their states read again each time. Defaults turns the hints back on, dismissed ones included. Its text
--- reads from `locale` (an addon's view passes its own L).
+-- it shows and their states read again each time. Defaults turns the hints back on, dismissed ones included.
 ---@param parent? Frame
 ---@param db ForeverFamilySaved
 ---@param current? string
----@param locale? ForeverFamilyL
+---@param safeCall? ForeverSafeCall
 ---@return ForeverFamilyPanel
-function Family.CreatePanel(parent, db, current, locale)
+function Family.CreatePanel(parent, db, current, safeCall)
 	local owner = Owner(current)
 	local panel = CreateFrame("Frame", "ForeverFamilyPanel" .. owner, parent) --[[@as ForeverFamilyPanel]]
+	panel.foreverSafeCall = type(safeCall) == "function" and safeCall or false
 	-- Hidden until the settings panel shows it, so its OnShow always fires.
 	panel:Hide()
-	local L = Strings(locale)
+	local L = Strings()
 	local states = { on = L["On"], off = L["Installed, turned off"], missing = L["Not installed"] }
 	---@return ForeverFamilyDB?
 	local function Saved()
-		return Resolve(db)
+		return ReadDb(panel.foreverSafeCall, db)
 	end
 	local check
 	local rows = {}
@@ -515,9 +493,9 @@ function Family.CreatePanel(parent, db, current, locale)
 			Fit(button, 110)
 			button:SetScript("OnClick", function()
 				if folder then
-					Family.ShowLink(nil, nil, folder, nil, locale)
+					Family.ShowLink(nil, nil, folder, nil)
 				else
-					Family.ShowSupport(locale)
+					Family.ShowSupport()
 				end
 			end)
 			local right = button ---@type Region
@@ -576,14 +554,14 @@ end
 ---@param category table
 ---@param db ForeverFamilySaved
 ---@param current? string
----@param locale? ForeverFamilyL
+---@param safeCall? ForeverSafeCall
 ---@return table
-function Family.Register(category, db, current, locale)
-	local L = Strings(locale)
+function Family.Register(category, db, current, safeCall)
+	local L = Strings()
 	if not (InputUtil and InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()) then
 		return Settings.RegisterCanvasLayoutSubcategory(
 			category,
-			Family.CreatePanel(nil, db, current, locale),
+			Family.CreatePanel(nil, db, current, safeCall),
 			L["Forever addons"]
 		)
 	end
@@ -595,11 +573,11 @@ function Family.Register(category, db, current, locale)
 		L["Suggest my other Forever addons"],
 		true,
 		function()
-			local saved = Resolve(db)
+			local saved = ReadDb(safeCall, db)
 			return not (saved and saved.suggestFamily == false)
 		end,
 		function(value)
-			local saved = Resolve(db)
+			local saved = ReadDb(safeCall, db)
 			if saved then
 				saved.suggestFamily = value and true or false
 			end
@@ -615,7 +593,7 @@ function Family.Register(category, db, current, locale)
 			Settings.RegisterInitializer(
 				subcategory,
 				CreateSettingsButtonInitializer(addon.name, L["Copy link"], function()
-					Family.ShowLink(nil, nil, addon.folder, nil, locale)
+					Family.ShowLink(nil, nil, addon.folder, nil)
 				end, L[addon.line], false)
 			)
 		end
@@ -623,42 +601,10 @@ function Family.Register(category, db, current, locale)
 	Settings.RegisterInitializer(
 		subcategory,
 		CreateSettingsButtonInitializer(Family.SUPPORT.name, L["Copy link"], function()
-			Family.ShowSupport(locale)
+			Family.ShowSupport()
 		end, L[Family.SUPPORT.line], false)
 	)
 	return subcategory
 end
 
--- The API bound to one addon's L: ShowLink, ShowSupport, CreatePanel and Register read in that L unless a call names
--- another. Each addon's copy sets `ns.Family` to its own view (of `ns.FamilyL`, else `ns.L`), so no call site can
--- leave it out. The same view comes back for the same L while one is held.
-local views = setmetatable({}, { __mode = "kv" })
----@param locale? ForeverFamilyL
----@return ForeverFamilyAPI
-function Family.For(locale)
-	if type(locale) ~= "table" then
-		return Family
-	end
-	local view = views[locale]
-	if not view then
-		view = setmetatable({
-			ShowLink = function(db, key, folder, onDismiss, other)
-				return Family.ShowLink(db, key, folder, onDismiss, other or locale)
-			end,
-			CreatePanel = function(parent, db, current, other)
-				return Family.CreatePanel(parent, db, current, other or locale)
-			end,
-			Register = function(category, db, current, other)
-				return Family.Register(category, db, current, other or locale)
-			end,
-			ShowSupport = function(other)
-				return Family.ShowSupport(other or locale)
-			end,
-		}, { __index = Family })
-		views[locale] = view
-	end
-	return view --[[@as ForeverFamilyAPI]]
-end
-
-ForeverFamily = Family
-ns.Family = Family.For(ns.FamilyL or ns.L)
+ns.Family = Family

@@ -44,6 +44,7 @@ end
 
 local ns = {}
 assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
+local safe = ns.SafeCallFor("ForeverCore")
 
 local ok, first, second = ns.SafeCall("returns", function()
 	return "value", 42
@@ -58,16 +59,16 @@ end)
 equal(failed, false, "failed call returns false")
 equal(message:find("deliberate failure", 1, true) ~= nil, true, "failure is returned")
 equal(#handled, 1, "failure reaches the game error handler")
-local errors = ns.CaughtErrors()
+local errors = safe:CaughtErrors()
 equal(#errors, 1, "failure is recorded")
 equal(errors[1].label, "failure", "error label is recorded")
 equal(errors[1].count, 1, "first failure count")
 equal(type(errors[1].stack), "string", "trace is recorded")
 local shared = string.rep("shared prefix ", 25)
-ns.RecordError("same label", shared .. "A", "stack")
-ns.RecordError("same label", shared .. "B", "stack")
-ns.RecordError("same label", shared .. "A", "stack")
-local distinct = ns.CaughtErrors()
+safe:RecordError("same label", shared .. "A", "stack")
+safe:RecordError("same label", shared .. "B", "stack")
+safe:RecordError("same label", shared .. "A", "stack")
+local distinct = safe:CaughtErrors()
 equal(#distinct, 3, "same-label errors with distinct long identities remain separate")
 equal(distinct[2].count, 1, "second long identity has its own count")
 equal(distinct[3].count, 2, "repeated first long identity increments its own count")
@@ -80,7 +81,7 @@ local function previousCalls(callback)
 end
 
 local function lastError()
-	local list = ns.CaughtErrors()
+	local list = safe:CaughtErrors()
 	return list[#list]
 end
 
@@ -94,7 +95,7 @@ equal(
 equal(lastError().kind, "error", "an unwrapped error is journalled")
 equal(lastError().message:find("an unwrapped error", 1, true) ~= nil, true, "the unwrapped error is kept")
 
-local ignoredCount = #ns.CaughtErrors()
+local ignoredCount = #safe:CaughtErrors()
 equal(
 	previousCalls(function()
 		currentHandler("Interface/AddOns/OtherAddon/Other.lua:3: another addon's error")
@@ -102,7 +103,7 @@ equal(
 	1,
 	"the previous handler still runs for another addon"
 )
-equal(#ns.CaughtErrors(), ignoredCount, "another addon's error is not journalled")
+equal(#safe:CaughtErrors(), ignoredCount, "another addon's error is not journalled")
 
 equal(
 	previousCalls(function()
@@ -121,7 +122,7 @@ equal(
 	1,
 	"the previous handler runs once for the repeat"
 )
-equal(#ns.CaughtErrors(), ignoredCount + 1, "a repeat adds no entry")
+equal(#safe:CaughtErrors(), ignoredCount + 1, "a repeat adds no entry")
 equal(lastError().signature, numberedSignature, "numbers and addresses normalise into one signature")
 equal(lastError().count, 2, "a repeat raises the count instead of adding an entry")
 
@@ -134,7 +135,7 @@ equal(frame.events.ADDON_LOADED, true, "a later BugGrabber load is watched")
 equal(frame.events.PLAYER_LOGIN, true, "a late BugGrabber setup is watched")
 
 local function byKind(kind)
-	for _, entry in ipairs(ns.CaughtErrors()) do
+	for _, entry in ipairs(safe:CaughtErrors()) do
 		if entry.kind == kind then
 			return entry
 		end
@@ -145,10 +146,10 @@ frame.OnEvent(frame, "ADDON_ACTION_BLOCKED", "ForeverCore", "SetPoint")
 local blocked = byKind("blocked")
 equal(blocked ~= nil, true, "a blocked action is journalled")
 equal(blocked.message:find("SetPoint", 1, true) ~= nil, true, "the blocked action names the function")
-local blockedCount = #ns.CaughtErrors()
+local blockedCount = #safe:CaughtErrors()
 
 frame.OnEvent(frame, "ADDON_ACTION_BLOCKED", "OtherAddon", "SetPoint")
-equal(#ns.CaughtErrors(), blockedCount, "another addon's blocked action is ignored")
+equal(#safe:CaughtErrors(), blockedCount, "another addon's blocked action is ignored")
 
 frame.OnEvent(frame, "ADDON_ACTION_FORBIDDEN", "ForeverCore", "CastSpellByName")
 local forbidden = byKind("forbidden")
@@ -160,13 +161,13 @@ local warning = byKind("warning")
 equal(warning ~= nil, true, "a Lua warning is journalled")
 equal(warning.message:find("a warning", 1, true) ~= nil, true, "the warning text is kept")
 
-local warningCount = #ns.CaughtErrors()
+local warningCount = #safe:CaughtErrors()
 frame.OnEvent(frame, "LUA_WARNING", "Interface/AddOns/OtherAddon/Warn.lua:4: a warning")
-equal(#ns.CaughtErrors(), warningCount, "another addon's warning is ignored")
+equal(#safe:CaughtErrors(), warningCount, "another addon's warning is ignored")
 
 frame.OnEvent(frame, "LUA_WARNING", "prefix", "Interface/AddOns/ForeverCore/Core/Warn.lua:5: second argument warning")
 local secondWarning
-for _, entry in ipairs(ns.CaughtErrors()) do
+for _, entry in ipairs(safe:CaughtErrors()) do
 	if type(entry.message) == "string" and entry.message:find("second argument warning", 1, true) then
 		secondWarning = entry
 	end
@@ -209,7 +210,7 @@ local store = {
 		locale = "enUS",
 	},
 }
-ns.AttachErrorJournal(store)
+safe:Attach(store)
 equal(findMessage(store, "an unwrapped error") ~= nil, true, "entries recorded before attach are merged")
 equal(findMessage(store, "error from an earlier session") ~= nil, true, "an existing saved entry stays")
 local savedNumbered = findSignature(store, numberedSignature)
@@ -217,7 +218,7 @@ equal(savedNumbered ~= nil, true, "a repeated signature is saved once")
 equal(savedNumbered.count, 2, "attach keeps the repeat count")
 
 local earlier = 0
-for _, entry in ipairs(ns.CaughtErrors()) do
+for _, entry in ipairs(safe:CaughtErrors()) do
 	if entry.fromSession == false then
 		earlier = earlier + 1
 	end
@@ -225,40 +226,38 @@ end
 equal(earlier, 1, "earlier sessions are returned after this session's errors")
 
 local capped = {}
-ns.AttachErrorJournal(capped)
-ns.RecordError("cap", "cap marker", "")
+safe:Attach(capped)
+safe:RecordError("cap", "cap marker", "")
 for index = 1, 60 do
-	ns.RecordError("cap", "cap " .. string.rep("x", index), "")
+	safe:RecordError("cap", "cap " .. string.rep("x", index), "")
 end
 equal(#capped, 50, "the journal keeps at most 50 signatures")
 equal(findMessage(capped, "cap marker"), nil, "the least recently seen signature is dropped")
 
-local other = {}
-assert(loadfile("Core/SafeCall.lua"))("OtherAddon", other)
+-- One handler serves every registered addon, and attributes by the exact folder in the message or stack.
+local other = ns.SafeCallFor("OtherAddon")
+local coreBefore = #safe:CaughtErrors()
 equal(
 	previousCalls(function()
 		currentHandler("Interface/AddOns/OtherAddon/Other.lua:5: its own error")
 	end),
 	1,
-	"the chained handler still runs once"
+	"the shared handler still runs once"
 )
-local otherErrors = other.CaughtErrors()
-equal(#otherErrors, 1, "a second copy records its own error")
-equal(otherErrors[1].kind, "error", "the second copy records its own kind")
+local otherErrors = other:CaughtErrors()
+equal(#otherErrors, 1, "a second addon records its own error")
+equal(otherErrors[1].kind, "error", "the second addon records its own kind")
+equal(#safe:CaughtErrors(), coreBefore, "another addon's error never reaches ForeverCore's list")
 equal(
 	previousCalls(function()
-		currentHandler("Interface/AddOns/ForeverCore/Core/New.lua:6: primary through the chain")
+		currentHandler("Interface/AddOns/ForeverCore/Core/New.lua:6: primary error")
 	end),
 	1,
-	"the chained handler runs once for the first addon"
+	"the shared handler runs once for the first addon"
 )
-equal(#other.CaughtErrors(), 1, "a second copy ignores another addon's error")
-equal(lastError().fromSession, true, "the first copy's new error is from this session")
-equal(
-	lastError().message:find("primary through the chain", 1, true) ~= nil,
-	true,
-	"the first copy still records its own error"
-)
+equal(#other:CaughtErrors(), 1, "the second addon ignores another addon's error")
+equal(lastError().fromSession, true, "the first addon's new error is from this session")
+equal(lastError().message:find("primary error", 1, true) ~= nil, true, "the first addon still records its own error")
 
 local beforeOwn = #handled
 local ownOk, ownMessage = ns.SafeCall("own failure", function()
@@ -267,12 +266,12 @@ end)
 equal(ownOk, false, "an own SafeCall failure returns false")
 equal(ownMessage:find("own failure", 1, true) ~= nil, true, "an own SafeCall failure is returned")
 equal(#handled - beforeOwn, 1, "an own SafeCall failure reaches the handler once")
-equal(lastError().count, 1, "an own SafeCall failure is recorded once through the chain")
+equal(lastError().count, 1, "an own SafeCall failure is recorded once through the handler")
 
-local mutable = ns.CaughtErrors()
+local mutable = safe:CaughtErrors()
 local originalLabel = mutable[1].label
 mutable[1].label = "mutated copy"
-equal(ns.CaughtErrors()[1].label, originalLabel, "callers receive copies")
+equal(safe:CaughtErrors()[1].label, originalLabel, "callers receive copies")
 equal(ns.CutText(string.rep("a", 301), 300):len(), 300, "text is clipped to the limit")
 equal(ns.CutText(string.rep("é", 200), 300):sub(-3), "...", "text clipping does not split UTF-8")
 
@@ -322,7 +321,7 @@ assert(loadfile("Core/SafeCall.lua"))("GrabbyAddon", grabbedNs)
 -- The regression this guards: BugGrabber v12 fires "BugGrabber.BugGrabbed" on EventRegistry, so an error raised
 -- outside ns.SafeCall must still reach the journal exactly once.
 grab("Interface/AddOns/GrabbyAddon/Core/Boom.lua:7: grabbed error")
-local grabbedErrors = grabbedNs.CaughtErrors()
+local grabbedErrors = grabbedNs.SafeCallFor("GrabbyAddon"):CaughtErrors()
 equal(#grabbedErrors, 1, "an error outside SafeCall is journalled through EventRegistry")
 equal(grabbedErrors[1].count, 1, "an error outside SafeCall is journalled once")
 equal(
@@ -332,17 +331,17 @@ equal(
 )
 
 grab("Interface/AddOns/OtherAddon/Other.lua:3: someone else's grabbed error")
-equal(#grabbedNs.CaughtErrors(), 1, "another addon's grabbed error is ignored")
+equal(#grabbedNs.SafeCallFor("GrabbyAddon"):CaughtErrors(), 1, "another addon's grabbed error is ignored")
 
 grabRegistry:TriggerEvent("BugGrabber.BugGrabbed", "table: unknown")
-equal(#grabbedNs.CaughtErrors(), 1, "a table id BugGrabber cannot resolve is ignored")
+equal(#grabbedNs.SafeCallFor("GrabbyAddon"):CaughtErrors(), 1, "a table id BugGrabber cannot resolve is ignored")
 
 local grabbedOk, grabbedMessage = grabbedNs.SafeCall("grabber", function()
 	error("Interface/AddOns/GrabbyAddon/Core/Safe.lua:8: grabbed SafeCall")
 end)
 equal(grabbedOk, false, "a grabbed SafeCall failure returns false")
 equal(grabbedMessage:find("grabbed SafeCall", 1, true) ~= nil, true, "a grabbed SafeCall failure is returned")
-grabbedErrors = grabbedNs.CaughtErrors()
+grabbedErrors = grabbedNs.SafeCallFor("GrabbyAddon"):CaughtErrors()
 equal(#grabbedErrors, 2, "a grabbed SafeCall error adds one entry")
 local grabbedSafeCall = findMessage(grabbedErrors, "grabbed SafeCall")
 equal(grabbedSafeCall ~= nil, true, "the grabbed SafeCall error is kept")
@@ -372,7 +371,7 @@ equal(
 	"a BugGrabber below our handler is attached on ADDON_LOADED"
 )
 chainedCurrent("Interface/AddOns/ChainedAddon/Core/Boom.lua:9: chained error")
-local chainedErrors = chainedNs.CaughtErrors()
+local chainedErrors = chainedNs.SafeCallFor("ChainedAddon"):CaughtErrors()
 equal(#chainedErrors, 1, "a chained BugGrabber error is one entry")
 equal(chainedErrors[1].count, 1, "a chained BugGrabber error is counted once")
 

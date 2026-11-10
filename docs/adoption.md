@@ -1,329 +1,136 @@
-# How a Forever addon adopts the core
+# Depending on ForeverCore
 
-The shared files are vendored, not linked. Each addon carries a byte-identical copy of the same files at the same
-paths, so every addon still works on its own with nothing else installed, and the core's fixes reach players through
-the addon they already have.
+ForeverCore is a standalone addon every Forever addon requires. It loads once, before its consumers, and owns the
+shared runtime: the tracker column, the report and issue windows, the error journal and debug log, Forever
+Leaderboards, the minimap button, the quest log side tabs, the settings-page chrome and the family page.
 
-## What is shared
+Nothing is vendored any more. An addon no longer carries a copy of a shared file, so there is exactly one copy of each
+in the game and a fix reaches players with ForeverCore's next release.
 
-| File | What it is |
-|---|---|
-| `UI/TrackerHost.lua` | the private tracker column, its optional backdrop, layout, combat, Edit Mode and the `ForeverTrackerHost` global |
-| `UI/TrackerLock.lua` | the grip and the Lock switch, loaded before the host |
-| `UI/TrackerOrder.lua` | section order (`uiOrder`, then attach order) |
-| `UI/TrackerQuestie.lua` | Questie's quest list, so the column steps beside it |
-| `tests/tracker_host_spec.lua` | the native integration contract, run against Blizzard's own tracker source |
-| `tests/tracker_host_harness.lua` | the tracker test harness shared by the four tracker consumers |
-| `tests/tracker_backdrop_spec.lua` | the optional background's opacity and tint |
-| `tests/tracker_header_menu_spec.lua` | the section-header menu contract |
-| `tests/tracker_questie_spec.lua` | the Questie placement contract |
-| `tests/tracker_combat_spec.lua` | the column stays still as combat starts and ends |
-| `tests/tracker_geometry_spec.lua` | the column below the native quests across tracker anchors and scales |
-| `tests/tracker_host_lock_spec.lua` | the grip and the Lock switch on the host |
-| `tests/tracker_lock_spec.lua` | the grip and Lock switch contract on the lock module |
-| `tools/fetch_tracker_ui.py` | the pinned Blizzard tracker source the host spec runs against |
-| `UI/Report.lua` | the shared report and issue composer |
-| `tests/report_spec.lua` | the report and issue contract |
-| `UI/ForeverFamily.lua` | the shared Forever-family link box |
-| `tests/forever_family_spec.lua` | the link box contract |
-| `Core/SafeCall.lua` | shared error capture and journal used by the report window |
-| `Core/OpenMap.lua` | the shared client opener for the world map, through `CreateSecureDelegate` |
-| `tests/open_map_spec.lua` | the world map opener's delegate, combat and missing-delegate contract |
-| `Core/OpenSettings.lua` | the shared client opener for the settings panel, through `CreateSecureDelegate` |
-| `tests/open_settings_spec.lua` | the settings panel opener's delegate, combat and missing-delegate contract |
-| `Core/Log.lua` | the shared structured log, its saved ring and the `/forever debug` switch |
-| `tests/debug_log_spec.lua` | the log's ring, levels, persistence, switch and copy contract |
-| `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
-| `tests/minimap_button_spec.lua` | the button's register, click, drag and hide contract |
-| `UI/QuestLogTabs.lua` | the shared world map quest log side tab: one tab and panel per addon |
-| `tests/quest_log_tabs_spec.lua` | the tab's register, select and restore contract |
-| `Core/PeerStats.lua` | bounded guild and group statistics transport and ranking |
-| `tests/peer_stats_spec.lua` | transport, opt-out and ranking contract |
-| `Core/LeaderboardsData.lua` | overall points, standing, the per-scope cache and the unit tooltip |
-| `UI/Leaderboards.lua` | the shared Forever Leaderboards window and its board registrations |
-| `tests/leaderboards_spec.lua` | registration, takeover, overall points, pinned row, weekly and tooltip contract |
-| `tools/check_core_shared.py` | the vendoring map and the consumer's own drift check |
-| `tools/check_client_load.py` | the client load rule: fonts the client defines, no Bindings.xml in a TOC (WFA-37) |
-| `tools/blizzard_fonts.txt` | the font objects the client's UI defines, generated from the pinned Blizzard UI source |
-| `tools/check_menu_scroll.py` | the menu rule: a menu built from a list scrolls (WFA-36) |
-| `.github/workflows/core-shared-drift.yml` | runs the client load rule, the menu rule and the drift check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
+## The dependency
 
-`tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
-tracker, report, family, log, peer-statistics and leaderboard set, and the map also holds the client openers,
-settings page, text, minimap button and dead-code files.
+In the addon's TOC:
 
-Everything addon specific arrives through the namespace, never through an edit to these files:
-`ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
-`ns.L` carries the player's language, and a section is handed over with `ForeverTrackerHost.Attach(module)`.
+```toc
+## Dependencies: ForeverCore
+```
 
-A section with its own show switch passes it as the second argument, so its header menu offers **Hide this section**,
-whose tooltip says where to turn it back on:
+In `.pkgmeta`, so the stores install ForeverCore with the addon:
+
+```yaml
+required-dependencies:
+  - ForeverCore
+```
+
+CurseForge and Wago resolve the project from the addon's own store page, so a player installing any Forever addon gets
+ForeverCore without choosing it. CurseForge is the published description and gallery; Wago is an upload mirror with a
+fixed stub pointing at CurseForge. The addon must not list ForeverCore in `OptionalDeps`, and it must not ship its own
+copy of a core file.
+
+## Asking for per-addon services
+
+Some services keep state for each addon: the error journal, the debug log ring, the report window and the map markers.
+Register once, at or after the addon's `ADDON_LOADED`, and keep the returned context:
 
 ```lua
-ForeverTrackerHost.Attach(module, {
+local core = ForeverCore.Register("SkillUpForever", {
+	title = L["SkillUp Forever"], -- the report window's title
+	lines = function()            -- the addon's own report lines
+		return { "Route: " .. tostring(route) }
+	end,
+	db = SkillUpForeverDB,        -- optional; attach it later with core.Attach(db)
+})
+
+core.SafeCall("route rebuild", rebuild)
+core.RecordError("route rebuild", message, stack)
+core.CaughtErrors()
+core.CutText(text, 300)
+core.Log("info", "route", "rebuilt in %d ms", elapsed)
+core.LogLines(50)
+core.DebugEnabled()
+core.DebugCommand(argument)
+core.Report.Command("report")
+core.Report.Show(text)
+core.Report.Compose("bug")
+core.MapCanvas.Pool(map, mixin, { marker = "route" })
+```
+
+`Register` is idempotent: the same addon name returns the same context. Saved variables load after the files, so
+`spec.db` is optional; call `core.Attach(db)` from `ADDON_LOADED`. The journal lives under `db.errors` and the log ring
+under `db.log`.
+
+One global error handler serves every registered addon. It attributes an error to the addon whose
+`AddOns/<addonName>/` folder its message or stack names, and the same for `ADDON_ACTION_BLOCKED` and
+`ADDON_ACTION_FORBIDDEN`. ForeverCore registers itself, so its own errors land in its journal too. The debug switch is
+one state for the character, shared by every registered addon.
+
+## The tracker
+
+`ForeverCore.TrackerHost` is the one column. Attach a section to it:
+
+```lua
+ForeverCore.TrackerHost.Attach(module, {
 	get = function()
-		return ns.db.showTracker
+		return db.showTracker
 	end,
 	set = function(shown)
-		ns.db.showTracker = shown
+		db.showTracker = shown
 	end,
 	where = L["Turn it back on with /skillup, under Route and trainer."],
 })
 ```
 
-`set` must do what the addon's settings checkbox does, including hiding the section, and the host writes nothing
-else. A section without one keeps the menu it
-already has.
+The optional second argument is the section's own show switch, offered as **Hide this section**. A section without one
+keeps the menu it already has.
 
-The host also owns the optional backdrop behind the whole column. Every section's right-click menu offers it under
-**Tracker background**, with off, 25%, 50%, 75% and 100% choices, so an addon wires nothing: attaching a section
-puts its menu there, and the saved opacity, the art and the label stay in the host.
-
-## Error journal
-
-`Core/SafeCall.lua` chains the global error handler and listens for this addon's blocked and forbidden actions and
-Lua warnings, so the report window can list errors from earlier sessions as well as this one. It records in memory
-first and keeps what it saw before the saved table arrives. After the addon's saved variables load, pass the table
-that should hold the journal:
+The column's settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale, lock, attached/detached,
+background opacity and the detached position. A consumer whose old version kept its own tracker table offers it once so
+players keep the layout they chose:
 
 ```lua
-ns.AttachErrorJournal(AdventureGuideForeverDB.errors)
+module.legacySettings = SkillUpForeverDB.trackerHost
+ForeverCore.TrackerHost.Attach(module)
 ```
 
-The addon's defaults should make that table exist before this line runs. The journal keeps at most 50 signatures and
-drops the least recently seen. Nothing else changes: `ns.SafeCall`, `ns.RecordError` and `ns.CaughtErrors` work as
-before, and every error still reaches BugSack or the default error frame.
+While `ForeverCoreDB.trackerHost.migrated` is not true, the first `legacySettings` offered is copied into ForeverCoreDB
+(fields of the right shape only) and marked migrated. Later offers are ignored, so the first addon to attach decides
+for the client and one column's settings move every section together.
 
-## Client openers
+## Other modules
 
-Load `Core/OpenMap.lua` and `Core/OpenSettings.lua` after `Core/SafeCall.lua`. `ns.OpenMap(mapID)` opens or turns the
-world map, optionally on a map id, and `ns.OpenSettingsPanel(categoryID, element)` opens Options, optionally on a
-category and scrolled to a named row. Each calls the client's own `C_Map.OpenWorldMap` or
-`C_SettingsUtil.OpenSettingsPanel` through `CreateSecureDelegate`, so the request runs as the client rather than as
-the addon, and each returns false in combat, on a build without the delegate, or when the client function is missing,
-so the caller can say why nothing opened. Call these instead of the C functions directly.
+- `ForeverCore.Leaderboards:Register(key, spec)` registers one board; `Core/LeaderboardsData.lua` supplies overall
+  points, standings and the unit tooltip. `ForeverCore.PeerStats.New(config)` and `PeerStats.Listen(owner, config)`
+  are the transport behind those boards.
+- `ForeverCore.MinimapButton.Create(spec)` draws the addon's minimap button on the one shared ring. Pass `spec.safeCall`
+  (the `SafeCall` from `ForeverCore.Register`) so its click and refresh failures land in the addon's own journal.
+- `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as
+  `MenuUtil.CreateContextMenu`.
+- `ForeverCore.QuestLogTabs.Register(key, spec)` adds a panel tab to the world map's quest log. A `spec.safeCall` keeps
+  the panel's `shown` callback in the addon's journal.
+- `ForeverCore.SettingsPage.Register(name, build, L, safeCall)` draws a settings page with the caller's L for every
+  label and the caller's `SafeCall` for its builders, getters and setters.
+- `ForeverCore.Text.Fold` and `ForeverCore.Text.Rank` are the shared search fold and ranking.
+- `ForeverCore.Family` draws the Forever addons page and its link windows. `Family.Register` and `Family.CreatePanel`
+  take the addon's `SafeCall` as their last argument.
+- `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel` open the client's restricted map and settings panel through
+  `CreateSecureDelegate`, never in combat. `Core/OpenMap.lua` and `Core/OpenSettings.lua` are core runtime files, split
+  by what each addon opens; each returns false in combat, without the delegate, or when the client function is missing,
+  so the caller can say why nothing opened.
 
-## Debug log
+## Specs
 
-Load `Core/Log.lua` after `Core/SafeCall.lua` (it cuts lines with `ns.CutText`) and hand it the saved table that should
-hold the ring, at the same point the journal is attached:
-
-```lua
-ns.AttachLog(AdventureGuideForeverDB.log)
-```
-
-The addon's defaults should create that table (`log = {}`); `ns.AttachLog` fills in `lines` and the `pinned` flag. The
-ring keeps the newest 200 lines, oldest dropped, and earlier sessions stay until the ring pushes them out, so a
-`/reload` does not lose what led to a bug. `ns.Log(level, topic, message, ...)` takes `debug`, `info`, `warn` or
-`error`; `info` and above are always kept, and a `debug` line that is off costs one comparison because the level is
-checked before the message is formatted. `message` is a `string.format` template only when arguments follow it. Each
-line carries the client's date, this session's `GetTime` seconds, the level, the caller's topic and the message, cut
-with `ns.CutText`.
-
-`/forever debug` toggles debug for this character for the session, `/forever debug pin` keeps it on across sessions,
-`/forever debug off` turns it off and unpins, and `/forever debug show` opens the report window with every attached
-addon's latest lines under its name, selected for copying. The state lives in the published `ForeverDebugLog` global,
-so every loaded Forever addon shares one switch for the character; each attached addon registers its saved table and
-its name there, and a pin is written to every attached table. Nothing writes to chat. The report window's copy adds
-the newest lines that fit after the error journal, picked from the newest backwards, so the lines closest to the
-error survive a long journal. The shared leaderboards copy routes `debug` on `/flb` and on `/forever` when it owns
-that name; a consumer that already claimed `/forever` adds the same `ns.DebugCommand(rest)` branch to its own handler.
-
-The on-screen answers and the usage line come from `ns.L`, like the report's hint and the leaderboards' labels. The
-keys are listed in core's `Locales/enUS.lua`; a consuming addon copies the ones it uses into its own locale file, as
-it already does for the other shared files. The log section's headings are plain English like the error journal's.
-
-Log the addon's own key transitions as `info`: login and saved-variable load, data or catalogue load, route, plan or
-guide rebuilds, settings changes, and the detection of another addon the addon integrates with. Use `debug` for
-per-frame or per-item detail and `warn` or `error` beside a handled failure. Keep an expensive debug message behind
-`if ns.DebugEnabled() then`, so nothing is built while debug is off.
-
-## Why the paths are `UI/...` in a repo whose own addon is `ForeverCore`
-
-Suite convention is flat Lua at the repo root, and this repo is the deliberate exception. Keeping the files where
-every consumer keeps them makes vendoring a pure copy, and lets a consumer's spec, which loads `UI/TrackerHost.lua`
-by path, run here unchanged.
-
-## A consumer whose addon lives in a subfolder
-
-Kiln Forever also carries a Node bridge, so its addon lives in `addon/KilnForever/` and keeps each vendored file at
-`addon/KilnForever/<core path>`. `CONSUMER_ROOT` in `tools/check_core_shared.py` records that folder, and the drift
-check, `tools/check_consumers.py` and `tools/sync_consumers.py` all build the consumer's path through it. Kiln Forever
-runs the drift check from its repository root:
-
-    python3 addon/KilnForever/tools/check_core_shared.py --base origin/main
-
-It takes `tools/check_core_shared.py` but not the reusable `core-shared-drift.yml`, because its own CI owns the check.
+A consumer's spec loads core the way the client does: its own files are loaded with `loadfile`, and core is either
+required before them or stubbed with the one module the spec exercises. A spec that needs the real core loads
+`ForeverCore.toc`'s files in order into one fake client, registers its own addon with `ForeverCore.Register`, and then
+runs the addon's files. `tests/api_spec.lua` in this repo is the worked example.
 
 ## Changing a shared file
 
-1. Change it here. Both specs and `luacheck` and `stylua` must pass; the host spec needs
-   `python3 tools/fetch_tracker_ui.py` first.
-2. Bump `CHANGELOG.md` and the tag when the change is worth a release of its own.
-3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
-4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
-   is the gate. Tracker files go to the four published tracker addons and Kiln Forever; Forever-family files go to
-   the five published addons; the world map opener goes to the four addons that open the map, and the settings opener
-   to the five that open Options;
-   report, SafeCall and log files go to every addon in the suite, Kiln Forever included.
-   Peer statistics and the leaderboards go to the six that share a statistics adapter: the four published tracker
-   addons, Field Guide and Commissions. The checker is green once every mapped consumer has the same bytes.
-   `/forever debug` routes
-   through this file's leaderboards copy, so a leaderboard consumer without `Core/Log.lua` yet keeps working and simply
-   has no debug switch until it adopts the log.
-
-A push to `main` runs `.github/workflows/sync-consumers.yml`, which does steps 3 and 4 for every consumer: it
-force-pushes `forever-core-sync` and opens or refreshes the PR with squash auto-merge armed, leaving that consumer's
-checks to decide when it lands. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and
-stays green.
-
-## When the addons disagree with the core
-
-They cannot, in the steady state: `tools/check_consumers.py` fails on a byte difference, and that is the point. If a
-consumer genuinely needs different behaviour, the change belongs behind the namespace, here, with the behaviour
-switched by what that addon registers, so the four copies stay one file.
-
-## Runtime: what a player sees
-
-- One Forever addon installed, core absent: that addon builds the column from its own copy. Nothing changes.
-- Several installed: the first to load publishes `ForeverTrackerHost`; the rest adopt it, so there is one column.
-- Core installed too: `ForeverCore.toc` lists the five addons as `OptionalDeps`, so they load first and core adopts
-  the column they built rather than starting a second one with settings nobody saved.
-
-## Minimap buttons
-
-Load `Core/MinimapButton.lua` before the addon builds its button. `ns.MinimapButton.Create(spec)` parents one button
-to `Minimap` and registers it in the suite-wide ring; `ns.MinimapButton.Refresh()` re-reads every addon's hide flag
-and saved angle, and `Destroy(button)` takes one out again. A spec supplies `name`, `icon`, `title`, optional
-`binding` and `subtext`, `onClick`, and the addon's saved `settings` table. The angle is written to
-`settings.minimapButtonAngle` and the hide flag is read from `settings.minimapButtonHidden`, unless the spec names its
-own `angleKey`/`hiddenKey` or supplies `getShown`. A drag moves the button around the rim and saves the angle it
-stopped on. Nothing here hooks or resizes a Blizzard frame.
-
-## Quest log tabs
-
-List `UI/QuestLogTabs.lua` in the TOC before the addon's panel file, and register from
-`EventUtil.ContinueOnAddOnLoaded("Blizzard_WorldMap", ...)` so `QuestMapFrame` exists:
-
-```lua
-local tab = ns.QuestLogTabs.Register("guide", {
-	name = "AdventureGuideForeverTab", -- the tab frame's global name
-	tooltip = ns.TITLE, -- the tooltip text
-	panel = panel, -- the frame to show while this tab is selected
-	order = 10, -- lowest first; ties sort by key
-	shown = function(visible) end, -- told when this panel starts and stops being visible
-})
-Art.Fit(tab.Icon, "islands-queue-prop-compass", 30, 30) -- each addon fits its own icon
-```
-
-`Select(key)` shows that panel, hides the quest log's own content frames and checks only that tab. The replacement
-Quests tab, the client's `QuestLog.SetDisplayMode` callback and the quest details hook bring the stock pages back,
-each content frame restored from its own `displayMode`. The module never writes `displayMode`, never resizes
-`QuestMapFrame` or a panel and never touches a panel's children, so a panel's `ScrollFrame` keeps its offset. The
-replacement Quests tab is created only when `QuestMapFrameOverrides.questTabHidden` says the stock one is hidden;
-without it the first addon tab hangs below the map's legend or Quests tab. One copy publishes
-`ForeverQuestLogTabs` and later copies join it.
-
-A panel must not set an `OnShow` or `OnHide` script, or hook either, because it lives under the world map: an addon
-script there runs inside the map's close path and its taint blocks the gamepad's interact target. Register `shown`
-instead and start or stop work from it. The module calls it once per change, as the panel becomes visible or stops
-being visible, including when the map opens or closes, its quest log side panel collapses or expands, or the map
-maximizes or minimizes.
-
-## Peer statistics
-
-Load `Core/PeerStats.lua` before the addon's statistics adapter. Create one instance with
-`ns.PeerStats.New(config)`: `addon` is the wire identifier, `enabled()` reads the saved sharing switch,
-`db()` returns the peer table, `snapshot()` returns this character's observed rows, and `metrics`
-allowlists the addon's metric names. A metric declares `subject = "all"`, `"numeric"` or `"qualified"`;
-`first = true` ranks its earliest timestamp. Other metrics rank the highest cumulative value.
-Each snapshot row supplies `metric`, `subject`, `value` and `eventUnix`. Cumulative rows may omit the
-timestamp; the first observation of each changed value gets a timestamp. First-completion rows require
-an observed timestamp.
-
-The adapter migrates its own saved layout to `sender -> metric -> subject -> { value, eventUnix }`
-before registering. It owns metric definitions, recording, labels, settings and UI. The shared module
-validates names and rows, bounds saved peers and incoming traffic, and sends only local snapshot rows
-over `WFAStats` wire version 1 on guild and group channels. Received rows are never relayed. All loaded
-copies share one versioned `ForeverPeerStats` manager, event frame and throttled queue.
-
-Call `instance:Sync()` after the character's metrics change. For a sharing toggle, save the setting
-first, then call `instance:SetEnabled(value)`. Disabling cancels pending sends immediately, blocks
-receives and hides peers; it preserves recorded history. Enabling offers the snapshot again. Sharing
-is opt-out: a missing saved setting (or a config without an `enabled` function) means on, only an
-explicit `false` is off, and a missing peer table still means off. `instance:Shared()` returns a copy
-of the validated peers, or an empty table while off.
-`instance:Board(metric, subject, localValue, localEventUnix)` returns ranked rows with the personal
-row included even while sharing is off.
-`instance:WeekBoard(metric, subject, localValue, localEventUnix)` mirrors it with this week's progress: each value is
-the current value minus the first value heard per sender, metric and subject since the weekly reset. The reset comes
-from `C_DateAndTime.GetSecondsUntilWeeklyReset` when the client has it, else the last Tuesday 15:00 UTC. The player's
-own baseline uses the same metric/subject layout under a reserved key, so the saved peer layout is unchanged and an
-older table simply gains baselines when it loads.
-
-The queue holds at most 512 payloads. Overflow keys are bounded by the snapshot's 2048-row limit and
-refilled from that snapshot as capacity returns. Each addon retains at most 100 peers, 256 subjects
-per metric and 1024 rows per peer. Use client-observed values and timestamps, and present absent
-peer data as unknown. These boards compare what peers report; they cannot verify another client.
-
-## Leaderboards
-
-Load `Core/LeaderboardsData.lua` and then `UI/Leaderboards.lua`, and register one board before anything opens the
-window:
-
-```lua
-ForeverLeaderboards:Register("guide", {
-	title = "Adventure Guide Forever", -- the addon's name on its side tab and in its tooltip place
-	icon = "Interface\\AddOns\\AdventureGuideForever\\media\\Icon",
-	metric = "Quests turned in", -- the heading above the list
-	order = 2, -- optional; tab order after Overall, registration order otherwise
-	revision = function() -- the cache rebuilds when this counter moves
-		return peers:Revision()
-	end,
-	board = function(scope) -- "week" or "all"
-		local method = scope == "week" and "WeekBoard" or "Board"
-		local rows = peers[method](peers, "quests", "all", total, changedAt)
-		for _, row in ipairs(rows) do
-			row.you, row.class, row.extra = row.self, classOf(row.name), nil
-		end
-		return rows
-	end,
-	sharing = function()
-		return db.shareProgress
-	end,
-	setSharing = function(value)
-		db.shareProgress = value
-		peers:SetEnabled(value)
-	end,
-})
-```
-
-The addon sorts its rows. A row is `{ name =, class =, value =, extra =, you = }`: `you` marks the
-player, `class` is a `RAID_CLASS_COLORS` key (or nil), `extra` is the grey value before the number
-("377 total", "5 boards"), and `value` is the number in the right-hand column. For `scope == "week"`
-the value is the delta the module draws as a green `+N`, so a PeerStats consumer uses `WeekBoard`.
-
-Overall is cached per scope. A PeerStats board passes `revision = function() return peers:Revision() end`;
-`Revision` rises when a stored peer row, the player's own snapshot or the sharing state changes. The
-cache rebuilds only when the summed revisions, the scope, the registered board list or the current week
-start changes, and the window and a tooltip hover read the same cache. A board without a revision is
-rebuilt when any other board or the week changes it.
-
-The first copy to load publishes `ForeverLeaderboards`; later copies join it, and a copy with a higher
-`LEADERBOARDS_VERSION` takes over with every registration already made. `:Open(key)` shows one board
-(Overall when the key is omitted or unknown) and `:Toggle()` shows or hides the window; `/forever` and
-`/flb` open it too, and `/forever` stays with a consumer that already claimed it. Overall is first on
-the side rail and sums 10, 8, 6, 5, 4, 3, 2 and 1 points for the first eight places on each board;
-its second column counts the boards that scored. The window is an ordinary addon frame: it is built on
-first open (never at login), has no `OnUpdate`, is not protected, writes nothing to chat and draws no
-glow. The "Share my progress" switch is the selected board's own `sharing`/`setSharing`; on Overall it
-turns every registered board that offers one on or off together. Sharing is opt-out: a missing or nil
-setting reads as checked, and only an explicit `false` unchecks it.
-
-The unit tooltip gets a gold line with the player's overall place and a grey line of their per-addon
-places for anyone on a registered board. Someone the boards know but who places nowhere gets one
-"Uses Forever addons" line. The hook is installed once, by the copy that publishes the global, and a
-newer copy takes it over. Nothing in the window knows an addon: it reads the registered specs and
-`ns.L` only. A consumer's `types/Client.lua` declares the client widgets this file reads
-(`CreateDataProvider`, `CreateScrollBoxListLinearView`, `ScrollUtil`, `ScrollBoxConstants` and
-`RAID_CLASS_COLORS`), as core's does.
+1. Change it here. Both specs, `luacheck` and `stylua` must pass.
+2. Bump `CHANGELOG.md`; raise `ForeverCore.API` only for a breaking change to the table or `Register`.
+3. Release ForeverCore. The stores carry it to players with the addons that require it.
+4. Consumers pick up behaviour changes with no file copy. `tools/sync_consumers.py` copies only the development
+   tooling in `tools/check_core_shared.py`'s `VENDORED`.
+5. A changed store description in an addon's `docs/curseforge.md` reaches CurseForge through
+   `tools/sync_curseforge.py`, which skips descriptions that did not change and checks every link and image URL it
+   publishes. Wago keeps its fixed stub and is not described again.

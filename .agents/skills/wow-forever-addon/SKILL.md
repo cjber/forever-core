@@ -23,10 +23,14 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-2** Zero setup. Every feature works out of the box: no required settings, extra downloads
   or companion installs. Data ships in the release zip (`.pkgmeta` `move-folders` for a
   load-on-demand data addon). Anything off by default is off because it acts for the player.
+  ForeverCore is the one required companion, and the stores install it automatically with any Forever addon: declare
+  `## Dependencies: ForeverCore` in the TOC and list it under `required-dependencies` in `.pkgmeta`. It is the suite's
+  shared library, not a second addon the player has to choose.
 - **WFA-28** Game data has two sources: the installed QuestieDB (quests, NPCs, objects, spawns,
   vendors, trainers' places) and AtlasLoot (bosses, loot, recipes, drop rates), read at runtime
   through their public tables. Neither is copied into the repo or the zip: QuestieDB carries no
-  licence and AtlasLoot is GPL v2. This is the one companion install WFA-2 allows; without it the
+  licence and AtlasLoot is GPL v2. This is the one data companion WFA-2 allows (ForeverCore is the required library,
+  not a data companion); without it the
   feature says in one plain line what to install and the rest of the addon works. A dataset neither
   holds (trainer fees, transports) is a named exception in the repo's `AGENTS.md` under `## Waivers`,
   stating its source, and the player sees a live in-game value over the bundled one wherever the
@@ -262,6 +266,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   thanked by name in the addon's credits and changelog. The text is `forever_tools.family` and never edited in a
   repo: `tools/check_family.py` runs in `typecheck.sh` and fails on any difference (`--fix` rewrites it after a
   sync, `--print` gives it to place). Prose outside the block says only what a sibling really adds to this addon.
+  ForeverCore is the shared library the addons require, so the table gives it no row.
 - **WFA-33** A player who reported a bug we fix, or asked for a feature we build, is credited by name in the same PR,
   whether they wrote on GitHub or in store comments: the changelog bullet ends "thanks to X for the report" (or "for
   the idea"), and THIRD_PARTY.md's `## Ideas and contributors` table gains or extends their row with what came of it.

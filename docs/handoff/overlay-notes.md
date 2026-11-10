@@ -1,7 +1,7 @@
 # Overlay notes: gamepad-safe map drawing (S2, SPF)
 
-Reference implementation: `cjber/shortest-path-forever`, branch `ccr-cc333990-q8ydc4-map-overlay`,
-file `UI/MapCanvas.lua`, with spec `tests/map_canvas_spec.lua`. Copy the approach. Don't copy Polestar's code.
+Reference implementation: `cjber/forever-core`, `UI/MapCanvas.lua`, with spec `tests/map_canvas_spec.lua`. Every addon
+reaches it through `ForeverCore.Register(name).MapCanvas`. Don't copy Polestar's code.
 
 ## Why (the taint path, from Blizzard source at the pinned build)
 - `MapCanvasMixin:AcquirePin` called from addon code writes `map.pinPools[template]` (a pool made in tainted code) and
@@ -17,8 +17,9 @@ file `UI/MapCanvas.lua`, with spec `tests/map_canvas_spec.lua`. Copy the approac
   `host:SetAllPoints(canvas)`, `EnableMouse(false)`. (The gamepad interface follows `CreateFrame` calls whose parent
   sits in an open window, so every frame of ours is made parentless and then reparented.)
 - Under the host, a `layer` frame (made the same way) holds every pin. Combat hides the layer, not each pin.
-- Pins come from our own pools (`MapCanvas.Pool(map, key, mixin, {template, frameType, marker})`), made parentless,
-  then `SetParent(layer)`, with the mixin applied in Lua (`Mixin(pin, mixin)`). XML templates hold **art only**: no
+- Pins come from the addon's own pools (`core.MapCanvas.Pool(map, mixin, {template = ..., marker = ...})`, where
+  `core` is the context `ForeverCore.Register` returned), made parentless, then `SetParent(layer)`, with the mixin
+  applied in Lua (`Mixin(pin, mixin)`). XML templates hold **art only**: no
   `mixin=` and no inheriting `BaseMapPoiPinTemplate`, `FlightPointPinTemplate`, `MapPinPingTemplate` and so on (their
   OnLoad and mixins reach the map). Rebuild the art you need (Texture plus HIGHLIGHT-layer HighlightTexture, glows).
   A `QuestPOIFrame` widget is fine as a frame type (`CreateFrame("QuestPOIFrame", nil, nil, template)`).
@@ -88,26 +89,28 @@ file `UI/MapCanvas.lua`, with spec `tests/map_canvas_spec.lua`. Copy the approac
   `ADDON_LOADED` with `"Blizzard_BattlefieldMap"` (or at init if `BattlefieldMapFrame` already exists). Its pin scale
   and alpha differ. Read `map:GetGlobalPinScale()` per view, and `map:GetGlobalAlpha()` if you mirror its opacity.
 
-## Cross-addon markers (H's point 2): `ForeverMapMarkers`
-- A shared global registry: one function per addon, under its folder name.
-- **Publish a copy; never write a field into the existing table.** The family taint lint (`taint-blizzard-write`) treats
-  `ForeverMapMarkers.X = fn` as a write into a table someone else owns. SPF's CI failed on exactly that. The idiom:
+## Cross-addon markers (H's point 2): `core.MapCanvas.Markers(map)`
+- Each addon has its own canvas context from `ForeverCore.Register(name).MapCanvas`. A pool created with a `marker`
+  kind is listed only for that owner, so another addon can read the positions without sharing a global.
+- **Read the owner's list; never write into another addon's table.** The context is module state in Forever Core, keyed
+  by addon name, so there is no family global to replace and no direct field write to taint.
   ```lua
-  local markers = {}
-  for name, fn in pairs(ForeverMapMarkers or {}) do markers[name] = fn end
-  markers.TweaksForever = function(map) return {...} end
-  ForeverMapMarkers = markers
+  local core = ForeverCore.Register("TweaksForever")
+  local pool = core.MapCanvas.Pool(WorldMapFrame, mixin, { marker = "dungeon" })
+  local markers = core.MapCanvas.Markers(WorldMapFrame) -- { {x =, y =, kind =}, ... }
   ```
-  Readers look the global up each time (never cache the table), since a later addon replaces it.
-- A function takes the map frame (WorldMapFrame) and returns `{ {x=, y=, kind=}... }`: fractions on `map:GetMapID()` for
-  **shown** markers, in a fresh table each call. It returns `{}` for a map it doesn't draw on, while the map is closed,
-  and in combat (layer hidden). It never errors. SPF's kinds: `dock`, `portal`, `flight`, `stop`.
-- Consumers (Tweaks' `DungeonEntrances.Settle`): replace `EnumeratePinsByTemplate(otherAddonTemplate)` with
-  `for _, list in pairs(ForeverMapMarkers or {}) do for _, m in ipairs(list(WorldMapFrame)) do ... end end`
-  (keep `EnumeratePinsByTemplate("FlightPointPinTemplate")` for Blizzard's own pins). Add `ForeverMapMarkers` to
-  `.luacheckrc` globals and to your types file.
+- `Markers(map)` returns fractions on `map:GetMapID()` for that owner's **shown** markers, in a fresh table each call.
+  It returns `{}` for a map the addon does not draw on, while the map is closed, in combat (the layer is hidden), and
+  when that owner has called `SetShown(map, false)`.
+- Consumers (Tweaks' `DungeonEntrances.Settle`) call the owning addon's context when it is present:
+  ```lua
+  local tweaks = ForeverCore.Register("TweaksForever")
+  for _, marker in ipairs(tweaks.MapCanvas.Markers(WorldMapFrame)) do ... end
+  ```
+  Keep `EnumeratePinsByTemplate("FlightPointPinTemplate")` for Blizzard's own pins. Add the class names to the
+  addon's types file; no new global belongs in `.luacheckrc`.
 
-## Specs (copy `tests/map_canvas_spec.lua`)
+## Specs (Forever Core's `tests/map_canvas_spec.lua`)
 - Freeze the fixture map before the addon's Init: `setmetatable(WorldMapFrame, {__index = old, __newindex = error})`.
   Snapshot every value reachable from WorldMapFrame (3 deep) before, run everything, then compare (catches changed
   existing keys such as `dataProviders` entries).

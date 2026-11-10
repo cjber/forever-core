@@ -76,9 +76,9 @@ copper (`ns.FormatNet`, green `+` for profit, red `-` for cost). What is missing
 
 ## W5. Adventure Guide: rare encounter route overlays and milestone checklist cards
 
-- A rare encounter overlay on the world map for the zone the player is in, drawn through `UI/MapCanvas.lua` and the
-  `ForeverMapMarkers` registry (see `overlay-notes.md`) so there is no gamepad taint, with the same "we do not know
-  where it spawns" honesty the rest of the suite keeps: no invented coordinates.
+- A rare encounter overlay on the world map for the zone the player is in, drawn through the addon's
+  `ForeverCore.Register("AdventureGuideForever").MapCanvas` (see `overlay-notes.md`) so there is no gamepad taint, with
+  the same "we do not know where it spawns" honesty the rest of the suite keeps: no invented coordinates.
 - Level milestone checklist cards: the levels and unlocks a player should care about next, as cards in the guide's own
   feed, reading Legacy's targets where Legacy is installed and using its own fallback where it is not.
 - Specs, nine locales, and no navigation of its own: Shortest Path routes.
@@ -92,8 +92,8 @@ top as the boundary doc says. Specs, nine locales.
 
 ## Rules that apply to every item
 
-- The shared tracker files are vendored from Forever Core and are never edited in a consumer repo; everything addon
-  specific goes through `ns.TrackerHostSettings` and `ns.L`.
+- The shared runtime lives in Forever Core and is never copied into a consumer repo; everything addon specific goes
+  through `ForeverCore.Register`, `ForeverCore.TrackerHost` and the addon's own L.
 - Never loosen a check, skip a spec, or hand-edit generated `Data/`.
 - Report `READY <PR URL> <head sha>` per PR. Do not merge; the coordinator merges.
 - Every PR lists its in-game `/reload` checks for the owner, since no agent launches the game.

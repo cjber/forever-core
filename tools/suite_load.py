@@ -1,9 +1,10 @@
-"""Load every published Forever addon together with ForeverCore under forever_sim and exercise them.
+"""Load ForeverCore and every published Forever addon together under forever_sim and exercise them.
 
 Each addon's own CI exercises it alone. This runs `tests/suite/suite_scenario.lua`, which registers all of them in
-one client, in the order their OptionalDeps give the real client, and runs `sim:exercise()`: every slash command of
-every addon twice, the world map, the same in combat, then a `/reload`. A clash between addons, such as a shared global,
-a second owner of one slash command or one addon's taint reaching another's secure call, fails it.
+one client, in the order their dependencies give the real client with ForeverCore first, and runs `sim:exercise()`:
+every slash command of every addon twice, the world map, the same in combat, then a `/reload`. A clash between addons,
+such as a shared global, a second owner of one slash command or one addon's taint reaching another's secure call,
+fails it.
 
     python3 tools/suite_load.py                 # shallow clones of each addon's main under tools/.cache/suite
     python3 tools/suite_load.py --root ..       # the checkouts beside this one, as they are
@@ -21,15 +22,16 @@ REPO = Path(__file__).resolve().parent.parent
 SIM = REPO / ".agents/skills/wow-forever-addon/tooling/forever_sim"
 CACHE = REPO / "tools/.cache/suite"
 
-# Repository and addon folder, in the order the client loads them: an addon after every Forever addon in its
-# OptionalDeps, and ForeverCore last, as its own OptionalDeps on all of them make it.
+# Repository and addon folder, in load order: ForeverCore first, because every addon requires it.
 ADDONS = (
+    ("forever-core", "ForeverCore"),
     ("shortest-path-forever", "ShortestPathForever"),
     ("tweaks-forever", "TweaksForever"),
     ("skillup-forever", "SkillUpForever"),
     ("legacy-forever", "LegacyForever"),
     ("field-guide-forever", "FieldGuideForever"),
     ("commissions-forever", "CommissionsForever"),
+    ("macro-assist-forever", "MacroAssistForever"),
     ("adventure-guide-forever", "AdventureGuideForever"),
 )
 

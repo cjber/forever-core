@@ -9,8 +9,7 @@ do
 	Client()
 	local env, frames, named = harness.env, harness.frames, harness.named
 	local api = Load()
-	check(api ~= nil and api.VERSION == 7, "the first copy publishes a versioned global")
-	check(env.ForeverLeaderboards == api, "the global is the same table")
+	check(api ~= nil, "the module publishes its API")
 	check(type(api.Register) == "function" and type(api.Open) == "function", "the API is there")
 	check(api.window == nil, "loading builds no window")
 	check(api:Register("bad key", spec("x", {}, {})) == false, "a key with a space is refused")
@@ -48,7 +47,7 @@ do
 	for _, widget in ipairs(frames) do
 		equal(widget:GetScript("OnUpdate"), nil, "no frame runs an OnUpdate")
 	end
-	equal(named.ForeverLeaderboardsFrame7, window, "the window has its name")
+	equal(named.ForeverLeaderboardsFrame, window, "the window has its name")
 	equal(window.title, "Forever Leaderboards", "the title")
 	equal(window.portrait.texture, ICON, "the trophy portrait")
 	equal(#window.tabs, 3, "Overall plus both boards")
@@ -133,6 +132,40 @@ do
 	radios[2].onClick()
 	equal(api.window.heading.text, "Metric guide", "scope keeps the selected board")
 	radios[1].onClick()
+end
+
+-- A board's callbacks run in the registering addon's SafeCall, so their failures land in its journal.
+do
+	Client()
+	local api = Load()
+	local calls = {}
+	local safeSpec = spec("safe", { row("Abe", 2, nil, false, "MAGE") }, { row("Abe", 3, nil, false, "MAGE") })
+	safeSpec.revision = function()
+		return 1
+	end
+	safeSpec.safeCall = function(label, fn, ...)
+		calls[#calls + 1] = label
+		return pcall(fn, ...)
+	end
+	check(api:Register("safe", safeSpec), "a board with a SafeCall registers")
+	api:Open("safe")
+	api:Overall("week")
+	check(#calls > 0, "the board's callbacks run through its SafeCall")
+	check(calls[1] == "leaderboard revision" or calls[1] == "leaderboard board", calls[1] or "no label")
+	local seenBoard, seenRevision, seenSharing = false, false, false
+	for _, label in ipairs(calls) do
+		seenBoard = seenBoard or label == "leaderboard board"
+		seenRevision = seenRevision or label == "leaderboard revision"
+	end
+	check(seenBoard, "the board runs in its SafeCall")
+	check(seenRevision, "the revision runs in its SafeCall")
+	calls = {}
+	api.window.share:SetChecked(false)
+	api.window.share:Click()
+	for _, label in ipairs(calls) do
+		seenSharing = seenSharing or label == "leaderboard sharing"
+	end
+	check(seenSharing, "the sharing switch runs in its SafeCall")
 end
 
 -- /forever debug routes to the shared log without opening a board ------------------------------------------------

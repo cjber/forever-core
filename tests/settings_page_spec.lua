@@ -124,7 +124,7 @@ end
 
 -- A page with one of everything, the way an addon's own Core/Settings.lua builds it.
 local saved = { enabled = true, scale = 1.5 }
-local Page = Load({ ["Example options"] = "Options d'exemple", ["Tick"] = "Cocher", ["Wide"] = "Large" })
+local Page, pageNs = Load({ ["Example options"] = "Options d'exemple", ["Tick"] = "Cocher", ["Wide"] = "Large" })
 local seen = {}
 local category, panel = Page.Register("Example options", function(target, page)
 	seen.target, seen.page = target, page
@@ -141,7 +141,7 @@ local category, panel = Page.Register("Example options", function(target, page)
 	page.AddButton(target, "Tick", function()
 		saved.pressed = true
 	end)
-end)
+end, pageNs.L)
 
 -- Register: one canvas category, registered by name, and the panel the rows are drawn on.
 check(seen.page == Page, "the builder gets the module to draw with")
@@ -211,6 +211,41 @@ equal(second.name, "Plain", "with its own name")
 equal(Children(secondPanel, "Button")[1].text, "Untranslated", "no ns.L at all: the phrase reads as English")
 equal(#Children(secondPanel, "CheckButton"), 0, "and it has none of the first page's rows")
 check(calls.categories[1] == second, "registered in its own right")
+
+-- Every row callback runs in the addon's SafeCall when Register was given one, so a failure stays in its journal.
+local safeCalls = {}
+local safeModule, safeNs = Load({ ["Safe"] = "Safe" })
+local _, safePanel = safeModule.Register(
+	"Safe",
+	function(target, page)
+		page.AddCheck(target, "Safe", function()
+			error("the addon's getter failed")
+		end, function()
+			error("the addon's setter failed")
+		end)
+		page.AddButton(target, "Safe", function()
+			error("the addon's button failed")
+		end)
+	end,
+	safeNs.L,
+	function(label, fn, ...)
+		safeCalls[#safeCalls + 1] = label
+		return pcall(fn, ...)
+	end
+)
+check(safePanel ~= nil, "a page with a SafeCall registers")
+local safeCheck = Children(safePanel, "CheckButton")[1]
+check(safeCheck and safeCheck.checked == false, "a failed getter leaves the box unchecked")
+safeCheck.checked = true
+safeCheck.scripts.OnClick(safeCheck)
+Children(safePanel, "Button")[1].scripts.OnClick(Children(safePanel, "Button")[1])
+local seenLabels = {}
+for _, label in ipairs(safeCalls) do
+	seenLabels[label] = true
+end
+check(seenLabels["settings page"], "the page builder runs in the addon's SafeCall")
+check(seenLabels["settings checkbox"], "a checkbox getter and setter run in its SafeCall")
+check(seenLabels["settings button"], "a button callback runs in its SafeCall")
 
 -- A client without the Settings API: the addon keeps its options off the interface instead of erroring on load.
 local bare = Load(nil)

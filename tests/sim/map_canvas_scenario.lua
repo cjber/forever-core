@@ -1,8 +1,12 @@
 -- luacheck: read globals scenario ADDON
 scenario("shared canvas stays outside the gamepad map tables", { addon = false }, function(sim)
 	local ns = {
-		SafeCall = function(_, fn, ...)
-			return true, fn(...)
+		SafeCallFor = function()
+			return {
+				SafeCall = function(_, _, fn, ...)
+					return true, fn(...)
+				end,
+			}
 		end,
 	}
 	sim:runAs(ADDON, "")
@@ -16,6 +20,7 @@ scenario("shared canvas stays outside the gamepad map tables", { addon = false }
 		ADDON,
 		[[
 		local ns = ...
+		ns.MapCanvas = ns.MapCanvasFor("CanvasScenario")
 		local mixin = CreateFromMixins(ns.MapCanvas.PinMixin, {
 			takesMouse = true,
 			clicks = true,

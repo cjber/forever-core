@@ -1,7 +1,7 @@
 name: Forever Core drift
 
 # Vendored from cjber/forever-core (tools/core-shared-drift.yml); change it there, never here.
-# A pull request checks only the vendored files it changes, so a hand edit fails while a lag behind core does not
+# A pull request checks only the vendored tooling it changes, so a hand edit fails while a lag behind core does not
 # block unrelated work. The schedule checks every vendored file and reports the lag.
 on:
   pull_request:

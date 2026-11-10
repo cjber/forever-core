@@ -32,6 +32,18 @@ local ORDINALS = { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th" }
 Data.MEDALS = { "challenges-medal-gold", "challenges-medal-silver", "challenges-medal-bronze" }
 local NO_STRINGS = {}
 
+-- A board's callback runs in the registering addon's SafeCall, so its failure lands in that addon's journal.
+local function RunSafe(spec, label, fn, ...)
+	local safe = spec and spec.safeCall
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
+end
+
 -- Every addon's L takes English phrases as keys. A phrase reads from this copy's L only, and as itself where that L
 -- has no entry, so a line is never half translated. A phrase counts only as the L's own entry (rawget).
 local strings = setmetatable({}, { __mode = "kv" })
@@ -321,15 +333,15 @@ end
 ---@param scope ForeverLeaderboardsScope
 ---@return ForeverLeaderboardsRow[]
 function Data.BoardRows(api, spec, scope)
-	local manager = rawget(_G, "ForeverPeerStats")
-	local managed = type(manager) == "table"
+	---@type table?
+	local manager = ns.PeerStats and ns.PeerStats.Manager and ns.PeerStats.Manager() or nil
 	local previous
-	if managed then
+	if manager then
 		previous = manager.includeRelayed
 		manager.includeRelayed = api.reach == "met"
 	end
-	local ok, rows = pcall(spec.board, scope)
-	if managed then
+	local ok, rows = RunSafe(spec, "leaderboard board", spec.board, scope)
+	if manager then
 		manager.includeRelayed = previous
 	end
 	if ok and type(rows) == "table" then
@@ -348,7 +360,7 @@ local function Revisions(api)
 		local spec = api.boards and api.boards[key]
 		local revision = spec and spec.revision
 		if type(revision) == "function" then
-			local ok, value = pcall(revision)
+			local ok, value = RunSafe(spec, "leaderboard revision", revision)
 			if ok and type(value) == "number" and value == value then
 				sum = sum + value
 			end

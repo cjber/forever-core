@@ -146,9 +146,11 @@ class ForeverClientTest(unittest.TestCase):
         addons = self.state / "AddOns"
         (addons / "FieldGuideForever").mkdir(parents=True)
         (addons / "FieldGuideForever/Core.lua").write_text('SLASH_FIELDGUIDEFOREVER1 = "/fgf"\n')
+        (addons / "ForeverCore").mkdir()
+        (addons / "ForeverCore/Expose.lua").write_text('SLASH_FOREVERCORE1 = "/fcore"\n')
         (addons / "SomeoneElse").mkdir()
         (addons / "SomeoneElse/Core.lua").write_text('SLASH_OTHER1 = "/other"\n')
-        for ok in ("/fgf", "/FGF reset", "/reload"):
+        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload"):
             fc.allowed_command(ok, addons)
         for refused in (
             "/other",

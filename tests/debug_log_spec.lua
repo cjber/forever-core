@@ -79,9 +79,9 @@ end
 -- The ring ---------------------------------------------------------------------------------------------------------
 seconds = 1.5
 for index = 1, 250 do
-	ns.Log("info", "ring", "line %d", index)
+	ns.LogFor("LogAddon"):Log("info", "ring", "line %d", index)
 end
-local kept = ns.LogLines(1000)
+local kept = ns.LogFor("LogAddon"):LogLines(1000)
 equal(#kept, 200, "the ring keeps 200 lines")
 check(kept[1]:find("line 51", 1, true) ~= nil, "the oldest lines are dropped first")
 check(kept[200]:find("line 250", 1, true) ~= nil, "the newest line is last")
@@ -89,22 +89,25 @@ check(
 	kept[200]:find("2026-11-08 12:00:00 +1.5s info ring: line 250", 1, true) ~= nil,
 	"a line carries the date, session seconds, level, topic and message"
 )
-equal(#ns.LogLines(7), 7, "LogLines returns only the requested newest lines")
-check(ns.LogLines(2)[2]:find("line 250", 1, true) ~= nil, "LogLines returns them oldest first")
+equal(#ns.LogFor("LogAddon"):LogLines(7), 7, "LogLines returns only the requested newest lines")
+check(ns.LogFor("LogAddon"):LogLines(2)[2]:find("line 250", 1, true) ~= nil, "LogLines returns them oldest first")
 
 -- Levels and the debug switch -------------------------------------------------------------------------------------
-ns.Log("debug", "off", "dropped while off")
-check(not Has(ns.LogLines(1000), "dropped while off"), "a debug line is dropped while the switch is off")
+ns.LogFor("LogAddon"):Log("debug", "off", "dropped while off")
+check(
+	not Has(ns.LogFor("LogAddon"):LogLines(1000), "dropped while off"),
+	"a debug line is dropped while the switch is off"
+)
 check(not ns.DebugEnabled(), "the switch starts off")
 equal(ns.DebugCommand(""), true, "a bare debug command is handled")
 check(ns.DebugEnabled(), "the bare command turns the switch on")
 equal(shown[#shown], "Debug log is on for this session.", "the confirmation is on screen, unpinned")
-ns.Log("debug", "on", "kept while on")
-check(Has(ns.LogLines(1000), "kept while on"), "a debug line is kept while the switch is on")
-ns.Log("warn", "on", "warn always kept")
-check(Has(ns.LogLines(1000), "warn always kept"), "warn is kept while debug is off or on")
-ns.Log("error", "on", "error always kept")
-check(Has(ns.LogLines(1000), "error always kept"), "error is kept")
+ns.LogFor("LogAddon"):Log("debug", "on", "kept while on")
+check(Has(ns.LogFor("LogAddon"):LogLines(1000), "kept while on"), "a debug line is kept while the switch is on")
+ns.LogFor("LogAddon"):Log("warn", "on", "warn always kept")
+check(Has(ns.LogFor("LogAddon"):LogLines(1000), "warn always kept"), "warn is kept while debug is off or on")
+ns.LogFor("LogAddon"):Log("error", "on", "error always kept")
+check(Has(ns.LogFor("LogAddon"):LogLines(1000), "error always kept"), "error is kept")
 
 -- Formatting costs nothing for a dropped line ----------------------------------------------------------------------
 equal(ns.DebugCommand(""), true, "the bare command turns the switch off again")
@@ -115,40 +118,39 @@ local argument = setmetatable({}, {
 		return "value"
 	end,
 })
-ns.Log("debug", "format", "%s", argument)
+ns.LogFor("LogAddon"):Log("debug", "format", "%s", argument)
 equal(formatted, 0, "a dropped debug line never formats its arguments")
 ns.DebugCommand("")
-ns.Log("debug", "format", "%s", argument)
+ns.LogFor("LogAddon"):Log("debug", "format", "%s", argument)
 equal(formatted, 1, "a kept line formats its arguments")
-ns.Log("debug", "format", "%d", "not a number")
-local fallback = ns.LogLines(1)[1]
+ns.LogFor("LogAddon"):Log("debug", "format", "%d", "not a number")
+local fallback = ns.LogFor("LogAddon"):LogLines(1)[1]
 check(fallback:find("format: %d", 1, true) ~= nil, "a failed format falls back to the template")
 ns.DebugCommand("")
 check(not ns.DebugEnabled(), "the switch is off again")
 
 -- Attach and persistence across a reload ---------------------------------------------------------------------------
 local saved = {}
-ns.AttachLog(saved)
+ns.LogFor("LogAddon"):Attach({ log = saved })
 equal(type(saved.lines), "table", "attach creates the saved ring")
 equal(saved.pinned, false, "a fresh saved table is unpinned")
-ns.Log("info", "saved", "before reload")
+ns.LogFor("LogAddon"):Log("info", "saved", "before reload")
 ns.DebugCommand("pin")
 equal(saved.pinned, true, "pin is written to the attached saved table")
 check(ns.DebugEnabled(), "pin turns the switch on")
 equal(shown[#shown], "Debug log is on and pinned for this character.", "pin confirms on screen")
-ns.Log("debug", "saved", "debug before reload")
+ns.LogFor("LogAddon"):Log("debug", "saved", "debug before reload")
 local savedCount = #saved.lines
 check(savedCount >= 2, "the ring is the saved table")
 
--- A reload drops the globals but keeps SavedVariables, which is exactly what a /reload does.
-_G.ForeverDebugLog = nil
+-- A reload drops the module state but keeps SavedVariables, which is exactly what a /reload does.
 local reloaded = {}
 Load(reloaded)
 check(not reloaded.DebugEnabled(), "a new session starts with the switch off")
-reloaded.AttachLog(saved)
+reloaded.LogFor("LogAddon"):Attach({ log = saved })
 equal(#saved.lines, savedCount, "attach does not duplicate the saved lines")
 check(reloaded.DebugEnabled(), "the saved pin turns the switch on after a reload")
-local recovered = reloaded.LogLines(1000)
+local recovered = reloaded.LogFor("LogAddon"):LogLines(1000)
 check(Has(recovered, "before reload"), "earlier sessions survive the reload")
 check(Has(recovered, "debug before reload"), "debug lines from the pinned session survive")
 
@@ -157,15 +159,14 @@ equal(reloaded.DebugCommand("off"), true, "off is handled")
 check(not reloaded.DebugEnabled(), "off turns the switch off")
 equal(saved.pinned, false, "off unpins the attached saved table")
 equal(shown[#shown], "Debug log is off and unpinned.", "off confirms on screen")
-_G.ForeverDebugLog = nil
 local again = {}
 Load(again)
-again.AttachLog(saved)
+again.LogFor("LogAddon"):Attach({ log = saved })
 check(not again.DebugEnabled(), "an unpinned saved table stays off after a reload")
 
 -- Pin is idempotent and written to every attached addon's table.
 local other = {}
-again.AttachLog(other)
+again.LogFor("LogAddon"):Attach({ log = other })
 equal(again.DebugCommand("  pin  "), true, "pin trims its argument")
 check(other.pinned, "pin writes the pin to a second attached table")
 equal(shown[#shown], "Debug log is on and pinned for this character.", "the first pin confirms")
@@ -180,7 +181,7 @@ again.Report = {
 	end,
 }
 for index = 1, 60 do
-	again.Log("info", "show", "show-%d", index)
+	again.LogFor("LogAddon"):Log("info", "show", "show-%d", index)
 end
 copies = {}
 equal(again.DebugCommand("show"), true, "show is handled")
@@ -195,24 +196,23 @@ equal(
 	"Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show",
 	"an unknown argument shows the usage on screen"
 )
--- show lists every attached addon's lines under its name, not only the copy that owns /forever.
-_G.ForeverDebugLog = nil
-local first = {}
-Load(first, "FirstAddon")
-local second = {}
-Load(second, "SecondAddon")
-first.AttachLog({})
-second.AttachLog({})
-first.Log("info", "first", "first line")
-second.Log("info", "second", "second line one")
-second.Log("info", "second", "second line two")
+-- show lists every attached addon's lines under its name, in one module.
+local shared = {}
+Load(shared)
+local firstContext = shared.LogFor("FirstAddon")
+local secondContext = shared.LogFor("SecondAddon")
+firstContext:Attach({ log = {} })
+secondContext:Attach({ log = {} })
+firstContext:Log("info", "first", "first line")
+secondContext:Log("info", "second", "second line one")
+secondContext:Log("info", "second", "second line two")
 local both = {}
-first.Report = {
+shared.Report = {
 	Show = function(text)
 		both[#both + 1] = text
 	end,
 }
-equal(first.DebugCommand("show"), true, "show is handled with two copies loaded")
+equal(shared.DebugCommand("show"), true, "show is handled with two addons attached")
 check(both[1]:find("FirstAddon (last 1):", 1, true) ~= nil, "the first addon's name heads its lines")
 check(both[1]:find("SecondAddon (last 2):", 1, true) ~= nil, "the second addon's name heads its lines")
 check(both[1]:find("first line", 1, true) ~= nil, "the first addon's line is shown")
@@ -223,8 +223,7 @@ check(
 	"attached addons are listed in registration order"
 )
 
--- A copy without the report window still answers in the client's error frame.
-_G.ForeverDebugLog = nil
+-- A module without the report window still answers in the client's error frame.
 local bare = {}
 Load(bare)
 equal(bare.DebugCommand("show"), true, "show works without a report window")

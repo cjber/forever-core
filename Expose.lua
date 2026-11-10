@@ -1,27 +1,115 @@
--- The core's public face, loaded after the shared files so it can publish what they built. A Forever addon reads
--- ForeverCore.TrackerHost when it wants the column without vendoring the host itself, and /fcore prints the same
--- diagnostic the addons' own slash commands print.
-local ns = select(2, ...)
+-- The core's public face, loaded after the shared files so it can publish what they built. Every Forever addon reads
+-- ForeverCore for the modules it shares and calls ForeverCore.Register for the services that belong to it alone, and
+-- /fcore prints the tracker's diagnostic.
+
+local _, ns = ...
 
 local core = {}
 core.name = "ForeverCore"
-core.Defaults = ns.Defaults
+-- Raised when a change breaks the interface below, so an addon can refuse to run against an older core.
+core.API = 1
+
 core.TrackerHost = ns.TrackerHost
 core.TrackerLock = ns.TrackerLock
 core.TrackerOrder = ns.TrackerOrder
 core.TrackerQuestie = ns.TrackerQuestie
+core.TrackerEqot = ns.TrackerEqot
 core.TrackerQuests = ns.TrackerQuests
+core.QuestLogTabs = ns.QuestLogTabs
+core.PeerStats = ns.PeerStats
+core.Leaderboards = ns.Leaderboards
+core.LeaderboardsData = ns.LeaderboardsData
+core.MinimapButton = ns.MinimapButton
+core.SettingsPage = ns.SettingsPage
+core.Text = ns.Text
+core.QuestOrder = ns.QuestOrder
+core.OpenMap = ns.OpenMap
+core.OpenSettingsPanel = ns.OpenSettingsPanel
+core.Family = ns.Family
+core.ContextMenu = ns.ContextMenu
 
----Attaches a section frame to the shared column; false when there is no column (no native tracker).
----@param module ForeverTrackerModule
----@return boolean
-function core.Attach(module)
-	local host = ns.TrackerHost
-	if host == nil then
-		return false
+-- One context per addon name, so Register twice returns the same tables and the same window.
+---@type table<string, ForeverCoreAddon>
+local contexts = {}
+
+-- The saved table's journal lives under `errors` and its log ring under `log`.
+---@param context ForeverCoreAddon
+---@param db table
+local function AttachDb(context, db)
+	if type(db) ~= "table" then
+		return
 	end
-	host.Attach(module)
-	return true
+	local journal = db.errors
+	if type(journal) ~= "table" then
+		journal = {}
+		db.errors = journal
+	end
+	ns.SafeCallFor(context.name):Attach(journal)
+	ns.LogFor(context.name):Attach(db)
+end
+
+-- The per-addon services: the error journal and log bound to `addonName`, its report window and its map markers.
+---@param addonName string
+---@param spec? ForeverCoreSpec
+---@return ForeverCoreAddon
+function core.Register(addonName, spec)
+	addonName = tostring(addonName or "?")
+	spec = spec or {}
+	local context = contexts[addonName]
+	if context then
+		if spec.db ~= nil then
+			AttachDb(context, spec.db)
+		end
+		return context
+	end
+	local safe = ns.SafeCallFor(addonName)
+	local log = ns.LogFor(addonName)
+	context = {
+		name = addonName,
+		SafeCall = function(...)
+			return safe:SafeCall(...)
+		end,
+		RecordError = function(...)
+			safe:RecordError(...)
+		end,
+		CaughtErrors = function()
+			return safe:CaughtErrors()
+		end,
+		CutText = ns.CutText,
+		Log = function(...)
+			log:Log(...)
+		end,
+		LogLines = function(...)
+			return log:LogLines(...)
+		end,
+		DebugEnabled = ns.DebugEnabled,
+		DebugCommand = ns.DebugCommand,
+		Report = ns.ReportFor(addonName, {
+			title = spec.title,
+			lines = spec.lines,
+			safe = safe,
+			log = log,
+		}),
+		MapCanvas = ns.MapCanvasFor(addonName),
+		Attach = function(db)
+			AttachDb(context, db)
+		end,
+	}
+	contexts[addonName] = context
+	if spec.db ~= nil then
+		AttachDb(context, spec.db)
+	end
+	return context
+end
+
+-- Core's own errors and lines are recorded under ForeverCore. Core.lua's one ADDON_LOADED handler calls this once the
+-- saved table exists, so a first install attaches exactly like a later one.
+local self = core.Register("ForeverCore")
+ns.AttachCoreDb = function()
+	if type(ForeverCoreDB) ~= "table" then
+		return
+	end
+	self.Attach(ForeverCoreDB)
 end
 
 ForeverCore = core

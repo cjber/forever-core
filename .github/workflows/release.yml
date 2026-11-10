@@ -1,35 +1,119 @@
-# A library addon has no CurseForge or Wago page: this publishes the GitHub release, with the zip the packager builds,
-# so a consumer can pin a version. Consumers adopt a core version with their own PR, not by installing this.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  # A cloud agent session cannot push tags, so it releases from here: this run tags a main commit that passed full
+  # CI and publishes it itself, since a tag created with GITHUB_TOKEN starts no workflow of its own.
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release, as CHANGELOG.md names it (for example 0.1.0)
+        description: Version to release, as CHANGELOG.md names it (for example 1.0.0)
         required: true
+        type: string
+      commit:
+        description: Full SHA of the main commit to release; main's head when empty
+        required: false
         type: string
 
 permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: write # the packager creates the GitHub release; a manual release creates its tag
+      actions: read # release_check.py reads the commit's CI runs
     steps:
+      - name: Choose the tag and commit
+        id: target
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Manual releases run from main."
+            exit 1
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::The version must look like 1.2.3."
+            exit 1
+          fi
+          commit=${COMMIT:-$GITHUB_SHA}
+          if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::The commit must be a full 40-character SHA."
+            exit 1
+          fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.target.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Tag a dispatched release
+      # A release starts the moment its tag exists, which is normally while that commit's CI push run is still
+      # going, so wait for the run here instead of failing on the race. A run that finished without success fails the
+      # release at once, and the gate below still publishes only a completed, successful full CI run on main for this
+      # exact commit.
+      - name: Wait for full CI on the commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT: ${{ steps.target.outputs.commit }}
+        run: |
+          for attempt in $(seq 1 90); do
+            state=$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$RELEASE_COMMIT&event=push&per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_branch == "main")] | if length == 0 then "none/" else (max_by(.run_started_at) | "\(.status)/\(.conclusion // "")") end') || state="unreadable/"
+            case "$state" in
+              completed/success)
+                echo "Full CI on main is green for $RELEASE_COMMIT"
+                exit 0
+                ;;
+              completed/*)
+                echo "::error::Full CI on main finished without success ($state) for $RELEASE_COMMIT"
+                exit 1
+                ;;
+              none/*)
+                echo "::error::No full CI push run on main for $RELEASE_COMMIT"
+                exit 1
+                ;;
+            esac
+            echo "Full CI on main is $state for $RELEASE_COMMIT; waiting (${attempt} of 90)"
+            sleep 20
+          done
+          echo "::error::Full CI on main is still running for $RELEASE_COMMIT after 30 minutes"
+          exit 1
+      # release_check.py passes only a commit whose full CI push run on main succeeded, so a manual release cannot
+      # publish a branch, a pull request or an unchecked commit.
+      - name: Verify full CI on the commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT: ${{ steps.target.outputs.commit }}
+        run: |
+          python3 -c 'import os; os.environ["GITHUB_SHA"] = os.environ["RELEASE_COMMIT"]
+          from tools.release_check import main
+          main()'
+      # The release notes are this version's CHANGELOG entry, not the whole file;
+      # a tag without one fails here rather than shipping empty notes.
+      - name: Release notes
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+        run: python3 tools/changelog.py "$RELEASE_TAG" > .release-notes.md
+      - name: Tag a manual release
         if: github.event_name == 'workflow_dispatch'
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ inputs.version }}
-          RELEASE_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+          RELEASE_COMMIT: ${{ steps.target.outputs.commit }}
         run: |
           # A missing tag answers 404 with its error body on stdout, so branch on the exit status, not the output.
           if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null); then
@@ -40,10 +124,11 @@ jobs:
           else
             gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null
           fi
-          # The packager reads the version from the tag on the checked-out commit; a full-history checkout may already hold it.
-          git tag -f "$RELEASE_TAG" "$RELEASE_COMMIT"
+          # The packager reads the version from the tag on the checked-out commit. The full-history checkout
+          # already holds a tag that existed before this run, so only a new one is created here.
+          git rev-parse -q --verify "refs/tags/$RELEASE_TAG" > /dev/null || git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
       - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         env:
-          # The packager reads GITHUB_OAUTH to create the GitHub release; GITHUB_TOKEN alone left it
-          # without a token (the run packaged the zip but published nothing).
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

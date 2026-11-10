@@ -128,8 +128,8 @@ end
 _G.date = function()
 	return "d"
 end
-assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
-assert(loadfile("Core/Log.lua"))("ForeverCore", ns)
+assert(loadfile("Core/SafeCall.lua"))("ExampleAddon", ns)
+assert(loadfile("Core/Log.lua"))("ExampleAddon", ns)
 local chunk = assert(loadfile("UI/Report.lua"))
 chunk("ExampleAddon", ns)
 ns.ReportTitle = "ExampleAddon report"
@@ -137,6 +137,8 @@ local reportText = ns.Report.Text
 ns.Report.Text = function(lines)
 	return table.concat(lines, "\n")
 end
+local safe = ns.SafeCallFor("ExampleAddon")
+local logContext = ns.LogFor("ExampleAddon")
 
 local longError = ("long error "):rep(30)
 -- BugGrabber v12.1.1: the report reads its database directly, and its own error links resolve by table id.
@@ -151,7 +153,7 @@ _G.BugGrabber = {
 		return nil
 	end,
 }
-ns.RecordError("test", longError, "stack")
+safe:RecordError("test", longError, "stack")
 local uniqueText = reportText({})
 equal(uniqueText:find("Recent Lua errors (BugGrabber):", 1, true) ~= nil, true, "unique BugGrabber errors are shown")
 _G.BugGrabber.GetDB = function()
@@ -159,8 +161,8 @@ _G.BugGrabber.GetDB = function()
 end
 local duplicateText = reportText({})
 equal(duplicateText:find("Recent Lua errors (BugGrabber):", 1, true), nil, "duplicate BugGrabber errors are omitted")
-local caughtErrors = ns.CaughtErrors
-ns.CaughtErrors = function()
+local caughtErrors = safe.CaughtErrors
+safe.CaughtErrors = function()
 	return { { label = "test", message = ns.CutText(longError, 300), count = 1, stack = "stack" } }
 end
 local legacyText = reportText({})
@@ -169,7 +171,7 @@ equal(
 	true,
 	"ambiguous clipped legacy errors remain visible"
 )
-ns.CaughtErrors = function()
+safe.CaughtErrors = function()
 	return { { label = "test", message = "A", count = 1, stack = "stack" } }
 end
 _G.BugGrabber.GetDB = function()
@@ -186,10 +188,10 @@ equal(
 	true,
 	"distinct short legacy errors remain visible"
 )
-ns.CaughtErrors = caughtErrors
+safe.CaughtErrors = caughtErrors
 local sharedPrefix = ("same prefix "):rep(30)
-ns.RecordError("first", sharedPrefix .. "A", "stack")
-ns.RecordError("second", sharedPrefix .. "B", "stack")
+safe:RecordError("first", sharedPrefix .. "A", "stack")
+safe:RecordError("second", sharedPrefix .. "B", "stack")
 _G.BugGrabber.GetDB = function()
 	return {
 		{ message = sharedPrefix .. "A", counter = 1, session = 1 },
@@ -203,7 +205,7 @@ equal(
 	"distinct long errors keep one external section"
 )
 
-ns.AttachErrorJournal({
+safe:Attach({
 	{
 		signature = "earlier\n",
 		kind = "error",
@@ -224,10 +226,10 @@ equal(
 
 -- The copy carries the newest log lines after the error journal.
 local logStore = {}
-ns.AttachLog(logStore)
-ns.Log("info", "test", "first log line")
-ns.Log("debug", "test", "dropped debug line")
-ns.Log("warn", "test", "second log line")
+logContext:Attach({ log = logStore })
+logContext:Log("info", "test", "first log line")
+logContext:Log("debug", "test", "dropped debug line")
+logContext:Log("warn", "test", "second log line")
 local loggedText = reportText({})
 equal(loggedText:find("Log %(last 2%):", 1) ~= nil, true, "the log has its own heading")
 equal(loggedText:find("dropped debug line", 1, true), nil, "a dropped debug line is not in the copy")
@@ -235,12 +237,12 @@ local errorAt = loggedText:find("error from an earlier session", 1, true)
 local logAt = loggedText:find("first log line", 1, true)
 equal(errorAt ~= nil and logAt ~= nil and errorAt < logAt, true, "the log follows the error journal")
 
-ns.CaughtErrors = function()
+safe.CaughtErrors = function()
 	return {}
 end
 _G.BugGrabber = nil
 for index = 1, 60 do
-	ns.Log("info", "test", "log-%d", index)
+	logContext:Log("info", "test", "log-%d", index)
 end
 local fullText = reportText({})
 equal(fullText:find("Log %(last 50%):", 1) ~= nil, true, "the copy shows the newest 50 log lines")
@@ -250,7 +252,7 @@ equal(fullText:find("log-60\n", 1, true) ~= nil, true, "the newest line is inclu
 
 -- A log too long for the report keeps the newest lines, not the oldest: the section is built newest-first.
 for index = 1, 30 do
-	ns.Log("info", "test", ("long-%02d "):format(index) .. string.rep("x", 110))
+	logContext:Log("info", "test", ("long-%02d "):format(index) .. string.rep("x", 110))
 end
 local longText = reportText({})
 equal(longText:find("long-30 ", 1, true) ~= nil, true, "the newest line survives the report cap")

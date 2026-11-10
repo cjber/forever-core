@@ -2,10 +2,6 @@ std = "lua51"
 max_line_length = 120
 exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**"}
 globals = {
-	"ForeverFamily",
-	"ForeverLeaderboards",
-	"ForeverTrackerHost",
-	"ForeverQuestLogTabs",
 	"EventUtil",
 	"ShortestPathForever",
 	"ShortestPathForeverCharDB",
@@ -49,6 +45,7 @@ read_globals = {
 	"CreateVector2D",
 	"Enum",
 	"GameTooltip",
+	"GameTooltip_Hide",
 	"GameTooltip_AddColoredDoubleLine",
 	"GameTooltip_AddColoredLine",
 	"GameTooltip_AddInstructionLine",
@@ -123,8 +120,7 @@ files["tools/headless/"] = { read_globals = { "ChatEdit_DeactivateChat", "Screen
 
 -- Tracker colours.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"
--- MapCanvas.lua: the Forever addons' shared list of world map markers, and the gamepad's map cursor.
-globals[#globals + 1] = "ForeverMapMarkers"
+-- MapCanvas.lua: the gamepad's map cursor.
 read_globals[#read_globals + 1] = "SoftCursor"
 -- Shared-workspace arrow: Blizzard_QuestNavigation/SuperTrackedFrame.lua:291.
 read_globals[#read_globals + 1] = "C_Navigation"
@@ -215,8 +211,6 @@ globals[#globals + 1] = "ForeverCoreDB"
 -- UI/Leaderboards.lua: the window's slash commands.
 globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS1"
 globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS2"
--- Core/MinimapButton.lua publishes the registry every vendored copy shares.
-globals[#globals + 1] = "ForeverMinimapButtons"
 -- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.
 read_globals[#read_globals + 1] = "DEFAULT_CHAT_FRAME"
 globals[#globals + 1] = "SLASH_FOREVERCORE1"

@@ -1,0 +1,103 @@
+-- Machine translated (2026-10-22); corrections welcome: https://github.com/cjber/forever-core/issues/new?template=translation.yml
+local _, ns = ...
+if GetLocale() ~= "zhCN" then
+	return
+end
+local L = ns.L
+
+L[", "] = ", "
+L["(you)"] = "（你）"
+L["%d yd"] = "%d码"
+L["%s (last %d):"] = "%s（最近 %d 条）："
+L["%s: no lines yet."] = "%s：还没有日志行。"
+L["1st"] = "第 1 名"
+L["2nd"] = "第 2 名"
+L["3rd"] = "第 3 名"
+L["4th"] = "第 4 名"
+L["5th"] = "第 5 名"
+L["6th"] = "第 6 名"
+L["7th"] = "第 7 名"
+L["8th"] = "第 8 名"
+L["All time"] = "全部时间"
+L["Attach to quest tracker"] = "附着于任务追踪栏"
+L["Bug"] = "错误"
+L["Bug: "] = "错误："
+L["Close"] = "关闭"
+L["Copy issue link"] = "复制 Issue 链接"
+L["Copy link"] = "复制链接"
+L["Copy report"] = "复制报告"
+L["Copy the address, then open it in your browser."] = "复制该地址，然后在浏览器中打开。"
+L["Debug log is already on and pinned for this character."] = "该角色的调试日志已经开启并固定。"
+L["Debug log is off and unpinned."] = "调试日志已关闭并取消固定。"
+L["Debug log is off for this session; it is still pinned."] =
+	"本次会话已关闭调试日志，但仍保持固定。"
+L["Debug log is off."] = "调试日志已关闭。"
+L["Debug log is on and pinned for this character."] = "该角色的调试日志已开启并固定。"
+L["Debug log is on for this session."] = "本次会话已开启调试日志。"
+L["Don't suggest this again"] = "不再推荐"
+L["Drag to move"] = "拖动以移动"
+L["Feature request"] = "功能请求"
+L["Feature request: "] = "功能请求："
+L["Forever Core"] = "Forever Core"
+L["Forever Leaderboards"] = "Forever 排行榜"
+L["Forever addons"] = "Forever插件"
+L["Forever quest list"] = "Forever quest list"
+L["Forever standing"] = "Forever 总排名"
+L["Forever tracker"] = "Forever追踪栏"
+L["Forever: %s overall"] = "Forever：总排名 %s"
+L["Forever: %s overall this week"] = "Forever：本周总排名 %s"
+L["Hide this section"] = "Hide this section"
+L["Installed, turned off"] = "已安装，已禁用"
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
+L["Lock the tracker"] = "锁定追踪器"
+L["No addon has attached its log yet."] = "还没有插件附加日志。"
+L["No one has reported yet."] = "还没有人报告。"
+L["Not installed"] = "未安装"
+L["On"] = "开启"
+L["Others' values are player-reported."] = "其他玩家的数值由玩家自行报告。"
+L["Overall"] = "总览"
+L["Picks quests for your level and plans them into one journey."] =
+	"挑选适合你等级的任务，并规划成一段旅程。"
+L["Plans the cheapest route to your next profession rank."] = "规划升到下一专业等级最省钱的路线。"
+L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
+	"规划前往任何地点的最快路线并为你引路，附带船只和飞艇的实时时刻。"
+L["Player"] = "玩家"
+L["Players you've met"] = "遇到过的玩家"
+L["Points for placing on each addon's board."] = "在每个插件的排行榜上获得名次的分数。"
+L["Quest automation, rare alerts and merchant handling for the default UI."] =
+	"为默认界面提供任务自动化、稀有怪提醒和商人处理。"
+L["Rank"] = "排名"
+L["Ready to turn in"] = "Ready to turn in"
+L["Report a bug or request a feature"] = "报告错误或请求功能"
+L["Share my progress"] = "分享我的进度"
+L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
+	"在我的其他Forever插件能帮上忙的地方显示一行不显眼的提示。仅限你尚未安装的插件。"
+L["Shows the Legacy challenges you can advance in each zone."] =
+	"显示每个地区中你可以推进的传承挑战。"
+L["Suggest my other Forever addons"] = "推荐我的其他Forever插件"
+L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
+	"Forever 插件全部免费，没有任何付费才能使用的内容。如果它们对你有帮助，可以请我喝杯咖啡。"
+L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
+	"链接已选中。按 Ctrl+C（Mac 上为 Cmd+C）复制，然后粘贴到浏览器中；GitHub 会打开一个已填写的问题。"
+L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
+	"文本已选中。按Ctrl+C（Mac上为Cmd+C）复制，然后粘贴到你的错误报告中。"
+L["The tracker is locked. Turn off Lock the tracker to move it."] =
+	"追踪器已锁定。关闭“锁定追踪器”即可移动它。"
+L["This addon"] = "本插件"
+L["This week"] = "本周"
+L["Title"] = "标题"
+L["Tracker background"] = "追踪器背景"
+L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
+	"用法：/forever debug、/forever debug pin、/forever debug off、/forever debug show"
+L["Use the game's quest list"] = "Use the game's quest list"
+L["Uses Forever addons"] = "使用 Forever 插件"
+L["What happened, or what you would like"] = "发生了什么，或你想要的功能"
+L["Your guild and group"] = "你的公会和队伍"
+L["board"] = "个榜单"
+L["boards"] = "个榜单"
+L.MINIMAP_UNAVAILABLE = "小地图不可用，已跳过自定义按钮。"
+L["MENU_BACK"] = "返回"
+L["MENU_CHECKED"] = "[x] %s"
+L["MENU_UNCHECKED"] = "[ ] %s"
+L["MENU_SUBMENU"] = "%s >"

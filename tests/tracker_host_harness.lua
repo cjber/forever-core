@@ -239,6 +239,51 @@ function harness.new(options)
 			end
 		end,
 	}
+	-- The shared context menu, recorded so a spec can read back what a click offered. An entry with no callback and
+	-- entries of its own is a submenu, as inserting elements into an element description makes one in the client.
+	local function captureMenu(owner, generator)
+		local function Description()
+			local descriptionObject = { entries = {} }
+			function descriptionObject.CreateCheckbox(_, text, isSelected, setSelected)
+				descriptionObject.entries[#descriptionObject.entries + 1] =
+					{ text = text, isSelected = isSelected, setSelected = setSelected }
+				return {}
+			end
+			function descriptionObject.CreateRadio(_, text, isSelected, setSelected)
+				descriptionObject.entries[#descriptionObject.entries + 1] =
+					{ text = text, isSelected = isSelected, setSelected = setSelected }
+				return {}
+			end
+			function descriptionObject.CreateButton(_, text, callback)
+				if callback then
+					local entry = { text = text, callback = callback }
+					descriptionObject.entries[#descriptionObject.entries + 1] = entry
+					return {
+						SetTooltip = function(_, tooltip)
+							entry.tooltip = tooltip
+						end,
+					}
+				end
+				local submenu = Description()
+				submenu.text = text
+				descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, submenu = submenu }
+				return submenu
+			end
+			function descriptionObject.CreateTitle(_, text)
+				descriptionObject.title = text
+			end
+			return descriptionObject
+		end
+		local menu = { owner = owner, entries = {} }
+		local root = Description()
+		if generator then
+			generator(owner, root)
+		end
+		menu.entries, menu.title = root.entries, root.title
+		menus[#menus + 1] = menu
+		return menu
+	end
+	ns.ContextMenu = captureMenu
 	local editMode = { active = false, shown = false, scripts = {} }
 	function editMode:IsEditModeActive()
 		return self.active
@@ -277,50 +322,11 @@ function harness.new(options)
 				return { type = "Frame" }
 			end,
 		},
-		-- The client's menu API, recorded so a spec can read back what a click offered. An entry with no callback and
-		-- entries of its own is a submenu, as inserting elements into an element description makes one in the client.
+		-- The client's menu API is never used: the shared context menu is what a section opens. A spec that still calls
+		-- MenuUtil would catch the old path here.
 		MenuUtil = {
-			CreateContextMenu = function(owner, generator)
-				local function Description()
-					local descriptionObject = { entries = {} }
-					function descriptionObject.CreateCheckbox(_, text, isSelected, setSelected)
-						descriptionObject.entries[#descriptionObject.entries + 1] =
-							{ text = text, isSelected = isSelected, setSelected = setSelected }
-						return {}
-					end
-					function descriptionObject.CreateRadio(_, text, isSelected, setSelected)
-						descriptionObject.entries[#descriptionObject.entries + 1] =
-							{ text = text, isSelected = isSelected, setSelected = setSelected }
-						return {}
-					end
-					function descriptionObject.CreateButton(_, text, callback)
-						if callback then
-							local entry = { text = text, callback = callback }
-							descriptionObject.entries[#descriptionObject.entries + 1] = entry
-							return {
-								SetTooltip = function(_, tooltip)
-									entry.tooltip = tooltip
-								end,
-							}
-						end
-						local submenu = Description()
-						submenu.text = text
-						descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, submenu = submenu }
-						return submenu
-					end
-					function descriptionObject.CreateTitle(_, text)
-						descriptionObject.title = text
-					end
-					return descriptionObject
-				end
-				local menu = { owner = owner, entries = {} }
-				local root = Description()
-				if generator then
-					generator(owner, root)
-				end
-				menu.entries, menu.title = root.entries, root.title
-				menus[#menus + 1] = menu
-				return menu
+			CreateContextMenu = function()
+				error("native menu acquisition can assert on this client build")
 			end,
 		},
 		Mixin = function(target, mixin)

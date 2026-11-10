@@ -1,6 +1,6 @@
--- UI/ForeverFamily.lua is byte-identical in all five Forever addons, and so is this spec. A change to the module is
--- made in Forever Core first, then copied unchanged to the other four with this spec and its new pin.
-local PINNED = "3a6d44f505766b8518f961929ab11e7fc0a73fce849b39704271de956c26d4d4"
+-- UI/ForeverFamily.lua now loads once, in ForeverCore, and reads core's own L. A change to the module is made here
+-- with this spec; no consumer keeps a copy.
+local PINNED = "eb23b996430d7514a34e2baa3eb522d837b08ae1573ec2f3308bfb6f5b96602b"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -77,11 +77,7 @@ file:close()
 local actual = sha256(source)
 check(
 	actual == PINNED,
-	PATH
-		.. " changed (sha256 "
-		.. actual
-		.. "). It is shared byte for byte by all five Forever addons: make the change in Forever Core, "
-		.. "update PINNED here, then copy both files unchanged to the others."
+	PATH .. " changed (sha256 " .. actual .. "). Update PINNED here after changing Forever Core's one copy."
 )
 
 -- A headless client: frames remember what the module sets and tests read back; every other method does nothing.
@@ -299,27 +295,13 @@ local function PhraseLocale()
 	})
 end
 
--- The first copy loaded is the one every addon uses; each addon's ns.Family is a view of it bound to its own L.
+-- One module, loaded once, reads core's own L. There is no global and no per-addon view: this file is ForeverCore's.
 Client()
-local first = { L = PhraseLocale() }
-local firstView = Load(first)
-local Family = env.ForeverFamily
-check(Family and Family.VERSION == 8, "the first copy sets the shared global")
-check(firstView.State == Family.State and firstView.VERSION == Family.VERSION, "an addon's view is the shared module")
-check(Family.For(first.L) == firstView, "bound to its own L, the same view each time")
-check(Family.For(nil) == Family, "with no L, the module itself")
-local count = #frames
-local second = { L = PhraseLocale() }
-local secondView = Load(second)
-check(env.ForeverFamily == Family and secondView ~= firstView, "a later copy joins the first, with its own view")
-check(secondView.Hint == Family.Hint, "the same module behind it")
-check(#frames == count and count == 0, "loading builds no frames; the window and page wait until they're needed")
-local older = { VERSION = Family.VERSION - 1 }
-env.ForeverFamily = older
-local newer = { L = PhraseLocale() }
-Load(newer)
-check(env.ForeverFamily ~= older and env.ForeverFamily.VERSION == 8, "a newer copy takes over from an older one")
-env.ForeverFamily = Family
+local ns = { L = PhraseLocale() }
+local Family = Load(ns)
+check(Family and type(Family.Register) == "function", "loading returns the one family module")
+check(env.ForeverFamily == nil, "no ForeverFamily global is published")
+check(#frames == 0, "loading builds no frames; the window and page wait until they're needed")
 
 -- The five addons, in order, with their store pages.
 local expected = {
@@ -392,8 +374,6 @@ check(window.portrait.texture == "Interface\\Icons\\INV_Misc_QuestionMark", "a m
 local edit = Children(window, "EditBox")[1]
 check(edit.text == "https://www.curseforge.com/wow/addons/tweaks-forever", "the address is in the box")
 check(edit.focused and edit.highlighted, "and selected for Ctrl+C")
--- The client calls the handler as handler(self, isUserInput); the method itself in its place used to raise
--- "bad argument #2 to '?' (outside of expected range ...)" from HighlightText.
 check(type(edit.scripts.OnEditFocusGained) == "function", "the box gains focus through a script")
 edit.highlighted, edit.highlightCalls = false, 0
 edit.scripts.OnEditFocusGained(edit, true)
@@ -425,7 +405,7 @@ local fresh = {}
 Family.ShowLink(fresh, "Test.tweaks", "TweaksForever")
 never:Click()
 check(fresh.familyDismissed and fresh.familyDismissed["Test.tweaks"], "a first dismissal makes the table")
-count = #frames
+local count = #frames
 check(Family.ShowLink(nil, nil, "AdventureGuideForever"), "a link with no hint behind it")
 check(#frames == count, "the window is reused")
 check(not never:IsShown(), "and has nothing to dismiss")
@@ -437,8 +417,6 @@ check(
 -- CreatePanel: the settings page, built on first show and read again each time.
 local saved = {}
 local parent = Create("Frame")
--- The page is a named frame: UICheckButtonTemplate's Text takes its name instead of landing on the bare global
--- `Text`, which addon code would write into _G and taint for the client or another addon (#457).
 local PANEL = "ForeverFamilyPanelLegacyForever"
 local globals = {}
 for name in pairs(env) do
@@ -518,10 +496,31 @@ plain:Show()
 check(not Children(plain, "CheckButton")[1].checked, "a plain table works as the saved variables too")
 check(not Texts(plain):find("This addon", 1, true), "with no current addon, no row says This addon")
 
+-- The addon's saved-variable reader and dismiss callback run in the addon's SafeCall.
+local familyCalls = {}
+local function familySafe(label, fn, ...)
+	familyCalls[#familyCalls + 1] = label
+	return pcall(fn, ...)
+end
+local safePanel = Family.CreatePanel(nil, function()
+	return saved
+end, "SafeFamily", familySafe)
+safePanel:Show()
+local seenFamily = {}
+for _, label in ipairs(familyCalls) do
+	seenFamily[label] = true
+end
+check(seenFamily["family saved variables"], "the saved-variable reader runs in the addon's SafeCall")
+familyCalls = {}
+Family.ShowLink({}, "Test.safe", "TweaksForever", function()
+	error("the addon's dismiss failed")
+end, familySafe)
+never:Click()
+check(familyCalls[#familyCalls] == "family dismiss", "a dismiss callback runs in the addon's SafeCall")
+
 -- Register: the page as a canvas, or as the client's own rows with the gamepad interface on.
 Client()
 local registering = Load({ L = PhraseLocale() })
-local registered = env.ForeverFamily
 local gamepadUI = false
 env.InputUtil = {
 	IsGamepadUIEnabled = function()
@@ -602,7 +601,7 @@ check(lazy.suggestFamily == false, "and written")
 
 -- One row per other addon in order, then Ko-fi last.
 local others = {}
-for _, addon in ipairs(registered.ADDONS) do
+for _, addon in ipairs(registering.ADDONS) do
 	if addon.folder ~= "LegacyForever" then
 		others[#others + 1] = addon
 	end
@@ -616,147 +615,59 @@ for index, addon in ipairs(others) do
 end
 local support = gamepadPage.rows[#gamepadPage.rows]
 check(
-	support.name == "Ko-fi" and support.buttonText == "Copy link" and support.tooltip == registered.SUPPORT.line,
+	support.name == "Ko-fi" and support.buttonText == "Copy link" and support.tooltip == registering.SUPPORT.line,
 	"Ko-fi comes last"
 )
 gamepadPage.rows[2].click()
 check(named.ForeverFamilyLink:IsShown(), "an addon row opens its link window")
 
--- A view from Family.For(L) passes its own L to the page.
-local germanL = setmetatable({ ["Copy link"] = "Link kopieren" }, {
-	__index = function(_, phrase)
-		return phrase
-	end,
-})
-local germanView = registered.For(germanL)
-local germanPage = germanView.Register(category, {}, "LegacyForever")
-check(germanPage.rows[2].buttonText == "Link kopieren", "a view's Register reads in its own L")
-
--- Translations: an addon whose L holds only some phrases, or no metatable at all, still reads every line.
+-- Translations: a client whose core L holds only some phrases still reads every line.
 Client()
-local agf = { L = { ["Not installed"] = "Nicht installiert" } }
-local agfView = Load(agf)
-local Translated = env.ForeverFamily
-check(Translated ~= Family and agfView == Translated.For(agf.L), "a fresh client loads a fresh copy")
-check(Translated.ADDONS[1].line == Family.ADDONS[1].line, "an untranslated phrase reads as English")
+local translated = {
+	L = setmetatable({
+		["Not installed"] = "Nicht installiert",
+		["Copy link"] = "Link kopieren",
+		["Close"] = "Schließen",
+		["Copy the address, then open it in your browser."] = "Kopiert die Adresse.",
+	}, {
+		__index = function(_, phrase)
+			return phrase
+		end,
+	}),
+}
+translated.L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
+	"Plant den schnellsten Weg überallhin."
+local Translated = Load(translated)
+check(Translated.ADDONS[1].line == Family.ADDONS[1].line, "the addon's line stays the English key")
+check(Translated.ADDONS[2].line == Family.ADDONS[2].line, "an untranslated phrase reads as English")
 local page = Translated.CreatePanel(nil, {}, nil)
 page:Show()
 check(Texts(page):find("Nicht installiert", 1, true), "a translated phrase is used")
-check(Texts(page):find("Copy link", 1, true) == nil, "button labels aren't font strings")
-check(Children(page, "Button")[1].text == "Copy link", "and fall back to English")
+check(Texts(page):find("Plans the quickest way anywhere", 1, true) == nil, "the addon's line is not the key")
+check(Children(page, "Button")[1].text == "Link kopieren", "the buttons read the same L")
+Translated.ShowLink(nil, nil, "ShortestPathForever")
+local linkWindow = named.ForeverFamilyLink
+local linkButtons = Children(linkWindow, "Button", "SharedButtonSmallTemplate")
+check(linkButtons[1].text == "Schließen", "the window reads the same L")
+check(Texts(linkWindow):find("Kopiert die Adresse.", 1, true), "all of it")
+check(Texts(linkWindow):find("Plant den schnellsten Weg überallhin.", 1, true), "with the addon's line")
 
--- Each addon's own L: its page and window read in its translations, and in English where it has none, never in
--- another addon's.
-local SPF_LINE = Translated.ADDONS[1].line
--- Shaped like every addon's L (Locales/enUS.lua): a phrase it has no entry for answers itself.
-local french = setmetatable({
-	["Copy link"] = "Copier le lien",
-	["Not installed"] = "Pas installé",
-	["Forever addons"] = "Addons Forever",
-	[SPF_LINE] = "Planifie le trajet le plus rapide.",
-	["Close"] = "Fermer",
-	["Copy the address, then open it in your browser."] = "Copiez l'adresse.",
+-- A long translation grows the window rather than pushing a button out of it or running the line over the box. The
+-- hidden Don't suggest button doesn't count.
+local long = setmetatable({
+	["Don't suggest this again"] = string.rep("x", 60),
+	["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] = string.rep("y", 160),
 }, {
 	__index = function(_, phrase)
 		return phrase
 	end,
 })
-local frenchView = Translated.For(french)
-local own = frenchView.CreatePanel(nil, {}, nil)
-own:Show()
-local ownText = Texts(own)
-check(ownText:find("Addons Forever", 1, true), "the page's title is the caller's")
-check(ownText:find("Pas installé", 1, true), "its states are the caller's, over the copy in use's")
-check(ownText:find("Planifie le trajet le plus rapide.", 1, true), "and so are the addons' lines")
-check(ownText:find("Suggest my other Forever addons", 1, true), "a phrase neither has reads as English")
-agf.L["This addon"] = "Dieses Addon"
-own = Translated.CreatePanel(nil, {}, "LegacyForever", french)
-own:Show()
-check(Texts(own):find("This addon", 1, true), "a phrase only the copy in use's L has reads as English, not German")
-check(not Texts(own):find("Dieses Addon", 1, true), "so no line mixes languages")
-check(Children(own, "Button")[1].text == "Copier le lien", "the buttons are the caller's")
-page:Show()
-check(Texts(page):find("Nicht installiert", 1, true), "a page made without an L reads in the copy in use's")
-Children(own, "Button")[1]:Click()
-local linkWindow = named.ForeverFamilyLink
-local linkButtons = Children(linkWindow, "Button", "SharedButtonSmallTemplate")
-check(linkButtons[1].text == "Fermer", "Copy link opens the window in the page's language")
-check(Texts(linkWindow):find("Copiez l'adresse.", 1, true), "all of it")
-check(Texts(linkWindow):find("Planifie le trajet le plus rapide.", 1, true), "with the addon's line")
-check(linkButtons[1].width == 96, "a short label keeps the button's least width")
-Translated.ShowLink(nil, nil, "ShortestPathForever")
-check(linkButtons[1].text == "Close", "a call without an L (an older caller) reads in the copy in use's")
-check(Texts(linkWindow):find(Translated.ADDONS[1].line, 1, true), "line included")
-frenchView.ShowLink(nil, nil, "ShortestPathForever")
-check(linkButtons[1].text == "Fermer", "a view's ShowLink reads in its own L")
-frenchView.ShowLink(nil, nil, "ShortestPathForever", nil, PhraseLocale())
-check(linkButtons[1].text == "Close", "unless the call names another")
-french[Translated.SUPPORT.line] = "Les addons Forever sont gratuits."
-check(ownText:find(Translated.SUPPORT.line, 1, true), "an untranslated Ko-fi line reads as English")
-frenchView.ShowSupport()
-check(Texts(linkWindow):find("Les addons Forever sont gratuits.", 1, true), "and a translated one in the caller's L")
-check(linkButtons[1].text == "Fermer", "with the window's buttons")
-
--- A long translation grows the window rather than pushing a button out of it or running the line over the box. The
--- hidden Don't suggest button doesn't count.
-local long = { ["Don't suggest this again"] = string.rep("x", 60), [SPF_LINE] = string.rep("y", 160) }
-Translated.ShowLink({}, "Test.long", "ShortestPathForever", nil, long)
+local Long = Load({ L = long })
+Long.ShowLink({}, "Test.long", "ShortestPathForever")
+linkWindow = named.ForeverFamilyLink
 check(linkWindow.width == 96 + 8 + (60 * 7 + 24) + 102, "the window fits its buttons")
 check(linkWindow.height == 4 * 14 + 14 + 124, "and its line")
-Translated.ShowLink(nil, nil, "ShortestPathForever", nil, long)
+Long.ShowLink(nil, nil, "ShortestPathForever")
 check(linkWindow.width == 400, "a hidden button takes no room")
-
--- The generic rule for a later version: a newer copy takes over the global, puts away the window the older one
--- keeps on its own table (one name, listed once for Escape), and an addon still holding the older copy's view is
--- served by the newer one.
-Client()
-local currentView = Load({ L = PhraseLocale() })
-local current = env.ForeverFamily
-currentView.ShowLink(nil, nil, "TweaksForever")
-local currentWindow = current.window
-check(currentWindow == named.ForeverFamilyLink and currentWindow:IsShown(), "the window is kept on the module")
-local served = {}
-local v9 = {
-	VERSION = 9,
-	ShowLink = function(_, _, folder)
-		served[#served + 1] = folder
-		return true
-	end,
-	ShowSupport = function()
-		served[#served + 1] = "Ko-fi"
-		return true
-	end,
-	Once = function()
-		return "v9"
-	end,
-}
-env.ForeverFamily = v9
-check(
-	currentView.ShowLink(nil, nil, "SkillUpForever") and served[1] == "SkillUpForever",
-	"a newer copy serves ShowLink"
-)
-check(currentView.ShowSupport() and served[2] == "Ko-fi", "and ShowSupport")
-check(current.Once("Test.later") == "v9", "and Once, so there is one record")
--- And from the other side: a copy taking over from an older one hides the older one's window.
-Client()
-local olderWindow = Create("Frame")
-env.ForeverFamily = { VERSION = 4, window = olderWindow }
-env.UISpecialFrames[1] = "ForeverFamilyLink"
-local takeoverView = Load({ L = PhraseLocale() })
-takeoverView.ShowLink(nil, nil, "TweaksForever")
-check(not olderWindow:IsShown() and named.ForeverFamilyLink:IsShown(), "the older copy's window is put away")
-check(#env.UISpecialFrames == 1, "and Escape lists the name once")
-
--- An addon whose L uses other keys (Adventure Guide's) names an English-keyed one as ns.FamilyL for this file.
-Client()
-local symbolic = { L = { SETTING_RXP = "Use RestedXP guides" }, FamilyL = { ["Copy link"] = "Link kopieren" } }
-local symbolicView = Load(symbolic)
-check(symbolicView == env.ForeverFamily.For(symbolic.FamilyL), "its view is bound to ns.FamilyL")
-local symbolicPage = symbolicView.CreatePanel(nil, {}, nil)
-symbolicPage:Show()
-check(Children(symbolicPage, "Button")[1].text == "Link kopieren", "and reads in it")
-local plainPage = env.ForeverFamily.CreatePanel(nil, {}, nil)
-plainPage:Show()
-check(Children(plainPage, "Button")[1].text == "Link kopieren", "as does a call that names no L, in that copy")
 
 print(("forever_family_spec: %d checks passed"):format(checks))

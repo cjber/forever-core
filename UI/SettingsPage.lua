@@ -1,21 +1,46 @@
 local _, ns = ...
 
--- The settings page every Forever addon draws, and only the page. Field Guide and Hoard each hand-rolled the same
--- CheckButton (the template, a label font string, a tooltip) and the same RegisterCanvasLayoutCategory pair, and the
--- five older addons carry five hand-edited copies of it. This file is that chrome once: a panel with a title, rows that
--- stack down it, and the category registration. It holds no addon's options -- which rows exist, what they read and
--- write, and every phrase are the addon's, passed in here. Boundaries §5 keeps each addon's settings page its own; only
--- the drawing is shared.
+-- The settings page every Forever addon draws, and only the page. This file loads once, in ForeverCore: a panel with
+-- a title, rows that stack down it, and the category registration. It holds no addon's options -- which rows exist,
+-- what they read and write, and every phrase are the addon's, passed in here. Register takes the caller's L, and
+-- every label and tooltip on that page reads through it.
 
+---@class ForeverSettingsPanel : Frame
+---@field name? string
+---@field foreverL? table<string, string>
+---@field foreverSafeCall? ForeverSafeCall|false
+---@field settingsRowY? number
+---@field title? FontString
+---@field category? table
+
+---@class ForeverSettingsPage
 local Page = {}
 ns.SettingsPage = Page
 
--- A phrase through the addon's own table, English when it has no translation for it (an addon's L is either a
--- metatable that answers the key or a plain table, and both read the same way here).
+-- A row's callback runs in the registering addon's SafeCall, so a failure lands in that addon's journal.
+---@param panel ForeverSettingsPanel
+---@param label string
+---@param fn function
+---@return boolean ok, any ...
+local function Run(panel, label, fn, ...)
+	local safe = panel.foreverSafeCall
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
+end
+
+-- A phrase through the page's own L, English when that L has no translation for it. `panel.foreverL` is the L the
+-- page was registered with.
+---@param panel ForeverSettingsPanel
 ---@param phrase string
 ---@return string
-local function Text(phrase)
-	local translated = ns.L and ns.L[phrase]
+local function Text(panel, phrase)
+	local L = panel.foreverL
+	local translated = type(L) == "table" and L[phrase] or nil
 	return translated or phrase
 end
 
@@ -24,7 +49,7 @@ end
 local TITLE = 16
 local CHECK, SLIDER, BUTTON = 28, 56, 36
 
----@param panel Frame
+---@param panel ForeverSettingsPanel
 ---@param height integer
 ---@return integer
 local function Next(panel, height)
@@ -34,25 +59,29 @@ local function Next(panel, height)
 	return y
 end
 
--- Register `build` as the addon's settings page under the category `name` (a phrase, read through ns.L).
+-- Register `build` as the addon's settings page under the category `name` (a phrase, read through L).
 -- `build` is called once with the panel and this table, and adds the addon's own rows through AddCheck and the rest.
 -- Returns the category and the panel, or nil on a client with no Settings API, where the addon keeps its options off
 -- the interface rather than erroring on load.
 ---@param name string
 ---@param build fun(panel: Frame, page: table)
+---@param L? table<string, string> the calling addon's phrases, used for this page's labels and tooltips
+---@param safeCall? ForeverSafeCall the addon's SafeCall for its own rows
 ---@return table?, Frame?
-function Page.Register(name, build)
+function Page.Register(name, build, L, safeCall)
 	if not Settings or not Settings.RegisterCanvasLayoutCategory then
 		return nil
 	end
-	local panel = CreateFrame("Frame")
-	panel.name = Text(name)
+	local panel = CreateFrame("Frame") --[[@as ForeverSettingsPanel]]
+	panel.foreverL = L
+	panel.foreverSafeCall = type(safeCall) == "function" and safeCall or false
+	panel.name = Text(panel, name)
 	local title = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
 	title:SetPoint("TOPLEFT", 16, -TITLE)
-	title:SetText(Text(name))
+	title:SetText(Text(panel, name))
 	panel.title = title
-	build(panel, Page)
-	local category = Settings.RegisterCanvasLayoutCategory(panel, Text(name))
+	Run(panel, "settings page", build, panel, Page)
+	local category = Settings.RegisterCanvasLayoutCategory(panel, Text(panel, name))
 	Settings.RegisterAddOnCategory(category)
 	panel.category = category
 	return category, panel
@@ -60,72 +89,76 @@ end
 
 -- A tick box that reads `get()` when it is drawn and writes `set(checked)` when the player changes it. The setter is
 -- where an addon refreshes whatever the setting affects; this file never calls back into the addon.
----@param panel Frame
----@param label string a phrase, read through ns.L
+---@param panel ForeverSettingsPanel
+---@param label string a phrase, read through the page's L
 ---@param get fun(): boolean?
 ---@param set fun(checked: boolean)
----@param tooltip? string a phrase, read through ns.L
+---@param tooltip? string a phrase, read through the page's L
 ---@return CheckButton
 function Page.AddCheck(panel, label, get, set, tooltip)
 	local check = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
 	check:SetPoint("TOPLEFT", 16, Next(panel, CHECK))
-	check:SetChecked(get() == true)
+	local ok, checked = Run(panel, "settings checkbox", get)
+	check:SetChecked(ok and checked == true)
 	local text = check:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	text:SetPoint("LEFT", check, "RIGHT", 4, 0)
-	text:SetText(Text(label))
+	text:SetText(Text(panel, label))
 	if tooltip then
-		check.tooltipText = Text(tooltip)
+		check.tooltipText = Text(panel, tooltip)
 	end
 	check:SetScript("OnClick", function(self)
-		set(self:GetChecked() == true)
+		Run(panel, "settings checkbox", set, self:GetChecked() == true)
 	end)
 	return check
 end
 
 -- A slider with its own label above it; `get()` is the saved value, `set(value)` writes it.
----@param panel Frame
----@param label string a phrase, read through ns.L
+---@param panel ForeverSettingsPanel
+---@param label string a phrase, read through the page's L
 ---@param get fun(): number?
 ---@param set fun(value: number)
 ---@param minimum number
 ---@param maximum number
 ---@param step? number
----@param tooltip? string a phrase, read through ns.L
+---@param tooltip? string a phrase, read through the page's L
 ---@return Slider
 function Page.AddSlider(panel, label, get, set, minimum, maximum, step, tooltip)
 	local text = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	text:SetPoint("TOPLEFT", 16, Next(panel, SLIDER))
-	text:SetText(Text(label))
+	text:SetText(Text(panel, label))
 	local slider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
 	slider:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -8)
 	slider:SetWidth(240)
 	slider:SetMinMaxValues(minimum, maximum)
 	slider:SetValueStep(step or 1)
 	slider:SetObeyStepOnDrag(true)
-	slider:SetValue(get() or minimum)
+	local ok, savedValue = Run(panel, "settings slider", get)
+	slider:SetValue((ok and savedValue) or minimum)
 	if tooltip then
-		slider.tooltipText = Text(tooltip)
+		slider.tooltipText = Text(panel, tooltip)
 	end
 	slider:SetScript("OnValueChanged", function(_, value)
-		set(value)
+		Run(panel, "settings slider", set, value)
 	end)
 	return slider
 end
 
 -- A button that runs `callback`; the addon does whatever it does behind it.
----@param panel Frame
----@param label string a phrase, read through ns.L
+---@param panel ForeverSettingsPanel
+---@param label string a phrase, read through the page's L
 ---@param callback fun()
----@param tooltip? string a phrase, read through ns.L
+---@param tooltip? string a phrase, read through the page's L
 ---@return Button
 function Page.AddButton(panel, label, callback, tooltip)
 	local button = CreateFrame("Button", nil, panel, "SharedButtonSmallTemplate")
 	button:SetSize(180, 24)
 	button:SetPoint("TOPLEFT", 16, Next(panel, BUTTON))
-	button:SetText(Text(label))
-	button:SetScript("OnClick", callback)
+	button:SetText(Text(panel, label))
+	button:SetScript("OnClick", function()
+		Run(panel, "settings button", callback)
+	end)
 	if tooltip then
-		button.tooltipText = Text(tooltip)
+		button.tooltipText = Text(panel, tooltip)
 	end
 	return button --[[@as Button]]
 end

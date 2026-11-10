@@ -1,16 +1,25 @@
 ## Interface: 16001
 ## Title: Forever Core
-## Notes: The shared tracker column, grip, Lock switch, section order and leaderboards every Forever addon is built on.
+## Notes: The shared library every Forever addon needs: the tracker column and lock, the report window, the leaderboards, the log and the settings chrome.
 ## Author: cjber
 ## Version: @project-version@
 ## Category: Map
+## IconTexture: Interface\AddOns\ForeverCore\media\Icon
 ## X-License: GPL-3.0-or-later
 ## X-Website: https://github.com/cjber/forever-core
 ## SavedVariables: ForeverCoreDB
-## OptionalDeps: AdventureGuideForever, LegacyForever, ShortestPathForever, SkillUpForever, TweaksForever
 
 Core.lua
 Locales\enUS.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\frFR.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
 Core\SafeCall.lua
 Core\OpenMap.lua
 Core\OpenSettings.lua
@@ -18,14 +27,19 @@ Core\Log.lua
 Core\Text.lua
 Core\PeerStats.lua
 Core\MinimapButton.lua
+UI\Art.lua
+UI\Report.lua
+UI\ForeverFamily.lua
 UI\SettingsPage.lua
 UI\TrackerQuestie.lua
 UI\TrackerEqot.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
+UI\ContextMenu.lua
 UI\TrackerHost.lua
 Core\QuestOrder.lua
 UI\TrackerQuests.lua
+UI\MapCanvas.lua
 Core\LeaderboardsData.lua
 UI\Leaderboards.lua
 UI\QuestLogTabs.lua

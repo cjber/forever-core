@@ -27,11 +27,6 @@ if not ObjectiveTrackerFrame then
 	return
 end
 
-if ForeverTrackerHost then
-	ns.TrackerHost = ForeverTrackerHost
-	return
-end
-
 local host = CreateFrame("Frame", "ForeverTrackerCompanion", UIParent)
 ---@class ForeverTrackerHostAPI
 local api = {}
@@ -673,20 +668,19 @@ function api.SavePosition(x, y)
 	settings.x, settings.y = x, y
 	host:MarkDirty()
 end
--- Adventure Guide draws its own context menu because Blizzard_Menu.AcquireMenu can assert in Forever 70009. A consumer
--- that defines one gets it with the same generator shape; the rest keep Blizzard's menu.
----@param owner Frame
----@param generator fun(owner: Frame, root: any)
-local function OpenContextMenu(owner, generator)
-	if type(ns.ContextMenu) == "function" then
-		ns.ContextMenu(owner, generator)
-	else
-		MenuUtil.CreateContextMenu(owner, generator)
+-- A section's own callback runs in that addon's SafeCall, so its failure lands in its journal; core's is the fallback.
+local function RunSafe(safe, label, fn, ...)
+	if safe then
+		return safe(label, fn, ...)
 	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
 end
--- Every section header answers a right click the same way: the column's own switches, so a player can attach, detach
--- or lock it from whichever section is in front of them. The section's own click runs first and is never replaced;
--- writing a saved setting is safe in combat, and the layout waits for combat's end as ApplyAttachment already does.
+
+-- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
+-- column's, without the host learning what the section is.
 ---@param module ForeverTrackerModule
 local function AddHeaderMenu(module)
 	local header = module.Header
@@ -694,19 +688,17 @@ local function AddHeaderMenu(module)
 		return
 	end
 	module.headerMenu = true
-	-- Read through the same keys TrackerLock uses: Adventure Guide's L is constant keyed, the other addons' L answers
-	-- the English phrase, and an untranslated line still reads as English.
 	local L = ns.L
-	local attach = rawget(L, "SETTING_ATTACH_TRACKER") or L["Attach to quest tracker"] or "Attach to quest tracker"
-	local lock = rawget(L, "SETTING_LOCK_TRACKER") or L["Lock the tracker"] or "Lock the tracker"
-	local background = rawget(L, "SETTING_TRACKER_BACKGROUND") or L["Tracker background"] or "Tracker background"
-	local hide = rawget(L, "SETTING_HIDE_SECTION") or L["Hide this section"] or "Hide this section"
+	local attach = L["Attach to quest tracker"]
+	local lock = L["Lock the tracker"]
+	local background = L["Tracker background"]
+	local hide = L["Hide this section"]
 	header:EnableMouse(true)
 	header:HookScript("OnMouseUp", function(_, button)
 		if button ~= "RightButton" then
 			return
 		end
-		OpenContextMenu(module:GetContextMenuParent(), function(_, root)
+		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
 			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
 				api.SetAttached(not api.IsAttachedToQuestTracker())
 			end)
@@ -740,9 +732,11 @@ local function AddHeaderMenu(module)
 				and type(show.set) == "function"
 				and type(show.where) == "string"
 			then
+				local showSafe = show.safeCall or module.safeCall
 				local entry = root:CreateButton(hide, function()
-					if show.get() then
-						show.set(false)
+					local ok, visible = RunSafe(showSafe, "tracker section show", show.get)
+					if ok and visible then
+						RunSafe(showSafe, "tracker section show", show.set, false)
 					end
 				end)
 				entry:SetTooltip(function(tooltip)
@@ -752,16 +746,65 @@ local function AddHeaderMenu(module)
 			end
 			-- A section may add its own entries after the column's, without the host learning what the section is.
 			if type(module.AddHeaderMenuEntries) == "function" then
-				module:AddHeaderMenuEntries(root)
+				RunSafe(module.safeCall, "tracker section menu", module.AddHeaderMenuEntries, module, root)
 			end
 		end)
 	end)
 end
+
+-- A consumer's old tracker settings, offered once by the first module that attaches with a `legacySettings` table.
+-- Saved variables are not there while the files load, so the copy waits for ForeverCore's ADDON_LOADED.
+local pendingLegacy
+
+-- Copy the first legacy table offered into ForeverCoreDB.trackerHost, once. Each field is taken only when it has the
+-- shape the host reads; the rest keep the fresh defaults. Later offers are ignored.
+local function Migrate()
+	if type(ForeverCoreDB) ~= "table" or pendingLegacy == nil then
+		return
+	end
+	local legacy = pendingLegacy
+	pendingLegacy = nil
+	local settings = ns.TrackerHostSettings()
+	if settings.migrated == true then
+		return
+	end
+	if type(legacy.attached) == "boolean" then
+		settings.attached = legacy.attached
+	end
+	if type(legacy.locked) == "boolean" then
+		settings.locked = legacy.locked
+	end
+	if type(legacy.scale) == "number" then
+		settings.scale = legacy.scale
+	end
+	if type(legacy.backdropOpacity) == "number" then
+		settings.backdropOpacity = legacy.backdropOpacity
+	end
+	if type(legacy.x) == "number" then
+		settings.x = legacy.x
+	end
+	if type(legacy.y) == "number" then
+		settings.y = legacy.y
+	end
+	settings.migrated = true
+	-- The host's own repair settles a bad scale, opacity or coordinate the way every other read does.
+	Settings()
+	host:MarkDirty()
+end
+
+-- Core.lua's one ADDON_LOADED handler calls this after ForeverCoreDB exists, so a first install completes the copy.
+ns.MigrateTrackerSettings = Migrate
+
+---@param module ForeverTrackerModule
 ---@param show? ForeverTrackerShowSetting the section's own show switch, when it has one
 function api.Attach(module, show)
 	---@cast module ForeverTrackerModule
 	if show ~= nil then
 		module.show = show
+	end
+	if pendingLegacy == nil and type(module.legacySettings) == "table" then
+		pendingLegacy = module.legacySettings
+		Migrate()
 	end
 	if module.parentContainer == host then
 		return
@@ -891,12 +934,11 @@ function api.Debug()
 	)
 end
 
-ForeverTrackerHost = api
-ns.TrackerHost = api
-
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true
 	host:MarkDirty()
 	TrackerEqot.Await(host.MarkDirty)
 	TrackerQuestie.Await(host.MarkDirty)
 end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
+
+ns.TrackerHost = api

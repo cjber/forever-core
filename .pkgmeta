@@ -1,5 +1,9 @@
 package-as: ForeverCore
 
+manual-changelog:
+  filename: .release-notes.md
+  markup-type: markdown
+
 ignore:
   - AGENTS.md
   - .agents
@@ -8,5 +12,7 @@ ignore:
   - tools
   - types
   - tests
+  - media/icon.svg
+  - media/icon-400.png
   - stylua.toml
   - ruff.toml

@@ -11,50 +11,13 @@ from pathlib import Path
 import check_core_shared
 
 CORE = {
-    "tools/deadcode.py": b"core deadcode\n",
-    "tools/deadcode-allow.txt": b"core allow\n",
-    "UI/SettingsPage.lua": b"core settings\n",
-    "tests/settings_page_spec.lua": b"core settings spec\n",
-    "UI/TrackerHost.lua": b"core tracker host\n",
-    "types/ForeverTracker.lua": b"core tracker types\n",
-    "UI/TrackerLock.lua": b"core tracker lock\n",
-    "UI/TrackerOrder.lua": b"core tracker order\n",
-    "UI/TrackerQuestie.lua": b"core tracker questie\n",
-    "UI/TrackerEqot.lua": b"core tracker eqot\n",
-    "tests/tracker_host_spec.lua": b"core tracker host spec\n",
-    "tests/tracker_host_harness.lua": b"core tracker harness\n",
-    "tests/tracker_backdrop_spec.lua": b"core tracker backdrop spec\n",
-    "tests/tracker_header_menu_spec.lua": b"core tracker menu spec\n",
-    "tests/tracker_combat_spec.lua": b"core tracker combat spec\n",
-    "tests/tracker_geometry_spec.lua": b"core tracker geometry spec\n",
-    "tests/tracker_host_lock_spec.lua": b"core tracker host lock spec\n",
-    "tests/tracker_lock_spec.lua": b"core tracker lock spec\n",
-    "tests/tracker_questie_spec.lua": b"core tracker questie spec\n",
-    "tests/tracker_eqot_spec.lua": b"core tracker eqot spec\n",
-    "tools/fetch_tracker_ui.py": b"core fetch tracker\n",
-    "Core/MinimapButton.lua": b"core minimap\n",
-    "Core/PeerStats.lua": b"core peer stats\n",
-    "tests/peer_stats_spec.lua": b"core peer stats spec\n",
-    "Core/LeaderboardsData.lua": b"core leaderboards data\n",
-    "UI/Leaderboards.lua": b"core leaderboards\n",
-    "tests/leaderboards_spec.lua": b"core leaderboards spec\n",
-    "tests/leaderboards_window_spec.lua": b"core leaderboards window spec\n",
-    "tests/leaderboards_harness.lua": b"core leaderboards harness\n",
-    "tests/minimap_button_spec.lua": b"core minimap spec\n",
-    "Core/SafeCall.lua": b"core safecall\n",
-    "Core/OpenMap.lua": b"core open map\n",
-    "tests/open_map_spec.lua": b"core open map spec\n",
-    "Core/OpenSettings.lua": b"core open settings\n",
-    "tests/open_settings_spec.lua": b"core open settings spec\n",
-    "Core/Log.lua": b"core log\n",
-    "tests/debug_log_spec.lua": b"core debug log spec\n",
-    "UI/Report.lua": b"core report\n",
-    "tests/report_spec.lua": b"core report spec\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/check_client_load.py": b"core client load\n",
     "tools/blizzard_fonts.txt": b"core fonts\n",
     "tools/check_menu_scroll.py": b"core menu scroll\n",
     "tools/core-shared-drift.yml": b"core workflow\n",
+    "tools/deadcode.py": b"core deadcode\n",
+    "tools/deadcode-allow.txt": b"core allow\n",
 }
 
 
@@ -106,16 +69,16 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("25 vendored files match", out)
+        self.assertIn("7 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
-        self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
+        self.core["tools/check_client_load.py"] = b"core client load, newer\n"
         code, out = self.run_check()
         self.assertEqual(code, 1)
-        self.assertIn("UI/SettingsPage.lua", out)
+        self.assertIn("tools/check_client_load.py", out)
 
     def test_base_ignores_a_lag_the_branch_did_not_touch(self):
-        self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
+        self.core["tools/check_client_load.py"] = b"core client load, newer\n"
         self.write("Core/Own.lua", b"own, changed\n")
         self.commit("unrelated")
         code, out = self.run_check("--base", "base")
@@ -123,20 +86,20 @@ class CheckCoreSharedTest(unittest.TestCase):
         self.assertIn("No vendored file changed", out)
 
     def test_base_fails_a_hand_edit_of_a_vendored_copy(self):
-        self.write("Core/MinimapButton.lua", b"edited here\n")
+        self.write("tools/deadcode.py", b"edited here\n")
         self.write("Core/Own.lua", b"own, changed\n")
         self.commit("hand edit")
         code, out = self.run_check("--base", "base")
         self.assertEqual(code, 1)
-        self.assertIn("Core/MinimapButton.lua: consumer", out)
-        self.assertNotIn("UI/SettingsPage.lua", out)
+        self.assertIn("tools/deadcode.py: consumer", out)
+        self.assertNotIn("tools/check_client_load.py", out)
 
     def test_base_fails_a_deleted_vendored_copy(self):
-        (self.root / "tests/minimap_button_spec.lua").unlink()
+        (self.root / "tools/blizzard_fonts.txt").unlink()
         self.commit("delete")
         code, out = self.run_check("--base", "base")
         self.assertEqual(code, 1)
-        self.assertIn("tests/minimap_button_spec.lua: missing here", out)
+        self.assertIn("tools/blizzard_fonts.txt: missing here", out)
 
     def test_base_passes_a_sync_to_core_main(self):
         self.core["tools/core-shared-drift.yml"] = b"core workflow, newer\n"
@@ -171,7 +134,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("25 vendored files match", out)
+        self.assertIn("7 vendored files match", out)
 
     def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
         git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")
@@ -184,37 +147,16 @@ class CheckCoreSharedTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn(f"{len(paths)} vendored files match", out)
 
-        self.write("addon/KilnForever/UI/TrackerHost.lua", b"edited here\n")
+        self.write("addon/KilnForever/tools/check_core_shared.py", b"edited here\n")
         self.commit("hand edit")
         code, out = self.run_check("--base", "base")
         self.assertEqual(code, 1)
-        self.assertIn("addon/KilnForever/UI/TrackerHost.lua: consumer", out)
-        self.assertNotIn("UI/SettingsPage.lua", out)
+        self.assertIn("addon/KilnForever/tools/check_core_shared.py: consumer", out)
+        self.assertNotIn("tools/check_client_load.py", out)
 
-    def test_kiln_forever_takes_only_the_shared_ui_it_adopted(self):
+    def test_only_the_checker_reaches_kiln_forever(self):
         paths = set(check_core_shared.paths_for("kiln-forever"))
-        for path in (
-            "UI/TrackerHost.lua",
-            "UI/TrackerEqot.lua",
-            "Core/MinimapButton.lua",
-            "UI/SettingsPage.lua",
-            "Core/SafeCall.lua",
-            "Core/Log.lua",
-            "UI/Report.lua",
-            "tools/check_core_shared.py",
-        ):
-            self.assertIn(path, paths)
-        for path in (
-            "UI/ForeverFamily.lua",
-            "Core/PeerStats.lua",
-            "UI/Leaderboards.lua",
-            "UI/QuestLogTabs.lua",
-            "UI/MapCanvas.lua",
-            "Core/Text.lua",
-            "tools/deadcode.py",
-            ".github/workflows/core-shared-drift.yml",
-        ):
-            self.assertNotIn(path, paths)
+        self.assertEqual(paths, {"tools/check_core_shared.py"})
 
 
 if __name__ == "__main__":

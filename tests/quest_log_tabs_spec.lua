@@ -69,9 +69,8 @@ local function countCreated(world, name)
 	return count
 end
 
--- A fresh client per scenario, so each world's published global and QuestMapFrame are independent.
+-- A fresh client per scenario, so each world's QuestMapFrame and named frames are independent.
 local function newWorld(questTabHidden, offsetX, offsetY)
-	_G.ForeverQuestLogTabs = nil
 	_G.ForeverQuestLogQuestsTab = nil
 	local map = newFrame("QuestMapFrame")
 	map.displayMode = 1
@@ -141,20 +140,17 @@ local function load(ns)
 	return ns.QuestLogTabs
 end
 
--- Two addons with their own vendored copies, like Adventure Guide and Shortest Path. The second adopts the first.
+-- One module serves both addons: each registers its own key and panel.
 local world = newWorld(true)
-local nsA, nsB = {}, {}
+local nsA = {}
 local first = load(nsA)
-local second = load(nsB)
-assert(first and second, "no quest log tabs API")
-assert(first == second, "the second copy did not adopt the first")
-assert(_G.ForeverQuestLogTabs == first, "the shared global is not the published API")
+assert(first, "no quest log tabs API")
 
 local panelA = newFrame("ForeverPanelA")
 local panelB = newFrame("ForeverPanelB")
 panelA.scroll = 42
 local tabB = first.Register("b", { name = "AddonBTab", tooltip = "B", panel = panelB, order = 20 })
-local tabA = second.Register("a", { name = "AddonATab", tooltip = "A", panel = panelA, order = 10 })
+local tabA = first.Register("a", { name = "AddonATab", tooltip = "A", panel = panelA, order = 10 })
 
 assert(tabA ~= tabB, "both keys share one tab")
 assert(_G.AddonATab == tabA and _G.AddonBTab == tabB, "tabs did not take their names")
@@ -193,7 +189,7 @@ map.ContentFrames[1]:Show()
 map.ContentFrames[2]:Show()
 
 -- Selecting shows one panel, hides the quest log's pages and checks only the matching tab.
-second.Select("a")
+first.Select("a")
 assert(first.Selected() == "a", first.Selected())
 assert(panelA.shown and not panelB.shown, "panel visibility after Select(a)")
 assert(not map.ContentFrames[1].shown and not map.ContentFrames[2].shown, "content frame left showing")
@@ -252,7 +248,6 @@ assert(tostring(err):find("already registered", 1, true), tostring(err))
 local openWorld = newWorld(false)
 local nsC = {}
 local api = load(nsC)
-assert(_G.ForeverQuestLogTabs == api, "the new world did not publish its own API")
 assert(_G.ForeverQuestLogQuestsTab == nil, "a replacement Quests tab exists with the stock one shown")
 local openMap = openWorld.map
 openMap.MapLegendTab:Show()
@@ -278,7 +273,6 @@ assert(not openMap.ContentFrames[2].shown, "the legend page came back in the wro
 local eventWorld = newWorld(false)
 local nsE = {}
 local events = load(nsE)
-assert(_G.ForeverQuestLogTabs == events, "the event world did not publish its own API")
 local eventMap = eventWorld.map
 local panelE = newFrame("ForeverPanelE")
 local panelF = newFrame("ForeverPanelF")
@@ -411,7 +405,8 @@ events.Select("g")
 assert(events.Selected() == "g" and panelG.shown, "a spec with no shown did not switch")
 assert(#calls == 22, "a spec with no shown reported a visibility change")
 
--- A callback that errors does not break the module's own switching.
+-- A callback that errors does not break the module's own switching, and runs in the addon's SafeCall when registered.
+local safeCalls = {}
 events.Register("h", {
 	name = "AddonHTab",
 	tooltip = "H",
@@ -420,10 +415,18 @@ events.Register("h", {
 	shown = function()
 		error("panel callback failed")
 	end,
+	safeCall = function(label, fn, ...)
+		safeCalls[#safeCalls + 1] = label
+		return pcall(fn, ...)
+	end,
 })
 events.Select("h")
 assert(events.Selected() == "h" and panelH.shown and not panelG.shown, "a failing shown callback broke switching")
 assert(#calls == 22, "a failing shown callback recorded a change")
+assert(
+	#safeCalls > 0 and safeCalls[#safeCalls] == "quest log tab shown",
+	"the panel callback did not run in its addon's SafeCall"
+)
 
 -- Nothing the module created or was given carries a script under the world map.
 local function assertNoShowScripts(frames)
