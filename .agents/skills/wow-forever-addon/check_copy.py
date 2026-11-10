@@ -6,7 +6,7 @@ stacked under another with no text between (WFA-25).
 Image alt text and code spans are skipped: they quote the game, not our voice.
 
 check_copy.py --words FILE... also prints each file's prose words beside its WFA-10/11 limit (README.md
-under 1,200, curseforge.md under 600), so every repo measures the same way. The count is a guide and never
+under 1,200, curseforge.md under 1,000), so every repo measures the same way. The count is a guide and never
 fails. The shared forever-family block, code, images, link addresses and HTML tags are not counted:
 the block is the same on every page and is not that page's prose.
 """
@@ -14,6 +14,9 @@ the block is the same on every page and is not that page's prose.
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tooling"))
+from forever_tools import store_page  # noqa: E402
 
 BANNED = [
     r"—",
@@ -86,26 +89,8 @@ def stacked(path: Path) -> list[str]:
     return found
 
 
-LIMITS = {"README.md": 1200, "curseforge.md": 600}
-NOT_PROSE = [
-    re.compile(r"<!-- forever-family:start -->.*?<!-- forever-family:end -->", re.DOTALL),
-    re.compile(r"^ {0,3}```.*?^ {0,3}```", re.DOTALL | re.MULTILINE),
-    re.compile(r"<!--.*?-->", re.DOTALL),
-    re.compile(r"`[^`\n]*`"),  # code spans quote the game, as hits() treats them
-    re.compile(r"!\[[^\]]*\](?:\([^)]*\)|\[[^\]]*\])"),  # images, inline or by reference
-    re.compile(r"^ {0,3}\[[^\]]+\]:.*$", re.MULTILINE),  # link reference definitions
-    re.compile(r"<[^>]+>"),
-]
-LINK = re.compile(r"\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])")
-URL = re.compile(r"\bhttps?://\S+")  # a bare address, once links have become their text
-WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*")
-
-
-def words(text: str) -> int:
-    """Prose words as WFA-10/11 count them: link text counts; the family block and markup do not."""
-    for pattern in NOT_PROSE:
-        text = pattern.sub(" ", text)
-    return len(WORD.findall(URL.sub(" ", LINK.sub(r"\1", text))))
+LIMITS = {"README.md": 1200, "curseforge.md": store_page.MAX_WORDS}
+words = store_page.words
 
 
 def word_counts(paths: list[Path]) -> None:

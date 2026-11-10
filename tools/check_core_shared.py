@@ -65,6 +65,10 @@ VENDORED = {
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
     "tools/deadcode.py": DEADCODE_CONSUMERS,
     "tools/deadcode-allow.txt": DEADCODE_CONSUMERS,
+    # The store page's button row (wow-forever-addon/store-page.md), identical on every page.
+    "docs/discord-button.png": SUITE_CONSUMERS,
+    "docs/github-sponsors-button.png": SUITE_CONSUMERS,
+    "docs/kofi-button.png": SUITE_CONSUMERS,
 }
 # Core keeps the consumers' workflow out of its own .github/workflows, where it would run against core itself.
 SOURCES = {".github/workflows/core-shared-drift.yml": "tools/core-shared-drift.yml"}

@@ -32,7 +32,7 @@ the producer commit the copy came from.
 
 A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_art.py`,
 `lint_multivalue.py`, `lint_secret.py`, `typecheck_coverage.py`, `check_package.py`, `check_screenshots.py`,
-`check_editorconfig.py`, `check_family.py`, `check_locales.py`, `doctor.py`) and add only per-addon policy such as `RUNTIME_DIRS`.
+`check_editorconfig.py`, `check_family.py`, `check_locales.py`, `check_store_page.py`, `doctor.py`) and add only per-addon policy such as `RUNTIME_DIRS`.
 
 The packaged-zip check runs in its own CI job, after the pinned packager builds without uploading:
 

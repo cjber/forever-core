@@ -18,6 +18,9 @@ CORE = {
     "tools/core-shared-drift.yml": b"core workflow\n",
     "tools/deadcode.py": b"core deadcode\n",
     "tools/deadcode-allow.txt": b"core allow\n",
+    "docs/discord-button.png": b"discord\n",
+    "docs/github-sponsors-button.png": b"sponsors\n",
+    "docs/kofi-button.png": b"kofi\n",
 }
 
 
@@ -69,7 +72,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("7 vendored files match", out)
+        self.assertIn("10 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["tools/check_client_load.py"] = b"core client load, newer\n"
@@ -134,7 +137,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("7 vendored files match", out)
+        self.assertIn("10 vendored files match", out)
 
     def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
         git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")
