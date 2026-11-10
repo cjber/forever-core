@@ -27,8 +27,10 @@ the addon they already have.
 | `UI/ForeverFamily.lua` | the shared Forever-family link box |
 | `tests/forever_family_spec.lua` | the link box contract |
 | `Core/SafeCall.lua` | shared error capture and journal used by the report window |
-| `Core/Open.lua` | the shared client opener: the world map and the settings panel through `CreateSecureDelegate` |
-| `tests/open_spec.lua` | the opener's delegate, combat and missing-delegate contract |
+| `Core/OpenMap.lua` | the shared client opener for the world map, through `CreateSecureDelegate` |
+| `tests/open_map_spec.lua` | the world map opener's delegate, combat and missing-delegate contract |
+| `Core/OpenSettings.lua` | the shared client opener for the settings panel, through `CreateSecureDelegate` |
+| `tests/open_settings_spec.lua` | the settings panel opener's delegate, combat and missing-delegate contract |
 | `Core/Log.lua` | the shared structured log, its saved ring and the `/forever debug` switch |
 | `tests/debug_log_spec.lua` | the log's ring, levels, persistence, switch and copy contract |
 | `Core/MinimapButton.lua` | the shared minimap button: one rim angle per addon, the LibDBIcon art and the hide flag |
@@ -47,8 +49,8 @@ the addon they already have.
 | `.github/workflows/core-shared-drift.yml` | runs the client load rule, the menu rule and the drift check on every PR and on a schedule; copied from `tools/core-shared-drift.yml` |
 
 `tools/check_core_shared.py` lists every shared file with the consumers that carry it; the table above is the
-tracker, report, family, log, peer-statistics and leaderboard set, and the map also holds the client opener, settings
-page, text, minimap button and dead-code files.
+tracker, report, family, log, peer-statistics and leaderboard set, and the map also holds the client openers,
+settings page, text, minimap button and dead-code files.
 
 Everything addon specific arrives through the namespace, never through an edit to these files:
 `ns.TrackerHostSettings()` returns the saved settings, `ns.ReportTitle` supplies the report's localized title,
@@ -94,12 +96,12 @@ before, and every error still reaches BugSack or the default error frame.
 
 ## Client openers
 
-Load `Core/Open.lua` after `Core/SafeCall.lua`. `ns.OpenMap(mapID)` opens or turns the world map, optionally on a map
-id, and `ns.OpenSettingsPanel(categoryID, element)` opens Options, optionally on a category and scrolled to a named
-row. Both call the client's own `C_Map.OpenWorldMap` and `C_SettingsUtil.OpenSettingsPanel` through
-`CreateSecureDelegate`, so the request runs as the client rather than as the addon, and both return false in combat,
-on a build without the delegate, or when the client function is missing, so the caller can say why nothing opened.
-Call these instead of the C functions directly.
+Load `Core/OpenMap.lua` and `Core/OpenSettings.lua` after `Core/SafeCall.lua`. `ns.OpenMap(mapID)` opens or turns the
+world map, optionally on a map id, and `ns.OpenSettingsPanel(categoryID, element)` opens Options, optionally on a
+category and scrolled to a named row. Each calls the client's own `C_Map.OpenWorldMap` or
+`C_SettingsUtil.OpenSettingsPanel` through `CreateSecureDelegate`, so the request runs as the client rather than as
+the addon, and each returns false in combat, on a build without the delegate, or when the client function is missing,
+so the caller can say why nothing opened. Call these instead of the C functions directly.
 
 ## Debug log
 
@@ -161,7 +163,8 @@ It takes `tools/check_core_shared.py` but not the reusable `core-shared-drift.ym
 3. `python3 tools/sync_consumers.py <checkouts>` copies it into each checkout under `<checkouts>`.
 4. One PR per consumer with all the shared files in it. Their own CI (luacheck, stylua, the specs, the package check)
    is the gate. Tracker files go to the four published tracker addons and Kiln Forever; Forever-family files go to
-   the five published addons; the client opener goes to the five addons that open the map or the settings panel;
+   the five published addons; the world map opener goes to the four addons that open the map, and the settings opener
+   to the five that open Options;
    report, SafeCall and log files go to every addon in the suite, Kiln Forever included.
    Peer statistics and the leaderboards go to the six that share a statistics adapter: the four published tracker
    addons, Field Guide and Commissions. The checker is green once every mapped consumer has the same bytes.

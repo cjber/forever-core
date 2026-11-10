@@ -10,8 +10,10 @@ from unittest import mock
 import sync_consumers as sync
 
 LOG = b"-- shared log\n"
-OPEN = b"-- shared opener\n"
-OPEN_SPEC = b'-- Core/Open.lua\nassert(loadfile("Core/Open.lua"))\n'
+OPEN_MAP = b"-- shared world map opener\n"
+OPEN_SETTINGS = b"-- shared settings opener\n"
+OPEN_MAP_SPEC = b'-- Core/OpenMap.lua\nassert(loadfile("Core/OpenMap.lua"))\n'
+OPEN_SETTINGS_SPEC = b'-- Core/OpenSettings.lua\nassert(loadfile("Core/OpenSettings.lua"))\n'
 TRACKER = b"-- shared tracker\n"
 TOC = "## Interface: 16001\nCore\\SafeCall.lua\nCore\\Own.lua\n"
 TOC_WITH_LOG = TOC.replace("Core\\Own.lua", "Core\\Log.lua\nCore\\Own.lua")
@@ -152,26 +154,51 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertIn("Core\\Log.lua", (root / "LegacyForever.toc").read_text())
         self.assertNotIn("Core/Log.lua: skipped", out)
 
-    def test_the_client_opener_is_wired_after_safecall(self):
-        self.write(self.core, "Core/Open.lua", OPEN)
+    def test_the_world_map_opener_is_wired_after_safecall(self):
+        self.write(self.core, "Core/OpenMap.lua", OPEN_MAP)
         root = self.consumer(log=None)
-        code, out = self.run_sync(only=("Core/Open.lua",))
+        code, out = self.run_sync(only=("Core/OpenMap.lua",))
         self.assertEqual(code, 0, out)
-        self.assertEqual((root / "Core/Open.lua").read_bytes(), OPEN)
+        self.assertEqual((root / "Core/OpenMap.lua").read_bytes(), OPEN_MAP)
         lines = (root / "LegacyForever.toc").read_text().splitlines()
-        self.assertEqual(lines[lines.index("Core\\SafeCall.lua") + 1], "Core\\Open.lua")
+        self.assertEqual(lines[lines.index("Core\\SafeCall.lua") + 1], "Core\\OpenMap.lua")
         text = (root / ".luacheckrc").read_text()
+        self.assertIn("-- Core/OpenMap.lua: the client's secure world map opener.", text)
+        self.assertIn('read_globals[#read_globals + 1] = "CreateSecureDelegate"', text)
+        self.assertIn('read_globals[#read_globals + 1] = "C_Map"', text)
+        self.assertNotIn('read_globals[#read_globals + 1] = "C_SettingsUtil"', text)
+
+    def test_the_world_map_opener_spec_copies_with_its_module(self):
+        self.write(self.core, "Core/OpenMap.lua", OPEN_MAP)
+        self.write(self.core, "tests/open_map_spec.lua", OPEN_MAP_SPEC)
+        root = self.consumer(log=None)
+        code, out = self.run_sync(only=("Core/OpenMap.lua", "tests/open_map_spec.lua"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "Core/OpenMap.lua").read_bytes(), OPEN_MAP)
+        self.assertEqual((root / "tests/open_map_spec.lua").read_bytes(), OPEN_MAP_SPEC)
+
+    def test_the_settings_opener_is_wired_after_safecall(self):
+        self.write(self.core, "Core/OpenSettings.lua", OPEN_SETTINGS)
+        root = self.consumer(log=None)
+        code, out = self.run_sync(only=("Core/OpenSettings.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "Core/OpenSettings.lua").read_bytes(), OPEN_SETTINGS)
+        lines = (root / "LegacyForever.toc").read_text().splitlines()
+        self.assertEqual(lines[lines.index("Core\\SafeCall.lua") + 1], "Core\\OpenSettings.lua")
+        text = (root / ".luacheckrc").read_text()
+        self.assertIn("-- Core/OpenSettings.lua: the client's secure settings panel opener.", text)
         self.assertIn('read_globals[#read_globals + 1] = "CreateSecureDelegate"', text)
         self.assertIn('read_globals[#read_globals + 1] = "C_SettingsUtil"', text)
+        self.assertNotIn('read_globals[#read_globals + 1] = "C_Map"', text)
 
-    def test_the_client_opener_spec_copies_with_its_module(self):
-        self.write(self.core, "Core/Open.lua", OPEN)
-        self.write(self.core, "tests/open_spec.lua", OPEN_SPEC)
+    def test_the_settings_opener_spec_copies_with_its_module(self):
+        self.write(self.core, "Core/OpenSettings.lua", OPEN_SETTINGS)
+        self.write(self.core, "tests/open_settings_spec.lua", OPEN_SETTINGS_SPEC)
         root = self.consumer(log=None)
-        code, out = self.run_sync(only=("Core/Open.lua", "tests/open_spec.lua"))
+        code, out = self.run_sync(only=("Core/OpenSettings.lua", "tests/open_settings_spec.lua"))
         self.assertEqual(code, 0, out)
-        self.assertEqual((root / "Core/Open.lua").read_bytes(), OPEN)
-        self.assertEqual((root / "tests/open_spec.lua").read_bytes(), OPEN_SPEC)
+        self.assertEqual((root / "Core/OpenSettings.lua").read_bytes(), OPEN_SETTINGS)
+        self.assertEqual((root / "tests/open_settings_spec.lua").read_bytes(), OPEN_SETTINGS_SPEC)
 
     def test_a_new_module_and_its_test_wait_until_the_consumer_toc_loads_it(self):
         root = self.quest_consumer()

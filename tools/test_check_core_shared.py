@@ -42,6 +42,10 @@ CORE = {
     "tests/leaderboards_harness.lua": b"core leaderboards harness\n",
     "tests/minimap_button_spec.lua": b"core minimap spec\n",
     "Core/SafeCall.lua": b"core safecall\n",
+    "Core/OpenMap.lua": b"core open map\n",
+    "tests/open_map_spec.lua": b"core open map spec\n",
+    "Core/OpenSettings.lua": b"core open settings\n",
+    "tests/open_settings_spec.lua": b"core open settings spec\n",
     "Core/Log.lua": b"core log\n",
     "tests/debug_log_spec.lua": b"core debug log spec\n",
     "UI/Report.lua": b"core report\n",
@@ -102,7 +106,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("23 vendored files match", out)
+        self.assertIn("25 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["UI/SettingsPage.lua"] = b"core settings, newer\n"
@@ -167,7 +171,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("23 vendored files match", out)
+        self.assertIn("25 vendored files match", out)
 
     def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
         git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")

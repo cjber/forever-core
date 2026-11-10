@@ -14,7 +14,13 @@ SCRATCH_RUNS = {".bugpatrol", ".sloppatrol", ".speedpatrol"}
 # `script-tests/` holds deliberately broken Lua a script-test asserts on.
 SCRATCH_SUBTREES = {"runs", "script-tests"}
 # Consumer-only shared modules are stored here as source for sync_consumers.py.
-CORE_SOURCE_ONLY = {"Core/Open.lua", "UI/Report.lua", "UI/ForeverFamily.lua", "UI/MapCanvas.lua"}
+CORE_SOURCE_ONLY = {
+    "Core/OpenMap.lua",
+    "Core/OpenSettings.lua",
+    "UI/Report.lua",
+    "UI/ForeverFamily.lua",
+    "UI/MapCanvas.lua",
+}
 
 
 def rel(path):
