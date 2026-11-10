@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - **`run --wait` queues until the Wine prefix is free.** The waiter took the session lock and checked the prefix once, so a wineserver still winding down from the previous session, or another waiter taking the lock first, made it give up without running its command. It now holds the lock and keeps checking until the prefix is empty, or exits non-zero with a message when `--timeout` passes. (#317)
+- **A consumer sync PR no longer closes itself, and carries its phrase template.** `tools/sync_consumer_prs.py` pointed `forever-core-sync` at the consumer's `main` head before creating the sync commit, so between the two calls the PR's head equalled its base and GitHub closed it; the commit is now built on a scratch branch from `main` and the sync branch moves once to that commit. A consumer with `tools/phrases.py` also gets its `Locales/phrases.txt` regenerated in the same commit, so its locale spec passes; the extractor runs with the consumer's root importable, so one that imports `tools.forever_tools` as a package (Tweaks) works too. (#330)
 
 ## [0.5.4] - 2026-11-10
 
