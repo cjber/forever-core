@@ -39,6 +39,8 @@ UI\TrackerLock.lua
 UI\TrackerOrder.lua
 UI\ContextMenu.lua
 UI\TrackerHost.lua
+UI\TrackerSection.xml
+UI\TrackerSection.lua
 Core\QuestOrder.lua
 UI\TrackerQuests.lua
 UI\MapCanvas.lua

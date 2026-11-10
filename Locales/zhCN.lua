@@ -5,6 +5,7 @@ if GetLocale() ~= "zhCN" then
 end
 local L = ns.L
 
+L["+%d more"] = "还有 %d 个"
 L[", "] = ", "
 L["(you)"] = "（你）"
 L["%d yd"] = "%d码"

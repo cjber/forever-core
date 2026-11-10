@@ -54,6 +54,56 @@
 ---@class ForeverTrackerModule : Frame
 ---@field legacySettings? ForeverTrackerLegacySettings the addon's old tracker table, copied once by the host
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own menu entries
+---@field CanUpdate? fun(self: ForeverTrackerModule): boolean whether a refresh may lay the section out now
+---@field OnHeaderClick? fun(self: ForeverTrackerModule, button: string) a header click other than the host's right-click menu
+---@field OnBlockHeaderEnter? fun(self: ForeverTrackerModule, block: any) a block header's hover
+---@field OnBlockHeaderLeave? fun(self: ForeverTrackerModule, block: any)
+---@field MarkDirty? fun(self: ForeverTrackerModule) asks the host for one layout on the next frame
+---@field SetHeader? fun(self: ForeverTrackerModule, text: string) sets the section's header text
+---@field lineTemplate? string the template its objective lines acquire
+---@field GetExistingBlock? fun(self: ForeverTrackerModule, key: any): any a block already built, never a new one
+---@field GetNextBlockAnchoring? fun(self: ForeverTrackerModule): number, number where the next block would anchor
+---@field availableHeight? number the room this layout pass gave the section
+---@field contentsHeight? number what the section drew in this pass
+
+-- UI/TrackerSection.lua, the section plumbing every addon's tracker shares.
+---@class ForeverTrackerSectionOptions
+---@field order? number the section's place among the column's sections
+---@field lineTemplate? string the template its objective lines acquire
+---@field header? string the header text set after the mixin
+---@field show? ForeverTrackerShowSetting the section's own show switch, offered as Hide this section
+---@field legacy? table|fun(): table? the saved table holding the addon's old tracker table
+---@field legacyKey? string the key in `legacy` holding the old tracker table, cleared after it is offered
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for this section
+---@field onUnattached? fun(module: ForeverTrackerModule) called when the section is still not attached after a few seconds
+
+---@class ForeverTrackerTextRow
+---@field key any the objective key the line was added under
+---@field text string the new line text
+---@field color? any the line's colour table, Normal when absent
+
+---@class ForeverTrackerTextBlock
+---@field key any the block key
+---@field title? string the block header's new text
+---@field rows? ForeverTrackerTextRow[]
+
+---@class ForeverTrackerInteractiveSpec
+---@field onClick? fun(line: Frame, button: string) a left click on the line
+---@field tooltip? fun(line: Frame) draws the line's tooltip; the helper hides it on leave
+
+---@class ForeverTrackerHeaderTooltip
+---@field title string the tooltip's title
+---@field lines? string[] normal lines under the title
+
+---@class ForeverTrackerLineAPI
+---@field SetInteractive fun(line: Frame, spec: ForeverTrackerInteractiveSpec)
+---@field SetHeaderTooltip fun(module: ForeverTrackerModule, tip: ForeverTrackerHeaderTooltip|fun(block: any): ForeverTrackerHeaderTooltip?)
+
+---@class ForeverTrackerSectionAPI
+---@field Create fun(name: string, mixin?: table, opts?: ForeverTrackerSectionOptions): ForeverTrackerModule?
+---@field UpdateText fun(module: ForeverTrackerModule, blocks: ForeverTrackerTextBlock[]): boolean
+---@field Room fun(module: ForeverTrackerModule, block: any): number
+---@field AddMore fun(block: any, key: any, count: integer): any
 
 ---@class ForeverTrackerLock
 ---@field Locked fun(): boolean reads the saved switch through the host
@@ -61,6 +111,8 @@
 
 ---@class ForeverTrackerNamespace
 ---@field TrackerHost? ForeverTrackerHostAPI
+---@field TrackerSection? ForeverTrackerSectionAPI
+---@field TrackerLine? ForeverTrackerLineAPI
 ---@field TrackerHostForeign? boolean true when a vendored host loaded first and core forwarded to it
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI

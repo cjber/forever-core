@@ -66,7 +66,16 @@ one state for the character, shared by every registered addon.
 
 ## The tracker
 
-`ForeverCore.TrackerHost` is the one column. Attach a section to it:
+`ForeverCore.TrackerSection.Create(name, mixin, opts)` builds a section from `ObjectiveTrackerModuleTemplate`, mixes
+the addon in, sets `order`, `lineTemplate` and `header`, and attaches it once saved variables are loaded; `legacy` and
+`legacyKey` offer and then clear the addon's old tracker table, `safeCall` binds its errors and `onUnattached` warns
+when the section never joined. `TrackerSection.UpdateText(module, blocks)` rewrites existing line and header text
+without another layout. `TrackerSection.Room(module, block)` measures the room left in the column, and
+`TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
+{ onClick, tooltip })` makes a stock line clickable, and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
+header's hover; `ForeverTrackerInteractiveLineTemplate` is the mouse-enabled line template both use.
+
+`ForeverCore.TrackerHost` is the one column. Attach a section directly to it:
 
 ```lua
 ForeverCore.TrackerHost.Attach(module, {

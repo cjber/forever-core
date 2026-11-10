@@ -556,7 +556,8 @@ local function tocFiles()
 	local files = {}
 	for line in io.lines("ForeverCore.toc") do
 		line = line:gsub("\r$", "")
-		if not (line:match("^%s*$") or line:match("^%s*#")) then
+		-- XML templates are registered by the client loader; this fake client runs Lua files only.
+		if not (line:match("^%s*$") or line:match("^%s*#")) and line:match("%.lua$") then
 			files[#files + 1] = (line:gsub("\\", "/"))
 		end
 	end

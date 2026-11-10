@@ -5,6 +5,7 @@ if GetLocale() ~= "esES" then
 end
 local L = ns.L
 
+L["+%d more"] = "+%d más"
 L[", "] = ", "
 L["(you)"] = "(tú)"
 L["%d yd"] = "%d m"

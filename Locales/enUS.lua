@@ -11,6 +11,7 @@ local L = setmetatable({}, {
 })
 ns.L = L
 
+L["+%d more"] = "+%d more"
 L[", "] = ", "
 L["(you)"] = "(you)"
 L["%d yd"] = "%d yd"

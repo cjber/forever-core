@@ -7,6 +7,7 @@
 ### For addon authors
 
 - Add `## X-Forever-Icon: Interface\Icons\<name>` to the TOC, read it with `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`, and pass that value to every identity surface. `forever_tools.identity` runs in the assets check, and `docs/asset-registry.md` records each addon's icon. The TOC `## IconTexture` stays the drawn `media/Icon`.
+- `ForeverCore.TrackerSection.Create(name, mixin, opts)` builds and attaches a tracker section, with `UpdateText`, `Room` and `AddMore` for its lines. `ForeverCore.TrackerLine.SetInteractive` and `SetHeaderTooltip` wire clickable objective lines and block header tooltips through `ForeverTrackerInteractiveLineTemplate`. The column now records one section's layout error in its own journal and still lays out the sections below it, and calls `module.OnHeaderClick(button)` for a header click other than the right-click menu. `docs/adoption.md` names each call.
 
 ## [1.1.0] - 2026-11-10
 

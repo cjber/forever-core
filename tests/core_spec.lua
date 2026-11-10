@@ -45,6 +45,8 @@ for _, path in ipairs({
 	"UI/ForeverFamily.lua",
 	"UI/SettingsPage.lua",
 	"UI/TrackerHost.lua",
+	"UI/TrackerSection.lua",
+	"UI/TrackerSection.xml",
 	"UI/TrackerLock.lua",
 	"UI/TrackerOrder.lua",
 	"UI/TrackerQuestie.lua",
@@ -60,14 +62,16 @@ for _, path in ipairs({
 end
 check(files[#files] == "Expose.lua", "Expose.lua loads last, after every module it publishes")
 -- The lock, order and questie modules answer the host, so they load before it.
-local hostAt, lockAt, menuAt
+local hostAt, sectionAt, lockAt, menuAt
 for index, path in ipairs(files) do
 	hostAt = path == "UI/TrackerHost.lua" and index or hostAt
+	sectionAt = path == "UI/TrackerSection.lua" and index or sectionAt
 	lockAt = path == "UI/TrackerLock.lua" and index or lockAt
 	menuAt = path == "UI/ContextMenu.lua" and index or menuAt
 end
 check(hostAt ~= nil and lockAt ~= nil and lockAt < hostAt, "the grip loads before the host it drags")
 check(menuAt ~= nil and menuAt < hostAt, "the shared context menu loads before the host that opens it")
+check(sectionAt ~= nil and hostAt < sectionAt, "the section API loads after the host it attaches to")
 -- Art is what the report window draws its portrait with.
 local artAt, reportAt
 for index, path in ipairs(files) do
@@ -182,6 +186,7 @@ check(order[1] == "attach" and order[2] == "migrate", "core attaches before the 
 
 -- Expose.lua publishes the one public table and the per-addon factory.
 ns.TrackerHost = { name = "host" }
+ns.TrackerSection, ns.TrackerLine = { name = "section" }, { name = "line" }
 ns.TrackerLock, ns.TrackerOrder = { name = "lock" }, { name = "order" }
 ns.TrackerQuestie, ns.TrackerEqot, ns.TrackerQuests = { name = "questie" }, { name = "eqot" }, { name = "quests" }
 ns.QuestLogTabs, ns.PeerStats = { name = "tabs" }, { name = "peers" }
@@ -254,6 +259,8 @@ check(ForeverCore.name == "ForeverCore", "the core knows its name")
 check(ForeverCore.API == 1, "the interface starts at version 1")
 for _, field in ipairs({
 	"TrackerHost",
+	"TrackerSection",
+	"TrackerLine",
 	"TrackerLock",
 	"TrackerOrder",
 	"TrackerQuestie",
@@ -274,7 +281,13 @@ for _, field in ipairs({
 }) do
 	check(ForeverCore[field] ~= nil, "the core publishes " .. field)
 end
-check(ForeverCore.TrackerHost == ns.TrackerHost and ForeverCore.TrackerOrder == ns.TrackerOrder, "and the modules")
+check(
+	ForeverCore.TrackerHost == ns.TrackerHost
+		and ForeverCore.TrackerOrder == ns.TrackerOrder
+		and ForeverCore.TrackerSection == ns.TrackerSection
+		and ForeverCore.TrackerLine == ns.TrackerLine,
+	"and the modules"
+)
 check(ForeverCore.Attach == nil, "the old Attach helper is gone")
 check(ForeverCore.Defaults == nil, "the old Defaults field is gone")
 

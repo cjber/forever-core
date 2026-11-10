@@ -5,6 +5,7 @@ if GetLocale() ~= "ruRU" then
 end
 local L = ns.L
 
+L["+%d more"] = "+%d ещё"
 L[", "] = ", "
 L["(you)"] = "(вы)"
 L["%d yd"] = "%d м"

@@ -5,6 +5,7 @@ if GetLocale() ~= "ptBR" then
 end
 local L = ns.L
 
+L["+%d more"] = "+%d mais"
 L[", "] = ", "
 L["(you)"] = "(você)"
 L["%d yd"] = "%d m"

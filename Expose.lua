@@ -10,6 +10,8 @@ core.name = "ForeverCore"
 core.API = 1
 
 core.TrackerHost = ns.TrackerHost
+core.TrackerSection = ns.TrackerSection
+core.TrackerLine = ns.TrackerLine
 core.TrackerLock = ns.TrackerLock
 core.TrackerOrder = ns.TrackerOrder
 core.TrackerQuestie = ns.TrackerQuestie
