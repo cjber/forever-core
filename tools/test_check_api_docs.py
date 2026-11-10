@@ -43,9 +43,16 @@ class PublicationsTest(unittest.TestCase):
     def test_every_publication_form_is_found(self):
         self.assertEqual(docs_contract.published(API), ["CurrentStop", "Leaderboard", "Stats"])
 
-    def test_an_assignment_of_a_function_from_outside_the_file_is_left_alone(self):
-        source = "API.Handler = ns.Handler\n"
-        self.assertEqual(docs_contract.published(source), [])
+    def test_an_assignment_from_a_table_member_is_published(self):
+        source = (
+            "local hub = ForeverCore.APIKit.Hub(name, channels)\n"
+            "API.Subscribe = hub.Subscribe\n"
+            "API.Handler = ns.Handler\n"
+        )
+        self.assertEqual(docs_contract.published(source), ["Handler", "Subscribe"])
+
+    def test_the_value_fields_assigned_by_name_are_not_published(self):
+        self.assertEqual(docs_contract.published("API.version = VERSION\nAPI.minor = MINOR\n"), [])
 
     def test_table_fields_are_not_published_names(self):
         self.assertEqual(docs_contract.published("local API = { version = 1, minor = 7 }\n"), [])
