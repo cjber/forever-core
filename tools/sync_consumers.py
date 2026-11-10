@@ -49,11 +49,16 @@ class Wiring(NamedTuple):
 
 
 WIRING = {
+    "Core/Open.lua": Wiring(
+        toc_after="Core\\SafeCall.lua",
+        read_globals=("CreateSecureDelegate", "C_SettingsUtil"),
+        comment="Core/Open.lua: the client's secure delegate and settings panel.",
+    ),
     "Core/Log.lua": Wiring(
         toc_after="Core\\SafeCall.lua",
         read_globals=("date",),
         comment="Core/Log.lua: the client's date, this session's seconds.",
-    )
+    ),
 }
 
 

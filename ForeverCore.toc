@@ -12,6 +12,7 @@
 Core.lua
 Locales\enUS.lua
 Core\SafeCall.lua
+Core\Open.lua
 Core\Log.lua
 Core\Text.lua
 Core\PeerStats.lua

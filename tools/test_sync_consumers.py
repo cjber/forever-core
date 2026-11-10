@@ -10,6 +10,8 @@ from unittest import mock
 import sync_consumers as sync
 
 LOG = b"-- shared log\n"
+OPEN = b"-- shared opener\n"
+OPEN_SPEC = b'-- Core/Open.lua\nassert(loadfile("Core/Open.lua"))\n'
 TRACKER = b"-- shared tracker\n"
 TOC = "## Interface: 16001\nCore\\SafeCall.lua\nCore\\Own.lua\n"
 TOC_WITH_LOG = TOC.replace("Core\\Own.lua", "Core\\Log.lua\nCore\\Own.lua")
@@ -149,6 +151,27 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual((root / "Core/Log.lua").read_bytes(), LOG)
         self.assertIn("Core\\Log.lua", (root / "LegacyForever.toc").read_text())
         self.assertNotIn("Core/Log.lua: skipped", out)
+
+    def test_the_client_opener_is_wired_after_safecall(self):
+        self.write(self.core, "Core/Open.lua", OPEN)
+        root = self.consumer(log=None)
+        code, out = self.run_sync(only=("Core/Open.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "Core/Open.lua").read_bytes(), OPEN)
+        lines = (root / "LegacyForever.toc").read_text().splitlines()
+        self.assertEqual(lines[lines.index("Core\\SafeCall.lua") + 1], "Core\\Open.lua")
+        text = (root / ".luacheckrc").read_text()
+        self.assertIn('read_globals[#read_globals + 1] = "CreateSecureDelegate"', text)
+        self.assertIn('read_globals[#read_globals + 1] = "C_SettingsUtil"', text)
+
+    def test_the_client_opener_spec_copies_with_its_module(self):
+        self.write(self.core, "Core/Open.lua", OPEN)
+        self.write(self.core, "tests/open_spec.lua", OPEN_SPEC)
+        root = self.consumer(log=None)
+        code, out = self.run_sync(only=("Core/Open.lua", "tests/open_spec.lua"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "Core/Open.lua").read_bytes(), OPEN)
+        self.assertEqual((root / "tests/open_spec.lua").read_bytes(), OPEN_SPEC)
 
     def test_a_new_module_and_its_test_wait_until_the_consumer_toc_loads_it(self):
         root = self.quest_consumer()

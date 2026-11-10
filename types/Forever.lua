@@ -52,6 +52,8 @@
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
 
 ---@class ForeverTrackerNamespace
+---@field OpenMap fun(mapID?: integer): boolean
+---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field MapCanvas? ForeverMapCanvas
 ---@field Leaderboards? ForeverLeaderboardsAPI
