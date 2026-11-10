@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -22,6 +23,25 @@ def dataset(releases, changelog=None, store=None, addon=None):
 
 def release(version, published):
     return digest.Release(version, published)
+
+
+def addon(repo):
+    return next(item for item in digest.ADDONS if item.repo == repo)
+
+
+class FamilySyncTest(unittest.TestCase):
+    def test_every_list_names_the_same_addons_in_the_same_order(self):
+        source = (digest.ROOT / "UI/ForeverFamily.lua").read_text(encoding="utf-8")
+        calls = re.findall(r'Addon\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"', source)
+        family_names = [name for name, _slug, _line in digest.family.ADDONS]
+        family_slugs = [slug for _name, slug, _line in digest.family.ADDONS]
+        self.assertEqual([name for name, _folder, _slug in calls], family_names)
+        self.assertEqual([slug for _name, _folder, slug in calls], family_slugs)
+        self.assertEqual([item.name for item in digest.ADDONS], family_names)
+        self.assertEqual([item.repo for item in digest.ADDONS], family_slugs)
+        self.assertEqual(set(digest.ACCENTS), set(family_slugs))
+        for item in digest.ADDONS:
+            self.assertEqual(item.accent, digest.ACCENTS[item.repo])
 
 
 class ChangelogTest(unittest.TestCase):
@@ -103,13 +123,13 @@ class DigestTest(unittest.TestCase):
         )
         embed = payload["embeds"][0]
         self.assertEqual(embed["title"], "v1.0.0 → v1.1.0")
-        self.assertEqual(embed["url"], "https://github.com/cjber/adventure-guide-forever/releases/tag/v1.1.0")
+        self.assertEqual(embed["url"], "https://github.com/cjber/shortest-path-forever/releases/tag/v1.1.0")
         lines = embed["description"].splitlines()
         self.assertEqual(lines[0], "• New in 1.1: see the post above")
         self.assertEqual(lines[1], "• The patch fix.")
         self.assertEqual(lines[2], "• Another patch fix.")
         self.assertNotIn("The big feature.", embed["description"])
-        self.assertIn("[Full notes](https://github.com/cjber/adventure-guide-forever/releases/tag/v1.1.0)", lines[-1])
+        self.assertIn("[Full notes](https://github.com/cjber/shortest-path-forever/releases/tag/v1.1.0)", lines[-1])
 
     def test_an_addon_without_player_lines_is_left_out(self):
         with_lines = dataset([release("1.0.1", NOW - timedelta(hours=1))], {"1.0.1": digest.ChangelogEntry(("Fix.",))})
@@ -214,7 +234,7 @@ class FeatureTest(unittest.TestCase):
                     "docs/screenshots/feature.png",
                 )
             },
-            addon=digest.ADDONS[3],
+            addon=addon("tweaks-forever"),
         )
         payloads = digest.build_features([data], NOW - timedelta(hours=1), NOW)
         self.assertEqual(len(payloads), 1)
@@ -222,8 +242,8 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(payload["content"], "**New in Tweaks Forever 1.1**")
         embed = payload["embeds"][0]
         self.assertEqual(embed["title"], "v1.1.0 · What's new")
-        self.assertEqual(embed["author"]["icon_url"], digest.emblem_url(digest.ADDONS[3]))
-        self.assertEqual(embed["thumbnail"]["url"], digest.icon_url(digest.ADDONS[3]))
+        self.assertEqual(embed["author"]["icon_url"], digest.emblem_url(addon("tweaks-forever")))
+        self.assertEqual(embed["thumbnail"]["url"], digest.icon_url(addon("tweaks-forever")))
         self.assertEqual(
             embed["image"]["url"],
             "https://raw.githubusercontent.com/cjber/tweaks-forever/v1.1.0/docs/screenshots/feature.png",
@@ -263,11 +283,13 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(
             [data.addon.repo for data in datasets],
             [
-                "adventure-guide-forever",
                 "shortest-path-forever",
-                "tweaks-forever",
+                "adventure-guide-forever",
                 "legacy-forever",
+                "tweaks-forever",
                 "field-guide-forever",
+                "commissions-forever",
+                "macro-assist-forever",
             ],
         )
         self.assertIn("skipping skillup-forever: connection reset", errors.getvalue())
