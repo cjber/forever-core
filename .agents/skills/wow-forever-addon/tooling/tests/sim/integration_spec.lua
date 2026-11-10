@@ -575,6 +575,29 @@ test("Professions book page completes OnShow and runs post-hooks", function()
 	sim:expectNoErrors("SimProfessionCaller")
 end)
 
+test("an XML frame from LargeSideTabButtonTemplate is a Frame, and refuses OnClick", function()
+	local sim = Sim.new()
+	blacksmith(sim)
+	sim:login()
+	local pf = sim:openProfessions(164)
+	local tab = pf.ProfessionsOverviewTab
+	eq(tab:GetObjectType(), "Frame", "the XML element names a Frame")
+	eq(tab:IsObjectType("Button"), false, "the template's name does not make it a Button")
+	eq(tab:HasScript("OnClick"), false, "a Frame does not support OnClick")
+	local ok, err = pcall(function()
+		tab:HookScript("OnClick", function() end)
+	end)
+	eq(ok, false, "HookScript OnClick")
+	assert(
+		tostring(err):find(
+			"Frame:HookScript(): Cannot assign script handler for 'onclick' (script type not supported by this object)",
+			1,
+			true
+		),
+		err
+	)
+end)
+
 test("slashCommands returns the first alias of each command an addon registered", function()
 	local sim = Sim.new()
 	sim:addon(fixtures .. "SimSlash", "SimSlash")

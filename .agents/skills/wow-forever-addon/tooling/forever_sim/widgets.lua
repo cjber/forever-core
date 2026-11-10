@@ -5,6 +5,7 @@
 -- secret arguments add aspects, secret aspects and secret anchoring make getters return secrets, and protected
 -- methods on protected frames are blocked for tainted code in combat.
 local Secret = require("veil")
+local ScriptTypes = require("script_types")
 
 local M = {}
 
@@ -132,6 +133,35 @@ local function isA(typeName, ancestor)
 	return false
 end
 M.isA = isA
+
+-- Widget type -> its supported scripts, lower-case name -> the client's spelling. Each type unions its TYPES
+-- parent's set with the set it declares itself (script_types.lua, generated from the pinned annotations), so a
+-- CheckButton supports Button's scripts and every Frame supports the ScriptRegion ones without a second list.
+local SCRIPT_SETS = {}
+local function scriptSet(kind)
+	local set = SCRIPT_SETS[kind]
+	if set then
+		return set
+	end
+	set = {}
+	local parent = TYPES[kind] and TYPES[kind][1]
+	if parent then
+		for name, canonical in pairs(scriptSet(parent)) do
+			set[name] = canonical
+		end
+	end
+	for name, canonical in pairs(ScriptTypes[kind] or {}) do
+		set[name] = canonical
+	end
+	SCRIPT_SETS[kind] = set
+	return set
+end
+M.scriptSet = scriptSet
+
+local function scriptName(kind, name)
+	return scriptSet(kind)[tostring(name):lower()]
+end
+M.scriptName = scriptName
 
 local function zeroOf(ret)
 	if ret.Nilable then
@@ -727,7 +757,26 @@ function M.build(sim)
 	end
 
 	-- ScriptRegion: scripts, visibility, mouse.
+	local function assignableScript(self, method, name)
+		local canonical = scriptName(st(self).kind, name)
+		if canonical then
+			return canonical
+		end
+		-- The client names the object type and lower-cases the script it refused.
+		error(
+			string.format(
+				"%s:%s(): Cannot assign script handler for '%s' (script type not supported by this object)",
+				st(self).kind,
+				method,
+				tostring(name):lower()
+			),
+			2
+		)
+	end
+	W.assignableScript = assignableScript
+
 	impl.ScriptRegion.SetScript = function(self, name, handler)
+		local canonical = assignableScript(self, "SetScript", name)
 		local s = st(self)
 		if not s.scripts then
 			s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
@@ -735,21 +784,23 @@ function M.build(sim)
 		if not s.scriptInfo then
 			s.scriptInfo = {}
 		end
-		s.scripts[name] = handler
-		s.scriptTaint[name] = Taint.current
-		s.scriptInfo[name] = Taint.writer()
-		s.hooks[name] = nil
+		s.scripts[canonical] = handler
+		s.scriptTaint[canonical] = Taint.current
+		s.scriptInfo[canonical] = Taint.writer()
+		s.hooks[canonical] = nil
 	end
 	impl.ScriptRegion.GetScript = function(self, name)
 		-- Reading a script does not taint the reader: the client keeps scripts outside the table-slot rule, and
 		-- secure code checks for an addon's OnMouseUp all the time when it enumerates frames. Executing the
 		-- addon's script still runs as that addon (W.dispatch sets its taint).
-		return st(self).scripts and st(self).scripts[name]
+		local canonical = scriptName(st(self).kind, name)
+		return canonical and st(self).scripts and st(self).scripts[canonical]
 	end
-	impl.ScriptRegion.HasScript = function()
-		return true
+	impl.ScriptRegion.HasScript = function(self, name)
+		return scriptName(st(self).kind, name) ~= nil
 	end
 	impl.ScriptRegion.HookScript = function(self, name, hook)
+		local canonical = assignableScript(self, "HookScript", name)
 		local s = st(self)
 		if not s.scripts then
 			s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
@@ -757,20 +808,28 @@ function M.build(sim)
 		if not s.scriptInfo then
 			s.scriptInfo = {}
 		end
-		if not s.scripts[name] then
+		if not s.scripts[canonical] then
 			-- Hooking an empty script sets it, as the client does.
-			s.scripts[name] = hook
-			s.scriptTaint[name] = Taint.current
-			s.scriptInfo[name] = Taint.writer()
+			s.scripts[canonical] = hook
+			s.scriptTaint[canonical] = Taint.current
+			s.scriptInfo[canonical] = Taint.writer()
 			return true
 		end
-		s.hooks[name] = s.hooks[name] or {}
-		table.insert(s.hooks[name], hook)
+		s.hooks[canonical] = s.hooks[canonical] or {}
+		table.insert(s.hooks[canonical], hook)
 		return true
 	end
 	impl.ScriptRegion.ClearScripts = function(self)
 		local s = st(self)
 		s.scripts, s.scriptTaint, s.scriptInfo, s.hooks = {}, {}, {}, {}
+	end
+	-- Animations are ScriptObjects too: the same script table, the same client check. Without this they would fall
+	-- to the documented SetScript stub, which stores the handler where nothing dispatches it.
+	for _, kind in ipairs({ "Animation", "AnimationGroup" }) do
+		impl[kind].SetScript = impl.ScriptRegion.SetScript
+		impl[kind].GetScript = impl.ScriptRegion.GetScript
+		impl[kind].HasScript = impl.ScriptRegion.HasScript
+		impl[kind].HookScript = impl.ScriptRegion.HookScript
 	end
 	impl.ScriptRegion.Show = function(self)
 		setShown(self, true)
