@@ -195,6 +195,30 @@ must name, not a precedent.
 `shortest-path-forever/media/Dot.tga` (4,140 B, `UI/Route.lua` `DOT_TEXTURE`) is a 1px stroke
 primitive, not chrome — allowed.
 
+## Identity icons
+
+Each addon represents itself in game with one client icon, declared once in its TOC as
+`## X-Forever-Icon: Interface\Icons\<name>` and read with
+`C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`. The minimap button, the Professions or side tab,
+the window portrait, the leaderboard tab and the addon compartment all draw that value, and no shipped Lua
+repeats the path. The TOC `## IconTexture` stays the drawn `media/Icon` for the TOC, the addon list, the
+compartment, the report window and the stores; that is the addon's store identity, not its in-game one.
+
+| Addon | `X-Forever-Icon` |
+|---|---|
+| Adventure Guide Forever | `Interface\Icons\INV_Misc_Map_01` |
+| Shortest Path Forever | `Interface\Icons\INV_Misc_Spyglass_03` |
+| SkillUp Forever | `Interface\Icons\INV_Scroll_03` |
+| Commissions Forever | `Interface\Icons\INV_Letter_15` |
+| Legacy Forever | `Interface\Icons\Achievement_General` |
+| Field Guide Forever | `Interface\Icons\INV_Misc_Book_09` |
+| Macro Assist Forever | `Interface\Icons\INV_Misc_Note_01` |
+| Tweaks Forever | `Interface\Icons\Trade_Engineering` |
+
+Tweaks has no in-game identity surface today; it declares `Trade_Engineering` so the rule stays uniform.
+`forever_tools.identity` runs in every addon's assets check: it fails a TOC that omits the field, a value the
+pinned build does not have, or the declared path repeated in shipped Lua.
+
 ## What the addons actually reference today
 
 Eleven atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,

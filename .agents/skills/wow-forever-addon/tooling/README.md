@@ -13,6 +13,7 @@ the producer commit the copy came from.
 |---|---|
 | `lua` | Lua 5.1 lexer (`tokenize`, `Token`, `LuaSyntaxError`) |
 | `toc` | TOC and nested XML traversal, orphan Lua check per addon `runtime_dirs`, LuaLS coverage gate |
+| `identity` | One in-game identity icon per addon: the TOC's `X-Forever-Icon` is a client icon in the pinned build, and no shipped Lua repeats it |
 | `multivalue` | `select()` and multi-return expansion lint; `Rules` carries the addon's policy |
 | `art` | Art lint (WFA-27): raw texture, atlas and markup calls outside the addon's art helper files need an `art-ok` reason |
 | `readable` | Secret-value lint (WFA-30): `UnitGUID`, `UnitName` and tooltip data reads go through the `Readable` guard, tooltip hooks check `IsForbidden`; `Policy` names the guard and safe units |

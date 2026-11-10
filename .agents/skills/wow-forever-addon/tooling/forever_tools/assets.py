@@ -1,7 +1,8 @@
-"""The suite's asset blacklist, independent of aspect-ratio helpers and waivers.
+"""The suite's asset blacklist and identity icon rule, independent of aspect-ratio helpers and waivers.
 
 Runtime Lua/XML and Python renderers use the Forever atlas set. Loose legacy frame chrome
-and templates which select it are forbidden, even inside an Art helper.
+and templates which select it are forbidden, even inside an Art helper. `main` also runs `identity`, so
+an addon's assets check enforces the one in-game icon its TOC declares.
 """
 
 import argparse
@@ -308,7 +309,10 @@ def main() -> int:
             part.startswith(".") or part in {"tools", "tests", "node_modules"} for part in path.relative_to(root).parts
         )
     ]
-    return run([*runtime_files(root), *xml, *renderer_files(root)])
+    # A local import avoids the cycle: identity reads string literals through this module.
+    from . import identity
+
+    return int(identity.run(root)) | run([*runtime_files(root), *xml, *renderer_files(root)])
 
 
 if __name__ == "__main__":

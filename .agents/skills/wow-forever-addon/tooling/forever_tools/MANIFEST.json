@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "assets.py": "65fc1bbb289f8d3ed1ac906f021f670dd1585f938a0fcdaaad079eb0ebed3707",
+    "assets.py": "18a092e60f2bb23e62bf7857906c4af1d0d9efdbd265202f0cba3738ca9e0c21",
     "backdrops.txt": "815f66269b9159e8672e8f684318ceb58509758d26f9d03eed02a75c1a0962c3",
     "changelog.py": "10fae82d4fb4f001d38859fe7975cfd09a4b1c8ba5c53c0e1751093c5a73a800",
     "csvtable.py": "afcfd1ce82104d3c0094eb9b07eb19d544b689d2284fb22b6a4a5c12229fca05",
@@ -18,6 +18,7 @@
     "family.py": "ac202d15e6a9d394f8dc2acf18ae33efbe6f3d2fb320739ab628ce39f34afe7a",
     "fsio.py": "a6af0c5ce14823f67f00553dde5c3c014be596e2e4e0b12aaa902349c173e41c",
     "generated.py": "1165ae433d771dd26c5aa606ed56a2e9bc8e6bea6e3436e34ca07c2f9fc10569",
+    "identity.py": "b2ded6b3a49c9908dade7666968c2e60822a6314e9369cbc5ecfee166fef77c0",
     "interface_paths.txt": "14179c8c508b67347fe98dacbf6f62e0a8ebaacc6a4e9c9ca8c016f8a957233e",
     "latest_build.py": "31d483946a872f5a90f62e03f34dae8b4a78f3516f819f323714687985f6e483",
     "legacy_chrome.py": "44ad05e9b37d2f0f28068f00b6a780e1d9f7f61a4bbdb776c7e7c2a834b677fc",
@@ -33,7 +34,7 @@
     "screens.py": "3b8f4ffccf1b89d51bafeeec640fd51076a29ad6fd344c7a2030446c3f33048a",
     "store_page.py": "71131139300663d1cb5f52745de2d662130f85d5f314e1fd191bbd287abb4bcb",
     "sync.py": "1412fdf936902241659a141dde0c37e2d359b4e939a7f2b7e4e06bc7bf0c812c",
-    "toc.py": "7e41c023439bf643e1da0f9e9c31a2439adce6e95da866f080a51b8d3637150f",
+    "toc.py": "faec044d0276b904b57c6b67b7053fe0373f080dbee7ce18a96356667a81c23e",
     "wago.py": "907a90aa7ef7e6bc2540efab121b6976aa6431accc226650105d3ead7e8a5d40"
   }
 }

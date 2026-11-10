@@ -101,6 +101,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   writes `media/icon-400.png` (README, store logo) and `media/Icon.tga` (64 px). The TOC uses
   `## IconTexture: Interface\AddOns\<Addon>\media\Icon`, and so does every child addon the zip
   ships (load-on-demand data or map addons), pointing at the parent's icon, so none shows a `?`.
+  Every in-game identity surface (minimap button, Professions or side tab, window portrait, leaderboard tab,
+  addon compartment) reads the one `## X-Forever-Icon: Interface\Icons\<name>` value from the TOC with
+  `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`; `forever_tools.identity`, run by the assets
+  check, fails a TOC that omits it, a value the pinned build does not have, or a repeat in shipped Lua.
 - **WFA-9** Screenshots come from `tools/screenshots.py` via the `wow-mock-screenshots` skill, one
   per headline feature, regenerated in the same PR as any UI change they show. README, store page
   and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes.sha256` records each
