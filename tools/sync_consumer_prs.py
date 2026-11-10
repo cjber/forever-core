@@ -64,8 +64,10 @@ class Result:
     detail: str | None = None
 
 
-def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
+def run(
+    command: list[str], cwd: Path | None = None, check: bool = True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False, env=env)
     if check and result.returncode:
         detail = (result.stderr or result.stdout).strip()
         raise SyncError(f"{' '.join(command)} failed: {detail}")
@@ -158,7 +160,10 @@ def regenerate_phrases(root: Path) -> None:
     template = root / "Locales" / "phrases.txt"
     if not script.is_file() or not template.is_file():
         return
-    generated = run([sys.executable, str(script)], cwd=root)
+    # Run by path, so a script importing its siblings in tools/ finds them, and with the root importable, so one
+    # importing `tools.forever_tools` as a package (tweaks-forever documents `python3 -m tools.phrases`) does too.
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
+    generated = run([sys.executable, str(script)], cwd=root, env=env)
     template.write_text(generated.stdout, encoding="utf-8")
 
 
