@@ -49,10 +49,15 @@ class Wiring(NamedTuple):
 
 
 WIRING = {
-    "Core/Open.lua": Wiring(
+    "Core/OpenMap.lua": Wiring(
+        toc_after="Core\\SafeCall.lua",
+        read_globals=("CreateSecureDelegate", "C_Map"),
+        comment="Core/OpenMap.lua: the client's secure world map opener.",
+    ),
+    "Core/OpenSettings.lua": Wiring(
         toc_after="Core\\SafeCall.lua",
         read_globals=("CreateSecureDelegate", "C_SettingsUtil"),
-        comment="Core/Open.lua: the client's secure delegate and settings panel.",
+        comment="Core/OpenSettings.lua: the client's secure settings panel opener.",
     ),
     "Core/Log.lua": Wiring(
         toc_after="Core\\SafeCall.lua",

@@ -158,7 +158,7 @@ read_globals[#read_globals + 1] = "OpenMapAPI"
 
 read_globals[#read_globals + 1] = "IsPlayerMoving"
 read_globals[#read_globals + 1] = "InCombatLockdown"
--- Core/Open.lua: the client's secure delegate for its restricted map and settings openers.
+-- Core/OpenMap.lua and Core/OpenSettings.lua: the client's secure delegate for its restricted openers.
 read_globals[#read_globals + 1] = "CreateSecureDelegate"
 read_globals[#read_globals + 1] = "C_AddOnProfiler"
 read_globals[#read_globals + 1] = "UpdateAddOnMemoryUsage"
