@@ -40,7 +40,8 @@ MARK = (
     "c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419"
     " 0 1.3332-.946 2.4189-2.1568 2.4189Z"
 )
-# The icon square and label position, measured from docs/github-sponsors-button.png.
+# The corner radius, icon square and label position, measured from docs/github-sponsors-button.png.
+RADIUS = 8
 BOX = (9, 4, 34, 25)
 LABEL_X = 55
 
@@ -57,7 +58,7 @@ def render(font_path):
     w, h = SIZE[0] * SCALE, SIZE[1] * SCALE
     image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=h // 2, fill=PILL)
+    draw.rounded_rectangle((0, 0, w - 1, h - 1), radius=RADIUS * SCALE, fill=PILL)
     box = tuple(v * SCALE for v in BOX)
     draw.rounded_rectangle(box, radius=5 * SCALE, fill=(255, 255, 255, 255), outline=INK, width=SCALE + SCALE // 2)
     side = (box[3] - box[1]) * 7 // 10
