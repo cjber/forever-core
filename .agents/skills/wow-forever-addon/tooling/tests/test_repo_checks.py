@@ -200,6 +200,8 @@ class TocTest(unittest.TestCase):
                 "Child/child.lua": "",
                 "tools/forever_sim/stubs/Auctionator/Auctionator.toc": "Auctionator.lua\n",
                 "tools/forever_sim/stubs/Auctionator/Auctionator.lua": "",
+                "forever-core/ForeverCore.toc": "Core.lua\n",
+                "forever-core/Core.lua": "",
             }
         )
         names = [p.relative_to(root.resolve()).as_posix() for p in toc.runtime_files(root)]
