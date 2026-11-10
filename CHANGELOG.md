@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-10
+
 - **One tracker column again.** With an older Forever addon still installed, its tracker section no longer draws on top of the others.
 
 ### For addon authors
 
 - `ForeverCore.APIKit` (minor 1) is the shape every addon's own API follows. `Hub(addonName, channels, ready)` returns `{ Subscribe, Queue }`: one dispatch on the next frame per burst of changes, a fresh `{ change = true }` table naming only the changed channels, idempotent unsubscribe, and each callback under the addon's `SafeCall`. `NotReady(reason)` returns `nil, reason` for `"loading"`, `"disabled"` and `"none"`. `docs/api-conventions.md` states the conventions every addon API follows, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its `docs/api.md`.
+
+<!-- discord-image: docs/screenshots/tracker.png -->
 
 ## [1.0.0] - 2026-11-10
 
