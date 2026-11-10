@@ -113,7 +113,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   counted; `check_copy.py --words` gives the count every repo uses.
 - **WFA-11** `docs/curseforge.md` is the store description: the pitch, the headline screenshots,
   Features, Usage, a source/licence line; under 600 words; no Install or Development sections. It
-  is pasted into CurseForge and Wago by hand after it changes (`wow-addon-publish`). The WFA-32 block is
+  is pasted into CurseForge by hand after it changes; Wago carries a fixed stub (`wow-addon-publish`). The WFA-32 block is
   not counted here either.
 - **WFA-23** The addon fits the game's own UI. Show this in the lead image, against the stock UI
   where the change is subtle. Copy leads with what the addon does and how to use it; it does not
