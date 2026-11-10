@@ -1,5 +1,5 @@
 ---@type string, ForeverTrackerNamespace
-local addonName, ns = ...
+local _, ns = ...
 
 -- Addon drawings on the world map, on frames of its own, with nothing written into the map.
 --
@@ -640,5 +640,3 @@ function ns.MapCanvasFor(owner)
 		Gamepad = MapCanvas.Gamepad,
 	}
 end
-
-ns.MapCanvas = ns.MapCanvasFor(addonName or "ForeverCore")

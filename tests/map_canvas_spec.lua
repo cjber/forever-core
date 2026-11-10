@@ -46,7 +46,7 @@ local ns = {
 }
 assert(loadfile("UI/MapCanvas.lua"))("CanvasSpec", ns)
 local changes = {}
-local canvas = ns.MapCanvas
+local canvas = ns.MapCanvasFor("CanvasSpec")
 local otherCanvas = ns.MapCanvasFor("OtherAddon")
 canvas.Watch(Kit.map, function(_, what)
 	changes[#changes + 1] = what
