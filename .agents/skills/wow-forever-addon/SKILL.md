@@ -35,7 +35,13 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   holds (trainer fees, transports) is a named exception in the repo's `AGENTS.md` under `## Waivers`,
   stating its source, and the player sees a live in-game value over the bundled one wherever the
   client offers it. A server-emulator dump (CMaNGOS classic-db) describes Classic Era, not Forever:
-  it is never the source for a dataset QuestieDB or AtlasLoot holds.
+  it is never the source for a dataset QuestieDB or AtlasLoot holds. `.pkgmeta` lists the CurseForge
+  slug of every TOC `OptionalDeps` folder under `optional-dependencies` (QuestieDB is `questiedb`,
+  AtlasLoot's Forever build `atlasloot-forever`): the TOC line only orders loading, and the store
+  relation is what makes the CurseForge app offer the data addon. Wrong or missing data in either is
+  fixed upstream, by a report or PR to that project (Questie's in-game debug offer already collects
+  missing quest, NPC and loot data), not by an override table in the addon, which drifts from what
+  every other addon reads.
 - **WFA-3** Minimal surface. Options live in one place: a Settings > AddOns page (Blizzard's
   settings API), or a menu on the addon's own UI when every option is about that UI (Legacy Forever's
   map menu). A slash command (short form plus the full name) and an addon compartment entry
