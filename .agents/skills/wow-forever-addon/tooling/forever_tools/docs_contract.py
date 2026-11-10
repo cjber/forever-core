@@ -1,7 +1,8 @@
 """Check an addon's published API against its docs/api.md.
 
 `Core/API.lua` is the one list of what an addon publishes. A function is published as `function API.Name(...)`, as
-`API.Name = function`, or as `API.Name = SomeFunction` where `SomeFunction` is defined in the same file. `docs/api.md`
+`API.Name = function`, or as `API.Name = value` for any name or member path (`hub.Subscribe`), except the two value
+fields docs/api-conventions.md defines, `version` and `minor`. `docs/api.md`
 must name each published function as `Name(`. The API table's `minor = N` must also appear in the docs near the word
 minor, so each addition's history is written down. An addon with no `Core/API.lua` passes, because ForeverCore itself
 publishes no addon API.
@@ -21,8 +22,8 @@ ASSIGNED = re.compile(
     r"(?P<value>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(?:--.*)?$",
     re.MULTILINE,
 )
-DEFINED_FUNCTION = re.compile(r"^\s*(?:local\s+)?function\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
-LOCAL_FUNCTION = re.compile(r"^\s*local\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*function\b", re.MULTILINE)
+# The API table's value fields (docs/api-conventions.md); every other member it publishes is a function.
+VALUE_FIELDS = {"version", "minor"}
 MINOR = re.compile(r"\bminor\s*=\s*(?P<minor>\d+)")
 MINOR_WORD = re.compile(r"\bminor\b", re.IGNORECASE)
 # How far from the word minor a number may sit and still be its history. Adventure Guide's one-line history keeps
@@ -32,12 +33,10 @@ NEAR = 200
 
 def published(source: str) -> list[str]:
     """Every name the API table publishes as a function, sorted."""
-    defined = {match["name"] for match in DEFINED_FUNCTION.finditer(source)}
-    defined |= {match["name"] for match in LOCAL_FUNCTION.finditer(source)}
     names = {match["name"] for match in FUNCTION.finditer(source)}
     names |= {match["name"] for match in ASSIGNED_FUNCTION.finditer(source)}
-    names |= {match["name"] for match in ASSIGNED.finditer(source) if match["value"].split(".", 1)[0] in defined}
-    return sorted(names)
+    names |= {match["name"] for match in ASSIGNED.finditer(source)}
+    return sorted(names - VALUE_FIELDS)
 
 
 def minor_of(source: str) -> int | None:
