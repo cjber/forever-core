@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **A consumer sync PR no longer closes itself, and carries its phrase template.** `tools/sync_consumer_prs.py` pointed `forever-core-sync` at the consumer's `main` head before creating the sync commit, so between the two calls the PR's head equalled its base and GitHub closed it; the commit is now built on a scratch branch from `main` and the sync branch moves once to that commit. A consumer with `tools/phrases.py` also gets its `Locales/phrases.txt` regenerated in the same commit, so its locale spec passes. (#330)
+
 ## [0.5.4] - 2026-11-10
 
 - **Guild members keep their class on the Forever Leaderboards window.** `GetNumGuildMembers` returns the member count and the online count, and the second value reached `tonumber`'s base argument, so building the guild part raised "base out of range" and no guild row got a class colour or icon. (#587)
