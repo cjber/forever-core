@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The asset check follows a `BACKDROP_*` global to the art it draws.** A backdrop constant was only an identifier to the checker, so `SetBackdrop(BACKDROP_TOAST_12_12)` passed while the two loose toast files it names are pre-Legion chrome. Each backdrop's `bgFile` and `edgeFile` now comes from the pinned build's `Blizzard_SharedXML/Backdrop.lua` through a generated `backdrops.txt` beside `legacy_chrome.txt`, and those paths get the same FileDataID age rule as a literal path. (#320)
+
 ## [0.5.4] - 2026-11-10
 
 - **Guild members keep their class on the Forever Leaderboards window.** `GetNumGuildMembers` returns the member count and the online count, and the second value reached `tonumber`'s base argument, so building the guild part raised "base out of range" and no guild row got a class colour or icon. (#587)

@@ -6,7 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / ".agents/skills/wow-forever-addon/tooling"))
-from forever_tools import assets  # noqa: E402
+import gen_legacy_chrome  # noqa: E402
+from forever_tools import assets, legacy_chrome  # noqa: E402
 
 
 class LegacyChromeAgeTest(unittest.TestCase):
@@ -106,6 +107,54 @@ class LegacyChromeAgeTest(unittest.TestCase):
 
     def test_a_constant_prefix_of_a_known_path_is_not_called_a_typo(self):
         self.assertEqual(self.messages("Interface\\WorldMap\\ShadowfangKeep\\ShadowfangKeep1"), [])
+
+    def test_a_backdrop_global_gets_the_age_rule_for_the_files_it_draws(self):
+        messages = [message for _, message in assets.check("f:SetBackdrop(BACKDROP_TOAST_12_12)")]
+        self.assertEqual(
+            messages,
+            [
+                "asset-blacklist: interface/friendsframe/ui-toast-background: "
+                "pre-Legion UI chrome (FileDataID < 1000000); use an atlas",
+                "asset-blacklist: interface/friendsframe/ui-toast-border: "
+                "pre-Legion UI chrome (FileDataID < 1000000); use an atlas",
+            ],
+        )
+
+    def test_a_backdrop_global_is_expanded_in_every_source_kind(self):
+        for source, suffix in (
+            ("backdrop = BACKDROP_TOAST_12_12", ".py"),
+            ('<KeyValue key="backdropInfo" value="BACKDROP_TOAST_12_12" type="global"/>', ".xml"),
+            ('local backdrop = _G["BACKDROP_TOAST_12_12"]', ".lua"),
+        ):
+            with self.subTest(suffix=suffix):
+                messages = [message for _, message in assets.check(source, suffix)]
+                self.assertTrue(any("interface/friendsframe/ui-toast-border" in message for message in messages))
+
+    def test_a_backdrop_global_with_current_files_passes(self):
+        self.assertEqual(assets.check("f:SetBackdrop(BACKDROP_WATERMARK_DIALOG_0_16)"), [])
+
+    def test_generated_backdrop_data_names_the_toast_files(self):
+        self.assertEqual(
+            legacy_chrome.backdrop_paths("BACKDROP_TOAST_12_12"),
+            ("interface/friendsframe/ui-toast-background", "interface/friendsframe/ui-toast-border"),
+        )
+
+
+class BackdropSourceTest(unittest.TestCase):
+    def test_backdrop_globals_are_read_from_their_definitions(self):
+        source = (
+            "BACKDROP_OLD_1_1 = {\n"
+            '\tbgFile = "Interface\\\\Old\\\\Background",\n'
+            '\tedgeFile = "Interface\\\\Old\\\\Border",\n'
+            "\tinsets = { left = 1 },\n"
+            "};\n"
+            'NOT_A_BACKDROP = { name = "Interface\\\\Old\\\\Art" };\n'
+            'OUTER = { inner = { bgFile = "Interface\\\\Old\\\\Nested" } };\n'
+        )
+        self.assertEqual(
+            gen_legacy_chrome.parse_backdrops(source),
+            {"BACKDROP_OLD_1_1": ["interface/old/background", "interface/old/border"]},
+        )
 
 
 if __name__ == "__main__":
