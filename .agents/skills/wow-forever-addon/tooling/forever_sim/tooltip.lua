@@ -232,7 +232,8 @@ function M.build(sim)
 	end
 	impl.CopyTooltip = function() end
 
-	-- The secure delegate the client builds: runs untainted, then restores the caller's taint.
+	-- The secure delegate the client builds: the call starts untainted, then the caller's taint is restored. A body
+	-- authored by an addon taints execution as it runs, as the client's tainted function closure does.
 	G.CreateSecureDelegate = function(f)
 		return function(...)
 			local saved, savedOrigin = Taint.current, Taint.origin

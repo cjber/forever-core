@@ -2,9 +2,9 @@
 --
 -- Every chunk is loaded with a chunk name naming its addon folder ("@SkillUpForever/UI/Tooltip.lua",
 -- "@Blizzard_SharedXML/SharedTooltipTemplates.lua"), and instrumented (transform.lua) so every table field
--- read and write calls __fsi_get / __fsi_set / __fsi_callm here. A field written while an addon runs carries
--- that addon's taint; a secure reader of a tainted field becomes tainted by the addon, exactly as in game.
--- Globals use the same slot idea through the chunk environment.
+-- read and write calls __fsi_get / __fsi_set / __fsi_callm / __fsi_ctor here. A field written while an addon
+-- runs carries that addon's taint; a secure reader of a tainted field becomes tainted by the addon, exactly as in
+-- game. Globals use the same slot idea through the chunk environment.
 --
 -- A call hook is still available (FOREVER_SIM_HOOK=1) to see each function as it starts; the normal path
 -- classifies a function from its chunk name only when it is first seen.
@@ -330,6 +330,20 @@ function M.fieldSet(t, k, v)
 	recordParent(t, k, v)
 	M.writeSlot(t, k, M.writer())
 	t[k] = v
+end
+
+-- A table constructor `{ ... }` writes every field it names. The table's own fields are fresh, so each (table, key)
+-- slot carries the taint of the execution that built it, exactly as `t.k = v` does.
+function M.constructor(t)
+	local info, wrote
+	for k, v in next, t do
+		recordParent(t, k, v)
+		if not wrote then
+			wrote, info = true, M.writer()
+		end
+		M.writeSlot(t, k, info)
+	end
+	return t
 end
 
 -- t:m(...), which reads the method field once and calls it with t.
@@ -728,6 +742,7 @@ function M.installHelpers(G)
 	G.__fsi_get = M.fieldGet
 	G.__fsi_set = M.fieldSet
 	G.__fsi_callm = M.methodCall
+	G.__fsi_ctor = M.constructor
 end
 
 return M

@@ -1,9 +1,10 @@
 -- A Lua 5.1 tokenizer, parser and source rewriter for field taint.
 --
 -- Every table field read (`t.k`, `t[k]`, a method call, and the walks `next`/`pairs` reach) becomes
--- `__fsi_get(t, k)`, and every field write (`t.k = v`, `t[k] = v`, `rawset`, a named method definition)
--- becomes `__fsi_set(t, k, v)`. The helpers in taint.lua record the writer's execution taint per (table,
--- key) slot and taint a secure reader of a tainted slot, which is the client's rule.
+-- `__fsi_get(t, k)`, and every field write (`t.k = v`, `t[k] = v`, `rawset`, a named method definition, a table
+-- constructor's fields) becomes `__fsi_set(t, k, v)` or `__fsi_ctor({...})`. The helpers in taint.lua record the
+-- writer's execution taint per (table, key) slot and taint a secure reader of a tainted slot, which is the
+-- client's rule.
 --
 -- The parser is a real Lua 5.1 parser: it never looks at source with a pattern. The printer keeps every
 -- original token on its original line (comments are dropped, their lines become blank), so error messages
@@ -800,7 +801,7 @@ function Emitter:expression(expr)
 		self:functionBody(expr, false)
 	elseif tag == "Table" then
 		self:at(expr.line)
-		self:raw("{")
+		self:raw("__fsi_ctor({")
 		for i, field in ipairs(expr.fields) do
 			if i > 1 then
 				self:raw(",")
@@ -818,7 +819,7 @@ function Emitter:expression(expr)
 				self:expression(field.value)
 			end
 		end
-		self:raw("}")
+		self:raw("})")
 	elseif tag == "BinOp" then
 		self:expression(expr.left)
 		self:at(expr.opTok and expr.opTok.line)

@@ -146,10 +146,12 @@ function Sim.new(opts)
 	end
 	-- An addon's runtime chunk is instrumented with the marker bound as a local of a wrapper, so the chunk keeps it
 	-- under any environment the addon gives it (a data parser's setfenv(chunk, {})). The chunk name defaults to the
-	-- addon's own code, as the client's does.
+	-- addon's own code, as the client's does. The field helpers are locals for the same reason.
 	local rawLoadstring = loadstring
 	local Instrument = require("instrument")
-	local bind = "local " .. Instrument.MARKER .. " = ...; return function(...) "
+	local bind = "local __fsi_get, __fsi_set, __fsi_callm, __fsi_ctor, "
+		.. Instrument.MARKER
+		.. " = ...; return function(...) "
 	sim.G.loadstring = function(code, name)
 		local addon = Taint.current
 		local chunk, err
@@ -157,7 +159,7 @@ function Sim.new(opts)
 			if addon then
 				local wrapper
 				wrapper, err = rawLoadstring(bind .. Instrument.rewrite(code, addon) .. "\nend", name or code)
-				chunk = wrapper and wrapper(mark)
+				chunk = wrapper and wrapper(Taint.fieldGet, Taint.fieldSet, Taint.methodCall, Taint.constructor, mark)
 			else
 				chunk, err = rawLoadstring(Instrument.rewrite(code, nil), name or code)
 			end

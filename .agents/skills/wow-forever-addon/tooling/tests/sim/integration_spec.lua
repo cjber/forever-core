@@ -153,6 +153,31 @@ test("the gamepad binding stack is watched, and a tainted read blocks the gamepa
 	end
 end)
 
+test("a secure delegate starts secure, and an addon-authored body taints execution", function()
+	local sim = Sim.new()
+	sim:login()
+	sim:runAs(
+		"SimSecureDelegate",
+		[[
+		SimSecureDelegate = CreateSecureDelegate(function()
+			SimSecureDelegateSecure = issecure()
+		end)
+	]]
+	)
+	local secureFn = assert(sim.G.loadstring("return function() return issecure() end"))()
+	local secureDelegate = sim.G.CreateSecureDelegate(secureFn)
+	sim.run(function()
+		sim.G.SimSecureDelegate()
+	end)
+	eq(sim.G.SimSecureDelegateSecure, false, "the addon's body runs tainted through the delegate")
+	local secure
+	sim.run(function()
+		secure = secureDelegate()
+	end)
+	eq(secure, true, "a secure body stays secure through the delegate")
+	sim:expectNoErrors("SimSecureDelegate")
+end)
+
 test("switching to the gamepad runs the interface transition, so a pooled menu's submenu opens clean", function()
 	local sim = Sim.new()
 	orgrimmar(sim)
@@ -573,6 +598,30 @@ test("Professions book page completes OnShow and runs post-hooks", function()
 	]]
 	)
 	sim:expectNoErrors("SimProfessionCaller")
+end)
+
+test("C_TradeSkillUI.CloseTradeSkill closes the opened trade skill through the client's event", function()
+	local sim = Sim.new()
+	blacksmith(sim)
+	sim:login()
+	local pf = sim:openProfessions(164)
+	assert(pf:IsShown(), "the Professions window opened")
+	sim:takeErrors()
+	local closed = 0
+	local watcher = sim.G.CreateFrame("Frame")
+	watcher:RegisterEvent("TRADE_SKILL_CLOSE")
+	watcher:SetScript("OnEvent", function(_, event)
+		if event == "TRADE_SKILL_CLOSE" then
+			closed = closed + 1
+		end
+	end)
+	sim.G.C_TradeSkillUI.CloseTradeSkill()
+	sim:advance(0.05)
+	eq(closed, 1, "TRADE_SKILL_CLOSE fired once")
+	eq(pf:IsShown(), false, "the Professions window's own handler hid it")
+	eq(sim.world.openProfession, nil, "the open trade skill is cleared")
+	eq(sim.G.C_TradeSkillUI.IsTradeSkillReady(), false, "the trade skill is no longer open")
+	sim:expectNoErrors()
 end)
 
 test("an XML frame from LargeSideTabButtonTemplate is a Frame, and refuses OnClick", function()
