@@ -89,8 +89,9 @@ either client caused; pass `addons`, `commands`, `savedVariables` or `allowError
   script names match in any case.
 - **Taint**: every table field read and write in Blizzard's and the addon's Lua is instrumented at load with a
   real Lua 5.1 parser (line numbers kept, Blizzard's rewritten source cached per build). A field written while
-  addon code runs carries that addon's taint; a secure read of it taints execution, and the next protected call
-  is refused with the field, the writer's addon and file:line, and the Blizzard file:line of the read. Method
+  addon code runs carries that addon's taint, including a field a table constructor names; a secure read of it
+  taints execution, and the next protected call is refused with the field, the writer's addon and file:line, and
+  the Blizzard file:line of the read. Method
   calls, `rawget`, `rawset`, `next`, `pairs`, `ipairs` and the table-mutating library functions follow the same
   slot rule. The boundaries match the client: a C API's synchronous Lua runs in the caller's taint, and only an
   engine boundary it really has (an event it fires, a callback it defers to the next frame) is modelled in that

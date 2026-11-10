@@ -566,6 +566,26 @@ function Family.CreatePanel(parent, db, current, safeCall)
 	return panel
 end
 
+-- Blizzard builds the settings rows its gamepad navigation reads in secure execution. This page's row data is built
+-- in addon execution, so what we hand Blizzard carries our taint; the row's gamepad fields then taint the binding
+-- stack and closing the page has the game refuse an action and blame the addon (cjber/tweaks-forever#446). These
+-- builders run as the client through CreateSecureDelegate, or directly on a build without it
+-- (cjber/adventure-guide-forever#592).
+local delegates = setmetatable({}, { __mode = "k" })
+---@param fn function
+---@return function
+local function Secure(fn)
+	if type(CreateSecureDelegate) ~= "function" then
+		return fn
+	end
+	local delegate = delegates[fn]
+	if not delegate then
+		delegate = CreateSecureDelegate(fn)
+		delegates[fn] = delegate
+	end
+	return delegate
+end
+
 -- The client's settings navigation enters only a vertical page. From a canvas page it picks the first row of the
 -- vertical settings list, which still holds the previous page's rows, and leaves the cursor on a hidden frame. So
 -- with the gamepad interface on, this registers the page from the client's own rows, which its navigation can enter.
@@ -601,7 +621,7 @@ function Family.Register(category, db, current, safeCall)
 			end
 		end
 	)
-	Settings.CreateCheckbox(
+	Secure(Settings.CreateCheckbox)(
 		subcategory,
 		setting,
 		L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."]
@@ -610,7 +630,7 @@ function Family.Register(category, db, current, safeCall)
 		if addon.folder ~= current then
 			Settings.RegisterInitializer(
 				subcategory,
-				CreateSettingsButtonInitializer(addon.name, L["Copy link"], function()
+				Secure(CreateSettingsButtonInitializer)(addon.name, L["Copy link"], function()
 					Family.ShowLink(nil, nil, addon.folder, nil)
 				end, L[addon.line], false)
 			)
@@ -618,7 +638,7 @@ function Family.Register(category, db, current, safeCall)
 	end
 	Settings.RegisterInitializer(
 		subcategory,
-		CreateSettingsButtonInitializer(Family.SUPPORT.name, L["Copy link"], function()
+		Secure(CreateSettingsButtonInitializer)(Family.SUPPORT.name, L["Copy link"], function()
 			Family.ShowSupport()
 		end, L[Family.SUPPORT.line], false)
 	)

@@ -263,6 +263,28 @@ test("instrument: every function body and the chunk start report the addon, line
 	assert(loadstring(out))
 end)
 
+test("instrument: table constructor fields carry the writer's taint, as an assignment does", function()
+	Taint.reset()
+	local G = {}
+	local env = Taint.environment(G)
+	Taint.install(G, env)
+	env.__fst = function(addon)
+		Taint.set(addon, { addon = addon, kind = "execution" })
+	end
+	local chunk = assert(loadstring(Instrument.rewrite("return { x = 1, { y = 2 }, [3] = { z = 3 } }", "Addon")))
+	setfenv(chunk, env)
+	local t = chunk()
+	Taint.set(nil)
+	local x = Taint.slotInfo(t, "x")
+	eq(x and x.addon, "Addon", "named field")
+	local array = Taint.slotInfo(t, 1)
+	eq(array and array.addon, "Addon", "array field")
+	local keyed = Taint.slotInfo(t, 3)
+	eq(keyed and keyed.addon, "Addon", "keyed field")
+	local nested = Taint.slotInfo(t[1], "y")
+	eq(nested and nested.addon, "Addon", "nested constructor field")
+end)
+
 test("instrument: a multiple assignment computes every target index before the first write", function()
 	-- Writing each index as it is reached would make the second `#t` count the first append and leave a hole.
 	local out = Instrument.rewrite("local t = {} t[#t + 1], t[#t + 2] = 1, 2 return #t", "Addon")
@@ -273,6 +295,9 @@ test("instrument: a multiple assignment computes every target index before the f
 		__fst = function() end,
 		__fsi_set = function(t, k, v)
 			t[k] = v
+		end,
+		__fsi_ctor = function(t)
+			return t
 		end,
 	})
 	eq(chunk(), 2, "#t")

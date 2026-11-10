@@ -394,6 +394,15 @@ function M.build(sim)
 		end
 		return false
 	end
+	impl["C_TradeSkillUI.CloseTradeSkill"] = function()
+		if not W.openProfession then
+			return
+		end
+		-- Clear the skill before the event, as the client does: ProfessionsFrame:OnHide calls this API again, and
+		-- with nothing open that second call is a no-op rather than another TRADE_SKILL_CLOSE.
+		W.openProfession = nil
+		sim.events.fire("TRADE_SKILL_CLOSE")
+	end
 
 	-- Items.
 	impl["C_Item.GetItemInfo"] = function(id)
