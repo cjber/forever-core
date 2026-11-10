@@ -3,6 +3,8 @@ max_line_length = 120
 exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**"}
 globals = {
 	"EventUtil",
+	-- UI/TrackerHost.lua: the companion tracker registry a store build's vendored host still uses.
+	"ForeverTrackerHost",
 	"ShortestPathForever",
 	"ShortestPathForeverCharDB",
 	"ShortestPathForeverDB",

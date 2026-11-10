@@ -61,6 +61,7 @@
 
 ---@class ForeverTrackerNamespace
 ---@field TrackerHost? ForeverTrackerHostAPI
+---@field TrackerHostForeign? boolean true when a vendored host loaded first and core forwarded to it
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI
 ---@field TrackerQuestie? ForeverTrackerQuestie

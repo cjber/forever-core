@@ -66,6 +66,12 @@ if not ObjectiveTrackerFrame then
 	return
 end
 
+-- Core's own list is a section of core's own column. A host that loaded before ForeverCore owns this game session, so
+-- the section stays out of it and no switch is offered that could not draw anything.
+if ns.TrackerHostForeign then
+	return
+end
+
 local host = ns.TrackerHost
 if not host then
 	EventUtil.ContinueAfterAllEvents(RegisterSettings, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
