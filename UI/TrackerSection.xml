@@ -1,0 +1,5 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- A tracker objective line that takes the mouse. The tracker pools lines by template name, so these never mix
+	     with Blizzard's or another section's lines. TrackerLine.SetInteractive sets its scripts. -->
+	<Frame name="ForeverTrackerInteractiveLineTemplate" inherits="ObjectiveTrackerLineTemplate" enableMouse="true" virtual="true"/>
+</Ui>

@@ -5,6 +5,7 @@ if GetLocale() ~= "zhTW" then
 end
 local L = ns.L
 
+L["+%d more"] = "還有 %d 個"
 L[", "] = ", "
 L["(you)"] = "（你）"
 L["%d yd"] = "%d碼"

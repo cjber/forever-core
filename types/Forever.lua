@@ -115,6 +115,8 @@
 ---@field API integer the interface version; 1 is the first
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
 ---@field TrackerHost? ForeverTrackerHostAPI
+---@field TrackerSection? ForeverTrackerSectionAPI
+---@field TrackerLine? ForeverTrackerLineAPI
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI
 ---@field TrackerQuestie? ForeverTrackerQuestie

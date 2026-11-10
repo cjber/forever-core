@@ -463,15 +463,33 @@ end
 -- The space under each section that draws.
 local GAP = 10
 
+-- A section's own callback runs in that addon's SafeCall, so its failure lands in its journal; core's is the fallback.
+local function RunSafe(safe, label, fn, ...)
+	if safe then
+		return safe(label, fn, ...)
+	end
+	if ns.SafeCall then
+		return ns.SafeCall(label, fn, ...)
+	end
+	return pcall(fn, ...)
+end
+
 -- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
--- column never runs past `available`. Returns whether any section drew.
+-- column never runs past `available`. Returns whether any section drew. One section's layout error is recorded in its
+-- own journal and leaves the sections below it to lay out, instead of breaking the whole column.
 local function LayoutModules(width, available, reserve)
 	ns.TrackerOrder.Sort(modules)
 	local heights, total = {}, 0
 	for index, module in ipairs(modules) do
 		module:SetWidth(width)
-		module:Update(math.max(0, available - total - GAP))
-		local used = module:GetContentsHeight()
+		local ok = RunSafe(
+			module.safeCall,
+			"tracker section update",
+			module.Update,
+			module,
+			math.max(0, available - total - GAP)
+		)
+		local used = ok and module:GetContentsHeight() or 0
 		heights[index] = used
 		if used > 0 then
 			total = total + used + GAP
@@ -761,16 +779,6 @@ function api.SavePosition(x, y)
 	settings.x, settings.y = x, y
 	host:MarkDirty()
 end
--- A section's own callback runs in that addon's SafeCall, so its failure lands in its journal; core's is the fallback.
-local function RunSafe(safe, label, fn, ...)
-	if safe then
-		return safe(label, fn, ...)
-	end
-	if ns.SafeCall then
-		return ns.SafeCall(label, fn, ...)
-	end
-	return pcall(fn, ...)
-end
 
 -- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
 -- column's, without the host learning what the section is.
@@ -789,6 +797,9 @@ local function AddHeaderMenu(module)
 	header:EnableMouse(true)
 	header:HookScript("OnMouseUp", function(_, button)
 		if button ~= "RightButton" then
+			if type(module.OnHeaderClick) == "function" then
+				RunSafe(module.safeCall, "tracker section header", module.OnHeaderClick, module, button)
+			end
 			return
 		end
 		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)

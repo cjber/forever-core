@@ -110,7 +110,6 @@ local function SetNativeCollapsed(collapsed)
 end
 
 local ready = false
-local attached = false
 local ownedByOther = false
 local collapsedByUs = false
 ---@type boolean?
@@ -137,10 +136,15 @@ local function ApplyNativeCollapse(active)
 	end
 end
 
-local section = CreateFrame("Frame", "ForeverCoreQuestTracker", UIParent, "ObjectiveTrackerModuleTemplate")
+local section = ns.TrackerSection.Create("ForeverCoreQuestTracker", QuestObjectiveTrackerMixin, {
+	order = -10,
+	header = TRACKER_HEADER_QUESTS,
+})
+if not section then
+	EventUtil.ContinueAfterAllEvents(RegisterSettings, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
+	return
+end
 ---@cast section ForeverQuestTrackerModule
-Mixin(section, QuestObjectiveTrackerMixin)
-section.uiOrder = -10
 
 ---@class ForeverQuestTrackerOverrides : ForeverQuestTrackerModule
 local Overrides = {}
@@ -359,14 +363,6 @@ for _, event in ipairs({
 	section:RegisterEvent(event)
 end
 
-local function Attach()
-	if attached or not TrackerQuests.Enabled() or ownedByOther then
-		return
-	end
-	host.Attach(section)
-	attached = host.IsAttached(section) == true
-end
-
 ---@param event string
 function Overrides:OnEvent(event)
 	if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
@@ -380,7 +376,6 @@ end
 
 -- Mixin copies at call time: every override, OnEvent included, must be defined before this line.
 Mixin(section, Overrides)
-section:SetHeader(TRACKER_HEADER_QUESTS)
 
 apply = function()
 	if not ready then
@@ -388,9 +383,6 @@ apply = function()
 	end
 	ownedByOther = OtherOwner()
 	local active = TrackerQuests.Enabled() and not ownedByOther
-	if active then
-		Attach()
-	end
 	section:MarkDirty()
 	ApplyNativeCollapse(active)
 end
@@ -406,7 +398,7 @@ EventUtil.ContinueAfterAllEvents(function()
 			if InCombatLockdown() or not TrackerQuests.Enabled() then
 				return
 			end
-			if not attached or section:IsShown() then
+			if host.IsAttached(section) ~= true or section:IsShown() then
 				apply()
 			end
 		end)

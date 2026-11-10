@@ -5,6 +5,7 @@ if GetLocale() ~= "koKR" then
 end
 local L = ns.L
 
+L["+%d more"] = "+%d개 더"
 L[", "] = ", "
 L["(you)"] = "(나)"
 L["%d yd"] = "%dm"
