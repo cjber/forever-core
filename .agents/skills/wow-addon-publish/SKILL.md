@@ -34,21 +34,30 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
 
 ## Requiring ForeverCore
 
-Every Forever addon depends on ForeverCore, the suite's shared library. In the TOC:
+Every Forever addon depends on ForeverCore, the suite's shared library, and ships it inside its own release zip.
+A store dependency does not reach a player who is updating: CurseForge can update the addon without installing its
+required dependency, and a Wago upload carries no dependencies at all, because the packager sends Wago only label,
+patches, stability and changelog. In the TOC:
 
 ```toc
 ## Dependencies: ForeverCore
 ```
 
-and in `.pkgmeta`, so CurseForge and Wago install it automatically:
+In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
+addon's own folder, and no `required-dependencies` entry (one owner for the folder):
 
 ```yaml
-required-dependencies:
-  - ForeverCore
+externals:
+  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.1/ForeverCore-v1.4.1-forever.zip
+
+move-folders:
+  LegacyForever/ForeverCore: ForeverCore
 ```
 
-CurseForge's slug is `forevercore` (project 1796337; `forever-core` belongs to someone else); Wago resolves the dependency from its own project page (see
-`addons.wago.io/addons/forever-core`, project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not ship its runtime files.
+Keep the external's tag equal to the tag in `tools/forever-core.txt`, and `<package-as>/ForeverCore` equal to your
+`package-as`; `tools/check_consumers.py` fails either mismatch. ForeverCore's own store pages are CurseForge
+`forevercore` (project 1796337; `forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core`
+(project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
 
 ## 2. CurseForge project (authors.curseforge.com)
 
