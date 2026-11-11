@@ -170,8 +170,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and push to main: `deadcode`, `check` (luacheck, the specs, the native
-tracker spec, StyLua, ruff, the `tools/` unit tests), `typecheck`, `project-rules` (the client load rule and the menu
-rule), `packaged`, `secrets` and `workflows` (actionlint and zizmor over `.github` and the consumer workflow template).
+tracker spec, StyLua, ruff, the `tools/` unit tests, `tools/changelog.py --check` against the `v*` tags), `typecheck`,
+`project-rules` (the client load rule and the menu rule), `packaged`, `secrets` and `workflows` (actionlint and zizmor
+over `.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and LuaJIT and luacheck are
 installed at that release's exact apt versions, so a runner image update cannot change them.
