@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A consumer can take core's tooling fixes through `sync.py update` again.** `forever_sim/sync.py update` judged the producer's `MANIFEST.json` with the running copy's own file walk, so a consumer whose vendored `sync.py` predated a data file such as `restrictions.txt` refused with a false "the producer's MANIFEST.json is stale". It now judges the producer by the names its own manifest lists, exactly as `forever_tools/sync.py` has since #366, so a consumer carrying the older updater still takes the new files. (#467)
+
 ## [1.7.1] - 2026-11-11
 
 ### For addon authors
