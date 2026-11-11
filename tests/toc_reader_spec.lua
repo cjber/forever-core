@@ -51,6 +51,7 @@ equal(
 		"lua UI/SettingsPage.lua",
 		"lua UI/TrackerQuestie.lua",
 		"lua UI/TrackerEqot.lua",
+		"lua UI/TrackerEllesmere.lua",
 		"lua UI/TrackerLock.lua",
 		"lua UI/TrackerOrder.lua",
 		"lua UI/ContextMenu.lua",

@@ -453,9 +453,13 @@ local TrackerEqot = ns.TrackerEqot
 		end,
 	}
 local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = function() end }
+-- EllesmereUI's custom quest tracker, consulted after EQOT and before Questie: its list is the one a player who chose
+-- it sees, even while its own visibility rules hide the frame.
+local TrackerEllesmere = ns.TrackerEllesmere or { List = function() end, Await = function() end }
 -- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
----@type boolean, boolean, boolean, "eqot"|"questie"|nil, number
-local besideList, besideQuestie, besideEqot, besideKind, displacedRoom = false, false, false, nil, 0
+---@type boolean, boolean, boolean, boolean, "eqot"|"ellesmere"|"questie"|nil, number
+local besideList, besideQuestie, besideEqot, besideEllesmere, besideKind, displacedRoom =
+	false, false, false, false, nil, 0
 
 -- Blizzard's Edit Mode owns the native slot while its manager is on screen. The manager can also be hidden and locked
 -- without exiting (CheckHideAndLockEditMode), which leaves editModeActive true with no EditMode.Exit: a hidden manager
@@ -556,7 +560,9 @@ local function LayoutDetached(settings)
 	if settings.x and settings.y then
 		x, y = settings.x / scale, settings.y / scale
 	else
-		local list = TrackerEqot.List(host, host.MarkDirty) or TrackerQuestie.List(host, host.MarkDirty)
+		local list = TrackerEqot.List(host, host.MarkDirty)
+			or TrackerEllesmere.List(host, host.MarkDirty)
+			or TrackerQuestie.List(host, host.MarkDirty)
 		x, y = Beside(list or ObjectiveTrackerFrame, width, screenHeight)
 	end
 	x = math.max(0, math.min(x, math.max(0, screenWidth - width)))
@@ -653,18 +659,23 @@ end
 -- native tracker keeps its slot. Only our frames move, so this runs in combat too; with `list` nil (the addon hid its
 -- list in combat) the column holds its place until combat ends.
 ---@param list ForeverTrackerEqotList|Frame?
----@param kind "eqot"|"questie"?
+---@param kind "eqot"|"ellesmere"|"questie"?
 local function LayoutBesideList(list, kind)
 	if Editing() then
 		return
 	end
 	besideList, besideKind = true, kind
-	besideEqot, besideQuestie = kind == "eqot", kind == "questie"
+	besideEqot, besideEllesmere, besideQuestie = kind == "eqot", kind == "ellesmere", kind == "questie"
 	if not list then
 		host:SetShown(LayoutModules(host:GetWidth(), displacedRoom, 0))
 		return
 	end
-	local module = kind == "eqot" and TrackerEqot or TrackerQuestie
+	local module = TrackerQuestie
+	if kind == "eqot" then
+		module = TrackerEqot
+	elseif kind == "ellesmere" then
+		module = TrackerEllesmere
+	end
 	host:Show()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
@@ -698,13 +709,19 @@ local function Layout()
 	-- source is UIParent, so this is also its final scale; the native tracker's and a Questie frame's are set below.
 	MatchScale(UIParent)
 	if not attached then
-		besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
+		besideList, besideQuestie, besideEqot, besideEllesmere, besideKind = false, false, false, false, nil
 		LayoutDetached(settings)
 		return
 	end
 	local eqot = TrackerEqot.List(host, host.MarkDirty)
 	if eqot then
 		LayoutBesideList(eqot, "eqot")
+		return
+	end
+	local ellesmere = TrackerEllesmere.List(host, host.MarkDirty)
+	if ellesmere then
+		MatchScale(ellesmere)
+		LayoutBesideList(ellesmere, "ellesmere")
 		return
 	end
 	local questie = TrackerQuestie.List(host, host.MarkDirty)
@@ -718,7 +735,7 @@ local function Layout()
 		LayoutBesideList(nil, besideKind)
 		return
 	end
-	besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
+	besideList, besideQuestie, besideEqot, besideEllesmere, besideKind = false, false, false, false, nil
 	-- A hidden or transparent native tracker, as a replacement UI leaves it, is not the frame the column sits beside.
 	MatchScale(NativeScaleSource())
 	LayoutAttached()
@@ -1022,7 +1039,7 @@ function api.Debug()
 		)
 	end
 	local form = "combat=%s shown=%s hostH=%.1f host[%s] g[%s] nativeH=%.1f native[%s] g[%s] uiS%.2f"
-	return (form .. " questie=%s eqot=%s"):format(
+	return (form .. " questie=%s eqot=%s ellesmere=%s"):format(
 		tostring(InCombatLockdown()),
 		tostring(host:IsShown()),
 		host:GetHeight() or -1,
@@ -1033,7 +1050,8 @@ function api.Debug()
 		geometry(ObjectiveTrackerFrame),
 		UIParent:GetEffectiveScale(),
 		tostring(besideQuestie),
-		tostring(besideEqot)
+		tostring(besideEqot),
+		tostring(besideEllesmere)
 	)
 end
 
@@ -1041,6 +1059,7 @@ EventUtil.ContinueAfterAllEvents(function()
 	ready = true
 	host:MarkDirty()
 	TrackerEqot.Await(host.MarkDirty)
+	TrackerEllesmere.Await(host.MarkDirty)
 	TrackerQuestie.Await(host.MarkDirty)
 end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
 
