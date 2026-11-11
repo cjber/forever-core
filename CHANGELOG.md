@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **ZiiMs is on the Thanks page** for the EllesmereUI tracker support that started in cjber/shortest-path-forever#621.
+
 ## [1.7.2] - 2026-11-11
 
 - **The Professions overview is its own width again.** Since SkillUp's wide recipe list, the overview page with every profession's bar took the widened crafting width, leaving a wide empty strip to the right of its panels. The overview now keeps the game's own width, and the recipe list and every Forever addon's tab keep the one wide width as before. Thanks to qwertzyxc on Discord for the report (cjber/skillup-forever#636).
