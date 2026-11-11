@@ -1,6 +1,6 @@
 -- UI/ProfessionTabs.lua against a stub of the Professions window: two addons register a tab, selecting either shows one
 -- page and checks one tab, a client tab or page hands the window back, and the window keeps one width and its anchor
--- across every switch and profession change.
+-- across every switch and profession change, except on the client's book page, which keeps the client's own width.
 local function newFrame(name, parent)
 	local frame = {
 		name = name,
@@ -141,13 +141,16 @@ local function newWorld()
 	pf.rightProfessionTabs = { native1, native2 }
 	-- A native side tab checks itself and shows its page when the client runs its mouse-up. The module's hook on the
 	-- same script hands our pages back.
+	-- The client's SelectBookPage shows the book and hides the crafting page without resizing the window.
 	overview.OnMouseUp = function(self)
 		self:SetChecked(true)
 		book:Show()
+		crafting:Hide()
 	end
 	native1.OnMouseUp = function(self)
 		self:SetChecked(true)
 		crafting:Show()
+		book:Hide()
 	end
 	native2.OnMouseUp = native1.OnMouseUp
 
@@ -301,12 +304,21 @@ assertWidthAndAnchor(world, width, point, "after a client tab")
 -- And back to a registered tab, then a client page: the client's own page shows and ours hide, never the other way.
 api.Select("commissions")
 assertOnePage(pageA, pageB, "Select(commissions) again")
-world.book:Show()
+pressNative(world.overview)
 assert(world.book.shown, "the client page was hidden by the module")
 assert(not pageA.shown and not pageB.shown, "a registered page stayed shown after a client page")
 assert(not tabA.checked and not tabB.checked, "a registered tab stayed checked after a client page")
 assert(api.Selected() == nil, "a tab stayed selected after a client page")
-assertWidthAndAnchor(world, width, point, "after a client page")
+
+-- The book page lays its panels out at the client's own width, so it keeps that width rather than the fixed one;
+-- a registered page over it, and the crafting page after it, take the fixed width again.
+assertWidthAndAnchor(world, 673, point, "on the client's book page")
+api.Select("skillup")
+assertWidthAndAnchor(world, width, point, "a registered page over the book page")
+pressNative(world.overview)
+assertWidthAndAnchor(world, 673, point, "back on the book page from a registered page")
+pressNative(world.native1)
+assertWidthAndAnchor(world, width, point, "the crafting page after the book page")
 
 -- A profession change resizes the window through the client's own path. The fixed width comes back from
 -- OnSizeChanged and the events, and the anchor stays where it was.
@@ -348,12 +360,12 @@ assertWidthAndAnchor(world, width, point, "after lowering a minWidth to the clie
 api.SetMinWidth("commissions", nil)
 assertWidthAndAnchor(world, width, point, "after clearing every minWidth")
 
--- The client page and its own tabs were never hidden by the module; the only shows are the client's own, run by the
--- spec's mouse-up and page show.
-assert(world.crafting.hideCalls == 0, "the module hid the client crafting page")
-assert(world.book.hideCalls == 0, "the module hid the client book page")
-assert(world.crafting.showCalls == 1, "the module showed or hid the client crafting page")
-assert(world.book.showCalls == 1, "the module showed or hid the client book page")
+-- The client page and its own tabs were never shown or hidden by the module; every show and hide is the client's own,
+-- run by the spec's two mouse-ups on each client tab.
+assert(world.crafting.hideCalls == 2, "the module hid the client crafting page")
+assert(world.book.hideCalls == 2, "the module hid the client book page")
+assert(world.crafting.showCalls == 2, "the module showed or hid the client crafting page")
+assert(world.book.showCalls == 2, "the module showed or hid the client book page")
 
 -- The module's own handback is the same one a client tab or page runs.
 api.ShowNative()

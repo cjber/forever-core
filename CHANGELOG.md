@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-11-11
+
+- **The Professions overview is its own width again.** Since SkillUp's wide recipe list, the overview page with every profession's bar took the widened crafting width, leaving a wide empty strip to the right of its panels. The overview now keeps the game's own width, and the recipe list and every Forever addon's tab keep the one wide width as before. Thanks to qwertzyxc on Discord for the report (cjber/skillup-forever#636).
+
 ### For addon authors
 
 - **A consumer can take core's tooling fixes through `sync.py update` again.** `forever_sim/sync.py update` judged the producer's `MANIFEST.json` with the running copy's own file walk, so a consumer whose vendored `sync.py` predated a data file such as `restrictions.txt` refused with a false "the producer's MANIFEST.json is stale". It now judges the producer by the names its own manifest lists, exactly as `forever_tools/sync.py` has since #366, so a consumer carrying the older updater still takes the new files. (#467)
