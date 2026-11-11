@@ -56,8 +56,12 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		ADDON,
 		[[
 		local ns = ...
-		local pageA = CreateFrame("Frame", "ProfessionTabsScenarioPageA", UIParent)
-		local pageB = CreateFrame("Frame", "ProfessionTabsScenarioPageB", UIParent)
+		local pageA = CreateFrame("Frame", "ProfessionTabsScenarioPageA", _G.ProfessionsFrame)
+		local pageB = CreateFrame("Frame", "ProfessionTabsScenarioPageB", _G.ProfessionsFrame)
+		pageA:SetAllPoints(_G.ProfessionsFrame)
+		pageB:SetAllPoints(_G.ProfessionsFrame)
+		pageA:EnableMouse(true)
+		pageB:EnableMouse(true)
 		local tabA = ns.ProfessionTabs.Register("a", {
 			icon = "Interface\\Icons\\INV_Misc_Note_01",
 			tooltip = "Scenario A",
@@ -101,6 +105,18 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		return count, page
 	end
 
+	-- The native page owns the search, rank and recipe controls. If it remains shown below a custom page, those
+	-- controls are still visible and their hit regions overlap the addon surface.
+	local function nativeShown()
+		for _, name in ipairs({ "CraftingPage", "BookPage", "SpecPage", "OrdersPage" }) do
+			local native = pf[name]
+			if native and native:IsShown() and native:GetAlpha() > 0 then
+				return true, name
+			end
+		end
+		return false
+	end
+
 	-- Tab art is how a check reads: the template shows its selected texture when SetChecked is true.
 	local function checked(tab)
 		return tab.SelectedTexture and tab.SelectedTexture:IsShown()
@@ -129,6 +145,8 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		if not inCombat then
 			local count, page = shown()
 			assert(count == 1 and page == pageA, label .. ": selecting A did not show exactly its own page")
+			local native, name = nativeShown()
+			assert(not native, label .. ": native " .. tostring(name) .. " controls remained visible under page A")
 		end
 		stable(label .. " after A")
 
@@ -138,6 +156,8 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		if not inCombat then
 			local count, page = shown()
 			assert(count == 1 and page == pageB, label .. ": selecting B did not show exactly its own page")
+			local native, name = nativeShown()
+			assert(not native, label .. ": native " .. tostring(name) .. " controls remained visible under page B")
 		end
 		stable(label .. " after B")
 
@@ -147,6 +167,8 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		if not inCombat then
 			local count = shown()
 			assert(count == 0, label .. ": a registered page stayed shown after a client side tab")
+			local native, name = nativeShown()
+			assert(native, label .. ": native " .. tostring(name) .. " controls were not restored")
 		end
 		stable(label .. " after a client side tab")
 

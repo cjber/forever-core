@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-11-11
+
+- **Profession tabs hide the native controls cleanly.** Switching to a Forever profession page no longer leaves the game's crafting controls visible underneath it, and returning to a native page restores the controls and their original transparency.
+
 ## [1.7.3] - 2026-11-11
 
 - **ZiiMs is on the Thanks page** for the EllesmereUI tracker support that started in cjber/shortest-path-forever#621.

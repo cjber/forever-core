@@ -30,6 +30,10 @@ local enforcingWidth = false
 -- Frame work waits for combat to end, the way UI/TrackerQuests.lua does: a protected native window, or an addon page
 -- with a secure child, refuses SetWidth and Show/Hide under our taint.
 local pending = false
+---@type Frame[]
+local hiddenNativePages = {}
+---@type table<Frame, number>
+local nativePageAlpha = {}
 ---@type Frame?
 local watcher
 
@@ -129,8 +133,46 @@ EnforceWidth = function()
 	end
 end
 
--- Show or hide the registered pages. A native page is never touched: the client shows it, and the gamepad footer and
--- its focus stay secure.
+-- Show or hide the registered pages. When a custom page is selected it occupies the native page's slot, so the
+-- currently shown native pages must step aside or their controls remain visible underneath the addon page.
+local function HideNativePages()
+	local window = Window()
+	if not window then
+		return
+	end
+	local function hide(page)
+		if not page or not page:IsShown() then
+			return
+		end
+		for _, hidden in ipairs(hiddenNativePages) do
+			if hidden == page then
+				return
+			end
+		end
+		hiddenNativePages[#hiddenNativePages + 1] = page
+		nativePageAlpha[page] = page:GetAlpha()
+		page:SetAlpha(0)
+	end
+	local pages = window.Pages or {}
+	for _, page in ipairs(pages) do
+		hide(page)
+	end
+	for _, name in ipairs({ "CraftingPage", "BookPage", "SpecPage", "OrdersPage" }) do
+		hide(window[name])
+	end
+end
+
+local function ClearHiddenNativePages()
+	hiddenNativePages = {}
+	nativePageAlpha = {}
+end
+
+local function RestoreNativePages()
+	for _, page in ipairs(hiddenNativePages) do
+		page:SetAlpha(nativePageAlpha[page] or 1)
+	end
+end
+
 ApplyPages = function()
 	if Locked() then
 		Queue()
@@ -139,6 +181,9 @@ ApplyPages = function()
 	local selected = selectedKey and tabs[selectedKey]
 	for _, entry in ipairs(order) do
 		entry.spec.page:SetShown(entry == selected)
+	end
+	if selected then
+		HideNativePages()
 	end
 end
 
@@ -255,6 +300,8 @@ end
 -- so its OnShow is the signal that the client wants its own page, not ours.
 local function NativePageShown()
 	CaptureWidth()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	ns.ProfessionTabs.ShowNative()
 	EnforceWidth()
 end
@@ -262,6 +309,8 @@ end
 -- Every native side tab hands the window back. The tab's own OnMouseUp runs first; our hook then clears our selection
 -- even when the native page was already showing and its OnShow does not fire again.
 local function NativeTabClicked()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	ns.ProfessionTabs.ShowNative()
 end
 
@@ -388,6 +437,8 @@ function api.ShowNative()
 	selectedKey = nil
 	SyncChecked()
 	ApplyPages()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	EnforceWidth()
 end
 

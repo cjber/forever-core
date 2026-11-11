@@ -13,6 +13,7 @@ local function newFrame(name, parent)
 		showCalls = 0,
 		hideCalls = 0,
 		widthCalls = 0,
+		alpha = 1,
 	}
 	function frame:SetPoint(...)
 		self.points = { ... }
@@ -32,6 +33,12 @@ local function newFrame(name, parent)
 	end
 	function frame:IsShown()
 		return self.shown
+	end
+	function frame:SetAlpha(value)
+		self.alpha = value
+	end
+	function frame:GetAlpha()
+		return self.alpha
 	end
 	function frame:Show()
 		self.shown = true
@@ -276,20 +283,33 @@ assertWidthAndAnchor(world, width, point, "after registering both tabs")
 assert(world.frame.widthCalls > 0, "the window width was never set")
 
 -- Selecting a tab shows one page, checks one tab and unchecks every client tab.
+world.crafting:SetAlpha(0.4)
 api.Select("commissions")
 assert(api.Selected() == "commissions", api.Selected())
 assertOnePage(pageA, pageB, "Select(commissions)")
 assert(tabA.checked and not tabB.checked, "tab checks after Select(commissions)")
 assert(not world.overview.checked, "the client's overview tab stayed checked")
 assert(not world.native1.checked and not world.native2.checked, "a client profession tab stayed checked")
+assert(
+	(not world.crafting.shown or world.crafting:GetAlpha() == 0)
+		and (not world.book.shown or world.book:GetAlpha() == 0),
+	"native profession controls stayed visible under the custom page"
+)
 assert(#selected == 1 and selected[1] == "commissions", "onSelect did not run with the key")
 assertWidthAndAnchor(world, width, point, "after Select(commissions)")
+api.ShowNative()
+assert(world.crafting:GetAlpha() == 0.4, "handing back to native did not restore the native crafting page")
 
 -- Switching shows exactly the other page.
 api.Select("skillup")
 assertOnePage(pageB, pageA, "Select(skillup)")
 assert(tabB.checked and not tabA.checked, "tab checks after Select(skillup)")
 assert(not world.overview.checked and not world.native1.checked and not world.native2.checked, "a client tab checked")
+assert(
+	(not world.crafting.shown or world.crafting:GetAlpha() == 0)
+		and (not world.book.shown or world.book:GetAlpha() == 0),
+	"native profession page stayed visible under the second custom page"
+)
 assert(#selected == 2 and selected[2] == "skillup", "onSelect did not run for the second tab")
 assertWidthAndAnchor(world, width, point, "after Select(skillup)")
 
@@ -360,15 +380,19 @@ assertWidthAndAnchor(world, width, point, "after lowering a minWidth to the clie
 api.SetMinWidth("commissions", nil)
 assertWidthAndAnchor(world, width, point, "after clearing every minWidth")
 
--- The client page and its own tabs were never shown or hidden by the module; every show and hide is the client's own,
--- run by the spec's two mouse-ups on each client tab.
-assert(world.crafting.hideCalls == 2, "the module hid the client crafting page")
-assert(world.book.hideCalls == 2, "the module hid the client book page")
-assert(world.crafting.showCalls == 2, "the module showed or hid the client crafting page")
-assert(world.book.showCalls == 2, "the module showed or hid the client book page")
+-- Selecting a custom page hides the native page beneath it; native clicks still own restoration.
+assert(
+	not world.crafting.shown or world.crafting:GetAlpha() == 0,
+	"the native crafting controls were not cleared under custom pages"
+)
+assert(
+	not world.book.shown or world.book:GetAlpha() == 0,
+	"the native book controls were not cleared under custom pages"
+)
 
 -- The module's own handback is the same one a client tab or page runs.
 api.ShowNative()
+assert(world.crafting:GetAlpha() == 0.4, "native crafting alpha was not preserved across handback")
 assert(not pageA.shown and not pageB.shown, "ShowNative left a registered page shown")
 assert(not tabA.checked and not tabB.checked, "ShowNative left a registered tab checked")
 assert(api.Selected() == nil, "ShowNative left a tab selected")
@@ -442,5 +466,21 @@ assert(late.frame:GetWidth() == 673, "the module set a width before the client l
 assert(late.frame.widthCalls == lateWidthCalls, "the module wrote the window width before the engine's width was known")
 late.crafting:Show()
 assert(late.frame:GetWidth() == 900, "the module did not take the width once the client laid its page out")
+
+-- Optional client pages can be absent on a build. A shown BookPage must still step aside when CraftingPage is nil.
+local optional = newWorld()
+optional.frame.CraftingPage = nil
+optional.frame.Pages = { optional.book }
+optional.book:Show()
+local optionalApi = load({})
+optionalApi.Register("optional", {
+	icon = "Interface\\Icons\\INV_Misc_Note_03",
+	tooltip = "Optional",
+	page = newFrame("ForeverOptionalPage"),
+})
+optionalApi.Select("optional")
+assert(optional.book:GetAlpha() == 0, "a shown optional native page stayed visible when CraftingPage was absent")
+optionalApi.ShowNative()
+assert(optional.book:GetAlpha() == 1, "the optional native page was not restored after handback")
 
 print("profession_tabs_spec: ok")
