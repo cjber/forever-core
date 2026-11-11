@@ -25,7 +25,9 @@
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
 
 ---@class ForeverProfessionTabsAPI
+---@field minor integer raised with each member this module adds
 ---@field Register fun(key: string, spec: ForeverProfessionTabSpec): ForeverProfessionTab
+---@field SetMinWidth fun(key: string, width: number?)
 ---@field Select fun(key: string)
 ---@field ShowNative fun()
 ---@field Selected fun(): string?

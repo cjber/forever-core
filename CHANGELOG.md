@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- `ForeverCore.ProfessionTabs.SetMinWidth(key, width)` lets a registration change its `minWidth` after it registered. It recomputes and enforces the one window width across tabs and professions, `nil` clears it, and in combat the change waits with the module's other frame work. `ForeverCore.ProfessionTabs.minor` is now 1. (#433)
+
 ## [1.4.1] - 2026-11-11
 
 ### For addon authors

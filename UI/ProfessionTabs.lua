@@ -295,6 +295,9 @@ end
 ---@class ForeverProfessionTabsAPI
 local api = {}
 
+-- The module's own version, raised with each member it adds. SetMinWidth arrived in minor 1.
+api.minor = 1
+
 ---@param key string
 ---@param spec ForeverProfessionTabSpec
 ---@return ForeverProfessionTab
@@ -326,6 +329,23 @@ function api.Register(key, spec)
 	RecomputeWidth()
 	EnforceWidth()
 	return tab
+end
+
+-- A page whose needed width changes after it registered raises or clears its minWidth, and the one width the window
+-- keeps is recomputed and enforced. In combat the change waits with the rest of the frame work.
+---@param key string
+---@param width number?
+function api.SetMinWidth(key, width)
+	if type(key) ~= "string" or key == "" then
+		error("ForeverCore.ProfessionTabs.SetMinWidth: key must be a non-empty string", 2)
+	end
+	local entry = tabs[key]
+	if not entry then
+		error("ForeverCore.ProfessionTabs.SetMinWidth: key not registered: " .. key, 2)
+	end
+	entry.spec.minWidth = width
+	RecomputeWidth()
+	EnforceWidth()
 end
 
 ---@param key string
