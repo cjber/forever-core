@@ -22,13 +22,26 @@ the addon's specs and CI test against the core a player runs. The pin change rid
 says what moved. A pin that is newer, equal or not a `vX.Y.Z` tag is left alone, and a run that cannot read the latest
 release leaves every pin alone rather than failing the tooling sync.
 
+The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
+it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
+(adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
+repaired even when the pin does not move. When the tag the external downloads changes, whether the pin moved or a
+lagging bundle was repaired, the run also gives the consumer a release entry in `CHANGELOG.md` so the core reaches
+players. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
+and TOC field move with no entry. The entry goes above the newest released version, keeps any notes under
+`## [Unreleased]` above it, raises that newest patch by one and carries the `<!-- forever-core-sync -->` marker;
+`tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
+already carries the marker gets no second entry, and one with no `CHANGELOG.md`, no release entry or no
+`## [Unreleased]` heading gets a notice and no entry.
+
     python3 tools/sync_consumer_prs.py
 
-Set `GH_TOKEN` to the `CONSUMER_SYNC_TOKEN` secret, a fine-grained PAT with Contents, Pull requests and Workflows
-write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` is vendored). The
-token must also reach the private `kiln-forever` repository, which is in the vendoring map; without access its sync is
-reported as failed in the run summary rather than silently leaving that consumer behind. Without a token at all the
-script prints a notice and exits 0, so the workflow stays green until the owner adds the secret.
+Set `GH_TOKEN` to the `CONSUMER_SYNC_TOKEN` secret, a fine-grained PAT with Contents, Pull requests, Workflows and
+Actions write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` is vendored,
+Actions because `tools/release_consumers.py` dispatches each consumer's `release.yml`). The token must also reach the
+private `kiln-forever` repository, which is in the vendoring map; without access its sync is reported as failed in the
+run summary rather than silently leaving that consumer behind. Without a token at all the script prints a notice and
+exits 0, so the workflow stays green until the owner adds the secret.
 """
 
 import base64
@@ -40,8 +53,10 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 
+from check_consumers import core_external, pkgmeta_field
 from check_core_shared import VENDORED, consumer_path
 
 OWNER = "cjber"
@@ -53,6 +68,19 @@ TITLE = "chore: sync shared files from forever-core"
 PIN_PATH = "tools/forever-core.txt"
 # The only pin form this can compare and move; anything else is a maintainer's decision, not a bump.
 RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+# The consumer-side bundle a moved pin rewrites: the shipped core's `.pkgmeta` external, the TOC field naming it, and
+# the changelog release entry that `tools/release_consumers.py` finds by this marker.
+PKGMETA = ".pkgmeta"
+CORE_EXTERNAL = re.compile(r"^(?P<indent>[ \t]*)ForeverCore:[ \t]*\S+[^\r\n]*", re.IGNORECASE | re.MULTILINE)
+# The tag inside that external's download URL, `.../download/v1.4.1/ForeverCore-v1.4.1-forever.zip`.
+EXTERNAL_TAG = re.compile(r"/download/(?P<tag>[^/\s]+)/", re.IGNORECASE)
+TOC_CORE_FIELD = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
+TOC_DEPENDENCIES = re.compile(r"^##[ \t]*Dependencies[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
+CHANGELOG = "CHANGELOG.md"
+UNRELEASED = re.compile(r"^## \[Unreleased\][ \t]*$", re.MULTILINE)
+RELEASED = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\]", re.MULTILINE)
+SYNC_MARKER = "<!-- forever-core-sync -->"
+SYNC_BULLET = "- Ships with the same shared code as your other Forever addons, so they keep working together."
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
 # Where this checkout keeps each tooling package's producer, the PRODUCER_PATH both sync.py files carry.
 TOOLING_PRODUCER_ROOT = ".agents/skills/wow-forever-addon/tooling"
@@ -142,18 +170,18 @@ def release_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
-def bump_pin(root: Path, latest: str | None) -> str | None:
+def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str | None:
     """Move the consumer's ForeverCore pin up to `latest`, returning the tag it moved from.
 
     `root` is a clone named after the consumer's repository, so a consumer whose addon lives below its root
     (kiln-forever) gets the pin at the path CONSUMER_ROOT names. A pin that is equal, newer, or not a `vX.Y.Z` tag is
     left exactly as it is: the pin never moves backwards, and a tag this cannot compare is a maintainer's call.
+
+    Every run also points the bundle at the pin, moved or not: the `.pkgmeta` external and the root TOC's
+    `## X-Forever-Core:` field name the release the pin ships, so a consumer that pins v1.5.0 while its zip still
+    downloads v1.4.1 is repaired. A marked `CHANGELOG.md` entry is added only when the tag the external downloads
+    changes, so a repair to an unchanged pin still gives the release that carries it a reason to ship.
     """
-    if not latest:
-        return None
-    latest_version = release_version(latest)
-    if latest_version is None:
-        return None
     path = root / consumer_path(root.name, PIN_PATH)
     if not path.is_file():
         return None
@@ -162,10 +190,163 @@ def bump_pin(root: Path, latest: str | None) -> str | None:
     if current_version is None:
         print(f"{root.name}: {consumer_path(root.name, PIN_PATH)} is not a vX.Y.Z tag ({current!r}); leaving it alone.")
         return None
-    if current_version >= latest_version:
+    pinned = current
+    bumped = None
+    latest_version = release_version(latest) if latest else None
+    if latest_version is not None and current_version < latest_version:
+        pinned = latest
+        bumped = current
+        path.write_text(f"{latest}\n", encoding="utf-8")
+    update_bundle(root, pinned, today, current)
+    return bumped
+
+
+def pkgmeta_path(root: Path) -> Path:
+    """Where the consumer keeps its `.pkgmeta`, below its addon folder when that is not the repo root."""
+    return root / consumer_path(root.name, PKGMETA)
+
+
+def rewrite_core_external(root: Path, pin: str) -> bool:
+    """Point the consumer's `.pkgmeta` ForeverCore external at `pin`, returning whether it changed.
+
+    A consumer without a `.pkgmeta`, or one whose `externals:` does not ship ForeverCore, is left alone: the tooling
+    sync does not decide that an addon bundles core.
+    """
+    path = pkgmeta_path(root)
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    if not CORE_EXTERNAL.search(text):
+        return False
+    updated = CORE_EXTERNAL.sub(lambda match: f"{match['indent']}ForeverCore: {core_external(pin)}", text, count=1)
+    if updated == text:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
+def root_toc_path(root: Path) -> Path | None:
+    """The consumer's root TOC, named after `package-as` as the packager names it, or None when that is unknown."""
+    path = pkgmeta_path(root)
+    if not path.is_file():
         return None
-    path.write_text(f"{latest}\n", encoding="utf-8")
-    return current
+    package = pkgmeta_field(path.read_text(encoding="utf-8"), "package-as")
+    return root / consumer_path(root.name, f"{package}.toc") if package else None
+
+
+def rewrite_toc_core_field(root: Path, pin: str) -> bool:
+    """Set the root TOC's `## X-Forever-Core:` to `pin`, adding it after `## Dependencies:` when absent.
+
+    The client reads the field at load, so a player's other Forever addon can name a sibling that bundles a different
+    core. A TOC with no `## Dependencies:` line is left alone rather than guessed at.
+    """
+    path = root_toc_path(root)
+    if path is None or not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    field = f"## X-Forever-Core: {pin}"
+    if TOC_CORE_FIELD.search(text):
+        updated = TOC_CORE_FIELD.sub(field, text, count=1)
+    else:
+        dependencies = TOC_DEPENDENCIES.search(text)
+        if not dependencies:
+            print(f"{root.name}: {path.name} has no `## Dependencies:` line; leaving out `## X-Forever-Core:`.")
+            return False
+        updated = f"{text[: dependencies.end()]}\n{field}{text[dependencies.end() :]}"
+    if updated == text:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
+def next_version(text: str) -> str | None:
+    """The newest `## [X.Y.Z]` heading with its patch incremented, or None when the changelog has no release."""
+    versions = [tuple(int(part) for part in match["version"].split(".")) for match in RELEASED.finditer(text)]
+    if not versions:
+        return None
+    major, minor, patch = max(versions)
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def newest_entry_body(text: str) -> str | None:
+    """The newest `## [X.Y.Z]` entry's body, or None when the changelog has no release."""
+    matches = list(RELEASED.finditer(text))
+    if not matches:
+        return None
+    newest = max(matches, key=lambda match: tuple(int(part) for part in match["version"].split(".")))
+    following = re.search(r"^## ", text[newest.end() :], re.MULTILINE)
+    end = newest.end() + following.start() if following else len(text)
+    return text[newest.end() : end]
+
+
+def with_sync_entry(text: str, version: str, day: str) -> str | None:
+    """`text` with a marked release entry for `version` at the top, the notes under `## [Unreleased]` kept above it."""
+    unreleased = UNRELEASED.search(text)
+    if not unreleased:
+        return None
+    after = text[unreleased.end() :]
+    following = re.search(r"^## ", after, re.MULTILINE)
+    end = following.start() if following else len(after)
+    notes = after[:end].strip()
+    rest = after[end:]
+    entry = f"## [{version}] - {day}\n\n{SYNC_MARKER}\n\n{SYNC_BULLET}\n"
+    head = f"{text[: unreleased.end()]}\n\n"
+    body = f"{notes}\n\n" if notes else ""
+    return f"{head}{body}{entry}\n{rest}".rstrip("\n") + "\n"
+
+
+def add_changelog_entry(root: Path, today: date | None = None) -> bool:
+    """Give a consumer whose bundled core changed a release entry the release workflow can find."""
+    path = root / CHANGELOG
+    if not path.is_file():
+        print(f"{root.name}: no {CHANGELOG}; no release entry added for the core sync.")
+        return False
+    text = path.read_text(encoding="utf-8")
+    if SYNC_MARKER in (newest_entry_body(text) or ""):
+        print(f"{root.name}: {CHANGELOG} already has an unreleased ForeverCore sync entry; no second entry added.")
+        return False
+    version = next_version(text)
+    if version is None:
+        print(f"{root.name}: {CHANGELOG} has no `## [X.Y.Z]` release to raise; no release entry added.")
+        return False
+    day = (today or datetime.now(timezone.utc).date()).isoformat()
+    updated = with_sync_entry(text, version, day)
+    if updated is None:
+        print(f"{root.name}: {CHANGELOG} has no `## [Unreleased]` heading; no release entry added.")
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
+def bundle_tag(root: Path) -> str | None:
+    """The tag the consumer's `.pkgmeta` ForeverCore external downloads, or None when it ships none."""
+    path = pkgmeta_path(root)
+    if not path.is_file():
+        return None
+    match = CORE_EXTERNAL.search(path.read_text(encoding="utf-8"))
+    tag = EXTERNAL_TAG.search(match.group(0)) if match else None
+    return tag["tag"] if tag else None
+
+
+def ships_core(root: Path) -> bool:
+    """Whether the consumer's `.pkgmeta` ships ForeverCore as an external, so its release zip carries core."""
+    path = pkgmeta_path(root)
+    return path.is_file() and CORE_EXTERNAL.search(path.read_text(encoding="utf-8")) is not None
+
+
+def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
+    """Point the bundle at `pin`, adding a release entry only when a consumer that ships core changes its tag.
+
+    A consumer whose `.pkgmeta` has no ForeverCore external (kiln-forever has no `.pkgmeta` at all) bundles no core, so
+    a pin that moves gives its own release nothing to carry: it still gets the pin and the TOC field, and no entry.
+    """
+    bundles = ships_core(root)
+    before = bundle_tag(root) or previous_pin
+    rewrite_core_external(root, pin)
+    rewrite_toc_core_field(root, pin)
+    after = bundle_tag(root) or pin
+    if bundles and after != before:
+        add_changelog_entry(root, today)
 
 
 def repo_vendors_tooling(repo: str) -> bool:
@@ -362,6 +543,9 @@ def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None =
         lines += [
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
             " latest release.",
+            "",
+            "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and adds a"
+            " marked CHANGELOG.md release entry for the release-consumers workflow to publish.",
             "",
         ]
     lines += [

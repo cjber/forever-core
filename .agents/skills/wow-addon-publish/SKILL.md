@@ -41,6 +41,7 @@ patches, stability and changelog. In the TOC:
 
 ```toc
 ## Dependencies: ForeverCore
+## X-Forever-Core: v1.4.1
 ```
 
 In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
@@ -54,10 +55,21 @@ move-folders:
   LegacyForever/ForeverCore: ForeverCore
 ```
 
-Keep the external's tag equal to the tag in `tools/forever-core.txt`, and `<package-as>/ForeverCore` equal to your
-`package-as`; `tools/check_consumers.py` fails either mismatch. ForeverCore's own store pages are CurseForge
-`forevercore` (project 1796337; `forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core`
-(project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
+Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
+`<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails
+a TOC that lists core in `## Dependencies` but names no core release. The field is what a sibling addon reads at load to
+name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge `forevercore` (project 1796337;
+`forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core` (project ID `RNL4RQNo`). Do not
+list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
+
+Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
+release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC
+field, and adds a release entry to `CHANGELOG.md` above the newest version: the next patch, dated today, with the marker
+`<!-- forever-core-sync -->` and the plain bullet about the shared code. Any notes already under `## [Unreleased]` stay
+there, above the new heading. `tools/release_consumers.py` then dispatches the addon's own `release.yml` once full CI on
+main is green, skipping it while the tag exists or a release is queued or running. Do not delete or edit a marked entry
+by hand; a release published without the new core leaves that addon's zip with an old copy. The `CONSUMER_SYNC_TOKEN`
+secret needs Actions write on the consumers, because dispatching their release is a workflow run.
 
 ## 2. CurseForge project (authors.curseforge.com)
 

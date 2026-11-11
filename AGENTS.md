@@ -116,9 +116,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   it.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
-  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and its `.pkgmeta` must not ship
-  ForeverCore under `externals:` while a consumer whose root TOC lists ForeverCore in `## Dependencies` must declare
-  `- forevercore` under `required-dependencies:`.
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC lists
+  ForeverCore in `## Dependencies` must ship it in its own zip (`externals:` at the pin and
+  `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
+  `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
   `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
   timing.
 - `tools/sync_consumer_prs.py`: the automatic tooling sync behind `.github/workflows/sync-consumers.yml`. On every push
@@ -126,10 +127,22 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `GITHUB_TOKEN` fires no push event), it derives the consumers from `VENDORED` plus the live repositories that vendor
   `tools/forever_tools/` or `tools/forever_sim/`, runs the same syncs as `sync_consumers.py`, regenerates each
   consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and moves each consumer's `tools/forever-core.txt`
-  pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone), then
+  pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone). A moved pin
+  also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, and, when that consumer's
+  `.pkgmeta` ships a ForeverCore external whose tag changed, adds a marked `CHANGELOG.md` release entry, then the run
   creates the signed commit through the GraphQL `createCommitOnBranch` mutation and opens an auto-merging PR in each
   consumer. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green.
   `tools/test_sync_consumer_prs.py` is its spec.
+- `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
+  20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
+  `## [X.Y.Z]` entry carries `<!-- forever-core-sync -->`, its tag does not exist, no `release.yml` run is queued or
+  running, no `release.yml` run at that head has already failed, and `ci.yml` on that head is green, it dispatches the
+  consumer's `release.yml` with the version and commit. A consumer whose release already failed at main's head is
+  reported as failed, so the job goes red instead of retrying every 20 minutes; the maintainer fixes it and dispatches
+  by hand.
+  Every core release therefore re-releases every consumer, whose zips all carry the same `ForeverCore` folder. It is
+  dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
+  prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
 - `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from
   this checkout. It opens and closes every loaded addon that depends on ForeverCore (read from the client, so a new
   addon is covered with no list to update) and the world map, saving a pass or fail per surface in `DevSmokeDB`,

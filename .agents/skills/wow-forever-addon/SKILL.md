@@ -27,7 +27,13 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   in the TOC, and in `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
   with `move-folders:` `<package-as>/ForeverCore: ForeverCore`, with no `required-dependencies` entry. A store update
   can skip a required dependency, and the packager sends Wago no dependency list, so the zip carries the core. It is
-  the suite's shared library, not a second addon the player has to choose.
+  the suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
+  `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. Every core
+  release re-releases every addon automatically: the core sync PR moves the pin, rewrites the external and the TOC
+  field, and adds a marked `CHANGELOG.md` entry, then `release-consumers.yml` dispatches each addon's own release once
+  its full CI on main is green. Each addon's `Core/Require.lua` computes `ready` from feature checks of every
+  post-API-1 ForeverCore member it calls, never a version comparison, and calls `ns.ForeverRequire(ready)`; the
+  vendored file is never edited in a consumer.
 - **WFA-28** Game data has two sources: the installed QuestieDB (quests, NPCs, objects, spawns,
   vendors, trainers' places) and AtlasLoot (bosses, loot, recipes, drop rates), read at runtime
   through their public tables. Neither is copied into the repo or the zip: QuestieDB carries no
