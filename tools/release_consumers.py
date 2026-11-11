@@ -98,15 +98,20 @@ def has_pending_release(runs: dict) -> bool:
 
 
 def has_failed_release(runs: dict, sha: str) -> bool:
-    """Whether a `release.yml` run on `sha` already finished with a conclusion other than success.
+    """Whether the newest finished `release.yml` run on `sha` ended in anything but success.
 
     A 20-minute cron would otherwise dispatch the same failing release again and again, forever, so a failure at the
-    head commit is the maintainer's to fix and dispatch by hand.
+    head commit is the maintainer's to fix and dispatch by hand. Only the newest finished run counts, so a failure
+    rerun to success clears. A release tags its commit before the packager uploads, so this is read before the tag:
+    a tag left by a failed upload is not a published release.
     """
-    return any(
-        run.get("head_sha") == sha and run.get("status") == "completed" and run.get("conclusion") != "success"
-        for run in runs.get("workflow_runs", [])
-    )
+    finished = [
+        run for run in runs.get("workflow_runs", []) if run.get("head_sha") == sha and run.get("status") == "completed"
+    ]
+    if not finished:
+        return False
+    newest = max(finished, key=lambda run: run.get("run_started_at") or "")
+    return newest.get("conclusion") != "success"
 
 
 def decide(
@@ -130,17 +135,18 @@ def decide(
     version, body = entry
     if MARKER not in body:
         return Decision(reason=f"the newest entry, v{version}, is not a ForeverCore sync")
-    if tag_exists:
-        return Decision(reason=f"v{version} is already released")
     if release_pending:
         return Decision(reason=f"{RELEASE_WORKFLOW} is queued or running")
-    if head is None:
-        return Decision(reason="main has no head commit")
-    if release_failed:
+    if release_failed and head is not None:
+        # Before the tag: a release tags its commit before it uploads, so a failed upload leaves a tag behind.
         return Decision(
             reason=f"{RELEASE_WORKFLOW} failed at {head[:7]}; fix it and dispatch by hand",
             failed=True,
         )
+    if tag_exists:
+        return Decision(reason=f"v{version} is already released")
+    if head is None:
+        return Decision(reason="main has no head commit")
     if ci_state != "completed/success":
         return Decision(reason=f"{CI_WORKFLOW} on main's head {head[:7]} is {ci_state}")
     return Decision(version, head, f"releases v{version} at {head}")
@@ -201,13 +207,13 @@ def plan(repo: str) -> Decision:
     if entry is None or MARKER not in entry[1]:
         return decide(changelog, None, False, False, "none")
     version = entry[0]
-    if tag_exists(repo, f"v{version}"):
-        return decide(changelog, None, True, False, "none")
     runs = release_runs(repo)
     if has_pending_release(runs):
         return decide(changelog, None, False, True, "none")
     if has_failed_release(runs, head):
         return decide(changelog, head, False, False, "none", release_failed=True)
+    if tag_exists(repo, f"v{version}"):
+        return decide(changelog, None, True, False, "none")
     return decide(changelog, head, False, False, ci_state(ci_runs(repo, head), head))
 
 

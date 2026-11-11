@@ -103,6 +103,11 @@ class FailedReleaseTest(unittest.TestCase):
     def test_a_running_release_is_not_failed(self):
         self.assertFalse(release.has_failed_release(runs(release_run("in_progress", None)), SHA))
 
+    def test_a_failure_rerun_to_success_is_not_failed(self):
+        failed = {**release_run("completed", "failure"), "run_started_at": "2026-11-11T10:00:00Z"}
+        passed = {**release_run("completed", "success"), "run_started_at": "2026-11-11T11:00:00Z"}
+        self.assertFalse(release.has_failed_release(runs(failed, passed), SHA))
+
     def test_no_runs_is_not_failed(self):
         self.assertFalse(release.has_failed_release(runs(), SHA))
 
@@ -197,18 +202,30 @@ class PlanTest(unittest.TestCase):
         pending.assert_not_called()
         ci.assert_not_called()
 
-    def test_an_existing_tag_is_checked_before_the_workflows(self):
+    def test_an_existing_tag_with_a_finished_release_reads_no_ci(self):
         with (
             mock.patch.object(release, "main_head", return_value=SHA),
             mock.patch.object(release, "read_changelog", return_value=SYNC_ENTRY),
             mock.patch.object(release, "tag_exists", return_value=True),
-            mock.patch.object(release, "release_runs") as pending,
+            mock.patch.object(release, "release_runs", return_value=runs(release_run("completed", "success"))),
             mock.patch.object(release, "ci_runs") as ci,
         ):
             decision = release.plan("legacy-forever")
         self.assertFalse(decision.release)
-        pending.assert_not_called()
+        self.assertFalse(decision.failed)
         ci.assert_not_called()
+
+    def test_a_tag_left_by_a_failed_upload_is_a_failed_release(self):
+        with (
+            mock.patch.object(release, "main_head", return_value=SHA),
+            mock.patch.object(release, "read_changelog", return_value=SYNC_ENTRY),
+            mock.patch.object(release, "tag_exists", return_value=True),
+            mock.patch.object(release, "release_runs", return_value=runs(release_run("completed", "failure"))),
+            mock.patch.object(release, "ci_runs"),
+        ):
+            decision = release.plan("legacy-forever")
+        self.assertFalse(decision.release)
+        self.assertTrue(decision.failed)
 
     def test_a_pending_release_is_checked_before_ci(self):
         with (
