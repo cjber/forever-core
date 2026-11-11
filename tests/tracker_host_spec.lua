@@ -132,6 +132,15 @@ hidden.native.effectiveScale, hidden.native.shown = 0.01, false
 hidden.ready()
 hidden.drain()
 hidden.check(math.abs(hidden.host:GetScale() - 1) < 1e-9, "a detached column ignores the hidden native tracker's scale")
+-- IsShown is true for a frame under a hidden parent; only effective visibility says the tracker is really gone.
+local hiddenParent = harness.new({ hostSettings = { attached = true } })
+hiddenParent.native.effectiveScale, hiddenParent.native.shown, hiddenParent.parent.shown = 0.01, true, false
+hiddenParent.ready()
+hiddenParent.drain()
+hiddenParent.check(
+	math.abs(hiddenParent.host:GetScale() - 1) < 1e-9,
+	"a shown native tracker under a hidden parent is not the source"
+)
 local transparent = harness.new({ hostSettings = { attached = true } })
 transparent.native.effectiveScale, transparent.native.alpha = 0.01, 0
 transparent.ready()

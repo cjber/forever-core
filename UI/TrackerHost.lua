@@ -179,7 +179,14 @@ local function NativeScaleSource()
 	if not frame then
 		return UIParent
 	end
-	local shown = frame.IsVisible and frame:IsVisible() or (frame.IsShown and frame:IsShown())
+	-- IsVisible is effective visibility: the frame and every ancestor shown. A shown tracker under a hidden parent
+	-- is not visible, so it must not be the scale source. IsShown is only a fallback for a stub with no IsVisible.
+	local shown
+	if frame.IsVisible then
+		shown = frame:IsVisible()
+	elseif frame.IsShown then
+		shown = frame:IsShown()
+	end
 	local alpha = 1
 	if frame.GetEffectiveAlpha then
 		alpha = frame:GetEffectiveAlpha()
