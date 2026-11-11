@@ -146,6 +146,21 @@ class ProseWordsTest(unittest.TestCase):
             path.write_text(family.BLOCK + "\n", encoding="utf-8")
             self.assertEqual(self.copy.hits(path) + self.copy.stacked(path), [])
 
+    def test_a_gallery_caption_over_curseforges_limit_is_flagged(self):
+        long, short = "x" * 129, "x" * 128
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("curseforge.md", "gallery.md"):
+                path = Path(directory) / name
+                path.write_text(
+                    f"![{long}](docs/screenshots/a.png)\nWords.\n![{short}](docs/screenshots/b.png)\n"
+                    f'Words.\n<img alt="{long}" src="docs/screenshots/c.png">\n',
+                    encoding="utf-8",
+                )
+                self.assertEqual([hit.split(":")[1] for hit in self.copy.long_captions(path)], ["1", "5"])
+            readme = Path(directory) / "README.md"
+            readme.write_text(f"![{long}](docs/screenshots/a.png)\n", encoding="utf-8")
+            self.assertEqual(self.copy.long_captions(readme), [])
+
     def test_screenshots_with_no_words_between_are_flagged(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "README.md"

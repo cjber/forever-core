@@ -4,6 +4,9 @@ Usage: check_copy.py FILE... ; exits 1 and prints file:line: phrase for each hit
 stacked under another with no text between (WFA-25).
 Image alt text and code spans are skipped: they quote the game, not our voice.
 
+In curseforge.md and gallery.md, each screenshot's alt text is its CurseForge gallery caption, which CurseForge
+caps at 128 characters; a longer one fails.
+
 check_copy.py --words FILE... also prints each file's prose words beside its WFA-10/11 limit (README.md
 under 1,200, curseforge.md under 1,000), so every repo measures the same way. The count is a guide and never
 fails. The shared forever-family block, code, images, link addresses and HTML tags are not counted:
@@ -89,6 +92,36 @@ def stacked(path: Path) -> list[str]:
     return found
 
 
+# CurseForge's gallery caption limit. The gallery is built from these two files, titled with each image's alt text.
+CAPTION_LIMIT = 128
+GALLERY_SOURCES = {"curseforge.md", "gallery.md"}
+MARKDOWN_IMAGE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<src>[^)]*)\)")
+HTML_IMAGE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+ATTRIBUTE = re.compile(r"\b(alt|src)=\"([^\"]*)\"", re.IGNORECASE)
+
+
+def images(line: str) -> list[tuple[str, str]]:
+    """Each image on a line as (alt, src), Markdown and HTML alike."""
+    found = [(match["alt"], match["src"]) for match in MARKDOWN_IMAGE.finditer(line)]
+    for tag in HTML_IMAGE.findall(line):
+        attributes = {name.lower(): value for name, value in ATTRIBUTE.findall(tag)}
+        found.append((attributes.get("alt", ""), attributes.get("src", "")))
+    return found
+
+
+def long_captions(path: Path) -> list[str]:
+    """Screenshots whose alt text, their gallery caption, is over CurseForge's limit."""
+    if path.name not in GALLERY_SOURCES:
+        return []
+    found = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for alt, src in images(line):
+            if SCREENSHOT.search(src) and len(alt) > CAPTION_LIMIT:
+                limit = f"CurseForge's {CAPTION_LIMIT}-character caption limit"
+                found.append(f"{path}:{number}: alt text is {len(alt)} characters, over {limit}")
+    return found
+
+
 LIMITS = {"README.md": 1200, "curseforge.md": store_page.MAX_WORDS}
 words = store_page.words
 
@@ -102,7 +135,7 @@ def word_counts(paths: list[Path]) -> None:
 
 def main() -> int:
     paths = [Path(name) for name in sys.argv[1:] if name != "--words"]
-    found = [hit for path in paths for hit in hits(path) + stacked(path)]
+    found = [hit for path in paths for hit in hits(path) + stacked(path) + long_captions(path)]
     if "--words" in sys.argv[1:]:
         word_counts(paths)
     for hit in found:
