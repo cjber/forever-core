@@ -48,4 +48,5 @@ Core\LeaderboardsData.lua
 Core\APIKit.lua
 UI\Leaderboards.lua
 UI\QuestLogTabs.lua
+UI\ProfessionTabs.lua
 Expose.lua

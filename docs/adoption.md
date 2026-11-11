@@ -116,6 +116,11 @@ for the client and one column's settings move every section together.
   `MenuUtil.CreateContextMenu`.
 - `ForeverCore.QuestLogTabs.Register(key, spec)` adds a panel tab to the world map's quest log. A `spec.safeCall` keeps
   the panel's `shown` callback in the addon's journal.
+- `ForeverCore.ProfessionTabs.Register(key, spec)` adds a side tab to the Professions window, under the client's own
+  tabs and in registration order. `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is the
+  addon's page and `minWidth` raises the one width the window keeps for every profession and tab. Selecting a tab shows
+  only its page and unchecks the client's tabs; a client tab or page takes the window back. `Select(key)`,
+  `ShowNative()` and `Selected()` drive and read the same state.
 - `ForeverCore.SettingsPage.Register(name, build, L, safeCall)` draws a settings page with the caller's L for every
   label and the caller's `SafeCall` for its builders, getters and setters.
 - `ForeverCore.Text.Fold` and `ForeverCore.Text.Rank` are the shared search fold and ranking.

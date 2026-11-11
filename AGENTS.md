@@ -72,6 +72,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,
   restoring the client's own pages on demand and telling a panel through `shown` when it becomes visible or stops
   being visible, so panels set no OnShow or OnHide script under the map.
+- `UI/ProfessionTabs.lua`: the shared side tab for addon pages in the Professions window, stacking every addon's tab
+  under the client's own in registration order, handing the window back on a client tab or page, and keeping the
+  window at one width for every profession and tab.
 - `Core/LeaderboardsData.lua`: overall points, standing, the per-scope cache keyed on each board's `revision` and the
   unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one cache lookup rather than a board
   build and sort.

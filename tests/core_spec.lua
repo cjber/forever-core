@@ -54,6 +54,7 @@ for _, path in ipairs({
 	"UI/MapCanvas.lua",
 	"UI/Leaderboards.lua",
 	"UI/QuestLogTabs.lua",
+	"UI/ProfessionTabs.lua",
 	"Locales/enUS.lua",
 	"Expose.lua",
 }) do
@@ -188,7 +189,7 @@ ns.TrackerHost = { name = "host" }
 ns.TrackerSection, ns.TrackerLine = { name = "section" }, { name = "line" }
 ns.TrackerLock, ns.TrackerOrder = { name = "lock" }, { name = "order" }
 ns.TrackerQuestie, ns.TrackerEqot, ns.TrackerQuests = { name = "questie" }, { name = "eqot" }, { name = "quests" }
-ns.QuestLogTabs, ns.PeerStats = { name = "tabs" }, { name = "peers" }
+ns.QuestLogTabs, ns.ProfessionTabs, ns.PeerStats = { name = "tabs" }, { name = "professions" }, { name = "peers" }
 ns.Leaderboards, ns.LeaderboardsData = { name = "boards" }, { name = "data" }
 ns.MinimapButton, ns.SettingsPage = { name = "minimap" }, { name = "settings" }
 ns.Text, ns.QuestOrder = { name = "text" }, function()
@@ -266,6 +267,7 @@ for _, field in ipairs({
 	"TrackerEqot",
 	"TrackerQuests",
 	"QuestLogTabs",
+	"ProfessionTabs",
 	"PeerStats",
 	"Leaderboards",
 	"LeaderboardsData",
