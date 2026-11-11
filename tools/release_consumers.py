@@ -2,9 +2,10 @@
 
 Every consumer's release zip carries ForeverCore in the same `ForeverCore` folder, so all of the addons' latest releases
 must ship the same core: a core release has to re-release every consumer. `tools/sync_consumer_prs.py` moves each
-consumer's pin to the new core release, rewrites its bundle and, when its `## [Unreleased]` section is empty, adds a
-release entry to `CHANGELOG.md` carrying the `<!-- forever-core-sync -->` marker. This script, run every 20 minutes by
-`.github/workflows/release-consumers.yml`, reads each consumer's `main` and dispatches that consumer's own
+consumer's pin to the new core release, rewrites its bundle and, when its latest released tag bundles a different core
+than that pin and its `## [Unreleased]` section is empty, adds a release entry to `CHANGELOG.md` carrying the
+`<!-- forever-core-sync -->` marker above a marked entry whose own tag is already released. This script, run every 20
+minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `main` and dispatches that consumer's own
 `release.yml` for the marked entry once all of these hold:
 
 - the newest `## [X.Y.Z]` entry carries the marker, so it is the sync's, not a hand-written release;

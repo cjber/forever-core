@@ -25,16 +25,19 @@ release leaves every pin alone rather than failing the tooling sync.
 The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
 (adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
-repaired even when the pin does not move. When the tag the external downloads changes, whether the pin moved or a
-lagging bundle was repaired, the run also tells the player where the core lands, in `CHANGELOG.md`, so it reaches them.
-A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin and TOC
-field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release entry: the
-plain shared-code bullet joins those notes, so the core ships in that addon's own next release, whose notes the
-maintainer wrote. A consumer whose `## [Unreleased]` section is empty gets a release entry above the newest released
+repaired even when the pin does not move. The changelog decision is that same fact rather than whether this run moved
+the pin: the run reads the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta`
+ForeverCore external, or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from
+the pin, so a re-run repairs a consumer whose `main` already pins the new core while its last release still ships an
+older one. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
+and TOC field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release
+entry: the plain shared-code bullet joins those notes, so the core ships in that addon's own next release, whose notes
+the maintainer wrote. A consumer whose `## [Unreleased]` section is empty gets a release entry above the newest released
 version, that patch raised by one and carrying the `<!-- forever-core-sync -->` marker, and
 `tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
-already carries the marker gets no second entry, and one with no `CHANGELOG.md`, no release entry or no
-`## [Unreleased]` heading gets a notice and no entry.
+already carries the marker gets no second entry only while its own `vX.Y.Z` tag is missing from the consumer's remote;
+once that entry is released, a newer core gets a new entry above it, the patch raised by one. A consumer with no
+`CHANGELOG.md`, no release entry or no `## [Unreleased]` heading gets a notice and no entry.
 
     python3 tools/sync_consumer_prs.py
 
@@ -174,6 +177,82 @@ def release_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
+def remote_tags(root: Path) -> list[str]:
+    """The consumer's `vX.Y.Z` tags on `origin`, newest first by version.
+
+    The clone is `--depth=1`, so a local tag says nothing about what has been published; `git ls-remote` reads the
+    remote's refs without fetching them. A failed read is an error rather than a guessed answer, so a consumer is never
+    left without an entry because the network happened to be down.
+    """
+    result = git(root, "ls-remote", "--tags", "--refs", "origin", check=False)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise SyncError(f"{root.name}: could not list the remote's tags: {detail}")
+    tags = []
+    for line in result.stdout.splitlines():
+        _, _, ref = line.partition("\t")
+        name = ref.strip().removeprefix("refs/tags/")
+        version = release_version(name)
+        if version is not None:
+            tags.append((version, name))
+    return [name for _, name in sorted(tags, reverse=True)]
+
+
+def latest_release_tag(root: Path) -> str | None:
+    """The consumer's newest released `vX.Y.Z` tag on `origin`, or None when it has released nothing yet."""
+    tags = remote_tags(root)
+    return tags[0] if tags else None
+
+
+def remote_tag_exists(root: Path, tag: str) -> bool:
+    """Whether `tag` exists on the consumer's remote, read from `origin` rather than the shallow clone's local refs."""
+    result = git(root, "ls-remote", "--tags", "--refs", "origin", f"refs/tags/{tag}", check=False)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise SyncError(f"{root.name}: could not check {tag} on the remote: {detail}")
+    return bool(result.stdout.strip())
+
+
+def fetch_tag(root: Path, tag: str) -> None:
+    """Fetch `tag` into the shallow clone, so the files it carried can be read without a full history."""
+    result = git(root, "fetch", "--depth=1", "origin", "tag", tag, check=False)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise SyncError(f"{root.name}: could not fetch {tag}: {detail}")
+
+
+def file_at_tag(root: Path, tag: str, path: str) -> str | None:
+    """`path` as it was at `tag`, or None when that tag did not carry it."""
+    shown = git(root, "show", f"{tag}:{path}", check=False)
+    return shown.stdout if shown.returncode == 0 else None
+
+
+def toc_core_tag(text: str) -> str | None:
+    """A root TOC's `## X-Forever-Core:` value, or None when the TOC does not set it."""
+    field = TOC_CORE_FIELD.search(text)
+    return field.group(0).partition(":")[2].strip() if field else None
+
+
+def released_core_tag(root: Path, tag: str) -> str | None:
+    """The ForeverCore release the consumer's `tag` bundles, from its `.pkgmeta` external or its root TOC field.
+
+    This is the fact the changelog decision turns on, so it is read from the published tag rather than from `main`,
+    whose pin can already name a newer core. None means the release bundled no core this can read.
+    """
+    repo = root.name
+    fetch_tag(root, tag)
+    pkgmeta = file_at_tag(root, tag, consumer_path(repo, PKGMETA))
+    if pkgmeta is None:
+        return None
+    external = CORE_EXTERNAL.search(pkgmeta)
+    core = EXTERNAL_TAG.search(external.group(0)) if external else None
+    if core:
+        return core["tag"]
+    package = pkgmeta_field(pkgmeta, "package-as")
+    toc = file_at_tag(root, tag, consumer_path(repo, f"{package}.toc")) if package else None
+    return toc_core_tag(toc) if toc is not None else None
+
+
 def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str | None:
     """Move the consumer's ForeverCore pin up to `latest`, returning the tag it moved from.
 
@@ -183,8 +262,10 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
 
     Every run also points the bundle at the pin, moved or not: the `.pkgmeta` external and the root TOC's
     `## X-Forever-Core:` field name the release the pin ships, so a consumer that pins v1.5.0 while its zip still
-    downloads v1.4.1 is repaired. `CHANGELOG.md` is touched only when the tag the external downloads changes: an empty
-    `## [Unreleased]` gets a marked release entry, and one with notes gets the shared bullet and no entry.
+    downloads v1.4.1 is repaired. `CHANGELOG.md` is touched when the consumer's latest released tag bundles a core
+    other than `pinned`, whether this run moved the pin or a re-run found it already moved: an empty `## [Unreleased]`
+    gets a marked release entry, and one with notes gets the shared bullet and no entry. A consumer that has never
+    released falls back to whether this run changed its local bundle.
     """
     path = root / consumer_path(root.name, PIN_PATH)
     if not path.is_file():
@@ -272,15 +353,15 @@ def next_version(text: str) -> str | None:
     return f"{major}.{minor}.{patch + 1}"
 
 
-def newest_entry_body(text: str) -> str | None:
-    """The newest `## [X.Y.Z]` entry's body, or None when the changelog has no release."""
+def newest_entry(text: str) -> tuple[str, str] | None:
+    """The newest `## [X.Y.Z]` entry's version and body, or None when the changelog has no release."""
     matches = list(RELEASED.finditer(text))
     if not matches:
         return None
     newest = max(matches, key=lambda match: tuple(int(part) for part in match["version"].split(".")))
     following = re.search(r"^## ", text[newest.end() :], re.MULTILINE)
     end = newest.end() + following.start() if following else len(text)
-    return text[newest.end() : end]
+    return newest["version"], text[newest.end() : end]
 
 
 def unreleased_notes(text: str) -> str | None:
@@ -331,7 +412,8 @@ def add_changelog_entry(root: Path, today: date | None = None) -> bool:
         print(f"{root.name}: no {CHANGELOG}; no release entry added for the core sync.")
         return False
     text = path.read_text(encoding="utf-8")
-    if SYNC_MARKER in (newest_entry_body(text) or ""):
+    entry = newest_entry(text)
+    if entry is not None and SYNC_MARKER in entry[1] and not remote_tag_exists(root, f"v{entry[0]}"):
         print(f"{root.name}: {CHANGELOG} already has an unreleased ForeverCore sync entry; no second entry added.")
         return False
     notes = unreleased_notes(text) or ""
@@ -372,17 +454,27 @@ def ships_core(root: Path) -> bool:
 
 
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
-    """Point the bundle at `pin`, touching the changelog only when a consumer that ships core changes its tag.
+    """Point the bundle at `pin`, touching the changelog when the consumer's latest release ships another core.
 
     A consumer whose `.pkgmeta` has no ForeverCore external (kiln-forever has no `.pkgmeta` at all) bundles no core, so
     a pin that moves gives its own release nothing to carry: it still gets the pin and the TOC field, and no entry.
+
+    The decision is the released tag's bundled core, not whether this run moved the pin: `main` can already pin the new
+    core while the latest release still ships the old one, and a re-run has to repair that. A consumer that has never
+    released has no tag to compare, so a bundle tag this run changed is what needs carrying.
     """
     bundles = ships_core(root)
     before = bundle_tag(root) or previous_pin
     rewrite_core_external(root, pin)
     rewrite_toc_core_field(root, pin)
-    after = bundle_tag(root) or pin
-    if bundles and after != before:
+    if not bundles:
+        return
+    released = latest_release_tag(root)
+    if released is None:
+        if (bundle_tag(root) or pin) != before:
+            add_changelog_entry(root, today)
+        return
+    if released_core_tag(root, released) != pin:
         add_changelog_entry(root, today)
 
 

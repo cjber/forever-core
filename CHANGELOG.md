@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A core release re-releases every addon, even when its newest sync entry was already released.** `tools/sync_consumer_prs.py` treated any marked `CHANGELOG.md` entry as pending, so after a consumer's sync entry was tagged and released, the next core release moved its pin but added no new entry for `tools/release_consumers.py` to dispatch. A marked entry is now pending only while its own `vX.Y.Z` tag is missing from the consumer's remote, and an entry is added whenever the consumer's latest released tag bundles a core different from the new pin, so a re-run repairs a consumer whose `main` already pins the new core while its latest release ships an older one. (#471)
+
 ## [1.7.2] - 2026-11-11
 
 - **The Professions overview is its own width again.** Since SkillUp's wide recipe list, the overview page with every profession's bar took the widened crafting width, leaving a wide empty strip to the right of its panels. The overview now keeps the game's own width, and the recipe list and every Forever addon's tab keep the one wide width as before. Thanks to qwertzyxc on Discord for the report (cjber/skillup-forever#636).
