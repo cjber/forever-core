@@ -123,6 +123,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `Locales/phrases.txt` when it has `tools/phrases.py`, then creates the signed commit through the GraphQL
   `createCommitOnBranch` mutation and opens an auto-merging PR in each consumer. It needs the `CONSUMER_SYNC_TOKEN`
   secret; without it the job prints a notice and stays green. `tools/test_sync_consumer_prs.py` is its spec.
+- `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from
+  this checkout. It opens and closes every loaded addon that depends on ForeverCore (read from the client, so a new
+  addon is covered with no list to update) and the world map, saving a pass or fail per surface in `DevSmokeDB`,
+  which `tools/forever_errors.py` and `tools/forever_perf.py` read. `tests/devsmoke_spec.lua` is its spec.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.

@@ -31,8 +31,8 @@ local fakeCalls = { count = 0, messages = {} }
 local stop = 0
 local fakeDurations = { 0, 9 }
 
-local function addAddon(name, loaded)
-	addons[#addons + 1] = { name = name, loaded = loaded ~= false }
+local function addAddon(name, loaded, deps)
+	addons[#addons + 1] = { name = name, loaded = loaded ~= false, deps = deps }
 end
 
 local function addCommand(addonName, key, alias, handler)
@@ -92,6 +92,15 @@ _G.C_AddOns = {
 			end
 		end
 		return false
+	end,
+	-- The TOC's ## Dependencies names, as multiple return values the way the client answers.
+	GetAddOnDependencies = function(which)
+		local name = type(which) == "number" and addons[which] and addons[which].name or which
+		for _, addon in ipairs(addons) do
+			if addon.name == name then
+				return unpack(addon.deps or {})
+			end
+		end
 	end,
 }
 
@@ -166,14 +175,17 @@ local function surfaceOf(run, label)
 	end
 end
 
--- A Forever addon, a non-Forever one, one that is not loaded, and a dev addon, as the client would list them.
+-- A Forever addon, a non-Forever one, one that is not loaded, and a dev addon, as the client would list them. Ours is
+-- the ForeverCore dependency, not the name: NaowhForever is third-party and BrandNewForever is in no list at all.
 addAddon("!!DevSmoke")
 addAddon("!!DevSessionLog")
-addAddon("CommissionsForever")
+addAddon("CommissionsForever", true, { "ForeverCore" })
 addAddon("AtlasLootClassic")
-addAddon("NaowhForever")
-addAddon("SkillUpForever", false)
-addAddon("TweaksForever")
+addAddon("NaowhForever", true, { "AtlasLootClassic" })
+addAddon("SkillUpForever", false, { "ForeverCore" })
+addAddon("TweaksForever", true, { "ForeverCore" })
+addAddon("MacroAssistForever", true, { "ForeverCore" })
+addAddon("BrandNewForever", true, { "ForeverCore" })
 addAddon("ForeverCore")
 
 addCommand("CommissionsForever", "FAKE", "/fake", function(message, editBox)
@@ -186,6 +198,11 @@ addCommand("NaowhForever", "NAOWH", "/naowh", function()
 	error("a third-party addon's command must not run")
 end)
 addCommand("SkillUpForever", "SKILLUP", "/skillup", function() end)
+local macroAssistCalls = 0
+addCommand("MacroAssistForever", "MACROASSIST", "/macroassist", function()
+	macroAssistCalls = macroAssistCalls + 1
+end)
+addCommand("BrandNewForever", "BRANDNEW", "/brandnew", function() end)
 addCommand("TweaksForever", "TWEAKSFOREVER_RELOAD", "/rl", function()
 	error("the reload command must not run")
 end)
@@ -217,7 +234,7 @@ local beforeLoad = {}
 for key in pairs(_G) do
 	beforeLoad[key] = true
 end
-assert(loadfile("Core.lua"))("!!DevSmoke", {})
+assert(loadfile("tools/devsmoke/!!DevSmoke/Core.lua"))("!!DevSmoke", {})
 local added = {}
 for key in pairs(_G) do
 	if not beforeLoad[key] then
@@ -279,7 +296,12 @@ check(surfaceOf(run, "TweaksForever /rl") == nil, "the reload command is not a s
 check(surfaceOf(run, "NaowhForever /naowh") == nil, "a third-party addon ending in Forever is not a surface")
 check(surfaceOf(run, "!!DevSmoke /devsmoke") == nil, "the smoke addon does not test itself")
 check(surfaceOf(run, "ForeverCore /forever") ~= nil, "the leaderboards command is a surface")
-equal(#run.results, 3, "two commands and the world map")
+local macroAssist = surfaceOf(run, "MacroAssistForever /macroassist")
+check(macroAssist ~= nil, "an addon depending on ForeverCore is a surface")
+check(macroAssist.ok, "the Macro Assist surface passes")
+equal(macroAssistCalls, 2, "the Macro Assist surface runs twice")
+check(surfaceOf(run, "BrandNewForever /brandnew") ~= nil, "an addon in no list is covered by its dependency")
+equal(#run.results, 5, "four commands and the world map")
 equal(uiErrors[#uiErrors], ("Dev Smoke: %d surfaces, 0 failed"):format(#run.results), "the summary is shown")
 equal(delays[1], 0.5, "steps are half a second apart")
 
@@ -301,8 +323,8 @@ equal(boomCalls, 2, "a failing surface still runs twice")
 check(type(boom.firstMs) == "number" and type(boom.ms) == "number", "a failing surface is still timed")
 equal(surfaceOf(run, "CommissionsForever /fake").ok, true, "another surface still passes")
 check(surfaceOf(run, "world map") ~= nil, "the run reaches the world map after an error")
-equal(#run.results, 4, "the failing surface is still one surface")
-equal(uiErrors[#uiErrors], "Dev Smoke: 4 surfaces, 1 failed", "the summary counts the failure")
+equal(#run.results, 6, "the failing surface is still one surface")
+equal(uiErrors[#uiErrors], "Dev Smoke: 6 surfaces, 1 failed", "the summary counts the failure")
 
 -- /forever selftest starts a run; anything else reaches the shared leaderboards handler untouched.
 local runsBefore = #DevSmokeDB.runs
@@ -314,7 +336,7 @@ SlashCmdList.FOREVERLEADERBOARDS("selftest")
 equal(#DevSmokeDB.runs, runsBefore + 1, "/forever selftest starts a run")
 drain()
 run = latest()
-equal(#run.results, 4, "/forever selftest runs every surface")
+equal(#run.results, 6, "/forever selftest runs every surface")
 
 -- In combat nothing is run at all.
 inCombat = true

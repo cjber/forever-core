@@ -76,17 +76,19 @@ local function step()
 	C_Timer.After(STEP_DELAY, step)
 end
 
--- Our addon folders, by name: a suffix test would also match third-party addons such as NaowhForever.
-local OURS = {
-	AdventureGuideForever = true,
-	CommissionsForever = true,
-	FieldGuideForever = true,
-	ForeverCore = true,
-	LegacyForever = true,
-	ShortestPathForever = true,
-	SkillUpForever = true,
-	TweaksForever = true,
-}
+-- Ours is any addon depending on ForeverCore, the way every Forever addon declares it in its TOC. A name suffix
+-- would also match third-party addons such as NaowhForever, which declare no such dependency.
+local function isOurs(name)
+	if name == "ForeverCore" then
+		return true
+	end
+	for _, dependency in ipairs({ C_AddOns.GetAddOnDependencies(name) }) do
+		if dependency == "ForeverCore" then
+			return true
+		end
+	end
+	return false
+end
 
 -- Commands a run cannot exercise. Tweaks' /rl calls ReloadUI, which the client allows only from a key press or
 -- click, so run from a timer it is always blocked, and blamed on Tweaks; allowed, it would end the run.
@@ -115,7 +117,7 @@ local function collect()
 	local surfaces = {}
 	for index = 1, C_AddOns.GetNumAddOns() do
 		local name = C_AddOns.GetAddOnInfo(index)
-		if type(name) == "string" and OURS[name] and C_AddOns.IsAddOnLoaded(name) then
+		if type(name) == "string" and C_AddOns.IsAddOnLoaded(name) and isOurs(name) then
 			for key in pairs(commandKeys()) do
 				local global = "SLASH_" .. key .. "1"
 				local alias = rawget(_G, global)
