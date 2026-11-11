@@ -11,7 +11,8 @@ list is never compared with the TOC. Run the packager without uploading (`releas
   `ruff.toml`, `stylua.toml` and any dot file such as `.luacheckrc`), or a required file that did not (a licence
   file in every packaged folder, and `THIRD_PARTY.md` in the main addon);
 - credits that do not ship with it (WFA-10, WFA-31): the main addon's `README.md` needs a `## Credits` section and
-  its `THIRD_PARTY.md` an `## Ideas and contributors` section, each with some text under the heading;
+  its `THIRD_PARTY.md` a `## Players` (or the older `## Ideas and contributors`) section, each with some text under
+  the heading;
 - a spec that fails when run against the packaged files instead of the checkout: the package is copied to a scratch
   folder, the addon's test support (`tests/`) is laid over it, and each spec runs there under LuaJIT.
 
@@ -49,15 +50,16 @@ class Policy:
     target). `forbidden`: names that must not appear at any addon folder's top level, besides any dot file. Every
     folder must ship a licence file (`licence_file`). `required`: other files the main addon folder must ship.
     `credits`: (file, heading) pairs the main addon folder must ship, each file holding that ATX heading
-    (`has_section`) with text under it. `specs`: repository-relative specs to run on the packaged files, with
+    (`has_section`) with text under it; a heading may instead be a tuple, any one of which satisfies the pair.
+    `specs`: repository-relative specs to run on the packaged files, with
     `support` (paths in the checkout, never shipped) laid over a copy of the package first."""
 
     addons: tuple[str, ...]
     forbidden: tuple[str, ...] = FORBIDDEN
     required: tuple[str, ...] = ("THIRD_PARTY.md",)
-    credits: tuple[tuple[str, str], ...] = (
+    credits: tuple[tuple[str, str | tuple[str, ...]], ...] = (
         ("README.md", "## Credits"),
-        ("THIRD_PARTY.md", "## Ideas and contributors"),
+        ("THIRD_PARTY.md", ("## Ideas and contributors", "## Players")),
     )
     specs: tuple[str, ...] = ()
     support: tuple[str, ...] = ("tests",)
@@ -205,7 +207,7 @@ def check(release: Path, policy: Policy) -> list[str]:
         for file in dict.fromkeys(policy.required + tuple(file for file, _ in policy.credits)):
             if not licence_file(file) and not (main / file).exists():
                 problems.append(f"{name}/{file}: missing; it must ship")
-        for file, heading in policy.credits:
+        for file, headings in policy.credits:
             if not (main / file).is_file():
                 continue
             try:
@@ -213,13 +215,15 @@ def check(release: Path, policy: Policy) -> list[str]:
             except UnicodeDecodeError:
                 problems.append(f"{name}/{file}: not UTF-8")
                 continue
+            wanted = (headings,) if isinstance(headings, str) else headings
             try:
-                found = has_section(text, heading)
+                found = any(has_section(text, heading) for heading in wanted)
             except ValueError as error:
                 problems.append(f"{name}/{file}: {error}; fix the policy's credits heading")
                 continue
             if not found:
-                problems.append(f"{name}/{file}: no `{heading}` section with text; credit what the addon uses")
+                shown = "` or `".join(wanted)
+                problems.append(f"{name}/{file}: no `{shown}` section with text; credit what the addon uses")
     return problems
 
 

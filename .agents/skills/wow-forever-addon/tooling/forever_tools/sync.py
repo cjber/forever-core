@@ -27,9 +27,9 @@ PRODUCER_PATH = ".agents/skills/wow-forever-addon/tooling/forever_tools"
 REPOSITORY = "https://github.com/cjber/forever-core"
 UNPINNED = "UNPINNED"
 MANIFEST = "MANIFEST.json"
-# The generated data assets.py reads. They are vendored byte for byte with the modules, so a consumer
-# gets the age rule and its pinned-build data in one update.
-DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt", "backdrops.txt")
+# The data files vendored byte for byte with the modules: the pinned-build data assets.py reads, and the
+# credits opt-out list credits.py reads.
+DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt", "backdrops.txt", "credits_opt_out.txt")
 
 
 def digest(path: Path) -> str:
