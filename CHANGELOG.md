@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-11
+
+- **The tracker column stops flashing and rebuilding when the quests reach the bottom of the screen.** It no longer lays the sections out in the room below the tracker just to measure it, so a quest update no longer replays every header's add animation and rebuilds every block. The column moves above or beside the tracker only when it has to, and returns below as soon as the quests leave room for the whole column. (#438)
+
 ### For addon authors
 
 - **A changed family block reaches every addon.** The consumer sync runs the addon's `tools/check_family.py --fix` after the phrase template, so its README.md and docs/curseforge.md family block matches `forever_tools.family` and its typecheck job no longer fails when core changes that text. (#454)
@@ -11,7 +15,6 @@
 <!-- discord-image: docs/screenshots/thanks.png -->
 
 - **The Forever addons page has a Thanks page.** Every player who reported a bug, asked for a feature or translated an addon is named once, ranked by how many contributions they gave, with a count after the name and the addons they helped; hovering a row lists what they did for each in full, beside a short **Inspired by** list. A dropdown filters the page to one addon, an addon's own settings page opens it already filtered to that addon, and the choice survives closing and reopening it. Anyone who asks not to be credited is left off. An addon's own settings page can also show a one-line thanks for its players. (#419)
-- **The tracker column stops flashing and rebuilding when the quests reach the bottom of the screen.** It no longer lays the sections out in the room below the tracker just to measure it, so a quest update no longer replays every header's add animation and rebuilds every block. The column moves above or beside the tracker only when it has to, and returns below as soon as the quests leave room for the whole column. (#438)
 
 ### For addon authors
 
