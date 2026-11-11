@@ -61,6 +61,8 @@ end
 
 -- Rewrites Blizzard source, caching the result under `<cacheDir>/<rewriter hash>/<build>/<source hash>.lua` so a
 -- pinned build parses once per machine and rewriter rather than once per client.
+-- The write goes through a unique temporary file and a rename, so a reader in another process sees a missing file
+-- or a complete one, never a chunk still being written.
 function M.rewriteBlizzard(src, cacheDir, build)
 	local dir = string.format("%s/%s/%s", cacheDir, REWRITER, build)
 	local path = dir .. "/" .. hash(src) .. ".lua"
@@ -72,11 +74,17 @@ function M.rewriteBlizzard(src, cacheDir, build)
 	end
 	local out = M.rewrite(src, nil)
 	ensureDir(dir)
-	local write = io.open(path, "wb")
+	local token = (tostring({}) .. os.clock() .. os.time()):gsub("%W", "")
+	local tmp = path .. "." .. token .. ".tmp"
+	local write = io.open(tmp, "wb")
 	if write then
-		write:write(out)
+		local wrote = write:write(out)
 		write:close()
+		if wrote and os.rename(tmp, path) then
+			return out
+		end
 	end
+	os.remove(tmp)
 	return out
 end
 
