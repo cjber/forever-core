@@ -56,7 +56,17 @@ check(env.ForeverPeerStats == nil, "ForeverPeerStats is gone")
 check(env.ForeverQuestLogTabs == nil, "ForeverQuestLogTabs is gone")
 check(ForeverCore.ProfessionTabs == ns.ProfessionTabs, "ForeverCore publishes the ProfessionTabs module")
 check(type(ForeverCore.Credits) == "table", "ForeverCore publishes the Credits module")
-equal(#ForeverCore.Credits.Players(), 12, "core's own Data/Credits.lua is registered under Forever Core")
+local coreNames, distinct = {}, 0
+for _, row in ipairs(ns.Credits.players) do
+	if not coreNames[row.name] then
+		coreNames[row.name], distinct = true, distinct + 1
+	end
+end
+equal(
+	#ForeverCore.Credits.Players(),
+	distinct,
+	"core's own Data/Credits.lua is registered under Forever Core, once per player"
+)
 check(ForeverCore.Credits.Line("Forever Core") ~= nil, "and its one-line thanks reads")
 check(env.ForeverErrorJournal == nil, "ForeverErrorJournal is gone")
 check(env.ForeverDebugLog == nil, "ForeverDebugLog is gone")
