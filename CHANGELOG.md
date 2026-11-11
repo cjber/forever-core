@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+- **The Professions window keeps one width.** Forever's extra side tabs now share one owner in Forever Core: each tab shows only its own page, the game's own tabs and pages take the window back cleanly, and the window holds one width for every profession and tab instead of growing and shrinking. (#382)
+
 ### For addon authors
 
 - `tools/forever_sim/toc.lua` reads a TOC the way the client does: `files(root, tocName)` lists Lua files and expands each XML's `Script` and `Include` children in order, and `templates(path)` lists its virtual templates, so a consumer's spec loader can load `UI/TrackerSection.xml` and move its ForeverCore pin past v1.1.0. (#412)
+- `ForeverCore.ProfessionTabs.Register(key, spec)` adds a side tab under the client's own Professions tabs, in registration order. `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`, `minWidth` raises the one width the window keeps, and `Select(key)`, `ShowNative()` and `Selected()` drive and read the same state. (#382)
 
 ## [1.3.2] - 2026-11-11
 

@@ -129,6 +129,6 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`, `Text`, `QuestOrder`
-and `Family`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker section or a window;
-a third-party addon builds its own from `APIKit` and `ContextMenu` instead.
+`QuestLogTabs`, `ProfessionTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`,
+`Text`, `QuestOrder` and `Family`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker
+section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.

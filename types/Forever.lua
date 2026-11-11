@@ -16,6 +16,20 @@
 ---@field ShowQuests fun()
 ---@field Selected fun(): string?
 
+---@class ForeverProfessionTabSpec
+---@field icon string|number the tab's icon
+---@field tooltip string the tab's tooltip text
+---@field page Frame the page the tab shows
+---@field minWidth? number the window's fixed width is raised to this
+---@field onSelect? fun(key: string) runs when this tab is selected
+---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
+
+---@class ForeverProfessionTabsAPI
+---@field Register fun(key: string, spec: ForeverProfessionTabSpec): ForeverProfessionTab
+---@field Select fun(key: string)
+---@field ShowNative fun()
+---@field Selected fun(): string?
+
 -- The Forever quest list's pure ordering model, in Core/QuestOrder.lua.
 ---@class ForeverQuestRecord
 ---@field questID number
@@ -134,6 +148,7 @@
 ---@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
+---@field ProfessionTabs? ForeverProfessionTabsAPI
 ---@field PeerStats? ForeverPeerStatsNamespace
 ---@field Leaderboards? ForeverLeaderboardsAPI
 ---@field LeaderboardsData? ForeverLeaderboardsData
@@ -159,6 +174,7 @@ ForeverCore = nil
 ---@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
+---@field ProfessionTabs? ForeverProfessionTabsAPI
 ---@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field ContextMenu? fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?

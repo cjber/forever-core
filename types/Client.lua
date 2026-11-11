@@ -244,6 +244,34 @@ ScrollUtil = nil
 ---@type ForeverScrollBoxConstants
 ScrollBoxConstants = nil
 
+-- UI/ProfessionTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.
+---@class ForeverProfessionTab : Button
+---@field Icon Texture
+---@field tooltipText string
+---@field SetCustomOnMouseUpHandler fun(self: ForeverProfessionTab, handler: fun(self: ForeverProfessionTab, mouseButton: string, upInside: boolean))
+---@field SetChecked fun(self: ForeverProfessionTab, checked: boolean)
+---@field SetFillToInterior? fun(self: ForeverProfessionTab, value: boolean)
+
+-- A native side tab on the Professions window, from the client's ProfessionsFrame right-hand column.
+---@class ForeverProfessionNativeTab : Frame
+---@field SetChecked fun(self: ForeverProfessionNativeTab, checked: boolean)
+---@field IsShown fun(self: ForeverProfessionNativeTab): boolean
+
+-- A page in the Professions window.
+---@class ForeverProfessionPage : Frame
+
+-- The client's Professions window and its native side tabs and pages.
+---@class ForeverProfessionsWindow : Frame
+---@field CraftingPage ForeverProfessionPage
+---@field BookPage? ForeverProfessionPage
+---@field SpecPage? ForeverProfessionPage
+---@field OrdersPage? ForeverProfessionPage
+---@field Pages? ForeverProfessionPage[]
+---@field ProfessionsOverviewTab? ForeverProfessionNativeTab
+---@field rightProfessionTabs? ForeverProfessionNativeTab[]
+---@type ForeverProfessionsWindow
+ProfessionsFrame = nil
+
 -- UI/QuestLogTabs.lua: the client's protected call, which keeps a panel's error from breaking the module's switch.
 ---@param fn function
 function securecallfunction(fn, ...) end

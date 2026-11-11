@@ -18,6 +18,7 @@ core.TrackerQuestie = ns.TrackerQuestie
 core.TrackerEqot = ns.TrackerEqot
 core.TrackerQuests = ns.TrackerQuests
 core.QuestLogTabs = ns.QuestLogTabs
+core.ProfessionTabs = ns.ProfessionTabs
 core.PeerStats = ns.PeerStats
 core.Leaderboards = ns.Leaderboards
 core.LeaderboardsData = ns.LeaderboardsData

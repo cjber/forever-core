@@ -220,6 +220,8 @@ globals[#globals + 1] = "SLASH_FOREVERCORE1"
 read_globals[#read_globals + 1] = "QuestMapFrame"
 read_globals[#read_globals + 1] = "QuestMapFrameOverrides"
 read_globals[#read_globals + 1] = "QUESTS_LABEL"
+-- UI/ProfessionTabs.lua: the client's Professions window and the native side tabs on it.
+read_globals[#read_globals + 1] = "ProfessionsFrame"
 -- UI/TrackerQuests.lua: the game's own quest tracker mixins, its quest cache and the strings they draw.
 read_globals[#read_globals + 1] = "QuestObjectiveTrackerMixin"
 read_globals[#read_globals + 1] = "CampaignQuestObjectiveTrackerMixin"
