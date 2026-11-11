@@ -64,12 +64,14 @@ list ForeverCore under `OptionalDeps` and do not copy its runtime files into the
 
 Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
 release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC
-field, and adds a release entry to `CHANGELOG.md` above the newest version: the next patch, dated today, with the marker
-`<!-- forever-core-sync -->` and the plain bullet about the shared code. Any notes already under `## [Unreleased]` stay
-there, above the new heading. `tools/release_consumers.py` then dispatches the addon's own `release.yml` once full CI on
-main is green, skipping it while the tag exists or a release is queued or running. Do not delete or edit a marked entry
-by hand; a release published without the new core leaves that addon's zip with an old copy. The `CONSUMER_SYNC_TOKEN`
-secret needs Actions write on the consumers, because dispatching their release is a workflow run.
+field. When `CHANGELOG.md` has an empty `## [Unreleased]` section it adds a release entry above the newest version: the
+next patch, dated today, with the marker `<!-- forever-core-sync -->` and the plain bullet about the shared code. When
+that section already has notes it adds no entry and the same bullet joins those notes, so the core ships in the addon's
+own next release rather than under a maintenance line. `tools/release_consumers.py` then dispatches the addon's own
+`release.yml` once full CI on main is green, skipping it while the tag exists, a release is queued or running, or notes
+sit under `## [Unreleased]`. Do not delete or edit a marked entry by hand; a release published without the new core
+leaves that addon's zip with an old copy. The `CONSUMER_SYNC_TOKEN` secret needs Actions write on the consumers, because
+dispatching their release is a workflow run.
 
 ## 2. CurseForge project (authors.curseforge.com)
 
