@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **ZiiMs is on the Thanks page** for the EllesmereUI tracker support that started in cjber/shortest-path-forever#621.
+
 ### For addon authors
 
 - **A consumer's CI can build its Lua toolchain without apt.** `.github/actions/lua-toolchain` in this repository builds LuaJIT 2.1 at the v2.1 commit Ubuntu packages and luacheck 1.1.2 with argparse 0.7.2 and luafilesystem 1.9.0, all from pinned GitHub sources, caches the installed prefix with `actions/cache`, and adds `luajit` and `luacheck` to `PATH`, so a runner whose Ubuntu mirror cannot resolve no longer fails the job. Adopt it after `actions/checkout` with `uses: cjber/forever-core/.github/actions/lua-toolchain@<sha>`, pinned to the commit the consumer's other ForeverCore tooling comes from, and drop its `apt-get install` step. (#450)
