@@ -303,7 +303,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   THIRD_PARTY.md (WFA-33)`.
 - **WFA-33a** An issue filed from a CurseForge comment carries one line of its own, `CurseForge thread <id> (<addon>)`,
   so ForeverCore's `docs/handoff/cfwatch.py` can read which thread waits on the fix: `--unanswered` marks that thread as
-  waiting on the issue and its state, and `--due` lists it with the release once every linked issue is fixed and shipped.
+  waiting on the issue and its state, and `--due` lists it with the release once every linked issue is fixed and shipped,
+  unless the owner has already replied after that release.
 - **WFA-34** Every addon ships in the client languages the Forever client offers besides English (deDE, esES,
   esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN and zhTW, less any the client lacks), one `Locales/<locale>.lua` each,
   loaded by the TOC after `Locales\enUS.lua` and keyed exactly as `Locales/phrases.txt`. A human translation wins:

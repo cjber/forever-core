@@ -11,7 +11,8 @@ skips one only until somebody posts in it again.
 
 An issue filed from a comment carries the line `CurseForge thread <id> (<addon>)`. `--unanswered` reads those lines
 from every Forever issue and prints a linked thread as waiting on its issue and the issue's state. `--due` lists the
-threads whose issues all closed as completed and whose fix is in a released tag, with that version.
+threads whose issues all closed as completed and whose fix is in a released tag, with that version, unless the owner
+has already replied since that release.
 
 The watched projects are every addon in `forever_tools.family.ADDONS` plus ForeverCore. Each project's ID comes from
 its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout, or through `gh api` when that
@@ -26,6 +27,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 CORE = Path(__file__).resolve().parents[2]
 TOOLING = CORE / ".agents" / "skills" / "wow-forever-addon" / "tooling"
@@ -271,8 +273,15 @@ def linked_issues(search=None):
     return linked
 
 
-def released_in(repo, number):
-    """The first release tag that contains the merge of the PR that closed the issue, or None.
+class Release(NamedTuple):
+    """A published release tag and the moment it was published."""
+
+    tag: str
+    published: str
+
+
+def released_in(repo, number) -> Release | None:
+    """The first release that contains the merge of the PR that closed the issue, or None.
 
     An issue closed as not planned, still open, or fixed on main but not yet released answers None.
     """
@@ -300,8 +309,25 @@ def released_in(repo, number):
     for release in sorted(releases, key=lambda release: release.get("published_at") or ""):
         status = gh_json("api", f"repos/{OWNER}/{repo}/compare/{sha}...{release['tag_name']}").get("status")
         if status in ("ahead", "identical"):
-            return release["tag_name"]
+            return Release(release["tag_name"], release.get("published_at") or "")
     return None
+
+
+def moment(value):
+    """A timezone-aware datetime for an API timestamp, or None when it is missing or unreadable."""
+    try:
+        parsed = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.timezone.utc)
+
+
+def posted_after(comment, published):
+    """True when the comment was posted later than the release's published timestamp."""
+    release = moment(published)
+    if release is None:
+        return False
+    return datetime.datetime.fromtimestamp(comment["datePosted"] / 1000, datetime.timezone.utc) > release
 
 
 def when(comment):
@@ -379,8 +405,10 @@ def main(argv=None, fetch=None):
         print(f"\n{len(waiting)} unanswered, {on_issue} waiting on an issue, {quiet} settled")
     elif show_due:
         links = linked_issues()
+        by_thread = {str(top["id"]): rows for items in raw.values() for top, rows in threads(items)}
         released = {}
         due = []
+        answered = 0
         for thread, issues in links.items():
             versions = []
             for issue in issues:
@@ -388,13 +416,24 @@ def main(argv=None, fetch=None):
                 if key not in released:
                     released[key] = released_in(*key)
                 versions.append(released[key])
-            if all(versions):
-                for issue, version in zip(issues, versions, strict=True):
-                    due.append((thread, issue, version))
+            if not all(versions):
+                continue
+            # An owner reply after the release already answered the thread, so it is not due again.
+            rows = by_thread.get(thread)
+            latest = rows[-1] if rows else None
+            shipped = max((version.published for version in versions if version.published), default="")
+            if latest and is_owner(latest) and posted_after(latest, shipped):
+                answered += 1
+                continue
+            for issue, version in zip(issues, versions, strict=True):
+                due.append((thread, issue, version))
         for thread, issue, version in sorted(due, key=lambda row: (row[1]["slug"], int(row[0]))):
-            print(f"[{issue['slug']}] thread #{thread}: cjber/{issue['repo']}#{issue['number']} released in {version}")
+            print(
+                f"[{issue['slug']}] thread #{thread}: cjber/{issue['repo']}#{issue['number']} released in {version.tag}"
+            )
         due_threads = {thread for thread, _, _ in due}
-        print(f"\n{len(due_threads)} due, {len(links) - len(due_threads)} still waiting")
+        waiting = len(links) - len(due_threads) - answered
+        print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting")
     else:
         for _, slug, comment in sorted(new, key=lambda row: row[0]):
             print(format_comment(slug, comment))
