@@ -335,6 +335,25 @@ function M.build(sim)
 		protectedNames[name] = true
 	end
 
+	-- The wiki's class for a restricted function, overridden by observed client behaviour. An untagged name keeps
+	-- today's combat-only rule.
+	local function restrictedNow(name)
+		local class
+		if sim.restrictionClass then
+			class = sim.restrictionClass(name)
+		elseif sim.docs and sim.docs.restrictionClass then
+			class = sim.docs.restrictionClass(name)
+		end
+		class = class or "nocombat"
+		if class == "always" then
+			return true
+		end
+		if class == "hwevent" then
+			return not sim.hardwareInput
+		end
+		return sim.combatLockdown
+	end
+
 	local function stub(qualified, fdoc)
 		local nargs = #(fdoc.Arguments or {})
 		local protected = fdoc.IsProtectedFunction or protectedNames[qualified]
@@ -375,7 +394,7 @@ function M.build(sim)
 			end
 			-- HasRestrictions alone is a combat-time restriction; a documented function this client refuses at all
 			-- times is in protectedNames instead.
-			local refused = protected or (restricted and sim.combatLockdown)
+			local refused = protected or (restricted and restrictedNow(qualified))
 			if refused and tainted then
 				sim.forbidden(qualified)
 				return

@@ -94,7 +94,9 @@ test("widgets: a HasRestrictions method is refused to tainted code in combat, un
 		G = {},
 		env = {},
 		taint = Taint,
-		alwaysRestrictedMethods = { SetPassThroughButtons = "cjber/adventure-guide-forever#534" },
+		restrictionOverrides = {
+			SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
+		},
 		docs = {
 			enums = {},
 			widgets = {

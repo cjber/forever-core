@@ -187,6 +187,44 @@ test("an observed always-restricted HasRestrictions function blocks a tainted ca
 	assert(not sim.G.WorldMapFrame:IsShown(), "the restricted call did not open the map")
 end)
 
+test("a nocombat restriction passes out of combat and is refused in combat", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim.restrictionOverrides["C_Map.OpenWorldMap"] = nil
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim.G.WorldMapFrame:IsShown(), "the out-of-combat call opened the map")
+	sim:closeWorldMap()
+	sim:enterCombat()
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
+end)
+
+test("a hardware-event restriction is refused from a timer and allowed from input", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	assert(sim:expectError("tried to call the protected function 'C_FriendList.SendWho()'"))
+	local before = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	for i = before + 1, #sim.errors do
+		assert(not tostring(sim.errors[i].message):find("C_FriendList.SendWho", 1, true), sim.errors[i].message)
+	end
+end)
+
+test("an always restriction is refused out of combat", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeAlways()")
+	assert(sim:expectError("tried to call the protected function 'CopyToClipboard()'"))
+end)
+
+test("an observed override wins over the wiki class", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	-- The pin says nocombat; the client has refused C_Map.OpenWorldMap to tainted code out of combat.
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
+	assert(sim.restrictionOverrides["C_Map.OpenWorldMap"].issue == "cjber/adventure-guide-forever#411")
+end)
+
 test("an addon's Show of a Blizzard frame taints its OnShow", function()
 	check("SimTaintClientScript")
 end)

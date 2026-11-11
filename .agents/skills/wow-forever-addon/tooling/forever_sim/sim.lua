@@ -100,6 +100,9 @@ function Sim.new(opts)
 	sim.verbose = opts.verbose or os.getenv("FOREVER_SIM_VERBOSE") == "1"
 	sim.taint = Taint
 	sim.gaps = {}
+	-- True only while a hardware input's synchronous call runs, so a hardware-event restriction can refuse a call
+	-- made from a timer or an event.
+	sim.hardwareInput = false
 	-- The client's legacy LE_* constants are native and undocumented: client code reading one gets a distinct
 	-- number (recorded in sim.gaps), including when the reader runs tainted.
 	local leValue = 200000
@@ -119,6 +122,7 @@ function Sim.new(opts)
 	end
 	docsCache[sim.ui] = docsCache[sim.ui] or Docs.load(sim.ui)
 	sim.docs = docsCache[sim.ui]
+	sim.docs.restrictions()
 	sim.impl = {}
 	sim.started = os.clock()
 	require("client").build(sim)

@@ -5,13 +5,16 @@ test, so the bugs the offline specs miss show up: secret values, taint, gamepad-
 states and frames covering each other. Each repo vendors this folder as `tools/forever_sim/`, byte for byte, in the
 same way as `forever_tools` (`python3 tools/forever_sim/sync.py check|update|pin`).
 
-Nothing of Blizzard's or of a third-party addon is committed. `fetch.py` downloads Blizzard's UI source (Gethe/wow-ui-source at
+Nothing of Blizzard's or of a third-party addon is committed. `restrictions.txt` is the one committed list: the
+`restrictedapi` class of each documented function and method, derived from warcraft.wiki.gg (CC BY-SA 4.0), with the
+generator beside it. `fetch.py` downloads Blizzard's UI source (Gethe/wow-ui-source at
 the Forever build's revision, by commit hash) and the client's global strings, colours and atlas sizes
 (wago.tools, at the pinned build) into `tools/.cache/forever_sim/`. The Questie, TomTom, Auctionator and Polestar
 in `stubs/` are our own stand-ins, written from what those addons do in public.
 
 ```sh
 python3 tools/forever_sim/fetch.py [--locale deDE]   # once; CI caches it
+python3 tools/forever_sim/fetch.py --refresh-restrictions   # after the wiki's classes change; commit restrictions.txt
 luajit tools/forever_sim/run.lua                     # every tests/sim/*_scenario.lua
 luajit tools/forever_sim/run.lua -v --only=tooltip   # one scenario, with the client's errors
 ```
@@ -46,14 +49,15 @@ taint reached), and on any protected call refused because of a field the addon w
 | `sim:openWorldMap(mapID)`, `sim:zoomMap(n)`, `sim:panMap(dx, dy)`, `sim:closeWorldMap()` | the real world map |
 | `sim:enterCombat()`, `sim:leaveCombat()` | PLAYER_REGEN_*; combat lockdown and in-combat secrets |
 | `sim:joinGroup{ ... }`, `sim:leaveGroup()` | party members and GROUP_ROSTER_UPDATE |
-| `sim:hover(frame)`, `sim:leave()`, `sim:click(frame)`, `sim:hoverUnit(unit)` | input, as fresh secure dispatches |
+| `sim:hover(frame)`, `sim:leave()`, `sim:click(frame)`, `sim:hoverUnit(unit)` | input, as fresh secure dispatches; a click is a hardware input |
+| `sim:pressEscape()` | Escape through the client's `ToggleGameMenu` as a hardware input, so its registered handlers run |
 | `sim:event(name, ...)`, `sim:advance(seconds)` | client events; timers, animations, OnUpdate, OnSizeChanged |
 | `sim:setGamepad(true)`, `sim:gamepadNavigate()`, `sim:bindingSetChange()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), one secure pass of its navigation, and a binding-set change through the client's `InputBindingManager` |
 | `sim:stub("Questie", options)` | a third-party stand-in, loaded with the addons |
 | `sim:slashCommands(addon)` | the slash commands `addon` registered, as their first aliases, sorted |
 | `sim:slash("/cmd rest")` | a typed slash command as the chat box runs it: aliases match in any case, the handler gets the remainder as fresh input |
 | `sim:reload()` | a fresh client with the same options, addons and stubs, logged in with what `/reload` would have saved |
-| `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, and a target, soft-interact and binding-set change after each; then the same after a reload |
+| `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, Escape, and a target, soft-interact and binding-set change after each; then the same after a reload |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
@@ -99,9 +103,11 @@ either client caused; pass `addons`, `commands`, `savedVariables` or `allowError
   secure caller afterwards; client-dispatched events, timers, OnUpdate and scripts keep the taint of what set them
   (an addon handler still taints its own body); and a `hooksecurefunc` or `HookScript` post-hook runs isolated from
   its caller. A frame's script is not a table slot, so secure code reading an OnMouseUp does not taint itself,
-  though running the script does. A documented function with `HasRestrictions` raises ADDON_ACTION_BLOCKED for a
-  tainted caller in combat, as protected functions do; the few such functions this client refuses at all times
-  are listed (with the issue that observed each) beside the global and widget rules.
+  though running the script does. A documented function or widget method with `HasRestrictions` raises
+  ADDON_ACTION_BLOCKED for a tainted caller by its class in `restrictions.txt` (beside `docs.lua`, generated by
+  `fetch.py --refresh-restrictions`): `nocombat` in combat, `hwevent` outside a hardware input, `always` at any
+  time, and an `untagged` name keeps the combat-only rule. A name observed to differ from the wiki is overridden
+  beside the global and widget rules, with the issue that saw it.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region

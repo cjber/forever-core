@@ -381,14 +381,22 @@ function M.build(sim)
 		"ToggleRun",
 		"Logout",
 		"Quit",
-		"C_Map.OpenWorldMap", -- cjber/adventure-guide-forever#411
 	}
-	-- Widget methods the documentation marks HasRestrictions but this client has been observed refusing to
-	-- tainted code at all times, not only in combat. Each entry is observed client behaviour with the issue that
-	-- saw it; a new entry needs one (cjber/forever-core#297 tracks the full classes).
-	sim.alwaysRestrictedMethods = {
-		SetPassThroughButtons = "cjber/adventure-guide-forever#534",
+	-- Observed client behaviour that overrides the wiki's class, keyed as the pin keys: a widget method by its name,
+	-- a documented function by its qualified name. Each entry cites the issue that saw it.
+	sim.restrictionOverrides = {
+		["C_Map.OpenWorldMap"] = { class = "always", issue = "cjber/adventure-guide-forever#411" },
+		SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
 	}
+	-- The class of a restriction, the observed override first, then the pin, then today's combat-only rule for an
+	-- untagged name.
+	function sim.restrictionClass(name)
+		local override = sim.restrictionOverrides[name]
+		if override then
+			return override.class
+		end
+		return sim.docs.restrictionClass(name) or "nocombat"
+	end
 
 	---------------------------------------------------------------------------
 	-- Events

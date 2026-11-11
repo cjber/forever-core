@@ -86,9 +86,17 @@ function M.install(Sim)
 		return self
 	end
 
-	-- Runs f as the client would run input: a fresh, secure dispatch.
+	-- Runs f as the client would run input: a fresh, secure dispatch, with the hardware-input flag set for its
+	-- synchronous call only.
 	function Sim:input(f, ...)
-		return self.run(f, ...)
+		local previous = self.hardwareInput
+		self.hardwareInput = true
+		local result = { pcall(self.run, f, ...) }
+		self.hardwareInput = previous
+		if not result[1] then
+			error(result[2], 0)
+		end
+		return unpack(result, 2, table.maxn(result))
 	end
 
 	-- Presses Escape as fresh hardware input: the client's own ToggleGameMenu, which walks every Escape handler
@@ -145,7 +153,7 @@ function M.install(Sim)
 	end
 
 	function Sim:click(frame, button)
-		self.run(function()
+		self:input(function()
 			frame:Click(button or "LeftButton")
 		end)
 		self:advance(0.05)

@@ -2269,6 +2269,29 @@ function M.build(sim)
 		return out
 	end
 
+	-- The wiki's class for this method, overridden by observed client behaviour for the method's name; untagged
+	-- keeps today's combat-only rule.
+	local function restrictedNow(kind, name)
+		local overrides = sim.restrictionOverrides or {}
+		local override = overrides[name] or overrides[kind .. "_" .. name]
+		local class = override and override.class
+		if not class then
+			if sim.restrictionClass then
+				class = sim.restrictionClass(kind .. "_" .. name)
+			elseif sim.docs and sim.docs.restrictionClass then
+				class = sim.docs.restrictionClass(kind .. "_" .. name)
+			end
+		end
+		class = class or "nocombat"
+		if class == "always" then
+			return true
+		end
+		if class == "hwevent" then
+			return not sim.hardwareInput
+		end
+		return sim.combatLockdown
+	end
+
 	local function wrapMethod(kind, name, fdoc, body)
 		if not fdoc then
 			return body
@@ -2312,7 +2335,7 @@ function M.build(sim)
 				sim.blocked(self, name)
 				return
 			end
-			if restricted and Taint.current and ((sim.alwaysRestrictedMethods or {})[name] or sim.combatLockdown) then
+			if restricted and Taint.current and restrictedNow(kind, name) then
 				sim.blocked(self, name)
 				return
 			end
