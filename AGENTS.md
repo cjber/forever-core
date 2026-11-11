@@ -120,6 +120,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   ForeverCore in `## Dependencies` must ship it in its own zip (`externals:` at the pin and
   `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
   `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
+  The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, which the package job runs in
+  every consumer as part of `tools/check_package.py`, so a commit that moves one copy without the others fails its own
+  CI before it can land.
   `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
   timing.
 - `tools/sync_consumer_prs.py`: the automatic tooling sync behind `.github/workflows/sync-consumers.yml`. On every push

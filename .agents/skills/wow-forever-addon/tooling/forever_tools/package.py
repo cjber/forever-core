@@ -28,6 +28,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from . import core_pin
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -319,6 +320,9 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     parser.add_argument("--release-dir", type=Path, default=root / ".release", help="the packager's release folder")
     args = parser.parse_args(argv)
     problems = check(args.release_dir, policy)
+    # The pin, the shipped external and the TOC field all have to name one release, or the zip a release builds
+    # carries a core older than the one its specs and CI just ran against.
+    problems += core_pin.check(root)
     if not problems:
         problems = run_specs(root, args.release_dir, policy)
     for problem in problems:
