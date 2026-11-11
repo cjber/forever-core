@@ -61,11 +61,11 @@ def read_manifest(directory: Path) -> dict:
 SECRET_WORDS = re.compile(r"access|auth|api|credential|creds|key|passw|pwd|secret|token", re.IGNORECASE)
 
 
-def write_manifest(directory: Path, revision: str) -> None:
+def write_manifest(directory: Path, revision: str, files: dict[str, str] | None = None) -> None:
     manifest = {
         "package": "forever_tools",
         "source": {"repository": REPOSITORY, "path": PRODUCER_PATH, "revision": revision},
-        "files": hashes(directory),
+        "files": hashes(directory) if files is None else files,
     }
     (directory / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
@@ -126,14 +126,28 @@ def update(source: Path, revision: str | None) -> int:
     if git(source, "status", "--porcelain", "--", PRODUCER_PATH):
         raise SystemExit(f"{source} has uncommitted changes under {PRODUCER_PATH}; commit the producer first")
     expected = read_manifest(directory)["files"]
-    if hashes(directory) != expected:
-        raise SystemExit("the producer's MANIFEST.json is stale; run `sync.py manifest` there and commit")
+    missing = sorted(name for name in expected if not (directory / name).is_file())
+    changed = sorted(
+        name for name in expected if (directory / name).is_file() and digest(directory / name) != expected[name]
+    )
+    extra = sorted(hashes(directory).keys() - expected.keys())
+    if missing or extra or changed:
+        details = []
+        if missing:
+            details.append(f"missing: {', '.join(missing)}")
+        if extra:
+            details.append(f"not in manifest: {', '.join(extra)}")
+        if changed:
+            details.append(f"changed: {', '.join(changed)}")
+        raise SystemExit(
+            f"the producer's MANIFEST.json is stale ({'; '.join(details)}); run `sync.py manifest` there and commit"
+        )
     for stale in sources(PACKAGE):
         if stale.name not in expected:
             stale.unlink()
-    for name in expected:
+    for name in sorted(expected):
         copy_preserving_mode(directory / name, PACKAGE / name)
-    write_manifest(PACKAGE, head)
+    write_manifest(PACKAGE, head, {name: digest(PACKAGE / name) for name in expected})
     print(f"forever_tools: updated {len(expected)} files to {head}")
     return 0
 

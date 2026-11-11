@@ -416,11 +416,84 @@ class PerfReportTest(unittest.TestCase):
 
     def test_saved_variables_sizes_are_per_file_and_flag_ours(self):
         rows = {row.name: row for row in perf.saved_variable_sizes(self.wtf)}
-        self.assertAlmostEqual(rows["AdventureGuideForever.lua"].kb, 16.0, places=2)
-        self.assertTrue(rows["AdventureGuideForever.lua"].ours)
-        self.assertAlmostEqual(rows["SkillUpForever.lua"].kb, 1.0, places=2)
-        self.assertTrue(rows["SkillUpForever.lua"].ours)
-        self.assertFalse(rows["Questie.lua"].ours)
+        guide = rows["AdventureGuideForever.lua"]
+        self.assertAlmostEqual(guide.kb, 16.0, places=2)
+        self.assertAlmostEqual(guide.account_kb, 16.0, places=2)
+        self.assertAlmostEqual(guide.character_kb, 0.0, places=2)
+        self.assertEqual(guide.files, 1)
+        self.assertAlmostEqual(guide.disk_kb, 16.0, places=2)
+        self.assertTrue(guide.ours)
+        skillup = rows["SkillUpForever.lua"]
+        self.assertAlmostEqual(skillup.kb, 1.0, places=2)
+        self.assertAlmostEqual(skillup.account_kb, 0.0, places=2)
+        self.assertAlmostEqual(skillup.character_kb, 1.0, places=2)
+        self.assertEqual(skillup.files, 1)
+        self.assertAlmostEqual(skillup.disk_kb, 1.0, places=2)
+        self.assertTrue(skillup.ours)
+        questie = rows["Questie.lua"]
+        self.assertAlmostEqual(questie.kb, 4.0, places=2)
+        self.assertAlmostEqual(questie.account_kb, 4.0, places=2)
+        self.assertAlmostEqual(questie.character_kb, 0.0, places=2)
+        self.assertEqual(questie.files, 1)
+        self.assertFalse(questie.ours)
+
+    def test_saved_variables_do_not_sum_characters_into_the_per_login_size(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wtf = Path(directory) / "WTF"
+            account = wtf / "Account" / "1" / "SavedVariables"
+            sized(account / "AcrossForever.lua", "AcrossForeverDB = {}", 8 * 1024)
+            sized(
+                wtf / "Account" / "1" / "Achar" / "SavedVariables" / "AcrossForever.lua",
+                "AcrossForeverDB = {}",
+                2 * 1024,
+            )
+            sized(
+                wtf / "Account" / "1" / "Bchar" / "SavedVariables" / "AcrossForever.lua",
+                "AcrossForeverDB = {}",
+                4 * 1024,
+            )
+            row = perf.saved_variable_sizes(wtf)[0]
+            self.assertAlmostEqual(row.kb, 12.0, places=2)
+            self.assertAlmostEqual(row.account_kb, 8.0, places=2)
+            self.assertAlmostEqual(row.character_kb, 4.0, places=2)
+            self.assertEqual(row.files, 3)
+            self.assertAlmostEqual(row.disk_kb, 14.0, places=2)
+
+    def test_saved_variables_text_labels_the_disk_total_as_disk_use(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wtf = Path(directory) / "WTF"
+            account = wtf / "Account" / "1" / "SavedVariables"
+            sized(account / "AcrossForever.lua", "AcrossForeverDB = {}", 8 * 1024)
+            sized(
+                wtf / "Account" / "1" / "Achar" / "SavedVariables" / "AcrossForever.lua",
+                "AcrossForeverDB = {}",
+                2 * 1024,
+            )
+            sized(
+                wtf / "Account" / "1" / "Bchar" / "SavedVariables" / "AcrossForever.lua",
+                "AcrossForeverDB = {}",
+                4 * 1024,
+            )
+            saved = perf.saved_variable_sizes(wtf)
+            report = perf.build_report(
+                session=self.session(),
+                session_index=1,
+                session_count=1,
+                saved_variables=saved,
+                smoke=None,
+            )
+            text = perf.render_text(report)
+            login_total = sum(row.kb for row in saved)
+            disk_total = sum(row.disk_kb for row in saved)
+            self.assertIn(
+                f"1 file name(s) read at login; {login_total:.1f} KB per login, {disk_total:.1f} KB on disk",
+                text,
+            )
+            self.assertNotIn(f"{disk_total:.1f} KB per login", text)
+            row = next(line for line in text.splitlines() if line.startswith("AcrossForever.lua"))
+            self.assertIn("12.0", row)
+            self.assertIn("3", row)
+            self.assertIn("FILES", text)
 
     def test_smoke_flags_and_wfa13_findings(self):
         findings = perf.wfa13_findings(self.session(), self.sources.smoke)
