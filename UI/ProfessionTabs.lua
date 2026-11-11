@@ -37,6 +37,14 @@ local EnforceWidth
 local ApplyPages
 local RecomputeWidth
 
+-- The client loads Blizzard_Professions on demand, so the window is read at call time, never captured at load. The
+-- width reads may run before the client has built it; the install paths run only once an addon registers a tab,
+-- which needs the client's window already built.
+---@return ForeverProfessionsWindow?
+local function Window()
+	return _G.ProfessionsFrame --[[@as ForeverProfessionsWindow?]]
+end
+
 ---@return boolean
 local function Locked()
 	return type(InCombatLockdown) == "function" and InCombatLockdown() == true
@@ -65,11 +73,15 @@ local function CaptureWidth()
 	if baseWidth then
 		return
 	end
-	local crafting = ProfessionsFrame and ProfessionsFrame.CraftingPage
+	local window = Window()
+	if not window then
+		return
+	end
+	local crafting = window.CraftingPage
 	if not crafting or not crafting:IsShown() then
 		return
 	end
-	local width = ProfessionsFrame:GetWidth()
+	local width = window:GetWidth()
 	if type(width) == "number" and width > 1 then
 		baseWidth = width
 		RecomputeWidth()
@@ -80,17 +92,18 @@ EnforceWidth = function()
 	if not baseWidth then
 		CaptureWidth()
 	end
-	if not fixedWidth or not ProfessionsFrame or enforcingWidth then
+	local window = Window()
+	if not fixedWidth or not window or enforcingWidth then
 		return
 	end
 	if Locked() then
 		Queue()
 		return
 	end
-	local current = ProfessionsFrame:GetWidth()
+	local current = window:GetWidth()
 	if type(current) ~= "number" or math.abs(current - fixedWidth) > 0.5 then
 		enforcingWidth = true
-		ProfessionsFrame:SetWidth(fixedWidth)
+		window:SetWidth(fixedWidth)
 		enforcingWidth = false
 	end
 end
@@ -140,14 +153,15 @@ end
 -- scripts.
 ---@return ForeverProfessionTab
 local function NewTab()
-	return CreateFrame("Button", nil, ProfessionsFrame, "LargeSideTabButtonTemplate") --[[@as ForeverProfessionTab]]
+	return CreateFrame("Button", nil, Window(), "LargeSideTabButtonTemplate") --[[@as ForeverProfessionTab]]
 end
 
 -- The client's own side tabs, highest shown first. The last shown native tab is the slot our column starts under.
 ---@return ForeverProfessionNativeTab?
 local function LastNativeTab()
-	local last = ProfessionsFrame.ProfessionsOverviewTab
-	for _, native in ipairs(ProfessionsFrame.rightProfessionTabs or {}) do
+	local window = Window() --[[@as ForeverProfessionsWindow]]
+	local last = window.ProfessionsOverviewTab
+	for _, native in ipairs(window.rightProfessionTabs or {}) do
 		if native:IsShown() then
 			last = native
 		end
@@ -206,10 +220,11 @@ local function SyncChecked()
 		entry.tab:SetChecked(entry == selected)
 	end
 	if selected then
-		if ProfessionsFrame.ProfessionsOverviewTab then
-			ProfessionsFrame.ProfessionsOverviewTab:SetChecked(false)
+		local window = Window() --[[@as ForeverProfessionsWindow]]
+		if window.ProfessionsOverviewTab then
+			window.ProfessionsOverviewTab:SetChecked(false)
 		end
-		for _, native in ipairs(ProfessionsFrame.rightProfessionTabs or {}) do
+		for _, native in ipairs(window.rightProfessionTabs or {}) do
 			native:SetChecked(false)
 		end
 	end
@@ -230,6 +245,7 @@ local function NativeTabClicked()
 end
 
 local function HookNativePages()
+	local window = Window() --[[@as ForeverProfessionsWindow]]
 	local seen = {}
 	local function hook(page)
 		if page and not seen[page] then
@@ -237,23 +253,24 @@ local function HookNativePages()
 			page:HookScript("OnShow", NativePageShown)
 		end
 	end
-	for _, page in ipairs(ProfessionsFrame.Pages or {}) do
+	for _, page in ipairs(window.Pages or {}) do
 		hook(page)
 	end
-	hook(ProfessionsFrame.CraftingPage)
-	hook(ProfessionsFrame.BookPage)
-	hook(ProfessionsFrame.SpecPage)
-	hook(ProfessionsFrame.OrdersPage)
+	hook(window.CraftingPage)
+	hook(window.BookPage)
+	hook(window.SpecPage)
+	hook(window.OrdersPage)
 end
 
 -- Every native side tab hands the window back. The tab is a Frame with its own OnMouseUp script, so a mouse-up and a
 -- gamepad press both reach our hook without touching the tab's method.
 local function HookNativeTabs()
-	local overview = ProfessionsFrame.ProfessionsOverviewTab
+	local window = Window() --[[@as ForeverProfessionsWindow]]
+	local overview = window.ProfessionsOverviewTab
 	if overview then
 		overview:HookScript("OnMouseUp", NativeTabClicked)
 	end
-	for _, native in ipairs(ProfessionsFrame.rightProfessionTabs or {}) do
+	for _, native in ipairs(window.rightProfessionTabs or {}) do
 		native:HookScript("OnMouseUp", NativeTabClicked)
 	end
 end
@@ -267,8 +284,9 @@ local function Install()
 	HookNativeTabs()
 	-- The client resizes and rebuilds its own column through its own paths. Events and engine hooks tell us when the
 	-- layout is done; nothing of the client's methods is replaced or called.
-	ProfessionsFrame:HookScript("OnShow", Layout)
-	ProfessionsFrame:HookScript("OnSizeChanged", EnforceWidth)
+	local window = Window() --[[@as ForeverProfessionsWindow]]
+	window:HookScript("OnShow", Layout)
+	window:HookScript("OnSizeChanged", EnforceWidth)
 	EventRegistry:RegisterCallback("ProfessionsFrame.TabSet", Layout, ns.ProfessionTabs)
 	EventRegistry:RegisterCallback("ProfessionsFrame.Show", Layout, ns.ProfessionTabs)
 	EventRegistry:RegisterCallback("Professions.ProfessionSelected", Layout, ns.ProfessionTabs)
@@ -276,6 +294,9 @@ end
 
 ---@class ForeverProfessionTabsAPI
 local api = {}
+
+-- The module's own version, raised with each member it adds. SetMinWidth arrived in minor 1.
+api.minor = 1
 
 ---@param key string
 ---@param spec ForeverProfessionTabSpec
@@ -308,6 +329,23 @@ function api.Register(key, spec)
 	RecomputeWidth()
 	EnforceWidth()
 	return tab
+end
+
+-- A page whose needed width changes after it registered raises or clears its minWidth, and the one width the window
+-- keeps is recomputed and enforced. In combat the change waits with the rest of the frame work.
+---@param key string
+---@param width number?
+function api.SetMinWidth(key, width)
+	if type(key) ~= "string" or key == "" then
+		error("ForeverCore.ProfessionTabs.SetMinWidth: key must be a non-empty string", 2)
+	end
+	local entry = tabs[key]
+	if not entry then
+		error("ForeverCore.ProfessionTabs.SetMinWidth: key not registered: " .. key, 2)
+	end
+	entry.spec.minWidth = width
+	RecomputeWidth()
+	EnforceWidth()
 end
 
 ---@param key string

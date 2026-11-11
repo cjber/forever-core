@@ -495,6 +495,118 @@ class ToolingTest(unittest.TestCase):
             self.assertEqual(sync.tooling_packages(root), ["forever_tools"])
 
 
+class PinTest(unittest.TestCase):
+    """The ForeverCore pin each consumer checks its specs and CI against."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "legacy-forever"
+        self.pin = self.root / "tools" / "forever-core.txt"
+        self.pin.parent.mkdir(parents=True)
+
+    def write_pin(self, text):
+        self.pin.write_text(text, encoding="utf-8")
+
+    def test_an_older_pin_moves_to_the_latest_release(self):
+        self.write_pin("v1.3.2\n")
+        self.assertEqual(sync.bump_pin(self.root, "v1.4.0"), "v1.3.2")
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_an_equal_pin_is_left_alone(self):
+        self.write_pin("v1.4.0\n")
+        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_a_newer_pin_never_moves_backwards(self):
+        self.write_pin("v1.5.0\n")
+        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.5.0\n")
+
+    def test_versions_compare_numerically(self):
+        self.write_pin("v1.9.0\n")
+        self.assertEqual(sync.release_version("v1.10.0"), (1, 10, 0))
+        self.assertGreater(sync.release_version("v1.10.0"), sync.release_version("v1.9.0"))
+        self.assertEqual(sync.bump_pin(self.root, "v1.10.0"), "v1.9.0")
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.10.0\n")
+
+    def test_a_pin_that_is_not_a_release_tag_is_left_alone_with_a_notice(self):
+        self.write_pin("main\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "main\n")
+        self.assertIn("is not a vX.Y.Z tag", out.getvalue())
+
+    def test_a_consumer_without_a_pin_file_is_untouched(self):
+        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertEqual(sorted(self.pin.parent.iterdir()), [])
+
+    def test_a_prefixed_consumer_gets_its_pin_below_the_addon_folder(self):
+        root = Path(self.tmp.name) / "kiln-forever"
+        pin = root / "addon" / "KilnForever" / "tools" / "forever-core.txt"
+        pin.parent.mkdir(parents=True)
+        pin.write_text("v1.0.0\n", encoding="utf-8")
+        self.assertEqual(sync.bump_pin(root, "v1.4.0"), "v1.0.0")
+        self.assertEqual(pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_a_failed_latest_release_read_warns_and_bumps_nothing(self):
+        self.write_pin("v1.3.2\n")
+        out = io.StringIO()
+        with (
+            mock.patch.object(sync, "api", side_effect=sync.SyncError("gh: no network")),
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertIsNone(sync.latest_core_release())
+        self.assertIn("::warning::", out.getvalue())
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.3.2\n")
+
+    def test_the_latest_release_is_read_for_the_run(self):
+        requests = []
+
+        def fake_api(path, *args, check=True):
+            requests.append(path)
+            return subprocess.CompletedProcess(path, 0, json.dumps({"tag_name": "v1.4.0"}), "")
+
+        with mock.patch.object(sync, "api", side_effect=fake_api):
+            self.assertEqual(sync.latest_core_release(), "v1.4.0")
+        self.assertEqual(requests, ["repos/cjber/forever-core/releases/latest"])
+
+    def test_sync_checkout_bumps_the_pin_after_the_syncs(self):
+        self.write_pin("v1.3.2\n")
+        with mock.patch.object(sync, "run"):
+            self.assertEqual(sync.sync_checkout(self.root, self.root.parent, "v1.4.0"), "v1.3.2")
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_the_pr_body_names_the_bump_the_sync_made(self):
+        bodies = []
+
+        def fake_open(repo, body):
+            bodies.append(body)
+            return 9, "https://example.test/pull/9", "opened", None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "git"),
+                mock.patch.object(sync, "sync_checkout", return_value="v1.3.2"),
+                mock.patch.object(
+                    sync, "staged_changes", return_value=([{"path": "tools/forever-core.txt", "contents": "eA=="}], [])
+                ),
+                mock.patch.object(sync, "point_branch"),
+                mock.patch.object(sync, "create_commit"),
+                mock.patch.object(sync, "open_or_update_pr", side_effect=fake_open),
+            ):
+                sync.sync_consumer("legacy-forever", root, root, "abc123", "v1.4.0")
+
+        self.assertEqual(len(bodies), 1)
+        self.assertIn(
+            "Moves the ForeverCore pin from v1.3.2 to v1.4.0, so this addon's CI runs against the latest release.",
+            bodies[0],
+        )
+
+
 class BodyTest(unittest.TestCase):
     def test_body_names_the_core_commit_and_every_file(self):
         files = ("UI/TrackerHost.lua", "tools/forever_tools/sync.py")
@@ -502,6 +614,13 @@ class BodyTest(unittest.TestCase):
         self.assertIn("https://github.com/cjber/forever-core/commit/abc123", body)
         for path in files:
             self.assertIn(f"`{path}`", body)
+
+    def test_body_names_the_pin_bump(self):
+        body = sync.pr_body("abc123", ("tools/forever-core.txt",), ("v1.3.2", "v1.4.0"))
+        self.assertIn(
+            "Moves the ForeverCore pin from v1.3.2 to v1.4.0, so this addon's CI runs against the latest release.", body
+        )
+        self.assertNotIn("Moves the ForeverCore pin", sync.pr_body("abc123", ("tools/forever-core.txt",)))
 
 
 class SummaryTest(unittest.TestCase):

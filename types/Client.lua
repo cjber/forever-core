@@ -244,6 +244,7 @@ ScrollUtil = nil
 ---@type ForeverScrollBoxConstants
 ScrollBoxConstants = nil
 
+-- The ForeverProfession* classes type core's view of the window; the client global is left for an addon to type.
 -- UI/ProfessionTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.
 ---@class ForeverProfessionTab : Button
 ---@field Icon Texture
@@ -269,8 +270,6 @@ ScrollBoxConstants = nil
 ---@field Pages? ForeverProfessionPage[]
 ---@field ProfessionsOverviewTab? ForeverProfessionNativeTab
 ---@field rightProfessionTabs? ForeverProfessionNativeTab[]
----@type ForeverProfessionsWindow
-ProfessionsFrame = nil
 
 -- UI/QuestLogTabs.lua: the client's protected call, which keeps a panel's error from breaking the module's switch.
 ---@param fn function

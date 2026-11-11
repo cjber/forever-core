@@ -34,21 +34,30 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
 
 ## Requiring ForeverCore
 
-Every Forever addon depends on ForeverCore, the suite's shared library. In the TOC:
+Every Forever addon depends on ForeverCore, the suite's shared library, and ships it inside its own release zip.
+A store dependency does not reach a player who is updating: CurseForge can update the addon without installing its
+required dependency, and a Wago upload carries no dependencies at all, because the packager sends Wago only label,
+patches, stability and changelog. In the TOC:
 
 ```toc
 ## Dependencies: ForeverCore
 ```
 
-and in `.pkgmeta`, so CurseForge and Wago install it automatically:
+In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
+addon's own folder, and no `required-dependencies` entry (one owner for the folder):
 
 ```yaml
-required-dependencies:
-  - ForeverCore
+externals:
+  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.1/ForeverCore-v1.4.1-forever.zip
+
+move-folders:
+  LegacyForever/ForeverCore: ForeverCore
 ```
 
-CurseForge's slug is `forevercore` (project 1796337; `forever-core` belongs to someone else); Wago resolves the dependency from its own project page (see
-`addons.wago.io/addons/forever-core`, project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not ship its runtime files.
+Keep the external's tag equal to the tag in `tools/forever-core.txt`, and `<package-as>/ForeverCore` equal to your
+`package-as`; `tools/check_consumers.py` fails either mismatch. ForeverCore's own store pages are CurseForge
+`forevercore` (project 1796337; `forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core`
+(project ID `RNL4RQNo`). Do not list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
 
 ## 2. CurseForge project (authors.curseforge.com)
 
@@ -112,34 +121,36 @@ does not outlast the tool call. Confirm every change after a reload or on the pu
 press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
 CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).
 
-**CurseForge gallery.** The `file_upload` tool cannot reach this page: its file input is created
-detached on click, and a real click opens a native picker that blocks the tab. Instead:
+**CurseForge gallery.** Upload from the current `origin/main` render. Take the title from
+`docs/curseforge.md` first, then `docs/gallery.md`. The media title limit is 128 characters.
 
-1. Override `HTMLInputElement.prototype.click` to capture `file` inputs without opening a picker.
-2. Click "Add media", then "Upload or Drag Image".
-3. Fetch the image from `raw.githubusercontent.com` into a `File`, set the captured input's `files` from
-   a `DataTransfer`, dispatch `change`. Convert anything over 2 MB in the page: canvas, JPEG, quality 0.9.
-4. Wait about 5 s between images. New images land last, and their caption is a filename.
-5. Click the card, replace Title, click Apply, and use the side arrows for the next image. Move on only
-   after Apply dims. Check for a filename left in Description and an unwanted Feature Media star, which
-   can appear after processing.
+1. CurseForge rejects uploads of 2 MB or more. For oversized still PNGs, stage lossless WebP
+   copies under 2,000,000 bytes. Check dimensions and decoded RGBA pixels against the source
+   before uploading. Keep the tracked PNG and its links; keep animated GIFs animated.
+2. In Chrome, open "Add media", arm the Playwright `filechooser` event, then click "Upload or
+   Drag Image" and call `setFiles` on the chooser with the staged absolute path. The input is
+   created on click. This avoids a native picker. The ChatGPT Chrome extension needs "Allow
+   access to file URLs" to attach a local file.
+3. A new card lands last with a filename for its title. Save its image URL and use it to
+   identify the card, including when the old card has the same caption. If an upload times
+   out, read the author gallery before retrying.
+4. Click the new image to open its editor. Set Title, click Apply, check the saved caption
+   on that card, then close with Cancel if the editor stays open. Check Description and
+   Feature Media for unintended changes. Read the cards back after a reload; the Core API
+   can lag behind the author page.
 
-To reorder, open "Reorder gallery" after a full page load: the dialog can keep another project's list
-after in-app navigation. A mouse drag does nothing, so `focus()` the `li.sortable-screenshot-element`,
-press real keys, wait 4 s, read the order and click Done. The list is a grid three cards wide and
-the arrows move by position on screen: Left and Right move one place within a row, Up and Down move a
-whole row, and Left does nothing from the first column. Send space, the arrow (with `repeat` for more
-than one) and space as separate key calls: several keys in one string drop presses, and a dropped
-space leaves the sorter stuck until Done and a reload. Read the order after each move. The author
-site's order can flip between reloads even after a good save: confirm on the public
-`curseforge.com/wow/addons/<slug>/gallery` page. That page can serve a replaced file from cache for
-hours; when only the public copy is stale, check it again later.
+To reorder, open "Reorder gallery" after a full page load: in-app navigation can leave the
+previous project's list in the dialog. Use the sortable card's keyboard controls: press Space
+to pick it up, wait until it is active, send arrow keys separately, then press Space to drop it.
+Measure the current grid width; Up and Down move by a row and Left and Right move within a
+row. Re-read the image URLs in order after each drop, click Done, then check after a reload
+and on `curseforge.com/wow/addons/<slug>/gallery`. The public page can lag behind the author page.
 
-To delete, hover the card so its pencil and trash buttons render, click the trash and then OK in
-the "Delete media" dialog, one card at a time with a screenshot before each click. The buttons exist
-only on the hovered card, so a script that walks up from an image to "the last button" lands on a
-different card's trash. Screenshot coordinates differ from `getBoundingClientRect`; take positions
-from the screenshot.
+For an approved removal, identify the old card by image URL and verify its replacement
+first. Hover the exact card to reveal its trash button and selection checkbox. For a batch,
+check the selected image URLs and count against the approved list before confirming.
+Wait for those cards to disappear before leaving the page. Reload and read back before
+retrying a deletion, as the first reload can still show stale cards.
 
 ## Keep galleries in sync
 
@@ -162,7 +173,7 @@ when the player is not playing (a deskpilot screenshot first):
 
 1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
    note `date +%s`, then `/reload`.
-2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from `forever-smoke`). It opens and closes every
+2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from this repo's `tools/devsmoke/!!DevSmoke`). It opens and closes every
    loaded Forever addon's slash command and the world map, and shows "Dev Smoke: N surfaces, F failed" on
    screen.
 3. `/reload` again so the client writes SavedVariables, then

@@ -303,6 +303,68 @@ test("instrument: a multiple assignment computes every target index before the f
 	eq(chunk(), 2, "#t")
 end)
 
+test("instrument: the Blizzard rewrite cache is written to a temporary file and renamed into place", function()
+	local scratch = "tools/.cache/forever_sim/spec-cache-" .. (tostring({}):gsub("%W", ""))
+	local src = "local probe = 1 -- cache write probe\n"
+	local opened, renamed = {}, {}
+	local realOpen, realRename = io.open, os.rename
+	rawset(io, "open", function(path, mode)
+		opened[#opened + 1] = { path = path, mode = mode or "r" }
+		return realOpen(path, mode)
+	end)
+	rawset(os, "rename", function(from, to)
+		renamed[#renamed + 1] = { from = from, to = to }
+		return realRename(from, to)
+	end)
+	local called, out = pcall(Instrument.rewriteBlizzard, src, scratch, "1.60.1.70124")
+	rawset(io, "open", realOpen)
+	rawset(os, "rename", realRename)
+	local dest = renamed[1] and renamed[1].to
+	local ok, problem = pcall(function()
+		assert(called, out)
+		for _, call in ipairs(opened) do
+			if call.mode:find("[wa+]") then
+				assert(not call.path:match("%.lua$"), "a cache entry was opened for writing: " .. call.path)
+			end
+		end
+		eq(#renamed, 1, "renames")
+		local tmp = renamed[1].from
+		assert(dest:match("%.lua$"), "the rename target is not a cache entry: " .. tostring(dest))
+		local dir = dest:match("^(.*)/[^/]+$")
+		assert(
+			tmp ~= dest and tmp:match("^(.*)/[^/]+$") == dir,
+			"the temporary file is not beside the cache entry: " .. tostring(tmp)
+		)
+		local wroteTmp = false
+		for _, call in ipairs(opened) do
+			if call.path == dest then
+				assert(not call.mode:find("[wa+]"), "the cache entry was opened for writing: " .. call.mode)
+			end
+			if call.path == tmp and call.mode:find("w") then
+				wroteTmp = true
+			end
+		end
+		assert(wroteTmp, "no temporary file was written")
+		eq(Instrument.rewriteBlizzard(src, scratch, "1.60.1.70124"), out, "the cache read")
+	end)
+	for _, call in ipairs(opened) do
+		if call.mode:find("[wa+]") then
+			os.remove(call.path)
+		end
+	end
+	for _, call in ipairs(renamed) do
+		os.remove(call.to)
+	end
+	if dest then
+		local dir = dest:match("^(.*)/[^/]+$")
+		while dir and #dir >= #scratch do
+			os.remove(dir)
+			dir = dir:match("^(.*)/[^/]+$")
+		end
+	end
+	assert(ok, problem)
+end)
+
 test("veil: secrets error for tainted arithmetic, compare, length; pass through untainted", function()
 	local tainted
 	Veil.taintedBy = function()

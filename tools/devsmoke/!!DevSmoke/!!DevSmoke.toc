@@ -1,0 +1,5 @@
+## Interface: 16001
+## Title: Dev Smoke
+## Notes: Private dev addon: opens and closes every loaded Forever addon's slash surface and the world map, then saves any error per surface.
+## SavedVariables: DevSmokeDB
+Core.lua

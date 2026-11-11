@@ -8,6 +8,21 @@
 
 - `ForeverCore.Credits` (minor 1) draws the **Thanks** page. `Register(addonTitle, credits)` takes the addon's generated `ns.Credits` under its `Family.ADDONS` name, `Line(addonTitle)` returns the short "Thanks to ..." line for its settings page, `Players()` and `Inspired()` return the merged rows, and `Open(addonTitle?)` shows the page filtered to one addon or every addon. `tools/forever_tools/credits.py` writes `Data/Credits.lua` from THIRD_PARTY.md's new `## Players` and `## Inspired by` tables, one row per shipped contribution, and keeps the one-sentence thanks in README.md's `## Credits` and docs/curseforge.md; `--check` fails a stale file or block. A name in `credits_opt_out.txt` beside the tool makes the run fail until that row is removed, so a player who asked not to be credited is never written. WFA-31 and WFA-33 document the tables, the opt-out, and that the addon's author is never listed. (#419)
 
+## [1.5.0] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
+### For addon authors
+
+- `ForeverCore.ProfessionTabs.SetMinWidth(key, width)` lets a registration change its `minWidth` after it registered. It recomputes and enforces the one window width across tabs and professions, `nil` clears it, and in combat the change waits with the module's other frame work. `ForeverCore.ProfessionTabs.minor` is now 1. (#433)
+
+## [1.4.1] - 2026-11-11
+
+### For addon authors
+
+- **Each addon's ForeverCore pin follows core's releases.** The consumer sync moves `tools/forever-core.txt` to the latest release tag in the same PR as the tooling, and the drift gate fails a consumer whose pin lags, whose `.pkgmeta` ships ForeverCore as an `externals:` entry, or that requires core without `- forevercore` under `required-dependencies:`, so an addon's specs and CI no longer test against a core no player runs. (#420)
+- **Core no longer declares the client global `ProfessionsFrame`.** An addon that declares it with its own window type no longer gets the union of both, so a typecheck that assigns its frame to its own type passes. (#427)
+
 ## [1.4.0] - 2026-11-11
 
 <!-- discord-image: docs/screenshots/tracker.png -->
