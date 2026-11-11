@@ -32,11 +32,13 @@ python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WF
 python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
+python3 tools/gen_widget_methods.py       # regenerate the widget-method data from the pinned API annotations
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
-python3 tools/check_package.py            # .release/ForeverCore holds every TOC file and no development folder
+python3 tools/check_package.py            # .release/ForeverCore holds every loaded file, no development folder,
+                                          # and no widget method that takes parameters passed as a script handler
 ruff check tools && ruff format --check tools
 python3 -m unittest discover -s tools -p "test_*.py"
 ```
@@ -117,6 +119,13 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data from the wago.tools listfile for
   1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule lives in
   `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
+- `tools/gen_widget_methods.py`: regenerates `forever_tools/widget_methods.txt`, every method the client's API
+  annotations declare on a widget class that takes a parameter, from the Ketho vscode-wow-api checkout
+  `tools/typecheck.sh` pins. The vendored `forever_tools/widget_handlers.py` uses it to fail a `SetScript`/`HookScript`
+  whose handler is a widget's own method read that takes parameters (`edit.HighlightText`) instead of a function the
+  addon wrote; a method that declares none (`frame.StopMovingOrSizing`) ignores the handler's arguments and passes.
+  Every consumer's package job runs it over the packaged files, and `tools/test_gen_widget_methods.py` keeps the data
+  matching the pin.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, running the client
   load rule, the menu rule and the tooling check on every PR (`--base`) and on a schedule. Its `core-shared` job is
   required in every consumer. It lives outside `.github/workflows` so it never runs here; the `workflows` CI job lints
@@ -129,7 +138,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, which the package job runs in
   every consumer as part of `tools/check_package.py`, so a commit that moves one copy without the others fails its own
-  CI before it can land.
+  CI before it can land. That job also runs `forever_tools/widget_handlers.py` over the packaged files, so a widget
+  method that takes parameters passed straight as a script handler fails before it can reach a player.
   `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
   timing.
 - `tools/sync_consumer_prs.py`: the automatic tooling sync behind `.github/workflows/sync-consumers.yml`. On every push
