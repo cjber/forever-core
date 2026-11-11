@@ -32,6 +32,7 @@
     "sync.py": "c4d29b97dc30b3a60a620f2733dbab609acc8323f8a881b346414cf3412a8ffd",
     "taint.lua": "badc05c3b2177cc9ed6d9e7d6257d674365c3dfbdc7762fcfeb267eb4e9a3ddb",
     "templates.lua": "93e1483d9e6f6443aa9fabd19f1e314a2e783ff69a930b84a6a34050e80a13ec",
+    "toc.lua": "8eb8ab5fd3436f988e0ffa59cd1ad9add99f6fc576e521fd713a27ec1ae88211",
     "tooltip.lua": "40c470b960fdfb372dd057f9ae46977d57ef993d964b49aa8afa82daef33aa99",
     "transform.lua": "7d12c6805e503cb844bb6f815aba2fc9bde6f6c8360bcdd7e51c41c107a32bb2",
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",

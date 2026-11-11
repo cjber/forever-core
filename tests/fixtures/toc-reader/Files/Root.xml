@@ -1,0 +1,7 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- <Script file="Ignored.lua"/> and <Include file="Ignored.xml"/> are comments, not files. -->
+	<Frame name="RootTemplate" inherits="ObjectiveTrackerLineTemplate" virtual="true"/>
+	<Include file="Nested\Child.xml"/>
+	<Script file='Scripts\Root.lua'/>
+	<Frame name="OtherTemplate" inherits='RootTemplate' virtual="true"/>
+</Ui>

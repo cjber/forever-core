@@ -1,0 +1,5 @@
+<Ui>
+	<!-- A nested include, with a single-quoted script and a self-closing tag, all in document order. -->
+	<Script file='Deep.lua' />
+	<Frame name="DeepTemplate" inherits="ChildTemplate" virtual="true"/>
+</Ui>

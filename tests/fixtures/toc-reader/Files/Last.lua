@@ -1,0 +1,1 @@
+-- A fixture script: the reader names it, no client runs it.

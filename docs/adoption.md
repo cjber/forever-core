@@ -133,6 +133,13 @@ required before them or stubbed with the one module the spec exercises. A spec t
 `ForeverCore.toc`'s files in order into one fake client, registers its own addon with `ForeverCore.Register`, and then
 runs the addon's files. `tests/api_spec.lua` in this repo is the worked example.
 
+A consumer's `tests/forever_core.lua` reads that TOC with the shared reader in its vendored
+`tools/forever_sim/toc.lua`: `local Toc = dofile("tools/forever_sim/toc.lua")`, then
+`Toc.files(directory, "ForeverCore.toc")`. Each entry is `{ path, kind }`: `loadfile` the `kind == "lua"` entries, and
+register the `Toc.templates(entry.path)` of each `kind == "xml"` entry before loading that XML's scripts. The reader
+expands an XML file into its `Script` and `Include` children in the client's order, so `UI/TrackerSection.xml` and any
+later XML file need no special case in the loader.
+
 ## Changing a shared file
 
 1. Change it here. Both specs, `luacheck` and `stylua` must pass.

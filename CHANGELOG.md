@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- `tools/forever_sim/toc.lua` reads a TOC the way the client does: `files(root, tocName)` lists Lua files and expands each XML's `Script` and `Include` children in order, and `templates(path)` lists its virtual templates, so a consumer's spec loader can load `UI/TrackerSection.xml` and move its ForeverCore pin past v1.1.0. (#412)
+
 ## [1.3.2] - 2026-11-11
 
 ### For addon authors
