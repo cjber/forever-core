@@ -247,6 +247,7 @@ class Ui:
         self._textures = {}
         self._fonts = {}
         self._asset_problems = {}
+        self._atlas_index = None
 
     def table(self, name, key="ID"):
         if name not in self._tables:
@@ -293,15 +294,21 @@ class Ui:
     def _atlas_member(self, name):
         """The element and member SetAtlas would draw for `name`, its atlas, and its logical size in UI units.
         Selects by the same ranking as the client and fetches no texture."""
-        elements = self.table("UiTextureAtlasElement", key="Name")
-        element = next((row for n, row in elements.items() if n.lower() == name.lower()), None)
+        if self._atlas_index is None:
+            # Element by lower-cased name and members by element, built once: a scene that measures every
+            # client atlas would otherwise scan both tables per name.
+            by_name = {n.lower(): row for n, row in self.table("UiTextureAtlasElement", key="Name").items()}
+            by_element = {}
+            for m in self.table("UiTextureAtlasMember").values():
+                by_element.setdefault(m["UiTextureAtlasElementID"], []).append(m)
+            self._atlas_index = by_name, by_element
+        by_name, by_element = self._atlas_index
+        element = by_name.get(name.lower())
         if element is None:
             raise NoAtlas(f"no atlas element {name!r}")
         atlases = self.table("UiTextureAtlas")
         canvases = self.table("UiCanvas")
-        members = [
-            m for m in self.table("UiTextureAtlasMember").values() if m["UiTextureAtlasElementID"] == element["ID"]
-        ]
+        members = by_element.get(element["ID"], [])
 
         def logical_size(member):
             # Override size wins; else pixels scaled by the canvas (member's, else the atlas's): canvas 2
@@ -321,8 +328,10 @@ class Ui:
             # The client's own set wins. Outside it, a "-c60" member sits in the default set too but is
             # not what this client draws (its grey tooltip centre proves it), so take the plain one.
             in_set = atlases[member["UiTextureAtlasID"]]["UiTextureAtlasSetID"] == str(self.atlas_set)
-            density = int(member["Width"]) / logical_size(member)[0]
-            return (in_set, "-c60" not in member["CommittedName"], -abs(density - self.scale), int(member["ID"]))
+            width = logical_size(member)[0]
+            # A zero-width member has no density to compare, so any measurable member outranks it.
+            fit = -abs(int(member["Width"]) / width - self.scale) if width else float("-inf")
+            return (in_set, "-c60" not in member["CommittedName"], fit, int(member["ID"]))
 
         if not members:
             raise NoAtlas(f"atlas element {name!r} has no member")
