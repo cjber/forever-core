@@ -19,7 +19,7 @@ is not a widget method and passes.
 
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
 
@@ -244,7 +244,7 @@ def check(sources: Mapping[str, str]) -> list[str]:
     return findings
 
 
-def check_root(root: Path, addons: Iterable[str] = ()) -> list[str]:
+def check_root(root: Path, addons: Collection[str] = ()) -> list[str]:
     """Every finding in the Lua `root`'s TOCs and their XML load, paths relative to `root`.
 
     `addons` names the packaged addon folders to read (`Policy.addons`), so a bundled ForeverCore is not linted as
