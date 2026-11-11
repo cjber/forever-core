@@ -666,6 +666,17 @@ test("slash runs a typed command as the chat box does, matching its alias in any
 	sim:expectNoErrors("SimSlash")
 end)
 
+test("slash refuses a word the client's own commands define", function()
+	local sim = Sim.new()
+	sim:addon(fixtures .. "SimSlashClient", "SimSlashClient")
+	sim:login()
+	local ok, err = pcall(function()
+		sim:slash("/ma")
+	end)
+	eq(ok, false, "the client command wins")
+	assert(tostring(err):find("SLASH_MAINASSISTON", 1, true), err)
+end)
+
 test("exercise drives an addon's commands in and out of combat and across a reload", function()
 	local sim = Sim.new()
 	sim:addon(fixtures .. "SimSlash", "SimSlash")

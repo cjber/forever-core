@@ -551,12 +551,40 @@ function M.install(Sim)
 		return out
 	end
 
-	-- Runs a typed slash command the way the chat box does: "/cmd rest" split on the first space, the command
-	-- found by its aliases in lower case as the client compares them, and the handler called as fresh input.
+	-- The client's own word, from a SLASH_* global the Blizzard UI set (no addon ever wrote it). The chat box consults
+	-- its secure commands first, so such a word never reaches an addon's SlashCmdList entry.
+	local function clientSlashOwner(G, taint, word)
+		for name, value in pairs(G) do
+			if
+				type(name) == "string"
+				and name:sub(1, 6) == "SLASH_"
+				and type(value) == "string"
+				and not taint.globalTaint[name]
+				and value:lower() == word
+			then
+				return name
+			end
+		end
+	end
+
+	-- Runs a typed slash command the way the chat box does: "/cmd rest" split on the first space, a client command
+	-- refused by the word the client owns, otherwise the command found by its aliases in lower case as the client
+	-- compares them, and the handler called as fresh input.
 	function Sim:slash(text)
 		local cmd, rest = text:match("^(%S+)%s*(.*)$")
 		local wanted = cmd:lower()
 		local G = self.G
+		local owner = clientSlashOwner(G, self.taint, wanted)
+		if owner then
+			error(
+				string.format(
+					"slash command %s is the client's own (%s), so the chat box runs it before any addon command",
+					cmd,
+					owner
+				),
+				2
+			)
+		end
 		for key in pairs(G.SlashCmdList) do
 			local n = 1
 			while true do

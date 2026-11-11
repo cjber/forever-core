@@ -53,7 +53,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-3** Minimal surface. Options live in one place: a Settings > AddOns page (Blizzard's
   settings API), or a menu on the addon's own UI when every option is about that UI (Legacy Forever's
   map menu). A slash command (short form plus the full name) and an addon compartment entry
-  (`## AddonCompartmentFunc`) both open it. No minimap button, no custom options window.
+  (`## AddonCompartmentFunc`) both open it. No minimap button, no custom options window. Slash words are the addon's
+  own: a word the client's GlobalStrings define, such as `/ma` for main assist, is run by the chat box before any
+  addon command, so `tools/check_slash_words.py` (vendored, checked against `tools/client_slash_words.txt`) fails a
+  collision and `sim:slash` refuses one.
 
 ### UI
 
