@@ -5,6 +5,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import check_slash_words as gate
 
@@ -53,6 +54,15 @@ class CheckTest(unittest.TestCase):
         words = gate.client_words()
         self.assertIn("/ma", words)
         self.assertIn("SLASH_MAINASSISTON1", words["/ma"])
+
+    def test_a_refresh_writes_the_file_size_ignore_marker_within_the_first_five_lines(self):
+        rows = b"BaseTag,TagText_lang\nSLASH_HELP3,/help\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "client_slash_words.txt"
+            with mock.patch.object(gate, "download", return_value=rows), contextlib.redirect_stdout(io.StringIO()):
+                gate.refresh(path)
+            header = path.read_text(encoding="utf-8").splitlines()[:5]
+        self.assertIn("# rule-ignore: file-size-no-growth - generated client data, one word per line", header)
 
 
 if __name__ == "__main__":
