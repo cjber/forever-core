@@ -10,6 +10,7 @@ function harness.new(options)
 	end
 	local function noop() end
 	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
+	local animations, released = 0, 0
 	local textures = {}
 	local initializationEvents
 	local combat = false
@@ -377,6 +378,7 @@ function harness.new(options)
 				end,
 				Release = function(_, f)
 					releases[f] = true
+					released = released + 1
 				end,
 			}
 		end,
@@ -510,6 +512,40 @@ function harness.new(options)
 		end
 		ctx.ns.TrackerHost.Attach(m, show)
 		return m
+	end
+	-- A section driven by Blizzard's own module mixin, so a spec sees EndLayout's real work: the header's add
+	-- animation and FreeUnusedBlocks releasing the block. Only available when the native tracker source is loaded.
+	function ctx.nativeModule(order)
+		local moduleMixin = env.ObjectiveTrackerModuleMixin
+		if not moduleMixin then
+			return nil
+		end
+		local m = frame()
+		env.Mixin(m, moduleMixin)
+		m.uiOrder, m.ContentsFrame = order, frame()
+		m.blockTemplate, m.lineTemplate = "Block", "Line"
+		m.Header = frame()
+		env.Mixin(m.Header, env.ObjectiveTrackerModuleHeaderMixin)
+		m.Header.MinimizeButton = frame()
+		m.Header.AddAnim = {
+			Restart = function()
+				animations = animations + 1
+			end,
+		}
+		function m:LayoutContents()
+			local block = self:GetBlock("objective")
+			block.height = 80
+			self:LayoutBlock(block)
+		end
+		m:OnLoad()
+		ctx.ns.TrackerHost.Attach(m)
+		return m
+	end
+	function ctx.headerAnimations()
+		return animations
+	end
+	function ctx.blocksReleased()
+		return released
 	end
 	function ctx.probe()
 		for _, f in ipairs(frames) do
