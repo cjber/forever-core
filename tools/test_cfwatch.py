@@ -138,5 +138,40 @@ class UnansweredTest(unittest.TestCase):
         self.assertEqual(groups[5], [5, 50, 51])
 
 
+class SettleTest(unittest.TestCase):
+    def rows(self, follow_up=False):
+        replies = [owner_reply(10, 1), comment(11, "thanks, works now", parent=1)]
+        if follow_up:
+            replies.append(comment(12, "it broke again", parent=1))
+        return [comment(1, "a question", replies=replies), comment(2, "still waiting")]
+
+    def heads(self, output):
+        return [int(match) for match in re.findall(r"(?m)^=== \[test-mod\] thread #(\d+),", output)]
+
+    def test_a_settled_thread_leaves_the_unanswered_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = run(["--settle", "1", "thanks only"], fake_fetch(self.rows()), state=tmp)
+            self.assertIn("settled [test-mod] thread #1: thanks only", output)
+            saved = json.loads((Path(tmp) / "forever-core" / "cfwatch-settled.json").read_text())
+            self.assertEqual(saved["1"]["latest"], 11)
+            self.assertEqual(saved["1"]["reason"], "thanks only")
+            output = run(["--unanswered"], fake_fetch(self.rows()), state=tmp)
+            self.assertEqual(self.heads(output), [2])
+            self.assertIn("1 unanswered, 1 settled", output)
+
+    def test_a_new_post_brings_a_settled_thread_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run(["--settle", "#1", "thanks only"], fake_fetch(self.rows()), state=tmp)
+            output = run(["--unanswered"], fake_fetch(self.rows(follow_up=True)), state=tmp)
+            self.assertEqual(sorted(self.heads(output)), [1, 2])
+            self.assertIn("2 unanswered, 0 settled", output)
+
+    def test_an_unknown_thread_or_missing_reason_is_refused(self):
+        with self.assertRaises(SystemExit):
+            run(["--settle", "99", "thanks only"], fake_fetch(self.rows()))
+        with self.assertRaises(SystemExit):
+            run(["--settle", "1"], fake_fetch(self.rows()))
+
+
 if __name__ == "__main__":
     unittest.main()
