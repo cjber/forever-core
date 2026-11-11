@@ -20,9 +20,9 @@ local order = {}
 local selectedKey
 local installed = false
 
--- The one width the crafting page and the registered pages keep while any tab is registered. It is the width the client itself gave its crafting
--- page, read from the engine after the client laid the page out, raised to the largest minWidth a registration
--- declares. Nothing reads a page's own Lua or replaces one of the window's methods.
+-- The one width the crafting page and the registered pages keep while any tab is registered. It is the width the
+-- client itself gave its crafting page, read from the engine after the client laid the page out, raised to the
+-- largest minWidth a registration declares. Nothing reads a page's own Lua or replaces one of the window's methods.
 local baseWidth
 local fixedWidth
 local enforcingWidth = false
