@@ -16,7 +16,7 @@ Forever addon, and the game loads it first.
 
 <!-- forever-credits:start -->
 
-Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT and everyone who reported a bug or asked for a feature.
+Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-- **The Forever addons page has a Thanks page.** Every player who reported a bug, asked for a feature or translated an addon is named once in one compact row, with the addons they helped and, on hover, what they did for each, beside a short **Inspired by** list. A dropdown filters the page to one addon, and the filter survives closing and reopening it. An addon's own settings page can show a one-line thanks for its players. (#419)
+- **The Forever addons page has a Thanks page.** Every player who reported a bug, asked for a feature or translated an addon is named once, ranked by how many contributions they gave, with a count after the name and the addons they helped; hovering a row lists what they did for each in full, beside a short **Inspired by** list. A dropdown filters the page to one addon, an addon's own settings page opens it already filtered to that addon, and the choice survives closing and reopening it. Anyone who asks not to be credited is left off. An addon's own settings page can also show a one-line thanks for its players. (#419)
 
 ### For addon authors
 
-- `ForeverCore.Credits` (minor 1) draws the **Thanks** page. `Register(addonTitle, credits)` takes the addon's generated `ns.Credits`, `Line(addonTitle)` returns the short "Thanks to ..." line for its settings page, and `Open()` shows the page. `tools/forever_tools/credits.py` writes `Data/Credits.lua` from THIRD_PARTY.md's new `## Players` and `## Inspired by` tables, and keeps the one-sentence thanks in README.md's `## Credits` and docs/curseforge.md; `--check` fails a stale file or block. WFA-31 and WFA-33 document the tables, and that the addon's author is never listed. (#419)
+- `ForeverCore.Credits` (minor 1) draws the **Thanks** page. `Register(addonTitle, credits)` takes the addon's generated `ns.Credits` under its `Family.ADDONS` name, `Line(addonTitle)` returns the short "Thanks to ..." line for its settings page, `Players()` and `Inspired()` return the merged rows, and `Open(addonTitle?)` shows the page filtered to one addon or every addon. `tools/forever_tools/credits.py` writes `Data/Credits.lua` from THIRD_PARTY.md's new `## Players` and `## Inspired by` tables, one row per shipped contribution, and keeps the one-sentence thanks in README.md's `## Credits` and docs/curseforge.md; `--check` fails a stale file or block. A name in `credits_opt_out.txt` beside the tool makes the run fail until that row is removed, so a player who asked not to be credited is never written. WFA-31 and WFA-33 document the tables, the opt-out, and that the addon's author is never listed. (#419)
 
 ## [1.4.0] - 2026-11-11
 

@@ -6,15 +6,15 @@
         --source "SkillUp Forever=/path/to/skillup-forever/THIRD_PARTY.md" \
         --source "Legacy Forever=/path/to/legacy-forever/THIRD_PARTY.md"
 
-The first form writes docs/screenshots/thanks.png, with one compact row hovered (the player who helped the most
-addons): the row wears the client's quest-log list highlight and the tooltip touches the window's right edge at
-that row's top. Everything in it comes from this repository: the window's size, gaps and anchors from
+The first form writes docs/screenshots/thanks.png, with one compact row hovered (the top-ranked player, by number of
+contributions): the row wears the client's quest-log list highlight and the tooltip touches the window's right edge
+at that row's top. Everything in it comes from this repository: the window's size, gaps and anchors from
 UI/Credits.lua, its phrases from Locales/enUS.lua, the addon title the credits are registered under from
 Expose.lua, and the players and projects from THIRD_PARTY.md through forever_tools.credits.parse.
 
 --preview writes three images into DIR from the given THIRD_PARTY.md files, each parsed and registered
-under the TITLE on its --source, in the order given: thanks-all.png (All addons, scrolled to the player who
-helped the most addons so their tooltip shows), thanks-filtered.png (filtered to the first source's title,
+under the TITLE on its --source, in the order given: thanks-all.png (All addons, scrolled to the top-ranked
+player so their tooltip shows), thanks-filtered.png (filtered to the first source's title,
 the dropdown closed) and thanks-menu.png (the filter menu open). Nothing written by --preview is committed;
 with no --source it previews this repository's own data.
 
@@ -104,6 +104,7 @@ CONTENT_WIDTH = constant("CONTENT_WIDTH")
 SECTION_HEIGHT = constant("SECTION_HEIGHT")
 SECTION_GAP = constant("SECTION_GAP")
 ROW_HEIGHT = constant("ROW_HEIGHT")
+NAME_COUNT_GAP = constant("NAME_COUNT_GAP")
 NAME_DETAIL_GAP = constant("NAME_DETAIL_GAP")
 DROPDOWN_WIDTH = constant("DROPDOWN_WIDTH")
 DROPDOWN_HEIGHT = constant("DROPDOWN_HEIGHT")
@@ -137,40 +138,52 @@ PAGE_KINDS = {
 }
 
 
-def merge(entries):
-    """UI/Credits.lua's Merge: one row per exact name, every addon's line kept in registration order."""
+def name_order(row):
+    """Alphabetical, case-insensitively, as Inspired by is listed."""
+    return (row["name"].lower(), row["name"])
+
+
+def player_order(row):
+    """UI/Credits.lua's SortPlayers: most contributions first, then name, case-insensitively."""
+    return (-row["count"], row["name"].lower(), row["name"])
+
+
+def merge(entries, rank=False):
+    """UI/Credits.lua's Merge: one row per exact name, every contribution kept in registration order, with its count."""
     rows, index = [], {}
     for title, entry in entries:
         row = index.get(entry["name"])
         if row is None:
-            row = {"name": entry["name"], "helped": []}
+            row = {"name": entry["name"], "helped": [], "count": 0}
             index[entry["name"]] = row
             rows.append(row)
-        helped = next((item for item in row["helped"] if item["addon"] == title), None)
-        if helped is None:
-            row["helped"].append({"addon": title, "what": entry["what"]})
-        elif helped["what"] == "" and entry["what"] != "":
-            helped["what"] = entry["what"]
-    rows.sort(key=lambda row: (row["name"].lower(), row["name"]))
+        row["helped"].append({"addon": title, "what": entry["what"]})
+        row["count"] += 1
+    rows.sort(key=player_order if rank else name_order)
     return rows
 
 
 def detail(row, filter_title=None):
-    """UI/Credits.lua's Detail: the addon list, or the one addon's what when the page is filtered."""
+    """UI/Credits.lua's Detail: the addon list once each, or the filtered addon's distinct what lines."""
     if filter_title:
-        return row["helped"][0]["what"] if row["helped"] else ""
-    return phrase(", ").join(item["addon"] for item in row["helped"])
+        seen, what = set(), []
+        for item in row["helped"]:
+            if item["what"] and item["what"] not in seen:
+                seen.add(item["what"])
+                what.append(item["what"])
+        return phrase(", ").join(what)
+    return phrase(", ").join(dict.fromkeys(item["addon"] for item in row["helped"]))
 
 
 def view(rows, filter_title):
-    """UI/Credits.lua's View: only the rows crediting the filtered addon, each with just its line."""
+    """UI/Credits.lua's View: only the rows crediting the filtered addon, each with just its lines."""
     if not filter_title:
         return rows
     kept = []
     for row in rows:
         helped = [item for item in row["helped"] if item["addon"] == filter_title]
         if helped:
-            kept.append({"name": row["name"], "helped": helped})
+            kept.append({"name": row["name"], "helped": helped, "count": len(helped)})
     return kept
 
 
@@ -178,8 +191,11 @@ def page_sections(sources, filter_title=None):
     """UI/Credits.lua's Render order: Players first, then Inspired by, each only when it has rows."""
     sections = []
     for key, header in (("players", "Players"), ("inspired", "Inspired by")):
-        rows = merge((title, entry) for title, data in sources for entry in data.get(key, []))
+        entries = ((title, entry) for title, data in sources for entry in data.get(key, []))
+        rows = merge(entries, rank=key == "players")
         rows = view(rows, filter_title)
+        if key == "players":
+            rows.sort(key=player_order)
         if rows:
             sections.append((phrase(header), rows))
     return sections
@@ -207,27 +223,26 @@ def page(measure, sections, filter_title=None):
 
 
 def pick_hover(sections):
-    """The first player row that helped the most addons, the one every Thanks image tooltips."""
-    best = None
+    """The top-ranked player, the first Players row, the one every Thanks image tooltips."""
     for header, rows in sections:
-        if phrase("Players") not in header:
-            continue
-        for row in rows:
-            if best is None or len(row["helped"]) > len(best["helped"]):
-                best = row
-    return best
+        if phrase("Players") in header:
+            return rows[0] if rows else None
+    return None
 
 
 def tooltip_lines(row):
-    """UI/Credits.lua's GroupedLines: the addons grouped by the exact words they gave, in registration order."""
-    groups, index = [], {}
+    """UI/Credits.lua's GroupedLines: contributions grouped by the exact words they gave, each addon once, in order."""
+    groups, index, seen = [], {}, set()
     for helped in row["helped"]:
         group = index.get(helped["what"])
         if group is None:
             group = {"what": helped["what"], "addons": []}
             index[helped["what"]] = group
             groups.append(group)
-        group["addons"].append(helped["addon"])
+        key = (helped["what"], helped["addon"])
+        if key not in seen:
+            seen.add(key)
+            group["addons"].append(helped["addon"])
     return groups
 
 
@@ -266,7 +281,10 @@ def row_tooltip(ui, row):
     measure = ui.canvas(1, 1)
     header_font = wowmock.FONTS["GameTooltipHeaderText"]
     text_font = wowmock.FONTS["GameTooltipText"]
-    lines = [(row["name"], header_font)]
+    title = row["name"]
+    if row.get("count", len(row["helped"])) > 1:
+        title = phrase("%s (%s)") % (title, phrase("%d contributions") % row["count"])
+    lines = [(title, header_font)]
     for group in tooltip_lines(row):
         runs = [(phrase(", ").join(group["addons"]), GOLD)]
         if group["what"]:
@@ -298,14 +316,21 @@ def menu_entries(sources, filter_title):
 
 
 def draw_row(canvas, measure, row, top, filter_title):
-    """One compact row: the name, then the addons (or the filtered addon's what) in grey on the same line."""
+    """One compact row: the name, its contribution count when above one, then the addons (or the filtered
+    addon's what) in grey on the same line."""
     name_width = measure.text_width(row["name"], NAME_FONT)
     canvas.text(0, top, row["name"], NAME_FONT, box_height=ROW_HEIGHT)
+    text_x = name_width + NAME_DETAIL_GAP
+    count = row.get("count", len(row["helped"]))
+    if count > 1:
+        count_text = f"x{count}"
+        canvas.text(name_width + NAME_COUNT_GAP, top, count_text, DETAIL_FONT, GREY, box_height=ROW_HEIGHT)
+        text_x = name_width + NAME_COUNT_GAP + measure.text_width(count_text, DETAIL_FONT) + NAME_DETAIL_GAP
     text = detail(row, filter_title)
-    room = CONTENT_WIDTH - name_width - NAME_DETAIL_GAP
+    room = CONTENT_WIDTH - text_x
     if text and room > 0:
         line = wowmock.wrap_text(measure, text, DETAIL_FONT, room, max_lines=1)[0]
-        canvas.text(name_width + NAME_DETAIL_GAP, top, line, DETAIL_FONT, GREY, box_height=ROW_HEIGHT)
+        canvas.text(text_x, top, line, DETAIL_FONT, GREY, box_height=ROW_HEIGHT)
 
 
 def thanks(ui, sources, filter_title=None, hover=None, menu=False):

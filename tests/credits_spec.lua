@@ -62,7 +62,7 @@ local names = {}
 for _, row in ipairs(players) do
 	names[#names + 1] = row.name
 end
-equal(table.concat(names, ", "), "Alex, Brainc3ll, Robin, Sam", "players are sorted by name")
+equal(table.concat(names, ", "), "Brainc3ll, Alex, Robin, Sam", "players rank by contributions, then by name")
 
 local merged
 for _, row in ipairs(players) do
@@ -71,6 +71,7 @@ for _, row in ipairs(players) do
 	end
 end
 check(merged ~= nil, "the merged player is there")
+equal(merged.count, 2, "the row counts both contributions")
 equal(#merged.helped, 2, "the player is credited by both addons")
 equal(merged.helped[1].addon, "SkillUp Forever", "the first addon that registered")
 equal(merged.helped[1].what, "The French translation", "with its own what line")
@@ -150,6 +151,24 @@ for _, row in ipairs(credits.Players()) do
 	end
 end
 equal(broken.helped[1].what, "", "a non-string what reads as an empty line")
+
+-- One row per shipped contribution: duplicate Who rows are kept as separate lines and lead the ranking by count.
+credits.Register("Rank Forever", {
+	players = {
+		{ name = "Zed", what = "One report" },
+		{ name = "Zed", what = "One report" },
+		{ name = "Zed", what = "Another report" },
+		{ name = "Amy", what = "An idea" },
+	},
+})
+local ranked = credits.Players()
+equal(ranked[1].name, "Zed", "the player with the most rows leads")
+equal(ranked[1].count, 3, "with the number of rows as the count")
+equal(#ranked[1].helped, 3, "and every contribution kept, even the identical one")
+equal(ranked[1].helped[1].what, "One report", "the first contribution")
+equal(ranked[1].helped[2].what, "One report", "the repeated contribution is its own line")
+equal(ranked[1].helped[3].what, "Another report", "then the next")
+equal(credits.Line("Rank Forever"), "Thanks to Zed and Amy", "the addon's line ranks by its own contribution count")
 
 -- A second load in a fake client that counts every frame: opening the page twice must reuse the window, and a list
 -- that changes must grow the row pool, never rebuild it.
@@ -388,17 +407,20 @@ for _, item in ipairs(page.window.rows) do
 	end
 end
 equal(one.detail.text, "The other line", "and each row shows that addon's what instead of the addon list")
+equal(one.count.text, "", "one contribution in the filtered list shows no count")
 page.Open()
 equal(dropdown:GetText(), "Other Forever", "reopening with no title keeps the current filter")
 page.Open(nil)
 equal(dropdown:GetText(), "All addons", "an explicit nil shows every addon again")
-equal(ShownRows(), "Four, One, Three, Two", "the unfiltered rows are back, in name order")
+equal(ShownRows(), "One, Four, Three, Two", "the unfiltered rows are back, ranked by contributions then name")
 for _, item in ipairs(page.window.rows) do
 	if item.name.text == "One" and item.holder:IsShown() then
 		one = item
 	end
 end
-equal(one.detail.text, "Pool Forever, Other Forever", "a row lists every addon that credits the player")
+equal(one.detail.text, "Pool Forever, Other Forever", "a row lists every addon that credits the player once each")
+equal(one.count.text, "x2", "and shows the number of contributions after the name")
+check(one.count:IsShown(), "the count is drawn")
 check(one.detail.wordWrap == false and one.detail.maxLines == 1, "the addon line is cut, never wrapped")
 
 -- The filter is the client's own dropdown, and its menu is one radio per addon because the page shows one at a time.
@@ -430,7 +452,7 @@ check(not menu.entries[2].selected(), "and the others are not")
 tooltip.lines, tooltip.title = {}, nil
 one.holder.scripts.OnEnter(one.holder)
 equal(tooltip.anchor, "ANCHOR_RIGHT", "the tooltip is anchored to the right of the row")
-equal(tooltip.title, "One", "the tooltip is titled with the player")
+equal(tooltip.title, "One (2 contributions)", "the tooltip is titled with the player and their count")
 equal(#tooltip.lines, 2, "one line per addon that credits them")
 check(tooltip.lines[1].text:find("|cffffffffPool Forever|r", 1, true) ~= nil, "the addon is in the gold colour")
 check(tooltip.lines[1].text:find("The first report", 1, true) ~= nil, "with what the player did for it")
@@ -457,8 +479,10 @@ for _, item in ipairs(page.window.rows) do
 		one = item
 	end
 end
+equal(one.count.text, "x3", "the count follows every new contribution")
 tooltip.lines, tooltip.title = {}, nil
 one.holder.scripts.OnEnter(one.holder)
+equal(tooltip.title, "One (3 contributions)", "the tooltip counts the contributions")
 equal(#tooltip.lines, 2, "an identical what line is drawn once, not once per addon")
 check(
 	tooltip.lines[1].text:find("|cffffffffPool Forever, Twin Forever|r: The first report", 1, true) ~= nil,
@@ -473,8 +497,10 @@ for _, item in ipairs(page.window.rows) do
 		six = item
 	end
 end
+equal(six.count.text, "x2", "an empty contribution still counts")
 tooltip.lines = {}
 six.holder.scripts.OnEnter(six.holder)
+equal(tooltip.title, "Six (2 contributions)", "the count is in every multi-contribution title")
 equal(#tooltip.lines, 1, "an empty line shared by two addons is one line too")
 check(tooltip.lines[1].text:find("|cffffffffTwin Forever, Quiet Forever|r", 1, true) ~= nil, "with both names in gold")
 check(tooltip.lines[1].text:find(": ", 1, true) == nil, "and no colon when there are no words")

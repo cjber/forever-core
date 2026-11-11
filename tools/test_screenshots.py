@@ -32,13 +32,20 @@ def port(name, scope=None):
 
 class CreditRowTests(unittest.TestCase):
     def setUp(self):
-        self.merge = port("merge")
+        self.name_order = port("name_order")
+        self.player_order = port("player_order")
+        self.merge = port("merge", {"name_order": self.name_order, "player_order": self.player_order})
         self.detail = port("detail", {"phrase": phrase})
         self.view = port("view")
         self.tooltip_lines = port("tooltip_lines")
         self.sections = port(
             "page_sections",
-            {"merge": self.merge, "view": self.view, "phrase": phrase},
+            {
+                "merge": self.merge,
+                "view": self.view,
+                "phrase": phrase,
+                "player_order": self.player_order,
+            },
         )
         self.data = credits.parse((ROOT / "THIRD_PARTY.md").read_text(encoding="utf-8"))
 
@@ -47,11 +54,12 @@ class CreditRowTests(unittest.TestCase):
         shipped = {key: [dict(row.keyed) for row in table.keyed[key].array] for key in ("players", "inspired")}
         self.assertEqual(shipped, self.data)
 
-    def test_the_page_is_players_then_inspired_in_name_order(self):
+    def test_the_page_is_players_ranked_then_inspired_alphabetical(self):
         sections = self.sections([(TITLE, self.data)])
         self.assertEqual(["Players", "Inspired by"], [header for header, _ in sections])
-        for _header, rows in sections:
-            self.assertEqual(sorted(rows, key=lambda row: (row["name"].lower(), row["name"])), rows)
+        for header, rows in sections:
+            order = self.player_order if header == "Players" else self.name_order
+            self.assertEqual(sorted(rows, key=order), rows)
             for row in rows:
                 self.assertEqual([TITLE], [item["addon"] for item in row["helped"]])
 
@@ -83,27 +91,44 @@ class CreditRowTests(unittest.TestCase):
         self.assertEqual(["Atlas", "Questie"], [row["name"] for row in rows])
         self.assertEqual("The tracker layout", rows[1]["helped"][0]["what"])
 
-    def test_a_name_credited_twice_keeps_every_addon_s_line(self):
+    def test_a_name_credited_four_times_keeps_all_four_contributions(self):
         rows = self.merge(
             [
                 ("First", {"name": "Ada", "what": ""}),
                 ("Second", {"name": "Ada", "what": "Reported a bug"}),
                 ("First", {"name": "Ada", "what": "A tracker section"}),
                 ("Second", {"name": "Ada", "what": "Something else"}),
-            ]
+            ],
+            rank=True,
         )
         self.assertEqual(
             [
                 {
                     "name": "Ada",
                     "helped": [
-                        {"addon": "First", "what": "A tracker section"},
+                        {"addon": "First", "what": ""},
                         {"addon": "Second", "what": "Reported a bug"},
+                        {"addon": "First", "what": "A tracker section"},
+                        {"addon": "Second", "what": "Something else"},
                     ],
+                    "count": 4,
                 }
             ],
             rows,
         )
+
+    def test_players_rank_by_contribution_count_then_name(self):
+        rows = self.merge(
+            [
+                ("First", {"name": "bob", "what": "One"}),
+                ("First", {"name": "Ada", "what": "One"}),
+                ("First", {"name": "Ada", "what": "Two"}),
+                ("First", {"name": "Cid", "what": "One"}),
+            ],
+            rank=True,
+        )
+        self.assertEqual(["Ada", "bob", "Cid"], [row["name"] for row in rows])
+        self.assertEqual([2, 1, 1], [row["count"] for row in rows])
 
     def test_a_row_without_a_what_or_an_addon_still_reads(self):
         self.assertEqual(TITLE, self.detail({"name": "Ada", "helped": [{"addon": TITLE, "what": ""}]}))
@@ -112,10 +137,12 @@ class CreditRowTests(unittest.TestCase):
     def test_addons_with_the_same_what_share_one_tooltip_line(self):
         row = {
             "name": "Ada",
+            "count": 6,
             "helped": [
                 {"addon": "First", "what": "Same words"},
                 {"addon": "Second", "what": "Other words"},
                 {"addon": "Third", "what": "Same words"},
+                {"addon": "First", "what": "Same words"},
                 {"addon": "Fourth", "what": ""},
                 {"addon": "Fifth", "what": ""},
             ],

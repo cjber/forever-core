@@ -87,6 +87,21 @@ class ParseTest(unittest.TestCase):
         text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| \\_spada | One | |\n| _spada | Two | |\n"
         self.assertEqual([entry["name"] for entry in credits.parse(text)["players"]], ["_spada", "_spada"])
 
+    def test_one_row_per_contribution_survives_in_table_order(self):
+        text = (
+            "## Players\n| Who | What | Notes |\n|---|---|---|\n"
+            "| Ada | Fixed one report | |\n"
+            "| Bob | Built an idea | |\n"
+            "| Ada | Fixed another report | |\n"
+            "| Ada | A translation | |\n"
+        )
+        data = credits.parse(text)
+        self.assertEqual([entry["name"] for entry in data["players"]], ["Ada", "Bob", "Ada", "Ada"])
+        rendered = credits.render(data)
+        self.assertLess(rendered.index('"Fixed one report"'), rendered.index('"Built an idea"'))
+        self.assertLess(rendered.index('"Built an idea"'), rendered.index('"Fixed another report"'))
+        self.assertLess(rendered.index('"Fixed another report"'), rendered.index('"A translation"'))
+
     def test_a_backslash_before_a_letter_or_a_backslash_is_kept_or_unescaped(self):
         text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| A | C:\\Users stays, but one\\\\two joins | |\n"
         self.assertEqual(credits.parse(text)["players"][0]["what"], "C:\\Users stays, but one\\two joins")
@@ -179,6 +194,20 @@ class BlockTest(unittest.TestCase):
             "Thanks to Ada, Bob and everyone who reported a bug or asked for a feature.",
         )
 
+    def test_the_sentence_puts_most_rows_first_and_a_tie_in_table_order(self):
+        players = [
+            {"name": "Ada", "what": "One"},
+            {"name": "Bob", "what": "One"},
+            {"name": "Ada", "what": "Two"},
+            {"name": "Cid", "what": "One"},
+            {"name": "Ada", "what": "Three"},
+            {"name": "Bob", "what": "Two"},
+        ]
+        self.assertEqual(
+            credits.sentence(players),
+            "Thanks to Ada, Bob, Cid and everyone who reported a bug or asked for a feature.",
+        )
+
     def test_no_players_gets_the_present_tense_sentence(self):
         self.assertEqual(credits.sentence([]), "Thanks to everyone who reports a bug or asks for a feature.")
 
@@ -231,6 +260,54 @@ class BlockTest(unittest.TestCase):
         expected = f"# Addon\r\n\r\n{block}\r\n".replace("\n", "\r\n").replace("\r\r", "\r")
         self.assertEqual((self.root / "README.md").read_bytes().decode("utf-8"), expected)
         self.assertEqual(credits.block_problems(self.root, block), [])
+
+
+class OptOutTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.opt_out = self.root / "credits_opt_out.txt"
+        original = credits.OPT_OUT_FILE
+        credits.OPT_OUT_FILE = self.opt_out
+        self.addCleanup(setattr, credits, "OPT_OUT_FILE", original)
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_comments_and_blank_lines_are_not_names(self):
+        self.write("credits_opt_out.txt", "# A comment\n\nAda\n  BOB  \n")
+        self.assertEqual(credits.opt_out(), {"ada", "bob"})
+        players = [
+            {"name": "Ada", "what": ""},
+            {"name": "Bob", "what": ""},
+            {"name": "Cid", "what": ""},
+        ]
+        self.assertEqual(credits.opted_out(players), ["Ada", "Bob"])
+
+    def test_a_missing_file_opts_no_one_out(self):
+        self.write("credits_opt_out.txt", "# Nobody yet\n")
+        self.assertEqual(credits.opt_out(), set())
+        self.assertEqual(credits.opted_out([{"name": "Ada", "what": ""}]), [])
+
+    def test_a_listed_name_stops_generation_and_check(self):
+        self.write(
+            "THIRD_PARTY.md",
+            "## Players\n\n| Who | What | Notes |\n|---|---|---|\n"
+            "| [SOL\\_DEUS](https://github.com/sol) | Fixed a report | |\n",
+        )
+        self.write("credits_opt_out.txt", "# One name per line.\nsol_deus\n")
+        self.write("README.md", "# Addon\n\n" + credits.render_block([]) + "\n")
+        for argv in ([], ["--check"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit) as raised:
+                credits.main(self.root, argv)
+            message = str(raised.exception)
+            self.assertIn("THIRD_PARTY.md", message)
+            self.assertIn('"SOL_DEUS"', message)
+            self.assertIn("credits_opt_out.txt", message)
+        self.assertFalse((self.root / "Data/Credits.lua").exists())
 
 
 class MainTest(unittest.TestCase):

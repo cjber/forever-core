@@ -42,6 +42,7 @@ scenario("the Thanks page credits every addon's players once", function(sim)
 		end
 		assert(listed == 1, "the player who helped both addons is listed once")
 		assert(brainc3ll and #brainc3ll.helped == 2, "both addons keep their own line")
+		assert(brainc3ll.count == 2, "the row counts both contributions")
 		assert(brainc3ll.helped[1].addon == "SkillUp Forever" and brainc3ll.helped[1].what == "The French translation",
 			"the first addon's line is kept")
 		assert(brainc3ll.helped[2].addon == "Legacy Forever" and brainc3ll.helped[2].what == "",

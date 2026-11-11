@@ -433,18 +433,30 @@ local function OpenLeaderboards(safe)
 	return ok == true
 end
 
+-- The addon title the Thanks page filters to for `folder`: its Family.ADDONS name, or nil when that folder has no
+-- row (ForeverCore's own page, or an unknown one), which opens every addon. The name is the same string the addon
+-- passes to Credits.Register, so a panel only needs its own folder.
+---@param current? string
+---@return string?
+local function CreditTitle(current)
+	local addon = type(current) == "string" and Find(current) or nil
+	return addon and addon.name or nil
+end
+
 -- The Thanks window, on every addon. Its module loads after this file, so the read is nil until the end of the TOC;
--- the call runs in the addon's SafeCall, and nothing happens when the module is absent. The explicit nil clears any
--- filter a previous visit left in place, so the family page always opens the whole list.
+-- the call runs in the addon's SafeCall, and nothing happens when the module is absent. One argument is always
+-- passed, so an addon's page filters the list to its own row while ForeverCore's page and an unknown folder open
+-- every addon and clear any filter a previous visit left in place.
 ---@param safe? ForeverSafeCall|false
+---@param current? string
 ---@return boolean
-local function OpenCredits(safe)
+local function OpenCredits(safe, current)
 	local page = ns.CreditsPage
 	if type(page) ~= "table" or type(page.Open) ~= "function" then
 		return false
 	end
 	local ok = RunSafe(type(safe) == "function" and safe or nil, "family credits", function()
-		page.Open(nil)
+		page.Open(CreditTitle(current))
 	end)
 	return ok == true
 end
@@ -569,7 +581,7 @@ function Family.CreatePanel(parent, db, current, safeCall)
 		thanksButton:SetText(L["Open"])
 		Fit(thanksButton, 90)
 		thanksButton:SetScript("OnClick", function()
-			OpenCredits(panel.foreverSafeCall)
+			OpenCredits(panel.foreverSafeCall, current)
 		end)
 		local thanksName = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 		thanksName:SetPoint("TOPLEFT", thanksIcon, "TOPRIGHT", 10, 0)
@@ -720,7 +732,7 @@ function Family.Register(category, db, current, safeCall)
 	Settings.RegisterInitializer(
 		subcategory,
 		Secure(CreateSettingsButtonInitializer)(L["Thanks"], L["Open"], function()
-			OpenCredits(safeCall)
+			OpenCredits(safeCall, current)
 		end, L[THANKS_LINE], false)
 	)
 	for _, addon in ipairs(Family.ADDONS) do

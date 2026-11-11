@@ -57,7 +57,7 @@ class FamilyTest(unittest.TestCase):
         self.assertIn(
             "Bug reports, feature requests and pull requests are welcome on each addon's GitHub. "
             "Everyone whose report or idea ships is thanked by name on the Thanks page in game, in the store page "
-            "and in the changelog.",
+            "and in the changelog, unless they ask not to be.",
             family.BLOCK,
         )
         self.assertIn("(https://discord.gg/FpHugGxRJY)", family.BLOCK)

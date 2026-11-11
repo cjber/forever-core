@@ -9,6 +9,13 @@ ns.Credits = {
 		{ name = "Darkwavez76", what = "A darker tracker background" },
 		{ name = "Naburiel", what = "A background option behind the tracker" },
 		{ name = "MrFIXlT", what = "Hide the locked tracker's hint until hovered" },
+		{ name = "deathmvp1", what = "Tracker clear of Questie's quest list" },
+		{ name = "berserkerlxl", what = "Found the overlap with Questie's list" },
+		{ name = "Alex21xx", what = "Tracker lock" },
+		{ name = "Torpdotorgx", what = "Stopped the tracker erroring with another Forever addon loaded" },
+		{ name = "dryzee", what = "Fixed the tracker's nil-order crash" },
+		{ name = "procque", what = "Questie's quest tracker can be moved again" },
+		{ name = "Fareed", what = "Questie's quest tracker can be moved again" },
 	},
 	inspired = {
 		{ name = "The game's own objective tracker", what = "The column's left edge, width and header spacing" },

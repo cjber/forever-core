@@ -21,7 +21,8 @@ local _, ns = ...
 
 ---@class ForeverCreditRow
 ---@field name string
----@field helped ForeverCreditHelped[] the addons this player helped, in registration order
+---@field helped ForeverCreditHelped[] every contribution, in registration order
+---@field count integer how many rows carry this name across the shown addons
 
 ---@class ForeverCreditsRecord
 ---@field title string
@@ -39,6 +40,7 @@ local _, ns = ...
 ---@class ForeverCreditsRowWidget
 ---@field holder Frame
 ---@field name FontString
+---@field count FontString
 ---@field detail FontString
 ---@field row? ForeverCreditRow
 
@@ -98,6 +100,7 @@ local CONTENT_WIDTH = WINDOW_WIDTH - INSET_MARGIN - INSET_MARGIN - 8 - 28
 local SECTION_HEIGHT = 22
 local SECTION_GAP = 8
 local ROW_HEIGHT = 20
+local NAME_COUNT_GAP = 4
 local NAME_DETAIL_GAP = 8
 -- Fits the suite's longest title ("Adventure Guide Forever") in GameFontHighlight; a longer one is cut with "...".
 local DROPDOWN_WIDTH = 190
@@ -202,8 +205,35 @@ function credits.Register(addonTitle, data)
 	return true
 end
 
--- Merge the named list across every registered addon, one row per exact player name, with every addon's line kept in
--- registration order.
+-- Players rank by how many contributions they gave, then by name; an exact-name tie cannot leave a list unstable.
+---@param rows ForeverCreditRow[]
+local function SortPlayers(rows)
+	table.sort(rows, function(left, right)
+		if left.count ~= right.count then
+			return left.count > right.count
+		end
+		local a, b = left.name:lower(), right.name:lower()
+		if a ~= b then
+			return a < b
+		end
+		return left.name < right.name
+	end)
+end
+
+-- Inspired projects stay alphabetical, as a project has no contributions to rank.
+---@param rows ForeverCreditRow[]
+local function SortNames(rows)
+	table.sort(rows, function(left, right)
+		local a, b = left.name:lower(), right.name:lower()
+		if a ~= b then
+			return a < b
+		end
+		return left.name < right.name
+	end)
+end
+
+-- Merge the named list across every registered addon, one row per exact player name. Every row the tables carry is
+-- one contribution, so a player credited five times keeps five lines and a count of five.
 ---@param field "players"|"inspired"
 ---@return ForeverCreditRow[]
 local function Merge(field)
@@ -212,33 +242,19 @@ local function Merge(field)
 		for _, entry in ipairs(record[field]) do
 			local row = index[entry.name]
 			if not row then
-				row = { name = entry.name, helped = {} }
+				row = { name = entry.name, helped = {}, count = 0 }
 				index[entry.name] = row
 				rows[#rows + 1] = row
 			end
-			local helped
-			for _, item in ipairs(row.helped) do
-				if item.addon == record.title then
-					helped = item
-					break
-				end
-			end
-			if helped then
-				if helped.what == "" and entry.what ~= "" then
-					helped.what = entry.what
-				end
-			else
-				row.helped[#row.helped + 1] = { addon = record.title, what = entry.what }
-			end
+			row.helped[#row.helped + 1] = { addon = record.title, what = entry.what }
+			row.count = row.count + 1
 		end
 	end
-	table.sort(rows, function(left, right)
-		local a, b = left.name:lower(), right.name:lower()
-		if a ~= b then
-			return a < b
-		end
-		return left.name < right.name
-	end)
+	if field == "players" then
+		SortPlayers(rows)
+	else
+		SortNames(rows)
+	end
 	return rows
 end
 
@@ -264,13 +280,21 @@ function credits.Line(addonTitle)
 		return nil
 	end
 	local L = Strings()
-	local names, seen = {}, {}
+	local names, counts, first = {}, {}, {}
 	for _, entry in ipairs(record.players) do
-		if not seen[entry.name] then
-			seen[entry.name] = true
+		if not counts[entry.name] then
+			counts[entry.name] = 0
+			first[entry.name] = #names + 1
 			names[#names + 1] = entry.name
 		end
+		counts[entry.name] = counts[entry.name] + 1
 	end
+	table.sort(names, function(left, right)
+		if counts[left] ~= counts[right] then
+			return counts[left] > counts[right]
+		end
+		return first[left] < first[right]
+	end)
 	local count = #names
 	if count == 0 then
 		return nil
@@ -293,30 +317,39 @@ end
 ---@return string
 local function AddonList(row)
 	local L = Strings()
-	local addons = {}
+	local addons, seen = {}, {}
 	for _, helped in ipairs(row.helped) do
-		addons[#addons + 1] = helped.addon
+		if not seen[helped.addon] then
+			seen[helped.addon] = true
+			addons[#addons + 1] = helped.addon
+		end
 	end
 	return table.concat(addons, L[", "])
 end
 
--- What a row says after the player's name: the addon list, or that addon's own line when the page is filtered.
+-- What a row says after the player's name: the addon list, or that addon's own lines when the page is filtered.
 ---@param row ForeverCreditRow
 ---@return string
 local function Detail(row)
 	if filterTitle then
-		local helped = row.helped[1]
-		return helped and helped.what or ""
+		local what, seen = {}, {}
+		for _, helped in ipairs(row.helped) do
+			if helped.what ~= "" and not seen[helped.what] then
+				seen[helped.what] = true
+				what[#what + 1] = helped.what
+			end
+		end
+		return table.concat(what, Strings()[", "])
 	end
 	return AddonList(row)
 end
 
--- A player's addons grouped by the exact words they gave, in registration order: one sentence is one line however
--- many addons wrote it.
+-- A player's contributions grouped by the exact words they gave, in registration order: one sentence is one line
+-- however many addons wrote it, and an addon is named once per sentence rather than once per contribution.
 ---@param helped ForeverCreditHelped[]
 ---@return { addons: string[], what: string }[]
 local function GroupedLines(helped)
-	local groups, byWhat = {}, {}
+	local groups, byWhat, seen = {}, {}, {}
 	for _, item in ipairs(helped) do
 		local group = byWhat[item.what]
 		if not group then
@@ -324,7 +357,11 @@ local function GroupedLines(helped)
 			byWhat[item.what] = group
 			groups[#groups + 1] = group
 		end
-		group.addons[#group.addons + 1] = item.addon
+		local key = item.what .. "\0" .. item.addon
+		if not seen[key] then
+			seen[key] = true
+			group.addons[#group.addons + 1] = item.addon
+		end
 	end
 	return groups
 end
@@ -343,10 +380,21 @@ local function View(rows, title)
 			end
 		end
 		if #helped > 0 then
-			kept[#kept + 1] = { name = row.name, helped = helped }
+			kept[#kept + 1] = { name = row.name, helped = helped, count = #helped }
 		end
 	end
 	return kept
+end
+
+-- A row's tooltip title: the player, then how many contributions they gave when there is more than one.
+---@param row ForeverCreditRow
+---@return string
+local function Title(row)
+	if row.count > 1 then
+		local L = Strings()
+		return L["%s (%s)"]:format(row.name, L["%d contributions"]:format(row.count))
+	end
+	return row.name
 end
 
 -- Change the addon the page shows. A nil title is every addon; the window's label follows it.
@@ -491,8 +539,13 @@ local function Render(frame)
 			name:SetPoint("LEFT", 0, 0)
 			name:SetJustifyH("LEFT")
 			name:SetJustifyV("MIDDLE")
+			local count = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			count:SetPoint("LEFT", name, "RIGHT", NAME_COUNT_GAP, 0)
+			count:SetJustifyH("LEFT")
+			count:SetJustifyV("MIDDLE")
+			count:SetTextColor(GRAY_FONT_COLOR:GetRGB())
 			local detail = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-			detail:SetPoint("LEFT", name, "RIGHT", NAME_DETAIL_GAP, 0)
+			detail:SetPoint("LEFT", count, "RIGHT", NAME_DETAIL_GAP, 0)
 			detail:SetPoint("RIGHT", 0, 0)
 			detail:SetJustifyH("LEFT")
 			detail:SetJustifyV("MIDDLE")
@@ -500,7 +553,7 @@ local function Render(frame)
 			-- The client cuts a long line rather than wrapping it, so every row is exactly ROW_HEIGHT tall.
 			detail:SetWordWrap(false)
 			detail:SetMaxLines(1)
-			item = { holder = holder, name = name, detail = detail }
+			item = { holder = holder, name = name, count = count, detail = detail }
 			holder:SetScript("OnEnter", function(self)
 				local current = item.row
 				if not current or not GameTooltip then
@@ -508,9 +561,9 @@ local function Render(frame)
 				end
 				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 				if type(GameTooltip_SetTitle) == "function" then
-					GameTooltip_SetTitle(GameTooltip, current.name)
+					GameTooltip_SetTitle(GameTooltip, Title(current))
 				else
-					GameTooltip:SetText(current.name, 1, 1, 1)
+					GameTooltip:SetText(Title(current), 1, 1, 1)
 				end
 				local red, green, blue = NORMAL_FONT_COLOR:GetRGB()
 				local gold = ("|cff%02x%02x%02x"):format(
@@ -537,6 +590,13 @@ local function Render(frame)
 		item.holder:SetHeight(ROW_HEIGHT)
 		item.row = row
 		item.name:SetText(row.name)
+		if row.count > 1 then
+			item.count:SetText(("x%d"):format(row.count))
+			item.count:Show()
+		else
+			item.count:SetText("")
+			item.count:Hide()
+		end
 		item.detail:SetText(Detail(row))
 		item.holder:Show()
 		y = y - ROW_HEIGHT
@@ -545,7 +605,9 @@ local function Render(frame)
 	local players = credits.Players()
 	local inspired = credits.Inspired()
 	if filterTitle then
-		players, inspired = View(players, filterTitle), View(inspired, filterTitle)
+		players = View(players, filterTitle)
+		SortPlayers(players)
+		inspired = View(inspired, filterTitle)
 	end
 	if #players > 0 then
 		Section(L["Players"])

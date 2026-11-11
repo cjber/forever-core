@@ -16,16 +16,22 @@ sections carry the data, each a Markdown table `| Who | What | Notes |`:
     |---|---|---|
     | Questie | The objective-tracker layout | |
 
-Rows are taken as written; nothing is guessed from their text. A Markdown backslash escape before ASCII punctuation
+Rows are taken as written; nothing is guessed from their text. Each row is one shipped contribution (one report fixed,
+one idea built, one translation, one code change), so a player with five shipped items has five rows with the same
+`Who`, in table order; `Data/Credits.lua` keeps every one of them. A Markdown backslash escape before ASCII punctuation
 becomes the plain character, as CommonMark says, so `Sol\\_Deus` and `Sol_Deus` name one player. In `Who`, a Markdown
 link keeps only its visible text. In `What`, links are reduced to their text and issue references such as `(#99)` or
 `(cjber/x#12, #3)` are removed, so the in-game line reads cleanly. `Notes` is for the reader of the file and never
 reaches the game. A section that is missing is an empty list, and the addon's author is never listed (WFA-33).
 
+A name in `credits_opt_out.txt`, beside this module, is one a player asked not to be credited under (WFA-33). The run
+fails with the offending `## Players` row rather than writing a file that would name them.
+
 The same run writes one sentence, "Thanks to A, B and everyone who reported a bug or asked for a feature.", between
 `<!-- forever-credits:start -->` and `<!-- forever-credits:end -->` in `README.md` (inside its `## Credits`) and
-`docs/curseforge.md`, listing every `## Players` name in table order. The markers use `forever_tools.family`'s
-handling. A file without the markers is left alone, except that `--check` fails a `README.md` without them.
+`docs/curseforge.md`, listing every `## Players` name once, in rank order: most rows first, then table order. The
+markers use `forever_tools.family`'s handling. A file without the markers is left alone, except that `--check` fails a
+`README.md` without them.
 
 Run it from the addon's root after editing `THIRD_PARTY.md`, and add `Data\\Credits.lua` to the TOC:
 
@@ -53,9 +59,12 @@ __all__ = [
     "BLOCK_END",
     "BLOCK_FILES",
     "BLOCK_START",
+    "OPT_OUT",
     "OUTPUT",
     "SOURCE",
     "main",
+    "opt_out",
+    "opted_out",
     "parse",
     "read",
     "render",
@@ -66,6 +75,12 @@ __all__ = [
 
 SOURCE = "THIRD_PARTY.md"
 OUTPUT = "Data/Credits.lua"
+OPT_OUT = "credits_opt_out.txt"
+OPT_OUT_FILE = Path(__file__).with_name(OPT_OUT)
+OPT_OUT_HINT = (
+    "a player who asked not to be credited is removed from THIRD_PARTY.md's ## Players table, the README and "
+    "store thanks blocks and any changelog line that thanks them (WFA-33)"
+)
 BLOCK_START = "<!-- forever-credits:start -->"
 BLOCK_END = "<!-- forever-credits:end -->"
 BLOCK_FILES = ("README.md", "docs/curseforge.md")
@@ -195,6 +210,25 @@ def read(root: Path) -> dict[str, list[dict[str, str]]]:
     return parse(path.read_text(encoding="utf-8"))
 
 
+def opt_out(path: Path | None = None) -> set[str]:
+    """The folded names in `credits_opt_out.txt`; a missing file is an empty set."""
+    source = OPT_OUT_FILE if path is None else path
+    if not source.is_file():
+        return set()
+    names = set()
+    for line in source.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if text and not text.startswith("#"):
+            names.add(text.casefold())
+    return names
+
+
+def opted_out(players: list[dict[str, str]], names: set[str] | None = None) -> list[str]:
+    """The `Who` names among `players` that the opt-out file lists, matched exactly and case-insensitively."""
+    listed = opt_out() if names is None else names
+    return [entry["name"] for entry in players if entry["name"].casefold() in listed]
+
+
 def display_width(line: str) -> int:
     """A generated line's width with tabs counted as the column width the family's StyLua config uses."""
     return len(line) + line.count("\t") * (TAB_WIDTH - 1)
@@ -237,8 +271,19 @@ def render(credits: dict[str, list[dict[str, str]]]) -> str:
 
 
 def sentence(players: list[dict[str, str]]) -> str:
-    """The thanks sentence: every name once, in table order, then the invitation to report or ask."""
-    names = list(dict.fromkeys(entry["name"] for entry in players if entry["name"]))
+    """The thanks sentence: every name once, most rows first and table order on a tie, then the invitation."""
+    order: list[str] = []
+    counts: dict[str, int] = {}
+    for entry in players:
+        name = entry["name"]
+        if not name:
+            continue
+        if name not in counts:
+            order.append(name)
+            counts[name] = 0
+        counts[name] += 1
+    first = {name: index for index, name in enumerate(order)}
+    names = sorted(order, key=lambda name: (-counts[name], first[name]))
     if not names:
         return EMPTY_SENTENCE
     return f"Thanks to {', '.join(names)} and everyone who reported a bug or asked for a feature."
@@ -287,6 +332,11 @@ def main(root: Path, argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail instead of writing when the file is stale")
     arguments = parser.parse_args(argv)
     data = read(root)
+    listed = opted_out(data["players"])
+    if listed:
+        rows = ", ".join(f'"{name}"' for name in listed)
+        label, verb = ("row", "is") if len(listed) == 1 else ("rows", "are")
+        raise SystemExit(f"{SOURCE}: ## Players {label} {rows} {verb} on {OPT_OUT}; {OPT_OUT_HINT}")
     generated = render(data)
     block = render_block(data["players"])
     path = root / OUTPUT

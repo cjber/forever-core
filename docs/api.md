@@ -98,20 +98,26 @@ ForeverCore.Credits.Open(addonTitle?) --> boolean
 
 - `Register(addonTitle, credits)` hands core one addon's credits, the table its generated `Data/Credits.lua` sets as
   `ns.Credits`: `{ players = { { name, what }, ... }, inspired = { ... } }`. `addonTitle` is the name players see in
-  game; registering the same title again replaces that addon's list. A missing or malformed entry is left out rather
-  than raised. It returns false for a title that is not a non-empty string.
-- `Line(addonTitle)` is the short line an addon's own settings page shows: its players' names, up to three and a count
-  of the rest, such as `Thanks to Brainc3ll, Alex and 2 more`. It returns nil when that addon has registered no
-  players, so the page can hide the row.
-- `Players()` and `Inspired()` return the merged lists the page draws: one row per exact player name or project, sorted
-  by name, each `{ name, helped = { { addon = addonTitle, what = what }, ... } }`. Every addon that credits them keeps
-  its own `what` line, in the order the addons registered.
-- `Open(addonTitle?)` shows the **Thanks** page: one compact row per player with the addons they helped, and a short
-  **Inspired by** group below. Hovering a row shows each addon and what that player did for it. A dropdown at the top
+  game; registering the same title again replaces that addon's list. An addon registers under its `Family.ADDONS`
+  name (the row whose `folder` is its own), the same string the shared page filters to, so its Thanks row and its
+  lines name it the same way. `ForeverCore.Family.ADDONS` is the exposed list of `{ name, folder, url, line }` rows
+  if an addon needs to look its own up, though passing the literal title is enough. A missing or malformed entry is
+  left out rather than raised. It returns false for a title that is not a non-empty string.
+- `Line(addonTitle)` is the short line an addon's own settings page shows: its top three players by their number of
+  contributions to that addon, then a count of the rest, such as `Thanks to Brainc3ll, Alex and 2 more`. It returns nil
+  when that addon has registered no players, so the page can hide the row.
+- `Players()` and `Inspired()` return the merged lists the page draws: one row per exact player name or project, each
+  `{ name, count, helped = { { addon = addonTitle, what = what }, ... } }`. One `helped` item is one contribution, so
+  a player's generated rows all stay; `count` is how many the row carries. Players rank by `count` descending, then
+  name case-insensitively; **Inspired by** stays alphabetical.
+- `Open(addonTitle?)` shows the **Thanks** page: one compact row per player with the addons they helped, its count
+  after the name when above one, and a short **Inspired by** group below. Hovering a row shows every contribution,
+  grouped by identical `what`, each line led by the addons in gold. A dropdown at the top
   of the page filters to one registered addon, where each row shows that addon's `what` after the name and **Inspired
   by** lists only that addon's entries. Called with no argument it reopens on the filter the page already shows, so a
   choice survives closing and reopening; called with an addon title it filters to that addon; called with an explicit
-  nil it shows every addon. The Forever addons page has a Thanks row that calls `Open(nil)`, so it always opens **All
+  nil it shows every addon. An addon's own Forever addons page has a Thanks row that passes its `Family.ADDONS` name,
+  so it opens filtered to that addon; ForeverCore's own page, and any folder with no row, pass nil and open **All
   addons**. It returns false only when the client cannot build the window.
 
 Every Forever addon writes its `Data/Credits.lua` from `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables

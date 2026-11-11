@@ -26,6 +26,8 @@ the addon and are never part of it.
 
 ## Players
 
+One row per shipped contribution: a player with five shipped items has five rows with the same `Who`, in table order.
+
 | Who | What | Notes |
 |---|---|---|
 | [iPulse](https://github.com/iPulse) | Forever sections under the objective tracker | Asked on CurseForge (#335) |
@@ -33,6 +35,13 @@ the addon and are never part of it.
 | Darkwavez76 | A darker tracker background | Asked on CurseForge (#241) |
 | Naburiel | A background option behind the tracker | Asked in cjber/adventure-guide-forever#203; #241 |
 | MrFIXlT | Hide the locked tracker's hint until hovered | #193 |
+| deathmvp1 | Tracker clear of Questie's quest list | CurseForge; cjber/shortest-path-forever#214 |
+| berserkerlxl | Found the overlap with Questie's list | CurseForge; cjber/shortest-path-forever#214 |
+| Alex21xx | Tracker lock | CurseForge; cjber/shortest-path-forever#238 |
+| Torpdotorgx | Stopped the tracker erroring with another Forever addon loaded | CurseForge; cjber/shortest-path-forever#250 |
+| dryzee | Fixed the tracker's nil-order crash | CurseForge; cjber/shortest-path-forever#253 |
+| procque | Questie's quest tracker can be moved again | CurseForge |
+| Fareed | Questie's quest tracker can be moved again | CurseForge |
 
 ## Inspired by
 

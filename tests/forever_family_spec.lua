@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua now loads once, in ForeverCore, and reads core's own L. A change to the module is made here
 -- with this spec; no consumer keeps a copy.
-local PINNED = "b833e9ef20153f437164ddc6bcf0a8eb84f3bd9b71baa40261b82a13aaa1268b"
+local PINNED = "9402d27b47d1d0c7e80ec88f6823520e98adfcbf5c4c7f2872c74df94314a283"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -426,9 +426,11 @@ ns.Leaderboards = {
 	end,
 }
 local openedCredits = 0
+local creditTitles = {}
 ns.CreditsPage = {
-	Open = function()
+	Open = function(title)
 		openedCredits = openedCredits + 1
+		creditTitles[#creditTitles + 1] = { title = title }
 		return true
 	end,
 }
@@ -487,6 +489,7 @@ check(thanksButton.text == "Open", "the Thanks row has an Open button")
 check(Texts(panel):find("The players who helped each Forever addon.", 1, true), "the Thanks row says what it shows")
 thanksButton:Click()
 check(openedCredits == 1, "Open shows the Thanks page")
+check(creditTitles[1].title == "Legacy Forever", "filtered to the page's own addon")
 local boards = ns.Leaderboards
 ns.Leaderboards = nil
 openButton:Click()
@@ -497,6 +500,19 @@ ns.CreditsPage = nil
 thanksButton:Click()
 check(openedCredits == 1, "with no credits module, the press does nothing")
 ns.CreditsPage = credits
+-- A page with no Family.ADDONS row of its own opens every addon, as ForeverCore's own page does.
+local corePanel = Family.CreatePanel(nil, function()
+	return saved
+end, "ForeverCore")
+corePanel:Show()
+Children(corePanel, "Button", "SharedButtonSmallTemplate")[2]:Click()
+check(openedCredits == 2 and creditTitles[#creditTitles].title == nil, "ForeverCore's own page opens every addon")
+local unknownPanel = Family.CreatePanel(nil, function()
+	return saved
+end, "NotAForeverAddon")
+unknownPanel:Show()
+Children(unknownPanel, "Button", "SharedButtonSmallTemplate")[2]:Click()
+check(openedCredits == 3 and creditTitles[#creditTitles].title == nil, "an unknown folder opens every addon")
 local text = Texts(panel)
 check(text:find("This addon", 1, true), "the addon's own row says so")
 check(text:find("On", 1, true) and text:find("Not installed", 1, true), "the others show their state")
@@ -583,6 +599,7 @@ check(familyCalls[#familyCalls] == "family dismiss", "a dismiss callback runs in
 Client()
 local registeredBoards = {}
 local openedThanks = 0
+local thanksTitles = {}
 local registering = Load({
 	L = PhraseLocale(),
 	Leaderboards = {
@@ -592,8 +609,9 @@ local registering = Load({
 		end,
 	},
 	CreditsPage = {
-		Open = function()
+		Open = function(title)
 			openedThanks = openedThanks + 1
+			thanksTitles[#thanksTitles + 1] = { title = title }
 			return true
 		end,
 	},
@@ -696,6 +714,13 @@ check(thanksRow.tooltip == "The players who helped each Forever addon.", "and sa
 check(thanksRow.addSearchTags == false, "and no search tags")
 thanksRow.click()
 check(openedThanks == 1, "it opens the Thanks page")
+check(thanksTitles[1].title == "Legacy Forever", "filtered to the page's own addon")
+local corePage = registering.Register(category, {}, "ForeverCore")
+corePage.rows[3].click()
+check(openedThanks == 2 and thanksTitles[#thanksTitles].title == nil, "ForeverCore's own page opens every addon")
+local unknownPage = registering.Register(category, {}, "NotAForeverAddon")
+unknownPage.rows[3].click()
+check(openedThanks == 3 and thanksTitles[#thanksTitles].title == nil, "an unknown folder opens every addon")
 local others = {}
 for _, addon in ipairs(registering.ADDONS) do
 	if addon.folder ~= "LegacyForever" then
