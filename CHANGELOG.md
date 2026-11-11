@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-11
+
+### For addon authors
+
+- **The performance report stops overstating SavedVariables.** `tools/forever_perf.py` summed every account's and character's copy of a file into one figure and printed it as the size the client parses at login. Each row now reports what one login actually reads, the account file plus the largest per-character file, and the across-character total is labelled as disk use. (#385)
+- **`sync.py update` no longer fails a consumer with a false "manifest is stale".** It took the file list from the running copy's `DATA_FILES`, so a consumer whose vendored `sync.py` predated a new data file saw a mismatch and refused to update even though the producer's manifest was correct. It now takes the file list from the producer's `MANIFEST.json` and names the missing, unlisted and changed files on a genuine mismatch. (#366)
+
 ## [1.3.1] - 2026-11-11
 
 <!-- discord-image: docs/screenshots/tracker.png -->
