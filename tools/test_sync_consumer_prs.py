@@ -312,6 +312,69 @@ class CheckoutTest(unittest.TestCase):
             self.assertIn("no TOC", str(raised.exception))
             self.assertEqual((root / "Locales" / "phrases.txt").read_text(encoding="utf-8"), "stale\n")
 
+    def test_a_stale_family_block_is_rewritten_by_the_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "shortest-path-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "README.md").write_text("<!-- family -->\nstale\n<!-- /family -->\n", encoding="utf-8")
+            (root / "tools" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tools" / "block.py").write_text('TEXT = "current family block"\n', encoding="utf-8")
+            (root / "tools" / "check_family.py").write_text(
+                "import sys\n"
+                "from pathlib import Path\n"
+                "from tools.block import TEXT\n"
+                "if '--fix' in sys.argv[1:]:\n"
+                "    Path('README.md').write_text(TEXT + '\\n')\n",
+                encoding="utf-8",
+            )
+            real_run = sync.run
+
+            def fake_run(command, cwd=None, check=True, env=None):
+                if command[1].endswith("check_family.py"):
+                    return real_run(command, cwd=cwd, check=check, env=env)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(sync, "run", side_effect=fake_run):
+                sync.sync_checkout(root, root.parent)
+
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "current family block\n")
+
+    def test_a_consumer_without_a_family_checker_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "legacy-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "README.md").write_text("stale\n", encoding="utf-8")
+            calls = []
+
+            def fake_run(command, cwd=None, check=True, env=None):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(sync, "run", side_effect=fake_run):
+                sync.sync_checkout(root, root.parent)
+
+            self.assertFalse(any("check_family.py" in " ".join(command) for command in calls))
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "stale\n")
+
+    def test_a_failing_family_fix_fails_the_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            core = workspace / "core"
+            (core / "tools").mkdir(parents=True)
+            (core / "tools" / "sync_consumers.py").write_text("", encoding="utf-8")
+            root = workspace / "legacy-forever"
+            (root / "tools").mkdir(parents=True)
+            (root / "README.md").write_text("stale\n", encoding="utf-8")
+            (root / "tools" / "check_family.py").write_text(
+                "import sys\nprint('family markers missing', file=sys.stderr)\nraise SystemExit(4)\n", encoding="utf-8"
+            )
+
+            with self.assertRaises(sync.SyncError) as raised:
+                sync.sync_checkout(root, core)
+
+            self.assertIn("family markers missing", str(raised.exception))
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), "stale\n")
+
     def test_the_updater_that_runs_is_the_one_being_installed(self):
         # A release that adds a vendored data file (#339's backdrops.txt) reaches a consumer whose older sync.py does
         # not list it: the producer's sync.py is copied over the vendored one before `update` runs.

@@ -8,14 +8,14 @@ edit: the first comes from the vendoring map, the second from the repositories t
 
 For each consumer this clones `main`, runs the same three syncs a maintainer would (`tools/sync_consumers.py` for this
 repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`, each preceded by a
-copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the
-consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and, if anything changed, creates the commit on a
-scratch branch through the GraphQL `createCommitOnBranch` mutation from that `main` HEAD, then moves
-`forever-core-sync` to it in one ref update and opens or refreshes the PR with squash auto-merge enabled. Building the
-commit on a scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR
-empty and have GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures`
-ruleset accepts the sync. The consumer's own checks remain the gate: a sync that breaks one stays open as a red PR and
-is named in the run summary.
+copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the consumer's
+`Locales/phrases.txt` when it has `tools/phrases.py` and its README.md and docs/curseforge.md family block when it has
+`tools/check_family.py`, and, if anything changed, creates the commit on a scratch branch through the GraphQL
+`createCommitOnBranch` mutation from that `main` HEAD, then moves `forever-core-sync` to it in one ref update and opens
+or refreshes the PR with squash auto-merge enabled. Building the commit on a scratch branch keeps `forever-core-sync`
+away from a commit that equals `main`, which would make the PR empty and have GitHub close it. GitHub signs commits made
+through the API, so the consumer's `required_signatures` ruleset accepts the sync. The consumer's own checks remain the
+gate: a sync that breaks one stays open as a red PR and is named in the run summary.
 
 The run also moves every consumer's ForeverCore pin, `tools/forever-core.txt`, to core's latest published release, so
 the addon's specs and CI test against the core a player runs. The pin change rides in the same commit and PR, which
@@ -393,6 +393,11 @@ def clone(repo: str, workspace: Path) -> Path:
     return destination
 
 
+def python_env(root: Path) -> dict[str, str]:
+    """The environment for a consumer's own generator, with the checkout root importable as `tools`."""
+    return {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
+
+
 def regenerate_phrases(root: Path) -> None:
     """Refresh the consumer's phrase template from its own extractor.
 
@@ -406,9 +411,21 @@ def regenerate_phrases(root: Path) -> None:
         return
     # Run by path, so a script importing its siblings in tools/ finds them, and with the root importable, so one
     # importing `tools.forever_tools` as a package (tweaks-forever documents `python3 -m tools.phrases`) does too.
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
-    generated = run([sys.executable, str(script)], cwd=root, env=env)
+    generated = run([sys.executable, str(script)], cwd=root, env=python_env(root))
     template.write_text(generated.stdout, encoding="utf-8")
+
+
+def regenerate_family(root: Path) -> None:
+    """Rewrite the consumer's README.md and docs/curseforge.md family block from its own checker.
+
+    The text between the family markers is `forever_tools.family`'s and the consumer's typecheck job asserts that, so a
+    core change to the block would leave the sync PR red without this. `--fix` rewrites in place and leaves the
+    markers where they are; a consumer without `tools/check_family.py` is left alone.
+    """
+    script = root / "tools" / "check_family.py"
+    if not script.is_file():
+        return
+    run([sys.executable, str(script), "--fix"], cwd=root, env=python_env(root))
 
 
 def copy_preserving_mode(source: Path, target: Path) -> None:
@@ -444,6 +461,7 @@ def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str
             cwd=root,
         )
     regenerate_phrases(root)
+    regenerate_family(root)
     return bump_pin(root, latest)
 
 
