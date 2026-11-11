@@ -48,7 +48,7 @@ def run(argv, fetch, state=None):
     output = io.StringIO()
     with tempfile.TemporaryDirectory() as tmp:
         with (
-            unittest.mock.patch.object(cfwatch, "MODS", {"test-mod": 1}),
+            unittest.mock.patch.object(cfwatch, "projects", lambda root=None, remote=None: {"test-mod": 1}),
             unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": state or tmp}),
             contextlib.redirect_stdout(output),
         ):
@@ -69,9 +69,52 @@ class StatePathTest(unittest.TestCase):
             )
 
 
-class ModsTest(unittest.TestCase):
-    def test_field_guide_is_watched(self):
-        self.assertEqual(cfwatch.MODS["field-guide-forever"], 1786835)
+class ProjectsTest(unittest.TestCase):
+    def tree(self, root, ids, missing=()):
+        """A fake suite checkout per watched slug: one root TOC, with the project line when `ids` names one."""
+        for slug in cfwatch.slug_list():
+            if slug in missing:
+                continue
+            folder = Path(root) / slug
+            folder.mkdir(parents=True)
+            line = f"## X-Curse-Project-ID: {ids[slug]}\n" if slug in ids else ""
+            (folder / "Example.toc").write_text("## Interface: 16001\n" + line)
+
+    def test_every_addon_and_forevercore_is_watched_from_its_own_root_toc(self):
+        ids = {slug: 1000 + index for index, slug in enumerate(cfwatch.slug_list())}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(tmp, ids)
+            found = cfwatch.projects(tmp)
+        self.assertEqual(list(found), cfwatch.slug_list())
+        self.assertEqual(len(found), 9)
+        self.assertEqual(found, ids)
+        self.assertIn("forever-core", found)
+        self.assertEqual(found["commissions-forever"], ids["commissions-forever"])
+
+    def test_a_root_toc_without_the_project_line_fails_loudly(self):
+        ids = {slug: 1000 for slug in cfwatch.slug_list() if slug != "forever-core"}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(tmp, ids)
+            with self.assertRaisesRegex(SystemExit, "forever-core has no ## X-Curse-Project-ID"):
+                cfwatch.projects(tmp)
+
+    def test_a_missing_checkout_reads_the_toc_through_github(self):
+        ids = {slug: 1000 + index for index, slug in enumerate(cfwatch.slug_list())}
+        requested = []
+
+        def remote(slug):
+            requested.append(slug)
+            return f"## Interface: 16001\n## X-Curse-Project-ID: {ids[slug]}\n"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(
+                tmp,
+                {slug: ids[slug] for slug in cfwatch.slug_list() if slug != "tweaks-forever"},
+                missing=["tweaks-forever"],
+            )
+            found = cfwatch.projects(tmp, remote)
+        self.assertEqual(requested, ["tweaks-forever"])
+        self.assertEqual(found, ids)
 
 
 class OutputTest(unittest.TestCase):

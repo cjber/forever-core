@@ -8,23 +8,30 @@ thread whose latest post is not the owner's: one never answered, or one followed
 `--settle THREAD REASON` records that a thread needs no answer (a thank-you, a question another player answered).
 Settled threads live beside the seen IDs in cfwatch-settled.json with the thread's latest post, so `--unanswered`
 skips one only until somebody posts in it again.
+
+The watched projects are every addon in `forever_tools.family.ADDONS` plus ForeverCore. Each project's ID comes from
+its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout, or through `gh api` when that
+checkout is missing, so a new addon is watched with no list to keep here.
 """
 
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-MODS = {
-    "shortest-path-forever": 1708599,
-    "adventure-guide-forever": 1711538,
-    "legacy-forever": 1705879,
-    "skillup-forever": 1705762,
-    "tweaks-forever": 1708506,
-    "field-guide-forever": 1786835,
-}
+CORE = Path(__file__).resolve().parents[2]
+TOOLING = CORE / ".agents" / "skills" / "wow-forever-addon" / "tooling"
+sys.path.insert(0, str(TOOLING))
+sys.path.insert(0, str(CORE / "tools"))
+
+from check_core_shared import CONSUMER_ROOT  # noqa: E402
+from forever_tools.family import ADDONS  # noqa: E402
+
+PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.MULTILINE)
 OWNER = "cjber"
 
 
@@ -68,6 +75,79 @@ def get(url):
         except Exception:
             time.sleep(2**attempt)
     raise SystemExit("fetch failed: " + url + " " + result.stdout[:200] + result.stderr[:200])
+
+
+def suite_root():
+    """The folder that holds this checkout and its siblings: the main worktree's parent, else this checkout's parent."""
+    result = subprocess.run(
+        ["git", "-C", str(CORE), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    first = result.stdout.splitlines()[0] if result.returncode == 0 and result.stdout else ""
+    if first.startswith("worktree "):
+        return Path(first[len("worktree ") :]).parent
+    return CORE.parent
+
+
+def slug_list():
+    """Every published Forever addon, then ForeverCore itself."""
+    return [slug for _, slug, _ in ADDONS] + ["forever-core"]
+
+
+def toc_folder(root, slug):
+    """The checkout folder whose root TOC names the CurseForge project."""
+    return Path(root) / slug / CONSUMER_ROOT.get(slug, "")
+
+
+def local_toc(root, slug):
+    """The single root TOC in the sibling checkout, or None when the checkout is not there."""
+    folder = toc_folder(root, slug)
+    tocs = sorted(folder.glob("*.toc")) if folder.is_dir() else []
+    if len(tocs) > 1:
+        names = [toc.name for toc in tocs]
+        raise SystemExit(f"{folder}: more than one TOC, so X-Curse-Project-ID is ambiguous: {names}")
+    return tocs[0] if tocs else None
+
+
+def gh(*args):
+    result = subprocess.run(["gh", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if result.returncode:
+        raise SystemExit(f"gh {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def github_toc(slug):
+    """A sibling checkout's root TOC, fetched from cjber/<slug> when the checkout is not on this machine."""
+    folder = CONSUMER_ROOT.get(slug, "")
+    listing = f"repos/{OWNER}/{slug}/contents" + (f"/{folder}" if folder else "")
+    entries = json.loads(gh("api", listing))
+    tocs = [entry["path"] for entry in entries if entry.get("type") == "file" and entry["name"].endswith(".toc")]
+    if len(tocs) != 1:
+        raise SystemExit(f"cjber/{slug}: expected one root TOC, found {tocs}")
+    return gh("api", "-H", "Accept: application/vnd.github.raw", f"repos/{OWNER}/{slug}/contents/{tocs[0]}")
+
+
+def project_id(slug, text, source):
+    match = PROJECT_ID.search(text)
+    if not match:
+        raise SystemExit(f"{source}: {slug} has no ## X-Curse-Project-ID line in its root TOC")
+    return int(match.group(1))
+
+
+def projects(root=None, remote=None):
+    """Every watched CurseForge project as slug -> id, ids read from each addon's root TOC."""
+    root = suite_root() if root is None else Path(root)
+    remote = github_toc if remote is None else remote
+    found = {}
+    for slug in slug_list():
+        toc = local_toc(root, slug)
+        if toc is not None:
+            found[slug] = project_id(slug, toc.read_text(encoding="utf-8"), toc)
+        else:
+            found[slug] = project_id(slug, remote(slug), f"cjber/{slug}")
+    return found
 
 
 def fetch_mod(fetch, mod_id):
@@ -171,7 +251,7 @@ def main(argv=None, fetch=None):
     settled_path = state_path("cfwatch-settled.json")
     settled = load(settled_path)
     raw, totals, new = {}, {}, []
-    for slug, mod_id in MODS.items():
+    for slug, mod_id in projects().items():
         items, total = fetch_mod(fetch, mod_id)
         flat = flatten(items)
         raw[slug] = items
