@@ -25,7 +25,8 @@ local function candidate(index)
 	end
 	local result = { pcall(C_AddOns and C_AddOns.GetAddOnDependencies, index) }
 	for position = 2, result[1] and #result or 0 do
-		if type(result[position]) == "string" and result[position]:lower() == "forevercore" then
+		local dependency = result[position]
+		if type(dependency) == "string" and dependency:lower() == "forevercore" then
 			return true
 		end
 	end
@@ -54,7 +55,8 @@ local function culprits()
 	return found
 end
 local function phrase(key, ...)
-	return string.format((ns.L or {})[key] or key, ...)
+	local text = (ns.L or {})[key]
+	return string.format(type(text) == "string" and text or key, ...)
 end
 function ns.ForeverRequire(ready)
 	if ready then

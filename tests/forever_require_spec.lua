@@ -172,4 +172,20 @@ do
 	equal(text, "My Addon: update Legacy Forever now.", "ns.L overrides the phrase")
 end
 
+-- An English-only ns.L holds true for each phrase, so the key is printed.
+do
+	local L = { ["%s could not start. Reinstall %s to fix this."] = true }
+	local _, _, text = run({}, false, L)
+	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "a true phrase prints the English key")
+end
+
+-- ns.L with a translated string prints the translation.
+do
+	local L = { ["%s: %s are out of date. Update them to fix this."] = "%s must be updated: %s." }
+	local first = entry({ name = "AlphaForever", title = "Alpha", tag = "v1.4.0" })
+	local second = entry({ name = "BetaForever", title = "Beta", tag = "v1.3.0" })
+	local _, _, text = run({ first, second }, false, L)
+	equal(text, "My Addon must be updated: Alpha and Beta.", "a translated string is printed")
+end
+
 print(("forever_require_spec: %d checks passed"):format(checks))
