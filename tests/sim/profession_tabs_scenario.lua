@@ -42,6 +42,7 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	-- The engine's own width and anchor for its crafting window, before any tab is registered, and the client's own
 	-- methods, which the module must leave exactly as it found them (WFA-38).
 	local width, point = pf:GetWidth(), { pf:GetPoint(1) }
+	local expectedWidth = width
 	assert(width > 1, "the client gave its window a width")
 	local clientMethods = {
 		SetWidth = pf.SetWidth,
@@ -82,7 +83,7 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	assert(pf.ProfessionsOverviewTab.OnClick == overviewClick, "the module replaced a native side tab's OnClick")
 
 	local function stable(label)
-		assert(pf:GetWidth() == width, label .. ": the window width changed to " .. tostring(pf:GetWidth()))
+		assert(pf:GetWidth() == expectedWidth, label .. ": the window width changed to " .. tostring(pf:GetWidth()))
 		local now = { pf:GetPoint(1) }
 		assert(#now == #point, label .. ": the window anchor changed")
 		for index = 1, #point do
@@ -169,6 +170,47 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	assert(G.InputUtil.IsGamepadUIEnabled(), "the gamepad interface is on")
 	sim:gamepadNavigate()
 	walk("gamepad on", false)
+
+	-- A registration can raise its minWidth after it registered and lower it again. The window takes the new width at
+	-- once, keeps it across a tab switch and a profession change, and goes back to the client's width when cleared.
+	local raised = sim:runAs(
+		ADDON,
+		[[
+		local ns = ...
+		local raisedWidth = _G.ProfessionsFrame:GetWidth() + 120
+		ns.ProfessionTabsScenario.raisedWidth = raisedWidth
+		ns.ProfessionTabs.SetMinWidth("a", raisedWidth)
+	]],
+		ns
+	)
+	assert(raised, "raising a registration's minWidth failed")
+	expectedWidth = scenario.raisedWidth
+	assert(
+		pf:GetWidth() == expectedWidth,
+		"raising a registration's minWidth did not widen the window: " .. tostring(pf:GetWidth())
+	)
+	stable("after raising a minWidth")
+	selectTab(tabB)
+	stable("after a tab switch at the raised width")
+	sim:openProfessions(333)
+	sim:advance(0.2)
+	stable("after a profession change at the raised width")
+
+	local lowered = sim:runAs(
+		ADDON,
+		[[
+		local ns = ...
+		ns.ProfessionTabs.SetMinWidth("a", nil)
+	]],
+		ns
+	)
+	assert(lowered, "clearing a registration's minWidth failed")
+	expectedWidth = width
+	assert(
+		pf:GetWidth() == expectedWidth,
+		"clearing a registration's minWidth did not restore the client width: " .. tostring(pf:GetWidth())
+	)
+	stable("after clearing the minWidth")
 
 	-- In combat only the checked state changes; leaving combat applies the page and the width.
 	api.ShowNative()

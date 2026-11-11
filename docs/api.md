@@ -96,6 +96,32 @@ a long menu scroll past that many pixels. Returns the root description, a `Forev
 in ForeverCore's own frames because the client's menu can assert on this build and taints the gamepad interface's
 focus; use this rather than `MenuUtil.CreateContextMenu`.
 
+## `ForeverCore.ProfessionTabs`
+
+```lua
+ForeverCore.ProfessionTabs.minor -- integer
+ForeverCore.ProfessionTabs.Register(key, spec) --> ForeverProfessionTab
+ForeverCore.ProfessionTabs.SetMinWidth(key, width)
+ForeverCore.ProfessionTabs.Select(key)
+ForeverCore.ProfessionTabs.ShowNative()
+ForeverCore.ProfessionTabs.Selected() --> string?
+```
+
+`minor` is the module's own version: it rises with each member the module adds. It is `1` today, the minor that adds
+`SetMinWidth`. Check that member before you use it: `if (ForeverCore.ProfessionTabs.minor or 0) >= 1 then ... end`.
+
+- `Register(key, spec)` adds a side tab to the Professions window under the client's own tabs, in registration order.
+  `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is your page and `minWidth` raises the
+  one width the window keeps for every profession and tab. Selecting a tab shows only its page and unchecks the
+  client's tabs; a client tab or page takes the window back. A key that is not a non-empty string, or one that is
+  already registered, is a programming error raised at the calling line.
+- `SetMinWidth(key, width)` changes the `minWidth` of a registration that is already made, then recomputes and enforces
+  the one window width. `nil` clears it, so the window can return to the client's own width. In combat the change waits
+  for combat to end with the rest of the module's frame work. An unknown key is a programming error raised at the
+  calling line. (minor 1)
+- `Select(key)` shows that tab's page and checks its tab; `ShowNative()` hands the window back to the client;
+  `Selected()` returns the selected key, or `nil` when the client's own page is showing.
+
 ## Listing and subscribing to addon APIs
 
 Every Forever addon that follows [`docs/api-conventions.md`](api-conventions.md) publishes its API table, so one loop
@@ -129,6 +155,6 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `ProfessionTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`,
-`Text`, `QuestOrder` and `Family`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker
-section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.
+`QuestLogTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`, `Text`,
+`QuestOrder` and `Family`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker section
+or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.

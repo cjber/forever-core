@@ -225,6 +225,7 @@ local world = newWorld()
 local ns = {}
 local api = load(ns)
 assert(api, "no profession tabs API")
+assert(api.minor == 1, "the module's minor is 1")
 
 local pageA = newFrame("ForeverCommissionsPage")
 local pageB = newFrame("ForeverSkillUpPage")
@@ -325,6 +326,28 @@ assertOnePage(pageB, pageA, "after a profession change")
 assert(tabA.points[2] == world.native2, "the first tab did not follow the last shown client tab")
 assert(tabB.points[2] == tabA, "the second tab did not follow the first")
 
+-- A registration can raise its minWidth after it registered: the one window width changes at once and stays through a
+-- tab switch.
+api.SetMinWidth("skillup", 1050)
+width = 1050
+assertWidthAndAnchor(world, width, point, "after raising a minWidth")
+api.Select("commissions")
+assertWidthAndAnchor(world, width, point, "after a tab switch at the raised minWidth")
+api.Select("skillup")
+
+-- Lowering one registration leaves the largest of the rest; nil clears it and the window returns to the client's own
+-- width. A minWidth below that width never shrinks it.
+api.SetMinWidth("commissions", 800)
+assertWidthAndAnchor(world, width, point, "after a lower minWidth under another registration")
+api.SetMinWidth("skillup", nil)
+width = 800
+assertWidthAndAnchor(world, width, point, "after clearing the largest minWidth")
+api.SetMinWidth("commissions", 673)
+width = 673
+assertWidthAndAnchor(world, width, point, "after lowering a minWidth to the client width")
+api.SetMinWidth("commissions", nil)
+assertWidthAndAnchor(world, width, point, "after clearing every minWidth")
+
 -- The client page and its own tabs were never hidden by the module; the only shows are the client's own, run by the
 -- spec's mouse-up and page show.
 assert(world.crafting.hideCalls == 0, "the module hid the client crafting page")
@@ -342,6 +365,11 @@ assert(api.Selected() == nil, "ShowNative left a tab selected")
 local ok, err = pcall(api.Register, "commissions", { icon = "x", tooltip = "Duplicate", page = pageA })
 assert(not ok, "a duplicate key registered")
 assert(tostring(err):find("already registered", 1, true), tostring(err))
+
+-- An unknown key is a caller error, raised at the calling line.
+ok, err = pcall(api.SetMinWidth, "missing", 900)
+assert(not ok, "an unknown key changed a minWidth")
+assert(tostring(err):find("not registered", 1, true), tostring(err))
 
 -- A callback that errors does not break the module's own switching, and runs in the addon's SafeCall when registered.
 local safeCalls = {}
@@ -368,6 +396,8 @@ world.combat = true
 api.Select("commissions")
 assert(tabA.checked and not tabB.checked, "a combat selection did not check its tab")
 assert(not pageA.shown and not pageB.shown, "a combat selection showed a page")
+api.SetMinWidth("commissions", 1200)
+assertWidthAndAnchor(world, width, point, "a combat minWidth changed the window at once")
 local combatWatcher
 for _, frame in ipairs(world.created) do
 	if frame.events and frame.events.PLAYER_REGEN_ENABLED then
@@ -378,7 +408,10 @@ assert(combatWatcher, "a combat selection did not wait for combat to end")
 world.combat = false
 combatWatcher.scripts.OnEvent(combatWatcher, "PLAYER_REGEN_ENABLED")
 assert(not pageB.shown and pageA.shown, "leaving combat did not show the selected page")
+assertWidthAndAnchor(world, 1200, point, "leaving combat did not apply the combat minWidth")
 assert(not combatWatcher.events.PLAYER_REGEN_ENABLED, "the combat watcher stayed registered")
+api.SetMinWidth("commissions", nil)
+assertWidthAndAnchor(world, 673, point, "clearing the combat minWidth did not restore the client width")
 
 -- A registration made before the client has laid its crafting page out keeps no width yet: the engine's width is
 -- read once the page is shown, and only then is the largest minWidth applied.
