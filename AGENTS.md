@@ -26,7 +26,7 @@ stylua --check .
 python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py   # every spec, in parallel
 python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
 bash tools/typecheck.sh                   # LuaLS 3.19.1 over the Lua, with the pinned WoW API annotations
-python3 tools/check_consumers.py          # every consumer's development tooling matches this repo
+python3 tools/check_consumers.py          # every consumer's tooling, ForeverCore pin and packaging match this repo
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WFA-36)
 python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
@@ -115,14 +115,21 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   required in every consumer. It lives outside `.github/workflows` so it never runs here; the `workflows` CI job lints
   it.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
+  Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and its `.pkgmeta` must not ship
+  ForeverCore under `externals:` while a consumer whose root TOC lists ForeverCore in `## Dependencies` must declare
+  `- forevercore` under `required-dependencies:`.
   `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
   timing.
 - `tools/sync_consumer_prs.py`: the automatic tooling sync behind `.github/workflows/sync-consumers.yml`. On every push
-  to main it derives the consumers from `VENDORED` plus the live repositories that vendor `tools/forever_tools/` or
-  `tools/forever_sim/`, runs the same syncs as `sync_consumers.py` and regenerates each consumer's
-  `Locales/phrases.txt` when it has `tools/phrases.py`, then creates the signed commit through the GraphQL
-  `createCommitOnBranch` mutation and opens an auto-merging PR in each consumer. It needs the `CONSUMER_SYNC_TOKEN`
-  secret; without it the job prints a notice and stays green. `tools/test_sync_consumer_prs.py` is its spec.
+  to main and every release tag, and again from the release workflow itself (a tag a workflow creates with
+  `GITHUB_TOKEN` fires no push event), it derives the consumers from `VENDORED` plus the live repositories that vendor
+  `tools/forever_tools/` or `tools/forever_sim/`, runs the same syncs as `sync_consumers.py`, regenerates each
+  consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and moves each consumer's `tools/forever-core.txt`
+  pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone), then
+  creates the signed commit through the GraphQL `createCommitOnBranch` mutation and opens an auto-merging PR in each
+  consumer. It needs the `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green.
+  `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.

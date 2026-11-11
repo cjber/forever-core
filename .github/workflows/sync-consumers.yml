@@ -1,7 +1,9 @@
 name: Sync consumers
 
-# Every consumer carries a copy of this repo's development tooling. A push to main refreshes those copies in one
-# PR per consumer, with squash auto-merge armed so the consumer's own checks decide when it lands.
+# Every consumer carries a copy of this repo's development tooling and pins the ForeverCore release its specs and CI
+# check out. A push to main refreshes those copies in one PR per consumer, with squash auto-merge armed so the
+# consumer's own checks decide when it lands. release.yml starts the same sync once a release is published, which
+# moves every pin to that release.
 on:
   push:
     branches: [main]
