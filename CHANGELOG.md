@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A changed family block reaches every addon.** The consumer sync runs the addon's `tools/check_family.py --fix` after the phrase template, so its README.md and docs/curseforge.md family block matches `forever_tools.family` and its typecheck job no longer fails when core changes that text. (#454)
+
 ## [1.6.0] - 2026-11-11
 
 <!-- discord-image: docs/screenshots/thanks.png -->
