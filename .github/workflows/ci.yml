@@ -41,6 +41,11 @@ jobs:
           LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
           LUACHECK: 1.1.2-1
         run: |
+          # Fall back to a mirror of Ubuntu's signed archives when the runner's Azure mirror cannot resolve.
+          mirror_list=/etc/apt/apt-mirrors.txt
+          if [ -f "$mirror_list" ] && ! getent ahosts azure.archive.ubuntu.com >/dev/null; then
+            printf '%s\n' https://mirrors.mit.edu/ubuntu | sudo tee "$mirror_list" >/dev/null
+          fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --allow-downgrades \
             "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT" "lua-check=$LUACHECK"
@@ -106,6 +111,11 @@ jobs:
         env:
           LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
         run: |
+          # Fall back to a mirror of Ubuntu's signed archives when the runner's Azure mirror cannot resolve.
+          mirror_list=/etc/apt/apt-mirrors.txt
+          if [ -f "$mirror_list" ] && ! getent ahosts azure.archive.ubuntu.com >/dev/null; then
+            printf '%s\n' https://mirrors.mit.edu/ubuntu | sudo tee "$mirror_list" >/dev/null
+          fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --allow-downgrades \
             "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT"
