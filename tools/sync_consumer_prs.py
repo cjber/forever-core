@@ -1,4 +1,6 @@
-"""Open or update the per-consumer sync PR after a push to forever-core main.
+"""Open or update the per-consumer sync PR after a push to forever-core main or a release.
+
+release.yml starts this sync itself once a release is published, so the pins below move to it straight away.
 
 The consumers are the repositories in `check_core_shared.VENDORED`, plus every non-archived `cjber` repository that
 vendors `tools/forever_tools/MANIFEST.json` or `tools/forever_sim/MANIFEST.json`. There is no second consumer list to
@@ -15,6 +17,11 @@ empty and have GitHub close it. GitHub signs commits made through the API, so th
 ruleset accepts the sync. The consumer's own checks remain the gate: a sync that breaks one stays open as a red PR and
 is named in the run summary.
 
+The run also moves every consumer's ForeverCore pin, `tools/forever-core.txt`, to core's latest published release, so
+the addon's specs and CI test against the core a player runs. The pin change rides in the same commit and PR, which
+says what moved. A pin that is newer, equal or not a `vX.Y.Z` tag is left alone, and a run that cannot read the latest
+release leaves every pin alone rather than failing the tooling sync.
+
     python3 tools/sync_consumer_prs.py
 
 Set `GH_TOKEN` to the `CONSUMER_SYNC_TOKEN` secret, a fine-grained PAT with Contents, Pull requests and Workflows
@@ -27,6 +34,7 @@ script prints a notice and exits 0, so the workflow stays green until the owner 
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,13 +42,17 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from check_core_shared import VENDORED
+from check_core_shared import VENDORED, consumer_path
 
 OWNER = "cjber"
 CORE_REPO = "forever-core"
 BRANCH = "forever-core-sync"
 SCRATCH_BRANCH = f"{BRANCH}-commit"
 TITLE = "chore: sync shared files from forever-core"
+# The release each consumer's specs and CI check ForeverCore out at: one line, a tag such as `v1.3.2`.
+PIN_PATH = "tools/forever-core.txt"
+# The only pin form this can compare and move; anything else is a maintainer's decision, not a bump.
+RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 TOOLING_MANIFESTS = ("tools/forever_tools/MANIFEST.json", "tools/forever_sim/MANIFEST.json")
 # Where this checkout keeps each tooling package's producer, the PRODUCER_PATH both sync.py files carry.
 TOOLING_PRODUCER_ROOT = ".agents/skills/wow-forever-addon/tooling"
@@ -109,6 +121,51 @@ def consumer_repos(discovered=()) -> list[str]:
     """VENDORED's repositories plus repositories found to vendor the tooling, never this repo."""
     vendored = {repo for repos in VENDORED.values() for repo in repos}
     return sorted((vendored | set(discovered)) - {CORE_REPO})
+
+
+def latest_core_release() -> str | None:
+    """Core's newest published release tag, read once for the whole run.
+
+    A read that fails is a warning, not a failed run: the tooling sync still has work to do, and every pin simply
+    stays where it is for this run.
+    """
+    try:
+        return str(api_json(f"repos/{OWNER}/{CORE_REPO}/releases/latest")["tag_name"])
+    except (SyncError, json.JSONDecodeError, OSError, KeyError, TypeError) as error:
+        print(f"::warning::Could not read {OWNER}/{CORE_REPO}'s latest release ({error}); leaving every pin alone.")
+        return None
+
+
+def release_version(tag: str) -> tuple[int, int, int] | None:
+    """A `vX.Y.Z` tag as numbers, so v1.10.0 is newer than v1.9.0, or None when the tag is not one."""
+    match = RELEASE_TAG.match(tag.strip())
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def bump_pin(root: Path, latest: str | None) -> str | None:
+    """Move the consumer's ForeverCore pin up to `latest`, returning the tag it moved from.
+
+    `root` is a clone named after the consumer's repository, so a consumer whose addon lives below its root
+    (kiln-forever) gets the pin at the path CONSUMER_ROOT names. A pin that is equal, newer, or not a `vX.Y.Z` tag is
+    left exactly as it is: the pin never moves backwards, and a tag this cannot compare is a maintainer's call.
+    """
+    if not latest:
+        return None
+    latest_version = release_version(latest)
+    if latest_version is None:
+        return None
+    path = root / consumer_path(root.name, PIN_PATH)
+    if not path.is_file():
+        return None
+    current = path.read_text(encoding="utf-8").strip()
+    current_version = release_version(current)
+    if current_version is None:
+        print(f"{root.name}: {consumer_path(root.name, PIN_PATH)} is not a vX.Y.Z tag ({current!r}); leaving it alone.")
+        return None
+    if current_version >= latest_version:
+        return None
+    path.write_text(f"{latest}\n", encoding="utf-8")
+    return current
 
 
 def repo_vendors_tooling(repo: str) -> bool:
@@ -191,7 +248,11 @@ def install_updater(root: Path, core_root: Path, package: str) -> None:
     copy_preserving_mode(source, target)
 
 
-def sync_checkout(root: Path, core_root: Path) -> None:
+def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str | None:
+    """Sync the tooling and move the ForeverCore pin, returning the tag a moved pin came from.
+
+    The pin is bumped last, so a consumer whose sync fails keeps its pin where it was.
+    """
     run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent)])
     for package in tooling_packages(root):
         install_updater(root, core_root, package)
@@ -200,6 +261,7 @@ def sync_checkout(root: Path, core_root: Path) -> None:
             cwd=root,
         )
     regenerate_phrases(root)
+    return bump_pin(root, latest)
 
 
 def staged_changes(root: Path) -> tuple[list[dict], list[dict]]:
@@ -294,10 +356,15 @@ def create_commit(
     return created_oid(api("graphql", "--input", str(body)))
 
 
-def pr_body(sha: str, files: tuple[str, ...]) -> str:
-    lines = [
-        "Syncs this addon's copy of Forever Core's development tooling.",
-        "",
+def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
+    lines = ["Syncs this addon's copy of Forever Core's development tooling.", ""]
+    if pin_bump:
+        lines += [
+            f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
+            " latest release.",
+            "",
+        ]
+    lines += [
         f"Core commit: https://github.com/{OWNER}/{CORE_REPO}/commit/{sha}",
         "",
         "Files:",
@@ -379,12 +446,13 @@ def auto_merge_warning(node_id: str) -> str | None:
     return None
 
 
-def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Result:
+def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None) -> Result:
+    """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit."""
     try:
         root = clone(repo, workspace)
         head = git(root, "rev-parse", "HEAD").stdout.strip()
         git(root, "checkout", "-B", BRANCH)
-        sync_checkout(root, core_root)
+        bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
         if not additions and not deletions:
             closed = close_stale_prs(repo, sha)
@@ -397,7 +465,8 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str) -> Resu
         finally:
             delete_branch(repo, SCRATCH_BRANCH)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
-        number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files))
+        pin_bump = (bumped, latest) if bumped and latest else None
+        number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files, pin_bump))
         warning = auto_merge_warning(node_id) if node_id else None
         return Result(repo, status, files, url, warning)
     except (SyncError, json.JSONDecodeError, OSError) as error:
@@ -446,12 +515,14 @@ def main() -> int:
     except SyncError as error:
         print(f"::error::{error}")
         return 1
+    # One read for the whole run: every consumer's pin moves to the same release, or none of them do.
+    latest = latest_core_release()
 
     results = []
     with tempfile.TemporaryDirectory(prefix="forever-core-sync-") as directory:
         workspace = Path(directory)
         for repo in repos:
-            result = sync_consumer(repo, core_root, workspace, sha)
+            result = sync_consumer(repo, core_root, workspace, sha, latest)
             results.append(result)
             suffix = f" {result.url}" if result.url else ""
             if result.detail:
