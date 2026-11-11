@@ -1,7 +1,12 @@
-"""Check .release/ForeverCore against the TOC: every loaded file ships, no development folder does."""
+"""Check .release/ForeverCore against the TOC: every loaded file ships, no development folder does, and no widget
+method that takes parameters is passed straight as a script handler."""
 
 import sys
 from pathlib import Path
+
+TOOLING = Path(__file__).resolve().parent.parent / ".agents/skills/wow-forever-addon/tooling"
+sys.path.insert(0, str(TOOLING))
+from forever_tools import widget_handlers  # noqa: E402
 
 PACKAGE = Path(".release") / "ForeverCore"
 DEV = ("tests", "tools", "docs", "types")
@@ -31,10 +36,14 @@ def main():
         problems.append("loaded but not packaged: " + ", ".join(missing))
     if leaked:
         problems.append("development files packaged: " + ", ".join(leaked))
+    problems += widget_handlers.check_root(PACKAGE)
     if problems:
         print("\n".join(problems))
         return 1
-    print(f"package check: {len(shipped)} files, every TOC file present, no development folders")
+    print(
+        f"package check: {len(shipped)} files, every TOC file present, no development folders, no widget method "
+        "that takes parameters passed straight as a script handler"
+    )
     return 0
 
 
