@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
 - **Right-click menus show real checkboxes and arrows.** A checkbox row now puts the game's own tick box beside its label, a radio row puts the game's radio dot, and a submenu row shows the game's arrow on the right instead of a ">" in the text. (#379)
 
 ## [1.3.0] - 2026-11-11
