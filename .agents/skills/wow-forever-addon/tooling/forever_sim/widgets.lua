@@ -6,6 +6,7 @@
 -- methods on protected frames are blocked for tainted code in combat.
 local Secret = require("veil")
 local ScriptTypes = require("script_types")
+local Docs = require("docs")
 
 local M = {}
 
@@ -2269,27 +2270,22 @@ function M.build(sim)
 		return out
 	end
 
-	-- The wiki's class for this method, overridden by observed client behaviour for the method's name; untagged
-	-- keeps today's combat-only rule.
+	-- The wiki's classes for this method, overridden by observed client behaviour for the method's name; a name with
+	-- no applying class keeps the pre-class combat-only rule.
 	local function restrictedNow(kind, name)
-		local overrides = sim.restrictionOverrides or {}
-		local override = overrides[name] or overrides[kind .. "_" .. name]
-		local class = override and override.class
-		if not class then
-			if sim.restrictionClass then
-				class = sim.restrictionClass(kind .. "_" .. name)
-			elseif sim.docs and sim.docs.restrictionClass then
-				class = sim.docs.restrictionClass(kind .. "_" .. name)
+		local classes
+		if sim.restrictionClasses then
+			classes = sim.restrictionClasses(kind .. "_" .. name)
+		else
+			local overrides = sim.restrictionOverrides or {}
+			local override = overrides[name] or overrides[kind .. "_" .. name]
+			if override then
+				classes = type(override.class) == "table" and override.class or { override.class }
+			elseif sim.docs and sim.docs.restrictionClasses then
+				classes = sim.docs.restrictionClasses(kind .. "_" .. name)
 			end
 		end
-		class = class or "nocombat"
-		if class == "always" then
-			return true
-		end
-		if class == "hwevent" then
-			return not sim.hardwareInput
-		end
-		return sim.combatLockdown
+		return Docs.applies(classes or { "untagged" }, sim.combatLockdown, sim.hardwareInput)
 	end
 
 	local function wrapMethod(kind, name, fdoc, body)

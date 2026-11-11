@@ -8,6 +8,7 @@
 --   * protected functions called from tainted code are forbidden (ADDON_ACTION_FORBIDDEN);
 --   * from tainted code, a missing non-nilable argument raises the client's usage error.
 local Secret = require("veil")
+local Docs = require("docs")
 
 local M = {}
 
@@ -335,23 +336,16 @@ function M.build(sim)
 		protectedNames[name] = true
 	end
 
-	-- The wiki's class for a restricted function, overridden by observed client behaviour. An untagged name keeps
-	-- today's combat-only rule.
+	-- The wiki's classes for a restricted function, overridden by observed client behaviour. A name with no applying
+	-- class keeps the pre-class combat-only rule.
 	local function restrictedNow(name)
-		local class
-		if sim.restrictionClass then
-			class = sim.restrictionClass(name)
-		elseif sim.docs and sim.docs.restrictionClass then
-			class = sim.docs.restrictionClass(name)
+		local classes
+		if sim.restrictionClasses then
+			classes = sim.restrictionClasses(name)
+		elseif sim.docs and sim.docs.restrictionClasses then
+			classes = sim.docs.restrictionClasses(name)
 		end
-		class = class or "nocombat"
-		if class == "always" then
-			return true
-		end
-		if class == "hwevent" then
-			return not sim.hardwareInput
-		end
-		return sim.combatLockdown
+		return Docs.applies(classes or { "untagged" }, sim.combatLockdown, sim.hardwareInput)
 	end
 
 	local function stub(qualified, fdoc)

@@ -388,14 +388,14 @@ function M.build(sim)
 		["C_Map.OpenWorldMap"] = { class = "always", issue = "cjber/adventure-guide-forever#411" },
 		SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
 	}
-	-- The class of a restriction, the observed override first, then the pin, then today's combat-only rule for an
-	-- untagged name.
-	function sim.restrictionClass(name)
+	-- Every class of a restriction, the observed override first, then the pin, then the pre-class combat-only rule for
+	-- an untagged name. A function can carry several classes, and any one that applies refuses the call.
+	function sim.restrictionClasses(name)
 		local override = sim.restrictionOverrides[name]
 		if override then
-			return override.class
+			return type(override.class) == "table" and override.class or { override.class }
 		end
-		return sim.docs.restrictionClass(name) or "nocombat"
+		return sim.docs.restrictionClasses(name) or { "untagged" }
 	end
 
 	---------------------------------------------------------------------------

@@ -225,6 +225,33 @@ test("an observed override wins over the wiki class", function()
 	assert(sim.restrictionOverrides["C_Map.OpenWorldMap"].issue == "cjber/adventure-guide-forever#411")
 end)
 
+test("a restriction with several classes is refused when any one applies", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	-- SimRestrictionProbeWho calls C_FriendList.SendWho, normally hwevent; give it both classes.
+	sim.restrictionOverrides["C_FriendList.SendWho"] =
+		{ class = { "nocombat", "hwevent" }, issue = "cjber/forever-core#297" }
+	-- Out of combat, from a timer: hwevent refuses.
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	assert(sim:expectError("tried to call the protected function 'C_FriendList.SendWho()'"))
+	-- Out of combat, from input: neither class applies.
+	local quiet = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	assert(#sim.errors == quiet, "neither class refused the input call")
+	-- In combat, from input: nocombat refuses even though the hwevent class is satisfied.
+	local before = #sim.errors
+	sim:enterCombat()
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	assert(#sim.errors == before + 1, "the nocombat class refused the combat call")
+	assert(
+		tostring(sim.errors[#sim.errors].message):find("C_FriendList.SendWho", 1, true),
+		sim.errors[#sim.errors].message
+	)
+end)
+
 test("an addon's Show of a Blizzard frame taints its OnShow", function()
 	check("SimTaintClientScript")
 end)
