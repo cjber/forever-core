@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "tooling"))
 from forever_tools import store_page  # noqa: E402
 
 BANNED = [
-    r"—",
+    # U+2014 escaped: consumers ban the literal character in tools/*.py (repo rule no-em-dash).
+    "\u2014",
     r" – ",
     r"\bseamless(ly)?\b",
     r"\belevat(e|es|ing)\b",
