@@ -61,6 +61,12 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `UI/Art.lua`: the icon helper the report window draws its portrait with.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
 - `UI/ForeverFamily.lua`: the Forever addons settings page and link windows, in core's L.
+- `UI/Credits.lua`: the **Thanks** page the Forever addons page opens: every addon's `ns.Credits` merged by player
+  name into one compact row per player, with every addon's line on hover and a short **Inspired by** group, a
+  dropdown that filters the page to one registered addon, and the one-line thanks an addon's own settings page shows.
+- `Data/Credits.lua`: core's own generated credits, from `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables;
+  `Expose.lua` registers it under **Forever Core**. `THIRD_PARTY.md` also feeds the one-sentence thanks between the
+  `forever-credits` markers in README.md's `## Credits` and in `docs/curseforge.md`.
 - `UI/TrackerHost.lua`: the private tracker column, its optional tooltip-art backdrop and opacity, its layout, combat
   and Edit Mode handling, and the one-time migration from a consumer's old tracker settings.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on

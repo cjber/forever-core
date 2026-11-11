@@ -17,12 +17,13 @@ the producer commit the copy came from.
 | `multivalue` | `select()` and multi-return expansion lint; `Rules` carries the addon's policy |
 | `art` | Art lint (WFA-27): raw texture, atlas and markup calls outside the addon's art helper files need an `art-ok` reason |
 | `readable` | Secret-value lint (WFA-30): `UnitGUID`, `UnitName` and tooltip data reads go through the `Readable` guard, tooltip hooks check `IsForbidden`; `Policy` names the guard and safe units |
-| `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Ideas and contributors` ship with text under them, specs pass on the packaged files |
+| `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Players` (or the older `## Ideas and contributors`) ship with text under them, specs pass on the packaged files |
 | `doctor` | Every tool pin in `ci.yml` and `typecheck.sh` checked on this machine, each problem with its fix |
 | `screens` | `docs/screenshots/scenes.sha256`: each image's hash beside its scene dump's, and the CI check for a stale image |
 | `editorconfig` | The family `.editorconfig` template and its check against `stylua.toml` and `ruff.toml` |
 | `locales` | The translation check (WFA-34): every `Locales/<locale>.lua` parses, is loaded by the TOC, uses only the template's keys and keeps English's placeholders and escapes; prints each locale's coverage |
 | `family` | The shared "The Forever addons" block and its check in `README.md` and `docs/curseforge.md` |
+| `credits` | The in-game credits data (WFA-31): reads `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables into `Data/Credits.lua`, keeps the thanks sentence in README.md and docs/curseforge.md, and `--check` fails a stale file or block |
 | `changelog`, `release_check`, `latest_build` | Release gates and the newest Forever build |
 | `docs_contract` | The API docs check: every function `Core/API.lua` publishes is named in `docs/api.md` as `Name(`, and the API table's `minor` appears in its history |
 | `csvtable`, `wago` | Strict DB2 CSV parsing and cached, validated downloads |

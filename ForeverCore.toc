@@ -22,6 +22,7 @@ Locales\ptBR.lua
 Locales\ruRU.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
+Data\Credits.lua
 Core\SafeCall.lua
 Core\OpenMap.lua
 Core\OpenSettings.lua
@@ -32,6 +33,7 @@ Core\MinimapButton.lua
 UI\Art.lua
 UI\Report.lua
 UI\ForeverFamily.lua
+UI\Credits.lua
 UI\SettingsPage.lua
 UI\TrackerQuestie.lua
 UI\TrackerEqot.lua

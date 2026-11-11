@@ -82,6 +82,43 @@ Opens the client's settings panel, at `categoryID` and `element` when given. It 
 client opened it, and false with nothing opened in combat, without the delegate or when the client function is
 missing. Call this instead of `C_SettingsUtil.OpenSettingsPanel`.
 
+## `ForeverCore.Credits`
+
+```lua
+ForeverCore.Credits.minor -- integer
+ForeverCore.Credits.Register(addonTitle, credits)
+ForeverCore.Credits.Line(addonTitle) --> string?
+ForeverCore.Credits.Players() --> ForeverCreditRow[]
+ForeverCore.Credits.Inspired() --> ForeverCreditRow[]
+ForeverCore.Credits.Open(addonTitle?) --> boolean
+```
+
+`minor` is `1` today and rises with each member this module adds. It arrived as minor 1 with `Register`, `Line` and
+`Open`, the three members a Forever addon calls.
+
+- `Register(addonTitle, credits)` hands core one addon's credits, the table its generated `Data/Credits.lua` sets as
+  `ns.Credits`: `{ players = { { name, what }, ... }, inspired = { ... } }`. `addonTitle` is the name players see in
+  game; registering the same title again replaces that addon's list. A missing or malformed entry is left out rather
+  than raised. It returns false for a title that is not a non-empty string.
+- `Line(addonTitle)` is the short line an addon's own settings page shows: its players' names, up to three and a count
+  of the rest, such as `Thanks to Brainc3ll, Alex and 2 more`. It returns nil when that addon has registered no
+  players, so the page can hide the row.
+- `Players()` and `Inspired()` return the merged lists the page draws: one row per exact player name or project, sorted
+  by name, each `{ name, helped = { { addon = addonTitle, what = what }, ... } }`. Every addon that credits them keeps
+  its own `what` line, in the order the addons registered.
+- `Open(addonTitle?)` shows the **Thanks** page: one compact row per player with the addons they helped, and a short
+  **Inspired by** group below. Hovering a row shows each addon and what that player did for it. A dropdown at the top
+  of the page filters to one registered addon, where each row shows that addon's `what` after the name and **Inspired
+  by** lists only that addon's entries. Called with no argument it reopens on the filter the page already shows, so a
+  choice survives closing and reopening; called with an addon title it filters to that addon; called with an explicit
+  nil it shows every addon. The Forever addons page has a Thanks row that calls `Open(nil)`, so it always opens **All
+  addons**. It returns false only when the client cannot build the window.
+
+Every Forever addon writes its `Data/Credits.lua` from `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables
+with `python3 tools/forever_tools/credits.py`; the same run keeps the one-sentence thanks in README.md's `## Credits`
+and in docs/curseforge.md, and `--check` fails when either the file or a block is stale. The addon's author is never
+listed (WFA-33).
+
 ## `ForeverCore.ContextMenu`
 
 ```lua
@@ -130,5 +167,5 @@ These are on the `ForeverCore` table for the Forever addons themselves. They are
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
 `QuestLogTabs`, `ProfessionTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`,
-`Text`, `QuestOrder` and `Family`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker
+`Text`, `QuestOrder`, `Family` and `Credits`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a tracker
 section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.

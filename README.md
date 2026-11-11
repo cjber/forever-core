@@ -50,6 +50,17 @@ the same diagnostic the addons print from their own slash commands.
 The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md) and the Discord
 release digest in [`tools/discord_digest.py`](tools/discord_digest.py).
 
+## Credits
+
+Forever Core is built on the game's own UI and the work of other addon authors, listed with every player who helped in
+[THIRD_PARTY.md](THIRD_PARTY.md).
+
+<!-- forever-credits:start -->
+
+Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT and everyone who reported a bug or asked for a feature.
+
+<!-- forever-credits:end -->
+
 ## Licence
 
 GPL-3.0-or-later. See `LICENSE`.

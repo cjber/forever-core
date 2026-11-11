@@ -5,6 +5,10 @@ if GetLocale() ~= "zhTW" then
 end
 local L = ns.L
 
+L["%s (%s)"] = "%s（%s）"
+L["%s and %s"] = "%s和%s"
+L["%s, %s and %s"] = "%s、%s和%s"
+L["%s, %s, %s and %d more"] = "%s、%s、%s以及另外 %d 位"
 L["+%d more"] = "還有 %d 個"
 L[", "] = ", "
 L["(you)"] = "（你）"
@@ -25,6 +29,7 @@ L["7th"] = "第 7 名"
 L["8th"] = "第 8 名"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
 	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
+L["All addons"] = "所有插件"
 L["All time"] = "全部時間"
 L["Attach to quest tracker"] = "附著於任務追蹤器"
 L["Bug"] = "錯誤"
@@ -57,6 +62,7 @@ L["Guild and group"] = "公會和隊伍"
 L["Guild and group members who use a Forever addon show up here."] =
 	"使用 Forever 附加元件的公會和隊伍成員會顯示在這裡。"
 L["Hide this section"] = "Hide this section"
+L["Inspired by"] = "靈感來自"
 L["Installed, turned off"] = "已安裝，已停用"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
@@ -67,6 +73,7 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 L["Lock the tracker"] = "鎖定追蹤器"
 L["No addon has attached its log yet."] = "還沒有插件附加記錄。"
 L["No one has shared yet"] = "還沒有人分享。"
+L["No one is listed yet."] = "還沒有列出任何人。"
 L["Not installed"] = "未安裝"
 L["On"] = "開啟"
 L["Open"] = "開啟"
@@ -78,6 +85,7 @@ L["Plans the cheapest route to your next profession rank."] = "規劃升到下�
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
 	"規劃前往任何地點的最快路線並為你引路，附帶船隻與飛艇的即時時刻。"
 L["Player"] = "玩家"
+L["Players"] = "玩家"
 L["Players you've met"] = "遇過的玩家"
 L["Players you've met who use a Forever addon show up here."] =
 	"使用 Forever 附加元件的、你遇過的玩家會顯示在這裡。"
@@ -95,10 +103,13 @@ L["Show a quiet line where one of my other Forever addons would help. Only for a
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"顯示每個地區中你可以推進的傳承挑戰。"
 L["Suggest my other Forever addons"] = "推薦我的其他Forever插件"
+L["Thanks"] = "感謝"
+L["Thanks to %s"] = "感謝 %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"Forever 插件全部免費，沒有任何付費才能使用的內容。如果它們對你有幫助，可以請我喝杯咖啡。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"連結已選取。按 Ctrl+C（Mac 上為 Cmd+C）複製，然後貼到瀏覽器中；GitHub 會開啟一個已填寫的問題。"
+L["The players who helped each Forever addon."] = "幫助過每個 Forever 插件的玩家。"
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"文字已選取。按Ctrl+C（Mac上為Cmd+C）複製，然後貼到你的錯誤回報中。"
 L["The tracker is locked. Turn off Lock the tracker to move it."] =
