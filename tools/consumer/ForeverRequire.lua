@@ -25,7 +25,8 @@ local function candidate(index)
 	end
 	local result = { pcall(C_AddOns and C_AddOns.GetAddOnDependencies, index) }
 	for position = 2, result[1] and #result or 0 do
-		if type(result[position]) == "string" and result[position]:lower() == "forevercore" then
+		local dependency = result[position]
+		if type(dependency) == "string" and dependency:lower() == "forevercore" then
 			return true
 		end
 	end
