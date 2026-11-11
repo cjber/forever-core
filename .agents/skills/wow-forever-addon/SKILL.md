@@ -204,7 +204,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
   history. Every pull-request workflow cancels a PR's superseded runs (top-level `concurrency` grouped on
   the PR number, `cancel-in-progress` only for `pull_request`, so `main` keeps a run per commit) and every
-  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. A job
+  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT
+  and luacheck come from `cjber/forever-core/.github/actions/lua-toolchain` at the commit the repo's other core
+  tooling comes from, never from apt. A job
   named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
   one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
   hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,

@@ -35,19 +35,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       # forever_tools.locales parses each translation with LuaJIT, and its tests run that path.
-      # Ubuntu 24.04's release-pocket build, which the archive never replaces.
-      - name: Install LuaJIT
-        env:
-          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
-        run: |
-          # Fall back to a mirror of Ubuntu's signed archives when the runner's Azure mirror cannot resolve.
-          mirror_list=/etc/apt/apt-mirrors.txt
-          if [ -f "$mirror_list" ] && ! getent ahosts azure.archive.ubuntu.com >/dev/null; then
-            printf '%s\n' https://mirrors.mit.edu/ubuntu | sudo tee "$mirror_list" >/dev/null
-          fi
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --allow-downgrades \
-            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT"
+      - uses: ./.github/actions/lua-toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
       - run: python3 -m unittest discover -s tests -t .
       - run: python3 forever_tools/sync.py check --allow-unpinned
       - run: pipx run ruff==0.16.8 check .
