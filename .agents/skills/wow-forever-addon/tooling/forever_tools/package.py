@@ -13,6 +13,9 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 - credits that do not ship with it (WFA-10, WFA-31): the main addon's `README.md` needs a `## Credits` section and
   its `THIRD_PARTY.md` a `## Players` (or the older `## Ideas and contributors`) section, each with some text under
   the heading;
+- a widget's own client method that takes parameters passed straight as a `SetScript` or `HookScript` handler
+  (`edit.HighlightText` instead of `function(self) self:HighlightText() end`), which the client calls with the
+  handler's arguments;
 - a spec that fails when run against the packaged files instead of the checkout: the package is copied to a scratch
   folder, the addon's test support (`tests/`) is laid over it, and each spec runs there under LuaJIT.
 
@@ -29,7 +32,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import core_pin
+from . import core_pin, widget_handlers
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -327,6 +330,8 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     # The pin, the shipped external and the TOC field all have to name one release, or the zip a release builds
     # carries a core older than the one its specs and CI just ran against.
     problems += core_pin.check(root)
+    # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
+    problems += widget_handlers.check_root(args.release_dir, policy.addons)
     if not problems:
         problems = run_specs(root, args.release_dir, policy)
     for problem in problems:

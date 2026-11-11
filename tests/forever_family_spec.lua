@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua now loads once, in ForeverCore, and reads core's own L. A change to the module is made here
 -- with this spec; no consumer keeps a copy.
-local PINNED = "9402d27b47d1d0c7e80ec88f6823520e98adfcbf5c4c7f2872c74df94314a283"
+local PINNED = "54ccc667bd752a4b4b7ad6406b10a7b21840c16be9a083329a7f495e6ad0b7f2"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
