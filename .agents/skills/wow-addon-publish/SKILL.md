@@ -162,7 +162,7 @@ when the player is not playing (a deskpilot screenshot first):
 
 1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
    note `date +%s`, then `/reload`.
-2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from `forever-smoke`). It opens and closes every
+2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from this repo's `tools/devsmoke/!!DevSmoke`). It opens and closes every
    loaded Forever addon's slash command and the world map, and shows "Dev Smoke: N surfaces, F failed" on
    screen.
 3. `/reload` again so the client writes SavedVariables, then

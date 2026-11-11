@@ -119,6 +119,13 @@ read_globals = {
 files["tests/"] = { std = "+luajit" }
 -- The headless test client's dev addon (tools/headless): it closes a chat box and takes the ready screenshot.
 files["tools/headless/"] = { read_globals = { "ChatEdit_DeactivateChat", "Screenshot" } }
+-- The !!DevSmoke dev addon (tools/devsmoke) and its spec: the client's error frame, its error handler, the world map
+-- toggle, the secure-value check, the addon's saved runs and its slash alias.
+files["tools/devsmoke/"] = {
+	read_globals = { "UIErrorsFrame", "seterrorhandler", "ToggleWorldMap", "issecurevariable", "debugstack", "time" },
+	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
+}
+files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" } }
 
 -- Tracker colours.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"
