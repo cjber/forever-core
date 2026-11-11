@@ -54,7 +54,8 @@ local function culprits()
 	return found
 end
 local function phrase(key, ...)
-	return string.format((ns.L or {})[key] or key, ...)
+	local text = (ns.L or {})[key]
+	return string.format(type(text) == "string" and text or key, ...)
 end
 function ns.ForeverRequire(ready)
 	if ready then
