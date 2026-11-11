@@ -53,7 +53,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-3** Minimal surface. Options live in one place: a Settings > AddOns page (Blizzard's
   settings API), or a menu on the addon's own UI when every option is about that UI (Legacy Forever's
   map menu). A slash command (short form plus the full name) and an addon compartment entry
-  (`## AddonCompartmentFunc`) both open it. No minimap button, no custom options window.
+  (`## AddonCompartmentFunc`) both open it. No minimap button, no custom options window. Slash words are the addon's
+  own: a word the client's GlobalStrings define, such as `/ma` for main assist, is run by the chat box before any
+  addon command, so `tools/check_slash_words.py` (vendored, checked against `tools/client_slash_words.txt`) fails a
+  collision and `sim:slash` refuses one.
 
 ### UI
 
@@ -322,6 +325,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   their name is added to `credits_opt_out.txt` in forever-core so no later sweep re-adds them; `credits.py` fails
   while a `THIRD_PARTY.md` row names one. The org PR template (`cjber/.github`) carries the checklist line
   `- [ ] A reporter or requester is credited in the changelog bullet and THIRD_PARTY.md (WFA-33)`.
+- **WFA-33a** An issue filed from a CurseForge comment carries one line of its own, `CurseForge thread <id> (<addon>)`,
+  so ForeverCore's `docs/handoff/cfwatch.py` can read which thread waits on the fix: `--unanswered` marks that thread as
+  waiting on the issue and its state, and `--due` lists it with the release once every linked issue is fixed and shipped,
+  unless the owner has already replied after that release.
 - **WFA-34** Every addon ships in the client languages the Forever client offers besides English (deDE, esES,
   esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN and zhTW, less any the client lacks), one `Locales/<locale>.lua` each,
   loaded by the TOC after `Locales\enUS.lua` and keyed exactly as `Locales/phrases.txt`. A human translation wins:

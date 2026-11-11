@@ -126,4 +126,79 @@ empty.check(empty.host.shown == false, "host hides when visible header has no se
 empty.check(empty.first.point[5] == 0, "visible header reserves no gap without drawn content")
 empty.check(empty.nativeHeader.point[2] == empty.native, "visible header remains in native parent")
 
-print("tracker_host_spec: " .. t.checks() .. " checks passed")
+-- #383: a replacement UI may hide or shrink Blizzard's tracker, so the column follows only a frame it can see.
+local hidden = harness.new({ hostSettings = { attached = false } })
+hidden.native.effectiveScale, hidden.native.shown = 0.01, false
+hidden.ready()
+hidden.drain()
+hidden.check(math.abs(hidden.host:GetScale() - 1) < 1e-9, "a detached column ignores the hidden native tracker's scale")
+-- IsShown is true for a frame under a hidden parent; only effective visibility says the tracker is really gone.
+local hiddenParent = harness.new({ hostSettings = { attached = true } })
+hiddenParent.native.effectiveScale, hiddenParent.native.shown, hiddenParent.parent.shown = 0.01, true, false
+hiddenParent.ready()
+hiddenParent.drain()
+hiddenParent.check(
+	math.abs(hiddenParent.host:GetScale() - 1) < 1e-9,
+	"a shown native tracker under a hidden parent is not the source"
+)
+local transparent = harness.new({ hostSettings = { attached = true } })
+transparent.native.effectiveScale, transparent.native.alpha = 0.01, 0
+transparent.ready()
+transparent.drain()
+transparent.check(math.abs(transparent.host:GetScale() - 1) < 1e-9, "a transparent native tracker is not the source")
+local visible = harness.new({ hostSettings = { attached = true } })
+visible.native.effectiveScale = 0.8
+visible.ready()
+visible.drain()
+visible.check(math.abs(visible.host:GetScale() - 0.8) < 1e-9, "a visible native tracker still sets the column's scale")
+local userScaled = harness.new({ hostSettings = { attached = true, scale = 1.5 } })
+userScaled.native.effectiveScale = 0.8
+userScaled.ready()
+userScaled.drain()
+userScaled.check(math.abs(userScaled.host:GetScale() - 1.2) < 1e-9, "the user's scale multiplies the source scale")
+
+-- The room-below pass must not be a probe: Blizzard's EndLayout hides a section that fits nothing and
+-- FreeUnusedBlocks releases every block, so a second layout would replay each header's add animation and rebuild every
+-- block. Issue #438. The section uses Blizzard's own module mixin, which the native tracker source supplies.
+local asideChecks = 0
+if t.env.ObjectiveTrackerModuleMixin then
+	local stacked = harness.new({ deferReady = true, headerShown = true })
+	stacked.first.contentHeight, stacked.second.contentHeight = 0, 0
+	stacked.nativeModule(3)
+	stacked.ready()
+	stacked.drain()
+	stacked.check(stacked.host.point[2] == stacked.native.NineSlice, "the column starts below the quests")
+	-- The quests reach the bottom of the screen: nothing fits below the native content bottom.
+	stacked.native.NineSlice.bottom = 10
+	stacked.host:MarkDirty()
+	stacked.drain()
+	stacked.check(stacked.host.point[2] == stacked.native, "the column moves above or beside the tracker")
+	local animations, releases = stacked.headerAnimations(), stacked.blocksReleased()
+	stacked.host:MarkDirty()
+	stacked.drain()
+	stacked.check(stacked.host.point[2] == stacked.native, "the column stays above or beside the tracker")
+	stacked.check(stacked.headerAnimations() == animations, "a second layout aside replays no header animation")
+	stacked.check(stacked.blocksReleased() == releases, "a second layout aside releases no block")
+	-- The quests shrink so the whole laid-out column fits below again.
+	stacked.native.NineSlice.bottom = 700
+	animations, releases = stacked.headerAnimations(), stacked.blocksReleased()
+	stacked.host:MarkDirty()
+	stacked.drain()
+	stacked.check(
+		stacked.host.point[1] == "TOP"
+			and stacked.host.point[2] == stacked.native.NineSlice
+			and stacked.host.point[3] == "BOTTOM",
+		"the column returns below the quests when they leave room for it"
+	)
+	stacked.check(stacked.headerAnimations() == animations, "the move back below replays no header animation")
+	stacked.check(stacked.blocksReleased() == releases, "the move back below releases no block")
+	animations, releases = stacked.headerAnimations(), stacked.blocksReleased()
+	stacked.host:MarkDirty()
+	stacked.drain()
+	stacked.check(stacked.host.point[2] == stacked.native.NineSlice, "the column stays below the quests")
+	stacked.check(stacked.headerAnimations() == animations, "a repeated layout below replays no header animation")
+	stacked.check(stacked.blocksReleased() == releases, "a repeated layout below releases no block")
+	asideChecks = stacked.checks()
+end
+
+print("tracker_host_spec: " .. (t.checks() + asideChecks) .. " checks passed")

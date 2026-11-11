@@ -83,6 +83,31 @@ def problems(directory: Path, expected: dict[str, str]) -> list[str]:
     ]
 
 
+def stale(directory: Path, expected: dict[str, str], found: dict[str, str]) -> str | None:
+    """Why the producer's MANIFEST.json is stale, or None when it describes `directory`.
+
+    Missing and changed files are judged by the names the manifest itself lists, hashed directly. The copy running
+    this is a consumer's, and it can lag the producer: its walk predates a data file the producer now vendors (or the
+    reverse), so `found` may not describe the producer's folder the way the producer's own walk does. The manifest is
+    the producer's record of its walk, so only the files it left out are reported from `found`.
+    """
+    missing = sorted(name for name in expected if not (directory / name).is_file())
+    changed = sorted(
+        name for name in expected if (directory / name).is_file() and digest(directory / name) != expected[name]
+    )
+    extra = sorted(found.keys() - expected.keys())
+    if not (missing or extra or changed):
+        return None
+    details = []
+    if missing:
+        details.append(f"missing: {', '.join(missing)}")
+    if extra:
+        details.append(f"not in {MANIFEST}: {', '.join(extra)}")
+    if changed:
+        details.append(f"changed: {', '.join(changed)}")
+    return f"the producer's {MANIFEST} is stale ({'; '.join(details)}); run `sync.py manifest` there and commit"
+
+
 def git(source: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(source), *args], text=True).strip()
 
@@ -126,25 +151,12 @@ def update(source: Path, revision: str | None) -> int:
     if git(source, "status", "--porcelain", "--", PRODUCER_PATH):
         raise SystemExit(f"{source} has uncommitted changes under {PRODUCER_PATH}; commit the producer first")
     expected = read_manifest(directory)["files"]
-    missing = sorted(name for name in expected if not (directory / name).is_file())
-    changed = sorted(
-        name for name in expected if (directory / name).is_file() and digest(directory / name) != expected[name]
-    )
-    extra = sorted(hashes(directory).keys() - expected.keys())
-    if missing or extra or changed:
-        details = []
-        if missing:
-            details.append(f"missing: {', '.join(missing)}")
-        if extra:
-            details.append(f"not in manifest: {', '.join(extra)}")
-        if changed:
-            details.append(f"changed: {', '.join(changed)}")
-        raise SystemExit(
-            f"the producer's MANIFEST.json is stale ({'; '.join(details)}); run `sync.py manifest` there and commit"
-        )
-    for stale in sources(PACKAGE):
-        if stale.name not in expected:
-            stale.unlink()
+    complaint = stale(directory, expected, hashes(directory))
+    if complaint:
+        raise SystemExit(complaint)
+    for stale_file in sources(PACKAGE):
+        if stale_file.name not in expected:
+            stale_file.unlink()
     for name in sorted(expected):
         copy_preserving_mode(directory / name, PACKAGE / name)
     write_manifest(PACKAGE, head, {name: digest(PACKAGE / name) for name in expected})

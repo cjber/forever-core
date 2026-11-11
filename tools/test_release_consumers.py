@@ -113,7 +113,7 @@ class FailedReleaseTest(unittest.TestCase):
 
 
 class DecideTest(unittest.TestCase):
-    """The four conditions, and nothing else, release a consumer."""
+    """The release conditions, and nothing else, release a consumer."""
 
     def decide(
         self,
@@ -130,6 +130,19 @@ class DecideTest(unittest.TestCase):
         decision = self.decide()
         self.assertTrue(decision.release)
         self.assertEqual((decision.version, decision.commit), ("1.4.3", SHA))
+
+    def test_notes_merged_above_the_marked_entry_hold_it_for_the_addons_own_release(self):
+        text = SYNC_ENTRY.replace(
+            "## [Unreleased]\n\n", "## [Unreleased]\n\n- A note merged after the sync PR opened.\n\n"
+        )
+        decision = self.decide(changelog=text)
+        self.assertFalse(decision.release)
+        self.assertFalse(decision.failed)
+        self.assertEqual(decision.reason, "unreleased notes sit above v1.4.3; its own release ships them")
+
+    def test_a_blank_unreleased_section_still_releases_the_marked_entry(self):
+        text = SYNC_ENTRY.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n\n")
+        self.assertTrue(self.decide(changelog=text).release)
 
     def test_a_changelog_is_required(self):
         self.assertEqual(self.decide(changelog=None).reason, "main has no CHANGELOG.md")

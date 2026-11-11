@@ -8,14 +8,14 @@ edit: the first comes from the vendoring map, the second from the repositories t
 
 For each consumer this clones `main`, runs the same three syncs a maintainer would (`tools/sync_consumers.py` for this
 repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`, each preceded by a
-copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the
-consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and, if anything changed, creates the commit on a
-scratch branch through the GraphQL `createCommitOnBranch` mutation from that `main` HEAD, then moves
-`forever-core-sync` to it in one ref update and opens or refreshes the PR with squash auto-merge enabled. Building the
-commit on a scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR
-empty and have GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures`
-ruleset accepts the sync. The consumer's own checks remain the gate: a sync that breaks one stays open as a red PR and
-is named in the run summary.
+copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the consumer's
+`Locales/phrases.txt` when it has `tools/phrases.py` and its README.md and docs/curseforge.md family block when it has
+`tools/check_family.py`, and, if anything changed, creates the commit on a scratch branch through the GraphQL
+`createCommitOnBranch` mutation from that `main` HEAD, then moves `forever-core-sync` to it in one ref update and opens
+or refreshes the PR with squash auto-merge enabled. Building the commit on a scratch branch keeps `forever-core-sync`
+away from a commit that equals `main`, which would make the PR empty and have GitHub close it. GitHub signs commits made
+through the API, so the consumer's `required_signatures` ruleset accepts the sync. The consumer's own checks remain the
+gate: a sync that breaks one stays open as a red PR and is named in the run summary.
 
 The run also moves every consumer's ForeverCore pin, `tools/forever-core.txt`, to core's latest published release, so
 the addon's specs and CI test against the core a player runs. The pin change rides in the same commit and PR, which
@@ -26,10 +26,12 @@ The pin is the whole bundle, because every consumer's release zip carries Foreve
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
 (adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
 repaired even when the pin does not move. When the tag the external downloads changes, whether the pin moved or a
-lagging bundle was repaired, the run also gives the consumer a release entry in `CHANGELOG.md` so the core reaches
-players. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
-and TOC field move with no entry. The entry goes above the newest released version, keeps any notes under
-`## [Unreleased]` above it, raises that newest patch by one and carries the `<!-- forever-core-sync -->` marker;
+lagging bundle was repaired, the run also tells the player where the core lands, in `CHANGELOG.md`, so it reaches them.
+A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin and TOC
+field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release entry: the
+plain shared-code bullet joins those notes, so the core ships in that addon's own next release, whose notes the
+maintainer wrote. A consumer whose `## [Unreleased]` section is empty gets a release entry above the newest released
+version, that patch raised by one and carrying the `<!-- forever-core-sync -->` marker, and
 `tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
 already carries the marker gets no second entry, and one with no `CHANGELOG.md`, no release entry or no
 `## [Unreleased]` heading gets a notice and no entry.
@@ -181,8 +183,8 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
 
     Every run also points the bundle at the pin, moved or not: the `.pkgmeta` external and the root TOC's
     `## X-Forever-Core:` field name the release the pin ships, so a consumer that pins v1.5.0 while its zip still
-    downloads v1.4.1 is repaired. A marked `CHANGELOG.md` entry is added only when the tag the external downloads
-    changes, so a repair to an unchanged pin still gives the release that carries it a reason to ship.
+    downloads v1.4.1 is repaired. `CHANGELOG.md` is touched only when the tag the external downloads changes: an empty
+    `## [Unreleased]` gets a marked release entry, and one with notes gets the shared bullet and no entry.
     """
     path = root / consumer_path(root.name, PIN_PATH)
     if not path.is_file():
@@ -281,24 +283,49 @@ def newest_entry_body(text: str) -> str | None:
     return text[newest.end() : end]
 
 
+def unreleased_notes(text: str) -> str | None:
+    """The text under `## [Unreleased]` before the next `## ` heading, or None when there is no such heading."""
+    heading = UNRELEASED.search(text)
+    if not heading:
+        return None
+    after = text[heading.end() :]
+    following = re.search(r"^## ", after, re.MULTILINE)
+    return after[: following.start()] if following else after
+
+
+def with_sync_note(text: str) -> str | None:
+    """`text` with `SYNC_BULLET` at the end of the notes under `## [Unreleased]`, or None when it is already there."""
+    heading = UNRELEASED.search(text)
+    notes = unreleased_notes(text)
+    if heading is None or notes is None or not notes.strip() or SYNC_BULLET in notes:
+        return None
+    after = text[heading.end() :]
+    following = re.search(r"^## ", after, re.MULTILINE)
+    rest = after[following.start() :] if following else ""
+    # The bullet is for players, so it goes after their bullets and before a `### For addon authors` subsection.
+    notes = notes.strip()
+    subsection = re.search(r"^### ", notes, re.MULTILINE)
+    split = subsection.start() if subsection else len(notes)
+    players, authors = notes[:split].rstrip(), notes[split:]
+    notes = f"{players}\n{SYNC_BULLET}\n\n{authors}" if authors else f"{players}\n{SYNC_BULLET}"
+    body = f"{text[: heading.end()]}\n\n{notes.strip()}\n\n{rest}"
+    return body.rstrip("\n") + "\n"
+
+
 def with_sync_entry(text: str, version: str, day: str) -> str | None:
-    """`text` with a marked release entry for `version` at the top, the notes under `## [Unreleased]` kept above it."""
+    """`text` with a marked release entry for `version` at the top, for an empty `## [Unreleased]` section."""
     unreleased = UNRELEASED.search(text)
     if not unreleased:
         return None
     after = text[unreleased.end() :]
     following = re.search(r"^## ", after, re.MULTILINE)
-    end = following.start() if following else len(after)
-    notes = after[:end].strip()
-    rest = after[end:]
+    rest = after[following.start() :] if following else ""
     entry = f"## [{version}] - {day}\n\n{SYNC_MARKER}\n\n{SYNC_BULLET}\n"
-    head = f"{text[: unreleased.end()]}\n\n"
-    body = f"{notes}\n\n" if notes else ""
-    return f"{head}{body}{entry}\n{rest}".rstrip("\n") + "\n"
+    return f"{text[: unreleased.end()]}\n\n{entry}\n{rest}".rstrip("\n") + "\n"
 
 
 def add_changelog_entry(root: Path, today: date | None = None) -> bool:
-    """Give a consumer whose bundled core changed a release entry the release workflow can find."""
+    """Give a consumer whose bundled core changed a release entry, or the shared bullet under its unreleased notes."""
     path = root / CHANGELOG
     if not path.is_file():
         print(f"{root.name}: no {CHANGELOG}; no release entry added for the core sync.")
@@ -306,6 +333,14 @@ def add_changelog_entry(root: Path, today: date | None = None) -> bool:
     text = path.read_text(encoding="utf-8")
     if SYNC_MARKER in (newest_entry_body(text) or ""):
         print(f"{root.name}: {CHANGELOG} already has an unreleased ForeverCore sync entry; no second entry added.")
+        return False
+    notes = unreleased_notes(text) or ""
+    if notes.strip():
+        # A release now would ship those notes under a maintenance line, so the core waits for the addon's own release.
+        updated = with_sync_note(text)
+        if updated is not None:
+            path.write_text(updated, encoding="utf-8")
+        print(f"{root.name}: {CHANGELOG} has unreleased notes; the core ships in its next release")
         return False
     version = next_version(text)
     if version is None:
@@ -337,7 +372,7 @@ def ships_core(root: Path) -> bool:
 
 
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
-    """Point the bundle at `pin`, adding a release entry only when a consumer that ships core changes its tag.
+    """Point the bundle at `pin`, touching the changelog only when a consumer that ships core changes its tag.
 
     A consumer whose `.pkgmeta` has no ForeverCore external (kiln-forever has no `.pkgmeta` at all) bundles no core, so
     a pin that moves gives its own release nothing to carry: it still gets the pin and the TOC field, and no entry.
@@ -393,6 +428,11 @@ def clone(repo: str, workspace: Path) -> Path:
     return destination
 
 
+def python_env(root: Path) -> dict[str, str]:
+    """The environment for a consumer's own generator, with the checkout root importable as `tools`."""
+    return {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
+
+
 def regenerate_phrases(root: Path) -> None:
     """Refresh the consumer's phrase template from its own extractor.
 
@@ -406,9 +446,21 @@ def regenerate_phrases(root: Path) -> None:
         return
     # Run by path, so a script importing its siblings in tools/ finds them, and with the root importable, so one
     # importing `tools.forever_tools` as a package (tweaks-forever documents `python3 -m tools.phrases`) does too.
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")]))}
-    generated = run([sys.executable, str(script)], cwd=root, env=env)
+    generated = run([sys.executable, str(script)], cwd=root, env=python_env(root))
     template.write_text(generated.stdout, encoding="utf-8")
+
+
+def regenerate_family(root: Path) -> None:
+    """Rewrite the consumer's README.md and docs/curseforge.md family block from its own checker.
+
+    The text between the family markers is `forever_tools.family`'s and the consumer's typecheck job asserts that, so a
+    core change to the block would leave the sync PR red without this. `--fix` rewrites in place and leaves the
+    markers where they are; a consumer without `tools/check_family.py` is left alone.
+    """
+    script = root / "tools" / "check_family.py"
+    if not script.is_file():
+        return
+    run([sys.executable, str(script), "--fix"], cwd=root, env=python_env(root))
 
 
 def copy_preserving_mode(source: Path, target: Path) -> None:
@@ -444,6 +496,7 @@ def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str
             cwd=root,
         )
     regenerate_phrases(root)
+    regenerate_family(root)
     return bump_pin(root, latest)
 
 

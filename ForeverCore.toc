@@ -37,6 +37,7 @@ UI\Credits.lua
 UI\SettingsPage.lua
 UI\TrackerQuestie.lua
 UI\TrackerEqot.lua
+UI\TrackerEllesmere.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
 UI\ContextMenu.lua

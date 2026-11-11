@@ -147,6 +147,7 @@
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI
 ---@field TrackerQuestie? ForeverTrackerQuestie
+---@field TrackerEllesmere? ForeverTrackerEllesmere
 ---@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
