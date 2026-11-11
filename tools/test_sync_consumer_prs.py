@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -508,26 +509,31 @@ class PinTest(unittest.TestCase):
     def write_pin(self, text):
         self.pin.write_text(text, encoding="utf-8")
 
+    def bump(self, root, latest):
+        """`bump_pin` on a consumer with no changelog, whose skip notice is not under test here."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sync.bump_pin(root, latest)
+
     def test_an_older_pin_moves_to_the_latest_release(self):
         self.write_pin("v1.3.2\n")
-        self.assertEqual(sync.bump_pin(self.root, "v1.4.0"), "v1.3.2")
+        self.assertEqual(self.bump(self.root, "v1.4.0"), "v1.3.2")
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
 
     def test_an_equal_pin_is_left_alone(self):
         self.write_pin("v1.4.0\n")
-        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertIsNone(self.bump(self.root, "v1.4.0"))
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
 
     def test_a_newer_pin_never_moves_backwards(self):
         self.write_pin("v1.5.0\n")
-        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertIsNone(self.bump(self.root, "v1.4.0"))
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.5.0\n")
 
     def test_versions_compare_numerically(self):
         self.write_pin("v1.9.0\n")
         self.assertEqual(sync.release_version("v1.10.0"), (1, 10, 0))
         self.assertGreater(sync.release_version("v1.10.0"), sync.release_version("v1.9.0"))
-        self.assertEqual(sync.bump_pin(self.root, "v1.10.0"), "v1.9.0")
+        self.assertEqual(self.bump(self.root, "v1.10.0"), "v1.9.0")
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.10.0\n")
 
     def test_a_pin_that_is_not_a_release_tag_is_left_alone_with_a_notice(self):
@@ -539,7 +545,7 @@ class PinTest(unittest.TestCase):
         self.assertIn("is not a vX.Y.Z tag", out.getvalue())
 
     def test_a_consumer_without_a_pin_file_is_untouched(self):
-        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0"))
+        self.assertIsNone(self.bump(self.root, "v1.4.0"))
         self.assertEqual(sorted(self.pin.parent.iterdir()), [])
 
     def test_a_prefixed_consumer_gets_its_pin_below_the_addon_folder(self):
@@ -547,7 +553,7 @@ class PinTest(unittest.TestCase):
         pin = root / "addon" / "KilnForever" / "tools" / "forever-core.txt"
         pin.parent.mkdir(parents=True)
         pin.write_text("v1.0.0\n", encoding="utf-8")
-        self.assertEqual(sync.bump_pin(root, "v1.4.0"), "v1.0.0")
+        self.assertEqual(self.bump(root, "v1.4.0"), "v1.0.0")
         self.assertEqual(pin.read_text(encoding="utf-8"), "v1.4.0\n")
 
     def test_a_failed_latest_release_read_warns_and_bumps_nothing(self):
@@ -574,7 +580,7 @@ class PinTest(unittest.TestCase):
 
     def test_sync_checkout_bumps_the_pin_after_the_syncs(self):
         self.write_pin("v1.3.2\n")
-        with mock.patch.object(sync, "run"):
+        with mock.patch.object(sync, "run"), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(sync.sync_checkout(self.root, self.root.parent, "v1.4.0"), "v1.3.2")
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
 
@@ -605,6 +611,187 @@ class PinTest(unittest.TestCase):
             "Moves the ForeverCore pin from v1.3.2 to v1.4.0, so this addon's CI runs against the latest release.",
             bodies[0],
         )
+
+
+class BundleTest(unittest.TestCase):
+    """What a moved pin takes with it: the shipped external, the TOC field and a marked release entry."""
+
+    PKGMETA = (
+        "package-as: LegacyForever\n\n"
+        "externals:\n"
+        "  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+        "v1.3.2/ForeverCore-v1.3.2-forever.zip\n\n"
+        "move-folders:\n"
+        "  LegacyForever/ForeverCore: ForeverCore\n"
+    )
+    TOC = "## Interface: 16001\n## Dependencies: ForeverCore\n## Title: Legacy Forever\n"
+    TOC_WITH_FIELD = (
+        "## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n"
+    )
+    CHANGELOG = (
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "- A note that waits for the next release.\n\n"
+        "## [1.2.3] - 2026-11-01\n\n"
+        "- An older entry.\n"
+    )
+    DAY = date(2026, 11, 11)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "legacy-forever"
+        (self.root / "tools").mkdir(parents=True)
+        self.pin = self.root / "tools" / "forever-core.txt"
+        self.pin.write_text("v1.3.2\n", encoding="utf-8")
+        self.pkgmeta = self.root / ".pkgmeta"
+        self.pkgmeta.write_text(self.PKGMETA, encoding="utf-8")
+        self.toc = self.root / "LegacyForever.toc"
+        self.toc.write_text(self.TOC, encoding="utf-8")
+        self.changelog = self.root / "CHANGELOG.md"
+        self.changelog.write_text(self.CHANGELOG, encoding="utf-8")
+
+    def test_a_moved_pin_points_the_external_at_the_new_release(self):
+        self.assertEqual(sync.bump_pin(self.root, "v1.4.0", self.DAY), "v1.3.2")
+        self.assertIn(
+            "  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+            "v1.4.0/ForeverCore-v1.4.0-forever.zip\n",
+            self.pkgmeta.read_text(encoding="utf-8"),
+        )
+        self.assertIn("  LegacyForever/ForeverCore: ForeverCore\n", self.pkgmeta.read_text(encoding="utf-8"))
+
+    def test_a_moved_pin_adds_the_toc_field_after_dependencies(self):
+        sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertEqual(
+            self.toc.read_text(encoding="utf-8"),
+            "## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: v1.4.0\n## Title: Legacy Forever\n",
+        )
+
+    def test_an_existing_toc_field_is_replaced_in_place(self):
+        self.toc.write_text(
+            "## Interface: 16001\n## X-Forever-Core: v1.0.0\n## Dependencies: ForeverCore\n", encoding="utf-8"
+        )
+        sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertEqual(
+            self.toc.read_text(encoding="utf-8"),
+            "## Interface: 16001\n## X-Forever-Core: v1.4.0\n## Dependencies: ForeverCore\n",
+        )
+
+    def test_a_moved_pin_adds_a_marked_release_entry_above_the_newest(self):
+        sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertEqual(
+            self.changelog.read_text(encoding="utf-8"),
+            "# Changelog\n\n"
+            "## [Unreleased]\n\n"
+            "- A note that waits for the next release.\n\n"
+            "## [1.2.4] - 2026-11-11\n\n"
+            "<!-- forever-core-sync -->\n\n"
+            "- Ships with the same shared code as your other Forever addons, so they keep working together.\n\n"
+            "## [1.2.3] - 2026-11-01\n\n"
+            "- An older entry.\n",
+        )
+
+    def test_the_newest_release_is_compared_numerically(self):
+        self.changelog.write_text("## [Unreleased]\n\n## [1.10.0] - 2026-11-01\n\n- Older.\n", encoding="utf-8")
+        sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertIn("## [1.10.1] - 2026-11-11\n", self.changelog.read_text(encoding="utf-8"))
+
+    def test_a_changelog_without_unreleased_is_left_alone_with_a_notice(self):
+        self.changelog.write_text("## [1.2.3] - 2026-11-01\n\n- An older entry.\n", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), "## [1.2.3] - 2026-11-01\n\n- An older entry.\n")
+        self.assertIn("has no `## [Unreleased]` heading", out.getvalue())
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_a_consumer_without_a_changelog_is_left_alone_with_a_notice(self):
+        self.changelog.unlink()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertIn("no CHANGELOG.md; no release entry added", out.getvalue())
+        self.assertEqual(sorted(path.name for path in self.root.iterdir()), [".pkgmeta", "LegacyForever.toc", "tools"])
+
+    def test_a_pin_that_does_not_move_still_repairs_the_toc(self):
+        self.assertIsNone(sync.bump_pin(self.root, "v1.3.2", self.DAY))
+        self.assertEqual(self.pkgmeta.read_text(encoding="utf-8"), self.PKGMETA)
+        self.assertEqual(self.toc.read_text(encoding="utf-8"), self.TOC_WITH_FIELD)
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.CHANGELOG)
+
+    def test_a_moved_pin_changes_the_bundle_the_toc_and_the_entry(self):
+        self.assertEqual(sync.bump_pin(self.root, "v1.4.0", self.DAY), "v1.3.2")
+        self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", self.pkgmeta.read_text(encoding="utf-8"))
+        self.assertIn("## X-Forever-Core: v1.4.0\n", self.toc.read_text(encoding="utf-8"))
+        text = self.changelog.read_text(encoding="utf-8")
+        self.assertEqual(text.count(sync.SYNC_MARKER), 1)
+        self.assertIn("## [1.2.4] - 2026-11-11\n", text)
+
+    def test_an_unchanged_pin_repairs_a_lagging_bundle_with_one_entry(self):
+        self.pin.write_text("v1.4.0\n", encoding="utf-8")
+        self.assertIsNone(sync.bump_pin(self.root, "v1.4.0", self.DAY))
+        self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", self.pkgmeta.read_text(encoding="utf-8"))
+        self.assertIn("## X-Forever-Core: v1.4.0\n", self.toc.read_text(encoding="utf-8"))
+        text = self.changelog.read_text(encoding="utf-8")
+        self.assertEqual(text.count(sync.SYNC_MARKER), 1)
+        self.assertIn("## [1.2.4] - 2026-11-11\n", text)
+
+    def test_a_bundle_that_already_matches_changes_nothing(self):
+        self.toc.write_text(self.TOC_WITH_FIELD, encoding="utf-8")
+        self.assertIsNone(sync.bump_pin(self.root, "v1.3.2", self.DAY))
+        self.assertEqual(self.pkgmeta.read_text(encoding="utf-8"), self.PKGMETA)
+        self.assertEqual(self.toc.read_text(encoding="utf-8"), self.TOC_WITH_FIELD)
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.CHANGELOG)
+
+    def test_an_unreleased_marked_entry_is_not_duplicated(self):
+        self.pin.write_text("v1.4.0\n", encoding="utf-8")
+        marked = (
+            "# Changelog\n\n"
+            "## [Unreleased]\n\n"
+            "## [1.2.4] - 2026-11-11\n\n"
+            f"{sync.SYNC_MARKER}\n\n"
+            f"{sync.SYNC_BULLET}\n\n"
+            "## [1.2.3] - 2026-11-01\n\n"
+            "- An older entry.\n"
+        )
+        self.changelog.write_text(marked, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", self.pkgmeta.read_text(encoding="utf-8"))
+        self.assertIn("## X-Forever-Core: v1.4.0\n", self.toc.read_text(encoding="utf-8"))
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), marked)
+        self.assertIn("no second entry added", out.getvalue())
+
+    def test_a_consumer_without_a_pkgmeta_moves_its_pin_and_gets_no_entry(self):
+        self.pkgmeta.unlink()
+        self.toc.unlink()
+        self.assertEqual(sync.bump_pin(self.root, "v1.4.0", self.DAY), "v1.3.2")
+        self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.CHANGELOG)
+
+    def test_a_toc_without_dependencies_is_not_guessed_at(self):
+        self.toc.write_text("## Interface: 16001\n## Title: Legacy Forever\n", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sync.bump_pin(self.root, "v1.4.0", self.DAY)
+        self.assertEqual(self.toc.read_text(encoding="utf-8"), "## Interface: 16001\n## Title: Legacy Forever\n")
+        self.assertIn("has no `## Dependencies:` line", out.getvalue())
+
+    def test_a_nested_addon_gets_its_bundle_below_its_addon_folder(self):
+        root = Path(self.tmp.name) / "kiln-forever"
+        addon = root / "addon" / "KilnForever"
+        (addon / "tools").mkdir(parents=True)
+        (addon / "tools" / "forever-core.txt").write_text("v1.3.2\n", encoding="utf-8")
+        (addon / ".pkgmeta").write_text(self.PKGMETA.replace("LegacyForever", "KilnForever"), encoding="utf-8")
+        (addon / "KilnForever.toc").write_text(self.TOC, encoding="utf-8")
+        (root / "CHANGELOG.md").write_text(self.CHANGELOG, encoding="utf-8")
+
+        self.assertEqual(sync.bump_pin(root, "v1.4.0", self.DAY), "v1.3.2")
+
+        self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", (addon / ".pkgmeta").read_text(encoding="utf-8"))
+        self.assertIn("## X-Forever-Core: v1.4.0\n", (addon / "KilnForever.toc").read_text(encoding="utf-8"))
+        self.assertIn("## [1.2.4] - 2026-11-11\n", (root / "CHANGELOG.md").read_text(encoding="utf-8"))
 
 
 class BodyTest(unittest.TestCase):

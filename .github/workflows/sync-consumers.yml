@@ -26,9 +26,9 @@ jobs:
           persist-credentials: false
       - name: Sync every consumer
         env:
-          # Fine-grained PAT with Contents, Pull requests and Workflows write on the consumers, the private
-          # kiln-forever repository included. When it is unset the script prints a notice and the job stays green; a
-          # token without access to kiln-forever reports that consumer as failed in the run summary rather than
-          # skipping it silently.
+          # Fine-grained PAT with Contents, Pull requests, Workflows and Actions write on the consumers, the private
+          # kiln-forever repository included (Actions because release-consumers.yml dispatches their release.yml). When
+          # it is unset the script prints a notice and the job stays green; a token without access to kiln-forever
+          # reports that consumer as failed in the run summary rather than skipping it silently.
           GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
         run: python3 tools/sync_consumer_prs.py

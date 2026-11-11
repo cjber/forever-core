@@ -1,0 +1,34 @@
+name: Release consumers
+
+# Every consumer's release zip carries ForeverCore in the same folder, so every addon's latest release must ship the
+# same core: a core release has to re-release every consumer. The consumer sync opens a PR with a marked CHANGELOG.md
+# entry; once that PR has landed and its full CI is green, this dispatches that consumer's own release.yml for the entry.
+# It only dispatches, so running every 20 minutes changes nothing until a sync has landed.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-consumers
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Release every consumer whose sync landed
+        env:
+          # Fine-grained PAT with Contents, Pull requests, Workflows and Actions write on the consumers, the private
+          # kiln-forever repository included. Actions write is what dispatches their release.yml. When it is unset the
+          # script prints a notice and the job stays green; a token without access to a consumer reports it as failed
+          # rather than skipping it silently.
+          GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
+        run: python3 tools/release_consumers.py

@@ -18,6 +18,8 @@ drifts the same way:
   `ForeverCore-<pin>-forever.zip` from the release the consumer's `tools/forever-core.txt` names, `move-folders:` must
   place it at `ForeverCore` beside the addon's own folder, and `required-dependencies:` must not list `forevercore`, so
   one owner holds the folder.
+- The same root TOC must carry `## X-Forever-Core: <pin>`, the tag the bundled folder is, so a player's other Forever
+  addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 """
 
 import argparse
@@ -38,6 +40,8 @@ PIN_PATH = "tools/forever-core.txt"
 PKGMETA = ".pkgmeta"
 FOREVER_CORE = "forevercore"
 CORE_FOLDER = "ForeverCore"
+# The TOC header naming the core release the zip bundles, which a sibling addon compares to its own.
+CORE_FIELD = "X-Forever-Core"
 
 
 def digest(data):
@@ -170,6 +174,18 @@ def requires_core(toc):
     return False
 
 
+def toc_field(toc, name):
+    """A TOC header's value for `name`, matched case-insensitively, or None when the TOC does not set it."""
+    for line in toc.decode("utf-8", "replace").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("##"):
+            continue
+        key, separator, value = stripped[2:].partition(":")
+        if separator and key.strip().lower() == name.lower():
+            return value.strip()
+    return None
+
+
 def root_toc(repo, pkgmeta, branch, local):
     """The consumer's root TOC text, or None when it cannot be told.
 
@@ -234,6 +250,8 @@ def check_packaging(repo, pin, branch, local):
     toc = root_toc(repo, pkgmeta, branch, local)
     if toc is None or not requires_core(toc):
         return []
+    package = pkgmeta_field(pkgmeta, "package-as")
+    toc_path = consumer_path(repo, f"{package}.toc")
     blocks = pkgmeta_blocks(pkgmeta)
     failures = []
     if not pin:
@@ -253,7 +271,16 @@ def check_packaging(repo, pin, branch, local):
                 f"{repo}: {path}: `externals:` ships ForeverCore from {shipped}; {PIN_PATH} pins {pin},"
                 f" so it must be {expected}"
             )
-    package = pkgmeta_field(pkgmeta, "package-as")
+        declared = toc_field(toc, CORE_FIELD)
+        if not declared:
+            failures.append(
+                f"{repo}: {toc_path}: a dependency of the TOC, but no `## {CORE_FIELD}:` line names the core release"
+                f" the zip bundles; add `## {CORE_FIELD}: {pin}`"
+            )
+        elif declared != pin:
+            failures.append(
+                f"{repo}: {toc_path}: `## {CORE_FIELD}:` is {declared}; {PIN_PATH} pins {pin}, so it must be {pin}"
+            )
     moved = block_values(blocks.get("move-folders", []))
     if moved.get(f"{package}/{CORE_FOLDER}".lower()) != CORE_FOLDER:
         failures.append(
