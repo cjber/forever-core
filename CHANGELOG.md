@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
 - **The tracker column keeps its size with a replacement quest tracker.** It now follows the scale of the frame it actually sits beside: Blizzard's tracker only while that frame is visible and not transparent, another tracker's list, or the screen when detached. A UI that hides or shrinks Blizzard's tracker no longer shrinks every Forever section with it. (#383)
 - **The tracker column follows EllesmereUI's custom quest tracker.** With its Custom Quest Tracker on, the column sits below the filtered list the player sees instead of the hidden native quests, and moves with it as it grows, shrinks or is dragged. EQOT still wins above it and Questie is consulted after it. Fixed on GitHub by ZiiMs. (#332)
 
