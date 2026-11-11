@@ -94,7 +94,9 @@ test("widgets: a HasRestrictions method is refused to tainted code in combat, un
 		G = {},
 		env = {},
 		taint = Taint,
-		alwaysRestrictedMethods = { SetPassThroughButtons = "cjber/adventure-guide-forever#534" },
+		restrictionOverrides = {
+			SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
+		},
 		docs = {
 			enums = {},
 			widgets = {
@@ -635,6 +637,23 @@ test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function(
 	require("stubgen").build(sim)
 	eq(G.Constants.QuestConsts.QUEST_INFO_DUNGEON_ID, 81, "the dungeon tag id")
 	eq(G.Constants.QuestConsts, G.Constants.QuestInfoLuaConsts, "the alias")
+end)
+
+test("docs: a restriction keeps every class its tag names, and any one refuses the call", function()
+	local Docs = require("docs")
+	local path = os.tmpname()
+	local file = assert(io.open(path, "w"))
+	file:write("X.Both nocombat,hwevent\nX.Always always,hwevent\n")
+	file:close()
+	local classes = Docs.restrictions(path)
+	os.remove(path)
+	eq(table.concat(classes["X.Both"], ","), "nocombat,hwevent", "both classes survive")
+	eq(table.concat(classes["X.Always"], ","), "always,hwevent", "the tag order does not drop one")
+	eq(Docs.applies(classes["X.Both"], false, false), true, "hwevent refuses without a hardware input")
+	eq(Docs.applies(classes["X.Both"], false, true), false, "neither class applies out of combat with input")
+	eq(Docs.applies(classes["X.Both"], true, true), true, "nocombat refuses in combat")
+	eq(Docs.applies(classes["X.Always"], false, true), true, "always refuses regardless")
+	eq(Docs.applies({ "untagged" }, false, true), false, "untagged keeps the combat-only rule")
 end)
 
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))

@@ -73,7 +73,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
-- `UI/TrackerQuestie.lua` and `UI/TrackerEqot.lua`: another tracker's quest list, so the column steps beside it.
+- `UI/TrackerQuestie.lua`, `UI/TrackerEqot.lua` and `UI/TrackerEllesmere.lua`: another tracker's quest list, so the
+  column steps beside it.
 - `UI/TrackerQuests.lua` and `Core/QuestOrder.lua`: core's own optional quest list and its pure ordering.
 - `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,
   restoring the client's own pages on demand and telling a panel through `shown` when it becomes visible or stops

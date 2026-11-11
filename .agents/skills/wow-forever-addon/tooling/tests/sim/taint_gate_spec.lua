@@ -187,6 +187,71 @@ test("an observed always-restricted HasRestrictions function blocks a tainted ca
 	assert(not sim.G.WorldMapFrame:IsShown(), "the restricted call did not open the map")
 end)
 
+test("a nocombat restriction passes out of combat and is refused in combat", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim.restrictionOverrides["C_Map.OpenWorldMap"] = nil
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim.G.WorldMapFrame:IsShown(), "the out-of-combat call opened the map")
+	sim:closeWorldMap()
+	sim:enterCombat()
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
+end)
+
+test("a hardware-event restriction is refused from a timer and allowed from input", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	assert(sim:expectError("tried to call the protected function 'C_FriendList.SendWho()'"))
+	local before = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	for i = before + 1, #sim.errors do
+		assert(not tostring(sim.errors[i].message):find("C_FriendList.SendWho", 1, true), sim.errors[i].message)
+	end
+end)
+
+test("an always restriction is refused out of combat", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeAlways()")
+	assert(sim:expectError("tried to call the protected function 'CopyToClipboard()'"))
+end)
+
+test("an observed override wins over the wiki class", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	-- The pin says nocombat; the client has refused C_Map.OpenWorldMap to tainted code out of combat.
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
+	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
+	assert(sim.restrictionOverrides["C_Map.OpenWorldMap"].issue == "cjber/adventure-guide-forever#411")
+end)
+
+test("a restriction with several classes is refused when any one applies", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	-- SimRestrictionProbeWho calls C_FriendList.SendWho, normally hwevent; give it both classes.
+	sim.restrictionOverrides["C_FriendList.SendWho"] =
+		{ class = { "nocombat", "hwevent" }, issue = "cjber/forever-core#297" }
+	-- Out of combat, from a timer: hwevent refuses.
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	assert(sim:expectError("tried to call the protected function 'C_FriendList.SendWho()'"))
+	-- Out of combat, from input: neither class applies.
+	local quiet = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	assert(#sim.errors == quiet, "neither class refused the input call")
+	-- In combat, from input: nocombat refuses even though the hwevent class is satisfied.
+	local before = #sim.errors
+	sim:enterCombat()
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWho()")
+	end)
+	assert(#sim.errors == before + 1, "the nocombat class refused the combat call")
+	assert(
+		tostring(sim.errors[#sim.errors].message):find("C_FriendList.SendWho", 1, true),
+		sim.errors[#sim.errors].message
+	)
+end)
+
 test("an addon's Show of a Blizzard frame taints its OnShow", function()
 	check("SimTaintClientScript")
 end)
@@ -236,6 +301,18 @@ test("a Blizzard menu opened from addon code under the gamepad interface taints 
 			sim.G.SettingsPanel:Close()
 		end)
 	end)
+end)
+
+test("pressing Escape names the Blizzard handler list an addon wrote", function()
+	local sim = fixtureSim("SimGameMenuEsc")
+	sim:enterCombat()
+	sim:pressEscape()
+	local hits = sim.gamepadTaint("SimGameMenuEsc")
+	assert(#hits > 0, "Blizzard's secure read of the handler list was not recorded")
+	local report = sim.watch.describe(hits)
+	assert(has(report, "written by SimGameMenuEsc"), report)
+	assert(has(report, "Blizzard_GameMenuEsc/Blizzard_GameMenuEsc.lua"), report)
+	assert(has(report, "read by secure code"), report)
 end)
 
 test("an addon frame's own mouse scripts are not a taint slot", function()

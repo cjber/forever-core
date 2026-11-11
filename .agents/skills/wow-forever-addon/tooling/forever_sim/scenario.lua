@@ -86,9 +86,29 @@ function M.install(Sim)
 		return self
 	end
 
-	-- Runs f as the client would run input: a fresh, secure dispatch.
+	-- Runs f as the client would run input: a fresh, secure dispatch, with the hardware-input flag set for its
+	-- synchronous call only.
 	function Sim:input(f, ...)
-		return self.run(f, ...)
+		local previous = self.hardwareInput
+		self.hardwareInput = true
+		local result = { pcall(self.run, f, ...) }
+		self.hardwareInput = previous
+		if not result[1] then
+			error(result[2], 0)
+		end
+		return unpack(result, 2, table.maxn(result))
+	end
+
+	-- Presses Escape as fresh hardware input: the client's own ToggleGameMenu, which walks every Escape handler
+	-- secure code has registered, Blizzard's and addons'.
+	function Sim:pressEscape()
+		local G = self.G
+		self:input(function()
+			if G.ToggleGameMenu then
+				G.ToggleGameMenu()
+			end
+		end)
+		self:advance(0.1)
 	end
 
 	function Sim:showPanel(frame)
@@ -133,7 +153,7 @@ function M.install(Sim)
 	end
 
 	function Sim:click(frame, button)
-		self.run(function()
+		self:input(function()
 			frame:Click(button or "LeftButton")
 		end)
 		self:advance(0.05)
@@ -551,12 +571,40 @@ function M.install(Sim)
 		return out
 	end
 
-	-- Runs a typed slash command the way the chat box does: "/cmd rest" split on the first space, the command
-	-- found by its aliases in lower case as the client compares them, and the handler called as fresh input.
+	-- The client's own word, from a SLASH_* global the Blizzard UI set (no addon ever wrote it). The chat box consults
+	-- its secure commands first, so such a word never reaches an addon's SlashCmdList entry.
+	local function clientSlashOwner(G, taint, word)
+		for name, value in pairs(G) do
+			if
+				type(name) == "string"
+				and name:sub(1, 6) == "SLASH_"
+				and type(value) == "string"
+				and not taint.globalTaint[name]
+				and value:lower() == word
+			then
+				return name
+			end
+		end
+	end
+
+	-- Runs a typed slash command the way the chat box does: "/cmd rest" split on the first space, a client command
+	-- refused by the word the client owns, otherwise the command found by its aliases in lower case as the client
+	-- compares them, and the handler called as fresh input.
 	function Sim:slash(text)
 		local cmd, rest = text:match("^(%S+)%s*(.*)$")
 		local wanted = cmd:lower()
 		local G = self.G
+		local owner = clientSlashOwner(G, self.taint, wanted)
+		if owner then
+			error(
+				string.format(
+					"slash command %s is the client's own (%s), so the chat box runs it before any addon command",
+					cmd,
+					owner
+				),
+				2
+			)
+		end
 		for key in pairs(G.SlashCmdList) do
 			local n = 1
 			while true do
@@ -682,6 +730,8 @@ function M.install(Sim)
 			touch(sim)
 			sim:closeWorldMap()
 			touch(sim)
+			sim:pressEscape()
+			touch(sim)
 		end
 
 		local function combat(sim)
@@ -691,6 +741,7 @@ function M.install(Sim)
 			end
 			sim:openWorldMap()
 			sim:closeWorldMap()
+			sim:pressEscape()
 			sim:leaveCombat()
 		end
 

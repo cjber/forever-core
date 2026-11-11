@@ -64,6 +64,8 @@ Sim.CORE = {
 	"Blizzard_ActionBar/Shared/ActionButton.lua",
 	"Blizzard_ActionBar/Shared/ActionButtonComponentTemplate.xml",
 	"Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml",
+	-- The Escape handler registry Blizzard_ActionBar loads at startup: addons register into its file-local list.
+	"Blizzard_GameMenuEsc",
 	-- The gamepad action bars are real: they are where UpdateInteractIcons makes its protected call. The action
 	-- bar templates above supply the buttons they inherit; the gamepad UI's own setup registers the target and
 	-- soft-interact callbacks and reacts to binding-set changes.
@@ -98,6 +100,9 @@ function Sim.new(opts)
 	sim.verbose = opts.verbose or os.getenv("FOREVER_SIM_VERBOSE") == "1"
 	sim.taint = Taint
 	sim.gaps = {}
+	-- True only while a hardware input's synchronous call runs, so a hardware-event restriction can refuse a call
+	-- made from a timer or an event.
+	sim.hardwareInput = false
 	-- The client's legacy LE_* constants are native and undocumented: client code reading one gets a distinct
 	-- number (recorded in sim.gaps), including when the reader runs tainted.
 	local leValue = 200000
@@ -117,6 +122,7 @@ function Sim.new(opts)
 	end
 	docsCache[sim.ui] = docsCache[sim.ui] or Docs.load(sim.ui)
 	sim.docs = docsCache[sim.ui]
+	sim.docs.restrictions()
 	sim.impl = {}
 	sim.started = os.clock()
 	require("client").build(sim)

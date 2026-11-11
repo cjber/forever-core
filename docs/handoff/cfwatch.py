@@ -8,23 +8,37 @@ thread whose latest post is not the owner's: one never answered, or one followed
 `--settle THREAD REASON` records that a thread needs no answer (a thank-you, a question another player answered).
 Settled threads live beside the seen IDs in cfwatch-settled.json with the thread's latest post, so `--unanswered`
 skips one only until somebody posts in it again.
+
+An issue filed from a comment carries the line `CurseForge thread <id> (<addon>)`. `--unanswered` reads those lines
+from every Forever issue and prints a linked thread as waiting on its issue and the issue's state. `--due` lists the
+threads whose issues all closed as completed and whose fix is in a released tag, with that version, unless the owner
+has already replied since that release.
+
+The watched projects are every addon in `forever_tools.family.ADDONS` plus ForeverCore. Each project's ID comes from
+its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout, or through `gh api` when that
+checkout is missing, so a new addon is watched with no list to keep here.
 """
 
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import NamedTuple
 
-MODS = {
-    "shortest-path-forever": 1708599,
-    "adventure-guide-forever": 1711538,
-    "legacy-forever": 1705879,
-    "skillup-forever": 1705762,
-    "tweaks-forever": 1708506,
-    "field-guide-forever": 1786835,
-}
+CORE = Path(__file__).resolve().parents[2]
+TOOLING = CORE / ".agents" / "skills" / "wow-forever-addon" / "tooling"
+sys.path.insert(0, str(TOOLING))
+sys.path.insert(0, str(CORE / "tools"))
+
+from check_core_shared import CONSUMER_ROOT  # noqa: E402
+from forever_tools.family import ADDONS  # noqa: E402
+
+PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.MULTILINE)
+LINK = re.compile(r"^CurseForge thread (\d+) \(([a-z0-9-]+)\)\s*$", re.MULTILINE)
 OWNER = "cjber"
 
 
@@ -68,6 +82,83 @@ def get(url):
         except Exception:
             time.sleep(2**attempt)
     raise SystemExit("fetch failed: " + url + " " + result.stdout[:200] + result.stderr[:200])
+
+
+def suite_root():
+    """The folder that holds this checkout and its siblings: the main worktree's parent, else this checkout's parent."""
+    result = subprocess.run(
+        ["git", "-C", str(CORE), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    first = result.stdout.splitlines()[0] if result.returncode == 0 and result.stdout else ""
+    if first.startswith("worktree "):
+        return Path(first[len("worktree ") :]).parent
+    return CORE.parent
+
+
+def slug_list():
+    """Every published Forever addon, then ForeverCore itself."""
+    return [slug for _, slug, _ in ADDONS] + ["forever-core"]
+
+
+def toc_folder(root, slug):
+    """The checkout folder whose root TOC names the CurseForge project."""
+    return Path(root) / slug / CONSUMER_ROOT.get(slug, "")
+
+
+def local_toc(root, slug):
+    """The single root TOC in the sibling checkout, or None when the checkout is not there."""
+    folder = toc_folder(root, slug)
+    tocs = sorted(folder.glob("*.toc")) if folder.is_dir() else []
+    if len(tocs) > 1:
+        names = [toc.name for toc in tocs]
+        raise SystemExit(f"{folder}: more than one TOC, so X-Curse-Project-ID is ambiguous: {names}")
+    return tocs[0] if tocs else None
+
+
+def gh(*args):
+    result = subprocess.run(["gh", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if result.returncode:
+        raise SystemExit(f"gh {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def gh_json(*args):
+    return json.loads(gh(*args))
+
+
+def github_toc(slug):
+    """A sibling checkout's root TOC, fetched from cjber/<slug> when the checkout is not on this machine."""
+    folder = CONSUMER_ROOT.get(slug, "")
+    listing = f"repos/{OWNER}/{slug}/contents" + (f"/{folder}" if folder else "")
+    entries = json.loads(gh("api", listing))
+    tocs = [entry["path"] for entry in entries if entry.get("type") == "file" and entry["name"].endswith(".toc")]
+    if len(tocs) != 1:
+        raise SystemExit(f"cjber/{slug}: expected one root TOC, found {tocs}")
+    return gh("api", "-H", "Accept: application/vnd.github.raw", f"repos/{OWNER}/{slug}/contents/{tocs[0]}")
+
+
+def project_id(slug, text, source):
+    match = PROJECT_ID.search(text)
+    if not match:
+        raise SystemExit(f"{source}: {slug} has no ## X-Curse-Project-ID line in its root TOC")
+    return int(match.group(1))
+
+
+def projects(root=None, remote=None):
+    """Every watched CurseForge project as slug -> id, ids read from each addon's root TOC."""
+    root = suite_root() if root is None else Path(root)
+    remote = github_toc if remote is None else remote
+    found = {}
+    for slug in slug_list():
+        toc = local_toc(root, slug)
+        if toc is not None:
+            found[slug] = project_id(slug, toc.read_text(encoding="utf-8"), toc)
+        else:
+            found[slug] = project_id(slug, remote(slug), f"cjber/{slug}")
+    return found
 
 
 def fetch_mod(fetch, mod_id):
@@ -148,6 +239,97 @@ def unanswered(items):
     return sorted(waiting, key=lambda thread: thread[1][-1]["datePosted"])
 
 
+def search_issues():
+    """Every Forever issue that may carry a CurseForge thread line, open and closed."""
+    return gh_json(
+        "search",
+        "issues",
+        "CurseForge thread",
+        "--owner",
+        OWNER,
+        "--limit",
+        "1000",
+        "--json",
+        "repository,number,state,body,closedAt",
+    )
+
+
+def linked_issues(search=None):
+    """Thread id -> the issues that name it, from the exact line `CurseForge thread <id> (<addon>)`."""
+    search = search_issues if search is None else search
+    linked = {}
+    for issue in search():
+        repo = issue["repository"]["name"]
+        for thread, slug in LINK.findall(issue.get("body") or ""):
+            linked.setdefault(thread, []).append(
+                {
+                    "repo": repo,
+                    "slug": slug,
+                    "number": issue["number"],
+                    "state": issue.get("state") or "open",
+                    "closed_at": issue.get("closedAt") or "",
+                }
+            )
+    return linked
+
+
+class Release(NamedTuple):
+    """A published release tag and the moment it was published."""
+
+    tag: str
+    published: str
+
+
+def released_in(repo, number) -> Release | None:
+    """The first release that contains the merge of the PR that closed the issue, or None.
+
+    An issue closed as not planned, still open, or fixed on main but not yet released answers None.
+    """
+    issue = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}")
+    if issue.get("state") != "closed" or issue.get("state_reason") == "not_planned":
+        return None
+    closed_at = issue.get("closed_at") or ""
+    events = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}/timeline", "--paginate")
+    sha = next(
+        (event.get("commit_id") for event in events if event.get("event") == "closed" and event.get("commit_id")), None
+    )
+    closing = []
+    for event in events:
+        source = (event.get("source") or {}).get("issue") or {}
+        merged_at = (source.get("pull_request") or {}).get("merged_at")
+        if event.get("event") == "cross-referenced" and merged_at and merged_at <= closed_at:
+            closing.append((merged_at, source.get("number")))
+    if sha is None and closing:
+        sha = gh_json("api", f"repos/{OWNER}/{repo}/pulls/{max(closing)[1]}").get("merge_commit_sha")
+    if not sha:
+        return None
+    releases = [
+        release for release in gh_json("api", f"repos/{OWNER}/{repo}/releases?per_page=100") if not release.get("draft")
+    ]
+    for release in sorted(releases, key=lambda release: release.get("published_at") or ""):
+        status = gh_json("api", f"repos/{OWNER}/{repo}/compare/{sha}...{release['tag_name']}").get("status")
+        if status in ("ahead", "identical"):
+            return Release(release["tag_name"], release.get("published_at") or "")
+    return None
+
+
+def moment(value):
+    """A timezone-aware datetime for an API timestamp, or None when it is missing or unreadable."""
+    try:
+        parsed = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.timezone.utc)
+
+
+def posted_after(comment, published):
+    """True when the comment was posted later than the release's published timestamp."""
+    release = moment(published)
+    if release is None:
+        return False
+    return datetime.datetime.fromtimestamp(comment["datePosted"] / 1000, datetime.timezone.utc) > release
+
+
 def when(comment):
     posted = datetime.datetime.fromtimestamp(comment["datePosted"] / 1000, datetime.timezone.utc)
     return posted.strftime("%Y-%m-%d %H:%M")
@@ -164,6 +346,7 @@ def main(argv=None, fetch=None):
     fetch = fetch or get
     mark = "--mark" in argv
     show_unanswered = "--unanswered" in argv
+    show_due = "--due" in argv
     requests = settle_requests(argv)
 
     path = state_path()
@@ -171,7 +354,7 @@ def main(argv=None, fetch=None):
     settled_path = state_path("cfwatch-settled.json")
     settled = load(settled_path)
     raw, totals, new = {}, {}, []
-    for slug, mod_id in MODS.items():
+    for slug, mod_id in projects().items():
         items, total = fetch_mod(fetch, mod_id)
         flat = flatten(items)
         raw[slug] = items
@@ -199,19 +382,58 @@ def main(argv=None, fetch=None):
         save(settled_path, settled)
 
     if show_unanswered:
-        waiting, quiet = [], 0
+        links = linked_issues()
+        waiting, quiet, on_issue = [], 0, 0
         for slug, items in raw.items():
             for _, rows in unanswered(items):
                 entry = settled.get(str(rows[0]["id"]))
                 if entry and entry.get("latest") == rows[-1]["id"]:
                     quiet += 1
                     continue
+                issues = links.get(str(rows[0]["id"]))
+                if issues:
+                    on_issue += 1
+                    print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
+                    for issue in issues:
+                        print(f"waiting on cjber/{issue['repo']}#{issue['number']} ({issue['state']})")
+                    continue
                 waiting.append((rows[-1]["datePosted"], slug, rows))
         for _, slug, rows in sorted(waiting, key=lambda row: row[0]):
             print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
             for comment in rows:
                 print(format_comment(slug, comment))
-        print(f"\n{len(waiting)} unanswered, {quiet} settled")
+        print(f"\n{len(waiting)} unanswered, {on_issue} waiting on an issue, {quiet} settled")
+    elif show_due:
+        links = linked_issues()
+        by_thread = {str(top["id"]): rows for items in raw.values() for top, rows in threads(items)}
+        released = {}
+        due = []
+        answered = 0
+        for thread, issues in links.items():
+            versions = []
+            for issue in issues:
+                key = (issue["repo"], issue["number"])
+                if key not in released:
+                    released[key] = released_in(*key)
+                versions.append(released[key])
+            if not all(versions):
+                continue
+            # An owner reply after the release already answered the thread, so it is not due again.
+            rows = by_thread.get(thread)
+            latest = rows[-1] if rows else None
+            shipped = max((version.published for version in versions if version.published), default="")
+            if latest and is_owner(latest) and posted_after(latest, shipped):
+                answered += 1
+                continue
+            for issue, version in zip(issues, versions, strict=True):
+                due.append((thread, issue, version))
+        for thread, issue, version in sorted(due, key=lambda row: (row[1]["slug"], int(row[0]))):
+            print(
+                f"[{issue['slug']}] thread #{thread}: cjber/{issue['repo']}#{issue['number']} released in {version.tag}"
+            )
+        due_threads = {thread for thread, _, _ in due}
+        waiting = len(links) - len(due_threads) - answered
+        print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting")
     else:
         for _, slug, comment in sorted(new, key=lambda row: row[0]):
             print(format_comment(slug, comment))
