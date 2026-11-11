@@ -5,6 +5,10 @@ if GetLocale() ~= "koKR" then
 end
 local L = ns.L
 
+L["%s (%s)"] = "%s (%s)"
+L["%s and %s"] = "%s 및 %s"
+L["%s, %s and %s"] = "%s, %s 및 %s"
+L["%s, %s, %s and %d more"] = "%s, %s, %s 및 %d명 더"
 L["+%d more"] = "+%d개 더"
 L[", "] = ", "
 L["(you)"] = "(나)"
@@ -25,6 +29,7 @@ L["7th"] = "7위"
 L["8th"] = "8위"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
 	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
+L["All addons"] = "모든 애드온"
 L["All time"] = "전체 기간"
 L["Attach to quest tracker"] = "퀘스트 추적기에 붙이기"
 L["Bug"] = "오류"
@@ -59,6 +64,7 @@ L["Guild and group"] = "길드 및 그룹"
 L["Guild and group members who use a Forever addon show up here."] =
 	"Forever 애드온을 사용하는 길드 및 그룹 구성원이 여기에 표시됩니다."
 L["Hide this section"] = "Hide this section"
+L["Inspired by"] = "영감을 준"
 L["Installed, turned off"] = "설치됨, 사용 안 함"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
@@ -69,6 +75,7 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 L["Lock the tracker"] = "추적기 잠금"
 L["No addon has attached its log yet."] = "아직 기록을 첨부한 애드온이 없습니다."
 L["No one has shared yet"] = "아직 공유한 사람이 없습니다."
+L["No one is listed yet."] = "아직 등록된 사람이 없습니다."
 L["Not installed"] = "설치 안 됨"
 L["On"] = "켬"
 L["Open"] = "열기"
@@ -81,6 +88,7 @@ L["Plans the cheapest route to your next profession rank."] =
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
 	"어디든 가장 빠른 길을 계획해 안내하며, 배와 비행선 시간을 실시간으로 보여줍니다."
 L["Player"] = "플레이어"
+L["Players"] = "플레이어"
 L["Players you've met"] = "만난 플레이어"
 L["Players you've met who use a Forever addon show up here."] =
 	"Forever 애드온을 사용하는, 만난 플레이어가 여기에 표시됩니다."
@@ -98,10 +106,13 @@ L["Show a quiet line where one of my other Forever addons would help. Only for a
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"각 지역에서 진행할 수 있는 유산 도전을 보여줍니다."
 L["Suggest my other Forever addons"] = "제 다른 Forever 애드온 추천"
+L["Thanks"] = "감사합니다"
+L["Thanks to %s"] = "%s 님께 감사드립니다"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"Forever 애드온은 무료이며 잠긴 기능이 없습니다. 도움이 되셨다면 커피 한 잔 사 주세요."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"링크가 선택되었습니다. Ctrl+C(Mac은 Cmd+C)를 눌러 복사한 후 브라우저에 붙여 넣으십시오. GitHub에 내용이 채워진 이슈가 열립니다."
+L["The players who helped each Forever addon."] = "각 Forever 애드온을 도와주신 플레이어들입니다."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"텍스트가 선택되었습니다. Ctrl+C(Mac은 Cmd+C)를 눌러 복사한 후 오류 보고에 붙여 넣으십시오."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =

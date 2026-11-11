@@ -5,6 +5,10 @@ if GetLocale() ~= "ruRU" then
 end
 local L = ns.L
 
+L["%s (%s)"] = "%s (%s)"
+L["%s and %s"] = "%s и %s"
+L["%s, %s and %s"] = "%s, %s и %s"
+L["%s, %s, %s and %d more"] = "%s, %s, %s и ещё %d"
 L["+%d more"] = "+%d ещё"
 L[", "] = ", "
 L["(you)"] = "(вы)"
@@ -25,6 +29,7 @@ L["7th"] = "7-е"
 L["8th"] = "8-е"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
 	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
+L["All addons"] = "Все аддоны"
 L["All time"] = "За всё время"
 L["Attach to quest tracker"] = "Прикрепить к отслеживанию заданий"
 L["Bug"] = "Ошибка"
@@ -60,6 +65,7 @@ L["Guild and group"] = "Гильдия и группа"
 L["Guild and group members who use a Forever addon show up here."] =
 	"Участники вашей гильдии и группы, использующие аддон Forever, появляются здесь."
 L["Hide this section"] = "Hide this section"
+L["Inspired by"] = "Вдохновили"
 L["Installed, turned off"] = "Установлено, отключено"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
@@ -71,6 +77,7 @@ L["Lock the tracker"] = "Закрепить трекер"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
 L["No one has shared yet"] = "Пока никто не поделился."
+L["No one is listed yet."] = "Пока никого нет в списке."
 L["Not installed"] = "Не установлено"
 L["On"] = "Вкл."
 L["Open"] = "Открыть"
@@ -84,6 +91,7 @@ L["Plans the cheapest route to your next profession rank."] =
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
 	"Прокладывает самый быстрый путь куда угодно и ведет вас туда, с расписанием кораблей и дирижаблей в реальном времени."
 L["Player"] = "Игрок"
+L["Players"] = "Игроки"
 L["Players you've met"] = "Встреченные игроки"
 L["Players you've met who use a Forever addon show up here."] =
 	"Встреченные игроки, использующие аддон Forever, появляются здесь."
@@ -101,10 +109,14 @@ L["Show a quiet line where one of my other Forever addons would help. Only for a
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"Показывает старинные испытания, которые можно продвинуть в каждой зоне."
 L["Suggest my other Forever addons"] = "Предлагать другие мои модификации Forever"
+L["Thanks"] = "Спасибо"
+L["Thanks to %s"] = "Спасибо %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"Аддоны Forever бесплатны, и ничего в них не закрыто за оплатой. Если они вам помогают, можете угостить меня кофе."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"Ссылка выделена. Нажмите Ctrl+C (Cmd+C на Mac) и вставьте ее в браузер; GitHub откроет заполненную задачу."
+L["The players who helped each Forever addon."] =
+	"Игроки, которые помогли каждому аддону Forever."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"Текст выделен. Нажмите Ctrl+C (Cmd+C на Mac), чтобы скопировать его, затем вставьте в сообщение об ошибке."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =

@@ -1,0 +1,1 @@
+# One name per line: players who asked not to be credited. credits.py --check fails while a THIRD_PARTY.md row names one.

@@ -13,7 +13,7 @@ per UI unit.
 
     tip = tooltip(ui, item_tooltip_lines(ui, ui.item(4818)) + [TooltipLine("|cffffd100Extra|r")])
     bag, slots = container_frame(ui, "Backpack", 133633, [(4818, None), ...], money=12345)
-    menu, rows = context_menu(ui, [MenuTitle("Title"), MenuCheckbox("A", True), MenuDivider(), ...])
+    menu, rows = context_menu(ui, [MenuTitle("Title"), MenuCheckbox("A", True), MenuRadio("B", True), ...])
     scene(ui, [(bag, 0, 0), (tip, x, y)]).save(path)   # layers bottom to top, framed over a backdrop
 
     art = map_art(ui, 1440)                  # a UiMap's base art; map_overlays + draw_overlay reveal areas
@@ -1059,6 +1059,13 @@ class MenuCheckbox:
 
 
 @dataclass
+class MenuRadio:
+    text: str
+    selected: bool
+    hover: bool = False
+
+
+@dataclass
 class MenuDivider:
     pass
 
@@ -1073,14 +1080,24 @@ def context_menu(ui, entries):
     """A Blizzard_Menu context menu in MenuStyle1. Returns (canvas, {"menu": rect, "rows": [rect]})."""
     measure = ui.canvas(1, 1)
     text_font = FONTS["GameFontHighlight"]
-    tick = ui.atlas("common-dropdown-ticksquare")
+    square = ui.atlas("common-dropdown-ticksquare")
+    radial = ui.atlas("common-dropdown-tickradial")
+
+    def indicator(entry):
+        """UI/ContextMenu.lua's checkbox and radio art: atlas, label gap and the tick's nudge in UI units."""
+        if isinstance(entry, MenuCheckbox):
+            return square, 7, (2, 1)
+        if isinstance(entry, MenuRadio):
+            return radial, 1, (0, 0)
+        return None, 0, (0, 0)
 
     def extent(entry):
         if isinstance(entry, MenuDivider):
             return 0, MENU_DIVIDER
         width = measure.text_width(entry.text, text_font)
-        if isinstance(entry, MenuCheckbox):
-            width += tick.width + 7
+        mark, gap, _ = indicator(entry)
+        if mark is not None:
+            width += mark.width + gap
         if isinstance(entry, MenuButton) and entry.submenu:
             width += 16
         return width, MENU_ROW
@@ -1115,16 +1132,25 @@ def context_menu(ui, entries):
                 )
             if isinstance(entry, MenuTitle):
                 canvas.text(x, y, entry.text, text_font, NORMAL, box_height=MENU_ROW)
-            elif isinstance(entry, MenuCheckbox):
-                tick_top = y + (MENU_ROW - tick.height) / 2
-                canvas.draw(tick, x, tick_top)
-                if entry.checked:
-                    check = ui.atlas("common-dropdown-icon-checkmark-yellow")
-                    canvas.draw(
-                        check, x + (tick.width - check.width) / 2 + 2, tick_top + (tick.height - check.height) / 2 - 1
+            elif isinstance(entry, (MenuCheckbox, MenuRadio)):
+                mark, gap, (tick_x, tick_y) = indicator(entry)
+                tick_top = y + (MENU_ROW - mark.height) / 2
+                canvas.draw(mark, x, tick_top)
+                selected = entry.checked if isinstance(entry, MenuCheckbox) else entry.selected
+                if selected:
+                    check = ui.atlas(
+                        "common-dropdown-icon-checkmark-yellow"
+                        if isinstance(entry, MenuCheckbox)
+                        else "common-dropdown-icon-radialtick-yellow"
                     )
-                # Real capture legacy-forever 8afee98 menu.png: a checkbox label sits ~1 unit above a plain row's.
-                canvas.text(x + tick.width + 7, y - 1, entry.text, text_font, box_height=MENU_ROW)
+                    canvas.draw(
+                        check,
+                        x + (mark.width - check.width) / 2 + tick_x,
+                        tick_top + (mark.height - check.height) / 2 - tick_y,
+                    )
+                # Real capture legacy-forever 8afee98 menu.png: a checkbox label sits ~1 unit above a plain row's,
+                # and a radio's sits on the row; both labels clear the 12- or 18-wide indicator by its own gap.
+                canvas.text(x + mark.width + gap, y - tick_y, entry.text, text_font, box_height=MENU_ROW)
             else:
                 canvas.text(x, y, entry.text, text_font, box_height=MENU_ROW)
                 if entry.submenu:
