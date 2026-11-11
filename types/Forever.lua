@@ -163,6 +163,7 @@
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field Family? ForeverFamilyAPI
+---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 
 ---@type ForeverCoreAPI

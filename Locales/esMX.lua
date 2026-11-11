@@ -5,6 +5,10 @@ if GetLocale() ~= "esMX" then
 end
 local L = ns.L
 
+L["%s (%s)"] = "%s (%s)"
+L["%s and %s"] = "%s y %s"
+L["%s, %s and %s"] = "%s, %s y %s"
+L["%s, %s, %s and %d more"] = "%s, %s, %s y %d más"
 L["+%d more"] = "+%d más"
 L[", "] = ", "
 L["(you)"] = "(tú)"
@@ -25,6 +29,7 @@ L["7th"] = "7.º"
 L["8th"] = "8.º"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
 	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
+L["All addons"] = "Todos los addons"
 L["All time"] = "Todo el tiempo"
 L["Attach to quest tracker"] = "Unir al rastreador de misiones"
 L["Bug"] = "Error"
@@ -59,6 +64,7 @@ L["Guild and group"] = "Hermandad y grupo"
 L["Guild and group members who use a Forever addon show up here."] =
 	"Los miembros de tu hermandad y grupo que usan un addon de Forever aparecen aquí."
 L["Hide this section"] = "Hide this section"
+L["Inspired by"] = "Inspirado por"
 L["Installed, turned off"] = "Instalado, desactivado"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
@@ -69,6 +75,7 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 L["Lock the tracker"] = "Bloquear el rastreador"
 L["No addon has attached its log yet."] = "Ningún addon ha adjuntado su registro todavía."
 L["No one has shared yet"] = "Nadie ha compartido todavía."
+L["No one is listed yet."] = "Todavía no hay nadie en la lista."
 L["Not installed"] = "No instalado"
 L["On"] = "Activado"
 L["Open"] = "Abrir"
@@ -81,6 +88,7 @@ L["Plans the cheapest route to your next profession rank."] =
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
 	"Planea la ruta más rápida a cualquier lugar y te guía hasta allí, con horarios en vivo de barcos y zepelines."
 L["Player"] = "Jugador"
+L["Players"] = "Jugadores"
 L["Players you've met"] = "Jugadores que has conocido"
 L["Players you've met who use a Forever addon show up here."] =
 	"Los jugadores que has conocido y que usan un addon de Forever aparecen aquí."
@@ -98,10 +106,13 @@ L["Show a quiet line where one of my other Forever addons would help. Only for a
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"Muestra los desafíos de legado que puedes avanzar en cada zona."
 L["Suggest my other Forever addons"] = "Sugerir mis otros addons Forever"
+L["Thanks"] = "Gracias"
+L["Thanks to %s"] = "Gracias a %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"Los addons Forever son gratuitos y no hay nada bloqueado tras un pago. Si te ayudan, puedes invitarme un café."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"El enlace está seleccionado. Presiona Ctrl+C (Cmd+C en Mac) y pégalo en un navegador; GitHub abrirá un reporte ya rellenado."
+L["The players who helped each Forever addon."] = "Los jugadores que ayudaron a cada complemento Forever."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"El texto está seleccionado. Pulsa Ctrl+C (Cmd+C en Mac) para copiarlo y pégalo en tu informe de error."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =

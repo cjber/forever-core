@@ -1,0 +1,373 @@
+import contextlib
+import io
+import string
+import tempfile
+import unittest
+from pathlib import Path
+
+from forever_tools import credits
+
+TABLE = """# Third-party inputs
+
+## Players
+
+| Who | What | Notes |
+|---|---|---|
+| [Brainc3ll](https://github.com/Brainc3ll) | The French translation | |
+| Someone | Reported the tracker drift ([#99](https://github.com/cjber/x/issues/99)) | |
+| Another | Fixed a plan (cjber/x#12, #3) | |
+|  | The empty row is skipped | |
+
+Prose after the table.
+
+## Inspired by
+
+| Who | What | Notes |
+|:---|---|---:|
+| [Questie](https://github.com/Questie/Questie) | The objective-tracker layout | |
+| A blog post | [A route idea](https://example.com/route) | |
+
+## Ideas and contributors
+
+| Who | What | Notes |
+|---|---|---|
+| Ignored | This old section is not a credit list | |
+"""
+
+
+class ParseTest(unittest.TestCase):
+    def test_reads_the_two_sections_and_ignores_any_other(self):
+        data = credits.parse(TABLE)
+        self.assertEqual(
+            data["players"],
+            [
+                {"name": "Brainc3ll", "what": "The French translation"},
+                {"name": "Someone", "what": "Reported the tracker drift"},
+                {"name": "Another", "what": "Fixed a plan"},
+            ],
+        )
+        self.assertEqual(
+            data["inspired"],
+            [
+                {"name": "Questie", "what": "The objective-tracker layout"},
+                {"name": "A blog post", "what": "A route idea"},
+            ],
+        )
+
+    def test_a_missing_section_is_an_empty_list(self):
+        data = credits.parse("# Nothing here\n")
+        self.assertEqual(data, {"players": [], "inspired": []})
+        data = credits.parse("## Players\n\n| Who | What | Notes |\n|---|---|---|\n| A | B | C |\n")
+        self.assertEqual(data["players"], [{"name": "A", "what": "B"}])
+        self.assertEqual(data["inspired"], [])
+
+    def test_rows_are_taken_as_written(self):
+        text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| A | **Bold** stays, and so does `code` | |\n"
+        self.assertEqual(credits.parse(text)["players"], [{"name": "A", "what": "**Bold** stays, and so does `code`"}])
+
+    def test_a_link_keeps_only_its_text_and_escaped_pipes_work(self):
+        text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| [A \\| B](u) | x \\| y | |\n"
+        self.assertEqual(credits.parse(text)["players"], [{"name": "A | B", "what": "x | y"}])
+
+    def test_markdown_backslash_escapes_become_the_plain_character(self):
+        text = (
+            "## Players\n| Who | What | Notes |\n|---|---|---|\n"
+            "| Sol\\_Deus | Fixed the \\*important\\* \\`startup\\` path | |\n"
+            "| \\[A\\] | See the \\#1 report and one \\| pipe | |\n"
+        )
+        self.assertEqual(
+            credits.parse(text)["players"],
+            [
+                {"name": "Sol_Deus", "what": "Fixed the *important* `startup` path"},
+                {"name": "[A]", "what": "See the #1 report and one | pipe"},
+            ],
+        )
+
+    def test_an_escaped_and_a_plain_name_read_the_same(self):
+        text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| \\_spada | One | |\n| _spada | Two | |\n"
+        self.assertEqual([entry["name"] for entry in credits.parse(text)["players"]], ["_spada", "_spada"])
+
+    def test_one_row_per_contribution_survives_in_table_order(self):
+        text = (
+            "## Players\n| Who | What | Notes |\n|---|---|---|\n"
+            "| Ada | Fixed one report | |\n"
+            "| Bob | Built an idea | |\n"
+            "| Ada | Fixed another report | |\n"
+            "| Ada | A translation | |\n"
+        )
+        data = credits.parse(text)
+        self.assertEqual([entry["name"] for entry in data["players"]], ["Ada", "Bob", "Ada", "Ada"])
+        rendered = credits.render(data)
+        self.assertLess(rendered.index('"Fixed one report"'), rendered.index('"Built an idea"'))
+        self.assertLess(rendered.index('"Built an idea"'), rendered.index('"Fixed another report"'))
+        self.assertLess(rendered.index('"Fixed another report"'), rendered.index('"A translation"'))
+
+    def test_a_backslash_before_a_letter_or_a_backslash_is_kept_or_unescaped(self):
+        text = "## Players\n| Who | What | Notes |\n|---|---|---|\n| A | C:\\Users stays, but one\\\\two joins | |\n"
+        self.assertEqual(credits.parse(text)["players"][0]["what"], "C:\\Users stays, but one\\two joins")
+
+    def test_every_ascii_punctuation_escape_is_resolved_and_nothing_else_is(self):
+        for char in string.punctuation:
+            self.assertEqual(credits.unescape("\\" + char), char)
+        self.assertEqual(credits.unescape("\\a\\1\\ "), "\\a\\1\\ ")
+
+    def test_issue_references_are_stripped_from_what_only(self):
+        data = credits.parse(TABLE)
+        self.assertNotIn("#99", data["players"][1]["what"])
+        self.assertNotIn("#12", data["players"][2]["what"])
+        self.assertNotIn("#", data["players"][0]["name"])
+
+
+class RenderTest(unittest.TestCase):
+    def test_the_file_names_its_source_and_both_lists(self):
+        text = credits.render({"players": [{"name": "Brainc3ll", "what": "The French translation"}], "inspired": []})
+        self.assertEqual(
+            text,
+            "-- Generated by tools/forever_tools/credits.py from THIRD_PARTY.md.\n"
+            "-- Do not edit: change THIRD_PARTY.md and run the generator.\n"
+            "local _, ns = ...\n"
+            "\n"
+            "ns.Credits = {\n"
+            '\tplayers = {\n\t\t{ name = "Brainc3ll", what = "The French translation" },\n\t},\n'
+            "\tinspired = {},\n"
+            "}\n",
+        )
+
+    def test_an_empty_file_still_has_both_lists(self):
+        text = credits.render({"players": [], "inspired": []})
+        self.assertIn("\tplayers = {},\n", text)
+        self.assertIn("\tinspired = {},\n", text)
+
+    def test_lua_strings_are_quoted(self):
+        text = credits.render({"players": [{"name": 'A "quoted" name', "what": "one\\two\nthree"}], "inspired": []})
+        self.assertIn(r'name = "A \"quoted\" name"', text)
+        self.assertIn(r'what = "one\\two\nthree"', text)
+
+    def test_an_apostrophe_is_written_as_it_is(self):
+        text = credits.render({"players": [{"name": "Bob's plan", "what": "The game's own layout"}], "inspired": []})
+        self.assertIn('name = "Bob\'s plan"', text)
+        self.assertIn('what = "The game\'s own layout"', text)
+
+    def test_a_long_row_expands_the_way_stylua_formats_it(self):
+        text = credits.render(
+            {
+                "players": [
+                    {
+                        "name": "Someone With A Long Name",
+                        "what": "A very long explanation of exactly what this person did for the addon over time",
+                    }
+                ],
+                "inspired": [],
+            }
+        )
+        self.assertIn(
+            "\t\t{\n"
+            '\t\t\tname = "Someone With A Long Name",\n'
+            '\t\t\twhat = "A very long explanation of exactly what this person did for the addon over time",\n'
+            "\t\t},\n",
+            text,
+        )
+
+
+class BlockTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.players = [
+            {"name": "Ada", "what": ""},
+            {"name": "Bob", "what": ""},
+            {"name": "Ada", "what": "again"},
+        ]
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+
+    def read(self, name):
+        return (self.root / name).read_text(encoding="utf-8")
+
+    def test_the_sentence_names_every_player_once_in_table_order(self):
+        self.assertEqual(
+            credits.sentence(self.players),
+            "Thanks to Ada, Bob and everyone who reported a bug or asked for a feature.",
+        )
+
+    def test_the_sentence_puts_most_rows_first_and_a_tie_in_table_order(self):
+        players = [
+            {"name": "Ada", "what": "One"},
+            {"name": "Bob", "what": "One"},
+            {"name": "Ada", "what": "Two"},
+            {"name": "Cid", "what": "One"},
+            {"name": "Ada", "what": "Three"},
+            {"name": "Bob", "what": "Two"},
+        ]
+        self.assertEqual(
+            credits.sentence(players),
+            "Thanks to Ada, Bob, Cid and everyone who reported a bug or asked for a feature.",
+        )
+
+    def test_no_players_gets_the_present_tense_sentence(self):
+        self.assertEqual(credits.sentence([]), "Thanks to everyone who reports a bug or asks for a feature.")
+
+    def test_the_block_is_marked_and_checked(self):
+        block = credits.render_block(self.players)
+        self.assertTrue(block.startswith(credits.BLOCK_START) and block.endswith(credits.BLOCK_END))
+        self.assertIn("Thanks to Ada, Bob", block)
+        self.write("README.md", f"# Addon\n\n## Credits\n\n{block}\n")
+        self.write("docs/curseforge.md", f"Pitch.\n\n{block}\n")
+        self.assertEqual(credits.block_problems(self.root, block), [])
+
+    def test_a_stale_or_malformed_block_fails(self):
+        block = credits.render_block(self.players)
+        stale = credits.render_block([{"name": "Old", "what": ""}])
+        self.write("README.md", f"# Addon\n\n{stale}\n")
+        self.write("docs/curseforge.md", f"Pitch.\n\n{credits.BLOCK_START}\n{credits.BLOCK_END}\n")
+        problems = credits.block_problems(self.root, block)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("README.md:3: the credits block differs", problems[0])
+        self.assertIn("docs/curseforge.md:3: the credits block differs", problems[1])
+
+    def test_readme_without_markers_fails_and_the_store_page_without_them_does_not(self):
+        block = credits.render_block(self.players)
+        self.write("README.md", "# Addon\n\nNo markers.\n")
+        self.write("docs/curseforge.md", "Pitch with no markers.\n")
+        problems = credits.block_problems(self.root, block)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("README.md: no <!-- forever-credits:start -->", problems[0])
+
+    def test_a_missing_readme_fails(self):
+        problems = credits.block_problems(self.root, credits.render_block(self.players))
+        self.assertEqual(problems, ["README.md: missing; it must carry the credits block"])
+
+    def test_fix_rewrites_in_place_and_leaves_other_files_alone(self):
+        block = credits.render_block(self.players)
+        stale = credits.render_block([{"name": "Old", "what": ""}])
+        readme = f"# Addon\n\nBefore.\n\n{stale}\n\nAfter.\n"
+        self.write("README.md", readme)
+        self.write("docs/curseforge.md", "No markers here.\n")
+        self.assertEqual(credits.block_fix(self.root, block), ["README.md"])
+        self.assertEqual(self.read("README.md"), readme.replace(stale, block))
+        self.assertEqual(self.read("docs/curseforge.md"), "No markers here.\n")
+        self.assertEqual(credits.block_fix(self.root, block), [])
+
+    def test_fix_keeps_crlf_line_endings(self):
+        block = credits.render_block(self.players)
+        stale = credits.render_block([]).replace("\n", "\r\n")
+        self.write("README.md", f"# Addon\r\n\r\n{stale}\r\n")
+        self.assertEqual(credits.block_fix(self.root, block), ["README.md"])
+        expected = f"# Addon\r\n\r\n{block}\r\n".replace("\n", "\r\n").replace("\r\r", "\r")
+        self.assertEqual((self.root / "README.md").read_bytes().decode("utf-8"), expected)
+        self.assertEqual(credits.block_problems(self.root, block), [])
+
+
+class OptOutTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.opt_out = self.root / "credits_opt_out.txt"
+        original = credits.OPT_OUT_FILE
+        credits.OPT_OUT_FILE = self.opt_out
+        self.addCleanup(setattr, credits, "OPT_OUT_FILE", original)
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_comments_and_blank_lines_are_not_names(self):
+        self.write("credits_opt_out.txt", "# A comment\n\nAda\n  BOB  \n")
+        self.assertEqual(credits.opt_out(), {"ada", "bob"})
+        players = [
+            {"name": "Ada", "what": ""},
+            {"name": "Bob", "what": ""},
+            {"name": "Cid", "what": ""},
+        ]
+        self.assertEqual(credits.opted_out(players), ["Ada", "Bob"])
+
+    def test_a_missing_file_opts_no_one_out(self):
+        self.write("credits_opt_out.txt", "# Nobody yet\n")
+        self.assertEqual(credits.opt_out(), set())
+        self.assertEqual(credits.opted_out([{"name": "Ada", "what": ""}]), [])
+
+    def test_a_listed_name_stops_generation_and_check(self):
+        self.write(
+            "THIRD_PARTY.md",
+            "## Players\n\n| Who | What | Notes |\n|---|---|---|\n"
+            "| [SOL\\_DEUS](https://github.com/sol) | Fixed a report | |\n",
+        )
+        self.write("credits_opt_out.txt", "# One name per line.\nsol_deus\n")
+        self.write("README.md", "# Addon\n\n" + credits.render_block([]) + "\n")
+        for argv in ([], ["--check"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit) as raised:
+                credits.main(self.root, argv)
+            message = str(raised.exception)
+            self.assertIn("THIRD_PARTY.md", message)
+            self.assertIn('"SOL_DEUS"', message)
+            self.assertIn("credits_opt_out.txt", message)
+        self.assertFalse((self.root / "Data/Credits.lua").exists())
+
+
+class MainTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_it_writes_the_file_and_then_checks_it(self):
+        self.write("THIRD_PARTY.md", TABLE)
+        players = credits.parse(TABLE)["players"]
+        self.write("README.md", f"# Addon\n\n## Credits\n\n{credits.render_block(players)}\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(credits.main(self.root, []), 0)
+            self.assertEqual(credits.main(self.root, ["--check"]), 0)
+        self.assertIn("wrote Data/Credits.lua", out.getvalue())
+        self.assertTrue((self.root / "Data/Credits.lua").is_file())
+
+    def test_check_fails_on_a_stale_or_missing_file(self):
+        self.write("THIRD_PARTY.md", TABLE)
+        for name in (None, "stale"):
+            if name:
+                self.write("Data/Credits.lua", "ns.Credits = {}\n")
+            else:
+                path = self.root / "Data/Credits.lua"
+                if path.exists():
+                    path.unlink()
+            with self.assertRaises(SystemExit) as raised:
+                credits.main(self.root, ["--check"])
+            self.assertIn("Data/Credits.lua", str(raised.exception))
+            self.assertIn("stale", str(raised.exception))
+
+    def test_check_fails_on_a_stale_or_missing_block(self):
+        self.write("THIRD_PARTY.md", TABLE)
+        self.write("Data/Credits.lua", credits.render(credits.parse(TABLE)))
+        self.write("README.md", "# Addon\n")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(credits.main(self.root, ["--check"]), 1)
+        self.assertIn("README.md: no", err.getvalue())
+        self.write("README.md", "# Addon\n\n" + credits.render_block([]) + "\n")
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(credits.main(self.root, ["--check"]), 1)
+        self.assertIn("README.md:3: the credits block differs", err.getvalue())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(credits.main(self.root, []), 0)
+            self.assertEqual(credits.main(self.root, ["--check"]), 0)
+        self.assertIn("README.md: credits block rewritten", out.getvalue())
+
+    def test_a_missing_third_party_file_is_named(self):
+        with self.assertRaisesRegex(SystemExit, "THIRD_PARTY.md is missing"):
+            credits.main(self.root, ["--check"])
+
+
+if __name__ == "__main__":
+    unittest.main()
