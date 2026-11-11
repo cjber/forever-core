@@ -552,14 +552,14 @@ local function Client()
 	return named
 end
 
--- The TOC's files, in order, the way the client loads them.
+-- The TOC's files, in order, the way the client loads them. XML templates are registered by the client loader; this
+-- fake client runs Lua files only.
+local Toc = dofile(".agents/skills/wow-forever-addon/tooling/forever_sim/toc.lua")
 local function tocFiles()
 	local files = {}
-	for line in io.lines("ForeverCore.toc") do
-		line = line:gsub("\r$", "")
-		-- XML templates are registered by the client loader; this fake client runs Lua files only.
-		if not (line:match("^%s*$") or line:match("^%s*#")) and line:match("%.lua$") then
-			files[#files + 1] = (line:gsub("\\", "/"))
+	for _, entry in ipairs(Toc.files(".", "ForeverCore.toc")) do
+		if entry.kind == "lua" then
+			files[#files + 1] = entry.path
 		end
 	end
 	return files

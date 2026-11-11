@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: TOC Reader Fixture
+
+# A commented line is not a file.
+Files\Root.xml
+Files\Last.lua

@@ -6,14 +6,13 @@ local function check(value, message)
 	checks = checks + 1
 end
 
--- The TOC is the one list of what ships, so a file it names must exist and every shared file must be named.
+-- The TOC is the one list of what ships, so a file it names must exist and every shared file must be named. The
+-- shared reader expands its XML entry the way the client does, UI/TrackerSection.xml included.
+local Toc = dofile(".agents/skills/wow-forever-addon/tooling/forever_sim/toc.lua")
 local function tocFiles()
 	local files = {}
-	for line in io.lines("ForeverCore.toc") do
-		line = line:gsub("\r$", "")
-		if not (line:match("^%s*$") or line:match("^%s*#")) then
-			files[#files + 1] = (line:gsub("\\", "/"))
-		end
+	for _, entry in ipairs(Toc.files(".", "ForeverCore.toc")) do
+		files[#files + 1] = entry.path
 	end
 	return files
 end

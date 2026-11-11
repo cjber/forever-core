@@ -1,0 +1,5 @@
+<Ui>
+	<Frame name="ChildTemplate" virtual="true"/>
+	<Include file="Grandchild.xml"/>
+	<Script file="../Scripts/Child.lua"/>
+</Ui>
