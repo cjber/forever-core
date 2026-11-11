@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-11
+
 ### For addon authors
 
 - An addon spec that loads core without `UI/Credits.lua` no longer fails in `Expose.lua`. (#461)
