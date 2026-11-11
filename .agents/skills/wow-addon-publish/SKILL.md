@@ -112,34 +112,36 @@ does not outlast the tool call. Confirm every change after a reload or on the pu
 press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
 CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).
 
-**CurseForge gallery.** The `file_upload` tool cannot reach this page: its file input is created
-detached on click, and a real click opens a native picker that blocks the tab. Instead:
+**CurseForge gallery.** Upload from the current `origin/main` render. Take the title from
+`docs/curseforge.md` first, then `docs/gallery.md`. The media title limit is 128 characters.
 
-1. Override `HTMLInputElement.prototype.click` to capture `file` inputs without opening a picker.
-2. Click "Add media", then "Upload or Drag Image".
-3. Fetch the image from `raw.githubusercontent.com` into a `File`, set the captured input's `files` from
-   a `DataTransfer`, dispatch `change`. Convert anything over 2 MB in the page: canvas, JPEG, quality 0.9.
-4. Wait about 5 s between images. New images land last, and their caption is a filename.
-5. Click the card, replace Title, click Apply, and use the side arrows for the next image. Move on only
-   after Apply dims. Check for a filename left in Description and an unwanted Feature Media star, which
-   can appear after processing.
+1. CurseForge rejects uploads of 2 MB or more. For oversized still PNGs, stage lossless WebP
+   copies under 2,000,000 bytes. Check dimensions and decoded RGBA pixels against the source
+   before uploading. Keep the tracked PNG and its links; keep animated GIFs animated.
+2. In Chrome, open "Add media", arm the Playwright `filechooser` event, then click "Upload or
+   Drag Image" and call `setFiles` on the chooser with the staged absolute path. The input is
+   created on click. This avoids a native picker. The ChatGPT Chrome extension needs "Allow
+   access to file URLs" to attach a local file.
+3. A new card lands last with a filename for its title. Save its image URL and use it to
+   identify the card, including when the old card has the same caption. If an upload times
+   out, read the author gallery before retrying.
+4. Click the new image to open its editor. Set Title, click Apply, check the saved caption
+   on that card, then close with Cancel if the editor stays open. Check Description and
+   Feature Media for unintended changes. Read the cards back after a reload; the Core API
+   can lag behind the author page.
 
-To reorder, open "Reorder gallery" after a full page load: the dialog can keep another project's list
-after in-app navigation. A mouse drag does nothing, so `focus()` the `li.sortable-screenshot-element`,
-press real keys, wait 4 s, read the order and click Done. The list is a grid three cards wide and
-the arrows move by position on screen: Left and Right move one place within a row, Up and Down move a
-whole row, and Left does nothing from the first column. Send space, the arrow (with `repeat` for more
-than one) and space as separate key calls: several keys in one string drop presses, and a dropped
-space leaves the sorter stuck until Done and a reload. Read the order after each move. The author
-site's order can flip between reloads even after a good save: confirm on the public
-`curseforge.com/wow/addons/<slug>/gallery` page. That page can serve a replaced file from cache for
-hours; when only the public copy is stale, check it again later.
+To reorder, open "Reorder gallery" after a full page load: in-app navigation can leave the
+previous project's list in the dialog. Use the sortable card's keyboard controls: press Space
+to pick it up, wait until it is active, send arrow keys separately, then press Space to drop it.
+Measure the current grid width; Up and Down move by a row and Left and Right move within a
+row. Re-read the image URLs in order after each drop, click Done, then check after a reload
+and on `curseforge.com/wow/addons/<slug>/gallery`. The public page can lag behind the author page.
 
-To delete, hover the card so its pencil and trash buttons render, click the trash and then OK in
-the "Delete media" dialog, one card at a time with a screenshot before each click. The buttons exist
-only on the hovered card, so a script that walks up from an image to "the last button" lands on a
-different card's trash. Screenshot coordinates differ from `getBoundingClientRect`; take positions
-from the screenshot.
+For an approved removal, identify the old card by image URL and verify its replacement
+first. Hover the exact card to reveal its trash button and selection checkbox. For a batch,
+check the selected image URLs and count against the approved list before confirming.
+Wait for those cards to disappear before leaving the page. Reload and read back before
+retrying a deletion, as the first reload can still show stale cards.
 
 ## Keep galleries in sync
 
