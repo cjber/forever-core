@@ -28,13 +28,16 @@ local function region(kind, parent)
 		textures = {},
 		text = "",
 		rows = {},
+		points = {},
 	}
 	local methods = {}
 	function methods:SetPoint(...)
 		self.point = { ... }
+		self.points[#self.points + 1] = { ... }
 	end
 	function methods:ClearAllPoints()
 		self.point = nil
+		self.points = {}
 	end
 	function methods:SetFrameStrata(setting)
 		self.strata = setting
@@ -145,14 +148,17 @@ local function region(kind, parent)
 	function methods:CreateTexture(layer)
 		local texture = region("Texture", self)
 		texture.layer = layer
-		function texture.SetAtlas(texture_, atlas)
-			texture_.atlas = atlas
+		function texture.SetAtlas(texture_, atlas, useAtlasSize)
+			texture_.atlas, texture_.useAtlasSize = atlas, useAtlasSize
 		end
 		function texture.SetAllPoints(texture_)
 			texture_.allPoints = true
 		end
 		function texture.SetColorTexture(texture_, r, g, b, a)
 			texture_.color = { r, g, b, a }
+		end
+		function texture.SetDrawLayer(texture_, drawLayer, subLevel)
+			texture_.drawLayer, texture_.subLevel = drawLayer, subLevel
 		end
 		self.textures[#self.textures + 1] = texture
 		return texture
@@ -231,12 +237,6 @@ local ns = {
 		__index = function(_, key)
 			if key == "MENU_BACK" then
 				return "Back"
-			elseif key == "MENU_CHECKED" then
-				return "[x] %s"
-			elseif key == "MENU_UNCHECKED" then
-				return "[ ] %s"
-			elseif key == "MENU_SUBMENU" then
-				return "%s >"
 			end
 			return key
 		end,
@@ -268,7 +268,10 @@ local popup = env.ForeverCoreContextMenu
 check(popup ~= nil, "the suite's popup is built")
 equal(popup:IsShown(), true, "owned menu opens")
 equal(popup.rows[3]:GetHeight(), 20, "compact dropdown rows")
-equal(popup.rows[3].fontString:GetText(), "First >", "button uses its compact text label")
+equal(popup.rows[3].fontString:GetText(), "First", "button uses its compact text label")
+equal(popup.rows[3].arrow.atlas, "common-dropdown-icon-next", "a submenu carries the client's expand arrow")
+equal(popup.rows[3].arrow.shown, true, "the submenu arrow is shown")
+equal(popup.rows[3].indicator.shown, false, "a plain submenu row carries no checkbox")
 equal(popup:GetParent(), env.UIParent, "popup escapes owner scroll clipping")
 equal(popup.rows[1]:IsEnabled(), false, "title not actionable")
 equal(popup.rows[2]:IsEnabled(), false, "disabled action stays disabled")
@@ -278,7 +281,7 @@ popup.rows[2].scripts.OnClick(popup.rows[2])
 popup.rows[1].scripts.OnClick(popup.rows[1])
 equal(popup.rows[1]:GetText(), "Back", "deep back retains parent navigation")
 popup.rows[1].scripts.OnClick(popup.rows[1])
-equal(popup.rows[3]:GetText(), "First >", "back returns root")
+equal(popup.rows[3]:GetText(), "First", "back returns root")
 popup.rows[3].scripts.OnClick(popup.rows[3])
 popup.rows[2].scripts.OnClick(popup.rows[2])
 popup.rows[2].scripts.OnClick(popup.rows[2])
@@ -296,10 +299,44 @@ ns.ContextMenu(owner, function(_, root)
 		end, value)
 	end
 end)
-equal(popup.rows[1]:GetText(), "[x] 50%", "the chosen radio is marked")
-equal(popup.rows[2]:GetText(), "[ ] 100%", "the other radio is not")
+equal(popup.rows[1]:GetText(), "50%", "a radio label carries no marker text")
+equal(popup.rows[1].indicator.atlas, "common-dropdown-tickradial", "a radio draws the client's radio art")
+equal(popup.rows[1].indicator.shown, true, "the radio art is shown")
+equal(popup.rows[1].tick.atlas, "common-dropdown-icon-radialtick-yellow", "a chosen radio draws the client's dot")
+equal(popup.rows[1].tick.shown, true, "the chosen radio is marked")
+equal(popup.rows[2]:GetText(), "100%", "the other radio label carries no marker text")
+equal(popup.rows[2].tick.shown, false, "the other radio is not")
 popup.rows[2].scripts.OnClick(popup.rows[2])
 equal(picked, 1, "a radio hands its data to the setter")
+
+-- A checkbox row draws the client's tick square.
+local attached = false
+ns.ContextMenu(owner, function(_, root)
+	root:CreateCheckbox("Attach", function()
+		return attached
+	end, function()
+		attached = not attached
+	end)
+end)
+local checkRow = popup.rows[1]
+equal(checkRow:GetText(), "Attach", "a checkbox label carries no marker text")
+equal(checkRow.indicator.atlas, "common-dropdown-ticksquare", "a checkbox draws the client's tick square")
+equal(checkRow.indicator.shown, true, "the tick square is shown")
+equal(checkRow.tick.atlas, "common-dropdown-icon-checkmark-yellow", "a checked box draws the client's checkmark")
+equal(checkRow.tick.shown, false, "an unchecked box draws no checkmark")
+check(checkRow:GetWidth() >= checkRow:GetTextWidth() + 12 + 7 + 16, "the checkbox row holds its art and label")
+checkRow.scripts.OnClick(checkRow)
+equal(attached, true, "a checkbox toggle writes the setting")
+equal(popup:IsShown(), false, "a checkbox toggle closes the menu")
+
+-- A long submenu label still leaves room for the arrow inside its row.
+local longSubmenu = "A submenu label long enough to size the row past its minimum"
+ns.ContextMenu(owner, function(_, root)
+	root:CreateButton(longSubmenu):CreateButton("Inside", function() end)
+end)
+local longRow = popup.rows[1]
+equal(longRow:GetText(), longSubmenu, "a submenu label carries no arrow text")
+check(longRow:GetWidth() >= longRow:GetTextWidth() + 17 + 4 + 16, "a submenu row leaves room for its arrow")
 
 -- A long level scrolls, and a level that sets its own extent scrolls past it.
 ns.ContextMenu(owner, function(_, root)

@@ -41,18 +41,20 @@ function Description:CreateCheckbox(text, selected, action)
 	return entry
 end
 
--- Blizzard's radio contract: setSelected gets the entry's data. The suite's text rows mark a radio as a checkbox.
+-- Blizzard's radio contract: setSelected gets the entry's data.
 ---@param text string
 ---@param selected fun(data: any): boolean
 ---@param action fun(data: any)
 ---@param data? any
 ---@return ForeverMenuDescription
 function Description:CreateRadio(text, selected, action, data)
-	return self:CreateCheckbox(text, function()
+	local entry = self:CreateCheckbox(text, function()
 		return selected(data)
 	end, function()
 		action(data)
 	end)
+	entry.kind = "radio"
+	return entry
 end
 
 function Description:SetEnabled(enabled)
@@ -79,15 +81,25 @@ end
 -- The popup is as wide as its longest entry: a fixed row width cut titles such as a step's "Complete objectives,
 -- ..." with no way to read them. The body width is capped so one very long line cannot run off the screen; a row cut
 -- at the cap carries its whole text in a tooltip, unless the entry already has one of its own.
-local BODY_MIN, FRAME_PAD, ROW_INSET, TEXT_PADDING, BODY_MAX = 180, 24, 12, 20, 600
+local BODY_MIN, FRAME_PAD, ROW_INSET, ROW_TEXT_INSET, TEXT_SLACK, BODY_MAX = 180, 24, 12, 8, 4, 600
 -- A level scrolls past its SetScrollMode extent, or past this one; the popup's frame adds 14 px around the rows.
 local SCROLL_EXTENT, FRAME_HEIGHT_PAD = 406, 14
+-- Blizzard_Menu's own selection art at its native size: a tick square, a radio, and the next arrow that stands in for
+-- the client's loose submenu arrow, which is pre-Legion chrome the blacklist refuses.
+local CHECK_SIZE, RADIO_SIZE, ARROW_SIZE = 12, 18, 17
+local CHECK_GAP, RADIO_GAP, ARROW_GAP = 7, 1, 4
+
+---@class ForeverContextMenuRow : Button
+---@field indicator Texture
+---@field tick Texture
+---@field arrow Texture
+---@field label FontString
 
 ---@class ForeverMenuScrollFrame : ScrollFrame
 ---@field ScrollBar Frame
 
 ---@class ForeverContextPopup : Frame
----@field rows Button[]
+---@field rows ForeverContextMenuRow[]
 ---@field owner? Region
 ---@field body Frame
 ---@field scroll ForeverMenuScrollFrame
@@ -212,36 +224,78 @@ function Draw(root)
 	for index, entry in ipairs(entries) do
 		local row = frame.rows[index]
 		if not row then
-			row = CreateFrame("Button", nil, frame.body) --[[@as Button]]
+			row = CreateFrame("Button", nil, frame.body) --[[@as ForeverContextMenuRow]]
 			local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-			text:SetPoint("LEFT", 8, 0)
-			text:SetPoint("RIGHT", -8, 0)
 			text:SetJustifyH("LEFT")
+			row.label = text
 			row:SetFontString(text)
 			row:SetNormalFontObject("GameFontHighlightSmall")
 			row:SetDisabledFontObject("GameFontDisableSmall")
 			local highlight = row:CreateTexture(nil, "HIGHLIGHT")
 			highlight:SetAllPoints()
 			highlight:SetColorTexture(1, 1, 1, 0.08)
+			row.indicator = row:CreateTexture(nil, "ARTWORK")
+			row.tick = row:CreateTexture(nil, "ARTWORK")
+			row.tick:SetDrawLayer("ARTWORK", 1)
+			row.arrow = row:CreateTexture(nil, "ARTWORK")
 			frame.rows[index] = row
 		end
 		local height = entry.kind == "divider" and 6 or 20
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", 6, -y)
-		local selected = entry.isSelected and entry.isSelected()
+		local selected = entry.isSelected and entry.isSelected() and true or false
+		local submenu = #entry.entries > 0
 		local label = entry.text or ""
-		if entry.kind == "checkbox" then
-			label = (selected and ns.L.MENU_CHECKED or ns.L.MENU_UNCHECKED):format(label)
-		elseif #entry.entries > 0 then
-			label = ns.L.MENU_SUBMENU:format(label)
-		end
 		row:SetDisabledFontObject(entry.kind == "title" and "GameFontNormalSmall" or "GameFontDisableSmall")
 		row:SetText(label)
-		local width = math.min(math.max(BODY_MIN - ROW_INSET, row:GetTextWidth() + TEXT_PADDING), BODY_MAX - ROW_INSET)
+
+		-- Checkbox and radio rows use the art Blizzard_Menu draws, left of the label and at its native size.
+		local indicatorAtlas = (entry.kind == "checkbox" and "common-dropdown-ticksquare")
+			or (entry.kind == "radio" and "common-dropdown-tickradial")
+		local tickAtlas = (entry.kind == "checkbox" and "common-dropdown-icon-checkmark-yellow")
+			or (entry.kind == "radio" and "common-dropdown-icon-radialtick-yellow")
+		local indicatorSize = entry.kind == "checkbox" and CHECK_SIZE or (entry.kind == "radio" and RADIO_SIZE or 0)
+		local gap = entry.kind == "checkbox" and CHECK_GAP or (entry.kind == "radio" and RADIO_GAP or 0)
+		local tickX = entry.kind == "checkbox" and 2 or 0
+		local tickY = entry.kind == "checkbox" and 1 or 0
+		local left = ROW_TEXT_INSET
+		row.label:ClearAllPoints()
+		if indicatorAtlas and tickAtlas then
+			row.indicator:SetAtlas(indicatorAtlas, true)
+			row.indicator:ClearAllPoints()
+			row.indicator:SetPoint("LEFT", ROW_TEXT_INSET, 0)
+			row.indicator:Show()
+			row.tick:SetAtlas(tickAtlas, true)
+			row.tick:ClearAllPoints()
+			row.tick:SetPoint("CENTER", row.indicator, "CENTER", tickX, tickY)
+			row.tick:SetShown(selected)
+			row.label:SetPoint("LEFT", row.indicator, "RIGHT", gap, tickY)
+			left = left + indicatorSize + gap
+		else
+			row.indicator:Hide()
+			row.tick:Hide()
+			row.label:SetPoint("LEFT", ROW_TEXT_INSET, 0)
+		end
+		local right = ROW_TEXT_INSET
+		if submenu then
+			row.arrow:SetAtlas("common-dropdown-icon-next", true)
+			row.arrow:ClearAllPoints()
+			row.arrow:SetPoint("RIGHT", -ROW_TEXT_INSET, 0)
+			row.arrow:Show()
+			right = right + ARROW_SIZE + ARROW_GAP
+			row.label:SetPoint("RIGHT", -(ROW_TEXT_INSET + ARROW_SIZE + ARROW_GAP), 0)
+		else
+			row.arrow:Hide()
+			row.label:SetPoint("RIGHT", -ROW_TEXT_INSET, 0)
+		end
+		local width = math.min(
+			math.max(BODY_MIN - ROW_INSET, row:GetTextWidth() + left + right + TEXT_SLACK),
+			BODY_MAX - ROW_INSET
+		)
 		row:SetSize(width, height)
 		bodyWidth = math.max(bodyWidth, width + ROW_INSET)
 		-- A row cut at the cap cannot show its whole line, so its tooltip does.
-		local truncated = entry.tooltip == nil and row:GetTextWidth() > width - TEXT_PADDING
+		local truncated = entry.tooltip == nil and row:GetTextWidth() > width - left - right
 		row:SetEnabled(entry.kind ~= "title" and entry.kind ~= "divider" and entry:IsEnabled())
 		row:SetMotionScriptsWhileDisabled(true)
 		row:SetScript("OnClick", function()

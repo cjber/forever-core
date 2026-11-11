@@ -126,6 +126,3 @@ L["boards"] = "списки"
 L.MINIMAP_UNAVAILABLE =
 	"Миникарта недоступна; пользовательская кнопка пропущена."
 L["MENU_BACK"] = "Назад"
-L["MENU_CHECKED"] = "[x] %s"
-L["MENU_UNCHECKED"] = "[ ] %s"
-L["MENU_SUBMENU"] = "%s >"

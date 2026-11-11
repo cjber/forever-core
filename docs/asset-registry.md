@@ -221,10 +221,12 @@ pinned build does not have, or the declared path repeated in shipped Lua.
 
 ## What the addons actually reference today
 
-Eleven atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
+Sixteen atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
 `questlog-icon-setting`, `common-icon-checkmark`, `common-dropdown-c-button-hover-arrow`,
-`checkmark-minimal`, `Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`,
-`UI-HUD-CoolDownManager-Bar`, `UI-HUD-CoolDownManager-Bar-BG`, `bags-roundhighlight`; `map-icon-suramardoor.tga`,
+`common-dropdown-ticksquare`, `common-dropdown-icon-checkmark-yellow`, `common-dropdown-tickradial`,
+`common-dropdown-icon-radialtick-yellow`, `common-dropdown-icon-next`, `checkmark-minimal`,
+`Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`, `UI-HUD-CoolDownManager-Bar`,
+`UI-HUD-CoolDownManager-Bar-BG`, `bags-roundhighlight`; `map-icon-suramardoor.tga`,
 `media/Dot.tga`, `media/TooltipBorder*.tga`, plus the allowlisted native widget pieces `WhiteIconFrame`,
 `ButtonHilight-Square` and `UI-QuestTitleHighlight`. The shared minimap button uses LibDBIcon's three loose
 pieces by FileDataID, the same construction Questie's, RXP's and AtlasLoot's buttons already wear on the
