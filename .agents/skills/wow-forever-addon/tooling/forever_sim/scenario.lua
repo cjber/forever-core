@@ -91,6 +91,18 @@ function M.install(Sim)
 		return self.run(f, ...)
 	end
 
+	-- Presses Escape as fresh hardware input: the client's own ToggleGameMenu, which walks every Escape handler
+	-- secure code has registered, Blizzard's and addons'.
+	function Sim:pressEscape()
+		local G = self.G
+		self:input(function()
+			if G.ToggleGameMenu then
+				G.ToggleGameMenu()
+			end
+		end)
+		self:advance(0.1)
+	end
+
 	function Sim:showPanel(frame)
 		local G = self.G
 		self.run(function()
@@ -710,6 +722,8 @@ function M.install(Sim)
 			touch(sim)
 			sim:closeWorldMap()
 			touch(sim)
+			sim:pressEscape()
+			touch(sim)
 		end
 
 		local function combat(sim)
@@ -719,6 +733,7 @@ function M.install(Sim)
 			end
 			sim:openWorldMap()
 			sim:closeWorldMap()
+			sim:pressEscape()
 			sim:leaveCombat()
 		end
 

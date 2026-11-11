@@ -64,6 +64,8 @@ Sim.CORE = {
 	"Blizzard_ActionBar/Shared/ActionButton.lua",
 	"Blizzard_ActionBar/Shared/ActionButtonComponentTemplate.xml",
 	"Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml",
+	-- The Escape handler registry Blizzard_ActionBar loads at startup: addons register into its file-local list.
+	"Blizzard_GameMenuEsc",
 	-- The gamepad action bars are real: they are where UpdateInteractIcons makes its protected call. The action
 	-- bar templates above supply the buttons they inherit; the gamepad UI's own setup registers the target and
 	-- soft-interact callbacks and reacts to binding-set changes.

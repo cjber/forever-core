@@ -238,6 +238,18 @@ test("a Blizzard menu opened from addon code under the gamepad interface taints 
 	end)
 end)
 
+test("pressing Escape names the Blizzard handler list an addon wrote", function()
+	local sim = fixtureSim("SimGameMenuEsc")
+	sim:enterCombat()
+	sim:pressEscape()
+	local hits = sim.gamepadTaint("SimGameMenuEsc")
+	assert(#hits > 0, "Blizzard's secure read of the handler list was not recorded")
+	local report = sim.watch.describe(hits)
+	assert(has(report, "written by SimGameMenuEsc"), report)
+	assert(has(report, "Blizzard_GameMenuEsc/Blizzard_GameMenuEsc.lua"), report)
+	assert(has(report, "read by secure code"), report)
+end)
+
 test("an addon frame's own mouse scripts are not a taint slot", function()
 	local sim = fixtureSim("SimTaintMouseScripts")
 	sim.run(function()

@@ -8,6 +8,7 @@
 - **The out-of-date warning survives an English-only phrase table.** An addon whose `ns.L` maps each English phrase to `true` no longer throws inside the warning's `string.format` and hides the warning behind a load error: `tools/consumer/ForeverRequire.lua` now takes a phrase only when it is a string and falls back to the key otherwise.
 - **`tools/check_consumers.py` checks the TOC's core tag.** An addon whose root TOC lists ForeverCore in `## Dependencies` now also fails when `## X-Forever-Core:` is missing or differs from `tools/forever-core.txt`, the field a sibling addon reads to name an out-of-date core.
 - **A slash command the client already owns fails the gate.** `tools/check_slash_words.py` compares every addon `SLASH_<KEY><n>` word with the client's own GlobalStrings in all shipped locales (`tools/client_slash_words.txt`) and names the file, line, word and client key, so a `/ma` that the chat box runs as main assist never ships unnoticed. `sim:slash` refuses such a word too, so an addon whose command the client shadows fails its exercise run. (#323)
+- **The simulator boots the client's Escape handler registry and presses Escape.** `Sim:pressEscape()` runs `ToggleGameMenu` as fresh input, `sim:exercise()` presses it in and out of combat, and `Blizzard_GameMenuEsc` is loaded at startup, so an addon handler registered there is reported with `Blizzard_GameMenuEsc.lua`, the slot it wrote and the writing addon. (#315)
 
 ## [1.5.0] - 2026-11-11
 
