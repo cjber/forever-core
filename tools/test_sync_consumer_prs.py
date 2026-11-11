@@ -714,6 +714,11 @@ class BundleTest(unittest.TestCase):
         self.toc.write_text(self.TOC, encoding="utf-8")
         self.changelog = self.root / "CHANGELOG.md"
         self.changelog.write_text(self.CHANGELOG, encoding="utf-8")
+        # These tests run offline: the released-tag reads are faked per test, and no tag is a released sync entry.
+        for name, value in (("latest_release_tag", None), ("remote_tag_exists", False)):
+            patcher = mock.patch.object(sync, name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def bump(self, latest="v1.4.0"):
         """`bump_pin`, with its notices kept out of the test output."""
@@ -881,6 +886,62 @@ class BundleTest(unittest.TestCase):
         self.assertEqual(self.changelog.read_text(encoding="utf-8"), marked)
         self.assertIn("no second entry added", out.getvalue())
 
+    MARKED_RELEASED = (
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n"
+        "## [1.2.4] - 2026-11-11\n\n"
+        f"{sync.SYNC_MARKER}\n\n"
+        f"{sync.SYNC_BULLET}\n\n"
+        "## [1.2.3] - 2026-11-01\n\n"
+        "- An older entry.\n"
+    )
+
+    def test_an_already_released_marked_entry_gets_a_new_marked_entry_above_it(self):
+        self.changelog.write_text(self.MARKED_RELEASED, encoding="utf-8")
+        with mock.patch.object(sync, "remote_tag_exists", return_value=True):
+            self.assertTrue(sync.add_changelog_entry(self.root, self.DAY))
+        text = self.changelog.read_text(encoding="utf-8")
+        self.assertIn(
+            f"## [1.2.5] - 2026-11-11\n\n{sync.SYNC_MARKER}\n\n{sync.SYNC_BULLET}\n",
+            text,
+        )
+        self.assertIn("## [1.2.4] - 2026-11-11\n", text)
+        self.assertEqual(text.count(sync.SYNC_MARKER), 2)
+
+    def test_an_unreleased_marked_entry_gets_no_second_entry(self):
+        self.changelog.write_text(self.MARKED_RELEASED, encoding="utf-8")
+        with mock.patch.object(sync, "remote_tag_exists", return_value=False):
+            self.assertFalse(sync.add_changelog_entry(self.root, self.DAY))
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.MARKED_RELEASED)
+
+    def test_a_pin_that_already_matches_still_gets_an_entry_when_the_release_bundles_an_older_core(self):
+        self.pin.write_text("v1.4.0\n", encoding="utf-8")
+        self.pkgmeta.write_text(self.PKGMETA.replace("v1.3.2", "v1.4.0"), encoding="utf-8")
+        self.toc.write_text(self.TOC_WITH_FIELD.replace("v1.3.2", "v1.4.0"), encoding="utf-8")
+        self.changelog.write_text(self.MARKED_RELEASED, encoding="utf-8")
+        with (
+            mock.patch.object(sync, "latest_release_tag", return_value="v1.2.4"),
+            mock.patch.object(sync, "released_core_tag", return_value="v1.3.2"),
+            mock.patch.object(sync, "remote_tag_exists", return_value=True),
+        ):
+            self.assertIsNone(sync.bump_pin(self.root, "v1.4.0", self.DAY))
+        text = self.changelog.read_text(encoding="utf-8")
+        self.assertIn("## [1.2.5] - 2026-11-11\n", text)
+        self.assertEqual(text.count(sync.SYNC_MARKER), 2)
+
+    def test_a_latest_release_that_already_bundles_the_pin_gets_no_entry(self):
+        self.pin.write_text("v1.4.0\n", encoding="utf-8")
+        self.pkgmeta.write_text(self.PKGMETA.replace("v1.3.2", "v1.4.0"), encoding="utf-8")
+        self.toc.write_text(self.TOC_WITH_FIELD.replace("v1.3.2", "v1.4.0"), encoding="utf-8")
+        self.changelog.write_text(self.MARKED_RELEASED, encoding="utf-8")
+        with (
+            mock.patch.object(sync, "latest_release_tag", return_value="v1.2.4"),
+            mock.patch.object(sync, "released_core_tag", return_value="v1.4.0"),
+            mock.patch.object(sync, "remote_tag_exists", return_value=True),
+        ):
+            self.assertIsNone(sync.bump_pin(self.root, "v1.4.0", self.DAY))
+        self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.MARKED_RELEASED)
+
     def test_a_consumer_without_a_pkgmeta_moves_its_pin_and_gets_no_entry(self):
         self.pkgmeta.unlink()
         self.toc.unlink()
@@ -911,6 +972,65 @@ class BundleTest(unittest.TestCase):
         self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", (addon / ".pkgmeta").read_text(encoding="utf-8"))
         self.assertIn("## X-Forever-Core: v1.4.0\n", (addon / "KilnForever.toc").read_text(encoding="utf-8"))
         self.assertIn(sync.SYNC_BULLET, (root / "CHANGELOG.md").read_text(encoding="utf-8"))
+
+
+class RemoteReleaseTest(unittest.TestCase):
+    """The facts the changelog decision reads, all from the consumer's remote rather than the shallow clone."""
+
+    def test_a_tag_is_checked_on_origin(self):
+        calls = []
+
+        def fake_git(root, *args, check=True):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "abc\trefs/tags/v1.9.0\n", "")
+
+        with mock.patch.object(sync, "git", side_effect=fake_git):
+            self.assertTrue(sync.remote_tag_exists(Path("/tmp/legacy-forever"), "v1.9.0"))
+        self.assertIn("ls-remote", calls[0])
+        self.assertIn("origin", calls[0])
+        self.assertIn("refs/tags/v1.9.0", calls[0])
+
+    def test_the_newest_release_tag_is_compared_numerically(self):
+        output = "a\trefs/tags/v1.9.0\nb\trefs/tags/v1.10.0\nc\trefs/tags/not-a-release\n"
+
+        def fake_git(root, *args, check=True):
+            return subprocess.CompletedProcess(args, 0, output, "")
+
+        with mock.patch.object(sync, "git", side_effect=fake_git):
+            self.assertEqual(sync.latest_release_tag(Path("/tmp/legacy-forever")), "v1.10.0")
+
+    def test_the_released_bundle_is_read_from_that_tags_pkgmeta_external(self):
+        pkgmeta = (
+            "package-as: LegacyForever\n\n"
+            "externals:\n"
+            "  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+            "v1.3.2/ForeverCore-v1.3.2-forever.zip\n"
+        )
+
+        def fake_git(root, *args, check=True):
+            if args[0] == "fetch":
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if args[0] == "show" and args[1] == "v1.2.4:.pkgmeta":
+                return subprocess.CompletedProcess(args, 0, pkgmeta, "")
+            return subprocess.CompletedProcess(args, 1, "", "missing")
+
+        with mock.patch.object(sync, "git", side_effect=fake_git):
+            self.assertEqual(sync.released_core_tag(Path("/tmp/legacy-forever"), "v1.2.4"), "v1.3.2")
+
+    def test_a_release_without_a_pkgmeta_external_uses_its_toc_field(self):
+        pkgmeta = "package-as: LegacyForever\n"
+        toc = "## Interface: 16001\n## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n"
+
+        def fake_git(root, *args, check=True):
+            if args[0] == "fetch":
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if args[0] == "show":
+                text = {"v1.2.4:.pkgmeta": pkgmeta, "v1.2.4:LegacyForever.toc": toc}.get(args[1])
+                return subprocess.CompletedProcess(args, 0 if text else 1, text or "", "")
+            return subprocess.CompletedProcess(args, 1, "", "missing")
+
+        with mock.patch.object(sync, "git", side_effect=fake_git):
+            self.assertEqual(sync.released_core_tag(Path("/tmp/legacy-forever"), "v1.2.4"), "v1.3.2")
 
 
 class BodyTest(unittest.TestCase):
