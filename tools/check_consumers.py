@@ -20,6 +20,9 @@ drifts the same way:
   one owner holds the folder.
 - The same root TOC must carry `## X-Forever-Core: <pin>`, the tag the bundled folder is, so a player's other Forever
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
+
+Those three copies are compared by `forever_tools.core_pin`, the same function the vendored package check runs in each
+consumer, so this gate and a consumer's own CI agree on the rule.
 """
 
 import argparse
@@ -35,13 +38,23 @@ from pathlib import Path
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
-# The release a consumer's specs and CI check ForeverCore out at, and the packaging files that decide how it ships.
-PIN_PATH = "tools/forever-core.txt"
-PKGMETA = ".pkgmeta"
+TOOLING = CORE_ROOT / ".agents/skills/wow-forever-addon/tooling"
+sys.path.insert(0, str(TOOLING))
+
+from forever_tools import core_pin  # noqa: E402
+
+# The shared comparison and the names tools/sync_consumer_prs.py rewrites the same bundle with.
+PIN_PATH = core_pin.PIN_PATH
+PKGMETA = core_pin.PKGMETA
+CORE_FOLDER = core_pin.CORE_FOLDER
+CORE_EXTERNAL = core_pin.CORE_EXTERNAL
+EXTERNAL_TAG = core_pin.EXTERNAL_TAG
+TOC_CORE_FIELD = core_pin.TOC_CORE_FIELD
+compare = core_pin.compare
+core_external = core_pin.core_external
+pkgmeta_field = core_pin.pkgmeta_field
+
 FOREVER_CORE = "forevercore"
-CORE_FOLDER = "ForeverCore"
-# The TOC header naming the core release the zip bundles, which a sibling addon compares to its own.
-CORE_FIELD = "X-Forever-Core"
 
 
 def digest(data):
@@ -135,18 +148,6 @@ def pkgmeta_blocks(text):
     return blocks
 
 
-def pkgmeta_field(text, name):
-    """A `.pkgmeta`'s scalar value for `name`, unquoted, or "" when the file does not set it."""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or line[:1].isspace() or stripped.startswith("#"):
-            continue
-        key, separator, value = stripped.partition(":")
-        if separator and key.strip() == name:
-            return value.strip().strip("'\"")
-    return ""
-
-
 def block_values(lines):
     """One `.pkgmeta` block's entries, lowercased: `- name` items as name -> "", `name: value` as name -> value."""
     values = {}
@@ -172,18 +173,6 @@ def requires_core(toc):
         if stripped.lower().startswith("## dependencies:"):
             return FOREVER_CORE in (name.strip().lower() for name in stripped.split(":", 1)[1].split(","))
     return False
-
-
-def toc_field(toc, name):
-    """A TOC header's value for `name`, matched case-insensitively, or None when the TOC does not set it."""
-    for line in toc.decode("utf-8", "replace").splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("##"):
-            continue
-        key, separator, value = stripped[2:].partition(":")
-        if separator and key.strip().lower() == name.lower():
-            return value.strip()
-    return None
 
 
 def root_toc(repo, pkgmeta, branch, local):
@@ -233,11 +222,6 @@ def check_pins(pins, local):
     return failures
 
 
-def core_external(pin):
-    """The `.pkgmeta` external a consumer of `pin` downloads, the ForeverCore release zip for that tag."""
-    return f"https://github.com/cjber/forever-core/releases/download/{pin}/{CORE_FOLDER}-{pin}-forever.zip"
-
-
 def check_packaging(repo, pin, branch, local):
     """A consumer that requires core ships it in its own zip, from the release its pin names, and owns it once."""
     path = consumer_path(repo, PKGMETA)
@@ -253,34 +237,18 @@ def check_packaging(repo, pin, branch, local):
     package = pkgmeta_field(pkgmeta, "package-as")
     toc_path = consumer_path(repo, f"{package}.toc")
     blocks = pkgmeta_blocks(pkgmeta)
-    failures = []
-    if not pin:
-        failures.append(
-            f"{repo}: {consumer_path(repo, PIN_PATH)}: a dependency of the TOC, but no pin names the release to ship"
+    failures = [
+        f"{repo}: {failure}"
+        for failure in compare(
+            pin or "",
+            pkgmeta,
+            toc.decode("utf-8", "replace"),
+            pin_path=consumer_path(repo, PIN_PATH),
+            pkgmeta_path=path,
+            toc_path=toc_path,
+            require_external=True,
         )
-    else:
-        expected = core_external(pin)
-        shipped = block_values(blocks.get("externals", [])).get(FOREVER_CORE, "")
-        if not shipped:
-            failures.append(
-                f"{repo}: {path}: a dependency of the TOC, but `externals:` does not ship ForeverCore;"
-                f" add `ForeverCore: {expected}`"
-            )
-        elif shipped != expected:
-            failures.append(
-                f"{repo}: {path}: `externals:` ships ForeverCore from {shipped}; {PIN_PATH} pins {pin},"
-                f" so it must be {expected}"
-            )
-        declared = toc_field(toc, CORE_FIELD)
-        if not declared:
-            failures.append(
-                f"{repo}: {toc_path}: a dependency of the TOC, but no `## {CORE_FIELD}:` line names the core release"
-                f" the zip bundles; add `## {CORE_FIELD}: {pin}`"
-            )
-        elif declared != pin:
-            failures.append(
-                f"{repo}: {toc_path}: `## {CORE_FIELD}:` is {declared}; {PIN_PATH} pins {pin}, so it must be {pin}"
-            )
+    ]
     moved = block_values(blocks.get("move-folders", []))
     if moved.get(f"{package}/{CORE_FOLDER}".lower()) != CORE_FOLDER:
         failures.append(
