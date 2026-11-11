@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-11
+
 ### For addon authors
 
 - **Each addon's ForeverCore pin follows core's releases.** The consumer sync moves `tools/forever-core.txt` to the latest release tag in the same PR as the tooling, and the drift gate fails a consumer whose pin lags, whose `.pkgmeta` ships ForeverCore as an `externals:` entry, or that requires core without `- forevercore` under `required-dependencies:`, so an addon's specs and CI no longer test against a core no player runs. (#420)
