@@ -56,7 +56,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from check_consumers import core_external, pkgmeta_field
+from check_consumers import (
+    CORE_EXTERNAL,
+    EXTERNAL_TAG,
+    TOC_CORE_FIELD,
+    core_external,
+    pkgmeta_field,
+)
 from check_core_shared import VENDORED, consumer_path
 
 OWNER = "cjber"
@@ -71,10 +77,6 @@ RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # The consumer-side bundle a moved pin rewrites: the shipped core's `.pkgmeta` external, the TOC field naming it, and
 # the changelog release entry that `tools/release_consumers.py` finds by this marker.
 PKGMETA = ".pkgmeta"
-CORE_EXTERNAL = re.compile(r"^(?P<indent>[ \t]*)ForeverCore:[ \t]*\S+[^\r\n]*", re.IGNORECASE | re.MULTILINE)
-# The tag inside that external's download URL, `.../download/v1.4.1/ForeverCore-v1.4.1-forever.zip`.
-EXTERNAL_TAG = re.compile(r"/download/(?P<tag>[^/\s]+)/", re.IGNORECASE)
-TOC_CORE_FIELD = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 TOC_DEPENDENCIES = re.compile(r"^##[ \t]*Dependencies[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 CHANGELOG = "CHANGELOG.md"
 UNRELEASED = re.compile(r"^## \[Unreleased\][ \t]*$", re.MULTILINE)

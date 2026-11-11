@@ -15,6 +15,7 @@ from unittest import mock
 
 import check_core_shared
 import sync_consumer_prs as sync
+from check_consumers import core_pin
 
 
 def listed(*names, archived=()):
@@ -726,6 +727,8 @@ class BundleTest(unittest.TestCase):
         text = self.changelog.read_text(encoding="utf-8")
         self.assertEqual(text.count(sync.SYNC_MARKER), 1)
         self.assertIn("## [1.2.4] - 2026-11-11\n", text)
+        # The sync bot and the check that runs in the consumer read the same three copies, so they agree.
+        self.assertEqual(core_pin.check(self.root), [])
 
     def test_an_unchanged_pin_repairs_a_lagging_bundle_with_one_entry(self):
         self.pin.write_text("v1.4.0\n", encoding="utf-8")

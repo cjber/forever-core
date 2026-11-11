@@ -65,9 +65,7 @@ class RestrictionClassesTest(unittest.TestCase):
 
     def rows(self):
         pin = fetch.RESTRICTIONS.read_text(encoding="utf-8").splitlines()
-        return {
-            line.split()[0]: line.split()[1].split(",") for line in pin if line and not line.startswith("#")
-        }
+        return {line.split()[0]: line.split()[1].split(",") for line in pin if line and not line.startswith("#")}
 
 
 if __name__ == "__main__":

@@ -25,6 +25,12 @@ class ConsumerSourceRootTest(unittest.TestCase):
         self.tools.mkdir(parents=True)
         for name in ("sync_consumers.py", "check_consumers.py"):
             shutil.copyfile(Path(__file__).parent / name, self.tools / name)
+        # check_consumers.py compares the pin through the vendored tooling, as core itself does.
+        tooling = self.producer / ".agents/skills/wow-forever-addon/tooling"
+        shutil.copytree(
+            Path(__file__).parent.parent / ".agents/skills/wow-forever-addon/tooling/forever_tools",
+            tooling / "forever_tools",
+        )
         (self.tools / "check_core_shared.py").write_text(
             'VENDORED = {"UI/Shared.lua": ("consumer",)}\n'
             "CONSUMER_ROOT = {}\n"
