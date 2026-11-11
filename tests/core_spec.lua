@@ -201,6 +201,11 @@ end, function()
 	return true
 end
 ns.Family = { name = "family" }
+ns.CreditsPage = {
+	Register = function()
+		return true
+	end,
+}
 ns.ContextMenu = function()
 	return nil
 end
@@ -278,6 +283,7 @@ for _, field in ipairs({
 	"OpenMap",
 	"OpenSettingsPanel",
 	"Family",
+	"Credits",
 	"ContextMenu",
 }) do
 	check(ForeverCore[field] ~= nil, "the core publishes " .. field)

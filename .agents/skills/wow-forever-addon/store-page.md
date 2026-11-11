@@ -51,6 +51,10 @@ For a bug report, paste `/<command> report`.
 
 <Optional: one paragraph on what changes when other Forever addons are installed together.>
 
+<!-- forever-credits:start -->
+<The credits sentence, written by tools/forever_tools/credits.py (WFA-31).>
+<!-- forever-credits:end -->
+
 Source code and issues: [github.com/cjber/<repo>](https://github.com/cjber/<repo>). Licence: GPL-3.0-or-later.
 
 Built with AI assistance.
@@ -59,13 +63,17 @@ Built with AI assistance.
 ## What the check enforces
 
 - **Order.** Pitch, sponsor line, the button row, images, `## Features`, at most one optional `##` section,
-  `## Usage`, the family block, source line, AI line. No other `##` headings: Install, Development and Credits live in the README.
+  `## Usage`, the family block, the credits block, source line, AI line. No other `##` headings: Install, Development
+  and Credits live in the README.
 - **Images.** Three to six, the first above `## Features`, every one under `docs/screenshots/` at a `main` raw URL,
   every file present in the repo, each followed by its caption (WFA-25). The lead image shows the main feature
   in the stock UI (WFA-23).
 - **Fixed lines.** The sponsor sentence, the "generated previews" line, the report line, the translation line (required when the addon ships a locale other than enUS), the
   source line, the AI line and the button row (Discord, GitHub Sponsors, Ko-fi, in that order, directly under the
   sponsor sentence, each image present in the repo), each exactly as above with only the placeholders filled.
+- **Credits.** The sentence between `<!-- forever-credits:start -->` and `<!-- forever-credits:end -->` is generated
+  by `tools/forever_tools/credits.py` from `THIRD_PARTY.md`'s `## Players` table (WFA-31); a page without the markers
+  is left alone.
 - **Features.** Three to eight bullets, each led by a bold name ending in a full stop.
 - **Pitch.** Starts with the addon's `## Title` from the TOC, without colour codes.
 - **Length.** Under 1,000 prose words by `check_copy.py --words`, the family block not counted (WFA-11).

@@ -11,9 +11,14 @@ local L = setmetatable({}, {
 })
 ns.L = L
 
+L["%s (%s)"] = "%s (%s)"
+L["%s and %s"] = "%s and %s"
+L["%s, %s and %s"] = "%s, %s and %s"
+L["%s, %s, %s and %d more"] = "%s, %s, %s and %d more"
 L["+%d more"] = "+%d more"
 L[", "] = ", "
 L["(you)"] = "(you)"
+L["%d contributions"] = "%d contributions"
 L["%d player from your guild and group"] = "%d player from your guild and group"
 L["%d player you've met"] = "%d player you've met"
 L["%d players from your guild and group"] = "%d players from your guild and group"
@@ -31,6 +36,7 @@ L["7th"] = "7th"
 L["8th"] = "8th"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
 	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
+L["All addons"] = "All addons"
 L["All time"] = "All time"
 L["Attach to quest tracker"] = "Attach to quest tracker"
 L["Bug"] = "Bug"
@@ -62,6 +68,7 @@ L["Guild and group"] = "Guild and group"
 L["Guild and group members who use a Forever addon show up here."] =
 	"Guild and group members who use a Forever addon show up here."
 L["Hide this section"] = "Hide this section"
+L["Inspired by"] = "Inspired by"
 L["Installed, turned off"] = "Installed, turned off"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
@@ -72,6 +79,7 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 L["Lock the tracker"] = "Lock the tracker"
 L["No addon has attached its log yet."] = "No addon has attached its log yet."
 L["No one has shared yet"] = "No one has shared yet"
+L["No one is listed yet."] = "No one is listed yet."
 L["Not installed"] = "Not installed"
 L["On"] = "On"
 L["Open"] = "Open"
@@ -83,6 +91,7 @@ L["Plans the cheapest route to your next profession rank."] = "Plans the cheapes
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
 	"Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."
 L["Player"] = "Player"
+L["Players"] = "Players"
 L["Players you've met"] = "Players you've met"
 L["Players you've met who use a Forever addon show up here."] =
 	"Players you've met who use a Forever addon show up here."
@@ -100,10 +109,13 @@ L["Show a quiet line where one of my other Forever addons would help. Only for a
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"Shows the Legacy challenges you can advance in each zone."
 L["Suggest my other Forever addons"] = "Suggest my other Forever addons"
+L["Thanks"] = "Thanks"
+L["Thanks to %s"] = "Thanks to %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."
+L["The players who helped each Forever addon."] = "The players who helped each Forever addon."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =

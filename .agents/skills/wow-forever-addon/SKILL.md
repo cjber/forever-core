@@ -277,27 +277,51 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   a copied value that a data refresh would leave stale), its licence, and whether it ships in the zip or is
   build-only. An embedded library (LibStub and the like) ships with its licence and is credited there; every
   `move-folders` folder ships a licence file of its own (public-domain code such as LibStub carries it in its
-  header). Media made for the addon (icons, textures) is named as the addon's own, with the script that draws it. Its `## Ideas and contributors` table names each addon an idea came
-  from (with the issue numbers), each translator and each reporter. `tools/check_package.py` fails a zip without
-  THIRD_PARTY.md, that section or README's `## Credits`.
+  header). Media made for the addon (icons, textures) is named as the addon's own, with the script that draws it. Its
+  credits are two Markdown tables, each `| Who | What | Notes |`: `## Players` names each player who reported a bug,
+  asked for a feature, translated the addon or changed its code, and `## Inspired by` names each addon or project an
+  idea came from. One row is one shipped contribution (one report fixed, one idea built, one translation, one code
+  change): a player with five shipped items has five rows with the same `Who`, in table order, never one row whose
+  `What` joins several with a semicolon. The `What` cell is the short outcome line a player reads in game, roughly
+  eight words and no channel or issue number: "A darker tracker background", not "Asked on CurseForge for ...". Where
+  they asked, the channel (CurseForge, Discord), and the issue number go in `Notes`, which never reaches the game.
+  `Who` and `What` are what the in-game Thanks page shows, so a link in `Who` keeps only its visible text.
+  `tools/forever_tools/credits.py` reads exactly those two sections into `Data/Credits.lua` for
+  `ForeverCore.Credits`; a missing section is an empty list, and nothing is inferred from a row's words. The same run
+  keeps one sentence, "Thanks to A, B and everyone who reported a bug or asked for a feature.", between
+  `<!-- forever-credits:start -->` and `<!-- forever-credits:end -->` in README.md's `## Credits` and in
+  docs/curseforge.md, naming every `## Players` name once, in rank order (most rows first, then table order); a store
+  page without the markers is left alone,
+  while `--check` fails a README without them. Add `Data\Credits.lua` to the TOC and pass `ns.Credits` to
+  `ForeverCore.Credits.Register` once the addon loads, so the in-game Thanks page shows it; `Line(addonTitle)` gives
+  the addon's own settings page its short thanks.
+  `tools/check_package.py` fails a zip without THIRD_PARTY.md, one of those credit sections or README's `## Credits`.
 - **WFA-32** README.md and docs/curseforge.md each carry the family block, "The Forever addons", once,
   between `<!-- forever-family:start -->` and `<!-- forever-family:end -->`, in place of any hand-written list of
   the other addons. The table has three columns: the addon linked to its CurseForge page, what it does, and an
   Issues link to `https://github.com/cjber/<repo>/issues`. A line under the table says bug reports, feature
   requests and pull requests are welcome on each addon's GitHub, and that everyone whose report or idea ships is
-  thanked by name in the addon's credits and changelog. The text is `forever_tools.family` and never edited in a
-  repo: `tools/check_family.py` runs in `typecheck.sh` and fails on any difference (`--fix` rewrites it after a
-  sync, `--print` gives it to place). Prose outside the block says only what a sibling really adds to this addon.
-  ForeverCore is the shared library the addons require, so the table gives it no row.
-- **WFA-33** A player who reported a bug we fix, or asked for a feature we build, is credited by name in the same PR,
-  whether they wrote on GitHub or in store comments: the changelog bullet ends "thanks to X for the report" (or "for
-  the idea"), and THIRD_PARTY.md's `## Ideas and contributors` table gains or extends their row with what came of it.
-  Use the handle they posted under; an anonymous store handle (`user_` and random characters) gets the table's
-  generic thanks instead. Praise, and requests that weren't built, are not credited. The addons' author, cjber, is
-  never credited: not in a changelog bullet, THIRD_PARTY.md, release notes, README or store copy. Only other players
-  are credited. The org PR template
-  (`cjber/.github`) carries the checklist line `- [ ] A reporter or requester is credited in the changelog bullet and
-  THIRD_PARTY.md (WFA-33)`.
+  thanked by name on the Thanks page in game, in the store page and in the changelog, unless they ask not to be. The
+  text is
+  `forever_tools.family` and never edited in a repo: `tools/check_family.py` runs in `typecheck.sh` and fails on any
+  difference (`--fix` rewrites it after a sync, `--print` gives it to place). Prose outside the block says only what
+  a sibling really adds to this addon. ForeverCore is the shared library the addons require, so the table gives it no
+  row.
+- **WFA-33** A player who reported a bug we fix, asked for a feature we build, translated the addon or changed its
+  code is credited by name in the same PR, whether they wrote on GitHub or in store comments: the changelog bullet
+  ends "thanks to X for the report" (or "for the idea"), and THIRD_PARTY.md's `## Players` table gains a row for what
+  came of it, one row per shipped contribution (WFA-31). When the reporter has a GitHub account, the fixing commit
+  also carries `Co-authored-by: <login> <<id>+<login>@users.noreply.github.com>` (the id from
+  `gh api users/<login> --jq .id`), so GitHub shows them as a contributor; a store or Discord reporter gets the
+  changelog and `## Players` credit only. Use the handle they posted under; an anonymous store handle (`user_` and
+  random characters) gets the table's generic thanks instead. Praise, and requests that weren't built, are not
+  credited. The addons' author, cjber, is never credited: not in a changelog bullet, THIRD_PARTY.md, release notes,
+  README, store copy or the in-game Thanks page. Only other players are credited. A player who asks not to be named,
+  in any issue, store comment or Discord, is removed from every addon's `## Players` table, the README and store
+  thanks blocks (regenerate them) and the changelog lines that thank them (replace the name with "a player"), and
+  their name is added to `credits_opt_out.txt` in forever-core so no later sweep re-adds them; `credits.py` fails
+  while a `THIRD_PARTY.md` row names one. The org PR template (`cjber/.github`) carries the checklist line
+  `- [ ] A reporter or requester is credited in the changelog bullet and THIRD_PARTY.md (WFA-33)`.
 - **WFA-34** Every addon ships in the client languages the Forever client offers besides English (deDE, esES,
   esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN and zhTW, less any the client lacks), one `Locales/<locale>.lua` each,
   loaded by the TOC after `Locales\enUS.lua` and keyed exactly as `Locales/phrases.txt`. A human translation wins:

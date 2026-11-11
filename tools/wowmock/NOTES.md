@@ -92,7 +92,9 @@ horizontally, BL vertically, BR both, BottomEdge vertically, RightEdge horizonta
   reverse, so slot 1 is top-left.
 - Blizzard_Menu (MenuStyle1): `common-dropdown-bg` from (-10, +3) to (+10, -3) at alpha 0.925; insets 8/8/8/15;
   child width +20; rows 20 high in GameFontHighlight; title gold; checkbox `common-dropdown-ticksquare` +
-  `common-dropdown-icon-checkmark-yellow`; divider `UI-TooltipDivider-Transparent` 13 high; submenu arrow
+  `common-dropdown-icon-checkmark-yellow`; radio `common-dropdown-tickradial` +
+  `common-dropdown-icon-radialtick-yellow` (18 wide, its label 1 unit right); divider
+  `UI-TooltipDivider-Transparent` 13 high; submenu arrow
   `ChatFrameExpandArrow` 16x16; highlight `UI-QuestTitleHighlight` ADD. A context menu opens with its
   top-left at the cursor.
 - WowStyle1DropdownTemplate (MenuTemplates.xml:3-37): `common-dropdown-textholder` TOPLEFT (-8, 7) to BOTTOMRIGHT

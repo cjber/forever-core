@@ -14,4 +14,10 @@ for:
 You never install or configure Forever Core by hand. CurseForge and Wago install it as a required dependency of every
 Forever addon, and the game loads it first.
 
+<!-- forever-credits:start -->
+
+Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed and everyone who reported a bug or asked for a feature.
+
+<!-- forever-credits:end -->
+
 Made by Cillian Berragan · [cillian.dev](https://cillian.dev/) · [GitHub](https://github.com/cjber) · [Twitter](https://twitter.com/cjberragan)
