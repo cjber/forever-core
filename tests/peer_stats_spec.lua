@@ -43,7 +43,7 @@ _G.C_ChatInfo = {
 	SendAddonMessage = function(prefix, payload, channel)
 		local result = type(sendResult) == "function" and sendResult(payload, channel) or sendResult
 		if result == 0 or result == true then
-			sent[#sent + 1] = { prefix = prefix, payload = payload, channel = channel }
+			sent[#sent + 1] = { prefix = prefix, payload = payload, channel = channel, at = clock }
 		end
 		return result
 	end,
@@ -768,7 +768,7 @@ do
 	resetSent()
 	groupKind, groupSize = "PARTY", 2
 	equal(peers:Sync(), 6, "rejoining a group redistributes the same unchanged rows")
-	advance(5)
+	advance(10)
 	equal(#sent, 6, "to the party only")
 	for _, message in ipairs(sent) do
 		equal(message.channel, "PARTY", "party rows")
@@ -777,7 +777,7 @@ do
 	equal(peers:Sync(), 0, "unchanged afterwards")
 	groupSize = 3
 	equal(peers:Sync(), 6, "a larger group gets the rows again")
-	advance(5)
+	advance(10)
 	equal(#sent, 6, "sent to the larger group")
 	for _, row in ipairs(state.rows) do
 		equal(row.value, 1, "snapshot untouched")
@@ -785,7 +785,7 @@ do
 	resetSent()
 	groupNames.party1 = "NewMember"
 	equal(peers:Sync(), 6, "a replacement member gets the rows even when group size is unchanged")
-	advance(5)
+	advance(10)
 	equal(#sent, 6, "replacement member triggers a party snapshot")
 	equal(peers:Sync(), 0, "the same roster is not sent twice")
 	groupNames.party1, groupNames.party2 = nil, "NewMember"
@@ -798,7 +798,7 @@ do
 	resetSent()
 	groupSize = 4
 	equal(peers:Sync(), 6, "an instance group join reads the instance roster, not the empty home group")
-	advance(5)
+	advance(10)
 	equal(#sent, 6, "the instance group's new member receives the snapshot")
 	groupNames.party1 = "InstanceReplacement"
 	equal(peers:Sync(), 6, "an instance replacement receives unchanged stats")
@@ -849,7 +849,7 @@ do
 	advance(0)
 	equal(#sent, 10, "burst is bounded")
 	advance(5)
-	equal(#sent, 20, "then two a second")
+	equal(#sent, 15, "then one a second")
 	advance(30)
 	equal(#sent, 40, "everything is eventually sent")
 	equal(ns.PeerStats.New == nil, false, "namespace intact")
@@ -884,7 +884,7 @@ do
 	end
 	equal(p3:Sync(), 512, "queue holds at most 512")
 	equal(n3.PeerStats.Manager().QueueSize(), 512, "queue size")
-	advance(400)
+	advance(700)
 	equal(#sent, 600, "overflow rows drain without another consumer event")
 	equal(p3:Sync(), 0, "the complete snapshot was sent once")
 
@@ -896,7 +896,7 @@ do
 		sm.rows[index] = s3.rows[index]
 	end
 	equal(pm:Sync(), 512, "two channels share the same bounded queue")
-	advance(400)
+	advance(700)
 	equal(#sent, 600, "overflow reaches both channels without another event")
 
 	-- A permanent transport error must not turn backpressure into an endless retry loop.
@@ -1424,14 +1424,15 @@ do
 		true,
 		"first relay"
 	)
-	local ok, why = recv(peers, relayWire("agf", "total", "all", 4, now, "Cat-OtherRealm"), "B-OtherRealm")
-	equal(ok, false, "a lower relay is stale")
+	local ok, why = recv(peers, relayWire("agf", "total", "all", 99, now - 20, "Cat-OtherRealm"), "B-OtherRealm")
+	equal(ok, false, "an older relay is stale even with a higher value")
 	equal(why, "stale", "with the stale reason")
 	equal(
-		recv(peers, relayWire("agf", "total", "all", 5, now, "Cat-OtherRealm"), "B-OtherRealm"),
+		recv(peers, relayWire("agf", "total", "all", 4, now, "Cat-OtherRealm"), "B-OtherRealm"),
 		true,
-		"a better relay replaces it"
+		"a newer relay replaces it even with a lower value"
 	)
+	equal(state.db["Cat-OtherRealm"].total.all.value, 4, "the newest relay's value wins")
 	equal(state.db["Cat-OtherRealm"].total.all.eventUnix, now, "with its time")
 end
 
@@ -1465,15 +1466,22 @@ do
 		"a relay stores a better row"
 	)
 	equal(savedState.db["OldPeer-OtherRealm"]["\1name"], "Old Peer", "and fills the missing display name")
+	equal(
+		recv(savedPeers, relayWire("agf", "total", "all", 3, now + 1, "OldPeer-OtherRealm"), "B-OtherRealm"),
+		true,
+		"a newer relay from the same identity is stored"
+	)
+	equal(savedState.db["OldPeer-OtherRealm"]["\1name"], "Old Peer", "and cannot change the saved identity name")
+	equal(count(savedState.db), 1, "nor create a second peer for the same identity")
 end
 
--- Relay-only peers have their own 400 cap and never displace a direct peer ---------------------------------------
+-- Relay-only peers have their own 500 cap, evict least recently updated first, and never displace a direct peer -------
 do
 	local ns = fresh()
 	local peers, state = make(ns)
 	local now = serverTime
 	equal(recv(peers, wire("agf", "total", "all", 1, now - 1000), "Direct-R"), true, "a direct peer")
-	for index = 1, 400 do
+	for index = 1, 500 do
 		local origin = "P" .. index .. "-R"
 		equal(
 			recv(peers, relayWire("agf", "total", "all", 1, now - 500 + index, origin), "Relayer" .. index .. "-R"),
@@ -1481,17 +1489,27 @@ do
 			"relay-only peer " .. index
 		)
 	end
-	equal(count(state.db), 401, "400 relay-only peers and one direct peer")
+	equal(count(state.db), 501, "500 relay-only peers and one direct peer")
 	equal(state.db["P1-R"] ~= nil, true, "the oldest relay-only peer is there at the cap")
 	equal(
-		recv(peers, relayWire("agf", "total", "all", 1, now, "P401-R"), "Relayer401-R"),
+		recv(peers, relayWire("agf", "total", "all", 1, now, "P501-R"), "Relayer501-R"),
 		true,
-		"the 401st relay-only peer is accepted"
+		"the 501st relay-only peer is accepted"
 	)
-	equal(state.db["P1-R"], nil, "the least recently active relay-only peer is evicted")
+	equal(state.db["P1-R"], nil, "the least recently updated relay-only peer is evicted")
 	equal(state.db["P2-R"] ~= nil, true, "the next one stays")
-	equal(state.db["P401-R"] ~= nil, true, "the new one is stored")
+	equal(state.db["P501-R"] ~= nil, true, "the new one is stored")
 	equal(state.db["Direct-R"] ~= nil, true, "a direct peer is never evicted for a relay")
+
+	-- A row heard again is the most recently updated, so the next eviction skips it.
+	equal(recv(peers, relayWire("agf", "total", "all", 2, now + 1, "P2-R"), "Relayer2-R"), true, "P2 is updated")
+	equal(
+		recv(peers, relayWire("agf", "total", "all", 1, now + 2, "P502-R"), "Relayer502-R"),
+		true,
+		"another relay-only peer arrives"
+	)
+	equal(state.db["P2-R"] ~= nil, true, "the updated peer stays")
+	equal(state.db["P3-R"], nil, "and the next least recently updated peer is evicted")
 
 	for index = 1, 99 do
 		equal(recv(peers, wire("agf", "total", "all", 1, now), "D" .. index .. "-R"), true, "direct peer " .. index)
@@ -1499,10 +1517,11 @@ do
 	local rejected, why = recv(peers, wire("agf", "total", "all", 1, now), "D100-R")
 	equal(rejected, false, "the direct cap still stops a new direct peer")
 	equal(why, "peers", "for the peer cap")
-	equal(state.db["P2-R"] ~= nil, true, "and relay-only peers are still not evicted for it")
+	equal(state.db["P4-R"] ~= nil, true, "and relay-only peers are still not evicted for it")
 end
 
--- Sync relays the newest rows, skips the channel the origin was heard on, and does nothing twice ------------------
+-- Sync relays the newest rows, spreads them over the send budget, skips the channel the origin was heard on, and does
+-- nothing twice ----------------------------------------------------------------------------------------------------
 do
 	local ns = fresh()
 	local peers, state = make(ns)
@@ -1514,17 +1533,18 @@ do
 	for index = 2, 26 do
 		equal(recv(peers, wire("agf", "total", "all", 1, now - index), "R" .. index .. "-R"), true, "peer " .. index)
 	end
-	equal(recv(peers, wire("agf", "total", "all", 1, now - 8 * 86400), "Old-R"), true, "an old row")
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 8 * 86400), "Older-R"), true, "an eight-day-old row")
+	equal(recv(peers, wire("agf", "total", "all", 1, now - 31 * 86400), "Old-R"), true, "a thirty-one-day-old row")
 	equal(ns.PeerStats.Manager().QueueSize(), 0, "receiving queues nothing")
-	equal(peers:Sync(), 24, "24 relay sends: Seen to the guild, the guild rows to the party")
-	advance(60)
+	equal(peers:Sync(), 10, "one burst of relay messages is queued, not the whole store")
+	advance(120)
 	local relayed = {}
 	for _, message in ipairs(sent) do
 		if message.payload:sub(1, 2) == "2|" then
 			relayed[#relayed + 1] = message
 		end
 	end
-	equal(#relayed, 24, "exactly the relay cap goes out")
+	equal(#relayed, 28, "every fresh row is relayed over the following rounds")
 	equal(
 		relayed[1].payload,
 		table.concat({ "2", "agf", "total", "all", 1, now, "Seen-R" }, "|"),
@@ -1536,20 +1556,50 @@ do
 		"a local-realm key is spelled out with the relayer's realm"
 	)
 	equal(relayed[1].channel, "GUILD", "a row heard on the party is not sent back to the party")
-	local sawOld, sawR24 = false, false
+	local sawOld, sawOlder, sawR26 = false, false, false
 	for _, message in ipairs(relayed) do
 		if message.payload:find("|Old%-R$") then
 			sawOld = true
 		end
-		if message.payload:find("|R24%-R$") then
-			sawR24 = true
+		if message.payload:find("|Older%-R$") then
+			sawOlder = true
+		end
+		if message.payload:find("|R26%-R$") then
+			sawR26 = true
 		end
 	end
-	equal(sawOld, false, "a row older than seven days is not relayed")
-	equal(sawR24, false, "the 25th newest row is over the cap")
+	equal(sawOld, false, "a row older than thirty days is not relayed")
+	equal(sawOlder, true, "a row inside thirty days is relayed")
+	equal(sawR26, true, "and the whole fresh set goes out, not just the newest 24")
 	equal(peers:Sync(), 0, "a second Sync with nothing changed queues no relay")
 	equal(recv(peers, wire("agf", "total", "all", 2, now), "Seen-R", "PARTY"), true, "the row changes")
 	equal(peers:Sync(), 1, "and only that relay is offered again")
+	advance(1)
+end
+
+-- The relay never sends past the client's per-prefix budget, however many Sync rounds run ---------------------------
+do
+	local ns = fresh()
+	local db = {}
+	for index = 1, 30 do
+		db["Peer" .. index .. "-R"] =
+			{ total = { all = { value = index, eventUnix = serverTime - index, relayed = true } } }
+	end
+	local peers = make(ns, { db = db })
+	resetSent()
+	for round = 1, 40 do
+		peers:Sync()
+		advance(1)
+		equal(#sent <= 10 + round, true, "round " .. round .. " stays inside the burst and one a second")
+	end
+	equal(#sent, 30, "every fresh row is relayed once the budget allows")
+	local first = sent[1].payload:match("^2|[^|]*|total|all|%d+|%d+|([^|]*)$")
+	equal(first, "Peer1-R", "the freshest row goes first")
+	local seen = {}
+	for _, message in ipairs(sent) do
+		equal(seen[message.payload] == nil, true, "no relay is sent twice")
+		seen[message.payload] = true
+	end
 end
 
 -- Only a sending New instance relays, and only its own addon's rows -----------------------------------------------
@@ -1612,12 +1662,13 @@ do
 
 	-- A later Sync can pass the relayed row on, keeping the origin it arrived with.
 	groupKind, groupSize = "PARTY", 2
-	equal(peers:Sync(), 2, "the next Sync relays it to the open channels")
+	equal(peers:Sync(), 1, "the next Sync relays it to the party, not back to the guild it came from")
 	advance(1)
 	local passed = false
 	for _, message in ipairs(sent) do
 		if message.payload:find("|Cat%-OtherRealm$") then
 			passed = true
+			equal(message.channel, "PARTY", "the relay goes to the party only")
 		end
 	end
 	equal(passed, true, "the relayed row keeps its origin when passed on")
@@ -1648,6 +1699,35 @@ do
 	reloadNs.PeerStats.Manager().includeRelayed = true
 	equal(#reloaded:Board("total", "all", 0, now), 4, "but the mark survived and the met reach finds it")
 	reloadNs.PeerStats.Manager().includeRelayed = false
+end
+
+-- A relayed row heard on a channel is not passed back to that channel ------------------------------------------
+do
+	local ns = fresh()
+	local peers = make(ns)
+	local now = serverTime
+	equal(recv(peers, relayWire("agf", "total", "all", 7, now, "Carol-X"), "Bob-X"), true, "relayed row accepted")
+	resetSent()
+	peers:Sync()
+	advance(60)
+	local echoed = 0
+	for _, message in ipairs(sent) do
+		if message.channel == "GUILD" and message.payload:find("|Carol%-X$") then
+			echoed = echoed + 1
+		end
+	end
+	equal(echoed, 0, "the guild already carries Carol's row, so no member sends it back")
+	equal(recv(peers, relayWire("agf", "total", "all", 8, now + 1, "Carol-X"), "Bob-X"), true, "newer relay accepted")
+	resetSent()
+	peers:Sync()
+	advance(60)
+	echoed = 0
+	for _, message in ipairs(sent) do
+		if message.channel == "GUILD" and message.payload:find("|Carol%-X$") then
+			echoed = echoed + 1
+		end
+	end
+	equal(echoed, 0, "a newer row heard on the guild is not echoed either")
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))

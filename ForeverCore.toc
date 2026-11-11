@@ -1,9 +1,9 @@
 ## Interface: 16001
 ## Title: Forever Core
-## Notes: The shared library every Forever addon needs: the tracker column and lock, the report window, the leaderboards, the log and the settings chrome.
+## Notes: Shared code the Forever addons need. Nothing to set up: each Forever addon uses it for its tracker column, settings and leaderboards.
 ## Author: cjber
 ## Version: @project-version@
-## Category: Map
+## Category: Libraries
 ## IconTexture: Interface\AddOns\ForeverCore\media\Icon
 ## X-License: GPL-3.0-or-later
 ## X-Website: https://github.com/cjber/forever-core

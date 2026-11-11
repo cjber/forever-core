@@ -8,6 +8,10 @@ local L = ns.L
 L["+%d more"] = "+%d ещё"
 L[", "] = ", "
 L["(you)"] = "(вы)"
+L["%d player from your guild and group"] = "%d игрок из вашей гильдии и группы"
+L["%d player you've met"] = "%d встреченный игрок"
+L["%d players from your guild and group"] = "%d игроков из вашей гильдии и группы"
+L["%d players you've met"] = "%d встреченных игроков"
 L["%d yd"] = "%d м"
 L["%s (last %d):"] = "%s (последние %d):"
 L["%s: no lines yet."] = "%s: строк пока нет."
@@ -52,6 +56,9 @@ L["Forever standing"] = "Общий рейтинг Forever"
 L["Forever tracker"] = "Отслеживание Forever"
 L["Forever: %s overall"] = "Forever: %s за всё время"
 L["Forever: %s overall this week"] = "Forever: %s на этой неделе"
+L["Guild and group"] = "Гильдия и группа"
+L["Guild and group members who use a Forever addon show up here."] =
+	"Участники вашей гильдии и группы, использующие аддон Forever, появляются здесь."
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "Установлено, отключено"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
@@ -63,9 +70,10 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 L["Lock the tracker"] = "Закрепить трекер"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
-L["No one has reported yet."] = "Пока никто не сообщил."
+L["No one has shared yet"] = "Пока никто не поделился."
 L["Not installed"] = "Не установлено"
 L["On"] = "Вкл."
+L["Open"] = "Открыть"
 L["Others' values are player-reported."] =
 	"Значения других игроков сообщены ими самими."
 L["Overall"] = "Общий"
@@ -77,11 +85,15 @@ L["Plans the quickest way anywhere and guides you there, with live boat and zepp
 	"Прокладывает самый быстрый путь куда угодно и ведет вас туда, с расписанием кораблей и дирижаблей в реальном времени."
 L["Player"] = "Игрок"
 L["Players you've met"] = "Встреченные игроки"
+L["Players you've met who use a Forever addon show up here."] =
+	"Встреченные игроки, использующие аддон Forever, появляются здесь."
 L["Points for placing on each addon's board."] = "Очки за место в списке каждого аддона."
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
 	"Автоматизация заданий, оповещения о редких противниках и работа с торговцами для стандартного интерфейса."
 L["Rank"] = "Место"
 L["Ready to turn in"] = "Ready to turn in"
+L["See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."] =
+	"Посмотрите, где вы находитесь в списке каждой модификации Forever. Снимите отметку «Делиться прогрессом», чтобы сохранить прогресс закрытым."
 L["Report a bug or request a feature"] = "Сообщить об ошибке или предложить функцию"
 L["Share my progress"] = "Делиться прогрессом"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
@@ -100,6 +112,7 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["This addon"] = "Эта модификация"
 L["This week"] = "На этой неделе"
 L["Title"] = "Заголовок"
+L["Total"] = "Всего"
 L["Tracker background"] = "Фон отслеживания"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Использование: /forever debug, /forever debug pin, /forever debug off, /forever debug show"

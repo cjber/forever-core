@@ -52,7 +52,7 @@ local MAX_VALUE = 1e9
 local FUTURE_SECONDS = 300
 local MAX_METRICS = 64
 local MAX_PEERS = 100
-local MAX_RELAYED_PEERS = 400
+local MAX_RELAYED_PEERS = 500
 local MAX_SUBJECTS = 256
 local MAX_ROWS = 1024
 local MAX_QUEUE = 512
@@ -61,15 +61,19 @@ local MAX_SCAN_KEYS = 2000
 local MAX_SCAN_SUBJECTS = 4096
 local MAX_RATE_SENDERS = 200
 local STALE_PEER_SECONDS = 30 * 86400
--- Per Sync: the newest stored rows, no older than a week. A relay is a hint, not a board dump.
-local MAX_RELAY_ROWS = 24
-local RELAY_MAX_AGE = 7 * 86400
+-- The freshest relay candidates, no older than 30 days. A relay is a hint, not a board dump; the shared transport
+-- below spreads them over several Sync rounds instead of sending the whole store at once.
+local MAX_RELAY_ROWS = 500
+local RELAY_MAX_AGE = 30 * 86400
 -- Per sender, per instance: room for a whole Field Guide snapshot, then ten rows a second.
 local RECEIVE_BURST = 300
 local RECEIVE_PER_SECOND = 10
--- Shared transport: a short burst, then two messages a second.
+-- Shared transport: the client's per-prefix budget, a burst of ten messages then one a second.
 local SEND_BURST = 10
-local SEND_PER_SECOND = 2
+local SEND_PER_SECOND = 1
+-- A relay round offers at most one burst; rows left over wait for the next round, which the manager starts once the
+-- queue drains.
+local RELAY_ROWS_PER_SYNC = SEND_BURST
 local MAX_RETRIES = 5
 local MAX_BACKOFF = 30
 local MEMBERSHIP_DELAY = 1
@@ -351,6 +355,18 @@ local function Better(first, old, value, unix)
 		return unix < old.eventUnix or (unix == old.eventUnix and value > old.value)
 	end
 	return value > old.value or (value == old.value and unix > old.eventUnix)
+end
+
+-- A passed-on row is a snapshot of what the origin reported, so the newest one wins even when its value is lower.
+-- A first metric still keeps the earliest event: a later relay cannot make the first kill earlier.
+local function RelayBetter(first, old, value, unix)
+	if not old then
+		return true
+	end
+	if first then
+		return unix < old.eventUnix or (unix == old.eventUnix and value > old.value)
+	end
+	return unix > old.eventUnix or (unix == old.eventUnix and value > old.value)
 end
 
 local function SortedStringKeys(source, limit)
@@ -780,7 +796,7 @@ local function SanitizeStore(self, raw)
 		end
 		return a.identity < b.identity
 	end)
-	-- Two caps: players heard directly keep the old 100, players only ever passed on keep 400. A relay-only peer
+	-- Two caps: players heard directly keep the old 100, players only ever passed on keep 500. A relay-only peer
 	-- never takes the place of one heard directly.
 	local direct, relayed = {}, {}
 	for _, peer in ipairs(peers) do
@@ -802,7 +818,7 @@ local function SanitizeStore(self, raw)
 	end
 	self.index, self.latest = {}, {}
 	self.peerCount, self.relayedCount = #direct, #relayed
-	self.relayOnly, self.heardOn = {}, {}
+	self.relayOnly, self.heardOn, self.relayHeard = {}, {}, {}
 	local function Save(peer)
 		local saved = {}
 		if peer.display then
@@ -890,6 +906,7 @@ end
 ---@field relayedCount integer peers whose every row arrived as a relay
 ---@field relayOnly table<string, boolean> the identities that count toward MAX_RELAYED_PEERS
 ---@field heardOn table<string, table<string, boolean>> channels an origin was heard on directly this session
+---@field relayHeard table<string, {value: number, unix: number}> `channel|r|...` relayed rows a channel already carries
 ---@field metrics table<string, {subject: string, first: boolean}>
 ---@field metricList string[]
 ---@field store table|nil
@@ -1128,6 +1145,11 @@ function Instance:Sync(onlyDeferred)
 			self.sent[sentKey] = nil
 		end
 	end
+	for heardKey in pairs(self.relayHeard) do
+		if not relayKeys[heardKey:match("^[^|]+|(.*)$")] then
+			self.relayHeard[heardKey] = nil
+		end
+	end
 
 	local queued = 0
 	local function Offer(item, skip)
@@ -1152,8 +1174,36 @@ function Instance:Sync(onlyDeferred)
 	for _, item in ipairs(list) do
 		Offer(item)
 	end
+
+	-- A relay round offers one burst of messages; the rest are deferred, so the manager starts the next round once
+	-- this one has drained. That keeps every Sync inside the client's per-prefix budget however large the store is.
+	local relayBudget = RELAY_ROWS_PER_SYNC
+	local function OfferRelay(item, skip)
+		for _, channel in ipairs(channels) do
+			if not (skip and skip[channel]) then
+				local sendKey = channel .. "|" .. item.key
+				local last = self.sent[sendKey]
+				local heard = self.relayHeard[sendKey]
+				local same = last
+						and last.value == item.value
+						and last.unix == item.unix
+						and last.epoch == (current.epoch[channel] or 0)
+					or heard and heard.value == item.value and heard.unix == item.unix
+				if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
+					if relayBudget <= 0 then
+						self.deferred[sendKey] = true
+					elseif current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
+						queued = queued + 1
+						relayBudget = relayBudget - 1
+					else
+						self.deferred[sendKey] = true
+					end
+				end
+			end
+		end
+	end
 	for _, item in ipairs(relayList) do
-		Offer(item, self.heardOn[item.identity])
+		OfferRelay(item, self.heardOn[item.identity])
 	end
 	return queued
 end
@@ -1331,7 +1381,13 @@ local function Apply(self, key, identity, display, config, metric, subject, valu
 			record.value, record.eventUnix, record.relayed = value, unix, nil
 			MakeDirect(self, identity)
 		else
-			if not Better(config.first, record, value, unix) then
+			local better
+			if relayed and record.relayed == true then
+				better = RelayBetter(config.first, record, value, unix)
+			else
+				better = Better(config.first, record, value, unix)
+			end
+			if not better then
 				if changed then
 					self.revision = self.revision + 1
 					return true
@@ -1429,7 +1485,15 @@ function Instance:Receive(prefix, payload, channel, sender)
 		if not value or not unix then
 			return false, "value"
 		end
-		return Apply(self, originKey, originIdentity, DisplayName(origin), config, metric, subject, value, unix, true)
+		local changed, why =
+			Apply(self, originKey, originIdentity, DisplayName(origin), config, metric, subject, value, unix, true)
+		-- This channel already carries this exact row: without the note every listener would pass the same row back
+		-- to the channel it came from, once per member.
+		if ALLOWED_CHANNELS[channel] then
+			self.relayHeard[channel .. "|r|" .. originIdentity .. "|" .. metric .. "|" .. subject] =
+				{ value = value, unix = unix }
+		end
+		return changed, why
 	end
 	metric, subject, valueText, unixText = payload:match("^1|[^|]*|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
 	local config = metric and #metric <= MAX_METRIC and self.metrics[metric]
@@ -1736,6 +1800,7 @@ local function New(config, owner)
 		relayedCount = 0,
 		relayOnly = {},
 		heardOn = {},
+		relayHeard = {},
 		metrics = {},
 		metricList = {},
 		revision = 0,

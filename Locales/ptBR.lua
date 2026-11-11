@@ -8,6 +8,10 @@ local L = ns.L
 L["+%d more"] = "+%d mais"
 L[", "] = ", "
 L["(you)"] = "(você)"
+L["%d player from your guild and group"] = "%d jogador da sua guilda e grupo"
+L["%d player you've met"] = "%d jogador que você conheceu"
+L["%d players from your guild and group"] = "%d jogadores da sua guilda e grupo"
+L["%d players you've met"] = "%d jogadores que você conheceu"
 L["%d yd"] = "%d m"
 L["%s (last %d):"] = "%s (últimas %d):"
 L["%s: no lines yet."] = "%s: ainda não há linhas."
@@ -51,6 +55,9 @@ L["Forever standing"] = "Posição Forever"
 L["Forever tracker"] = "Rastreador Forever"
 L["Forever: %s overall"] = "Forever: %s no total"
 L["Forever: %s overall this week"] = "Forever: %s no total esta semana"
+L["Guild and group"] = "Guilda e grupo"
+L["Guild and group members who use a Forever addon show up here."] =
+	"Membros da sua guilda e grupo que usam um addon Forever aparecem aqui."
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "Instalado, desativado"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
@@ -61,9 +68,10 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "Travar o rastreador"
 L["No addon has attached its log yet."] = "Nenhum addon anexou seu registro ainda."
-L["No one has reported yet."] = "Ninguém reportou ainda."
+L["No one has shared yet"] = "Ninguém compartilhou ainda."
 L["Not installed"] = "Não instalado"
 L["On"] = "Ativado"
+L["Open"] = "Abrir"
 L["Others' values are player-reported."] = "Os valores dos outros jogadores são reportados por eles."
 L["Overall"] = "Geral"
 L["Picks quests for your level and plans them into one journey."] =
@@ -74,11 +82,15 @@ L["Plans the quickest way anywhere and guides you there, with live boat and zepp
 	"Planeja o caminho mais rápido para qualquer lugar e guia você até lá, com horários ao vivo de barcos e zepelins."
 L["Player"] = "Jogador"
 L["Players you've met"] = "Jogadores que você conheceu"
+L["Players you've met who use a Forever addon show up here."] =
+	"Jogadores que você conheceu e que usam um addon Forever aparecem aqui."
 L["Points for placing on each addon's board."] = "Pontos por se classificar no quadro de cada addon."
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
 	"Automação de missões, alertas de raros e gestão de mercadores para a interface padrão."
 L["Rank"] = "Classificação"
 L["Ready to turn in"] = "Ready to turn in"
+L["See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."] =
+	"Veja onde você está no quadro de cada AddOn Forever. Desmarque Compartilhar meu progresso para manter seu progresso privado."
 L["Report a bug or request a feature"] = "Relatar um erro ou pedir um recurso"
 L["Share my progress"] = "Compartilhar meu progresso"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
@@ -97,6 +109,7 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["This addon"] = "Este AddOn"
 L["This week"] = "Esta semana"
 L["Title"] = "Título"
+L["Total"] = "Total"
 L["Tracker background"] = "Fundo do rastreador"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Uso: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
