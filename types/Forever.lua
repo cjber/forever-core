@@ -54,7 +54,7 @@
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
 
 -- UI/ContextMenu.lua, the suite's one context menu.
----@alias ForeverMenuEntryKind "root"|"button"|"title"|"divider"|"checkbox"
+---@alias ForeverMenuEntryKind "root"|"button"|"title"|"divider"|"checkbox"|"radio"
 
 ---@class ForeverMenuDescription
 ---@field kind ForeverMenuEntryKind
