@@ -6,7 +6,6 @@
 
 - An addon spec that loads core without `UI/Credits.lua` no longer fails in `Expose.lua`. (#461)
 - **The vendored client slash word list no longer trips an addon's file-size rule.** `tools/client_slash_words.txt` now carries a `file-size-no-growth` ignore marker in its header, so a consumer's `tools/repo_rules.py` stops failing the generated list for growing past 1000 lines while `tools/check_slash_words.py` still skips those header lines when it loads the words.
-- **An addon's simulator gets the restriction classes it reads.** `forever_sim/sync.py` now carries `restrictions.txt` with the code, so a consumer sync no longer leaves `docs.lua` failing with "no restrictions.txt beside docs.lua". A consumer whose vendored `sync.py` predates this takes the new `sync.py` before its first update.
 
 ## [1.7.0] - 2026-11-11
 

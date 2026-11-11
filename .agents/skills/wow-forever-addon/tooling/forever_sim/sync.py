@@ -35,9 +35,6 @@ def digest(path: Path) -> str:
 
 
 SUFFIXES = {".lua", ".py", ".toc"}
-# The data files vendored byte for byte with the modules: the committed list of restricted functions and widget
-# methods docs.lua reads (written by `fetch.py --refresh-restrictions`).
-DATA_FILES = ("restrictions.txt",)
 
 
 def copy_preserving_mode(source: Path, target: Path) -> None:
@@ -50,7 +47,7 @@ def sources(directory: Path) -> list[Path]:
     return sorted(
         path
         for path in directory.rglob("*")
-        if path.is_file() and (path.suffix in SUFFIXES or path.name in DATA_FILES) and "__pycache__" not in path.parts
+        if path.is_file() and path.suffix in SUFFIXES and "__pycache__" not in path.parts
     )
 
 
