@@ -65,6 +65,9 @@ function harness.new(options)
 		function f:IsShown()
 			return self.shown ~= false
 		end
+		function f:GetAlpha()
+			return self.alpha or 1
+		end
 		function f:SetScript(event, fn)
 			self.scripts[event] = fn
 		end

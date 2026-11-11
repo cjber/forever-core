@@ -171,16 +171,39 @@ local function StackPoints(point)
 	return "TOP" .. horizontal, "BOTTOM" .. horizontal
 end
 host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
-local function MatchNativeScale()
+-- The column's scale follows the frame it sits beside: the native tracker when it is really visible, another
+-- tracker's list frame, or UIParent when detached or the native tracker is hidden or transparent, as a replacement UI
+-- may leave it.
+local function NativeScaleSource()
+	local frame = ObjectiveTrackerFrame
+	if not frame then
+		return UIParent
+	end
+	local shown = frame.IsVisible and frame:IsVisible() or (frame.IsShown and frame:IsShown())
+	local alpha = 1
+	if frame.GetEffectiveAlpha then
+		alpha = frame:GetEffectiveAlpha()
+	elseif frame.GetAlpha then
+		alpha = frame:GetAlpha()
+	end
+	if shown and (alpha or 0) > 0 then
+		return frame
+	end
+	return UIParent
+end
+local function MatchScale(source)
+	if not (source and source.GetEffectiveScale) then
+		source = UIParent
+	end
 	local parentScale = UIParent:GetEffectiveScale()
-	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-	if parentScale and nativeScale and parentScale > 0 then
+	local sourceScale = source:GetEffectiveScale()
+	if parentScale and sourceScale and parentScale > 0 then
 		-- Saved variables, and with them the user's scale, are not ready while the files load.
 		local userScale = ready and Settings().scale or 1
-		host:SetScale(nativeScale / parentScale * userScale)
+		host:SetScale(sourceScale / parentScale * userScale)
 	end
 end
-MatchNativeScale()
+MatchScale(UIParent)
 host:SetWidth(ObjectiveTrackerFrame:GetWidth())
 host:SetHeight(1)
 host:SetMovable(true)
@@ -522,7 +545,6 @@ end
 -- Detached: the private column sits wherever the player dragged it, independent of the native tracker.
 local function LayoutDetached(settings)
 	host:Show()
-	MatchNativeScale()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(ObjectiveTrackerFrame:GetWidth(), screenWidth)
@@ -573,7 +595,6 @@ local function LayoutAttached()
 		return
 	end
 	host:Show()
-	MatchNativeScale()
 	local layoutScale = host:GetEffectiveScale()
 	local layoutScreenScale = UIParent:GetEffectiveScale()
 	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
@@ -645,7 +666,6 @@ local function LayoutBesideList(list, kind)
 	end
 	local module = kind == "eqot" and TrackerEqot or TrackerQuestie
 	host:Show()
-	MatchNativeScale()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(ObjectiveTrackerFrame:GetWidth(), screenWidth)
@@ -674,8 +694,9 @@ local function Layout()
 	local settings = ApplyAttachment()
 	ApplyBackdrop(settings)
 	Grip.Show(not attached)
-	-- Lock the host's scale before a list is normalised into it, so a saved user scale is already applied.
-	MatchNativeScale()
+	-- Settle the host's scale before a list is normalised into it. EQOT's list is always in host units, and its
+	-- source is UIParent, so this is also its final scale; the native tracker's and a Questie frame's are set below.
+	MatchScale(UIParent)
 	if not attached then
 		besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
 		LayoutDetached(settings)
@@ -688,6 +709,7 @@ local function Layout()
 	end
 	local questie = TrackerQuestie.List(host, host.MarkDirty)
 	if questie then
+		MatchScale(questie)
 		LayoutBesideList(questie, "questie")
 		return
 	end
@@ -697,6 +719,8 @@ local function Layout()
 		return
 	end
 	besideList, besideQuestie, besideEqot, besideKind = false, false, false, nil
+	-- A hidden or transparent native tracker, as a replacement UI leaves it, is not the frame the column sits beside.
+	MatchScale(NativeScaleSource())
 	LayoutAttached()
 end
 

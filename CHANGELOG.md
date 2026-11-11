@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The tracker column keeps its size with a replacement quest tracker.** It now follows the scale of the frame it actually sits beside: Blizzard's tracker only while that frame is visible and not transparent, another tracker's list, or the screen when detached. A UI that hides or shrinks Blizzard's tracker no longer shrinks every Forever section with it. (#383)
+
 ### For addon authors
 
 - **A core release re-releases every addon.** Each consumer's zip carries ForeverCore in the same folder, so the latest release of every addon must ship the same core. A moved pin now also rewrites that addon's `.pkgmeta` ForeverCore external and its `## X-Forever-Core:` TOC field, and adds a release entry to its `CHANGELOG.md`: the next patch, dated today, marked `<!-- forever-core-sync -->`, with the notes under `## [Unreleased]` kept above it. `tools/release_consumers.py`, run every 20 minutes, dispatches each addon's own `release.yml` for that entry once its tag is missing, no release is queued or running, and full CI on main is green.

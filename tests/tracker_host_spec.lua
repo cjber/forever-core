@@ -126,4 +126,26 @@ empty.check(empty.host.shown == false, "host hides when visible header has no se
 empty.check(empty.first.point[5] == 0, "visible header reserves no gap without drawn content")
 empty.check(empty.nativeHeader.point[2] == empty.native, "visible header remains in native parent")
 
+-- #383: a replacement UI may hide or shrink Blizzard's tracker, so the column follows only a frame it can see.
+local hidden = harness.new({ hostSettings = { attached = false } })
+hidden.native.effectiveScale, hidden.native.shown = 0.01, false
+hidden.ready()
+hidden.drain()
+hidden.check(math.abs(hidden.host:GetScale() - 1) < 1e-9, "a detached column ignores the hidden native tracker's scale")
+local transparent = harness.new({ hostSettings = { attached = true } })
+transparent.native.effectiveScale, transparent.native.alpha = 0.01, 0
+transparent.ready()
+transparent.drain()
+transparent.check(math.abs(transparent.host:GetScale() - 1) < 1e-9, "a transparent native tracker is not the source")
+local visible = harness.new({ hostSettings = { attached = true } })
+visible.native.effectiveScale = 0.8
+visible.ready()
+visible.drain()
+visible.check(math.abs(visible.host:GetScale() - 0.8) < 1e-9, "a visible native tracker still sets the column's scale")
+local userScaled = harness.new({ hostSettings = { attached = true, scale = 1.5 } })
+userScaled.native.effectiveScale = 0.8
+userScaled.ready()
+userScaled.drain()
+userScaled.check(math.abs(userScaled.host:GetScale() - 1.2) < 1e-9, "the user's scale multiplies the source scale")
+
 print("tracker_host_spec: " .. t.checks() .. " checks passed")
