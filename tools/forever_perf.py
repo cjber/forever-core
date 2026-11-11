@@ -173,6 +173,10 @@ class Sources:
 class SavedVariable:
     name: str
     kb: float
+    account_kb: float
+    character_kb: float
+    files: int
+    disk_kb: float
     paths: tuple[Path, ...]
     ours: bool
 
@@ -513,7 +517,7 @@ def load_sources(wtf: Path) -> Sources:
 
 
 def saved_variable_sizes(wtf: Path) -> tuple[SavedVariable, ...]:
-    """Every SavedVariables Lua file, summed per addon file name and largest first."""
+    """Every SavedVariables Lua file name, with what one login parses and the total on disk."""
     grouped: dict[str, list[Path]] = {}
     for path in sorted(wtf.rglob("SavedVariables/*.lua")):
         try:
@@ -523,14 +527,30 @@ def saved_variable_sizes(wtf: Path) -> tuple[SavedVariable, ...]:
         grouped.setdefault(path.name, []).append(path)
     rows: list[SavedVariable] = []
     for name, paths in grouped.items():
-        try:
-            size = sum(path.stat().st_size for path in paths)
-        except OSError:
-            continue
+        account_sizes: list[int] = []
+        character_sizes: list[int] = []
+        disk_size = 0
+        for path in paths:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            disk_size += size
+            relative = path.relative_to(wtf).parts
+            if len(relative) == 4 and relative[0] == "Account" and relative[2] == "SavedVariables":
+                account_sizes.append(size)
+            elif len(relative) == 5 and relative[0] == "Account" and relative[3] == "SavedVariables":
+                character_sizes.append(size)
+        account_kb = max(account_sizes, default=0) / 1024
+        character_kb = max(character_sizes, default=0) / 1024
         rows.append(
             SavedVariable(
                 name=name,
-                kb=size / 1024,
+                kb=account_kb + character_kb,
+                account_kb=account_kb,
+                character_kb=character_kb,
+                files=len(paths),
+                disk_kb=disk_size / 1024,
                 paths=tuple(paths),
                 ours=name.removesuffix(".lua") in FOLDERS,
             )
@@ -827,10 +847,18 @@ def _load_text(report: Report) -> list[str]:
 
 
 def _saved_variables_text(report: Report) -> list[str]:
-    total = sum(row.kb for row in report.saved_variables)
-    rows = [(row.name, f"{row.kb:.1f}", "yes" if row.ours else "-") for row in report.saved_variables[:10]]
-    lines = ["", "SavedVariables size", f"  {len(report.saved_variables)} file(s), {total:.1f} KB"]
-    lines.extend(_table_text(("FILE", "KB", "OURS"), rows))
+    login_total = sum(row.kb for row in report.saved_variables)
+    disk_total = sum(row.disk_kb for row in report.saved_variables)
+    rows = [
+        (row.name, f"{row.kb:.1f}", str(row.files), "yes" if row.ours else "-") for row in report.saved_variables[:10]
+    ]
+    lines = [
+        "",
+        "SavedVariables size",
+        f"  {len(report.saved_variables)} file name(s) read at login; "
+        f"{login_total:.1f} KB per login, {disk_total:.1f} KB on disk",
+    ]
+    lines.extend(_table_text(("FILE", "KB/LOGIN", "FILES", "OURS"), rows))
     return lines
 
 
