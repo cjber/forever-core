@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The tracker column stops flashing and rebuilding when the quests reach the bottom of the screen.** It no longer lays the sections out in the room below the tracker just to measure it, so a quest update no longer replays every header's add animation and rebuilds every block. The column moves above or beside the tracker only when it has to, and returns below as soon as the quests leave room for the whole column. (#438)
+
 ## [1.5.0] - 2026-11-11
 
 <!-- discord-image: docs/screenshots/tracker.png -->

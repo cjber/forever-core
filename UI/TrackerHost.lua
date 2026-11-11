@@ -433,6 +433,8 @@ local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = fun
 -- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
 ---@type boolean, boolean, boolean, "eqot"|"questie"|nil, number
 local besideList, besideQuestie, besideEqot, besideKind, displacedRoom = false, false, false, nil, 0
+-- Whether the last attached layout put the column above or beside the tracker instead of below the quests.
+local aside = false
 
 -- Blizzard's Edit Mode owns the native slot while its manager is on screen. The manager can also be hidden and locked
 -- without exiting (CheckHideAndLockEditMode), which leaves editModeActive true with no EditMode.Exit: a hidden manager
@@ -521,6 +523,7 @@ end
 
 -- Detached: the private column sits wherever the player dragged it, independent of the native tracker.
 local function LayoutDetached(settings)
+	aside = false
 	host:Show()
 	MatchNativeScale()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
@@ -570,6 +573,7 @@ local function LayoutAttached()
 	end
 	if NativeCollapsed() then
 		host:Hide()
+		aside = false
 		return
 	end
 	host:Show()
@@ -596,36 +600,66 @@ local function LayoutAttached()
 	local nativeCentre = ObjectiveTrackerFrame:GetCenter() or 0
 	local edgeCentre = edge:GetCenter() or 0
 	local offsetX = (nativeCentre * nativeScale - edgeCentre * edge:GetEffectiveScale()) / layoutScale
-	host:SetPoint("TOP", edge, edgePoint, offsetX, 0)
+	local function Below()
+		host:ClearAllPoints()
+		host:SetPoint("TOP", edge, edgePoint, offsetX, 0)
+	end
+	Below()
 	local contentBottom = edgePoint == "TOP" and edge:GetTop() or edge:GetBottom()
 	local layoutMargin = 24 * layoutScreenScale / layoutScale
 	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / layoutScale
-	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
-	-- column elsewhere.
-	if LayoutModules(host:GetWidth(), math.max(0, contentBottom - layoutMargin), 0) then
+	local roomBelow = math.max(0, contentBottom - layoutMargin)
+	local screenHeight = (UIParent:GetHeight() or 0) * layoutScreenScale / layoutScale
+	local screenRoom = math.max(0, screenHeight - layoutMargin)
+	-- Puts the column above the tracker when there is room there, otherwise to the side away from the tracker's
+	-- anchored edge, so it stays visible without overlapping the protected frame.
+	local function Aside()
+		local nativePoint, hostPoint = StackPoints(point)
+		host:ClearAllPoints()
+		local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
+		local screenTop = UIParent:GetHeight() or nativeTop
+		local room = screenTop * layoutScreenScale - nativeTop * nativeScale
+		if room >= math.max(host:GetHeight() or 0, 1) * layoutScale then
+			host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
+		elseif SidePoint(point) == "LEFT" then
+			host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
+		else
+			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+		end
+		AvoidMinimap(point)
+	end
+	-- A layout pass is not a measurement: Blizzard's EndLayout hides a section that fits nothing and its
+	-- FreeUnusedBlocks releases every block, so laying the sections out below just to probe the room replays each
+	-- header's add animation and rebuilds every block. `aside` remembers that the column went above or beside the
+	-- tracker last time, so only the real move off the room below pays that replay. A column already aside lays out
+	-- once in the screen's room, and moves back below when the whole laid-out column fits there, with no second pass.
+	if aside then
+		if not LayoutModules(host:GetWidth(), screenRoom, 0) then
+			host:Hide()
+			return
+		end
+		if (host:GetHeight() or 0) <= roomBelow then
+			Below()
+			aside = false
+			return
+		end
+		Aside()
 		return
 	end
-	-- No section fits below at all (quests ending at the bottom of the screen). If there is anything to show, it goes
-	-- above the tracker when there is room there, otherwise to the side away from the tracker's anchored edge, so it
-	-- stays visible without overlapping the protected frame.
-	local screenHeight = (UIParent:GetHeight() or 0) * layoutScreenScale / layoutScale
-	if not LayoutModules(host:GetWidth(), math.max(0, screenHeight - layoutMargin), 0) then
+	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
+	-- column elsewhere.
+	if LayoutModules(host:GetWidth(), roomBelow, 0) then
+		aside = false
+		return
+	end
+	-- No section fits below at all (quests ending at the bottom of the screen). The one pass that shows them above or
+	-- beside the tracker is a real move, so it pays the replay once; the next layout stays there without one.
+	if not LayoutModules(host:GetWidth(), screenRoom, 0) then
 		host:Hide()
 		return
 	end
-	local nativePoint, hostPoint = StackPoints(point)
-	host:ClearAllPoints()
-	local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
-	local screenTop = UIParent:GetHeight() or nativeTop
-	local room = screenTop * layoutScreenScale - nativeTop * nativeScale
-	if room >= math.max(host:GetHeight() or 0, 1) * layoutScale then
-		host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
-	elseif SidePoint(point) == "LEFT" then
-		host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
-	else
-		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-	end
-	AvoidMinimap(point)
+	aside = true
+	Aside()
 end
 
 -- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
@@ -638,6 +672,7 @@ local function LayoutBesideList(list, kind)
 		return
 	end
 	besideList, besideKind = true, kind
+	aside = false
 	besideEqot, besideQuestie = kind == "eqot", kind == "questie"
 	if not list then
 		host:SetShown(LayoutModules(host:GetWidth(), displacedRoom, 0))
