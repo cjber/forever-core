@@ -61,6 +61,22 @@ class CheckConsumersTest(unittest.TestCase):
     def write_toc(self, text):
         (self.repo / "LegacyForever.toc").write_text(text, encoding="utf-8")
 
+    def write_core_toc(self, pin="v1.4.0", dependencies="ForeverCore"):
+        """The root TOC of a consumer that depends on ForeverCore and names the core release its zip bundles."""
+        self.write_toc(f"## Interface: 16001\n## Dependencies: {dependencies}\n## X-Forever-Core: {pin}\n")
+
+    def write_core_pkgmeta(self, pin="v1.4.0", package="LegacyForever", declares_required=False):
+        """The `.pkgmeta` of a consumer that ships `pin`'s ForeverCore, optionally also asking for it by name."""
+        self.write_pkgmeta(
+            f"package-as: {package}\n\n"
+            "externals:\n"
+            f"  ForeverCore: https://github.com/cjber/forever-core/releases/download/{pin}/"
+            f"ForeverCore-{pin}-forever.zip\n\n"
+            "move-folders:\n"
+            f"  {package}/ForeverCore: ForeverCore\n"
+            + ("\nrequired-dependencies:\n  - forevercore\n" if declares_required else "")
+        )
+
     def test_an_equal_pin_passes(self):
         code, out = self.run_main()
         self.assertEqual(code, 0, out)
@@ -84,25 +100,77 @@ class CheckConsumersTest(unittest.TestCase):
         self.assertEqual(code, 1, out)
         self.assertIn("pin v1.9.0, core's latest release is v1.10.0", out)
 
-    def test_an_externals_forevercore_entry_fails(self):
-        self.write_pkgmeta(
-            "package-as: LegacyForever\n\nexternals:\n  ForeverCore: https://example.test/ForeverCore.zip\n"
+    def test_an_external_from_another_release_fails(self):
+        self.write_core_pkgmeta(pin="v1.3.2")
+        self.write_core_toc()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("tools/forever-core.txt pins v1.4.0", out)
+        self.assertIn(
+            "it must be https://github.com/cjber/forever-core/releases/download/v1.4.0/ForeverCore-v1.4.0-forever.zip",
+            out,
         )
+
+    def test_a_missing_externals_entry_fails(self):
+        self.write_pkgmeta("package-as: LegacyForever\n\nmove-folders:\n  LegacyForever/ForeverCore: ForeverCore\n")
+        self.write_core_toc()
         code, out = self.run_main()
         self.assertEqual(code, 1, out)
-        self.assertIn("legacy-forever: .pkgmeta: an externals entry ships ForeverCore", out)
+        self.assertIn("`externals:` does not ship ForeverCore", out)
 
-    def test_a_missing_required_dependencies_entry_fails(self):
-        self.write_pkgmeta("package-as: LegacyForever\n\noptional-dependencies:\n  - questie\n")
+    def test_a_missing_move_folders_entry_fails(self):
+        self.write_pkgmeta(
+            "package-as: LegacyForever\n\n"
+            "externals:\n"
+            "  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+            "v1.4.0/ForeverCore-v1.4.0-forever.zip\n"
+        )
+        self.write_core_toc()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("`move-folders:` must place ForeverCore at the zip's top level", out)
+        self.assertIn("LegacyForever/ForeverCore: ForeverCore", out)
+
+    def test_a_required_dependencies_forevercore_entry_fails(self):
+        self.write_core_pkgmeta(declares_required=True)
+        self.write_core_toc()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("one owner for the folder", out)
+
+    def test_a_consumer_that_requires_core_without_a_pin_fails(self):
+        self.pin.unlink()
+        self.write_core_pkgmeta()
+        self.write_core_toc()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("no pin names the release to ship", out)
+
+    def test_shipping_core_from_the_pin_and_not_requiring_it_passes(self):
+        self.write_core_pkgmeta()
+        self.write_core_toc()
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+
+    def test_a_missing_x_forever_core_field_fails(self):
+        self.write_core_pkgmeta()
         self.write_toc("## Interface: 16001\n## Dependencies: ForeverCore\n")
         code, out = self.run_main()
         self.assertEqual(code, 1, out)
-        self.assertIn("required-dependencies:", out)
-        self.assertIn("no `- forevercore`", out)
+        self.assertIn("no `## X-Forever-Core:` line names the core release the zip bundles", out)
+        self.assertIn("add `## X-Forever-Core: v1.4.0`", out)
 
-    def test_required_dependencies_and_no_externals_pass(self):
-        self.write_pkgmeta("package-as: LegacyForever\n\nrequired-dependencies:\n  - forevercore\n")
-        self.write_toc("## Interface: 16001\n## Dependencies: ForeverCore\n")
+    def test_an_x_forever_core_field_from_another_release_fails(self):
+        self.write_core_pkgmeta()
+        self.write_core_toc(pin="v1.3.0")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("`## X-Forever-Core:` is v1.3.0", out)
+        self.assertIn("tools/forever-core.txt pins v1.4.0, so it must be v1.4.0", out)
+
+    def test_the_x_forever_core_field_is_read_case_insensitively(self):
+        self.write_core_pkgmeta()
+        self.write_toc("## Interface: 16001\n## Dependencies: ForeverCore\n## x-forever-core: v1.4.0\n")
         code, out = self.run_main()
         self.assertEqual(code, 0, out)
 

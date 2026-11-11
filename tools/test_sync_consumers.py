@@ -73,6 +73,30 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual((root / "tools/deadcode.py").read_bytes(), before)
         self.assertIn("0 file(s) changed", out)
 
+    def test_warning_is_copied_and_loaded_before_the_guard(self):
+        root = self.consumer()
+        self.write(root, ".pkgmeta", b"package-as: LegacyForever\n")
+        self.write(self.core, "tools/consumer/ForeverRequire.lua", b"-- shared warning\n")
+        toc = root / "LegacyForever.toc"
+        original = b"## Interface: 16001\r\nCore\\Require.lua\r\nCore/ForeverRequire.lua\r\n"
+        toc.write_bytes(original)
+        only = ("Core/ForeverRequire.lua",)
+
+        code, out = self.run_sync("--dry-run", only=only)
+        self.assertEqual(code, 0, out)
+        self.assertIn("2 file(s) would change", out)
+        self.assertEqual(toc.read_bytes(), original)
+        self.assertFalse((root / only[0]).exists())
+
+        code, out = self.run_sync(only=only)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / only[0]).read_bytes(), b"-- shared warning\n")
+        self.assertEqual(toc.read_bytes(), b"## Interface: 16001\r\nCore\\ForeverRequire.lua\r\nCore\\Require.lua\r\n")
+
+        code, out = self.run_sync(only=only)
+        self.assertEqual(code, 0, out)
+        self.assertIn("0 file(s) changed", out)
+
     def test_dry_run_writes_nothing(self):
         root = self.consumer()
         code, out = self.run_sync("--dry-run")

@@ -4,6 +4,12 @@
 
 - **The tracker column stops flashing and rebuilding when the quests reach the bottom of the screen.** It no longer lays the sections out in the room below the tracker just to measure it, so a quest update no longer replays every header's add animation and rebuilds every block. The column moves above or beside the tracker only when it has to, and returns below as soon as the quests leave room for the whole column. (#438)
 
+### For addon authors
+
+- **A core release re-releases every addon.** Each consumer's zip carries ForeverCore in the same folder, so the latest release of every addon must ship the same core. A moved pin now also rewrites that addon's `.pkgmeta` ForeverCore external and its `## X-Forever-Core:` TOC field, and adds a release entry to its `CHANGELOG.md`: the next patch, dated today, marked `<!-- forever-core-sync -->`, with the notes under `## [Unreleased]` kept above it. `tools/release_consumers.py`, run every 20 minutes, dispatches each addon's own `release.yml` for that entry once its tag is missing, no release is queued or running, and full CI on main is green.
+- **The out-of-date warning survives an English-only phrase table.** An addon whose `ns.L` maps each English phrase to `true` no longer throws inside the warning's `string.format` and hides the warning behind a load error: `tools/consumer/ForeverRequire.lua` now takes a phrase only when it is a string and falls back to the key otherwise.
+- **`tools/check_consumers.py` checks the TOC's core tag.** An addon whose root TOC lists ForeverCore in `## Dependencies` now also fails when `## X-Forever-Core:` is missing or differs from `tools/forever-core.txt`, the field a sibling addon reads to name an out-of-date core.
+
 ## [1.5.0] - 2026-11-11
 
 <!-- discord-image: docs/screenshots/tracker.png -->
