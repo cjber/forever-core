@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/thanks.png -->
+
 - **The Forever addons page has a Thanks page.** Every player who reported a bug, asked for a feature or translated an addon is named once, ranked by how many contributions they gave, with a count after the name and the addons they helped; hovering a row lists what they did for each in full, beside a short **Inspired by** list. A dropdown filters the page to one addon, an addon's own settings page opens it already filtered to that addon, and the choice survives closing and reopening it. Anyone who asks not to be credited is left off. An addon's own settings page can also show a one-line thanks for its players. (#419)
 
 ### For addon authors
