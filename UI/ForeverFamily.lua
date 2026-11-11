@@ -14,6 +14,7 @@ local _, ns = ...
 ---@field L? ForeverFamilyL
 ---@field SafeCall? ForeverSafeCall
 ---@field Family? ForeverFamilyAPI
+---@field Leaderboards? ForeverLeaderboardsAPI
 
 ---@class ForeverFamilyDB
 ---@field suggestFamily? boolean false when the player turned the hints off; on by default
@@ -45,6 +46,9 @@ local _, ns = ...
 
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COIN = "Interface\\Icons\\INV_Misc_Coin_01"
+local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
+local LEADERBOARDS_LINE =
+	"See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."
 -- One window name for every client, so Escape always knows it.
 local LINK_NAME = "ForeverFamilyLink"
 local NO_STRINGS = {}
@@ -410,6 +414,22 @@ function Family.ShowSupport()
 	return true
 end
 
+-- The shared leaderboards window on its overall board. Its module loads after this file, so the read is nil until the
+-- end of the TOC; its Open builds and shows an addon frame and has no combat guard, so a press works in combat too.
+-- The call runs in the addon's SafeCall, and nothing happens when the module is absent.
+---@param safe? ForeverSafeCall|false
+---@return boolean
+local function OpenLeaderboards(safe)
+	local boards = ns.Leaderboards
+	if type(boards) ~= "table" or type(boards.Open) ~= "function" then
+		return false
+	end
+	local ok = RunSafe(type(safe) == "function" and safe or nil, "family leaderboards", function()
+		boards:Open("overall")
+	end)
+	return ok == true
+end
+
 local ROW_HEIGHT = 52
 -- The page has a global name built from its addon's folder: the templates it uses name their regions from $parent,
 -- so a named page keeps UICheckButtonTemplate's Text at ForeverFamilyPanel<folder>Text instead of the bare global
@@ -495,12 +515,35 @@ function Family.CreatePanel(parent, db, current, safeCall)
 			L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."]
 		)
 
+		-- The one shared window every Forever addon's board lives in, opened from here on the overall board.
+		local boardsIcon = panel:CreateTexture(nil, "ARTWORK")
+		boardsIcon:SetSize(32, 32)
+		boardsIcon:SetPoint("TOPLEFT", 16, -100)
+		-- art-ok: a square icon at 32x32
+		boardsIcon:SetTexture(TROPHY)
+		local boardsButton = CreateFrame("Button", nil, panel, "SharedButtonSmallTemplate") --[[@as Button]]
+		boardsButton:SetHeight(22)
+		boardsButton:SetPoint("TOPRIGHT", -16, -105)
+		boardsButton:SetText(L["Open"])
+		Fit(boardsButton, 90)
+		boardsButton:SetScript("OnClick", function()
+			OpenLeaderboards(panel.foreverSafeCall)
+		end)
+		local boardsName = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		boardsName:SetPoint("TOPLEFT", boardsIcon, "TOPRIGHT", 10, 0)
+		boardsName:SetText(L["Forever Leaderboards"])
+		local boardsLine = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+		boardsLine:SetPoint("TOPLEFT", boardsName, "BOTTOMLEFT", 0, -3)
+		boardsLine:SetPoint("RIGHT", boardsButton, "LEFT", -10, 0)
+		boardsLine:SetJustifyH("LEFT")
+		boardsLine:SetText(L[LEADERBOARDS_LINE])
+
 		-- A row per addon, then Ko-fi's, which has no state and no row to refresh.
 		local links = { unpack(Family.ADDONS) } ---@type ForeverFamilyLink[]
 		links[#links + 1] = Family.SUPPORT
 		for index, link in ipairs(links) do
 			local folder = link.folder
-			local top = -100 - (index - 1) * ROW_HEIGHT
+			local top = -100 - ROW_HEIGHT - (index - 1) * ROW_HEIGHT
 			local icon = panel:CreateTexture(nil, "ARTWORK")
 			icon:SetSize(32, 32)
 			icon:SetPoint("TOPLEFT", 16, top)
@@ -625,6 +668,12 @@ function Family.Register(category, db, current, safeCall)
 		subcategory,
 		setting,
 		L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."]
+	)
+	Settings.RegisterInitializer(
+		subcategory,
+		Secure(CreateSettingsButtonInitializer)(L["Forever Leaderboards"], L["Open"], function()
+			OpenLeaderboards(safeCall)
+		end, L[LEADERBOARDS_LINE], false)
 	)
 	for _, addon in ipairs(Family.ADDONS) do
 		if addon.folder ~= current then

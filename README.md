@@ -2,7 +2,7 @@
 
 <h1 align="center">Forever Core</h1>
 
-<p align="center">The shared library every Forever addon needs: one tracker column, its Lock switch, the report window and the suite's shared UI.</p>
+<p align="center">A library: the shared code every Forever addon needs. It comes in the same download as every Forever addon, and there is nothing to install or set up.</p>
 
 <p align="center">
   <a href="https://github.com/cjber/forever-core/actions/workflows/ci.yml"><img src="https://github.com/cjber/forever-core/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -11,11 +11,20 @@
 
 **Interface:** 16001 (WoW: Forever, live client folder `_forever_`, beta `_classic_beta_`)
 
-## What it is for
+## What it is
 
-Every Forever addon requires ForeverCore with `## Dependencies: ForeverCore`, so the game loads it first and exactly one
-copy of each shared file runs. A tracker scale, lock or position set in one addon is the same column in all of them,
-and a fix released here reaches every addon without a second pull request.
+Forever Core is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
+so the game loads it first and exactly one copy of each shared file runs. It has no settings page of its own. Your
+Forever addons use it for:
+
+- **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
+  drag it once, and every addon follows.
+- **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
+  build, the character, the place, recent errors and a log.
+- **Forever Leaderboards.** Each addon can add its board to one shared window, opened from that addon, with weekly and
+  all-time standings and a line on the unit tooltip.
+- **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
+  the debug log are shared once.
 
 The column can wear an optional dark background from any section's right-click menu, drawn with the game's own tooltip
 background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker fine over dark

@@ -44,7 +44,11 @@ function GameTooltip_Hide() end
 function GameTooltip_SetTitle(tooltip, text) end
 
 -- ForeverCore's own saved variables, from ForeverCore.toc.
----@type {trackerHost?: ForeverTrackerSettings, questList?: boolean}?
+---@class ForeverCoreSavedVariables
+---@field trackerHost? ForeverTrackerSettings
+---@field questList? boolean
+---@field leaderboards? {reach?: "group"|"met"}
+---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
 
 ---@class EditModeManagerFrame : Frame

@@ -123,8 +123,9 @@ scenario("the Forever addons settings page leaves the gamepad binding stack to t
 			rows = rows + 1
 		end
 	end
-	-- The hint setting, a row per other addon and the Ko-fi row, with LegacyForever's own row left out.
-	assert(rows == #ns.Family.ADDONS + 1, "the walk reached every row of the page")
+	-- The hint setting, the leaderboards row, a row per other addon and the Ko-fi row, with LegacyForever's own row
+	-- left out.
+	assert(rows == #ns.Family.ADDONS + 2, "the walk reached every row of the page")
 
 	-- B out of the rows, then out of the panel.
 	sim:input(function()

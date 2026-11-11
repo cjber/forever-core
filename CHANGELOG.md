@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Forever Core is listed as a library.** The addon list files it under Libraries, and its description says there is nothing to set up. Every Forever addon's **Forever addons** settings page also has a **Forever Leaderboards** row, to open the leaderboards and see where you stand. (#390)
+- **Forever Leaderboards fits the board it shows.** The window grows with the list instead of leaving empty space, with separate **This week**/**All time** and guild/players menus, a Total column and a gold bar on every row, your own row pinned below a gold rule when it falls outside the top ten, and plain words on an empty board. (#387)
+- **The leaderboards reach further.** Each addon now passes on the freshest rows from up to 500 players you have met in the last 30 days, spread over the normal send budget so nothing is sent too fast, and a passed-on row keeps the player and time it came from. A row is never sent back to the guild or group it was heard from. The board also opens on **Players you've met**, the widest reach, and remembers a narrower choice if you pick one. (#389)
+
 ### For addon authors
 
 - `ForeverCore.APIKit` (minor 2) gains the error answer and suite discovery. `Invalid()` returns `nil, "invalid"` for a read that refuses its argument, so `NotReady` keeps taking only `"loading"`, `"disabled"` and `"none"`; `ForeverCoreAPIAnswer` is the type for a read that can answer either. `Publish(addonName, api)` hands core an addon's public API table once at load (a non-empty name and an integer `version`, or a programming error), and `Addons()` returns a fresh list sorted by name of `{ name, version, minor, api }` with `version` and `minor` read at call time. `docs/api-conventions.md` documents the new members and `docs/api.md` is ForeverCore's own page for third-party authors: the members they may rely on and the examples that list and subscribe to every published API. Check a minor 2 member with `(ForeverCore.APIKit.minor or 1) >= 2`. (#392, #398)

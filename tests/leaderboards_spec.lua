@@ -55,8 +55,9 @@ do
 	equal(window.tabs[1].Icon.texture, ICON, "Overall's trophy")
 	equal(window.tabs[2].key, "guide", "board tabs follow")
 	equal(window.heading.text, "Metric guide", "the metric is the heading")
-	equal(window.subtitle.text, "Your guild and group", "the scope note")
-	equal(window.valueHeader.text, "This week", "the default scope")
+	equal(window.subtitle.text, "2 players you've met", "the subtitle counts the rows on the widest reach")
+	equal(window.totalHeader.text, "Total", "the grey column has a header")
+	equal(window.periodHeader.text, "This week", "the period header")
 	equal(window.note.text, "Others' values are player-reported.", "the footer note")
 	check(window.share:IsShown(), "an addon board offers sharing")
 	check(window.share:GetChecked(), "sharing reads the addon's switch")
@@ -81,27 +82,35 @@ do
 	equal(shared.shared, false, "the checkbox saves the addon's switch")
 	equal(window.share:GetChecked(), false, "and reads it back")
 
-	-- The scope dropdown says what it shows and swaps the board's callback.
+	-- The period dropdown says what it shows and swaps the board's callback.
 	local radios = {}
-	local root = {
-		SetScrollMode = noop,
-		CreateDivider = noop,
-		CreateRadio = function(_, text, _, onClick)
-			radios[#radios + 1] = { text = text, onClick = onClick }
-		end,
-	}
-	window.dropdown.menu(window.dropdown, root)
-	equal(#radios, 4, "two scopes and two reaches")
+	local function Menu()
+		radios = {}
+		return {
+			SetScrollMode = noop,
+			CreateDivider = noop,
+			CreateRadio = function(_, text, _, onClick)
+				radios[#radios + 1] = { text = text, onClick = onClick }
+			end,
+		}
+	end
+	local root = Menu()
+	window.periodDropdown.menu(window.periodDropdown, root)
+	equal(#radios, 2, "the two periods")
+	equal(radios[1].text, "This week", "the first period")
+	equal(radios[2].text, "All time", "the second period")
 	radios[2].onClick()
-	equal(window.valueHeader.text, "All time", "the dropdown changes scope")
+	equal(window.periodHeader.text, "All time", "the dropdown changes scope")
 	equal(window.scroll.buttons[1].value.text, "40", "all-time values are not signed")
 	equal(window.scroll.buttons[1].value.textColor[1], 1, "and not green")
 	radios[1].onClick()
-	equal(window.valueHeader.text, "This week", "back to the week")
+	equal(window.periodHeader.text, "This week", "back to the week")
 
 	-- Overall: points, its own heading and note, and no addon sharing switch.
 	api:Open("overall")
 	equal(api.window.heading.text, "Forever standing", "the overall heading")
+	equal(api.window.totalHeader.text, "Total", "Overall has the same columns")
+	equal(api.window.periodHeader.text, "This week", "and the same period header")
 	equal(api.window.note.text, "Points for placing on each addon's board.", "the overall note")
 	check(api.window.share:IsShown(), "Overall offers the combined switch")
 	check(api.window.share:GetChecked() == false, "off while one board is off")
@@ -127,8 +136,8 @@ do
 
 	-- The dropdown scope callback runs after the selected board is the one refreshed.
 	api:Open("guide")
-	radios = {}
-	api.window.dropdown.menu(api.window.dropdown, root)
+	root = Menu()
+	api.window.periodDropdown.menu(api.window.periodDropdown, root)
 	radios[2].onClick()
 	equal(api.window.heading.text, "Metric guide", "scope keeps the selected board")
 	radios[1].onClick()
@@ -235,7 +244,10 @@ do
 	api:Open("long")
 	local window = api.window
 	check(window.pinned:IsShown(), "a row below the visible list is pinned")
-	check(window.pinnedSpacer:IsShown(), "with the ... spacer")
+	check(window.pinnedSeparator:IsShown(), "with the gold rule above it")
+	equal(window.pinnedSeparator.kind, "Texture", "the separator is a line, not text")
+	equal(window.pinnedSeparator.height, 1, "one pixel high")
+	equal(window.pinnedSeparator.color[4], 0.35, "in faded gold")
 	equal(#window.scroll.buttons, 13, "and the own row leaves the list")
 	equal(window.pinned.nameText.text, "Me (you)", "the pinned row is the player")
 	equal(window.pinned.rankText.text, "14", "with their place")
@@ -252,8 +264,120 @@ do
 	)
 	api:Open("short")
 	check(window.pinned:IsShown() == false, "an own row in view is not pinned")
-	check(window.pinnedSpacer:IsShown() == false, "and the spacer is hidden")
+	check(window.pinnedSeparator:IsShown() == false, "and the separator is hidden")
 	check(window.scroll.buttons[2].highlight:IsShown(), "it stays highlighted in the list")
+end
+
+-- The approved look: two pickers, a counted subtitle, a fitted height, the leader bar and the empty state ----------
+do
+	Client()
+	local api = Load()
+	local function rows(values)
+		return spec("look", values, values)
+	end
+	local look = {
+		row("Peer1", 100, "100 total", false, "MAGE"),
+		row("Peer2", 50, "50 total", false, "HUNTER"),
+		row("Peer3", 10, "10 total", false),
+	}
+	api:Register("look", rows(look))
+	api:Open("look")
+	local window = api.window
+
+	-- Two dropdowns, each sized from its own longest option.
+	local period = harness.MenuRoot()
+	window.periodDropdown.menu(window.periodDropdown, period)
+	equal(#period.radios, 2, "the period has two options")
+	equal(period.radios[1].text, "This week", "the first period option")
+	equal(period.radios[2].text, "All time", "the second period option")
+	local reach = harness.MenuRoot()
+	window.reachDropdown.menu(window.reachDropdown, reach)
+	equal(#reach.radios, 2, "the reach has two options")
+	equal(reach.radios[1].text, "Guild and group", "the first reach option")
+	equal(reach.radios[2].text, "Players you've met", "the second reach option")
+	check(window.periodDropdown:GetWidth() >= #"This week" * 7, "the period dropdown fits its longest option")
+	check(window.reachDropdown:GetWidth() >= #"Players you've met" * 7, "the reach dropdown fits its longest option")
+	equal(window.periodDropdown.defaultText, "This week", "the period picker shows its choice")
+	equal(window.reachDropdown.defaultText, "Players you've met", "the reach picker opens on the widest reach")
+
+	-- The subtitle counts the rows and says where they came from.
+	equal(window.subtitle.text, "3 players you've met", "the counted subtitle")
+	equal(window.totalHeader.text, "Total", "the Total column header")
+	equal(window.periodHeader.text, "This week", "the period column header")
+
+	-- Alternate stripes and the leader bar.
+	local first, second, third = window.scroll.buttons[1], window.scroll.buttons[2], window.scroll.buttons[3]
+	check(first.stripe:IsShown() == false, "the first row has no stripe")
+	check(second.stripe:IsShown(), "the second row is striped")
+	equal(second.stripe.color[4], 0.035, "a faint white stripe")
+	check(first.bar:IsShown(), "the leader has a bar")
+	check(second.bar:IsShown(), "a smaller row still has a bar")
+	check(math.abs(first.bar.width - second.bar.width * 2) < 0.01, "bar widths follow the value fraction")
+	equal(first.bar.height, 2, "the bar is two pixels high")
+	equal(first.bar.color[4], 0.55, "the bar is faded gold")
+	check(third.classIcon:IsShown() == false, "an unknown class draws no icon")
+	equal(third.nameText.pointsArgs.LEFT[2], 70, "and the name keeps its place")
+
+	-- Fitted height: the same space fits no rows and three rows, then grows for the list.
+	equal(window:GetHeight(), 306, "three rows fit in the short window")
+	api:Register("none", spec("none", {}, {}))
+	api:Open("none")
+	equal(window:GetHeight(), 306, "the empty state keeps three rows of space")
+	equal(window.subtitle.text, "Players you've met", "an empty board states the widest reach without a count")
+	equal(window.empty.text, "No one has shared yet", "the empty title")
+	equal(
+		window.emptyBody.text,
+		"Players you've met who use a Forever addon show up here.",
+		"the empty body for the widest reach"
+	)
+	check(window.emptyIcon:IsShown(), "the trophy is shown")
+	equal(window.emptyIcon.width, 40, "the trophy is 40 wide")
+	equal(window.emptyIcon.height, 40, "the trophy is 40 high")
+	equal(window.emptyIcon.alpha, 0.55, "the trophy is faded")
+	equal(window.emptyIcon.texture, harness.ICON, "the trophy is the shared trophy")
+
+	-- The guild-and-group reach has its own empty words.
+	reach = harness.MenuRoot()
+	window.reachDropdown.menu(window.reachDropdown, reach)
+	reach.radios[1].onClick()
+	equal(window.subtitle.text, "Your guild and group", "the guild-and-group reach has no count while empty")
+	equal(
+		window.emptyBody.text,
+		"Guild and group members who use a Forever addon show up here.",
+		"the empty body for the guild and group"
+	)
+	reach = harness.MenuRoot()
+	window.reachDropdown.menu(window.reachDropdown, reach)
+	reach.radios[2].onClick()
+
+	-- A long board shows ten rows; a player below them adds the pinned block.
+	local long = {}
+	for index = 1, 15 do
+		long[index] = row("Peer" .. index, 100 - index, nil, false, "MAGE")
+	end
+	api:Register("long", spec("long", long, long))
+	api:Open("long")
+	equal(window:GetHeight(), 516, "fifteen rows show ten and scroll")
+	long[15] = row("Me", 1, nil, true, "HUNTER")
+	api:Register("long", spec("long", long, long))
+	api:Open("long")
+	equal(window:GetHeight(), 560, "the pinned row adds its own block")
+
+	-- The top-left corner stays put while the height changes.
+	window.left, window.top = 120, 640
+	api:Open("none")
+	equal(window:GetHeight(), 306, "the empty window shrinks")
+	equal(window.pointArgs[1], "TOPLEFT", "and reanchors by its top-left")
+	equal(window.pointArgs[2], harness.env.UIParent, "to the screen")
+	equal(window.pointArgs[4], 120, "at the old left")
+	equal(window.pointArgs[5], 640, "and the old top")
+
+	-- A board with no points hides every bar.
+	api:Register("zero", spec("zero", { row("A", 0, nil, false, "MAGE"), row("B", 0, nil, false, "MAGE") }, {}))
+	api:Open("zero")
+	for _, button in ipairs(window.scroll.buttons) do
+		check(button.bar:IsShown() == false, "a zero top value hides the bar")
+	end
 end
 
 -- Overall points across boards -----------------------------------------------------------------------------------

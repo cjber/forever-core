@@ -14,6 +14,10 @@ ns.L = L
 L["+%d more"] = "+%d more"
 L[", "] = ", "
 L["(you)"] = "(you)"
+L["%d player from your guild and group"] = "%d player from your guild and group"
+L["%d player you've met"] = "%d player you've met"
+L["%d players from your guild and group"] = "%d players from your guild and group"
+L["%d players you've met"] = "%d players you've met"
 L["%d yd"] = "%d yd"
 L["%s (last %d):"] = "%s (last %d):"
 L["%s: no lines yet."] = "%s: no lines yet."
@@ -54,6 +58,9 @@ L["Forever standing"] = "Forever standing"
 L["Forever tracker"] = "Forever tracker"
 L["Forever: %s overall"] = "Forever: %s overall"
 L["Forever: %s overall this week"] = "Forever: %s overall this week"
+L["Guild and group"] = "Guild and group"
+L["Guild and group members who use a Forever addon show up here."] =
+	"Guild and group members who use a Forever addon show up here."
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "Installed, turned off"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
@@ -64,9 +71,10 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "Lock the tracker"
 L["No addon has attached its log yet."] = "No addon has attached its log yet."
-L["No one has reported yet."] = "No one has reported yet."
+L["No one has shared yet"] = "No one has shared yet"
 L["Not installed"] = "Not installed"
 L["On"] = "On"
+L["Open"] = "Open"
 L["Others' values are player-reported."] = "Others' values are player-reported."
 L["Overall"] = "Overall"
 L["Picks quests for your level and plans them into one journey."] =
@@ -76,11 +84,15 @@ L["Plans the quickest way anywhere and guides you there, with live boat and zepp
 	"Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."
 L["Player"] = "Player"
 L["Players you've met"] = "Players you've met"
+L["Players you've met who use a Forever addon show up here."] =
+	"Players you've met who use a Forever addon show up here."
 L["Points for placing on each addon's board."] = "Points for placing on each addon's board."
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
 	"Quest automation, rare alerts and merchant handling for the default UI."
 L["Rank"] = "Rank"
 L["Ready to turn in"] = "Ready to turn in"
+L["See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."] =
+	"See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."
 L["Report a bug or request a feature"] = "Report a bug or request a feature"
 L["Share my progress"] = "Share my progress"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
@@ -99,6 +111,7 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["This addon"] = "This addon"
 L["This week"] = "This week"
 L["Title"] = "Title"
+L["Total"] = "Total"
 L["Tracker background"] = "Tracker background"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"

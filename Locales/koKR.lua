@@ -8,6 +8,10 @@ local L = ns.L
 L["+%d more"] = "+%d개 더"
 L[", "] = ", "
 L["(you)"] = "(나)"
+L["%d player from your guild and group"] = "%d명의 길드 및 그룹 플레이어"
+L["%d player you've met"] = "%d명의 만난 플레이어"
+L["%d players from your guild and group"] = "%d명의 길드 및 그룹 플레이어"
+L["%d players you've met"] = "%d명의 만난 플레이어"
 L["%d yd"] = "%dm"
 L["%s (last %d):"] = "%s (최근 %d개):"
 L["%s: no lines yet."] = "%s: 아직 줄이 없습니다."
@@ -51,6 +55,9 @@ L["Forever standing"] = "Forever 순위"
 L["Forever tracker"] = "Forever 추적기"
 L["Forever: %s overall"] = "Forever: 종합 %s"
 L["Forever: %s overall this week"] = "Forever: 이번 주 종합 %s"
+L["Guild and group"] = "길드 및 그룹"
+L["Guild and group members who use a Forever addon show up here."] =
+	"Forever 애드온을 사용하는 길드 및 그룹 구성원이 여기에 표시됩니다."
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "설치됨, 사용 안 함"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
@@ -61,9 +68,10 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "추적기 잠금"
 L["No addon has attached its log yet."] = "아직 기록을 첨부한 애드온이 없습니다."
-L["No one has reported yet."] = "아직 보고한 사람이 없습니다."
+L["No one has shared yet"] = "아직 공유한 사람이 없습니다."
 L["Not installed"] = "설치 안 됨"
 L["On"] = "켬"
+L["Open"] = "열기"
 L["Others' values are player-reported."] = "다른 플레이어의 값은 플레이어가 보고한 것입니다."
 L["Overall"] = "전체"
 L["Picks quests for your level and plans them into one journey."] =
@@ -74,11 +82,15 @@ L["Plans the quickest way anywhere and guides you there, with live boat and zepp
 	"어디든 가장 빠른 길을 계획해 안내하며, 배와 비행선 시간을 실시간으로 보여줍니다."
 L["Player"] = "플레이어"
 L["Players you've met"] = "만난 플레이어"
+L["Players you've met who use a Forever addon show up here."] =
+	"Forever 애드온을 사용하는, 만난 플레이어가 여기에 표시됩니다."
 L["Points for placing on each addon's board."] = "각 애드온 순위표에 오른 점수입니다."
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
 	"기본 UI용 퀘스트 자동화, 희귀 몬스터 알림, 상인 거래 처리."
 L["Rank"] = "순위"
 L["Ready to turn in"] = "Ready to turn in"
+L["See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."] =
+	"각 Forever 애드온 순위표에서 내 위치를 확인하십시오. 진행 상황 공유의 선택을 해제하면 진행 상황이 비공개로 유지됩니다."
 L["Report a bug or request a feature"] = "오류 보고 또는 기능 요청"
 L["Share my progress"] = "내 진행 상황 공유"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
@@ -97,6 +109,7 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["This addon"] = "이 애드온"
 L["This week"] = "이번 주"
 L["Title"] = "제목"
+L["Total"] = "합계"
 L["Tracker background"] = "추적기 배경"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"사용법: /forever debug, /forever debug pin, /forever debug off, /forever debug show"

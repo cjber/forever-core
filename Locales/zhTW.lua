@@ -8,6 +8,10 @@ local L = ns.L
 L["+%d more"] = "還有 %d 個"
 L[", "] = ", "
 L["(you)"] = "（你）"
+L["%d player from your guild and group"] = "%d 名來自你的公會和隊伍的玩家"
+L["%d player you've met"] = "%d 名你遇過的玩家"
+L["%d players from your guild and group"] = "%d 名來自你的公會和隊伍的玩家"
+L["%d players you've met"] = "%d 名你遇過的玩家"
 L["%d yd"] = "%d碼"
 L["%s (last %d):"] = "%s（最近 %d 筆）："
 L["%s: no lines yet."] = "%s：還沒有記錄行。"
@@ -49,6 +53,9 @@ L["Forever standing"] = "Forever 總排名"
 L["Forever tracker"] = "Forever追蹤器"
 L["Forever: %s overall"] = "Forever：總排名 %s"
 L["Forever: %s overall this week"] = "Forever：本週總排名 %s"
+L["Guild and group"] = "公會和隊伍"
+L["Guild and group members who use a Forever addon show up here."] =
+	"使用 Forever 附加元件的公會和隊伍成員會顯示在這裡。"
 L["Hide this section"] = "Hide this section"
 L["Installed, turned off"] = "已安裝，已停用"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
@@ -59,9 +66,10 @@ L["Lists your tracked quests in the Forever column, ready to turn in first, then
 	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
 L["Lock the tracker"] = "鎖定追蹤器"
 L["No addon has attached its log yet."] = "還沒有插件附加記錄。"
-L["No one has reported yet."] = "還沒有人回報。"
+L["No one has shared yet"] = "還沒有人分享。"
 L["Not installed"] = "未安裝"
 L["On"] = "開啟"
+L["Open"] = "開啟"
 L["Others' values are player-reported."] = "其他玩家的數值由玩家自行回報。"
 L["Overall"] = "總覽"
 L["Picks quests for your level and plans them into one journey."] =
@@ -71,11 +79,15 @@ L["Plans the quickest way anywhere and guides you there, with live boat and zepp
 	"規劃前往任何地點的最快路線並為你引路，附帶船隻與飛艇的即時時刻。"
 L["Player"] = "玩家"
 L["Players you've met"] = "遇過的玩家"
+L["Players you've met who use a Forever addon show up here."] =
+	"使用 Forever 附加元件的、你遇過的玩家會顯示在這裡。"
 L["Points for placing on each addon's board."] = "在每個插件的排行榜上獲得名次的分數。"
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
 	"為預設介面提供任務自動化、稀有怪提醒與商人處理。"
 L["Rank"] = "排名"
 L["Ready to turn in"] = "Ready to turn in"
+L["See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private."] =
+	"查看你在每個 Forever 插件排行榜上的位置。取消勾選「分享我的進度」即可讓進度保持私密。"
 L["Report a bug or request a feature"] = "回報錯誤或請求功能"
 L["Share my progress"] = "分享我的進度"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
@@ -94,6 +106,7 @@ L["The tracker is locked. Turn off Lock the tracker to move it."] =
 L["This addon"] = "本插件"
 L["This week"] = "本週"
 L["Title"] = "標題"
+L["Total"] = "總計"
 L["Tracker background"] = "追蹤器背景"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"用法：/forever debug、/forever debug pin、/forever debug off、/forever debug show"

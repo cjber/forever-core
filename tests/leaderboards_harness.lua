@@ -104,7 +104,7 @@ function Widget:SetWidth(width)
 end
 
 function Widget:GetWidth()
-	return self.width or 0
+	return rawget(self, "width") or 0
 end
 
 function Widget:SetHeight(height)
@@ -112,15 +112,34 @@ function Widget:SetHeight(height)
 end
 
 function Widget:GetHeight()
-	return self.height or 0
+	return rawget(self, "height") or 0
 end
 
 function Widget:SetSize(width, height)
 	self.width, self.height = width, height
 end
 
-function Widget:SetPoint(point)
+function Widget:GetStringWidth()
+	return #(rawget(self, "text") or "") * 7
+end
+
+function Widget:GetLeft()
+	return rawget(self, "left")
+end
+
+function Widget:GetTop()
+	return rawget(self, "top")
+end
+
+function Widget:SetPoint(point, relativeTo, relativePoint, x, y)
 	self.points[point] = true
+	self.pointArgs = { point, relativeTo, relativePoint, x, y }
+	local points = rawget(self, "pointsArgs")
+	if not points then
+		points = {}
+		self.pointsArgs = points
+	end
+	points[point] = { point, relativeTo, relativePoint, x, y }
 end
 
 function Widget:GetParent()
@@ -133,6 +152,14 @@ end
 
 function Widget:SetTexture(texture)
 	self.texture = texture
+end
+
+function Widget:SetColorTexture(r, g, b, a)
+	self.color = { r, g, b, a }
+end
+
+function Widget:SetAlpha(alpha)
+	self.alpha = alpha
 end
 
 function Widget:SetAllPoints()
@@ -171,6 +198,8 @@ function Widget:SetDataProvider(provider)
 	if view and view.initializer then
 		for _, entry in ipairs(provider and provider.entries or {}) do
 			local button = Create("Button", self)
+			-- The client's view sizes a row to the scroll box before the initializer runs.
+			button:SetWidth(404)
 			self.buttons[#self.buttons + 1] = button
 			view.initializer(button, entry)
 		end

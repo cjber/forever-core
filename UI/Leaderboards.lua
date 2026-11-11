@@ -78,11 +78,22 @@ local _, ns = ...
 local OVERALL = "overall"
 local TROPHY = "Interface\\Icons\\INV_Misc_Trophy_Argent"
 local ROW_HEIGHT = 30
-local SPACER_HEIGHT = 16
-local WINDOW_WIDTH, WINDOW_HEIGHT = 460, 560
-local VISIBLE_ROWS = 12
+local VISIBLE_ROWS = 10
+local MIN_VISIBLE_ROWS = 3
+local HEADER_HEIGHT = 112
+local LIST_HEADER_HEIGHT = 26
+local LIST_PADDING = 8
+local PINNED_HEIGHT = ROW_HEIGHT + 14
+local FOOTER_HEIGHT = 70
+local PINNED_BOTTOM = 8
+local WINDOW_WIDTH = 460
+local WINDOW_HEIGHT = HEADER_HEIGHT + LIST_HEADER_HEIGHT + MIN_VISIBLE_ROWS * ROW_HEIGHT + LIST_PADDING + FOOTER_HEIGHT
 local FRAME_NAME = "ForeverLeaderboardsFrame"
 local DROPDOWN_TEMPLATE = "WowStyle1DropdownTemplate"
+local DROPDOWN_PADDING = 56
+local DROPDOWN_MINIMUM = 120
+local BAR_LEFT = 70
+local BAR_RIGHT = 140
 
 local data = ns.LeaderboardsData
 if type(data) ~= "table" or type(data.Overall) ~= "function" then
@@ -102,7 +113,7 @@ local api = {
 	boards = {},
 	order = {},
 	scope = "week",
-	reach = "group",
+	reach = "met",
 	registration = 0,
 }
 local sequence = 0
@@ -112,6 +123,32 @@ ns.Leaderboards = api
 
 local function Strings()
 	return data.Strings()
+end
+
+-- The widest reach is the one a player sees first; a saved choice is kept in ForeverCoreDB and restored when the
+-- window is first built, after the saved variables have arrived.
+local DEFAULT_REACH = "met"
+local reachRestored = false
+
+---@return ForeverLeaderboardsReach
+local function SavedReach()
+	local saved = type(ForeverCoreDB) == "table"
+		and type(ForeverCoreDB.leaderboards) == "table"
+		and ForeverCoreDB.leaderboards.reach
+	return saved == "group" and "group" or DEFAULT_REACH
+end
+
+---@param reach ForeverLeaderboardsReach
+local function SaveReach(reach)
+	if type(ForeverCoreDB) ~= "table" then
+		return
+	end
+	local saved = ForeverCoreDB.leaderboards
+	if type(saved) ~= "table" then
+		saved = {}
+		ForeverCoreDB.leaderboards = saved
+	end
+	saved.reach = reach
 end
 
 -- A board's callback runs in the registering addon's SafeCall, so its failure lands in that addon's journal.
@@ -306,6 +343,8 @@ end
 
 ---@class ForeverLeaderboardsRowButton : Button
 ---@field highlight Texture
+---@field stripe Texture
+---@field bar Texture
 ---@field rankMedal Texture
 ---@field rankText FontString
 ---@field classIcon Texture
@@ -336,17 +375,25 @@ end
 ---@field GetPortrait fun(self: ForeverLeaderboardsWindow): Texture
 ---@field heading FontString
 ---@field subtitle FontString
----@field valueHeader FontString
+---@field totalHeader FontString
+---@field periodHeader FontString
+---@field measure FontString
 ---@field inset Frame
----@field dropdown ForeverLeaderboardsDropdown
+---@field periodDropdown ForeverLeaderboardsDropdown
+---@field reachDropdown ForeverLeaderboardsDropdown
 ---@field scroll ForeverLeaderboardsScrollBox
+---@field scrollBar Frame
+---@field topValue number
 ---@field pinned ForeverLeaderboardsRowButton
----@field pinnedSpacer FontString
+---@field pinnedSeparator Texture
 ---@field share CheckButton
 ---@field shareSetter? fun(shared: boolean)
 ---@field shareLabel FontString
 ---@field note FontString
+---@field emptyFrame Frame
+---@field emptyIcon Texture
 ---@field empty FontString
+---@field emptyBody FontString
 ---@field tabs ForeverLeaderboardsTab[]
 
 ---@param button ForeverLeaderboardsRowButton
@@ -360,40 +407,67 @@ local function InitRow(button)
 	button.highlight:SetAllPoints()
 	button.highlight:Hide()
 
+	-- The alternate row stripe, drawn under the row's text and above the inset's own background.
+	button.stripe = button:CreateTexture(nil, "BACKGROUND")
+	button.stripe:SetAllPoints()
+	button.stripe:SetColorTexture(1, 1, 1, 0.035)
+	button.stripe:Hide()
+
 	button.rankMedal = button:CreateTexture(nil, "ARTWORK")
 	button.rankMedal:SetSize(24, 24)
-	button.rankMedal:SetPoint("LEFT", 12, 0)
+	button.rankMedal:SetPoint("LEFT", 10, 0)
 
 	button.rankText = button:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-	button.rankText:SetPoint("LEFT", 12, 0)
+	button.rankText:SetPoint("LEFT", 10, 0)
 	button.rankText:SetWidth(24)
 	button.rankText:SetJustifyH("CENTER")
 
 	button.classIcon = button:CreateTexture(nil, "ARTWORK")
 	button.classIcon:SetSize(22, 22)
-	button.classIcon:SetPoint("LEFT", 45, 0)
+	button.classIcon:SetPoint("LEFT", 42, 0)
+
+	button.bar = button:CreateTexture(nil, "ARTWORK")
+	button.bar:SetHeight(2)
+	button.bar:SetPoint("BOTTOMLEFT", BAR_LEFT, 4)
+	button.bar:SetColorTexture(0.91, 0.74, 0.39, 0.55)
+	button.bar:Hide()
 
 	button.nameText = button:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-	button.nameText:SetPoint("LEFT", 76, 0)
+	button.nameText:SetPoint("LEFT", BAR_LEFT, 0)
 	button.nameText:SetJustifyH("LEFT")
 
 	button.value = button:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-	button.value:SetPoint("RIGHT", -12, 0)
-	button.value:SetWidth(80)
+	button.value:SetPoint("RIGHT", -10, 0)
+	button.value:SetWidth(60)
 	button.value:SetJustifyH("RIGHT")
 
 	button.extra = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-	button.extra:SetPoint("RIGHT", button.value, "LEFT", -10, 0)
+	button.extra:SetPoint("RIGHT", button.value, "LEFT", 0, 0)
 	button.extra:SetWidth(90)
 	button.extra:SetJustifyH("RIGHT")
 	button.nameText:SetPoint("RIGHT", button.extra, "LEFT", -10, 0)
 end
 
+-- The leader bar runs from the name's left edge up to the Total column, so its full width is what the widest bar may
+-- be. A bare Button has no width until the scroll view sizes it; the fallback keeps a fresh row sane.
+---@param button ForeverLeaderboardsRowButton
+---@return number
+local function BarWidth(button)
+	local width = button:GetWidth()
+	if not width or width <= 0 then
+		-- The inset's width less the scroll box's left inset and the scroll bar's column.
+		width = WINDOW_WIDTH - 28 - 28
+	end
+	return math.max(0, width - BAR_LEFT - BAR_RIGHT)
+end
+
 ---@param button ForeverLeaderboardsRowButton
 ---@param row ForeverLeaderboardsDisplayRow
-local function RenderRow(button, row)
+---@param top number the first row's value, which a bar is a fraction of
+local function RenderRow(button, row, top)
 	local L = Strings()
 	button.highlight:SetShown(row.you)
+	button.stripe:SetShown(not row.you and row.rank % 2 == 0)
 	if row.rank <= 3 then
 		button.rankMedal:SetAtlas(MEDALS[row.rank])
 		button.rankMedal:Show()
@@ -404,6 +478,7 @@ local function RenderRow(button, row)
 		button.rankText:Show()
 	end
 	local class = type(row.class) == "string" and row.class:upper() or nil
+	-- An unknown class keeps the icon's space: the name is anchored independently, so it never shifts.
 	if class and class ~= "" then
 		button.classIcon:SetAtlas("groupfinder-icon-class-" .. class:lower())
 		button.classIcon:Show()
@@ -419,12 +494,19 @@ local function RenderRow(button, row)
 	button.nameText:SetTextColor(r, g, b)
 	button.extra:SetText(row.extra or "")
 	button.extra:SetTextColor(GRAY_FONT_COLOR:GetRGB())
+	local value = tonumber(row.value) or 0
 	if row.weekly then
-		button.value:SetText("+" .. row.value)
+		button.value:SetText("+" .. value)
 		button.value:SetTextColor(GREEN_FONT_COLOR:GetRGB())
 	else
-		button.value:SetText(tostring(row.value))
+		button.value:SetText(tostring(value))
 		button.value:SetTextColor(HIGHLIGHT_FONT_COLOR:GetRGB())
+	end
+	if top > 0 and value > 0 then
+		button.bar:SetWidth(BarWidth(button) * math.min(1, value / top))
+		button.bar:Show()
+	else
+		button.bar:Hide()
 	end
 end
 
@@ -470,6 +552,41 @@ local function RefreshTabs(frame)
 	end
 end
 
+-- The window grows with the board, so its top-left corner stays put while the height changes.
+---@param frame ForeverLeaderboardsWindow
+---@param height number
+local function FitHeight(frame, height)
+	if frame:GetHeight() == height then
+		return
+	end
+	local left, top = frame:GetLeft(), frame:GetTop()
+	frame:SetHeight(height)
+	if left and top then
+		local parentLeft = UIParent:GetLeft() or 0
+		local parentTop = UIParent:GetTop() or 0
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left - parentLeft, top - parentTop)
+	end
+end
+
+-- The subtitle says where the rows come from and, when there are any, how many.
+---@param count integer
+---@return string
+local function ReachLine(count)
+	local L = Strings()
+	local met = api.reach == "met"
+	if count == 0 then
+		return met and L["Players you've met"] or L["Your guild and group"]
+	end
+	local phrase
+	if met then
+		phrase = count == 1 and L["%d player you've met"] or L["%d players you've met"]
+	else
+		phrase = count == 1 and L["%d player from your guild and group"] or L["%d players from your guild and group"]
+	end
+	return string.format(phrase, count)
+end
+
 function Refresh()
 	local L = Strings()
 	local frame = api.window
@@ -483,12 +600,13 @@ function Refresh()
 	api.selected = key
 	local spec = key ~= OVERALL and api.boards[key] or nil
 	frame.heading:SetText(spec and spec.metric or L["Forever standing"])
-	frame.subtitle:SetText(api.reach == "met" and L["Players you've met"] or L["Your guild and group"])
-	frame.valueHeader:SetText(api.scope == "week" and L["This week"] or L["All time"])
-	frame.dropdown:SetDefaultText(api.scope == "week" and L["This week"] or L["All time"])
+	frame.periodHeader:SetText(api.scope == "week" and L["This week"] or L["All time"])
+	frame.periodDropdown:SetDefaultText(api.scope == "week" and L["This week"] or L["All time"])
+	frame.reachDropdown:SetDefaultText(api.reach == "met" and L["Players you've met"] or L["Guild and group"])
 	RefreshTabs(frame)
 
 	local rows = Rows(key, api.scope)
+	frame.subtitle:SetText(ReachLine(#rows))
 	local ownIndex
 	for index, row in ipairs(rows) do
 		if row.you then
@@ -497,14 +615,24 @@ function Refresh()
 		end
 	end
 	local pinned = ownIndex ~= nil and ownIndex > VISIBLE_ROWS
+	local visible = math.min(#rows, VISIBLE_ROWS)
+	local listHeight = LIST_HEADER_HEIGHT
+		+ math.max(visible, MIN_VISIBLE_ROWS) * ROW_HEIGHT
+		+ (pinned and PINNED_HEIGHT or 0)
+		+ LIST_PADDING
+	FitHeight(frame, HEADER_HEIGHT + listHeight + FOOTER_HEIGHT)
+
 	frame.pinned:SetShown(pinned)
-	frame.pinnedSpacer:SetShown(pinned)
-	local bottom = pinned and (4 + ROW_HEIGHT + SPACER_HEIGHT) or 4
+	frame.pinnedSeparator:SetShown(pinned)
+	local bottom = pinned and (PINNED_HEIGHT + LIST_PADDING) or LIST_PADDING
+	local right = #rows > VISIBLE_ROWS and -24 or -4
 	frame.scroll:ClearAllPoints()
-	frame.scroll:SetPoint("TOPLEFT", frame.inset, "TOPLEFT", 4, -26)
-	frame.scroll:SetPoint("BOTTOMRIGHT", frame.inset, "BOTTOMRIGHT", -24, bottom)
+	frame.scroll:SetPoint("TOPLEFT", frame.inset, "TOPLEFT", 4, -LIST_HEADER_HEIGHT)
+	frame.scroll:SetPoint("BOTTOMRIGHT", frame.inset, "BOTTOMRIGHT", right, bottom)
+	local top = rows[1] and tonumber(rows[1].value) or 0
+	frame.topValue = top
 	if pinned then
-		RenderRow(frame.pinned, rows[ownIndex])
+		RenderRow(frame.pinned, rows[ownIndex], top)
 	end
 
 	local list = rows
@@ -516,11 +644,19 @@ function Refresh()
 			end
 		end
 	end
-	frame.empty:SetShown(#rows == 0)
+	local empty = #rows == 0
+	frame.empty:SetShown(empty)
+	frame.emptyBody:SetShown(empty)
+	frame.emptyIcon:SetShown(empty)
+	frame.emptyBody:SetText(
+		api.reach == "met" and L["Players you've met who use a Forever addon show up here."]
+			or L["Guild and group members who use a Forever addon show up here."]
+	)
 	frame.scroll:SetDataProvider(
 		CreateDataProvider(list),
 		ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
 	)
+	frame.scrollBar:SetShown(#rows > VISIBLE_ROWS)
 
 	local sharing, setSharing
 	if spec then
@@ -564,13 +700,9 @@ function Refresh()
 	)
 end
 
--- The dropdown's four choices, in the order a press steps through them.
-local PERIOD_CHOICES = {
-	{ scope = "week", reach = "group" },
-	{ scope = "all", reach = "group" },
-	{ scope = "week", reach = "met" },
-	{ scope = "all", reach = "met" },
-}
+-- Each dropdown's choices, in the order a press steps through them.
+local PERIOD_CHOICES = { "week", "all" }
+local REACH_CHOICES = { "group", "met" }
 
 -- The client's gamepad switch. Read through _G because not every consumer's pinned WoW API annotations declare
 -- InputUtil, and this file has to typecheck unchanged in each of them.
@@ -582,10 +714,49 @@ local function GamepadUI()
 		and input.IsGamepadUIEnabled() == true
 end
 
+-- With the gamepad interface on, the client's gamepad frame manager takes every menu that shows into its focus in the
+-- same call, under the taint of whoever opened it, and the next secure window call then has its protected
+-- SetPreferredGamepadInteractTarget refused. No addon code can open a Blizzard menu untainted, so a press steps to
+-- the dropdown's next choice instead (cjber/forever-core#267, cjber/skillup-forever#398).
+---@param dropdown ForeverLeaderboardsDropdown
+---@param choices string[]
+---@param current fun(): string
+---@param choose fun(choice: string)
+local function HookGamepad(dropdown, choices, current, choose)
+	local openMenu = dropdown.OpenMenu
+	function dropdown:OpenMenu()
+		if not GamepadUI() then
+			return openMenu(self)
+		end
+		if not self:IsEnabled() then
+			return
+		end
+		local index = 1
+		for position, choice in ipairs(choices) do
+			if choice == current() then
+				index = position % #choices + 1
+				break
+			end
+		end
+		choose(choices[index])
+		Refresh()
+	end
+end
+
+---@param parent Frame
+---@return ForeverLeaderboardsDropdown
+local function NewDropdown(parent)
+	return CreateFrame("DropdownButton", nil, parent, DROPDOWN_TEMPLATE) --[[@as ForeverLeaderboardsDropdown]]
+end
+
 ---@return ForeverLeaderboardsWindow
 local function Window()
 	if api.window then
 		return api.window
+	end
+	if not reachRestored then
+		api.reach = SavedReach()
+		reachRestored = true
 	end
 	local L = Strings()
 	local name = FRAME_NAME
@@ -615,10 +786,15 @@ local function Window()
 	frame.subtitle:SetPoint("TOPLEFT", 62, -54)
 	frame.subtitle:SetText(api.reach == "met" and L["Players you've met"] or L["Your guild and group"])
 
-	local dropdown = CreateFrame("DropdownButton", nil, frame, DROPDOWN_TEMPLATE) --[[@as ForeverLeaderboardsDropdown]]
-	dropdown:SetSize(140, 24)
-	dropdown:SetPoint("TOPRIGHT", -16, -60)
-	dropdown:SetupMenu(function(_, root)
+	-- A scratch line measures each dropdown's longest option in the client's font, so a translated option is never
+	-- cut short however long it is.
+	frame.measure = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	frame.measure:Hide()
+
+	local periodDropdown = NewDropdown(frame)
+	periodDropdown:SetHeight(24)
+	periodDropdown:SetPoint("TOPLEFT", 48, -80)
+	periodDropdown:SetupMenu(function(_, root)
 		root:SetScrollMode(300)
 		root:CreateRadio(L["This week"], function()
 			return api.scope == "week"
@@ -632,61 +808,63 @@ local function Window()
 			api.scope = "all"
 			Refresh()
 		end)
-		root:CreateDivider()
-		root:CreateRadio(L["Your guild and group"], function()
+	end)
+	HookGamepad(periodDropdown, PERIOD_CHOICES, function()
+		return api.scope
+	end, function(choice)
+		api.scope = choice
+	end)
+	periodDropdown:SetDefaultText(L["This week"])
+	frame.periodDropdown = periodDropdown
+
+	local reachDropdown = NewDropdown(frame)
+	reachDropdown:SetHeight(24)
+	reachDropdown:SetPoint("LEFT", periodDropdown, "RIGHT", 8, 0)
+	reachDropdown:SetupMenu(function(_, root)
+		root:SetScrollMode(300)
+		root:CreateRadio(L["Guild and group"], function()
 			return api.reach == "group"
 		end, function()
 			api.reach = "group"
+			SaveReach(api.reach)
 			Refresh()
 		end)
 		root:CreateRadio(L["Players you've met"], function()
 			return api.reach == "met"
 		end, function()
 			api.reach = "met"
+			SaveReach(api.reach)
 			Refresh()
 		end)
 	end)
-	-- With the gamepad interface on, the client's gamepad frame manager takes every menu that shows into its focus
-	-- in the same call, under the taint of whoever opened it, and the next secure window call then has its protected
-	-- SetPreferredGamepadInteractTarget refused. No addon code can open a Blizzard menu untainted, so a press steps
-	-- to the next choice instead (cjber/forever-core#267, cjber/skillup-forever#398).
-	local openMenu = dropdown.OpenMenu
-	function dropdown:OpenMenu()
-		if not GamepadUI() then
-			return openMenu(self)
-		end
-		if not self:IsEnabled() then
-			return
-		end
-		local index = 1
-		for position, choice in ipairs(PERIOD_CHOICES) do
-			if choice.scope == api.scope and choice.reach == api.reach then
-				index = position % #PERIOD_CHOICES + 1
-				break
+	HookGamepad(reachDropdown, REACH_CHOICES, function()
+		return api.reach
+	end, function(choice)
+		api.reach = choice
+		SaveReach(choice)
+	end)
+	reachDropdown:SetDefaultText(api.reach == "met" and L["Players you've met"] or L["Guild and group"])
+	frame.reachDropdown = reachDropdown
+
+	local function FitDropdown(dropdown, labels)
+		local longest = 0
+		for _, text in ipairs(labels) do
+			frame.measure:SetText(text)
+			local width = frame.measure:GetStringWidth()
+			if not width or width <= 0 then
+				width = #text * 7
 			end
+			longest = math.max(longest, width)
 		end
-		local choice = PERIOD_CHOICES[index]
-		api.scope, api.reach = choice.scope, choice.reach
-		Refresh()
+		dropdown:SetWidth(math.max(DROPDOWN_MINIMUM, math.ceil(longest) + DROPDOWN_PADDING))
 	end
-	dropdown:SetDefaultText(L["This week"])
-	frame.dropdown = dropdown
+	FitDropdown(periodDropdown, { L["This week"], L["All time"] })
+	FitDropdown(reachDropdown, { L["Guild and group"], L["Players you've met"] })
 
 	local inset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
-	inset:SetPoint("TOPLEFT", 14, -92)
-	inset:SetPoint("BOTTOMRIGHT", -14, 74)
+	inset:SetPoint("TOPLEFT", 14, -HEADER_HEIGHT)
+	inset:SetPoint("BOTTOMRIGHT", -14, FOOTER_HEIGHT)
 	frame.inset = inset --[[@as Frame]]
-
-	local rankHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-	rankHeader:SetPoint("TOPLEFT", 12, -8)
-	rankHeader:SetText(L["Rank"])
-	local playerHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-	playerHeader:SetPoint("TOPLEFT", 76, -8)
-	playerHeader:SetText(L["Player"])
-	frame.valueHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-	frame.valueHeader:SetPoint("TOPRIGHT", -12, -8)
-	frame.valueHeader:SetWidth(80)
-	frame.valueHeader:SetJustifyH("RIGHT")
 
 	local divider = inset:CreateTexture(nil, "ARTWORK")
 	divider:SetAtlas("_UI-Frame-InnerTopTile")
@@ -695,9 +873,9 @@ local function Window()
 	divider:SetHeight(3)
 
 	local scroll = CreateFrame("Frame", nil, inset, "WowScrollBoxList") --[[@as ForeverLeaderboardsScrollBox]]
-	scroll:SetPoint("TOPLEFT", 4, -26)
-	scroll:SetPoint("BOTTOMRIGHT", -24, 4)
-	local scrollBar = CreateFrame("EventFrame", nil, inset, "MinimalScrollBar")
+	scroll:SetPoint("TOPLEFT", 4, -LIST_HEADER_HEIGHT)
+	scroll:SetPoint("BOTTOMRIGHT", -4, LIST_PADDING)
+	local scrollBar = CreateFrame("EventFrame", nil, inset, "MinimalScrollBar") --[[@as Frame]]
 	scrollBar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, 0)
 	scrollBar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 4, 0)
 	local view = CreateScrollBoxListLinearView()
@@ -706,27 +884,69 @@ local function Window()
 	view:SetElementInitializer("Button", function(button, entry)
 		local rowButton = button --[[@as ForeverLeaderboardsRowButton]]
 		InitRow(rowButton)
-		RenderRow(rowButton, entry)
+		RenderRow(rowButton, entry, frame.topValue or 0)
 	end)
 	ScrollUtil.InitScrollBoxListWithScrollBar(scroll, scrollBar, view)
 	frame.scroll = scroll
+	frame.scrollBar = scrollBar
+
+	local rankHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+	rankHeader:SetPoint("TOPLEFT", 12, -8)
+	rankHeader:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+	rankHeader:SetText(L["Rank"])
+	local playerHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+	playerHeader:SetPoint("TOPLEFT", 74, -8)
+	playerHeader:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+	playerHeader:SetText(L["Player"])
+	frame.totalHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+	frame.totalHeader:SetPoint("TOPRIGHT", -74, -8)
+	frame.totalHeader:SetWidth(80)
+	frame.totalHeader:SetJustifyH("RIGHT")
+	frame.totalHeader:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+	frame.totalHeader:SetText(L["Total"])
+	frame.periodHeader = inset:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+	frame.periodHeader:SetPoint("TOPRIGHT", -14, -8)
+	frame.periodHeader:SetWidth(80)
+	frame.periodHeader:SetJustifyH("RIGHT")
+	frame.periodHeader:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
 
 	local pinned = CreateFrame("Button", nil, inset) --[[@as ForeverLeaderboardsRowButton]]
 	InitRow(pinned)
-	pinned:SetPoint("BOTTOMLEFT", 4, 4)
-	pinned:SetPoint("BOTTOMRIGHT", -24, 4)
+	pinned:SetPoint("BOTTOMLEFT", 4, PINNED_BOTTOM)
+	pinned:SetPoint("BOTTOMRIGHT", -24, PINNED_BOTTOM)
 	pinned:Hide()
 	frame.pinned = pinned
 
-	frame.pinnedSpacer = inset:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-	frame.pinnedSpacer:SetPoint("BOTTOM", pinned, "TOP", 0, 2)
-	frame.pinnedSpacer:SetText("...")
-	frame.pinnedSpacer:Hide()
+	frame.pinnedSeparator = inset:CreateTexture(nil, "ARTWORK")
+	frame.pinnedSeparator:SetColorTexture(0.91, 0.74, 0.39, 0.35)
+	frame.pinnedSeparator:SetPoint("BOTTOMLEFT", pinned, "TOPLEFT", 8, 7)
+	frame.pinnedSeparator:SetPoint("BOTTOMRIGHT", pinned, "TOPRIGHT", -8, 7)
+	frame.pinnedSeparator:SetHeight(1)
+	frame.pinnedSeparator:Hide()
 
-	frame.empty = inset:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-	frame.empty:SetPoint("CENTER", 0, 0)
-	frame.empty:SetText(L["No one has reported yet."])
+	frame.emptyFrame = CreateFrame("Frame", nil, inset)
+	frame.emptyFrame:SetPoint("TOPLEFT", inset, "TOPLEFT", 0, -LIST_HEADER_HEIGHT)
+	frame.emptyFrame:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", 0, 0)
+
+	frame.emptyIcon = inset:CreateTexture(nil, "ARTWORK")
+	frame.emptyIcon:SetSize(40, 40)
+	frame.emptyIcon:SetPoint("CENTER", frame.emptyFrame, "CENTER", 0, 32)
+	frame.emptyIcon:SetAlpha(0.55)
+	frame.emptyIcon:SetTexture(TROPHY)
+	frame.emptyIcon:Hide()
+
+	frame.empty = inset:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	frame.empty:SetPoint("TOP", frame.emptyFrame, "CENTER", 0, 2)
+	frame.empty:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+	frame.empty:SetText(L["No one has shared yet"])
 	frame.empty:Hide()
+
+	frame.emptyBody = inset:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	frame.emptyBody:SetPoint("TOP", frame.emptyFrame, "CENTER", 0, -20)
+	frame.emptyBody:SetWidth(WINDOW_WIDTH - 28 - 80)
+	frame.emptyBody:SetJustifyH("CENTER")
+	frame.emptyBody:SetTextColor(GRAY_FONT_COLOR:GetRGB())
+	frame.emptyBody:Hide()
 
 	local share = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate") --[[@as CheckButton]]
 	share:SetPoint("BOTTOMLEFT", 16, 34)
