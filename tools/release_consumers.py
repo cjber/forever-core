@@ -2,12 +2,14 @@
 
 Every consumer's release zip carries ForeverCore in the same `ForeverCore` folder, so all of the addons' latest releases
 must ship the same core: a core release has to re-release every consumer. `tools/sync_consumer_prs.py` moves each
-consumer's pin to the new core release, rewrites its bundle and adds a release entry to `CHANGELOG.md` carrying the
-`<!-- forever-core-sync -->` marker. This script, run every 20 minutes by
+consumer's pin to the new core release, rewrites its bundle and, when its `## [Unreleased]` section is empty, adds a
+release entry to `CHANGELOG.md` carrying the `<!-- forever-core-sync -->` marker. This script, run every 20 minutes by
 `.github/workflows/release-consumers.yml`, reads each consumer's `main` and dispatches that consumer's own
 `release.yml` for the marked entry once all of these hold:
 
 - the newest `## [X.Y.Z]` entry carries the marker, so it is the sync's, not a hand-written release;
+- nothing sits under `## [Unreleased]`: notes merged above the marked entry after the sync PR opened are that addon's
+  own release notes, and this release would ship them under a maintenance line;
 - the tag `vX.Y.Z` does not exist yet;
 - no `release.yml` run is queued or in progress;
 - no `release.yml` run for `main`'s head already finished with a failure, which the cron would otherwise dispatch
@@ -35,7 +37,15 @@ import re
 import sys
 from dataclasses import dataclass
 
-from sync_consumer_prs import OWNER, SyncError, api_json, consumer_repos, discover_tooling_repos, gh
+from sync_consumer_prs import (
+    OWNER,
+    SyncError,
+    api_json,
+    consumer_repos,
+    discover_tooling_repos,
+    gh,
+    unreleased_notes,
+)
 
 MARKER = "<!-- forever-core-sync -->"
 CHANGELOG = "CHANGELOG.md"
@@ -124,8 +134,9 @@ def decide(
 ) -> Decision:
     """The release decision for one consumer, from what main holds and what its workflows report.
 
-    Pure, so the whole rule is unit-tested without the network: only a marked newest entry whose tag is missing,
-    whose release is idle, whose head has no failed release run and whose full CI on main's head passed is dispatched.
+    Pure, so the whole rule is unit-tested without the network: only a marked newest entry with no notes under
+    `## [Unreleased]`, whose tag is missing, whose release is idle, whose head has no failed release run and whose full
+    CI on main's head passed is dispatched.
     """
     if changelog is None:
         return Decision(reason="main has no CHANGELOG.md")
@@ -135,6 +146,9 @@ def decide(
     version, body = entry
     if MARKER not in body:
         return Decision(reason=f"the newest entry, v{version}, is not a ForeverCore sync")
+    if (unreleased_notes(changelog) or "").strip():
+        # The addon's own next release carries those notes; this one would publish them under a maintenance line.
+        return Decision(reason=f"unreleased notes sit above v{version}; its own release ships them")
     if release_pending:
         return Decision(reason=f"{RELEASE_WORKFLOW} is queued or running")
     if release_failed and head is not None:
