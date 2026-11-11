@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/leaderboards.png -->
+
 - **Forever Core is listed as a library.** The addon list files it under Libraries, and its description says there is nothing to set up. Every Forever addon's **Forever addons** settings page also has a **Forever Leaderboards** row, to open the leaderboards and see where you stand. (#390)
 - **Forever Leaderboards fits the board it shows.** The window grows with the list instead of leaving empty space, with separate **This week**/**All time** and guild/players menus, a Total column and a gold bar on every row, your own row pinned below a gold rule when it falls outside the top ten, and plain words on an empty board. (#387)
 - **The leaderboards reach further.** Each addon now passes on the freshest rows from up to 500 players you have met in the last 30 days, spread over the normal send budget so nothing is sent too fast, and a passed-on row keeps the player and time it came from. A row is never sent back to the guild or group it was heard from. The board also opens on **Players you've met**, the widest reach, and remembers a narrower choice if you pick one. (#389)
