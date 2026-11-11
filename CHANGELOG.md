@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- **The Professions window keeps one width.** Forever's extra side tabs now share one owner in Forever Core: each tab shows only its own page, the game's own tabs and pages take the window back cleanly, and the window holds one width for every profession and tab instead of growing and shrinking. (#382)
+## [1.4.0] - 2026-11-11
+
+<!-- discord-image: docs/screenshots/tracker.png -->
 
 ### For addon authors
 
