@@ -10,7 +10,7 @@
     "client.lua": "21e0a622d87aa6a62cc430bda0b39ce6b7c62163ea78740f187d177f9cf6d125",
     "clientdata.lua": "e93b0c0d133d2f4384cce58e9b4f119ca2b7be3b9de95817e0351f245b6aa927",
     "docs.lua": "75c58231b2ab3ffc8be343d4e39634af0bebfd0b5a1c64bc4863f6e209c54597",
-    "fetch.py": "3e1e1ea4c4ee851b323cdbe30f05bd718ed34f88a9b5ac9e621731bf39923d7c",
+    "fetch.py": "6c968a8d119e9f7242474da01f956dd72c7e97d3d380de3788c5312b435ed048",
     "gen_script_types.py": "cce0d4c656d958532eae3903afafcf0e9abe15ec4996c76df74d03db15c9971a",
     "instrument.lua": "0458145c18888024db1b7aa9919ba4f462714348c27bebe3a97bbc4fd222c31c",
     "layout.lua": "2310ddc299e8fab165249b2378ae4b7f451f008c97078ad7f2dcbccad57b9ae2",

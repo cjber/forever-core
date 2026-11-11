@@ -188,12 +188,27 @@ def build_undocumented(root: Path, ui: Path) -> None:
     write(target, "\n".join(lines) + "\n")
 
 
-# Wiki classes the restrictedapi template uses, and how each becomes the simulator's one class. "always" covers every
-# tag that refuses addon calls whatever the moment; a tag about a runtime state the sim does not model (an instance,
-# a group, a free trial) stays untagged and keeps today's combat-only rule.
-ALWAYS_TAGS = frozenset({"protected", "noscript", "secureframe", "restrictedframe"})
-STATE_TAGS = frozenset({"noinstance", "grouponly", "nopermission", "nofreetrial", "anchorfamily"})
-KNOWN_TAGS = frozenset({"nocombat", "hwevent"}) | ALWAYS_TAGS | STATE_TAGS
+# Wiki classes the restrictedapi template uses, and how each becomes the simulator's one class. "always" is the one
+# unconditional refusal, "protected": addon code may not call it at any time. The other tags restrict something the
+# simulator does not model, so they stay untagged and keep today's combat-only rule:
+#   * noscript blocks /run, /script and loadstring, not addon file code, which is what the sim runs;
+#   * secureframe blocks calls on secure frames during combat;
+#   * restrictedframe blocks calls on restricted frames such as nameplates;
+#   * the state tags name an instance, a group, a free trial or an anchor family the sim has no notion of.
+ALWAYS_TAGS = frozenset({"protected"})
+UNMODELLED_TAGS = frozenset(
+    {
+        "noscript",
+        "secureframe",
+        "restrictedframe",
+        "noinstance",
+        "grouponly",
+        "nopermission",
+        "nofreetrial",
+        "anchorfamily",
+    }
+)
+KNOWN_TAGS = frozenset({"nocombat", "hwevent"}) | ALWAYS_TAGS | UNMODELLED_TAGS
 
 
 def restriction_class(tag, source):

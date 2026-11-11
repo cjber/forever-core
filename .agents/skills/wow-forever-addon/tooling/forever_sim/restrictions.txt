@@ -9,13 +9,13 @@ C_AchievementTelemetry.LinkAchievementInClub untagged
 C_AchievementTelemetry.LinkAchievementInWhisper untagged
 C_AddOnProfiler.AddPerformanceMessageShown untagged
 C_AnimaDiversion.SelectAnimaNode untagged
-C_AuctionHouse.CancelAuction always
+C_AuctionHouse.CancelAuction hwevent
 C_AuctionHouse.ConfirmPostCommodity untagged
 C_AuctionHouse.ConfirmPostItem untagged
-C_AuctionHouse.PlaceBid always
-C_AuctionHouse.PostCommodity always
-C_AuctionHouse.PostItem always
-C_AuctionHouse.StartCommoditiesPurchase always
+C_AuctionHouse.PlaceBid hwevent
+C_AuctionHouse.PostCommodity hwevent
+C_AuctionHouse.PostItem hwevent
+C_AuctionHouse.StartCommoditiesPurchase hwevent
 C_AzeriteEssence.ActivateEssence untagged
 C_AzeriteEssence.SetPendingActivationEssence untagged
 C_Bank.PurchaseBankTab untagged
@@ -116,7 +116,7 @@ C_EncounterJournal.SetTab untagged
 C_ExpansionTrial.OnTrialLevelUpDialogClicked untagged
 C_ExpansionTrial.OnTrialLevelUpDialogShown untagged
 C_ExternalEventURL.LaunchURL untagged
-C_FriendList.AddFriend always
+C_FriendList.AddFriend untagged
 C_FriendList.AddOrRemoveFriend untagged
 C_FriendList.SendWho hwevent
 C_GamePad.AddSDLMapping untagged
@@ -251,7 +251,7 @@ ClearOutage untagged
 ClearRaidMarker untagged
 CopyToClipboard always
 CreateSecureDelegate untagged
-DeleteCursorItem always
+DeleteCursorItem hwevent
 DropCursorMoney untagged
 FocusUnit always
 FrameAPISimpleCheckout_CancelOpenCheckout untagged
