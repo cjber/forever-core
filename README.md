@@ -2,7 +2,7 @@
 
 <h1 align="center">Forever Core</h1>
 
-<p align="center">A library: the shared code every Forever addon needs. It comes in the same download as every Forever addon, and there is nothing to install or set up.</p>
+<p align="center">A library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any Forever addon, and there is nothing to set up.</p>
 
 <p align="center">
   <a href="https://github.com/cjber/forever-core/actions/workflows/ci.yml"><img src="https://github.com/cjber/forever-core/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -41,7 +41,7 @@ A third-party addon reads the members it may rely on, and the suite's published 
 
 ## Install
 
-Players never install it by hand: CurseForge, Wago and every Forever addon bring it in. For a manual install, drop the
+Players never install it by hand: CurseForge and Wago install it as a required dependency of every Forever addon. For a manual install, drop the
 `ForeverCore` folder in `Interface/AddOns`. `/fcore` prints the column's anchors, heights and combat state, which is
 the same diagnostic the addons print from their own slash commands.
 

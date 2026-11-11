@@ -1,5 +1,5 @@
-Forever Core is a library: the shared code every Forever addon needs. It comes in the same download as every Forever
-addon, so there is nothing to install or set up, and it has no settings page of its own. Your Forever addons use it
+Forever Core is a library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any
+Forever addon, so there is nothing to set up, and it has no settings page of its own. Your Forever addons use it
 for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
@@ -11,7 +11,7 @@ for:
 - **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 
-You never install or configure Forever Core by hand. CurseForge and Wago bring it in with any Forever addon, and the
-game loads it first.
+You never install or configure Forever Core by hand. CurseForge and Wago install it as a required dependency of every
+Forever addon, and the game loads it first.
 
 Made by Cillian Berragan · [cillian.dev](https://cillian.dev/) · [GitHub](https://github.com/cjber) · [Twitter](https://twitter.com/cjberragan)
