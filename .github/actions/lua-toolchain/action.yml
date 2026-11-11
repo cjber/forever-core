@@ -1,0 +1,37 @@
+name: Lua toolchain
+description: Build or restore the pinned LuaJIT 2.1 and luacheck 1.1.2 from GitHub sources.
+
+# One prefix holds both tools: LuaJIT is built at the v2.1 commit Ubuntu packages, and luacheck 1.1.2, argparse and
+# luafilesystem are installed beside it. The key names every pin, so a cache hit needs no network at all.
+runs:
+  using: composite
+  steps:
+    - name: Restore the Lua toolchain
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/lua-toolchain
+        key: lua-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-luajit-c525bcb9024510cad9e170e12b6209aedb330f83-luacheck-418f48976c73be697fe64b0eba9ea9821ac9bca8-argparse-a5ab54f8161f9f508b058411f64c2c72d974733b-luafilesystem-a186cca5833691e830ed255e38ace8ff6b870dbf
+
+    - name: Build the Lua toolchain
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        LUA_TOOLCHAIN_PREFIX: ${{ runner.tool_cache }}/lua-toolchain
+      run: bash "$GITHUB_ACTION_PATH/build.sh" "$LUA_TOOLCHAIN_PREFIX" "$RUNNER_TEMP/lua-toolchain-build"
+
+    - name: Save the Lua toolchain
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/lua-toolchain
+        key: ${{ steps.cache.outputs.cache-primary-key }}
+
+    - name: Check the Lua toolchain
+      shell: bash
+      env:
+        LUA_TOOLCHAIN_PREFIX: ${{ runner.tool_cache }}/lua-toolchain
+      run: | # zizmor: ignore[github-env] the prefix is runner.tool_cache, never an untrusted value
+        echo "$LUA_TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
+        "$LUA_TOOLCHAIN_PREFIX/bin/luajit" -v 2>&1 | grep -q "LuaJIT 2.1"
+        "$LUA_TOOLCHAIN_PREFIX/bin/luacheck" --version | grep -q "^Luacheck: 1.1.2$"

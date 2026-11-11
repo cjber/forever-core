@@ -21,19 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Ubuntu 24.04's release-pocket builds, which the archive never replaces.
-      - name: Install LuaJIT
-        env:
-          LUAJIT: 2.1.0+git20231223.c525bcb+dfsg-1
-        run: |
-          # Fall back to a mirror of Ubuntu's signed archives when the runner's Azure mirror cannot resolve.
-          mirror_list=/etc/apt/apt-mirrors.txt
-          if [ -f "$mirror_list" ] && ! getent ahosts azure.archive.ubuntu.com >/dev/null; then
-            printf '%s\n' https://mirrors.mit.edu/ubuntu | sudo tee "$mirror_list" >/dev/null
-          fi
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --allow-downgrades \
-            "luajit=$LUAJIT" "libluajit-5.1-2=$LUAJIT" "libluajit-5.1-common=$LUAJIT"
+      - uses: ./.github/actions/lua-toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/forever_sim

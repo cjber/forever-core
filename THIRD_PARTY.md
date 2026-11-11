@@ -21,8 +21,8 @@ listed here, with the build-only sources, then the players who helped. The addon
 | [wago.tools](https://wago.tools) | The listfile and backdrop art facts behind `tools/legacy_chrome.txt` | `BUILD` in `tools/gen_legacy_chrome.py` | Blizzard Entertainment's game data |
 
 CI tools (StyLua, ruff, luacheck, lua-language-server, actionlint, zizmor, gitleaks, the BigWigs packager) are pinned in
-`.github/workflows/` and `tools/typecheck.sh`, except luajit and luacheck, which come from the runner's apt; they check
-the addon and are never part of it.
+`.github/workflows/`, `.github/actions/lua-toolchain/` and `tools/typecheck.sh`; they check the addon and are never part
+of it.
 
 ## Players
 

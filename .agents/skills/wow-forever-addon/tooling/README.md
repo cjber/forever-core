@@ -49,7 +49,7 @@ The packaged-zip check runs in its own CI job, after the pinned packager builds 
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y luajit
+      - uses: cjber/forever-core/.github/actions/lua-toolchain@<sha> # pinned as the repo's other actions
       - run: printf 'Package check\n' > .release-notes.md # .pkgmeta's manual-changelog
       - uses: BigWigsMods/packager@<sha> # the release workflow's pin
         with:
