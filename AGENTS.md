@@ -185,8 +185,9 @@ tracker spec, StyLua, ruff, the `tools/` unit tests, `tools/changelog.py --check
 `project-rules` (the client load rule and the menu rule), `packaged`, `secrets` and `workflows` (actionlint and zizmor
 over `.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
-with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and LuaJIT and luacheck are
-installed at that release's exact apt versions, so a runner image update cannot change them.
+with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and its LuaJIT 2.1 and luacheck
+1.1.2 come from `.github/actions/lua-toolchain/`, which builds the pinned sources from GitHub, caches the prefix with
+`actions/cache`, and never touches the runner's apt mirror.
 `.github/workflows/suite.yml` runs `tools/suite_load.py` daily and on demand (`gh workflow run suite.yml`): it clones
 ForeverCore and every published addon's main and runs `tests/suite/suite_scenario.lua`, which loads ForeverCore first
 with the addons that require it in one forever_sim client and calls `sim:exercise()`. It reads other repositories'

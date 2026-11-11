@@ -232,6 +232,10 @@ class Item:
     stats: list = field(default_factory=list)  # [(stat type, allocation /10000)]
 
 
+class NoAtlas(KeyError):
+    """An atlas element the client does not know, or one with no member art: SetAtlas draws nothing for it."""
+
+
 class Ui:
     """Data + asset access for one build, rendering at `scale` pixels per UI unit."""
 
@@ -243,6 +247,7 @@ class Ui:
         self._textures = {}
         self._fonts = {}
         self._asset_problems = {}
+        self._atlas_index = None
 
     def table(self, name, key="ID"):
         if name not in self._tables:
@@ -286,18 +291,24 @@ class Ui:
             )
         return self._fonts[key]
 
-    def atlas(self, name):
-        """Resolve an atlas element name the way SetAtlas does, preferring this client's atlas set."""
-        self.check_asset(name)
-        elements = self.table("UiTextureAtlasElement", key="Name")
-        element = next((row for n, row in elements.items() if n.lower() == name.lower()), None)
+    def _atlas_member(self, name):
+        """The element and member SetAtlas would draw for `name`, its atlas, and its logical size in UI units.
+        Selects by the same ranking as the client and fetches no texture."""
+        if self._atlas_index is None:
+            # Element by lower-cased name and members by element, built once: a scene that measures every
+            # client atlas would otherwise scan both tables per name.
+            by_name = {n.lower(): row for n, row in self.table("UiTextureAtlasElement", key="Name").items()}
+            by_element = {}
+            for m in self.table("UiTextureAtlasMember").values():
+                by_element.setdefault(m["UiTextureAtlasElementID"], []).append(m)
+            self._atlas_index = by_name, by_element
+        by_name, by_element = self._atlas_index
+        element = by_name.get(name.lower())
         if element is None:
-            raise KeyError(f"no atlas element {name!r}")
+            raise NoAtlas(f"no atlas element {name!r}")
         atlases = self.table("UiTextureAtlas")
         canvases = self.table("UiCanvas")
-        members = [
-            m for m in self.table("UiTextureAtlasMember").values() if m["UiTextureAtlasElementID"] == element["ID"]
-        ]
+        members = by_element.get(element["ID"], [])
 
         def logical_size(member):
             # Override size wins; else pixels scaled by the canvas (member's, else the atlas's): canvas 2
@@ -317,21 +328,37 @@ class Ui:
             # The client's own set wins. Outside it, a "-c60" member sits in the default set too but is
             # not what this client draws (its grey tooltip centre proves it), so take the plain one.
             in_set = atlases[member["UiTextureAtlasID"]]["UiTextureAtlasSetID"] == str(self.atlas_set)
-            density = int(member["Width"]) / logical_size(member)[0]
-            return (in_set, "-c60" not in member["CommittedName"], -abs(density - self.scale), int(member["ID"]))
+            width = logical_size(member)[0]
+            # A zero-width member has no density to compare, so any measurable member outranks it.
+            fit = -abs(int(member["Width"]) / width - self.scale) if width else float("-inf")
+            return (in_set, "-c60" not in member["CommittedName"], fit, int(member["ID"]))
 
+        if not members:
+            raise NoAtlas(f"atlas element {name!r} has no member")
         member = max(members, key=rank)
-        atlas = atlases[member["UiTextureAtlasID"]]
+        return element, member, atlases[member["UiTextureAtlasID"]], logical_size(member)
+
+    def atlas(self, name):
+        """Resolve an atlas element name the way SetAtlas does, preferring this client's atlas set."""
+        self.check_asset(name)
+        element, member, atlas, (width, height) = self._atlas_member(name)
         sheet = self._image(int(atlas["FileDataID"]))
         # BLP size can differ from the committed atlas size (a mip dropped); scale committed coordinates.
         sx, sy = sheet.width / int(atlas["AtlasWidth"]), sheet.height / int(atlas["AtlasHeight"])
         box = [int(member[k]) for k in ("CommittedLeft", "CommittedTop", "CommittedRight", "CommittedBottom")]
         image = sheet.crop((round(box[0] * sx), round(box[1] * sy), round(box[2] * sx), round(box[3] * sy)))
-        width, height = logical_size(member)
         flags = int(member["CommittedFlags"])
         slices = self.table("UiTextureAtlasElementSliceData", key="UiTextureAtlasElementID").get(element["ID"])
         margins = tuple(int(slices[k]) for k in ("Left", "Top", "Right", "Bottom")) if slices else None
         return Atlas(member["CommittedName"], image, width, height, bool(flags & 4), bool(flags & 2), margins)
+
+    def atlas_size(self, name):
+        """(width, height) in UI units of an atlas element, as C_Texture.GetAtlasInfo reports it, or None when
+        the element is unknown or has no member. Fetches no texture: the answer is in the atlas tables."""
+        try:
+            return self._atlas_member(name)[3]
+        except NoAtlas:
+            return None
 
     def global_color(self, name):
         """(r, g, b, a) of a GlobalColor constant such as UNCOMMON_GREEN_COLOR."""
