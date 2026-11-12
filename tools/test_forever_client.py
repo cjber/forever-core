@@ -255,6 +255,19 @@ class ForeverClientTest(unittest.TestCase):
             fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
             log_out.assert_called_once()
 
+    def test_teardown_reaps_children_that_respawn_after_wineserver_shutdown(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [43], []]),
+            mock.patch.object(fc.os, "killpg"),
+            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc.subprocess, "run"),
+            mock.patch.object(fc.time, "sleep"),
+        ):
+            fc.teardown(game, {}, None, {"display": ":1"})
+        self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])
+
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):

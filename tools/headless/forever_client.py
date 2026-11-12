@@ -356,11 +356,19 @@ def teardown(
     # The lock and the prefix check make every process in the prefix this session's: end them all.
     server = Path(wine.get("WINE", "wine")).with_name("wineserver")
     subprocess.run([str(server), "-k"], env={**os.environ, **wine, "WINEPREFIX": str(PREFIX)}, check=False)
-    for p in prefix_users():
-        try:
-            os.kill(p, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    # Battle.net can respawn its launcher children after the first wineserver shutdown. Keep checking the prefix
+    # briefly so a launcher timeout cannot leave a second-generation process behind.
+    for attempt in range(20):
+        users = prefix_users()
+        if not users:
+            break
+        for p in users:
+            try:
+                os.kill(p, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if attempt < 19:
+            time.sleep(0.25)
     if link and link.is_symlink():
         link.unlink()
     state_file().unlink(missing_ok=True)
