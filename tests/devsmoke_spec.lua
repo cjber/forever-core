@@ -31,8 +31,8 @@ local fakeCalls = { count = 0, messages = {} }
 local stop = 0
 local fakeDurations = { 0, 9 }
 
-local function addAddon(name, loaded, deps)
-	addons[#addons + 1] = { name = name, loaded = loaded ~= false, deps = deps }
+local function addAddon(name, loaded, deps, version)
+	addons[#addons + 1] = { name = name, loaded = loaded ~= false, deps = deps, version = version }
 end
 
 local function addCommand(addonName, key, alias, handler)
@@ -102,6 +102,14 @@ _G.C_AddOns = {
 			end
 		end
 	end,
+	GetAddOnMetadata = function(which, field)
+		local name = type(which) == "number" and addons[which] and addons[which].name or which
+		for _, addon in ipairs(addons) do
+			if addon.name == name then
+				return field == "Version" and addon.version or nil
+			end
+		end
+	end,
 }
 
 _G.C_Timer = {
@@ -135,6 +143,180 @@ _G.UIErrorsFrame = {
 _G.ToggleWorldMap = function()
 	mapToggles = mapToggles + 1
 end
+
+-- The chat windows this session has: ChatFrame1 is General. The Agent tab is made by the addon on first use, with no
+-- channels, and every command's lines land in its own message list.
+local chatWindows = {}
+local selectedChat = {}
+local openedChat = {}
+local function addChatWindow(name)
+	local frame = { name = name, messages = {} }
+	function frame:AddMessage(text)
+		self.messages[#self.messages + 1] = text
+	end
+	chatWindows[#chatWindows + 1] = frame
+	_G["ChatFrame" .. #chatWindows] = frame
+	return frame
+end
+addChatWindow("General")
+_G.NUM_CHAT_WINDOWS = 10
+_G.GetChatWindowInfo = function(index)
+	local frame = chatWindows[index]
+	return frame and frame.name
+end
+_G.FCF_OpenNewWindow = function(name, noDefaultChannels)
+	local frame = addChatWindow(name)
+	openedChat[#openedChat + 1] = { name = name, noChannels = noDefaultChannels }
+	return frame, #chatWindows
+end
+_G.FCF_SelectDockFrame = function(frame)
+	selectedChat[#selectedChat + 1] = frame
+end
+
+local function agentMessages()
+	local frame
+	for _, window in ipairs(chatWindows) do
+		if window.name == "Agent" then
+			frame = window
+		end
+	end
+	return frame and frame.messages or {}
+end
+
+-- The lines one command prints to the Agent tab, and nothing the command before it printed.
+local function command(text)
+	local before = #agentMessages()
+	SlashCmdList.DEVSMOKE(text, nil)
+	local messages = agentMessages()
+	local lines = {}
+	for index = before + 1, #messages do
+		lines[#lines + 1] = messages[index]
+	end
+	return lines
+end
+
+-- This session's BugGrabber entries: the /run line's own error in one message, and an addon error whose stack names
+-- a /run chunk in another, which is counted.
+local bugSession = 7
+local bugErrors = {}
+_G.BugGrabber = {
+	GetDB = function()
+		return bugErrors
+	end,
+	GetSessionId = function()
+		return bugSession
+	end,
+}
+
+-- The Thanks page the addon opens and scrolls, and the profession tabs it selects.
+local thanksOpen = {}
+local selectedProfession
+local scroll = { value = 0, immediate = false, range = 240 }
+function scroll:GetVerticalScrollRange()
+	return self.range
+end
+function scroll:SetVerticalScroll(value)
+	self.value = value
+end
+-- The client's ScrollFrameTemplate bar: a percentage between 0 and 1, applied at once.
+scroll.ScrollBar = {
+	SetScrollPercentage = function(_, percentage, immediate)
+		scroll.value = percentage * scroll.range
+		scroll.immediate = immediate
+	end,
+}
+local contents = { top = 500, parent = scroll }
+function contents:GetTop()
+	return self.top
+end
+function contents:GetParent()
+	return self.parent
+end
+local creditsWindow = { contents = contents, rows = {}, shown = true }
+function creditsWindow:IsShown()
+	return self.shown
+end
+function creditsWindow:Hide()
+	self.shown = false
+end
+local function creditRow(name, top)
+	local holder = { top = top }
+	function holder:GetTop()
+		return self.top
+	end
+	function holder:IsShown()
+		return self.visible ~= false
+	end
+	return { row = { name = name }, holder = holder }
+end
+creditsWindow.rows = { creditRow("Zerosprey42", 380), creditRow("Someone Else", 360) }
+local creditPlayers = {
+	{ name = "Zerosprey42", helped = { { addon = "ForeverCore", what = "an idea" } }, count = 1 },
+}
+local creditInspired = {
+	{ name = "Jiik", helped = { { addon = "Adventure Guide Forever", what = "" } }, count = 1 },
+}
+_G.ForeverCore = {
+	Credits = {
+		Open = function(title)
+			thanksOpen[#thanksOpen + 1] = title
+			return true
+		end,
+		Players = function()
+			return creditPlayers
+		end,
+		Inspired = function()
+			return creditInspired
+		end,
+		window = creditsWindow,
+	},
+	ProfessionTabs = {
+		Select = function(key)
+			selectedProfession = key
+		end,
+	},
+}
+
+-- The windows /devsmoke close hides: the professions window, the world map and the settings panel.
+local professionWindow = { shown = false }
+function professionWindow:IsShown()
+	return self.shown
+end
+function professionWindow:Hide()
+	self.shown = false
+end
+_G.ProfessionsFrame = professionWindow
+local worldMapWindow = { shown = true }
+function worldMapWindow:IsShown()
+	return self.shown
+end
+function worldMapWindow:Hide()
+	self.shown = false
+end
+_G.WorldMapFrame = worldMapWindow
+local settingsWindow = { shown = true }
+function settingsWindow:IsShown()
+	return self.shown
+end
+function settingsWindow:Close()
+	self.shown = false
+end
+function settingsWindow:Hide()
+	self.shown = false
+end
+_G.SettingsPanel = settingsWindow
+local hiddenPanels = {}
+_G.HideUIPanel = function(frame)
+	hiddenPanels[#hiddenPanels + 1] = frame
+	frame:Hide()
+end
+local openedSkills = {}
+_G.C_TradeSkillUI = {
+	OpenTradeSkill = function(id)
+		openedSkills[#openedSkills + 1] = id
+		professionWindow.shown = true
+	end,
+}
 
 local clock = 0
 _G.time = function()
@@ -179,14 +361,15 @@ end
 -- the ForeverCore dependency, not the name: NaowhForever is third-party and BrandNewForever is in no list at all.
 addAddon("!!DevSmoke")
 addAddon("!!DevSessionLog")
-addAddon("CommissionsForever", true, { "ForeverCore" })
+addAddon("CommissionsForever", true, { "ForeverCore" }, "1.2.3")
 addAddon("AtlasLootClassic")
 addAddon("NaowhForever", true, { "AtlasLootClassic" })
-addAddon("SkillUpForever", false, { "ForeverCore" })
-addAddon("TweaksForever", true, { "ForeverCore" })
-addAddon("MacroAssistForever", true, { "ForeverCore" })
-addAddon("BrandNewForever", true, { "ForeverCore" })
-addAddon("ForeverCore")
+addAddon("SkillUpForever", false, { "ForeverCore" }, "1.4.0")
+addAddon("TweaksForever", true, { "ForeverCore" }, "1.10.0")
+addAddon("MacroAssistForever", true, { "ForeverCore" }, "2.0.0")
+addAddon("BrandNewForever", true, { "ForeverCore" }, "0.9.0")
+addAddon("ForeverCore", true, nil, "2.5.0")
+addAddon("LibAHTab", true, nil, "1.0.4")
 
 addCommand("CommissionsForever", "FAKE", "/fake", function(message, editBox)
 	fakeCalls.count = fakeCalls.count + 1
@@ -391,6 +574,110 @@ local function contains(needle)
 end
 check(contains("ADDON_ACTION_BLOCKED: CommissionsForever ProtectedThing"), "a blocked action is recorded")
 check(contains("LUA_WARNING: a warning"), "a warning is recorded")
+
+-- /devsmoke tab makes the Agent tab with no channels, selects it, and tab off returns to General.
+local tabLines = command("tab")
+equal(#openedChat, 1, "the Agent tab is created once")
+equal(openedChat[1].name, "Agent", "the new tab is named Agent")
+equal(openedChat[1].noChannels, true, "the Agent tab listens to no channels")
+equal(selectedChat[#selectedChat], _G.ChatFrame2, "the Agent tab is selected")
+equal(tabLines[1], "Dev Smoke: Agent tab selected", "the selection is reported")
+command("tab")
+equal(#openedChat, 1, "a second tab command reuses the Agent tab")
+equal(selectedChat[#selectedChat], _G.ChatFrame2, "the Agent tab is selected again")
+local offLines = command("tab off")
+equal(selectedChat[#selectedChat], _G.ChatFrame1, "tab off selects General")
+equal(offLines[1], "Dev Smoke: General tab selected", "the return to General is reported")
+
+-- /devsmoke versions lists ForeverCore, LibAHTab and every loaded addon depending on ForeverCore.
+local versionLines = command("versions")
+equal(#versionLines, 7, "core, LibAHTab and four loaded Forever addons")
+equal(versionLines[1], "Dev Smoke: addons", "the versions are headed")
+equal(versionLines[2], "ForeverCore | version 2.5.0 | loaded", "core's own version")
+equal(versionLines[3], "LibAHTab | version 1.0.4 | loaded", "the tab library's version")
+equal(versionLines[4], "BrandNewForever | version 0.9.0 | loaded", "an addon in no list is listed")
+equal(versionLines[7], "TweaksForever | version 1.10.0 | loaded", "the loaded addons are sorted by folder")
+local listed = table.concat(versionLines, "\n")
+check(not listed:find("SkillUpForever", 1, true), "an unloaded Forever addon is left out")
+check(not listed:find("AtlasLootClassic", 1, true), "a non-Forever addon is left out")
+
+-- /devsmoke errors reports this session's BugGrabber entries, minus the error a chat /run line itself raises.
+bugErrors[#bugErrors + 1] = { message = "a plain error", session = 7 }
+bugErrors[#bugErrors + 1] = { message = '[string "SLASH_FAKE"]:1: attempt to call a nil value', session = 7 }
+bugErrors[#bugErrors + 1] = { message = "an earlier session's error", session = 6 }
+bugErrors[#bugErrors + 1] = {
+	message = "an addon error from a /run line",
+	session = 7,
+	stack = 'in function <[string "SLASH_FAKE"]:1>',
+}
+bugErrors[#bugErrors + 1] = { message = string.rep("long words ", 40), session = 7 }
+local errorLines = command("errors")
+equal(errorLines[1], "Dev Smoke: 3 errors this session", "only this session's own errors count")
+equal(errorLines[2], "1: a plain error", "an error under 180 characters prints whole")
+equal(errorLines[3], "2: an addon error from a /run line", "a /run chunk in the stack does not hide an addon error")
+equal(#errorLines[4], 183, "a long error is cut to its first 180 characters")
+check(errorLines[4]:find("long words", 1, true) ~= nil, "the cut keeps the start of the message")
+local errorText = table.concat(errorLines, "\n")
+check(not errorText:find("earlier session", 1, true), "an error from an earlier session is left out")
+check(not errorText:find("attempt to call a nil value", 1, true), "the /run line's own error is left out")
+local grabber = _G.BugGrabber
+_G.BugGrabber = nil
+local missingErrors = command("errors")
+equal(missingErrors[1], "Dev Smoke: BugGrabber is not loaded", "a missing BugGrabber is reported")
+_G.BugGrabber = grabber
+
+-- /devsmoke thanks opens the filtered page and scrolls the list to the named player's row.
+local thanksLines = command("thanks ForeverCore")
+equal(thanksOpen[#thanksOpen], "ForeverCore", "the addon title opens its filtered page")
+equal(thanksLines[1], "Dev Smoke: Thanks opened for ForeverCore", "the open is reported")
+local scrolled = command("thanks Adventure Guide Forever Zerosprey42")
+equal(thanksOpen[#thanksOpen], "Adventure Guide Forever", "a title with spaces opens whole")
+equal(scroll.value, 120, "the named player's row is scrolled to the top")
+equal(scroll.immediate, true, "the scroll is applied at once")
+equal(scrolled[1], "Dev Smoke: Thanks at Zerosprey42", "the scroll is reported")
+local absent = command("thanks ForeverCore Nobody")
+equal(thanksOpen[#thanksOpen], "ForeverCore", "the page still opens for an unknown player")
+equal(absent[1], "Dev Smoke: no credit row for Nobody", "a missing row is reported")
+local thanksUsage = command("thanks")
+equal(thanksUsage[1], "Dev Smoke: usage /devsmoke thanks <addon title> [player]", "no arguments prints usage")
+
+-- /devsmoke prof opens Cooking when no profession window is open, then selects the addon's tab.
+equal(professionWindow.shown, false, "no profession window is open yet")
+local profLines = command("prof cooking")
+equal(#openedSkills, 1, "the Cooking window is opened")
+equal(openedSkills[1], 185, "Cooking is skill line 185")
+equal(selectedProfession, "cooking", "the tab is selected")
+equal(profLines[1], "Dev Smoke: profession tab cooking", "the selection is reported")
+command("prof alchemy")
+equal(#openedSkills, 1, "an open profession window is kept")
+equal(selectedProfession, "alchemy", "the next tab is selected")
+
+-- /devsmoke close hides the Thanks window, Professions, the world map and Settings through the client's own routes.
+local closeLines = command("close")
+equal(#hiddenPanels, 2, "the professions window and the world map go through the panel manager")
+equal(hiddenPanels[1], professionWindow, "the professions window is hidden first")
+equal(hiddenPanels[2], worldMapWindow, "the world map is hidden next")
+equal(professionWindow.shown, false, "the professions window is hidden")
+equal(worldMapWindow.shown, false, "the world map is hidden")
+equal(settingsWindow.shown, false, "the settings panel is closed")
+equal(creditsWindow.shown, false, "the Thanks window is hidden")
+equal(closeLines[1], "Dev Smoke: closed 4 windows", "every open window is counted")
+local again = command("close")
+equal(again[1], "Dev Smoke: closed 0 windows", "a second close finds nothing open")
+
+-- An unknown subcommand prints the usage instead of starting a run.
+local runsBeforeUnknown = #DevSmokeDB.runs
+local unknown = command("wat")
+equal(#DevSmokeDB.runs, runsBeforeUnknown, "an unknown subcommand starts no run")
+equal(unknown[1], "Dev Smoke: unknown command wat", "an unknown subcommand is reported")
+equal(
+	unknown[2],
+	"Dev Smoke: /devsmoke, tab [off], versions, errors, thanks <addon> [player], prof <tab>, close",
+	"the usage lists every command"
+)
+for _, message in ipairs(agentMessages()) do
+	check(#message < 255, "every Agent line stays under 255 characters")
+end
 
 -- The database keeps the newest twenty runs and nothing reaches chat.
 for _ = 1, 25 do
