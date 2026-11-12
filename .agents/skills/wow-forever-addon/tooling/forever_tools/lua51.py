@@ -11,12 +11,18 @@ from pathlib import Path
 
 def loaded_lua(root: Path) -> list[Path]:
     toc = next(root.glob("*.toc"))
-    pending = [root / line.strip().replace("\\", "/") for line in toc.read_text(encoding="utf-8-sig").splitlines() if line.strip() and not line.strip().startswith("#")]
+    pending = [
+        root / line.strip().replace("\\", "/")
+        for line in toc.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
     seen, result = set(), []
     while pending:
         path = pending.pop(0)
-        if path in seen or not path.is_file():
+        if path in seen:
             continue
+        if not path.is_file():
+            raise ValueError(f"{path}: XML/TOC child is missing from the packaged addon")
         seen.add(path)
         if path.suffix.lower() == ".lua":
             result.append(path)
@@ -40,7 +46,7 @@ def check(root: Path) -> list[str]:
         return ["Lua 5.1 parser is unavailable; set LUA51_LUAC to the pinned luac5.1"]
     try:
         files = loaded_lua(root)
-    except (OSError, ET.ParseError, StopIteration) as error:
+    except (OSError, ET.ParseError, StopIteration, ValueError) as error:
         return [f"{root}: invalid TOC/XML load graph: {error}"]
     problems = []
     for path in files:

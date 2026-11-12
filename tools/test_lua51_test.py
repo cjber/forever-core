@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import unittest
 from pathlib import Path
-import sys
 
 
 @unittest.skipUnless(os.environ.get("LUA51_LUAC"), "requires the pinned Lua 5.1 parser")
@@ -57,5 +57,19 @@ class Lua51GateTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "ForeverCore.toc").write_text("Core.lua\n", encoding="utf-8")
-            (root / "Core.lua").write_text("local provider = CreateDataProvider()\n(provider):Flush()\n", encoding="utf-8")
+            source = "local provider = CreateDataProvider()\n(provider):Flush()\n"
+            (root / "Core.lua").write_text(source, encoding="utf-8")
+            self.assertTrue(lua51.check(root))
+
+    def test_packaged_xml_child_missing_is_rejected(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        tooling = Path(__file__).resolve().parents[1] / ".agents/skills/wow-forever-addon/tooling"
+        sys.path.insert(0, str(tooling))
+        from forever_tools import lua51
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("Core.xml\n", encoding="utf-8")
+            (root / "Core.xml").write_text('<Ui><Script file="Missing.lua" /></Ui>', encoding="utf-8")
             self.assertTrue(lua51.check(root))
