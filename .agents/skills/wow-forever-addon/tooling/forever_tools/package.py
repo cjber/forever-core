@@ -309,7 +309,9 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
             if shutil.which("luajit") is None:
                 return ["luajit: not found on PATH; install it to run the specs on the package"]
             command = ["luajit", spec]
-            environment = None
+            environment = os.environ.copy()
+            if "ForeverCore" in policy.addons:
+                environment["FOREVER_CORE"] = str((Path(scratch) / "ForeverCore").resolve())
             if spec.endswith("_scenario.lua"):
                 command = ["luajit", "tools/forever_sim/run.lua", spec]
                 cache = root / "tools/.cache/forever_sim"
@@ -318,7 +320,6 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
                         f"{spec}: missing tools/.cache/forever_sim; fetch the simulator before package checks"
                     )
                     continue
-                environment = os.environ.copy()
                 environment["FOREVER_SIM_CACHE"] = str(cache.resolve())
             try:
                 result = subprocess.run(
