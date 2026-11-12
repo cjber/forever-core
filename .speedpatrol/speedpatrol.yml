@@ -23,12 +23,6 @@ benchmarks:
     title: "The spec suite, as the gate runs it"
     run: 'for s in tests/*_spec.lua; do luajit "$s" >/dev/null || exit 1; done'
     profile: { enabled: false }
-  - id: leaderboards.bench
-    kind: command
-    critical: false
-    title: "1,000 realm messages and 1,000 tooltip lookups through PeerStats and the window"
-    run: "luajit -joff tests/leaderboards_bench.lua"
-    profile: { enabled: false }
   - id: gate.consumers
     kind: command
     critical: false

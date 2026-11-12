@@ -200,8 +200,7 @@ primitive, not chrome — allowed.
 Each addon represents itself in game with one client icon, declared once in its TOC as
 `## X-Forever-Icon: Interface\Icons\<name>` and read with
 `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`. The minimap button, the Professions or side tab,
-the window portrait, the leaderboard tab and the addon compartment all draw that value, and no shipped Lua
-repeats the path. The TOC `## IconTexture` stays the drawn `media/Icon` for the TOC, the addon list, the
+the window portrait and the addon compartment all draw that value, and no shipped Lua repeats the path. The TOC `## IconTexture` stays the drawn `media/Icon` for the TOC, the addon list, the
 compartment, the report window and the stores; that is the addon's store identity, not its in-game one.
 
 | Addon | `X-Forever-Icon` |

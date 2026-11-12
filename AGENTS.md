@@ -4,8 +4,8 @@ ForeverCore is the shared library under the WoW: Forever addon suite (Interface 
 `ForeverCore`, and every Forever addon requires it with `## Dependencies: ForeverCore`. It owns the one objective-tracker
 column the suite docks into, the grip and Lock switch that move it, the section order that stacks them, the Questie and
 EQOT bridges that keep the column out from under another tracker's quest list, the report and issue windows, the error
-journal and debug log, Forever Leaderboards, the minimap button, the world map quest log tabs, the settings-page chrome
-and the Forever addons page. It is GPL-3.0-or-later.
+journal and debug log, the minimap button, the world map quest log tabs, the settings-page chrome and the Forever
+addons page. It is GPL-3.0-or-later.
 
 ## The two rules that matter
 
@@ -52,8 +52,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 
 - `Core.lua`: ForeverCore's own install of the host's settings (`ns.TrackerHostSettings`), the one `ADDON_LOADED`
   handler that makes `ForeverCoreDB`, and the hooks that attach core's journal and log and run the tracker migration.
-- `Expose.lua`: the public `ForeverCore` table (`API = 1`), its modules, `Register` and `/fcore`; the last file the TOC
-  loads, because it publishes what the modules built.
+- `Expose.lua`: the public `ForeverCore` table (`API = 2`), its modules, `Register`, `/fcore` and `/forever debug`; the
+  last file the TOC loads, because it publishes what the modules built.
 - `Core/SafeCall.lua`: one global error handler for every registered addon, attributing by `AddOns/<name>/`; the
   per-addon context's `SafeCall`, `RecordError`, `CaughtErrors` and journal live here.
 - `Core/Log.lua`: the structured log and its 200-line saved ring per addon, the one `/forever debug` switch and the
@@ -85,17 +85,14 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `UI/ProfessionTabs.lua`: the shared side tab for addon pages in the Professions window, stacking every addon's tab
   under the client's own in registration order, handing the window back on a client tab or page, and keeping the
   window at one width for every profession and tab.
-- `Core/LeaderboardsData.lua`: overall points, standing, the per-scope cache keyed on each board's `revision` and the
-  unit-tooltip place. Loaded before `UI/Leaderboards.lua`, so a tooltip hover is one cache lookup rather than a board
-  build and sort.
+- `Core/RetiredLeaderboards.lua`: the no-op `ForeverCore.Leaderboards` and `ForeverCore.PeerStats.New` answers an older
+  addon release still calls unguarded while it loads. They keep a login from raising a Lua error, store nothing, register
+  no addon-message prefix and send nothing. Remove the file once no supported release calls those members.
 - `Core/APIKit.lua`: the shape every addon's own public API follows, published as `ForeverCore.APIKit`: `Hub` for a
   next-frame change dispatch, `NotReady` and `Invalid` for the two `nil, reason` answers, and `Publish` and `Addons`
   for the suite's published API list. `docs/api-conventions.md` is the convention, `docs/api.md` is ForeverCore's own
   page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
   `docs/api.md`.
-- `UI/Leaderboards.lua`: the one Forever Leaderboards window, its registration and tabs; each addon registers one board
-  and nothing there knows an addon.
-- `Core/PeerStats.lua`: bounded guild and group statistics transport and ranking behind the leaderboards.
 - `Core/MinimapButton.lua`: the one minimap ring; each addon draws one button.
 - `Core/Text.lua`: the shared search fold and ranking.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the

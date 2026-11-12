@@ -1,8 +1,8 @@
 # Depending on ForeverCore
 
 ForeverCore is a standalone addon every Forever addon requires. It loads once, before its consumers, and owns the
-shared runtime: the tracker column, the report and issue windows, the error journal and debug log, Forever
-Leaderboards, the minimap button, the quest log side tabs, the settings-page chrome and the family page.
+shared runtime: the tracker column, the report and issue windows, the error journal and debug log, the minimap
+button, the quest log side tabs, the settings-page chrome and the family page.
 
 Nothing is vendored any more. An addon no longer carries a copy of a shared file, so there is exactly one copy of each
 in the game and a fix reaches players with ForeverCore's next release.
@@ -140,9 +140,6 @@ for the client and one column's settings move every section together.
 
 ## Other modules
 
-- `ForeverCore.Leaderboards:Register(key, spec)` registers one board; `Core/LeaderboardsData.lua` supplies overall
-  points, standings and the unit tooltip. `ForeverCore.PeerStats.New(config)` and `PeerStats.Listen(owner, config)`
-  are the transport behind those boards.
 - `ForeverCore.MinimapButton.Create(spec)` draws the addon's minimap button on the one shared ring. Pass `spec.safeCall`
   (the `SafeCall` from `ForeverCore.Register`) so its click and refresh failures land in the addon's own journal.
 - `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as

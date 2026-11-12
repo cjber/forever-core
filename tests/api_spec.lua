@@ -45,7 +45,7 @@ for _, path in ipairs(tocFiles()) do
 end
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "the TOC publishes ForeverCore")
-equal(ForeverCore.API, 1, "the interface version is 1")
+equal(ForeverCore.API, 2, "the interface version is 2")
 check(type(ForeverCore.Register) == "function", "Register is the per-addon factory")
 check(type(ForeverCore.ContextMenu) == "function", "ContextMenu is the shared menu")
 check(ForeverCore.ContextMenu == ns.ContextMenu, "and it is the module UI/ContextMenu.lua built")

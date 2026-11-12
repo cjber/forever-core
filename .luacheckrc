@@ -21,15 +21,7 @@ read_globals = {
 	"IsAltKeyDown",
 	"CreateFramePoolCollection",
 	"C_XMLUtil",
-	"C_DateAndTime",
-	"Ambiguate",
-	"C_ChatInfo",
 	"Clamp",
-	"CreateDataProvider",
-	"CreateScrollBoxListLinearView",
-	"ScrollBoxConstants",
-	"ScrollUtil",
-	"RAID_CLASS_COLORS",
 	"GREEN_FONT_COLOR",
 	"CreateSettingsButtonInitializer",
 	"Lerp",
@@ -54,20 +46,13 @@ read_globals = {
 	"GameTooltip_AddNormalLine",
 	"GameTooltip_SetTitle",
 	"geterrorhandler",
-	"GetInstanceInfo",
-	"GetNormalizedRealmName",
-	"GetRealmName",
-	"GetRealZoneText",
-	"GetServerTime",
 	"GetTime",
 	"GRAY_FONT_COLOR",
 	"HIGHLIGHT_FONT_COLOR",
 	"hooksecurefunc",
 	"securecallfunction",
-	"IsInGroup",
 	"IsInGuild",
 	"IsInInstance",
-	"IsInRaid",
 	"LE_PARTY_CATEGORY_INSTANCE",
 	"Mixin",
 	"NORMAL_FONT_COLOR",
@@ -101,7 +86,6 @@ read_globals = {
 	"C_TaxiMap",
 	"C_SuperTrack",
 	"UnitFactionGroup",
-	"UnitName",
 	"UnitOnTaxi",
 	"UnitPosition",
 	"UnitIsDeadOrGhost",
@@ -203,9 +187,6 @@ read_globals[#read_globals + 1] = "GetLocale"
 read_globals[#read_globals + 1] = "UnitClass"
 read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
--- LeaderboardsData.lua: the guild roster's classFileName behind a peer row's missing class.
-read_globals[#read_globals + 1] = "GetGuildRosterInfo"
-read_globals[#read_globals + 1] = "GetNumGuildMembers"
 read_globals[#read_globals + 1] = "UISpecialFrames"
 read_globals[#read_globals + 1] = "tContains"
 -- Mover.lua: whether the button of a fine drag is still held.
@@ -217,12 +198,10 @@ files["Locales/*.lua"] = { max_line_length = false }
 -- ForeverCore: the shared files publish these globals, and Core.lua's saved table.
 globals[#globals + 1] = "ForeverCore"
 globals[#globals + 1] = "ForeverCoreDB"
--- UI/Leaderboards.lua: the window's slash commands.
-globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS1"
-globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS2"
 -- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.
 read_globals[#read_globals + 1] = "DEFAULT_CHAT_FRAME"
 globals[#globals + 1] = "SLASH_FOREVERCORE1"
+globals[#globals + 1] = "SLASH_FOREVERCORE2"
 -- UI/QuestLogTabs.lua: Blizzard's quest log, the Forever override table and the stock Quests label.
 read_globals[#read_globals + 1] = "QuestMapFrame"
 read_globals[#read_globals + 1] = "QuestMapFrameOverrides"

@@ -181,15 +181,15 @@ SlashCmdList["DEVSMOKE"] = function()
 	begin()
 end
 
--- The Forever addons load after this one, so /forever only exists here once PLAYER_LOGIN has fired.
+-- The Forever addons load after this one, so core's command only exists here once PLAYER_LOGIN has fired.
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function()
-	local original = SlashCmdList and SlashCmdList["FOREVERLEADERBOARDS"]
+	local original = SlashCmdList and SlashCmdList["FOREVERCORE"]
 	if type(original) ~= "function" then
 		return
 	end
-	SlashCmdList["FOREVERLEADERBOARDS"] = function(message, ...)
+	SlashCmdList["FOREVERCORE"] = function(message, ...)
 		local command = type(message) == "string" and message:match("^%s*(%S+)") or nil
 		if command == "selftest" then
 			begin()

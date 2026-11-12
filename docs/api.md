@@ -14,9 +14,11 @@ convention and the next read after this page.
 ForeverCore.API -- integer
 ```
 
-The interface version of the table below. It is `1` today. It changes only when a member a third-party addon may
+The interface version of the table below. It is `2` today. It changes only when a member a third-party addon may
 rely on breaks: its arguments, the shape of its result or its meaning. Additions keep it and raise a member's own
-`minor` instead. Refuse to run against a core older than the members you call:
+`minor` instead. Version 2 retired Forever Leaderboards and peer stats: `ForeverCore.Leaderboards` and
+`ForeverCore.PeerStats` remain only as no-op answers for older addon releases, and they store, register and send
+nothing. Refuse to run against a core older than the members you call:
 
 ```lua
 if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
@@ -200,6 +202,8 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`, `Text`,
-`QuestOrder`, `Family` and `Credits`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a
-tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.
+`QuestLogTabs`, `MinimapButton`, `SettingsPage`, `Text`, `QuestOrder`, `Family` and `Credits`.
+`Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
+a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
+addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
+instead.

@@ -47,7 +47,6 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
----@field leaderboards? {reach?: "group"|"met"}
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
 
@@ -220,23 +219,6 @@ InputUtil = nil
 -- The settings page keeps one cursor down its canvas, so every row claims its height.
 ---@class Frame
 ---@field settingsRowY? number
-
--- UI/Leaderboards.lua: the client widgets it builds, declared here because the shared file typechecks in core.
----@class ForeverClassColor
----@field GetRGB fun(self: ForeverClassColor): number, number, number
----@type table<string, ForeverClassColor>?
-RAID_CLASS_COLORS = nil
-
----@class ForeverDataProvider
----@field entries any[]
----@param entries? any[]
----@return ForeverDataProvider
-function CreateDataProvider(entries) end
-
----@class ForeverScrollBoxConstants
----@field RetainScrollPosition integer
----@type ForeverScrollBoxConstants
-ScrollBoxConstants = nil
 
 -- The ForeverProfession* classes type core's view of the window; the client global is left for an addon to type.
 -- UI/ProfessionTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.

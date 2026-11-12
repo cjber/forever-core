@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and
+  the short hitch some players saw every 10 seconds is gone. (#443, #512)
+
 ### For addon authors
 
 - **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)

@@ -139,7 +139,7 @@
 ---@field Addons fun(): ForeverCoreAPIEntry[]
 
 ---@class ForeverCoreAPI
----@field API integer the interface version; 1 is the first
+---@field API integer the interface version; 2 retired leaderboards and peer stats
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerSection? ForeverTrackerSectionAPI
@@ -152,9 +152,6 @@
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI
----@field PeerStats? ForeverPeerStatsNamespace
----@field Leaderboards? ForeverLeaderboardsAPI
----@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field Text? table
@@ -174,8 +171,6 @@ ForeverCore = nil
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field MapCanvas? ForeverCanvasAPI
----@field Leaderboards? ForeverLeaderboardsAPI
----@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI

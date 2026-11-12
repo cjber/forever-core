@@ -24,7 +24,7 @@ local chat = {}
 local defaultMessages = {}
 local mapToggles = 0
 local inCombat = false
-local leaderboardCalls = {}
+local foreverCalls = {}
 local fakeCalls = { count = 0, messages = {} }
 -- The profiler clock the addon times each action with, and how many extra milliseconds the fake command spends on
 -- each of its two runs: the second run is the slower one, so the surface has to keep that as its cost.
@@ -206,14 +206,14 @@ addCommand("BrandNewForever", "BRANDNEW", "/brandnew", function() end)
 addCommand("TweaksForever", "TWEAKSFOREVER_RELOAD", "/rl", function()
 	error("the reload command must not run")
 end)
-SlashCmdList["FOREVERLEADERBOARDS"] = function(message, ...)
+SlashCmdList["FOREVERCORE"] = function(message, ...)
 	local second = ...
-	leaderboardCalls[#leaderboardCalls + 1] = { message = message, extra = select("#", ...), second = second }
+	foreverCalls[#foreverCalls + 1] = { message = message, extra = select("#", ...), second = second }
 end
-_G.SLASH_FOREVERLEADERBOARDS1 = "/forever"
-_G.SLASH_FOREVERLEADERBOARDS2 = "/flb"
-taint["SLASH_FOREVERLEADERBOARDS1"] = "ForeverCore"
-taint["SLASH_FOREVERLEADERBOARDS2"] = "ForeverCore"
+_G.SLASH_FOREVERCORE1 = "/fcore"
+_G.SLASH_FOREVERCORE2 = "/forever"
+taint["SLASH_FOREVERCORE1"] = "ForeverCore"
+taint["SLASH_FOREVERCORE2"] = "ForeverCore"
 
 -- What the client's ChatFrameUtil.ImportListToHash does on every slash parse: each entry moves into the proxy table
 -- behind the list's __index, and the list itself is wiped.
@@ -295,7 +295,7 @@ check(surfaceOf(run, "SkillUpForever /skillup") == nil, "an unloaded Forever add
 check(surfaceOf(run, "TweaksForever /rl") == nil, "the reload command is not a surface")
 check(surfaceOf(run, "NaowhForever /naowh") == nil, "a third-party addon ending in Forever is not a surface")
 check(surfaceOf(run, "!!DevSmoke /devsmoke") == nil, "the smoke addon does not test itself")
-check(surfaceOf(run, "ForeverCore /forever") ~= nil, "the leaderboards command is a surface")
+check(surfaceOf(run, "ForeverCore /fcore") ~= nil, "core's command is a surface")
 local macroAssist = surfaceOf(run, "MacroAssistForever /macroassist")
 check(macroAssist ~= nil, "an addon depending on ForeverCore is a surface")
 check(macroAssist.ok, "the Macro Assist surface passes")
@@ -326,13 +326,13 @@ check(surfaceOf(run, "world map") ~= nil, "the run reaches the world map after a
 equal(#run.results, 6, "the failing surface is still one surface")
 equal(uiErrors[#uiErrors], "Dev Smoke: 6 surfaces, 1 failed", "the summary counts the failure")
 
--- /forever selftest starts a run; anything else reaches the shared leaderboards handler untouched.
+-- /forever selftest starts a run; anything else reaches core's handler untouched.
 local runsBefore = #DevSmokeDB.runs
-SlashCmdList.FOREVERLEADERBOARDS("other", "extra")
+SlashCmdList.FOREVERCORE("other", "extra")
 equal(#DevSmokeDB.runs, runsBefore, "another /forever command does not start a run")
-equal(leaderboardCalls[#leaderboardCalls].message, "other", "the original handler gets the same words")
-equal(leaderboardCalls[#leaderboardCalls].second, "extra", "the original handler gets the same arguments")
-SlashCmdList.FOREVERLEADERBOARDS("selftest")
+equal(foreverCalls[#foreverCalls].message, "other", "the original handler gets the same words")
+equal(foreverCalls[#foreverCalls].second, "extra", "the original handler gets the same arguments")
+SlashCmdList.FOREVERCORE("selftest")
 equal(#DevSmokeDB.runs, runsBefore + 1, "/forever selftest starts a run")
 drain()
 run = latest()
