@@ -252,11 +252,13 @@ def mark(name: str) -> float:
         return 0.0
 
 
-def send(state: Mapping, *args: str) -> None:
+def send(state: Mapping, *args: str, before_input=None) -> None:
     """One input action, at least INPUT_GAP after the last one from any invocation."""
     wait = INPUT_GAP - (time.time() - mark("last-input"))
     if wait > 0:
         time.sleep(wait)
+    if before_input:
+        before_input()
     x(state, *args)
     (STATE_DIR / "last-input").touch()
 
@@ -323,9 +325,12 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
         raise ClientError("take a `shot` and read it first: a click must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
-    if state.get("manual_launcher") and not state.get("ready") and client_pid():
-        raise ClientError("the game has started: wait for READY before clicking")
-    send(state, "mousemove", str(px), str(py), "click", button)
+
+    def launcher_guard():
+        if state.get("manual_launcher") and not state.get("ready") and client_pid():
+            raise ClientError("the game has started: wait for READY before clicking")
+
+    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard)
 
 
 def press(state: Mapping, keys: Sequence[str]) -> None:

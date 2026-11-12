@@ -440,14 +440,25 @@ class ForeverClientTest(unittest.TestCase):
         self.assertEqual(x.call_count, 1)
 
     def test_manual_launcher_click_refuses_when_game_process_has_started(self):
+        (self.state / "last-input").touch()
         (self.state / "last-shot").touch()
+        started = False
+
+        def start_game(unused):
+            nonlocal started
+            started = True
+
         with (
-            mock.patch.object(fc, "client_pid", return_value=456),
-            mock.patch.object(fc, "send") as send,
+            mock.patch.object(
+                fc, "mark", side_effect=lambda name: fc.time.time() + (0.1 if name == "last-shot" else 0)
+            ),
+            mock.patch.object(fc.time, "sleep", side_effect=start_game),
+            mock.patch.object(fc, "client_pid", side_effect=lambda: 456 if started else None),
+            mock.patch.object(fc, "x") as x,
             self.assertRaisesRegex(fc.ClientError, "game has started"),
         ):
             fc.click({"manual_launcher": True}, 100, 100, "1")
-        send.assert_not_called()
+        x.assert_not_called()
 
     def test_inputs_are_spaced_out(self):
         sleeps = []
