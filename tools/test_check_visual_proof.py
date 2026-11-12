@@ -7,6 +7,7 @@ suite in one place: discovery here runs that canonical module instead of a secon
 
 import importlib.util
 import sys
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,3 +22,7 @@ def load_tests(loader, standard_tests, pattern):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return loader.loadTestsFromModule(module)
+
+
+if __name__ == "__main__":
+    unittest.main()
