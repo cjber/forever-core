@@ -155,11 +155,11 @@ ForeverCore.ProfessionTabs.Selected() --> string?
 
 - `Register(key, spec)` adds a side tab to the Professions window under the client's own tabs, in registration order.
   `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is your page and `minWidth` raises the
-  one width the window keeps while that custom page is selected. Native pages retain the client's own width. Selecting a tab shows only its page and unchecks the
+  shared custom-page width, which is at least 850 units. Native pages use Camelot's 673-unit layout. Selecting a tab shows only its page and unchecks the
   client's tabs; a client tab or page takes the window back. A key that is not a non-empty string, or one that is
   already registered, is a programming error raised at the calling line.
 - `SetMinWidth(key, width)` changes the `minWidth` of a registration that is already made, then recomputes and enforces
-  the one window width. `nil` clears it, so the window can return to the client's own width. In combat the change waits
+  the shared custom-page width. `nil` clears that request, retaining the 850-unit minimum. In combat the change waits
   for combat to end with the rest of the module's frame work. An unknown key is a programming error raised at the
   calling line. (minor 1)
 - `Select(key)` shows that tab's page and checks its tab; `ShowNative()` hands the window back to the client;

@@ -20,10 +20,9 @@ local order = {}
 local selectedKey
 local installed = false
 
--- The custom width registered pages use while selected. It is the width the client gave its crafting page, read from
--- the engine after layout, raised to the largest minWidth a registration declares.
-local baseWidth
-local fixedWidth
+-- Custom profession pages share the approved 850-unit layout, independent of native page history.
+local CUSTOM_WIDTH = 850
+local fixedWidth = CUSTOM_WIDTH
 local enforcingWidth = false
 
 -- Frame work waits for combat to end, the way UI/TrackerQuests.lua does: a protected native window, or an addon page
@@ -54,14 +53,9 @@ local function Locked()
 	return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
--- The one width the window keeps: the client's own width for its crafting page, raised by any registration. Until
--- the client has laid its crafting page out there is no width to keep, so nothing is set.
+-- All registered pages share one width. A consumer can request more room, but selection never changes it.
 RecomputeWidth = function()
-	if not baseWidth then
-		fixedWidth = nil
-		return
-	end
-	local width = baseWidth
+	local width = CUSTOM_WIDTH
 	for _, entry in ipairs(order) do
 		local minWidth = entry.spec.minWidth
 		if type(minWidth) == "number" and minWidth > width then
@@ -71,41 +65,14 @@ RecomputeWidth = function()
 	fixedWidth = width
 end
 
--- Read the client's own width for its crafting page once, after the client has shown and laid the page out. From
--- then on the fixed width is ours to keep; reading it again would only read a width we had set.
-local function CaptureWidth()
-	if baseWidth then
-		return
-	end
-	local window = Window()
-	if not window then
-		return
-	end
-	local crafting = window.CraftingPage
-	if not crafting or not crafting:IsShown() then
-		return
-	end
-	local width = window:GetWidth()
-	if type(width) == "number" and width > 1 then
-		baseWidth = width
-		RecomputeWidth()
-	end
-end
-
--- Native pages keep the client's own width. A custom page may use the wider registered width while selected; after
--- handback the native page must not retain that width and stretch empty art past its panels.
----@return number?
+-- Camelot/Blizzard_ProfessionsFrame.xml owns the native 673-unit host. Its side-tab path bypasses the
+-- upstream desired-width getter, so custom handback restores that native width without calling Blizzard Lua.
+---@return number
 local function TargetWidth()
-	if selectedKey then
-		return fixedWidth
-	end
-	return baseWidth
+	return selectedKey and fixedWidth or 673
 end
 
 EnforceWidth = function()
-	if not baseWidth then
-		CaptureWidth()
-	end
 	local window = Window()
 	if not fixedWidth or not window or enforcingWidth then
 		return
@@ -244,9 +211,8 @@ local function Anchor()
 	end
 end
 
--- The window has laid itself out: keep its width and our column, (re)read from the engine.
+-- The window has laid itself out: keep the selected page width and our tab column.
 local function Layout()
-	CaptureWidth()
 	Anchor()
 	EnforceWidth()
 end
@@ -292,7 +258,6 @@ end
 -- Every native page hands the window back when the client shows it. The client builds a page as the window opens,
 -- so its OnShow is the signal that the client wants its own page, not ours.
 local function NativePageShown()
-	CaptureWidth()
 	RestoreNativePages()
 	ClearHiddenNativePages()
 	ns.ProfessionTabs.ShowNative()

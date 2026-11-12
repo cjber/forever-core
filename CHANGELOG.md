@@ -2,10 +2,10 @@
 
 ## [Unreleased]
 
-## [1.7.4] - 2026-11-11
+## [1.7.4] - 2026-11-12
 
 - **Profession tabs hide the native controls cleanly.** Switching to a Forever profession page no longer leaves the game's crafting controls visible underneath it, and returning to a native page restores the controls and their original transparency.
-- **Native Professions pages keep the game's width.** A wide custom page no longer leaves dead space after the player hands the window back to Blizzard.
+- **Profession tabs keep their intended size.** SkillUp and Commissions share one stable width, including when opened straight from the overview. Returning to the game's profession pages restores their native size.
 
 ## [1.7.3] - 2026-11-11
 

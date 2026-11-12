@@ -125,13 +125,14 @@ end
 local function newWorld()
 	local pf = newFrame("ProfessionsFrame")
 	pf:SetWidth(673)
+	pf.currentPageWidth = 673
 	pf.points = { "TOPLEFT", "UIParent", "TOPLEFT", 0, 0 }
 
 	local crafting = newFrame("CraftingPage", pf)
-	crafting:SetWidth(782)
+	crafting:SetWidth(673)
 	crafting.shown = true
 	local book = newFrame("BookPage", pf)
-	book:SetWidth(782)
+	book:SetWidth(673)
 	local overview = newFrame("ProfessionsOverviewTab", pf)
 	overview.checked = true
 	local native1 = newFrame("Professions1Tab", pf)
@@ -148,16 +149,20 @@ local function newWorld()
 	pf.rightProfessionTabs = { native1, native2 }
 	-- A native side tab checks itself and shows its page when the client runs its mouse-up. The module's hook on the
 	-- same script hands our pages back.
-	-- The client's SelectBookPage shows the book and hides the crafting page without resizing the window.
+	-- Camelot side tabs return both native pages to the 673-unit host.
 	overview.OnMouseUp = function(self)
 		self:SetChecked(true)
 		book:Show()
 		crafting:Hide()
+		pf:SetWidth(673)
+		pf.currentPageWidth = 673
 	end
 	native1.OnMouseUp = function(self)
 		self:SetChecked(true)
 		crafting:Show()
 		book:Hide()
+		pf:SetWidth(673)
+		pf.currentPageWidth = 673
 	end
 	native2.OnMouseUp = native1.OnMouseUp
 
@@ -376,11 +381,11 @@ api.Select("skillup")
 api.SetMinWidth("commissions", 800)
 assertWidthAndAnchor(world, width, point, "after a lower minWidth under another registration")
 api.SetMinWidth("skillup", nil)
-width = 800
+width = 850
 assertWidthAndAnchor(world, width, point, "after clearing the largest minWidth")
 api.SetMinWidth("commissions", 673)
-width = 673
-assertWidthAndAnchor(world, width, point, "after lowering a minWidth to the client width")
+width = 850
+assertWidthAndAnchor(world, width, point, "after lowering a minWidth below the shared custom width")
 api.SetMinWidth("commissions", nil)
 assertWidthAndAnchor(world, width, point, "after clearing every minWidth")
 
@@ -403,6 +408,7 @@ assert(api.Selected() == nil, "ShowNative left a tab selected")
 
 -- A native crafting page keeps the client's width even when a registered page's minimum is larger. The wider
 -- width belongs only to a selected custom page, not to the native page after handback.
+pressNative(world.native1)
 api.SetMinWidth("commissions", 1050)
 assert(world.frame:GetWidth() == 673, "a native crafting page inherited a custom page's dead width")
 api.SetMinWidth("commissions", nil)
@@ -444,7 +450,7 @@ api.Select("commissions")
 assert(tabA.checked and not tabB.checked, "a combat selection did not check its tab")
 assert(not pageA.shown and not pageB.shown, "a combat selection showed a page")
 api.SetMinWidth("commissions", 1200)
-assertWidthAndAnchor(world, width, point, "a combat minWidth changed the window at once")
+assertWidthAndAnchor(world, 673, point, "a combat minWidth changed the window at once")
 local combatWatcher
 for _, frame in ipairs(world.created) do
 	if frame.events and frame.events.PLAYER_REGEN_ENABLED then
@@ -458,10 +464,9 @@ assert(not pageB.shown and pageA.shown, "leaving combat did not show the selecte
 assertWidthAndAnchor(world, 1200, point, "leaving combat did not apply the combat minWidth")
 assert(not combatWatcher.events.PLAYER_REGEN_ENABLED, "the combat watcher stayed registered")
 api.SetMinWidth("commissions", nil)
-assertWidthAndAnchor(world, 673, point, "clearing the combat minWidth did not restore the client width")
+assertWidthAndAnchor(world, 850, point, "clearing the combat minWidth did not restore the custom base width")
 
--- A registration made before the client has laid its crafting page out keeps no width yet: the engine's width is
--- read once the page is shown, and only then is the largest minWidth applied.
+-- Registration leaves native geometry untouched; selecting the custom page applies its requested minimum.
 local late = newWorld()
 late.crafting.shown = false
 local lateWidthCalls = late.frame.widthCalls
@@ -474,10 +479,24 @@ lateApi.Register("late", {
 	minWidth = 900,
 })
 assert(late.frame:GetWidth() == 673, "the module set a width before the client laid its crafting page out")
-assert(late.frame.widthCalls == lateWidthCalls, "the module wrote the window width before the engine's width was known")
+assert(late.frame.widthCalls == lateWidthCalls, "registration rewrote the native width")
 late.crafting:Show()
 lateApi.Select("late")
 assert(late.frame:GetWidth() == 900, "the module did not take the width once the client laid its page out")
+
+-- The overview can be the first page opened. Custom sizing must not depend on visiting crafting first.
+local overviewFirst = newWorld()
+overviewFirst.crafting.shown = false
+overviewFirst.book.shown = true
+local firstApi = load({})
+firstApi.Register("skillup", { icon = "x", tooltip = "SkillUp", page = newFrame("FirstSkillUp") })
+firstApi.Register("commissions", { icon = "x", tooltip = "Commissions", page = newFrame("FirstCommissions") })
+firstApi.Select("skillup")
+assert(overviewFirst.frame:GetWidth() == 850, "overview-first SkillUp missed the shared width")
+firstApi.Select("commissions")
+assert(overviewFirst.frame:GetWidth() == 850, "Commissions changed the shared width")
+firstApi.ShowNative()
+assert(overviewFirst.frame:GetWidth() == 673, "overview handback retained the custom width")
 
 -- Optional client pages can be absent on a build. A shown BookPage must still step aside when CraftingPage is nil.
 local optional = newWorld()

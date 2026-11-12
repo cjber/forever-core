@@ -139,6 +139,9 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 			api.ShowNative()
 		end
 
+		if not inCombat then
+			expectedWidth = 850
+		end
 		selectTab(tabA)
 		assert(api.Selected() == "a", label .. ": tab A is not the selected tab")
 		assert(checked(tabA), label .. ": tab A is not checked")
@@ -170,13 +173,22 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 			local native, name = nativeShown()
 			assert(native, label .. ": native " .. tostring(name) .. " controls were not restored")
 		end
+		if not inCombat then
+			expectedWidth = 673
+		end
 		stable(label .. " after a client side tab")
 
 		sim:openProfessions(333)
 		sim:advance(0.2)
 		assert(api.Selected() == nil, label .. ": a profession change did not hand the window back")
+		if not inCombat then
+			expectedWidth = 673
+		end
 		stable(label .. " after a profession change")
 
+		if not inCombat then
+			expectedWidth = 850
+		end
 		selectTab(tabA)
 		assert(api.Selected() == "a", label .. ": tab A did not select again after a profession change")
 		if not inCombat then
@@ -222,14 +234,14 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	-- takes the raised width.
 	selectNative(pf.ProfessionsOverviewTab)
 	assert(pf.BookPage:IsShown(), "the overview tab did not show the client's book page")
-	expectedWidth = width
+	expectedWidth = 673
 	stable("on the book page at the raised width")
 	selectTab(tabB)
 	expectedWidth = scenario.raisedWidth
 	stable("a registered page over the book page")
 	sim:openProfessions(333)
 	sim:advance(0.2)
-	expectedWidth = width
+	expectedWidth = 673
 	stable("the crafting page after the book page")
 
 	local lowered = sim:runAs(
@@ -241,7 +253,7 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 		ns
 	)
 	assert(lowered, "clearing a registration's minWidth failed")
-	expectedWidth = width
+	expectedWidth = 673
 	assert(
 		pf:GetWidth() == expectedWidth,
 		"clearing a registration's minWidth did not restore the client width: " .. tostring(pf:GetWidth())
@@ -257,6 +269,7 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	sim:advance(0.2)
 	local count, page = shown()
 	assert(count == 1 and page == pageA, "leaving combat did not show exactly tab A's page")
+	expectedWidth = 850
 	stable("after combat")
 
 	sim:expectNoErrors(ADDON)
