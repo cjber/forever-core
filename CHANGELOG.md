@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
+
 ## [1.8.2] - 2026-11-12
 
 - **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and
