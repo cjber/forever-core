@@ -160,6 +160,28 @@ class VisualProofTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             visual_proof.compare_installed(root, root)
 
+    def test_move_folders_relocating_an_unloaded_shipped_script_is_refused(self):
+        root = self.checkout(
+            "package-as: A\n\nmove-folders:\n  A/Mod: AMod\n\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+        )
+        (root / "A.toc").write_text("A.lua\n", encoding="utf-8")
+        (root / "A.lua").write_text("a", encoding="utf-8")
+        (root / "Mod").mkdir()
+        (root / "Mod/Extra.lua").write_text("extra", encoding="utf-8")
+        self.assertNotIn(root / "Mod/Extra.lua", visual_proof.runtime_files(root))
+        self.assertIn("Mod/Extra.lua", visual_proof.packaged_runtime_files(root))
+        self.assertEqual(
+            visual_proof.unsupported(root),
+            [
+                "Mod/Extra.lua: .pkgmeta move-folders relocates this shipped runtime file, "
+                "which visual proof cannot model"
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "Mod/Extra.lua"):
+            visual_proof.candidate_digest(root)
+        with self.assertRaisesRegex(ValueError, "Mod/Extra.lua"):
+            visual_proof.compare_installed(root, root)
+
     def test_move_folders_for_an_absent_external_is_not_a_relocation(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/ForeverCore: ForeverCore\n\n"
@@ -265,6 +287,46 @@ class VisualProofTest(unittest.TestCase):
         root = self.checkout()
         self.assertTrue(visual_proof.compare_installed(root, root).equivalent)
 
+    def test_an_unloaded_packaged_script_binds_both_digests_and_is_compared(self):
+        source = self.checkout()
+        (source / "Unused.lua").write_text("unused\n", encoding="utf-8")
+        self.assertIn("Unused.lua", visual_proof.packaged_runtime_files(source))
+        candidate = visual_proof.candidate_digest(source)
+        source_digest = visual_proof.input_digest(source)
+        installed = self.package(source, self.elsewhere() / "installed")
+        # The packager's line-ending filter applies even though no TOC loads the file.
+        (installed / "Unused.lua").write_bytes(b"unused\r\n")
+        self.assertEqual(candidate, visual_proof.candidate_digest(installed))
+        self.assertTrue(visual_proof.compare_installed(source, installed).equivalent)
+        # A changed shipped script invalidates the identity even though nothing loads it.
+        (source / "Unused.lua").write_text("changed\n", encoding="utf-8")
+        self.assertNotEqual(candidate, visual_proof.candidate_digest(source))
+        self.assertNotEqual(source_digest, visual_proof.input_digest(source))
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertIn("Unused.lua", comparison.differing)
+        self.assertFalse(comparison.equivalent)
+
+    def test_an_injected_unloaded_script_with_no_source_file_is_fatal(self):
+        source = self.checkout()
+        installed = self.package(source, self.elsewhere() / "installed")
+        (installed / "Injected.lua").write_text("injected", encoding="utf-8")
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertEqual(comparison.extra, ("Injected.lua",))
+        self.assertFalse(comparison.equivalent)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_an_untracked_unloaded_script_is_not_shipped_or_equivalent(self):
+        source = self.checkout()
+        for command in (("init", "-q"), ("add", ".")):
+            subprocess.run(["git", "-C", str(source), *command], check=True, capture_output=True)
+        (source / "Unused.lua").write_text("untracked", encoding="utf-8")
+        self.assertNotIn("Unused.lua", visual_proof.packaged_runtime_files(source))
+        installed = self.package(source, self.elsewhere() / "installed")
+        (installed / "Unused.lua").write_text("untracked", encoding="utf-8")
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertIn("Unused.lua", comparison.extra)
+        self.assertFalse(comparison.equivalent)
+
     def test_a_plain_copy_crlf_file_has_the_same_candidate_everywhere(self):
         root = self.checkout(PLAIN_PKGMETA)
         vendor = root / "Vendor.lua"
@@ -277,12 +339,33 @@ class VisualProofTest(unittest.TestCase):
         self.assertEqual(visual_proof.candidate_digest(root), visual_proof.candidate_digest(installed))
         self.assertTrue(visual_proof.compare_installed(root, installed).equivalent)
 
-    def test_a_plain_copy_file_is_not_asked_to_model_its_tokens(self):
+    def test_a_plain_copy_file_is_asked_to_model_its_tokens(self):
         root = self.checkout(PLAIN_PKGMETA)
-        (root / "Vendor.lua").write_text("local hash = '@project-hash@'", encoding="utf-8")
+        vendor = root / "Vendor.lua"
+        vendor.write_text("local hash = '@project-hash@'", encoding="utf-8")
         with (root / "ForeverCore.toc").open("a") as stream:
             stream.write("Vendor.lua\n")
-        self.assertEqual(visual_proof.unmodeled_directives(root), [])
+        # An extraction has no .pkgmeta saying Vendor.lua is plain-copy, so the checkout refuses it too.
+        self.assertEqual(
+            visual_proof.unmodeled_directives(root),
+            ["Vendor.lua: packager substitution @project-hash@ is not modelled by the candidate digest"],
+        )
+        with self.assertRaisesRegex(ValueError, "@project-hash@"):
+            visual_proof.candidate_digest(root)
+        with self.assertRaisesRegex(ValueError, "@project-hash@"):
+            visual_proof.compare_installed(root, root)
+        installed = self.package(root, self.elsewhere() / "plain")
+        (installed / "Vendor.lua").write_bytes(vendor.read_bytes())
+        with self.assertRaisesRegex(ValueError, "@project-hash@"):
+            visual_proof.candidate_digest(installed)
+
+    def test_a_plain_copy_toc_bom_and_interface_line_are_refused(self):
+        root = self.checkout(PLAIN_PKGMETA.replace("Vendor.lua", "ForeverCore.toc"))
+        toc = root / "ForeverCore.toc"
+        toc.write_bytes(b"\xef\xbb\xbf" + toc.read_bytes())
+        self.assertTrue(any("UTF-8 BOM" in problem for problem in visual_proof.unmodeled_directives(root)))
+        toc.write_bytes(toc.read_bytes()[3:] + b"## Interface-Classic: 11507\n")
+        self.assertTrue(any("## Interface-" in problem for problem in visual_proof.unmodeled_directives(root)))
 
     def test_a_literal_token_the_packager_does_not_replace_is_not_rejected(self):
         root = self.checkout()
@@ -532,6 +615,53 @@ class VisualProofTest(unittest.TestCase):
         with mock.patch.object(pkgmeta.subprocess, "run", side_effect=fake_run):
             with self.assertRaisesRegex(ValueError, "git failed to list untracked paths"):
                 pkgmeta.read(root)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_a_git_checkout_without_pkgmeta_still_applies_git_ignores(self):
+        root = self.root()
+        (root / ".gitignore").write_text("media/generated.png\n", encoding="utf-8")
+        (root / "media").mkdir()
+        (root / "media/tracked.tga").write_bytes(b"tracked")
+        for command in (("init", "-q"), ("add", ".")):
+            subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
+        (root / "Untracked.lua").write_text("untracked", encoding="utf-8")
+        (root / "media/generated.png").write_bytes(b"ignored")
+        (root / "media/untracked.png").write_bytes(b"untracked")
+        manifest = pkgmeta.read(root)
+        self.assertIsNotNone(manifest)
+        for name in ("Untracked.lua", "media/generated.png", "media/untracked.png"):
+            self.assertFalse(manifest.keeps(name))
+        self.assertTrue(manifest.keeps("Core.lua"))
+        packaged = set(visual_proof.packaged_runtime_files(root))
+        self.assertNotIn("Untracked.lua", packaged)
+        self.assertNotIn("media/generated.png", packaged)
+        self.assertNotIn("media/untracked.png", packaged)
+        self.assertIn("media/tracked.tga", packaged)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_a_git_checkout_without_pkgmeta_refuses_an_untracked_loaded_script(self):
+        root = self.root()
+        (root / "ForeverCore.toc").write_text("Core.lua\nGenerated.lua\n", encoding="utf-8")
+        for command in (("init", "-q"), ("add", ".")):
+            subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
+        (root / "Generated.lua").write_text("generated", encoding="utf-8")
+        self.assertFalse(pkgmeta.read(root).keeps("Generated.lua"))
+        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+            visual_proof.packaged_runtime_files(root)
+        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+            visual_proof.candidate_digest(root)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_an_extraction_nested_in_a_checkout_is_still_an_extraction(self):
+        outer = self.elsewhere()
+        subprocess.run(["git", "-C", str(outer), "init", "-q"], check=True, capture_output=True)
+        (outer / ".gitignore").write_text("release/\n", encoding="utf-8")
+        extraction = outer / "release/ForeverCore"
+        extraction.mkdir(parents=True)
+        (extraction / "ForeverCore.toc").write_text("Core.lua\n", encoding="utf-8")
+        (extraction / "Core.lua").write_text("core", encoding="utf-8")
+        self.assertIsNone(pkgmeta.read(extraction))
+        self.assertIn("Core.lua", visual_proof.packaged_runtime_files(extraction))
 
     def test_a_non_git_package_fixture_is_still_supported(self):
         root = self.checkout()

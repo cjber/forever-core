@@ -8,7 +8,9 @@ their bytes; the packager applies no line-ending or keyword filter to them.
 
 This module only answers which files ship and which keep their bytes. It reads no other directive and applies no
 substitution. `release.sh` also adds every path `git ls-files --others` reports, untracked and ignored alike, to
-its ignore list at build time.
+its ignore list at build time, and it does so whether or not the checkout has a policy file: a git checkout with
+neither `.pkgmeta` nor `pkgmeta.yaml` still ships only what git tracks, while a non-git extraction has no such
+paths and is read as-is.
 """
 
 import fnmatch
@@ -113,6 +115,11 @@ def _work_tree(root: Path) -> bool:
     return any((directory / ".git").exists() for directory in (root, *root.parents))
 
 
+def _checkout_root(root: Path) -> bool:
+    """Whether `root` is itself a git checkout, not a package extraction nested inside another repository."""
+    return (root / ".git").exists()
+
+
 def _untracked(root: Path) -> tuple[str, ...]:
     """The packager's extra ignores, from `release.sh`'s `vcs_addignore`: git's untracked and ignored paths.
 
@@ -190,13 +197,19 @@ class Manifest:
 
 
 def read(root: Path) -> Manifest | None:
-    """The package selection of a checkout, or None for a folder that is already an installed addon."""
+    """The package selection of a checkout, or None for a folder that is already an installed addon.
+
+    A git checkout with no policy file still gets the packager's git selection: `release.sh` adds untracked and
+    ignored paths to its ignore list before it looks at a `.pkgmeta`. Only a non-git extraction, which carries
+    neither the policy nor a work tree of its own, is read as every file shipped. An extraction nested inside a
+    larger repository is an extraction too, so the test is the folder's own `.git`, not any ancestor.
+    """
     root = root.resolve()
     path = root / PKGMETA
     if not path.is_file():
         path = root / FALLBACK
         if not path.is_file():
-            return None
+            return Manifest(_untracked(root)) if _checkout_root(root) else None
     text = path.read_text(encoding="utf-8", errors="replace")
     ignored = _globs(root, _entries(text, "ignore")) + _untracked(root)
     return Manifest(

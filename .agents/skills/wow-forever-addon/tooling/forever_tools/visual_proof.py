@@ -2,17 +2,22 @@
 
 The proof separates what the checkout supplies from what a release installs:
 
-- `input_digest` is the source identity: every runtime file the TOC graph reaches, including artwork that only the
-  store uses, the Core pin and the packaging policy (`.pkgmeta` or `pkgmeta.yaml`). Any change to it, even to a
-  file no package ships, or to which files the policy ships, invalidates a recorded session.
+- `input_digest` is the source identity: every runtime file the TOC graph reaches, every other Lua or XML the
+  package selection ships (loaded or not), including artwork that only the store uses, the Core pin and the
+  packaging policy (`.pkgmeta` or `pkgmeta.yaml`). Any change to it, even to an asset no package ships, or to which
+  files the policy ships, invalidates a recorded session.
 - `candidate` is the canonical packaged runtime: the same graph after the packager's selection (`.pkgmeta`'s
   `ignore` plus git's untracked and ignored files, which a release build does not ship), with the packager's
   line-ending
   filter on `*.lua`, `*.md`, `*.toc`, `*.txt` and `*.xml` and its project-version substitution in the TOC's
   `## Version:` line accounted for. This is the bytes a release zip installs at the addon's folder, and
   `candidate_digest` gives the same answer for a package extraction, which carries no `.pkgmeta`: the canonical
-  form is uniform, so it never needs the checkout's policy to be reproduced. A `plain-copy` file ships raw, but
-  an extraction carries nothing that says so, and line endings do not change how the client runs Lua.
+  form is uniform, so it never needs the checkout's policy to be reproduced. A `plain-copy` file ships raw, but an
+  extraction carries nothing that says so, so a packager token, a TOC BOM or a `## Interface-` line is refused there
+  too: the supported identity is symmetric. Line endings do not change how the client runs Lua, so the canonical
+  form still normalises them. The package's non-dot Lua and XML are part of the candidate whether the TOC/XML
+  graph loads them or not, because the packager ships them either way; an ignored file the graph loads is still
+  refused.
 - `tested_artifact` records how the session's addon was installed: `release-package` is the zip, `source-tree` is
   the checkout folder in `Interface/AddOns`. A source-tree install carries development extras (a store icon) and
   is not a packaged install, so `compare_installed` proves the shipped files match one by one instead of the proof
@@ -31,8 +36,8 @@ derived, and `move-folders` with no `package-as` is refused because its keys nam
 derive; an entry whose source the checkout does not hold (the Core external's placement) relocates no runtime
 file. A file the TOC/XML graph loads but `.pkgmeta` ignores is refused too: the package would not run, so it is not
 a package graph the proof may hash. A project TOC's leading UTF-8 BOM and `## Interface-` lines are stripped by the
-packager, so a TOC carrying either is refused instead of hashed. The embedded Core external is not in the checkout,
-and the Core pin in `input_digest` binds it.
+packager, so a TOC carrying either is refused instead of hashed, whether or not the policy plain-copies it. The
+embedded Core external is not in the checkout, and the Core pin in `input_digest` binds it.
 """
 
 import argparse
@@ -144,6 +149,29 @@ def _excluded_runtime(files: dict[str, Path], manifest: pkgmeta.Manifest) -> lis
     ]
 
 
+def _script_map(root: Path, manifest: pkgmeta.Manifest | None) -> dict[str, Path]:
+    """Every non-dot Lua or XML file the package selection ships, whether the TOC/XML graph loads it or not.
+
+    The packager copies a script its policy keeps even when nothing loads it, so a release package carries it and
+    the candidate must name it. Every other TOC is already a graph root, and a dot path is pruned by the packager.
+    A loaded file the selection drops is a different case and stays refused by `_excluded_runtime`; a folder with
+    no policy at all is an extraction, where every such script present is shipped.
+    """
+    root = root.resolve()
+    scripts = {}
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if (
+            path.is_file()
+            and relative.suffix.lower() in (".lua", ".xml")
+            and not any(part.startswith(".") for part in relative.parts)
+        ):
+            name = relative.as_posix()
+            if manifest is None or manifest.keeps(name):
+                scripts[name] = path
+    return scripts
+
+
 def packaged_runtime_files(root: Path) -> dict[str, Path]:
     """The runtime files a release installs at the addon's folder, keyed by their installed path.
 
@@ -154,21 +182,23 @@ def packaged_runtime_files(root: Path) -> dict[str, Path]:
     root = root.resolve()
     files = _runtime_map(root)
     manifest = pkgmeta.read(root)
-    if manifest is None:
-        return files
-    excluded = _excluded_runtime(files, manifest)
-    if excluded:
-        raise ValueError("; ".join(excluded))
-    return {name: path for name, path in files.items() if manifest.keeps(name)}
+    if manifest is not None:
+        excluded = _excluded_runtime(files, manifest)
+        if excluded:
+            raise ValueError("; ".join(excluded))
+        files = {name: path for name, path in files.items() if manifest.keeps(name)}
+    files.update(_script_map(root, manifest))
+    return files
 
 
 def _selected_runtime(root: Path) -> dict[str, Path]:
     """The shipped runtime without refusing an excluded load: `unsupported` reports that before this is read."""
     files = _runtime_map(root)
     manifest = pkgmeta.read(root)
-    if manifest is None:
-        return files
-    return {name: path for name, path in files.items() if manifest.keeps(name)}
+    if manifest is not None:
+        files = {name: path for name, path in files.items() if manifest.keeps(name)}
+    files.update(_script_map(root, manifest))
+    return files
 
 
 def _shipped_bytes(path: Path, data: bytes) -> bytes:
@@ -192,9 +222,10 @@ def _digest(files: dict[str, Path], canonical) -> str:
 
 
 def input_digest(root: Path) -> str:
-    """The source identity: the runtime graph plus the Core pin, version-stamped TOC line aside."""
+    """The source identity: the runtime graph, the package's other scripts, the Core pin, TOC version aside."""
     root = root.resolve()
     files = _runtime_map(root)
+    files.update(_script_map(root, pkgmeta.read(root)))
     pin = root / "tools/forever-core.txt"
     if pin.is_file():
         files["tools/forever-core.txt"] = pin
@@ -226,9 +257,10 @@ def unsupported(root: Path) -> list[str]:
     """Packaging directives the candidate cannot model, mostly `.pkgmeta`'s `move-folders`.
 
     A relocated shipped runtime file leaves the addon folder the proof names, so the candidate would invent a
-    path the client never installs. An entry whose source the checkout does not hold (the Core external's
-    placement) relocates no runtime file and is not reported. `move-folders` without `package-as` is refused
-    outright: its keys are relative to a release folder the proof cannot name.
+    path the client never installs. Every shipped Lua or XML script counts, loaded or not, since the packager copies
+    both. An entry whose source the checkout does not hold (the Core external's placement) relocates no runtime file
+    and is not reported. `move-folders` without `package-as` is refused outright: its keys are relative to a release
+    folder the proof cannot name.
     """
     manifest = pkgmeta.read(root)
     if manifest is None:
@@ -238,9 +270,11 @@ def unsupported(root: Path) -> list[str]:
     if manifest.moved and not manifest.package:
         problems.append(pkgmeta.MOVE_WITHOUT_PACKAGE)
         return problems
+    shipped = dict(files)
+    shipped.update(_script_map(root, manifest))
     problems.extend(
         f"{name}: .pkgmeta move-folders relocates this shipped runtime file, which visual proof cannot model"
-        for name in sorted(files)
+        for name in sorted(shipped)
         if manifest.keeps(name) and manifest.relocates(name)
     )
     return problems
@@ -252,13 +286,13 @@ def unmodeled_directives(root: Path) -> list[str]:
     The candidate accounts for the line-ending filter and the TOC project version. Any other token changes the
     packaged bytes with the build type, the Core pin or a localization export, and every project TOC loses a
     leading UTF-8 BOM and its `## Interface-` lines. The proof refuses to claim an installed identity it would be
-    guessing rather than hashing bytes the release changes.
+    guessing rather than hashing bytes the release changes. A `plain-copy` file gets the same refusal: the
+    extraction that carries it has no policy saying so, and the supported identity must be symmetric.
     """
     root = root.resolve()
-    manifest = pkgmeta.read(root)
     problems = []
     for name, path in sorted(_selected_runtime(root).items()):
-        if path.suffix not in TEXT_SUFFIXES or (manifest is not None and manifest.kept_bytes(name)):
+        if path.suffix not in TEXT_SUFFIXES:
             continue
         raw = path.read_bytes()
         if path.suffix == ".toc":
@@ -283,10 +317,12 @@ class Comparison:
     """A checkout's shipped runtime against an installed addon folder, file by file.
 
     `extra` files are present in the installed folder but not in the shipped runtime, never dropped from the
-    installed side to force a match. An extra Lua, XML or TOC file is client content the package does not
-    describe, so it makes the two non-equivalent; an extra asset (a source-tree install's store icon) is reported
-    and harmless. Development trees and packaged non-runtime files (a README, a licence) are not extras. Missing
-    or differing shipped files also make the two non-equivalent.
+    installed side to force a match. An extra Lua, XML or TOC file has no source file the package selection ships,
+    so it is client content the package does not describe and makes the two non-equivalent; an extra asset (a
+    source-tree install's store icon) is reported and harmless. A script the source holds and the policy keeps is
+    shipped even when nothing loads it, so it is compared byte for byte rather than reported as an extra.
+    Development trees and packaged non-runtime files (a README, a licence) are not extras. Missing or differing
+    shipped files also make the two non-equivalent.
     """
 
     equivalent: bool
