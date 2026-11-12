@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)
+
 ## [1.8.1] - 2026-11-12
 
 - **Addons no longer bring an older ForeverCore with them.** Every Forever addon's zip now carries the newest ForeverCore release, so updating one addon can no longer downgrade the shared code another one needs.

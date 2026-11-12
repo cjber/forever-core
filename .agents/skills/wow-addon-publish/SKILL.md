@@ -88,6 +88,8 @@ Steps and what trips agents up:
    DOM file input behind it, so `file_upload` has nothing to target (don't click it: the stray picker
    blocks the tab). Ask the user to click "Upload image" and pick the repo's 400×400 PNG
    (`media/icon-400.png` in cjber's addons), either here or later at `#/projects/<ID>/general`.
+   On the same page set **Donation Method** to Ko-fi with the username `cjber`, then Save. No upload or
+   release sets it, so a project created without it shows no donation button.
 3. **Description**: set the textarea with `form_input` to `docs/curseforge.md`, then **type** a little
    text at the end (click the textarea, `ctrl+End`, type a newline). `form_input` alone does not update
    React state, so the step validates as empty. The description ends with the support buttons; add no
