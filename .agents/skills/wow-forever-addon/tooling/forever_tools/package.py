@@ -33,7 +33,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import core_pin, widget_handlers
+from . import core_pin, lua51, widget_handlers
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -345,6 +345,8 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     problems += core_pin.check(root)
     # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
     problems += widget_handlers.check_root(args.release_dir, policy.addons)
+    for addon in policy.addons:
+        problems += [f"{addon}: {problem}" for problem in lua51.check(args.release_dir / addon)]
     if not problems:
         problems = run_specs(root, args.release_dir, policy)
     for problem in problems:
