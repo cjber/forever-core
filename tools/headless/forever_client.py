@@ -55,9 +55,8 @@ PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
 LAUNCHER = PREFIX / "drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
 LAUNCH_ARGS = ["--exec=launch_uid wowf"]
-# Battle.net ignores --exec once it is logged in, so the session presses Play: its centre on the WoW: Forever page
-# that --exec opens, in the launcher window gamescope gives it. Another window size means another layout. The point
-# is in the focused window's pixels, which is also the screenshot's pixels, whatever the window's X position.
+# Battle.net ignores --exec once it is logged in, so the session presses the visible Play control on the WoW: Forever
+# page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
@@ -316,7 +315,7 @@ def press_play(state: Mapping) -> None:
             confidence = float(fields[10])
         except (ValueError, TypeError):
             continue
-        if confidence >= 35:
+        if confidence >= 0 and width > 0 and height > 0:
             targets.append((left, top, width, height, confidence))
     if len(targets) != 1:
         raise ClientError(f"expected one visible Play target in the Battle.net screenshot, found {len(targets)}")
