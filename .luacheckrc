@@ -32,6 +32,7 @@ read_globals = {
 	"RAID_CLASS_COLORS",
 	"GREEN_FONT_COLOR",
 	"CreateSettingsButtonInitializer",
+	"CreateSettingsListSectionHeaderInitializer",
 	"Lerp",
 	"Menu",
 	"MenuUtil",

@@ -35,6 +35,7 @@ UI\Report.lua
 UI\ForeverFamily.lua
 UI\Credits.lua
 UI\SettingsPage.lua
+UI\SettingsSections.lua
 UI\TrackerQuestie.lua
 UI\TrackerEqot.lua
 UI\TrackerEllesmere.lua

@@ -211,6 +211,10 @@ SettingsPanel = nil
 ---@type fun(name: string, buttonText: string, buttonClick: fun(), tooltip?: string, addSearchTags?: boolean): table
 CreateSettingsButtonInitializer = nil
 
+-- The client's native vertical-list section heading initializer.
+---@type fun(name: string, tooltip?: string, newTagID?: number): table
+CreateSettingsListSectionHeaderInitializer = nil
+
 -- The client's gamepad switch: the Forever addons page is a canvas page without it.
 ---@class ForeverInputUtil
 ---@field IsGamepadUIEnabled fun(): boolean

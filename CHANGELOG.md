@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- Native settings pages can register section headings through `SettingsSections.Register`, using Blizzard's row layout and focus handling (#488).
+
 ## [1.8.0] - 2026-11-12
 
 <!-- discord-image: docs/screenshots/tracker.png -->

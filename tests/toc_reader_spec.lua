@@ -51,6 +51,7 @@ equal(
 		"lua UI/ForeverFamily.lua",
 		"lua UI/Credits.lua",
 		"lua UI/SettingsPage.lua",
+		"lua UI/SettingsSections.lua",
 		"lua UI/TrackerQuestie.lua",
 		"lua UI/TrackerEqot.lua",
 		"lua UI/TrackerEllesmere.lua",
