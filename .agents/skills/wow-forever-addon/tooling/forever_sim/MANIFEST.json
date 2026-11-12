@@ -38,7 +38,7 @@
     "transform.lua": "7d12c6805e503cb844bb6f815aba2fc9bde6f6c8360bcdd7e51c41c107a32bb2",
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",
     "watch.lua": "2023fec311f100a85ee757a2c2bc2b59e9982cb6182d8546d4dd55f682b6e536",
-    "widgets.lua": "5d9ebe22532da6f1039a7209e703f2fdefd62a3c7736c6ae82c733c2f88e4941",
+    "widgets.lua": "7ca6ed830b75c3a200898196c63feec61dc33bc099470defb725cddc49ca5092",
     "world.lua": "e7b8b1a32c6c74dfcc4009f8bc31a6f1b3ec23afb5098dacd1cb5b020460e281",
     "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
   }

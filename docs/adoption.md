@@ -67,11 +67,15 @@ one state for the character, shared by every registered addon.
 ## The tracker
 
 `ForeverCore.TrackerSection.Create(name, mixin, opts)` builds a section from `ObjectiveTrackerModuleTemplate`, mixes
-the addon in, sets `order`, `lineTemplate` and `header`, and attaches it once saved variables are loaded; `legacy` and
-`legacyKey` offer and then clear the addon's old tracker table, `safeCall` binds its errors and `onUnattached` warns
-when the section never joined. `TrackerSection.UpdateText(module, blocks)` rewrites existing line and header text
-without another layout. `TrackerSection.Room(module, block)` measures the room left in the column, and
-`TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
+the addon in, sets `order`, `lineTemplate`, `header` and `maxHeight`, and attaches it once saved variables are loaded;
+`legacy` and `legacyKey` offer and then clear the addon's old tracker table, `safeCall` binds its errors and
+`onUnattached` warns when the section never joined. `maxHeight` caps the section's own height: a number of UI units
+(200 when omitted), or `"remaining"` for what the column's other sections leave. A section taller than its cap keeps
+its header and scrolls the blocks below it, showing the client's minimal scrollbar only while it overflows. The view
+keeps the top block in place across updates, the wheel moves one block per step, and combat freezes the view at half
+alpha so every secure quest item button stays beside its quest. `TrackerSection.UpdateText(module, blocks)` rewrites
+existing line and header text without another layout. `TrackerSection.Room(module, block)` measures the room left in
+the column, and `TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
 { onClick, tooltip })` makes a stock line clickable, and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
 header's hover; `ForeverTrackerInteractiveLineTemplate` is the mouse-enabled line template both use.
 

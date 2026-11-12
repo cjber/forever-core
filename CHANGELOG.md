@@ -3,9 +3,11 @@
 ## [Unreleased]
 
 - **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
+- **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest.
 
 ### For addon authors
 
+- **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
 - **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)
 
 ## [1.8.1] - 2026-11-12

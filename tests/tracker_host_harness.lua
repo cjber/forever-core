@@ -107,6 +107,53 @@ function harness.new(options)
 		function f:ClearAllPoints()
 			self.point = nil
 		end
+		function f:SetAlpha(value)
+			self.alpha = value
+		end
+		function f:SetScrollChild(child)
+			self.scrollChild = child
+			child.parent = self
+		end
+		function f:GetScrollChild()
+			return self.scrollChild
+		end
+		function f:SetVerticalScroll(value)
+			self.verticalScroll = value
+		end
+		function f:GetVerticalScroll()
+			return self.verticalScroll or 0
+		end
+		function f:EnableMouseWheel(value)
+			self.mouseWheel = value
+		end
+		-- The client's MinimalScrollBar is an EventFrame on ScrollBarMixin: percentages and a callback, never a
+		-- Slider value. A stub that still offered SetValue would hide exactly the mistake this harness checks.
+		function f:RegisterCallback(event, callback, owner)
+			self.callbacks = self.callbacks or {}
+			self.callbacks[event] = { callback = callback, owner = owner }
+		end
+		function f:SetVisibleExtentPercentage(value)
+			self.visibleExtent = value
+		end
+		function f:GetVisibleExtentPercentage()
+			return self.visibleExtent or 0
+		end
+		function f:SetScrollPercentage(value)
+			self.scrollPercentage = value
+			local entry = self.callbacks and self.callbacks.OnScroll
+			if entry then
+				entry.callback(entry.owner, value)
+			end
+		end
+		function f:GetScrollPercentage()
+			return self.scrollPercentage or 0
+		end
+		function f:SetScrollAllowed(value)
+			self.scrollAllowed = value
+		end
+		function f:IsScrollAllowed()
+			return self.scrollAllowed ~= false
+		end
 		function f:RegisterEvent(event)
 			self.events = self.events or {}
 			self.events[event] = true
@@ -295,7 +342,11 @@ function harness.new(options)
 		ObjectiveTrackerFrame = native,
 		Minimap = minimap,
 		UIParent = parent,
-		CreateFrame = frame,
+		CreateFrame = function(kind, _, _, template)
+			local f = frame()
+			f.kind, f.template = kind, template
+			return f
+		end,
 		C_Timer = {
 			After = function(_, fn)
 				timers[#timers + 1] = fn
@@ -540,6 +591,63 @@ function harness.new(options)
 				return f
 			end
 		end
+	end
+	-- A module shaped like Blizzard's own, with a real block chain, so a spec can see the shared scroll wrapper: the
+	-- cap, the viewport, the bar and the block-snapped offsets. It does not load Blizzard's source.
+	function ctx.scrollModule(order, count, blockHeight, maxHeight)
+		local m = frame()
+		m.uiOrder = order
+		m.headerHeight = 25
+		m.fromHeaderOffsetY = -10
+		m.fromBlockOffsetY = -10
+		m.bottomSpacing = 0
+		m.heightModifiers = {}
+		m.trackerMaxHeight = maxHeight
+		m.Header = frame()
+		m.ContentsFrame = frame()
+		m.lineTemplate = "Line"
+		m.count, m.scrollChanges = count, 0
+		function m:OnScrollChanged()
+			self.scrollChanges = self.scrollChanges + 1
+		end
+		function m.MarkDirty()
+			ctx.host:MarkDirty()
+		end
+		function m.Update(self, available)
+			self.available, self.updates = available, (self.updates or 0) + 1
+			self.firstContentsWidth = self.firstContentsWidth or self.ContentsFrame:GetWidth()
+			self:BeginLayout()
+			self.contentsHeight = self.headerHeight
+			local first, last
+			for index = 1, self.count do
+				local block = frame()
+				block.id, block.height = index, blockHeight
+				if last then
+					last.nextBlock = block
+				else
+					first = block
+				end
+				last = block
+				self.contentsHeight = self.contentsHeight + blockHeight + 10
+			end
+			self.firstBlock, self.lastBlock = first, last
+			self:UpdateHeight()
+		end
+		function m.UpdateHeight(self)
+			self:SetHeight(self.contentsHeight)
+		end
+		function m.GetContentsHeight(self)
+			return self.contentsHeight
+		end
+		function m.IsTruncated()
+			return false
+		end
+		function m.CanFitBlock()
+			return true
+		end
+		function m.BeginLayout() end
+		ctx.ns.TrackerHost.Attach(m)
+		return m
 	end
 	ctx.loadHost(ns)
 	ctx.host, ctx.grip = frames[6], frames[7]

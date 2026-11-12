@@ -47,6 +47,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
+---@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
 ---@field leaderboards? {reach?: "group"|"met"}
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
