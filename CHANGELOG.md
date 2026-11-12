@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
+
 ### For addon authors
 
 - **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)

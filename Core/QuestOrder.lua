@@ -3,7 +3,8 @@ local _, ns = ...
 
 -- The Forever quest list's order, kept pure so the spec runs it with no client: ready to turn in first, then the
 -- current zone, then every other zone, each quest nearest first and every zone by its nearest quest. A quest with no
--- distance sorts after the ones with one, and ties fall to the title and then the quest ID, so two runs agree.
+-- distance sorts after the ones with one, and ties fall to the title and then the quest ID, so two runs agree. One
+-- title names one group, because the section keeps one block per title.
 
 ---@param record ForeverQuestRecord
 ---@return string
@@ -87,5 +88,22 @@ function ns.QuestOrder(records)
 	for _, group in ipairs(others) do
 		groups[#groups + 1] = group
 	end
-	return groups
+	-- The section keeps one tracker block per group title, so a title may name exactly one group: the on-map group is
+	-- titled by its first quest's log header while off-map quests keep their own header, so the same zone arrives twice
+	-- (this zone, then its other quests) and the block would be laid out twice in one pass, anchored under a block that
+	-- already depends on it (#521). Same title, same zone: one group, folded into the first, nearest first.
+	local ordered, byTitle = {}, {}
+	for _, group in ipairs(groups) do
+		local first = byTitle[group.title]
+		if first then
+			for _, quest in ipairs(group.quests) do
+				first.quests[#first.quests + 1] = quest
+			end
+			Sort(first.quests)
+		else
+			byTitle[group.title] = group
+			ordered[#ordered + 1] = group
+		end
+	end
+	return ordered
 end
