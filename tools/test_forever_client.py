@@ -295,12 +295,28 @@ class ForeverClientTest(unittest.TestCase):
         self.assertEqual(len(sleeps), 1)
         self.assertGreater(sleeps[0], fc.INPUT_GAP - 0.5)
 
+    def prefix_scans(self, scans):
+        remaining = iter(scans)
+        return mock.patch.object(
+            fc, "prefix_snapshot", side_effect=lambda: {pid: fc.read_environ(pid) for pid in next(remaining, scans[-1])}
+        )
+
+    def test_prefix_ownership_keeps_one_environment_snapshot_when_process_exits(self):
+        env = {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "owned"}
+        with (
+            mock.patch.object(fc, "pids", return_value=[42]),
+            mock.patch.object(fc, "read_environ", side_effect=[env, {}]) as read,
+        ):
+            snapshot = fc.prefix_snapshot()
+            self.assertEqual(fc.prefix_ownership(snapshot, "owned"), ([42], []))
+            read.assert_called_once_with(42)
+
     def test_teardown_logs_out_only_from_the_world(self):
         game = mock.Mock(pid=1, **{"poll.return_value": None})
         with (
             mock.patch.object(fc, "log_out") as log_out,
             mock.patch.object(fc, "client_pid", return_value=9),
-            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc, "prefix_snapshot", return_value={}),
             mock.patch.object(fc.os, "killpg"),
             mock.patch.object(fc.subprocess, "run"),
         ):
@@ -309,20 +325,31 @@ class ForeverClientTest(unittest.TestCase):
             fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
             log_out.assert_called_once()
 
-    def test_teardown_reaps_children_that_respawn_after_wineserver_shutdown(self):
+    def test_teardown_reaps_owned_children_that_respawn(self):
         game = mock.Mock(pid=1, **{"poll.return_value": None})
         clock = FakeClock()
         with (
             mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "prefix_users", side_effect=[[42], [], [43], [], [], [], [], []]),
+            self.prefix_scans([[42], [42], [43], [], [], [], [], []]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                side_effect=lambda pid: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "owned"},
+            ),
             mock.patch.object(fc.os, "killpg"),
-            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc, "kill_owned_pid") as kill,
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
-            fc.teardown(game, {}, None, {"display": ":1"})
-        self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])
+            fc.teardown(game, {}, None, {"display": ":1", "token": "owned"})
+        self.assertEqual(
+            kill.call_args_list,
+            [
+                mock.call(42, "owned", Path("wineserver").resolve()),
+                mock.call(43, "owned", Path("wineserver").resolve()),
+            ],
+        )
 
     def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
         clock = FakeClock()
@@ -331,16 +358,91 @@ class ForeverClientTest(unittest.TestCase):
         link = self.state / "addon"
         link.symlink_to(self.state / "build")
         with (
-            mock.patch.object(fc, "prefix_users", return_value=[42]),
-            mock.patch.object(fc.os, "kill"),
+            self.prefix_scans([[42]]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                return_value={"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "owned"},
+            ),
+            mock.patch.object(fc, "kill_owned_pid", return_value=False),
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
             self.assertRaisesRegex(fc.ClientError, "processes survived: 42"),
         ):
-            fc.teardown(None, {}, link, {})
+            fc.teardown(None, {}, link, {"token": "owned"})
         self.assertTrue(state.exists())
         self.assertTrue(link.is_symlink())
+
+    def test_teardown_refuses_foreign_same_prefix_processes_before_wineserver(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            self.prefix_scans([[42]]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                return_value={"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "foreign"},
+            ),
+            mock.patch.object(fc.os, "killpg") as killpg,
+            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc, "log_out") as logout,
+            mock.patch.object(fc.subprocess, "run") as run,
+            self.assertRaisesRegex(fc.ClientError, "foreign or unowned.*42"),
+        ):
+            fc.teardown(game, {}, None, {"token": "owned"})
+        run.assert_not_called()
+        killpg.assert_not_called()
+        kill.assert_not_called()
+        logout.assert_not_called()
+        game.terminate.assert_not_called()
+        game.kill.assert_not_called()
+
+    def test_teardown_stops_before_killing_when_foreign_process_appears(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            self.prefix_scans([[42], [43]]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                side_effect=lambda pid: {
+                    "WINEPREFIX": str(fc.PREFIX),
+                    "FOREVER_CLIENT_SESSION": "owned" if pid == 42 else "foreign",
+                },
+            ),
+            mock.patch.object(fc, "kill_owned_pid") as kill,
+            mock.patch.object(fc.time, "monotonic", side_effect=[0, 0, 0]),
+            self.assertRaisesRegex(fc.ClientError, "foreign or unowned.*43"),
+        ):
+            fc.teardown(game, {}, None, {"token": "owned"})
+        kill.assert_not_called()
+        game.terminate.assert_not_called()
+        game.kill.assert_not_called()
+
+    def test_owned_pid_signal_preserves_shared_server_and_foreign_process(self):
+        server = Path("/runner/bin/wineserver")
+        cases = [
+            ("owned", Path("/runner/bin/wine"), True),
+            ("owned", server, False),
+            ("foreign", Path("/runner/bin/wine"), False),
+        ]
+        for token, executable, should_signal in cases:
+            with (
+                self.subTest(token=token, executable=executable),
+                mock.patch.object(fc.os, "pidfd_open", return_value=11) as opened,
+                mock.patch.object(fc.os, "close") as closed,
+                mock.patch.object(fc.signal, "pidfd_send_signal") as signal_pid,
+                mock.patch.object(Path, "readlink", return_value=executable),
+                mock.patch.object(
+                    fc, "read_environ", return_value={"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": token}
+                ),
+            ):
+                self.assertEqual(fc.kill_owned_pid(42, "owned", server), should_signal)
+                opened.assert_called_once_with(42)
+                closed.assert_called_once_with(11)
+                if should_signal:
+                    signal_pid.assert_called_once_with(11, fc.signal.SIGKILL)
+                else:
+                    signal_pid.assert_not_called()
 
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()
