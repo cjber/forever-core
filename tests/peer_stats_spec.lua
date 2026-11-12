@@ -150,6 +150,33 @@ local function load(ns_)
 	return ns
 end
 
+-- KB allocated and ms spent inside one call, with the collector held so the count is what the call made rather than
+-- whatever a background step happened to free, and the JIT off so no trace compiled inside the call lands in the
+-- count. An idle round is measured a few times and the smallest kept: a client table that resizes once, or any other
+-- one-off internal step, is not the round's cost.
+local function measure(fn, times)
+	local traced = type(jit) == "table" and jit.status and jit.status() and jit.on and jit.off
+	if traced then
+		jit.off()
+	end
+	local best, bestMs
+	for _ = 1, times or 1 do
+		collectgarbage("collect")
+		collectgarbage("stop")
+		local before, started = collectgarbage("count"), os.clock()
+		fn()
+		local kb, elapsed = collectgarbage("count") - before, (os.clock() - started) * 1000
+		collectgarbage("restart")
+		if not best or kb < best then
+			best, bestMs = kb, elapsed
+		end
+	end
+	if traced then
+		jit.on()
+	end
+	return best, bestMs
+end
+
 local METRICS = {
 	total = { subject = "all" },
 	node = { subject = "numeric" },
@@ -1728,6 +1755,383 @@ do
 		end
 	end
 	equal(echoed, 0, "a newer row heard on the guild is not echoed either")
+end
+
+-- A full store costs a round the rows it sends, not the store -------------------------------------------------------
+do
+	local ns = fresh()
+	local now = serverTime
+	-- MAX_RELAYED_PEERS relay-only peers, four rows each: far more fresh rows than one round relays, so a round that
+	-- rebuilt a payload per row would pay for the whole store to send ten.
+	local db, stamp = {}, 0
+	for index = 1, 500 do
+		local key = ("Peer%03d-R"):format(index)
+		local peer = {}
+		db[key] = peer
+		for _, slot in ipairs({
+			{ "total", "all" },
+			{ "node", tostring(index) },
+			{ "creature", "c:" .. index },
+			{ "firstkill", tostring(index) },
+		}) do
+			stamp = stamp + 1
+			peer[slot[1]] = peer[slot[1]] or {}
+			peer[slot[1]][slot[2]] = { value = index, eventUnix = now - stamp, relayed = true }
+		end
+	end
+	local peers = make(ns, { db = db })
+	equal(peers:IsEnabled(), true, "a full store loads")
+	equal(count(db), 500, "five hundred relay-only peers")
+	equal(peers:Sync(), 10, "one burst of relay rows is queued, not the whole store")
+	advance(2)
+
+	-- What the whole-store scan chose: every fresh row, newest first, capped at five hundred, then sent in order. None
+	-- of these peers has a saved display name, so its relay origin is the stored key as it stands.
+	local function expected()
+		local rows = {}
+		for key, peer in pairs(db) do
+			if key:sub(1, 1) ~= "\1" then
+				for metric, subjects in pairs(peer) do
+					if type(subjects) == "table" then
+						for subject, record in pairs(subjects) do
+							if type(record) == "table" then
+								rows[#rows + 1] = {
+									identity = key:lower(),
+									metric = metric,
+									subject = subject,
+									unix = record.eventUnix,
+									payload = table.concat(
+										{ "2", "agf", metric, subject, record.value, record.eventUnix, key },
+										"|"
+									),
+								}
+							end
+						end
+					end
+				end
+			end
+		end
+		table.sort(rows, function(a, b)
+			if a.unix ~= b.unix then
+				return a.unix > b.unix
+			end
+			if a.identity ~= b.identity then
+				return a.identity < b.identity
+			end
+			if a.metric ~= b.metric then
+				return a.metric < b.metric
+			end
+			return a.subject < b.subject
+		end)
+		local list = {}
+		for index = 1, math.min(#rows, 500) do
+			list[index] = rows[index].payload
+		end
+		return list
+	end
+	local want = expected()
+	equal(#want, 500, "the store holds a full relay cap of rows")
+	equal(
+		want[1],
+		table.concat({ "2", "agf", "total", "all", 1, now - 1, "Peer001-R" }, "|"),
+		"the newest row goes first, with the peer's key as its origin"
+	)
+
+	local rounds = 0
+	while #sent < #want and rounds < 400 do
+		rounds = rounds + 1
+		peers:Sync()
+		advance(2)
+	end
+	local relayed = {}
+	for _, message in ipairs(sent) do
+		if message.payload:sub(1, 2) == "2|" then
+			relayed[#relayed + 1] = message.payload
+		end
+	end
+	equal(#relayed, #want, "every capped fresh row is relayed once")
+	equal(
+		table.concat(relayed, "\n"),
+		table.concat(want, "\n"),
+		"the same rows in the same order as a whole-store scan, whichever round they land in"
+	)
+	equal(peers:Sync(), 0, "a settled store has nothing left to send")
+
+	-- A settled store: one round over it must not rebuild anything.
+	local idle, idleMs = measure(function()
+		peers:Sync()
+		advance(1)
+	end, 3)
+	equal(
+		idle < 8,
+		true,
+		("an idle round over a full store allocates under 8 KB (%.1f KB, %.2f ms)"):format(idle, idleMs)
+	)
+
+	-- A round that sends ten changed rows allocates for those ten, not for the store behind them. A relay heard on the
+	-- party carries a newer value for ten peers, and the guild has not seen it, so it is owed there.
+	for index = 1, 10 do
+		equal(
+			recv(
+				peers,
+				relayWire("agf", "total", "all", 1000 + index, now + 3, ("Peer%03d-R"):format(index * 10)),
+				"Relayer-R",
+				"PARTY"
+			),
+			true,
+			"a peer's row changes"
+		)
+	end
+	resetSent()
+	-- Refill the transport's tokens first, so the measured round is one burst of ten and nothing else.
+	advance(10)
+	local sending, sendingMs = measure(function()
+		peers:Sync()
+		advance(1)
+	end)
+	equal(#sent, 10, "the ten changed rows go out")
+	equal(
+		sending < 64,
+		true,
+		("a round that sends ten rows allocates under 64 KB (%.1f KB, %.2f ms)"):format(sending, sendingMs)
+	)
+end
+
+-- RelayBuild collects the fresh rows, sorts them once and takes the cap: the same set, order and payloads as the old
+-- insert-by-insert scan, whatever pairs() order the store was built in.
+do
+	local ns = fresh()
+	local now = serverTime
+	local seed = 512
+	local function random(limit)
+		seed = (seed * 16807) % 2147483647
+		return seed % limit + 1
+	end
+	local slots = {
+		{ "total", "all" },
+		{ "node", "1" },
+		{ "node", "2" },
+		{ "node", "3" },
+		{ "creature", "c:1" },
+		{ "creature", "c:2" },
+		{ "firstkill", "1" },
+		{ "firstkill", "2" },
+	}
+	local rows = {}
+	for peer = 1, 120 do
+		local key = ("Rnd%03d-R"):format(peer)
+		for slotIndex, slot in ipairs(slots) do
+			rows[#rows + 1] = {
+				key = key,
+				metric = slot[1],
+				subject = slot[2],
+				value = peer * 100 + slotIndex,
+				unix = now - ((peer * 7 + slotIndex * 13) % 900),
+			}
+		end
+	end
+	for index = #rows, 2, -1 do
+		local other = random(index)
+		rows[index], rows[other] = rows[other], rows[index]
+	end
+	local db = {}
+	for _, row in ipairs(rows) do
+		local peer = db[row.key] or {}
+		db[row.key] = peer
+		peer[row.metric] = peer[row.metric] or {}
+		peer[row.metric][row.subject] = { value = row.value, eventUnix = row.unix, relayed = true }
+	end
+	equal(#rows, 960, "a store almost twice the relay cap, built in a random order")
+	local peers = make(ns, { db = db })
+	equal(peers:IsEnabled(), true, "the randomized store loads")
+	local function reference()
+		local candidates = {}
+		for key, peer in pairs(db) do
+			if key:sub(1, 1) ~= "\1" then
+				for metric, subjects in pairs(peer) do
+					if type(subjects) == "table" then
+						for subject, record in pairs(subjects) do
+							if type(record) == "table" then
+								candidates[#candidates + 1] = {
+									identity = key:lower(),
+									metric = metric,
+									subject = subject,
+									unix = record.eventUnix,
+									value = record.value,
+									key = key,
+								}
+							end
+						end
+					end
+				end
+			end
+		end
+		table.sort(candidates, function(a, b)
+			if a.unix ~= b.unix then
+				return a.unix > b.unix
+			end
+			if a.identity ~= b.identity then
+				return a.identity < b.identity
+			end
+			if a.metric ~= b.metric then
+				return a.metric < b.metric
+			end
+			return a.subject < b.subject
+		end)
+		local list = {}
+		for index = 1, math.min(#candidates, 500) do
+			local row = candidates[index]
+			list[index] = table.concat({ "2", "agf", row.metric, row.subject, row.value, row.unix, row.key }, "|")
+		end
+		return list
+	end
+	local want = table.concat(reference(), "\n")
+	local function walk(head, field)
+		local list = {}
+		local item = head
+		while item do
+			list[#list + 1] = item.payload
+			item = item[field]
+		end
+		return table.concat(list, "\n")
+	end
+	equal(peers.relayCount, 500, "the randomized store keeps the relay cap")
+	equal(walk(peers.relayOrder.head, "next"), want, "the order list matches a whole-store scan")
+	equal(walk(peers.relayPending.head, "owedNext"), want, "the pending list matches the same selection")
+end
+
+-- A row that cannot be built spends no cap slot: no safe origin, or a message over MAX_PAYLOAD -----------------------
+do
+	local ns = fresh()
+	local now = serverTime
+	local longMetric = "m" .. string.rep("x", 31)
+	local longSubject = string.rep("9", 24)
+	local db = {
+		["NoOriginPeer-R"] = {
+			["\1name"] = string.rep("O", 64),
+			[longMetric] = { [longSubject] = { value = 1, eventUnix = now } },
+		},
+		["LongPayloadPeer-R"] = {
+			["\1name"] = string.rep("L", 62),
+			[longMetric] = { [longSubject] = { value = 1, eventUnix = now } },
+		},
+	}
+	for index = 1, 500 do
+		db[("Skip%03d-R"):format(index)] = {
+			total = { all = { value = index, eventUnix = now - index, relayed = true } },
+		}
+	end
+	local peers = ns.PeerStats.New({
+		addon = "agf",
+		enabled = function()
+			return true
+		end,
+		db = function()
+			return db
+		end,
+		snapshot = function()
+			return {}
+		end,
+		metrics = { total = { subject = "all" }, [longMetric] = { subject = "numeric" } },
+	})
+	equal(peers:IsEnabled(), true, "the store with unbuildable rows loads")
+	equal(peers.relayCount, 500, "the skipped rows do not spend a cap slot")
+	local oldest, sawSkipped = false, false
+	local item = peers.relayOrder.head
+	while item do
+		if item.identity == "nooriginpeer" or item.identity == "longpayloadpeer" then
+			sawSkipped = true
+		end
+		if item.identity == "skip500-r" then
+			oldest = true
+		end
+		item = item.next
+	end
+	equal(sawSkipped, false, "a row without an origin or with an overlong message is not kept")
+	equal(oldest, true, "the next row still takes the place it left")
+end
+
+-- RelayBuild over the cap is one sort: a bounded time and an allocation for the rows it keeps ----------------------
+do
+	local ns = fresh()
+	local now = serverTime
+	local db = {}
+	for peer = 1, 500 do
+		local rows = {}
+		db[("Build%03d-R"):format(peer)] = {
+			node = rows,
+			["\1name"] = ("Build%03d"):format(peer) .. string.rep("x", 54),
+		}
+		for row = 1, 20 do
+			rows[tostring(row)] = {
+				value = peer * 100 + row,
+				eventUnix = now - ((peer * 20 + row) % 5000),
+				relayed = true,
+			}
+		end
+	end
+	local peers = make(ns, { db = db })
+	equal(peers:IsEnabled(), true, "five hundred peers with twenty rows each load")
+	equal(peers.relayCount, 500, "the relay set is capped")
+	local kilobytes, milliseconds = measure(function()
+		ns.PeerStats.Rebuild(peers, db, now)
+	end, 3)
+	equal(
+		milliseconds < 50,
+		true,
+		("RelayBuild over 500 peers x 20 rows stays under 50 ms (%.2f ms)"):format(milliseconds)
+	)
+	equal(
+		kilobytes < 3584,
+		true,
+		("RelayBuild allocates for the 500 rows it keeps, not one payload per row (%.1f KB)"):format(kilobytes)
+	)
+end
+
+-- A row that arrives while the relay queue is draining is relayed in its turn ----------------------------------------
+do
+	local ns = fresh()
+	local peers = make(ns)
+	local now = serverTime
+	groupKind, groupSize = "PARTY", 2
+	for index = 1, 30 do
+		equal(recv(peers, wire("agf", "total", "all", 1, now - index), "R" .. index .. "-R"), true, "peer " .. index)
+	end
+	equal(peers:Sync(), 10, "one burst of relay rows is queued")
+	advance(0)
+	equal(recv(peers, wire("agf", "total", "all", 2, now), "Late-R"), true, "a row arrives while the burst drains")
+	advance(90)
+	local seen = false
+	for _, message in ipairs(sent) do
+		if message.payload:find("|Late%-R$") then
+			seen = true
+		end
+	end
+	equal(seen, true, "the new row is relayed without waiting for another membership event")
+end
+
+-- A snapshot is reused until a row changes ------------------------------------------------------------------------
+do
+	local ns = fresh()
+	local peers, state = make(ns)
+	local now = serverTime
+	state.rows = {
+		{ metric = "total", subject = "all", value = 10, eventUnix = now },
+		{ metric = "node", subject = "7", value = 2, eventUnix = now },
+	}
+	equal(peers:Sync(), 2, "the snapshot is offered")
+	advance(1)
+	resetSent()
+	equal(peers:Sync(), 0, "an unchanged snapshot is not offered again")
+	local idle = measure(function()
+		peers:Sync()
+		advance(1)
+	end, 3)
+	equal(idle < 4, true, ("an unchanged snapshot allocates nothing per round (allocated %.1f KB)"):format(idle))
+	state.rows[1].value = 11
+	equal(peers:Sync(), 1, "only the changed row is offered")
+	advance(1)
+	equal(sent[1].payload, wire("agf", "total", "all", 11, now), "and its payload is rebuilt from the new value")
 end
 
 print(("peer_stats_spec: %d checks passed"):format(checks))

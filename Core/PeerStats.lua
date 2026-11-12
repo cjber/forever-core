@@ -150,6 +150,18 @@ local function WeekStart(now)
 	return start
 end
 
+-- The same week start for a burst of rows stored at one instant: one client reset countdown answers for the second
+-- it was read in. Without a server clock there is no second boundary to lean on, so it is read again each time.
+local weekAt, weekStartAt
+---@param now number
+---@return number
+local function WeekStartAt(now)
+	if now ~= weekAt or now == 0 then
+		weekAt, weekStartAt = now, WeekStart(now)
+	end
+	return weekStartAt
+end
+
 -- The first value heard this week, kept only while its timestamp is inside the current week.
 ---@param record table
 ---@param weekStart number
@@ -278,6 +290,33 @@ local function DisplayName(sender)
 	return name ~= "" and name or nil
 end
 
+-- How many sender names are kept. A snapshot arrives as a burst of one player's rows, relayed or not, so the last few
+-- names cover nearly every message; the fold itself depends only on the name.
+local NAME_CACHE = 4
+
+-- The compacted key, identity and display read from a sender or relay origin, remembered from the last message.
+---@param self ForeverPeerStatsInstance
+---@param name string
+---@return string|nil key
+---@return string|nil identity
+---@return string|nil display
+local function SenderNames(self, name)
+	local cache = self.names
+	for index = 1, #cache do
+		local entry = cache[index]
+		if entry.name == name then
+			return entry.key, entry.identity, entry.display
+		end
+	end
+	local key, identity = Identity(name)
+	local entry = { name = name, key = key, identity = identity, display = DisplayName(name) }
+	if #cache >= NAME_CACHE then
+		cache[NAME_CACHE] = nil
+	end
+	table.insert(cache, 1, entry)
+	return key, identity, entry.display
+end
+
 -- A display name read back from the saved table. It is drawn as it arrived, so spaces survive.
 ---@param value any
 ---@return string|nil
@@ -323,6 +362,18 @@ local function OwnIdentity()
 	end
 	local _, identity = Identity(name)
 	return identity or Compact(name):lower()
+end
+
+-- The player's own identity, read once a name is available: a session's name, surname and realm do not change.
+---@param self ForeverPeerStatsInstance
+---@return string|nil identity
+local function SelfIdentity(self)
+	local identity = self.ownIdentity
+	if not identity then
+		identity = OwnIdentity()
+		self.ownIdentity = identity
+	end
+	return identity
 end
 
 ---@param mode string
@@ -383,10 +434,18 @@ local function SortedStringKeys(source, limit)
 	return keys
 end
 
+-- The client's send result codes, read once: the enum is fixed for the session and this runs on every pump.
+local sendSuccess, sendThrottles
 local function SendResultCodes()
-	local codes = Enum and Enum.SendAddonMessageResult
-	return (codes and codes.Success) or 0,
-		{ [(codes and codes.AddonMessageThrottle) or 3] = true, [(codes and codes.ChannelThrottle) or 8] = true }
+	if not sendSuccess then
+		local codes = Enum and Enum.SendAddonMessageResult
+		sendSuccess = (codes and codes.Success) or 0
+		sendThrottles = {
+			[(codes and codes.AddonMessageThrottle) or 3] = true,
+			[(codes and codes.ChannelThrottle) or 8] = true,
+		}
+	end
+	return sendSuccess, sendThrottles
 end
 
 --------------------------------------------------------------------------------------------------------------------
@@ -522,8 +581,9 @@ local function CreateManager()
 	end
 
 	function m.SyncAll()
-		for _, addon in ipairs({ unpack(m.order) }) do
-			local inst = m.instances[addon]
+		local count = #m.order
+		for index = 1, count do
+			local inst = m.instances[m.order[index]]
 			if inst then
 				pcall(inst.Sync, inst)
 			end
@@ -545,8 +605,9 @@ local function CreateManager()
 		tokens = math.min(SEND_BURST, tokens + (now - (tokenTime or now)) * SEND_PER_SECOND)
 		tokenTime = now
 		local _, open = m.Channels()
-		for _, addon in ipairs({ unpack(m.order) }) do
-			local inst = m.instances[addon]
+		local count = #m.order
+		for index = 1, count do
+			local inst = m.instances[m.order[index]]
 			if inst then
 				inst:IsEnabled()
 			end
@@ -586,12 +647,12 @@ local function CreateManager()
 				end
 			end
 		end
-		-- Only rows refused for capacity are retried automatically. Transport failures remain eligible for the next
-		-- consumer Sync, but cannot keep an overflow refill alive forever.
+		-- Only rows refused for capacity, and relay rows still owed to a channel, are retried automatically. Transport
+		-- failures remain eligible for the next consumer Sync, but cannot keep an overflow refill alive forever.
 		if #queue == 0 then
 			for _, addon in ipairs(m.order) do
 				local inst = m.instances[addon]
-				if inst and next(inst.deferred) then
+				if inst and (next(inst.deferred) or inst.relayPending.head) then
 					pcall(inst.Sync, inst, inst.deferred)
 				end
 			end
@@ -608,8 +669,11 @@ local function CreateManager()
 			if prefix ~= PREFIX then
 				return
 			end
-			for _, addon in ipairs({ unpack(m.order) }) do
-				local inst = m.instances[addon]
+			-- The count is read once, so an instance a consumer callback registers during the message waits for the
+			-- next one, exactly as a snapshot of the order did.
+			local count = #m.order
+			for index = 1, count do
+				local inst = m.instances[m.order[index]]
 				if inst then
 					inst:Receive(prefix, text, channel, sender)
 				end
@@ -663,6 +727,344 @@ local manager = CreateManager()
 -- The manager now published, which a newer copy may have replaced since this file ran.
 local function Manager()
 	return manager
+end
+
+--------------------------------------------------------------------------------------------------------------------
+-- Relay queue
+
+-- A relayed row's wire payload is built once, when the row is stored or changes. Two linked lists over the same
+-- items keep that work off the Sync round: `relayOrder` holds every fresh candidate newest first, and `relayPending`
+-- the rows still owed to an open channel, so a round walks only the rows it sends instead of the whole store.
+
+---@param list table
+---@param item table
+---@param before table|nil the item to go in front of; nil appends
+---@param prevField string
+---@param nextField string
+local function ListLink(list, item, before, prevField, nextField)
+	local previous = list.tail
+	if before then
+		previous = before[prevField]
+	end
+	item[prevField], item[nextField] = previous, before
+	if previous then
+		previous[nextField] = item
+	else
+		list.head = item
+	end
+	if before then
+		before[prevField] = item
+	else
+		list.tail = item
+	end
+end
+
+---@param list table
+---@param item table
+---@param prevField string
+---@param nextField string
+local function ListUnlink(list, item, prevField, nextField)
+	local previous, following = item[prevField], item[nextField]
+	if previous then
+		previous[nextField] = following
+	else
+		list.head = following
+	end
+	if following then
+		following[prevField] = previous
+	else
+		list.tail = previous
+	end
+	item[prevField], item[nextField] = nil, nil
+end
+
+-- The sender-shaped origin a receiver runs Identity() and DisplayName() on: the stored display name, a hyphen, and
+-- the realm the key leaves out or the relayer's own realm. Nil when no safe origin can be built.
+---@param store table|nil
+---@param key string
+---@return string|nil origin
+local function RelayOrigin(store, key)
+	local peer = store and store[key]
+	local name = key:match("^([^%-]+)") or key
+	local display = type(peer) == "table" and SavedDisplay(peer[DISPLAY_KEY]) or nil
+	if not display or display:find("%-") then
+		display = KeyDisplay(name)
+	end
+	local realm = key:match("^[^%-]+%-(.+)$") or LocalRealmName()
+	if not realm then
+		return nil
+	end
+	local origin = display .. "-" .. realm
+	if #origin > MAX_NAME or origin:find("[%c|]") then
+		return nil
+	end
+	return origin
+end
+
+-- Newest first, then the identity, metric and subject, so a capped selection is the same on every client.
+---@param a table
+---@param b table
+---@return boolean
+local function RelayBefore(a, b)
+	if a.unix ~= b.unix then
+		return a.unix > b.unix
+	end
+	if a.identity ~= b.identity then
+		return a.identity < b.identity
+	end
+	if a.metric ~= b.metric then
+		return a.metric < b.metric
+	end
+	return a.subject < b.subject
+end
+
+-- Forget one candidate, with the sent and heard records only it could use.
+---@param self ForeverPeerStatsInstance
+---@param item table
+local function RelayDrop(self, item)
+	if item.owed then
+		item.owed = nil
+		ListUnlink(self.relayPending, item, "owedPrev", "owedNext")
+	end
+	ListUnlink(self.relayOrder, item, "prev", "next")
+	if self.relayItems[item.key] == item then
+		self.relayItems[item.key] = nil
+		self.relayCount = self.relayCount - 1
+	end
+	local key = item.key
+	for _, channel in ipairs(CHANNEL_ORDER) do
+		local sendKey = channel .. "|" .. key
+		self.sent[sendKey] = nil
+		self.relayHeard[sendKey] = nil
+	end
+end
+
+-- Put an unlinked item at its place in the newest-first order, and in the owed list while it still owes a send.
+---@param self ForeverPeerStatsInstance
+---@param item table
+local function RelayPlace(self, item)
+	local at = self.relayOrder.head
+	while at and RelayBefore(at, item) do
+		at = at.next
+	end
+	ListLink(self.relayOrder, item, at, "prev", "next")
+	if item.owed then
+		local owedAt = self.relayPending.head
+		while owedAt and RelayBefore(owedAt, item) do
+			owedAt = owedAt.owedNext
+		end
+		ListLink(self.relayPending, item, owedAt, "owedPrev", "owedNext")
+	end
+end
+
+-- Record one stored row's wire payload. A message is built here when a row changes and in RelayBuild when the store
+-- loads, so a Sync round never concatenates. Only a row whose event time moves backwards can change place under a full
+-- cap; it keeps its place in the set rather than displacing a row the cap already let go, which is the one selection
+-- the old whole-store scan could differ on.
+---@param self ForeverPeerStatsInstance
+---@param store table
+---@param identity string
+---@param metric string
+---@param subject string
+---@param value number
+---@param unix number
+---@param origin string|nil the peer's origin, when the caller already built it
+local function RelayRow(self, store, identity, metric, subject, value, unix, origin)
+	-- A row that is older than the full cap's oldest cannot enter, and the cap's tail is the first thing to compare
+	-- with: inline so a rejected row allocates nothing, not even the key or a probe. Only the tail itself can be older
+	-- than the tail and still be an item already held, so its fields continue to the update below.
+	if self.relayCount >= MAX_RELAY_ROWS then
+		local tail = self.relayOrder.tail
+		if tail then
+			local before
+			if unix ~= tail.unix then
+				before = unix > tail.unix
+			elseif identity ~= tail.identity then
+				before = identity < tail.identity
+			elseif metric ~= tail.metric then
+				before = metric < tail.metric
+			else
+				before = subject < tail.subject
+			end
+			if
+				not before
+				and (unix ~= tail.unix or identity ~= tail.identity or metric ~= tail.metric or subject ~= tail.subject)
+			then
+				return
+			end
+		end
+	end
+	local key = "r|" .. identity .. "|" .. metric .. "|" .. subject
+	local item = self.relayItems[key]
+	if not origin then
+		local peerKey = self.index[identity]
+		origin = peerKey and RelayOrigin(store, peerKey) or nil
+	end
+	local payload = origin and table.concat({ RELAY_VERSION, self.addon, metric, subject, value, unix, origin }, "|")
+	if not payload or #payload > MAX_PAYLOAD then
+		if item then
+			RelayDrop(self, item)
+		end
+		return
+	end
+	if item then
+		if item.owed then
+			item.owed = nil
+			ListUnlink(self.relayPending, item, "owedPrev", "owedNext")
+		end
+		ListUnlink(self.relayOrder, item, "prev", "next")
+	else
+		item = { key = key, identity = identity, metric = metric, subject = subject }
+		self.relayItems[key] = item
+		self.relayCount = self.relayCount + 1
+	end
+	item.value, item.unix, item.payload, item.owed = value, unix, payload, true
+	RelayPlace(self, item)
+	while self.relayCount > MAX_RELAY_ROWS do
+		RelayDrop(self, self.relayOrder.tail)
+	end
+end
+
+-- Build the candidate set once from a store a sanitize just rebuilt, so every later round only walks its queue. The
+-- fresh rows are collected first and sorted once, rather than inserted into the list one at a time; a big store then
+-- pays one sort instead of one walk of the cap per row.
+---@param self ForeverPeerStatsInstance
+---@param store table
+---@param now number
+local function RelayBuild(self, store, now)
+	local item = self.relayOrder.head
+	while item do
+		local following = item.next
+		RelayDrop(self, item)
+		item = following
+	end
+	local oldest = now - RELAY_MAX_AGE
+	local fresh = {}
+	for identity, key in pairs(self.index) do
+		local peer = store[key]
+		local origin = type(peer) == "table" and RelayOrigin(store, key) or nil
+		if type(peer) == "table" then
+			for metric, subjects in pairs(peer) do
+				if type(subjects) == "table" and self.metrics[metric] then
+					for subject, record in pairs(subjects) do
+						local unix = type(record) == "table" and record.eventUnix
+						local value = type(record) == "table" and record.value
+						if type(unix) == "number" and unix >= oldest and type(value) == "number" then
+							fresh[#fresh + 1] = {
+								identity = identity,
+								metric = metric,
+								subject = subject,
+								unix = unix,
+								value = value,
+								origin = origin,
+							}
+						end
+					end
+				end
+			end
+		end
+	end
+	table.sort(fresh, RelayBefore)
+	local kept = 0
+	for _, row in ipairs(fresh) do
+		if kept >= MAX_RELAY_ROWS then
+			break
+		end
+		-- A row without a safe origin, or one whose message would be too long, is not a candidate; the next row takes
+		-- the place the cap did not spend on it.
+		local origin = row.origin
+		if origin then
+			local payload =
+				table.concat({ RELAY_VERSION, self.addon, row.metric, row.subject, row.value, row.unix, origin }, "|")
+			if #payload <= MAX_PAYLOAD then
+				local key = "r|" .. row.identity .. "|" .. row.metric .. "|" .. row.subject
+				local candidate = {
+					key = key,
+					identity = row.identity,
+					metric = row.metric,
+					subject = row.subject,
+					value = row.value,
+					unix = row.unix,
+					payload = payload,
+					owed = true,
+				}
+				self.relayItems[key] = candidate
+				self.relayCount = self.relayCount + 1
+				ListLink(self.relayOrder, candidate, nil, "prev", "next")
+				ListLink(self.relayPending, candidate, nil, "owedPrev", "owedNext")
+				kept = kept + 1
+			end
+		end
+	end
+end
+
+-- A peer's display name changed: the name is part of every payload, and the order does not move with it.
+---@param self ForeverPeerStatsInstance
+---@param store table
+---@param identity string
+local function RelayRename(self, store, identity)
+	local peerKey = self.index[identity]
+	local origin = peerKey and RelayOrigin(store, peerKey) or nil
+	for _, item in pairs(self.relayItems) do
+		if item.identity == identity then
+			local payload = origin
+				and table.concat(
+					{ RELAY_VERSION, self.addon, item.metric, item.subject, item.value, item.unix, origin },
+					"|"
+				)
+			if not payload or #payload > MAX_PAYLOAD then
+				RelayDrop(self, item)
+			else
+				item.payload = payload
+			end
+		end
+	end
+end
+
+-- A peer left the store: its rows go with it.
+---@param self ForeverPeerStatsInstance
+---@param identity string
+local function RelayForget(self, identity)
+	for _, item in pairs(self.relayItems) do
+		if item.identity == identity then
+			RelayDrop(self, item)
+		end
+	end
+end
+
+-- This row is on every open channel: it stays a candidate, but no round owes it any more.
+---@param self ForeverPeerStatsInstance
+---@param item table
+local function RelaySettle(self, item)
+	item.owed = nil
+	ListUnlink(self.relayPending, item, "owedPrev", "owedNext")
+end
+
+-- Every fresh candidate is owed again: a channel changed its audience, or every sent record was just cleared. The
+-- owed list is rebuilt from the order list, so it stays newest first.
+---@param self ForeverPeerStatsInstance
+---@param now number
+local function RelayRepend(self, now)
+	local pending = self.relayPending
+	local item = pending.head
+	while item do
+		local following = item.owedNext
+		item.owed, item.owedPrev, item.owedNext = nil, nil, nil
+		item = following
+	end
+	pending.head, pending.tail = nil, nil
+	local oldest = now - RELAY_MAX_AGE
+	item = self.relayOrder.head
+	while item do
+		local following = item.next
+		if item.unix < oldest then
+			RelayDrop(self, item)
+		else
+			item.owed = true
+			ListLink(pending, item, nil, "owedPrev", "owedNext")
+		end
+		item = following
+	end
 end
 
 --------------------------------------------------------------------------------------------------------------------
@@ -849,6 +1251,7 @@ local function SanitizeStore(self, raw)
 	if next(ownWeek) then
 		raw[WEEKLY_KEY] = ownWeek
 	end
+	RelayBuild(self, raw, now)
 	self.revision = self.revision + 1
 end
 
@@ -895,7 +1298,8 @@ end
 ---@field override boolean|nil
 ---@field gen integer
 ---@field sent table
----@field observed table<string, {value: number, unix: number}>
+---@field observed table<string, {value: number, unix: number, item: table}>
+---@field sentRows table<string, boolean> the snapshot send keys the last round offered
 ---@field weekLocal table<string, {value: number, eventUnix: number}> the player's own baselines while there is no db
 ---@field deferred table<string, boolean>
 ---@field rate table
@@ -910,15 +1314,25 @@ end
 ---@field metrics table<string, {subject: string, first: boolean}>
 ---@field metricList string[]
 ---@field store table|nil
+---@field relayOrder {head: table|nil, tail: table|nil} every fresh relay candidate, newest first
+---@field relayPending {head: table|nil, tail: table|nil} the candidates still owed to an open channel
+---@field relayItems table<string, table> a relay candidate by row key
+---@field relayCount integer candidates held, at most MAX_RELAY_ROWS
+---@field relayEpoch table<string, integer> the epoch each channel had when the rows were last offered
+---@field names {name: string, key: string|nil, identity: string|nil, display: string|nil}[] the last names read
+---@field observedCount integer rows in the last accepted snapshot
+---@field ownIdentity string|nil the player's identity, read once a name is available
 ---@field revision integer the cache key LeaderboardsData sums; raised when a stored row or snapshot changes
 local Instance = {}
 Instance.__index = Instance
 
--- Queued sends gone, sent cache reset: nothing queued before this call can be sent after it.
+-- Queued sends gone, sent cache reset: nothing queued before this call can be sent after it, and every relay row is
+-- owed to its channels again.
 function Instance:Cancel()
 	self.gen = self.gen + 1
 	self.sent = {}
 	self.deferred = {}
+	RelayRepend(self, Now())
 	local current = Manager()
 	if current then
 		current.Purge(self)
@@ -968,66 +1382,6 @@ function Instance:RecordSent(entry)
 	end
 end
 
--- The sender-shaped origin a receiver runs Identity() and DisplayName() on: the stored display name, a hyphen, and
--- the realm the key leaves out or the relayer's own realm. Nil when no safe origin can be built.
----@param self ForeverPeerStatsInstance
----@param key string
----@return string|nil
-local function RelayOrigin(self, key)
-	local peer = self.store and self.store[key]
-	local name = key:match("^([^%-]+)") or key
-	local display = type(peer) == "table" and SavedDisplay(peer[DISPLAY_KEY]) or nil
-	if not display or display:find("%-") then
-		display = KeyDisplay(name)
-	end
-	local realm = key:match("^[^%-]+%-(.+)$") or LocalRealmName()
-	if not realm then
-		return nil
-	end
-	local origin = display .. "-" .. realm
-	if #origin > MAX_NAME or origin:find("[%c|]") then
-		return nil
-	end
-	return origin
-end
-
--- Newest first, then the identity, metric and subject, so a capped selection is the same on every client.
----@param a table
----@param b table
----@return boolean
-local function RelayBefore(a, b)
-	if a.unix ~= b.unix then
-		return a.unix > b.unix
-	end
-	if a.identity ~= b.identity then
-		return a.identity < b.identity
-	end
-	if a.metric ~= b.metric then
-		return a.metric < b.metric
-	end
-	return a.subject < b.subject
-end
-
--- Keep at most MAX_RELAY_ROWS candidates, inserting in order so no sort of the whole store is needed.
----@param list table[]
----@param item table
-local function RememberRelay(list, item)
-	local position = #list + 1
-	for index = 1, #list do
-		if RelayBefore(item, list[index]) then
-			position = index
-			break
-		end
-	end
-	if position > MAX_RELAY_ROWS then
-		return
-	end
-	table.insert(list, position, item)
-	if #list > MAX_RELAY_ROWS then
-		list[#list] = nil
-	end
-end
-
 -- Offer the consumer's snapshot, then the newest rows heard from peers, to every open channel. A relayed row skips a
 -- channel the origin was heard on directly this session, since that audience already has it. Rows unchanged since
 -- their last successful send on a channel are skipped. Returns how many sends were queued.
@@ -1042,10 +1396,12 @@ function Instance:Sync(onlyDeferred)
 		return 0
 	end
 	local now = Now()
-	local list, byKey, observed = {}, {}, {}
+	local list, byKey, present = {}, {}, {}
 	if type(self.config.snapshot) == "function" then
 		local ok, rows = RunSafe(self.config, "peer stats snapshot", self.config.snapshot)
 		if ok and type(rows) == "table" then
+			local previous = self.observed
+			local observed, count = {}, 0
 			for index = 1, math.min(#rows, MAX_SNAPSHOT) do
 				local row = rows[index]
 				local config = type(row) == "table" and type(row.metric) == "string" and self.metrics[row.metric]
@@ -1055,15 +1411,25 @@ function Instance:Sync(onlyDeferred)
 					value = value and IntIn(value, 0, MAX_VALUE)
 					local key = row.metric .. "|" .. row.subject
 					local unix = IntIn(row.eventUnix, 1, now + FUTURE_SECONDS)
+					local cached = previous[key]
 					if not unix and not config.first and (row.eventUnix == nil or type(row.eventUnix) == "number") then
-						local previous = self.observed[key]
-						unix = previous and previous.value == value and previous.unix or now
+						unix = cached and cached.value == value and cached.unix or now
 					end
 					if value and unix then
-						observed[key] = { value = value, unix = unix }
-						local item = { key = key, value = value, unix = unix }
-						item.payload =
-							table.concat({ WIRE_VERSION, self.addon, row.metric, row.subject, value, unix }, "|")
+						local item, slot
+						if cached and cached.value == value and cached.unix == unix then
+							-- Unchanged: the payload built when this row last changed is still the one to send.
+							item, slot = cached.item, cached
+						else
+							item = { key = key, value = value, unix = unix }
+							item.payload =
+								table.concat({ WIRE_VERSION, self.addon, row.metric, row.subject, value, unix }, "|")
+							slot = { value = value, unix = unix, item = item }
+						end
+						if not observed[key] then
+							count = count + 1
+						end
+						observed[key] = slot
 						if byKey[key] then
 							list[byKey[key]] = item
 						else
@@ -1075,17 +1441,11 @@ function Instance:Sync(onlyDeferred)
 			end
 			-- The player's own snapshot is the other half of a board, so a change there invalidates the same cache
 			-- as a peer row. An unchanged snapshot leaves the revision alone, and with it a hover's single lookup.
-			local changed = false
-			for key, item in pairs(observed) do
-				local old = self.observed[key]
-				if not old or old.value ~= item.value or old.unix ~= item.unix then
-					changed = true
-					break
-				end
-			end
+			local changed = count ~= self.observedCount
 			if not changed then
-				for key in pairs(self.observed) do
-					if not observed[key] then
+				for key, slot in pairs(observed) do
+					local old = previous[key]
+					if not old or old.value ~= slot.value or old.unix ~= slot.unix then
 						changed = true
 						break
 					end
@@ -1094,116 +1454,90 @@ function Instance:Sync(onlyDeferred)
 			if changed then
 				self.revision = self.revision + 1
 			end
-			self.observed = observed
+			self.observed, self.observedCount = observed, count
 		end
 	end
 
-	local relayList, relayKeys = {}, {}
-	for identity, key in pairs(self.index) do
-		local peer = self.store and self.store[key]
-		if type(peer) == "table" then
-			local origin = RelayOrigin(self, key)
-			if origin then
-				for metric, subjects in pairs(peer) do
-					if type(subjects) == "table" and self.metrics[metric] then
-						for subject, record in pairs(subjects) do
-							local unix = type(record) == "table" and record.eventUnix
-							local value = type(record) == "table" and record.value
-							if type(unix) == "number" and unix >= now - RELAY_MAX_AGE and type(value) == "number" then
-								local payload = table.concat(
-									{ RELAY_VERSION, self.addon, metric, subject, value, unix, origin },
-									"|"
-								)
-								if #payload <= MAX_PAYLOAD then
-									RememberRelay(relayList, {
-										key = "r|" .. identity .. "|" .. metric .. "|" .. subject,
-										identity = identity,
-										metric = metric,
-										subject = subject,
-										value = value,
-										unix = unix,
-										payload = payload,
-									})
-								end
-							end
+	-- A channel appeared or its audience changed, so every row is owed there again, exactly as its new epoch implies.
+	local epochs, stale = self.relayEpoch, false
+	for _, channel in ipairs(channels) do
+		local epoch = current.epoch[channel] or 0
+		if epochs[channel] ~= epoch then
+			epochs[channel] = epoch
+			stale = true
+		end
+	end
+	if stale then
+		RelayRepend(self, now)
+	end
+
+	-- The player's own rows go to every open channel.
+	local queued = 0
+	for _, item in ipairs(list) do
+		for _, channel in ipairs(channels) do
+			local sendKey = channel .. "|" .. item.key
+			present[sendKey] = true
+			local last = self.sent[sendKey]
+			local same = last
+				and last.value == item.value
+				and last.unix == item.unix
+				and last.epoch == (current.epoch[channel] or 0)
+			if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
+				if current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
+					queued = queued + 1
+				else
+					self.deferred[sendKey] = true
+				end
+			end
+		end
+	end
+	local previousRows = self.sentRows or {}
+	for sendKey in pairs(previousRows) do
+		if not present[sendKey] then
+			self.sent[sendKey] = nil
+		end
+	end
+	self.sentRows = present
+
+	-- A relay round offers one burst of messages; the rows it did not reach stay at the head of its queue, so the
+	-- manager starts the next round once this one has drained. A round therefore walks the rows it sends, never the
+	-- store, and every Sync stays inside the client's per-prefix budget however large the store is.
+	local relayBudget = RELAY_ROWS_PER_SYNC
+	local oldest = now - RELAY_MAX_AGE
+	local item = self.relayPending.head
+	while item and relayBudget > 0 do
+		local following = item.owedNext
+		if item.unix < oldest then
+			RelayDrop(self, item)
+		else
+			local skip = self.heardOn[item.identity]
+			local settled = true
+			for _, channel in ipairs(channels) do
+				if not (skip and skip[channel]) then
+					local sendKey = channel .. "|" .. item.key
+					local last = self.sent[sendKey]
+					local heard = self.relayHeard[sendKey]
+					local same = (
+						last
+						and last.value == item.value
+						and last.unix == item.unix
+						and last.epoch == (current.epoch[channel] or 0)
+					) or (heard and heard.value == item.value and heard.unix == item.unix)
+					if not same then
+						if current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
+							queued = queued + 1
+							relayBudget = relayBudget - 1
+						else
+							settled = false
 						end
 					end
 				end
 			end
-		end
-	end
-	for _, item in ipairs(relayList) do
-		relayKeys[item.key] = true
-	end
-
-	for sentKey, entry in pairs(self.sent) do
-		if entry.key:sub(1, 2) == "r|" then
-			if not relayKeys[entry.key] then
-				self.sent[sentKey] = nil
-			end
-		elseif not byKey[entry.key] then
-			self.sent[sentKey] = nil
-		end
-	end
-	for heardKey in pairs(self.relayHeard) do
-		if not relayKeys[heardKey:match("^[^|]+|(.*)$")] then
-			self.relayHeard[heardKey] = nil
-		end
-	end
-
-	local queued = 0
-	local function Offer(item, skip)
-		for _, channel in ipairs(channels) do
-			if not (skip and skip[channel]) then
-				local sendKey = channel .. "|" .. item.key
-				local last = self.sent[sendKey]
-				local same = last
-					and last.value == item.value
-					and last.unix == item.unix
-					and last.epoch == (current.epoch[channel] or 0)
-				if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
-					if current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
-						queued = queued + 1
-					else
-						self.deferred[sendKey] = true
-					end
-				end
+			if settled then
+				RelaySettle(self, item)
 			end
 		end
-	end
-	for _, item in ipairs(list) do
-		Offer(item)
-	end
-
-	-- A relay round offers one burst of messages; the rest are deferred, so the manager starts the next round once
-	-- this one has drained. That keeps every Sync inside the client's per-prefix budget however large the store is.
-	local relayBudget = RELAY_ROWS_PER_SYNC
-	local function OfferRelay(item, skip)
-		for _, channel in ipairs(channels) do
-			if not (skip and skip[channel]) then
-				local sendKey = channel .. "|" .. item.key
-				local last = self.sent[sendKey]
-				local heard = self.relayHeard[sendKey]
-				local same = last
-						and last.value == item.value
-						and last.unix == item.unix
-						and last.epoch == (current.epoch[channel] or 0)
-					or heard and heard.value == item.value and heard.unix == item.unix
-				if not same and (not onlyDeferred or onlyDeferred[sendKey]) then
-					if relayBudget <= 0 then
-						self.deferred[sendKey] = true
-					elseif current.Enqueue(self, channel, item.key, item.payload, item.value, item.unix) then
-						queued = queued + 1
-						relayBudget = relayBudget - 1
-					else
-						self.deferred[sendKey] = true
-					end
-				end
-			end
-		end
-	end
-	for _, item in ipairs(relayList) do
-		OfferRelay(item, self.heardOn[item.identity])
+		item = following
 	end
 	return queued
 end
@@ -1278,6 +1612,7 @@ local function DropPeer(self, identity)
 		self.peerCount = self.peerCount - 1
 	end
 	self.store[key] = nil
+	RelayForget(self, identity)
 	self.index[identity], self.latest[identity], self.heardOn[identity] = nil, nil, nil
 end
 
@@ -1365,6 +1700,10 @@ local function Apply(self, key, identity, display, config, metric, subject, valu
 	if display and (not relayed or peer[DISPLAY_KEY] == nil) and peer[DISPLAY_KEY] ~= display then
 		peer[DISPLAY_KEY] = display
 		changed = true
+		if peerKey then
+			-- The name is part of every payload this peer already has queued.
+			RelayRename(self, store, identity)
+		end
 	end
 	local subjects = peer[metric]
 	local record = subjects and subjects[subject]
@@ -1425,11 +1764,12 @@ local function Apply(self, key, identity, display, config, metric, subject, valu
 	-- reset is replaced by this observation, which is then the first one heard this week.
 	if not config.first then
 		local now = Now()
-		local baseline = SavedBaseline(record, WeekStart(now), now)
+		local baseline = SavedBaseline(record, WeekStartAt(now), now)
 		if not baseline then
 			record.week, record.weekUnix = value, unix
 		end
 	end
+	RelayRow(self, store, identity, metric, subject, record.value, record.eventUnix)
 	if unix > (self.latest[identity] or 0) then
 		self.latest[identity] = unix
 	end
@@ -1450,15 +1790,19 @@ function Instance:Receive(prefix, payload, channel, sender)
 	if not ALLOWED_CHANNELS[channel] then
 		return false, "channel"
 	end
-	local version = payload:match("^(%d+)|")
-	if (version ~= WIRE_VERSION and version ~= RELAY_VERSION) or payload:match("^[12]|([^|]*)|") ~= self.addon then
+	-- "1|" or "2|", and this addon's field, by byte: a foreign message costs no capture or concatenation.
+	local marker = payload:byte(1)
+	if (marker ~= 49 and marker ~= 50) or payload:byte(2) ~= 124 then
+		return false, "addon"
+	end
+	if payload:find(self.addon, 3, true) ~= 3 or payload:byte(3 + #self.addon) ~= 124 then
 		return false, "addon"
 	end
 	if not self:IsEnabled() then
 		return false, "disabled"
 	end
-	local key, identity = Identity(sender)
-	local own = OwnIdentity()
+	local key, identity, display = SenderNames(self, sender)
+	local own = SelfIdentity(self)
 	if not key or not identity or identity == own then
 		return false, "sender"
 	end
@@ -1466,12 +1810,12 @@ function Instance:Receive(prefix, payload, channel, sender)
 		return false, "rate"
 	end
 	local metric, subject, valueText, unixText, origin
-	if version == RELAY_VERSION then
+	if marker == 50 then
 		metric, subject, valueText, unixText, origin =
 			payload:match("^2|[^|]*|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
-		local originKey, originIdentity
+		local originKey, originIdentity, originDisplay
 		if origin then
-			originKey, originIdentity = Identity(origin)
+			originKey, originIdentity, originDisplay = SenderNames(self, origin)
 		end
 		if not originKey or originIdentity == own or originIdentity == identity then
 			return false, "relay"
@@ -1486,12 +1830,13 @@ function Instance:Receive(prefix, payload, channel, sender)
 			return false, "value"
 		end
 		local changed, why =
-			Apply(self, originKey, originIdentity, DisplayName(origin), config, metric, subject, value, unix, true)
+			Apply(self, originKey, originIdentity, originDisplay, config, metric, subject, value, unix, true)
 		-- This channel already carries this exact row: without the note every listener would pass the same row back
-		-- to the channel it came from, once per member.
-		if ALLOWED_CHANNELS[channel] then
-			self.relayHeard[channel .. "|r|" .. originIdentity .. "|" .. metric .. "|" .. subject] =
-				{ value = value, unix = unix }
+		-- to the channel it came from, once per member. Only a row the relay holds keeps the note, so the memory
+		-- stays inside the relay cap rather than growing with every row a stranger sends.
+		local relayKey = "r|" .. originIdentity .. "|" .. metric .. "|" .. subject
+		if self.relayItems[relayKey] then
+			self.relayHeard[channel .. "|" .. relayKey] = { value = value, unix = unix }
 		end
 		return changed, why
 	end
@@ -1505,7 +1850,7 @@ function Instance:Receive(prefix, payload, channel, sender)
 	if not value or not unix then
 		return false, "value"
 	end
-	local changed, why = Apply(self, key, identity, DisplayName(sender), config, metric, subject, value, unix, false)
+	local changed, why = Apply(self, key, identity, display, config, metric, subject, value, unix, false)
 	if self.index[identity] then
 		---@type table<string, boolean>|nil
 		local heard = self.heardOn[identity]
@@ -1587,7 +1932,7 @@ function Instance:Board(metric, subject, localValue, localEventUnix)
 	local rows = {
 		{
 			name = name,
-			identity = OwnIdentity() or name:lower(),
+			identity = SelfIdentity(self) or name:lower(),
 			value = IntIn(type(localValue) == "number" and math.floor(localValue) or nil, 0, MAX_VALUE) or 0,
 			eventUnix = IntIn(localEventUnix, 1, Now() + FUTURE_SECONDS),
 			self = true,
@@ -1716,7 +2061,7 @@ function Instance:WeekBoard(metric, subject, localValue, localEventUnix)
 	local rows = {
 		{
 			name = name,
-			identity = OwnIdentity() or name:lower(),
+			identity = SelfIdentity(self) or name:lower(),
 			value = ownValue,
 			eventUnix = localUnix,
 			self = true,
@@ -1801,6 +2146,13 @@ local function New(config, owner)
 		relayOnly = {},
 		heardOn = {},
 		relayHeard = {},
+		relayOrder = {},
+		relayPending = {},
+		relayItems = {},
+		relayCount = 0,
+		relayEpoch = {},
+		names = {},
+		observedCount = 0,
 		metrics = {},
 		metricList = {},
 		revision = 0,
@@ -1839,6 +2191,14 @@ end
 ---@return table
 function PeerStats.Manager()
 	return manager
+end
+
+-- Rebuild the relay set from a sanitized store, for the spec that measures one build without the sanitize around it.
+---@param instance ForeverPeerStatsInstance
+---@param store table
+---@param now number
+function PeerStats.Rebuild(instance, store, now)
+	RelayBuild(instance, store, now)
 end
 
 ns.PeerStats = PeerStats

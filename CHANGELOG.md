@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Travel stats no longer hitch the game every ten seconds.** With "Share travel stats with guild and groups" on, a large guild or group made the game pause for about a tenth of a second every ten seconds and kept memory climbing, because every stored player's message was rebuilt before the addon sent ten of them. Each message is now built once, when the number it carries changes, so a round costs only what it sends. Thanks to hervad for the measurements and the report.
+
 ## [1.8.0] - 2026-11-12
 
 <!-- discord-image: docs/screenshots/tracker.png -->

@@ -17,6 +17,7 @@ ns.Credits = {
 		{ name = "procque", what = "Questie's quest tracker can be moved again" },
 		{ name = "Fareed", what = "Questie's quest tracker can be moved again" },
 		{ name = "ZiiMs", what = "Tracker column follows EllesmereUI's custom quest tracker" },
+		{ name = "hervad", what = "Measured the travel stats sharing hitches" },
 	},
 	inspired = {
 		{ name = "The game's own objective tracker", what = "The column's left edge, width and header spacing" },
