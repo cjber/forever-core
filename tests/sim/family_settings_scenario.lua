@@ -13,7 +13,7 @@ scenario("the Forever addons settings page leaves the gamepad binding stack to t
 
 	-- The client opens the panel itself: a C function that calls SettingsPanel:OpenToCategory.
 	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function(categoryID, scrollTo)
-		G.SettingsPanel:OpenToCategory(categoryID, scrollTo)
+		return G.SettingsPanel:OpenToCategory(categoryID, scrollTo)
 	end
 
 	-- SmartNavigation runs the cursor target's enter and leave scripts through FocusEnter/FocusExit, native methods
@@ -43,16 +43,6 @@ scenario("the Forever addons settings page leaves the gamepad binding stack to t
 		return false
 	end
 	G.SpellStopTargeting = G.SpellStopTargeting or function() end
-	-- Model Blizzard's securecallfunction: the method runs without the addon's taint and the caller's taint resumes.
-	G.securecallfunction = function(fn, ...)
-		local previous = sim.taint.current
-		sim.taint.current = nil
-		local ok, first, second = pcall(fn, ...)
-		sim.taint.current = previous
-		assert(ok, first)
-		return first, second
-	end
-
 	-- The gamepad interface is on before the addon loads, as after a reload with it enabled.
 	sim:setGamepad(true)
 	sim:login()

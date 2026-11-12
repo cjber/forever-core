@@ -2,6 +2,7 @@
 -- C_Map.OpenWorldMap is documented with the pin's nocombat class: a plain out-of-combat addon call opens the map,
 -- and the client refuses it in combat. The shared opener asks the same client function through securecallfunction.
 scenario("the shared opener asks the client to open the map and settings", function(sim)
+	local G = sim.G
 	sim.world.maps[1454] = { name = "Durotar", parent = 1414, mapType = 3 }
 	sim.world.maps[1414] = { name = "Kalimdor", parent = 947, mapType = 2 }
 	sim.world.maps[947] = { name = "Azeroth", parent = 0, mapType = 1 }
@@ -41,12 +42,23 @@ scenario("the shared opener asks the client to open the map and settings", funct
 
 	-- C_SettingsUtil.OpenSettingsPanel is Blizzard's restricted C path on this build.
 	local panelCalls = 0
+	local directTaint, wrapperTaint
+	local wrapper = G.SettingsPanel.OpenToCategory
+	G.SettingsPanel.OpenToCategory = function(self, categoryID, element)
+		wrapperTaint = sim.taint.current
+		return wrapper(self, categoryID, element)
+	end
 	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function(categoryID, element)
 		panelCalls = panelCalls + 1
+		directTaint = sim.taint.current
 		assert(categoryID == 1 and element == nil)
+		G.SettingsPanel:OpenToCategory(categoryID, element)
 	end
 	local shown = sim:runAs(ADDON, "local ns = ...; return ns.OpenSettingsPanel(1)", ns)
 	assert(shown == true, "the opener reports the settings panel opened")
 	assert(panelCalls == 1, "the settings panel opens through the shared opener")
+	assert(directTaint == nil, "the native C opener enters the panel securely")
+	sim:runAs(ADDON, "SettingsPanel:OpenToCategory(1)")
+	assert(wrapperTaint == ADDON, "the Lua SettingsPanel wrapper remains addon-tainted")
 	sim:expectNoErrors(ADDON)
 end)
