@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A Cooldown Manager icon frame is one core call.** `ForeverCore.Art` (minor 1) publishes `Icon` and the new
+  `CooldownIcon`, which draws an icon with the client's own `UI-HUD-CoolDownManager-Mask` and
+  `UI-HUD-CoolDownManager-IconOverlay` atlases and returns the overlay. The mask and overlay are built once per
+  texture, so a refresh moves the same pair instead of stacking another. See `docs/api.md`. (#525)
+- **Mock renders draw `|T` icons given by FileDataID.** `tools/wowmock` looked such an escape up as a path, which
+  never matched and stalled the render; it now reads the ID directly, as the client does. (#524)
+
 ## [1.8.2] - 2026-11-12
 
 - **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and

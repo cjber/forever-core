@@ -162,6 +162,7 @@
 ---@field Family? ForeverFamilyAPI
 ---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
+---@field Art? ForeverArt
 
 ---@type ForeverCoreAPI
 ForeverCore = nil

@@ -32,6 +32,7 @@ core.OpenSettingsPanel = ns.OpenSettingsPanel
 core.Family = ns.Family
 core.Credits = ns.CreditsPage
 core.ContextMenu = ns.ContextMenu
+core.Art = ns.Art
 
 -- Core's own credits are its generated Data/Credits.lua, loaded before this file onto ns.Credits; in an addon's own
 -- namespace that same table is what it hands to ForeverCore.Credits.Register.
