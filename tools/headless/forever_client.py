@@ -146,6 +146,35 @@ def prefix_ownership(users: Iterable[int], token: str | None) -> tuple[list[int]
     return owned, foreign
 
 
+def require_owned_prefix(token: str | None) -> list[int]:
+    users = prefix_users()
+    _, foreign = prefix_ownership(users, token)
+    if foreign:
+        detail = ", ".join(map(str, foreign))
+        raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
+    if users and not token:
+        raise ClientError("teardown refused: session ownership is unavailable for Wine prefix processes")
+    return users
+
+
+def kill_owned_pid(pid: int, token: str) -> bool:
+    """Signal a token-matched process through a pidfd, so PID reuse cannot hit a new process."""
+    try:
+        pidfd = os.pidfd_open(pid)
+    except (AttributeError, OSError):
+        return False
+    try:
+        env = read_environ(pid)
+        if env.get("WINEPREFIX") != str(PREFIX) or env.get("FOREVER_CLIENT_SESSION") != token:
+            return False
+        signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        return True
+    except ProcessLookupError:
+        return False
+    finally:
+        os.close(pidfd)
+
+
 def client_pid() -> int | None:
     return next(
         (p for p in pids() if "Wow.exe" in cmdline(p) and read_environ(p).get("WINEPREFIX") == str(PREFIX)), None
@@ -400,28 +429,21 @@ def log_out(state: Mapping) -> None:
 def teardown(
     gamescope: subprocess.Popen | None, wine: Mapping[str, str], link: Path | None, state: Mapping | None
 ) -> None:
+    token = state.get("token") if state else None
+    require_owned_prefix(token)
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
     if state and state.get("ready") and gamescope and gamescope.poll() is None and client_pid():
         log_out(state)
     if gamescope and gamescope.poll() is None:
-        os.killpg(gamescope.pid, signal.SIGTERM)
+        require_owned_prefix(token)
+        gamescope.terminate()
         try:
             gamescope.wait(20)
         except subprocess.TimeoutExpired:
-            os.killpg(gamescope.pid, signal.SIGKILL)
-    token = state.get("token") if state else None
-    users = prefix_users()
-    _, foreign = prefix_ownership(users, token)
-    if foreign:
-        detail = ", ".join(map(str, foreign))
-        raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
-    if users and not token:
-        raise ClientError("teardown refused: session ownership is unavailable for Wine prefix processes")
-    # Only token-matched processes may be affected. Recheck ownership before every destructive step.
-    server = Path(wine.get("WINE", "wine")).with_name("wineserver")
-    subprocess.run([str(server), "-k"], env={**os.environ, **wine, "WINEPREFIX": str(PREFIX)}, check=False)
-    # Battle.net can respawn its launcher children after the first wineserver shutdown. Keep checking until the
-    # owned prefix is empty and remains empty for a grace period, or retain state and report the exact survivors.
+            gamescope.kill()
+            gamescope.wait(20)
+    # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
+    # and signal only exact token-owned PIDs, retaining state when a foreign or unverifiable process appears.
     deadline = time.monotonic() + 20
     empty_since = None
     while True:
@@ -434,10 +456,7 @@ def teardown(
         if owned:
             empty_since = None
             for pid in owned:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                kill_owned_pid(pid, token)
         elif empty_since is None:
             empty_since = now
         elif now - empty_since >= 1:
@@ -578,15 +597,14 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        genv = child_env(token)
         state = {
             "pid": os.getpid(),
             "gamescope": gamescope.pid,
             "token": token,
-            "display": genv["DISPLAY"],
-            "gamescope_socket": genv["GAMESCOPE_WAYLAND_DISPLAY"],
             "started": started,
         }
+        genv = child_env(token)
+        state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
         state_file().write_text(json.dumps(state))
         print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
 

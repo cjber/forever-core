@@ -314,16 +314,20 @@ class ForeverClientTest(unittest.TestCase):
         clock = FakeClock()
         with (
             mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "prefix_users", side_effect=[[42], [], [43], [], [], [], [], []]),
-            mock.patch.object(fc, "read_environ", side_effect=lambda pid: {"FOREVER_CLIENT_SESSION": "owned"}),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [42], [43], [], [], [], [], []]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                side_effect=lambda pid: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "owned"},
+            ),
             mock.patch.object(fc.os, "killpg"),
-            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc, "kill_owned_pid") as kill,
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
             fc.teardown(game, {}, None, {"display": ":1", "token": "owned"})
-        self.assertEqual(kill.call_args_list, [mock.call(43, fc.signal.SIGKILL)])
+        self.assertEqual(kill.call_args_list, [mock.call(43, "owned")])
 
     def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
         clock = FakeClock()
@@ -333,8 +337,12 @@ class ForeverClientTest(unittest.TestCase):
         link.symlink_to(self.state / "build")
         with (
             mock.patch.object(fc, "prefix_users", return_value=[42]),
-            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "owned"}),
-            mock.patch.object(fc.os, "kill"),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                return_value={"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "owned"},
+            ),
+            mock.patch.object(fc, "kill_owned_pid", return_value=False),
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
@@ -348,13 +356,37 @@ class ForeverClientTest(unittest.TestCase):
         game = mock.Mock(pid=1, **{"poll.return_value": None})
         with (
             mock.patch.object(fc, "prefix_users", return_value=[42]),
-            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "foreign"}),
-            mock.patch.object(fc.os, "killpg"),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                return_value={"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "foreign"},
+            ),
+            mock.patch.object(fc.os, "killpg") as killpg,
             mock.patch.object(fc.subprocess, "run") as run,
             self.assertRaisesRegex(fc.ClientError, "foreign or unowned.*42"),
         ):
             fc.teardown(game, {}, None, {"token": "owned"})
         run.assert_not_called()
+        killpg.assert_not_called()
+
+    def test_teardown_stops_before_killing_when_foreign_process_appears(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [42], [43]]),
+            mock.patch.object(
+                fc,
+                "read_environ",
+                side_effect=lambda pid: {
+                    "WINEPREFIX": str(fc.PREFIX),
+                    "FOREVER_CLIENT_SESSION": "owned" if pid == 42 else "foreign",
+                },
+            ),
+            mock.patch.object(fc, "kill_owned_pid") as kill,
+            mock.patch.object(fc.time, "monotonic", side_effect=[0, 0, 0]),
+            self.assertRaisesRegex(fc.ClientError, "foreign or unowned.*43"),
+        ):
+            fc.teardown(game, {}, None, {"token": "owned"})
+        kill.assert_not_called()
 
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()
