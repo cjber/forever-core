@@ -48,7 +48,7 @@ class VisualProofTest(unittest.TestCase):
             "input_digest": check_visual_proof.input_digest(root),
             "client_build": "16001",
             "candidate": "addon-build",
-            "flows": [{"name": "open", "result": "pass"}],
+            "flows": [{"name": "open", "steps": ["open"], "result": "pass"}],
             "images": [
                 {
                     "url": "https://github.com/cjber/proof/raw/0123456789abcdef0123456789abcdef01234567/image.png",

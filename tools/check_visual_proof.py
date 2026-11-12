@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from forever_tools import toc
+
 PROOF = Path(".visual-proof.json")
 SHA = re.compile(r"/raw/[0-9a-f]{40}/", re.IGNORECASE)
-DOC_PREFIXES = ("docs/", ".github/", "tools/", "tests/")
+DOC_PREFIXES = ("docs/", ".github/", "tools/", "tests/", "CHANGELOG.md", "THIRD_PARTY")
 
 
 def changed_files(base: str) -> list[str]:
@@ -22,18 +24,20 @@ def changed_files(base: str) -> list[str]:
 
 
 def requires_proof(paths: list[str]) -> bool:
-    return any(not path.startswith(DOC_PREFIXES) and path != PROOF.as_posix() for path in paths)
+    return any(
+        not path.startswith(DOC_PREFIXES) and path != PROOF.as_posix() for path in paths
+    )
+
+
+def runtime_files(root: Path) -> list[Path]:
+    files = []
+    for toc_path in toc.toc_files(root):
+        files.extend(toc.loaded_files(toc_path, root))
+    return sorted(set(files))
 
 
 def input_digest(root: Path) -> str:
-    toc = root / "ForeverCore.toc"
-    files = [toc]
-    for line in toc.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            candidate = root / line.replace("\\", "/")
-            if candidate.is_file():
-                files.append(candidate)
+    files = runtime_files(root)
     pin = root / "tools/forever-core.txt"
     if pin.is_file():
         files.append(pin)
@@ -53,7 +57,10 @@ def image_hash(url: str) -> str:
         raise ValueError(f"image URL is not pinned to a full commit SHA: {url}")
     request = Request(url, headers={"User-Agent": "forever-visual-proof"})
     with urlopen(request, timeout=20) as response:
-        return hashlib.sha256(response.read()).hexdigest()
+        data = response.read()
+        if response.status != 200 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError(f"visual proof image is not a successful PNG: {url}")
+        return hashlib.sha256(data).hexdigest()
 
 
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
@@ -66,12 +73,24 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
     except (OSError, json.JSONDecodeError) as error:
         return [f"{proof_path}: invalid JSON: {error}"]
     problems = []
-    if proof.get("input_digest") != input_digest(root):
+    runtime = {path.relative_to(root).as_posix() for path in runtime_files(root)}
+    changed_runtime = runtime.intersection(paths)
+    if changed_runtime and proof.get("input_digest") != input_digest(root):
         problems.append("visual proof input_digest does not match the runtime TOC graph and Core pin")
     if not proof.get("client_build") or not proof.get("candidate"):
         problems.append("visual proof needs client_build and candidate")
     flows = proof.get("flows")
-    if not isinstance(flows, list) or not flows or any(flow.get("result") != "pass" for flow in flows):
+    if (
+        not isinstance(flows, list)
+        or not flows
+        or any(
+            not isinstance(flow, dict)
+            or not flow.get("name")
+            or not flow.get("steps")
+            or flow.get("result") != "pass"
+            for flow in flows
+        )
+    ):
         problems.append("visual proof needs at least one passing flow")
     images = proof.get("images")
     if not isinstance(images, list) or not images:
