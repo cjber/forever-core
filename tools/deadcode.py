@@ -98,7 +98,11 @@ def scan():
     for source in reference_sources:
         if ignored(source):
             continue
-        content = source.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
+        content = source.read_text(encoding="utf-8", errors="replace")
+        # Lua escaping can leave repeated separators in generated texture paths.
+        # Normalize them before matching, otherwise a nested asset is truncated at
+        # the first separator and reported as dead.
+        content = re.sub(r"/+", "/", content.replace("\\", "/"))
         if source.suffix == ".lua":
             content = re.sub(r"--[^\n]*", "", content)
         elif source.suffix == ".xml":
