@@ -227,6 +227,19 @@ class ForeverClientTest(unittest.TestCase):
         )
         self.assertNotIn("--window", x.call_args_list[0].args)
 
+    def test_press_play_waits_for_a_loading_launcher_without_clicking(self):
+        state = {"display": ":1"}
+        found = mock.Mock(stdout="12345\n")
+        ocr = mock.Mock(returncode=0, stdout="header\n", stderr="")
+        with (
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.press_play(state)
+        x.assert_not_called()
+
     def test_press_play_refuses_ambiguous_ocr_targets(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
@@ -241,6 +254,28 @@ class ForeverClientTest(unittest.TestCase):
         ):
             fc.press_play(state)
         x.assert_not_called()
+
+    def test_shot_does_not_return_a_stale_or_incomplete_png(self):
+        target = self.state / "launcher.png"
+        target.write_bytes(b"\x89PNG\r\n\x1a\n" + b"stale")
+        with (
+            mock.patch.object(fc.subprocess, "run"),
+            mock.patch.object(fc.time, "sleep"),
+            self.assertRaisesRegex(fc.ClientError, "wrote no screenshot"),
+        ):
+            fc.shot({"gamescope_socket": "wayland-9"}, target)
+        self.assertFalse(target.exists())
+
+    def test_complete_png_requires_the_iend_crc(self):
+        signature = b"\x89PNG\r\n\x1a\n"
+        iend = b"\x00\x00\x00\x00IEND"
+        self.assertFalse(fc._complete_png(self.state / "missing.png"))
+        truncated = self.state / "truncated.png"
+        truncated.write_bytes(signature + iend)
+        self.assertFalse(fc._complete_png(truncated))
+        complete = self.state / "complete.png"
+        complete.write_bytes(signature + iend + b"crc!")
+        self.assertTrue(fc._complete_png(complete))
 
     def test_a_click_needs_a_screenshot_since_the_last_input(self):
         with mock.patch.object(fc, "x") as x, mock.patch.object(fc, "INPUT_GAP", 0):

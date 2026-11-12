@@ -45,6 +45,7 @@ import re
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -198,13 +199,32 @@ def send(state: Mapping, *args: str) -> None:
     (STATE_DIR / "last-input").touch()
 
 
+def _complete_png(path: Path) -> bool:
+    """Return whether path contains a complete PNG, including its terminal IEND chunk."""
+    try:
+        with path.open("rb") as image:
+            if image.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+            while True:
+                header = image.read(8)
+                if len(header) != 8:
+                    return False
+                length, chunk = struct.unpack(">I4s", header)
+                if chunk == b"IEND":
+                    return length == 0 and len(image.read(4)) == 4
+                image.seek(length + 4, os.SEEK_CUR)
+    except (OSError, struct.error):
+        return False
+
+
 def shot(state: Mapping, path: Path) -> Path:
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.unlink(missing_ok=True)
     env = {**os.environ, "GAMESCOPE_WAYLAND_DISPLAY": state["gamescope_socket"]}
     subprocess.run(["gamescopectl", "screenshot", str(path)], env=env, check=True, capture_output=True)
     for _ in range(50):
-        if path.exists() and path.stat().st_size > 0:
+        if _complete_png(path):
             (STATE_DIR / "last-shot").touch()
             return path
         time.sleep(0.1)
@@ -318,6 +338,10 @@ def press_play(state: Mapping) -> None:
             continue
         if confidence >= 0 and width > 0 and height > 0:
             targets.append((left, top, width, height, confidence))
+    if not targets:
+        # The launcher can still be painting its signed-in page. The startup loop
+        # retries within its existing deadline; never click an unobserved target.
+        return
     if len(targets) != 1:
         raise ClientError(f"expected one visible Play target in the Battle.net screenshot, found {len(targets)}")
     left, top, width, height, _ = targets[0]
