@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-__all__ = ["FILES", "Manifest", "read"]
+__all__ = ["FILES", "Manifest", "project_toc_files", "read"]
 
 PKGMETA = ".pkgmeta"
 FALLBACK = "pkgmeta.yaml"
@@ -27,6 +27,30 @@ FILES = (PKGMETA, FALLBACK)
 # release.sh refuses a tab-indented line before it reads any directive.
 LEADING_TAB = re.compile(r"^ *\t+[ \t]*\S")
 MOVE_WITHOUT_PACKAGE = ".pkgmeta move-folders needs package-as; visual proof cannot derive the installed paths it moves"
+# The vendor's project TOC suffixes, in release.sh's own order: the plain TOC, then one pair per game family.
+PROJECT_TOC_VARIANTS = (
+    "",
+    "-Mainline",
+    "_Mainline",
+    "-Classic",
+    "_Classic",
+    "-Vanilla",
+    "_Vanilla",
+    "-BCC",
+    "_BCC",
+    "-TBC",
+    "_TBC",
+    "-Wrath",
+    "_Wrath",
+    "-WOTLKC",
+    "_WOTLKC",
+    "-Cata",
+    "_Cata",
+    "-Mists",
+    "_Mists",
+    "-Camelot",
+    "_Camelot",
+)
 
 
 def _unquote(value: str) -> str:
@@ -218,3 +242,48 @@ def read(root: Path) -> Manifest | None:
         _value(text, "package-as"),
         _mapping(text, "move-folders"),
     )
+
+
+def project_toc_files(root: Path) -> list[Path]:
+    """The project TOC files release.sh reads for an addon's package metadata and filtered output.
+
+    This mirrors release.sh's project TOC loops at the pinned BigWigs revision
+    `01e8631a69c69d7654c788d152630d5fed9e3812` (lines 1424-1454): the root `<package-as>` TOC and each exact
+    vendor variant, then, for every `move-folders` destination that is a single folder name, the files under the
+    move's source directory named for that destination basename. The vendor list is exact and case-sensitive:
+    the plain name plus `-` and `_` variants of Mainline, Classic, Vanilla, BCC, TBC, Wrath, WOTLKC, Cata, Mists
+    and Camelot. Only existing files are returned, in that order, with duplicates kept once.
+
+    Without `package-as`, release.sh uses the shortest root TOC name, breaking ties by name, and refuses a
+    flavor-suffixed name without a plain fallback. A nested move destination is skipped as release.sh skips it.
+
+    Only `.lua` files and the project TOCs this returns receive the packager's `@localization@` filter; every
+    other text suffix (`.md`, `.txt`, `.xml`) is copied without that filter.
+    """
+    root = root.resolve()
+    manifest = read(root)
+    package = manifest.package if manifest else ""
+    if not package:
+        tocs = sorted(root.glob("*.toc"), key=lambda path: (len(path.name), path.name))
+        if not tocs:
+            return []
+        package = tocs[0].stem
+        if any(package.endswith(suffix) for suffix in PROJECT_TOC_VARIANTS if suffix):
+            raise ValueError("Ambiguous addon name: set package-as or supply a plain fallback TOC")
+    found: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        if path.is_file() and path not in seen:
+            seen.add(path)
+            found.append(path)
+
+    for suffix in PROJECT_TOC_VARIANTS:
+        add(root / f"{package}{suffix}.toc")
+    for source, target in manifest.moved if manifest else ():
+        if "/" in target:
+            continue
+        directory = source.split("/", 1)[1] if "/" in source else source
+        for suffix in PROJECT_TOC_VARIANTS:
+            add(root / directory / f"{target}{suffix}.toc")
+    return found

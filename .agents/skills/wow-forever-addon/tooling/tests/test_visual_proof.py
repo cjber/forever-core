@@ -681,6 +681,52 @@ class VisualProofTest(unittest.TestCase):
         with mock.patch.object(pkgmeta.subprocess, "run", return_value=failed):
             self.assertTrue(pkgmeta.read(root).keeps("Core.lua"))
 
+    def test_project_toc_files_matches_the_packagers_exact_vendor_list(self):
+        root = self.checkout(
+            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: LibAHTab\n\n"
+            "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+        )
+        (root / "ForeverCore-Mainline.toc").write_text("Core.lua\n", encoding="utf-8")
+        (root / "ForeverCore_Classic.toc").write_text("Core.lua\n", encoding="utf-8")
+        (root / "ForeverCore-Camelot.toc").write_text("Core.lua\n", encoding="utf-8")
+        (root / "ForeverCore-Bogus.toc").write_text("Core.lua\n", encoding="utf-8")
+        (root / "LibAHTab").mkdir()
+        (root / "LibAHTab/LibAHTab.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        (root / "LibAHTab/LibAHTab-Wrath.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        (root / "LibAHTab/LibAHTab_wotlkc.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        (root / "LibAHTab/LibAHTab-Camelot.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
+        self.assertEqual(
+            found,
+            [
+                "ForeverCore.toc",
+                "ForeverCore-Mainline.toc",
+                "ForeverCore_Classic.toc",
+                "ForeverCore-Camelot.toc",
+                "LibAHTab/LibAHTab.toc",
+                "LibAHTab/LibAHTab-Wrath.toc",
+                "LibAHTab/LibAHTab-Camelot.toc",
+            ],
+        )
+
+    def test_project_toc_files_skips_a_nested_move_and_derives_an_implicit_package(self):
+        root = self.checkout(
+            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: Lib/Nested\n\n"
+            "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+        )
+        (root / "LibAHTab").mkdir()
+        (root / "LibAHTab/Nested.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
+        self.assertEqual(found, ["ForeverCore.toc"])
+        (root / ".pkgmeta").write_text("move-folders:\n  ForeverCore/LibAHTab: LibAHTab\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "A.toc").write_text("", encoding="utf-8")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "A.toc"])
+        (root / "A.toc").unlink()
+        (root / "ForeverCore.toc").rename(root / "ForeverCore-Camelot.toc")
+        with self.assertRaisesRegex(ValueError, "Ambiguous addon name"):
+            pkgmeta.project_toc_files(root)
+
     def test_pkgmeta_yaml_phase_mirrors_release_sh(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nignore:\n  - media/icon.tga\n- media/icon-400.png\n"
