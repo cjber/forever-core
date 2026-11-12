@@ -1,31 +1,46 @@
 {
-  "input_digest": "2d55d217c221a24ff2f00efc8feb79d538f216eedb5acac16419d348bbf231b8",
-  "runtime_sha256": "2d55d217c221a24ff2f00efc8feb79d538f216eedb5acac16419d348bbf231b8",
-  "candidate": "60a6e8450d5ee3edc8068d455f58caba81558242a86be7ecf98df8701cc44a41",
-  "tested_artifact": "release-package",
+  "input_digest": "822e70399b4b08c2313390fa81761f4597e29b5b8cc36cc4ec73ed150a4c0086",
+  "runtime_sha256": "822e70399b4b08c2313390fa81761f4597e29b5b8cc36cc4ec73ed150a4c0086",
+  "candidate": "ec39e624c74decb90b7cd3026d3473557451f182d4b0fbfdb46104f378cc0339",
+  "tested_artifact": "source-tree",
   "client_build": "1.60.1.70888 (Interface 16001)",
+  "source_commit": "80a31b39564e14f66d062dd0939d84832aa742a2",
+  "notes": "Recorded in the player's live client from an installed source-tree build of this commit (git archive, version stamped v1.8.1-dev+80a31b3); check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. Installed with the released Shortest Path Forever 1.34.0, Adventure Guide 1.7.7, Legacy, Tweaks, SkillUp, Field Guide, Commissions and Macro Assist.",
   "flows": [
     {
-      "name": "ProfessionTabs minor 2 hides the client's profession page",
+      "name": "Retired leaderboards answer old calls and nothing errors",
       "steps": [
-        "Install the packaged ForeverCore candidate c767f6c and reload",
-        "Print the loaded ForeverCore version and ProfessionTabs.minor: v1.8.0-12-gc767f6c, 2",
-        "Open Cooking and click the client's Cooking side tab",
-        "Confirm the client's own Cooking page shows at its own width with no addon page over it",
-        "Click the SkillUp side tab",
-        "Confirm the widened SkillUp Route page shows with no client recipe list or recipe details beneath it"
+        "Install the candidate in place of ForeverCore v1.8.1 and enter the world",
+        "Print the loaded version, ForeverCore.API, ForeverCore.Leaderboards.Boards() and ForeverCore.PeerStats.New({}):Revision(): v1.8.1-dev+80a31b3, 2, table, 0; SlashCmdList.FOREVERLEADERBOARDS is nil",
+        "Count BugGrabber errors for this session: 0"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "Forever addons settings page without the Leaderboards row",
+      "steps": [
+        "Open Options, AddOns, Shortest Path Forever, Forever addons",
+        "The page lists the suggestion checkbox, Thanks, then every Forever addon and Ko-fi, with no Forever Leaderboards row and no gap where it was"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "/forever debug on core's own slash entry",
+      "steps": [
+        "SLASH_FOREVERCORE1 and 2 read /fcore and /forever",
+        "With UIErrorsFrame.AddMessage echoed to chat, typing /forever debug twice shows Debug log is on for this session, then Debug log is off"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/1ebe156d863f7ed6f85a4d3ef6f228737f7f9c4c/core514-skillup-page-60a6e84.png",
-      "sha256": "e9a45c6b74cf16b5cc5f8e6dccf3dbb3c0545ed39be281552c49cfca740c3f66"
+      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/4e7a1d3bc3d329be9849629fcb782e9735b98fc2/core519-family-page-80a31b3.png",
+      "sha256": "fba246cc12a014e83e9b8598df2349a0ff64d74182ba655f8a353835d88f3a97"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/1ebe156d863f7ed6f85a4d3ef6f228737f7f9c4c/core514-native-page-60a6e84.png",
-      "sha256": "474b96ff83754019dc6d2f987fad17c59df9f42c5a92c754fede58027c885e63"
+      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/4e7a1d3bc3d329be9849629fcb782e9735b98fc2/core519-forever-debug-80a31b3.png",
+      "sha256": "3f50b927e84f23940224805b127fea793a0b953b13671408ce37768675db7f97"
     }
   ]
 }
