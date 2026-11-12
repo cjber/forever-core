@@ -37,7 +37,7 @@ core.ContextMenu = ns.ContextMenu
 -- namespace that same table is what it hands to ForeverCore.Credits.Register.
 -- An addon's spec can load core without UI/Credits.lua, so the page is optional there.
 if ns.CreditsPage then
-	ns.CreditsPage.Register("Forever Core", ns.Credits)
+	ns.CreditsPage.Register("ForeverCore", ns.Credits)
 end
 
 -- One context per addon name, so Register twice returns the same tables and the same window.

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Forever Core is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
+ForeverCore is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
 `ForeverCore`, and every Forever addon requires it with `## Dependencies: ForeverCore`. It owns the one objective-tracker
 column the suite docks into, the grip and Lock switch that move it, the section order that stacks them, the Questie and
 EQOT bridges that keep the column out from under another tracker's quest list, the report and issue windows, the error
@@ -29,6 +29,7 @@ bash tools/typecheck.sh                   # LuaLS 3.19.1 over the Lua, with the 
 python3 tools/check_consumers.py          # every consumer's tooling, ForeverCore pin and packaging match this repo
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
 python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WFA-36)
+python3 tools/check_core_name.py          # the shared addon is ForeverCore, one word, in every text file
 python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
@@ -67,7 +68,7 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   name into one compact row per player, with every addon's line on hover and a short **Inspired by** group, a
   dropdown that filters the page to one registered addon, and the one-line thanks an addon's own settings page shows.
 - `Data/Credits.lua`: core's own generated credits, from `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables;
-  `Expose.lua` registers it under **Forever Core**. `THIRD_PARTY.md` also feeds the one-sentence thanks between the
+  `Expose.lua` registers it under **ForeverCore**. `THIRD_PARTY.md` also feeds the one-sentence thanks between the
   `forever-credits` markers in README.md's `## Credits` and in `docs/curseforge.md`.
 - `UI/TrackerHost.lua`: the private tracker column, its optional tooltip-art backdrop and opacity, its layout, combat
   and Edit Mode handling, and the one-time migration from a consumer's old tracker settings.
@@ -116,6 +117,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/check_menu_scroll.py`: the menu rule, vendored into every consumer: a menu description that gets entries in a
   loop calls `SetScrollMode` in the same function, or the loop says why it stays short (`-- menu-scroll-ok: <reason>`).
   It reads Lua through the skill pack's `forever_tools/lua.py` lexer; `tools/test_check_menu_scroll.py` is its spec.
+- `tools/check_core_name.py`: the name rule, vendored into every consumer: the suite's shared addon is ForeverCore, one
+  word. The full read scans every text file but shipped `CHANGELOG.md` history; `--base REF` scans only the lines
+  `REF...HEAD` adds, so a new two-word spelling fails in a changelog entry while history stays untouched. It never
+  matches the `forever-core` repository slug, and `tools/test_check_core_name.py` is its spec.
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data from the wago.tools listfile for
   1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule lives in
   `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
@@ -127,21 +132,25 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   Every consumer's package job runs it over the packaged files, and `tools/test_gen_widget_methods.py` keeps the data
   matching the pin.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, running the client
-  load rule, the menu rule and the tooling check on every PR (`--base`) and on a schedule. Its `core-shared` job is
-  required in every consumer. It lives outside `.github/workflows` so it never runs here; the `workflows` CI job lints
-  it.
+  load rule, the menu rule, the name rule and the tooling check on every PR (`--base`) and on a schedule. Its
+  `core-shared` job is required in every consumer. It lives outside `.github/workflows` so it never runs here; the
+  `workflows` CI job lints it.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
   release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC lists
   ForeverCore in `## Dependencies` must ship it in its own zip (`externals:` at the pin and
   `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
   `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
-  The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, which the package job runs in
-  every consumer as part of `tools/check_package.py`, so a commit that moves one copy without the others fails its own
-  CI before it can land. That job also runs `forever_tools/widget_handlers.py` over the packaged files, so a widget
-  method that takes parameters passed straight as a script handler fails before it can reach a player.
-  `.github/workflows/drift.yml` runs the checker on a schedule only, so a core change never blocks on consumer release
-  timing.
+  The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also
+  requires the pin to name cjber/forever-core's latest published GitHub release, read with `GH_TOKEN` or
+  `GITHUB_TOKEN` when either is set. It fails closed when that release cannot be read. The package job runs it in every
+  consumer as part of `tools/check_package.py`, and `tools/sync_consumers.py` inserts the same gate directly above the
+  packager in each consumer's `release.yml`, so a commit that moves one copy without the others, or a core release that
+  lands between CI and the upload, fails before a player is downgraded. This gate also checks that each published
+  consumer's `release.yml` still runs the pin step directly above its packager, so a hand edit cannot reopen it. That
+  job also runs `forever_tools/widget_handlers.py` over the packaged files, so a widget method that takes parameters
+  passed straight as a script handler fails before it can reach a player. `.github/workflows/drift.yml` runs the
+  checker on a schedule only, so a core change never blocks on consumer release timing.
 - `tools/sync_consumer_prs.py`: the automatic tooling sync behind `.github/workflows/sync-consumers.yml`. On every push
   to main, and again from the release workflow once a release is published (a tag a workflow creates with
   `GITHUB_TOKEN` fires no push event), it derives the consumers from `VENDORED` plus the live repositories that vendor

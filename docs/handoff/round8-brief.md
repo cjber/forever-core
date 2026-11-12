@@ -38,7 +38,7 @@ What to build:
 
 Not in scope: changing what the planner returns, auto-discovering nodes, or anything that touches `Transport/`.
 
-## W2. Forever Core: publish and adopt, once the repo exists
+## W2. ForeverCore: publish and adopt, once the repo exists
 
 `cjber/skills`, branch `forever-core-staging`, folder `forever-core/` holds the finished ForeverCore addon (36 files,
 green locally). Its `docs/handoff.md` has the publish and adoption commands. Creating `cjber/forever-core` fails with
@@ -92,7 +92,7 @@ top as the boundary doc says. Specs, nine locales.
 
 ## Rules that apply to every item
 
-- The shared runtime lives in Forever Core and is never copied into a consumer repo; everything addon specific goes
+- The shared runtime lives in ForeverCore and is never copied into a consumer repo; everything addon specific goes
   through `ForeverCore.Register`, `ForeverCore.TrackerHost` and the addon's own L.
 - Never loosen a check, skip a spec, or hand-edit generated `Data/`.
 - Report `READY <PR URL> <head sha>` per PR. Do not merge; the coordinator merges.

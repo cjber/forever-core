@@ -12,7 +12,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 
 | Addon | Repo | Owns | Never does |
 |---|---|---|---|
-| Forever Core | forever-core | The shared tracker column, grip and Lock switch, combat and Edit Mode handling, section order, the Questie bridge, and the shared visual primitives every section draws with | Any player-facing feature of its own |
+| ForeverCore | forever-core | The shared tracker column, grip and Lock switch, combat and Edit Mode handling, section order, the Questie bridge, and the shared visual primitives every section draws with | Any player-facing feature of its own |
 | Adventure Guide | adventure-guide-forever | What to do next for your level and why: quest selection, skips, reasons, chains, journeys, breadcrumbs, zone flow, the RestedXP front-end, AtlasLoot readiness | Travel ordering, spawn spot choice, hearth timing, profession maths, accepting or turning in quests |
 | Shortest Path | shortest-path-forever | Travel and the order you travel in: transport graph, walking routes, flight/boat/zeppelin/portal/ tram timing, arrival estimates, quest-log routing, nearest-something ranking | Choosing quests, judging eligibility, tracking completion, drawing entrances or challenges |
 | Legacy | legacy-forever | Legacy challenges, zone completion percentages, exploration shading, dungeon and raid entrance challenge pins with done/not-done state | Navigating (it asks Shortest Path), drawing travel routes, quest selection |
@@ -33,7 +33,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 9. No addon guides a fixed authored route. That is Polestar; Adventure Guide and Tweaks step aside for it.
 10. Field Guide does not award anything that is not cosmetic, and does not duplicate Legacy's challenge tracking. Legacy may read Field Guide for a zone milestone (see §3).
 11. Every addon must work alone: anything another addon provides has a fallback that works with none of the others installed. ForeverCore is the one required companion, and the stores install it automatically.
-12. Shared code lives in Forever Core and is required with `## Dependencies: ForeverCore`, never re-implemented or copied per addon (§5).
+12. Shared code lives in ForeverCore and is required with `## Dependencies: ForeverCore`, never re-implemented or copied per addon (§5).
 
 ## 3. Feature to owner
 
@@ -64,9 +64,9 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 | Zone bestiary completion, creature records, rare and variant sightings | Field Guide | Legacy may read it for a *Zone Master* style milestone |
 | Profession numbers, cheapest path, shopping list export | SkillUp | export hands raw materials to work-orders-forever or a shopping list |
 | Gathering node route overlays | SkillUp | asks Shortest Path to route between nodes; draws nothing itself |
-| Tracker column, grip, Lock, combat hiding, section order | Forever Core | one implementation, required (§5) |
-| Shared visual primitives (backdrop, typography, section chrome) | Forever Core | moved here from the four addons that each had a copy |
-| Map marker visibility contract (one owner per place type) | Forever Core | round 6 shared tooling; each addon registers what it draws |
+| Tracker column, grip, Lock, combat hiding, section order | ForeverCore | one implementation, required (§5) |
+| Shared visual primitives (backdrop, typography, section chrome) | ForeverCore | moved here from the four addons that each had a copy |
+| Map marker visibility contract (one owner per place type) | ForeverCore | round 6 shared tooling; each addon registers what it draws |
 | Creature spawn points on a route ("hunt these on the way") | Field Guide proposes, Shortest Path routes | new (round 9). Field Guide picks the targets and prices the detour, Shortest Path orders and executes the travel; no passive overlay until the marker contract lands |
 | One `Nearest` ranking by travel | Shortest Path | new (round 9). SkillUp and Adventure Guide call it; see open question 4 |
 | Shopping list export and one buy trip | SkillUp | new (round 9). Export as text and through the API; Shortest Path executes the trip; work-orders-forever consumes the plain `itemID:count` format |
@@ -78,26 +78,26 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 
 | Duplicate | Today | After |
 |---|---|---|
-| Tracker column, grip and section order | Every addon carried its own copy | Forever Core is the only copy; every addon requires `ForeverCore` and only development tooling is synced |
-| Tracker specs | Two specs duplicated across four repos | the contract specs live in Forever Core and run there |
-| Report and issue window | Five drifting copies and five inline slash dispatchers | Forever Core owns the shared report UI, spec and command helper; every addon requires it |
-| Forever-family link box | Five byte-identical copies, synced by hand | Forever Core owns the UI and spec; every addon requires it |
-| Error capture for the report window | Five hand-maintained `Core/SafeCall.lua` copies | Forever Core owns the module; every addon requires it |
+| Tracker column, grip and section order | Every addon carried its own copy | ForeverCore is the only copy; every addon requires `ForeverCore` and only development tooling is synced |
+| Tracker specs | Two specs duplicated across four repos | the contract specs live in ForeverCore and run there |
+| Report and issue window | Five drifting copies and five inline slash dispatchers | ForeverCore owns the shared report UI, spec and command helper; every addon requires it |
+| Forever-family link box | Five byte-identical copies, synced by hand | ForeverCore owns the UI and spec; every addon requires it |
+| Error capture for the report window | Five hand-maintained `Core/SafeCall.lua` copies | ForeverCore owns the module; every addon requires it |
 | Nearest trainer, vendor, service | Four rankings (Shortest Path, Adventure Guide, SkillUp, Tweaks) | Shortest Path ranks; the others keep their own knowledge and call it when present |
 | Dungeon entrances | Four datasets | Tweaks owns pins, Shortest Path owns the door as a travel goal, Legacy owns the challenge badge. Two datasets stay: each addon must work alone |
 | Exploration and zone completion | Legacy shading, Tweaks reveal tint, Adventure Guide hint | Legacy owns it, Tweaks keeps its reveal as a different feature, Adventure Guide reads Legacy targets |
 | Quest order in the tracker | Tweaks sorts by straight distance, Shortest Path will have a real order | while a Shortest Path quest route runs, Tweaks follows it |
 | Profession guidance | Adventure Guide hints, SkillUp routes | SkillUp owns; Adventure Guide quotes SkillUp |
-| Map overlays and step-aside lists | One list per addon | one marker contract in Forever Core: one owner per place type |
+| Map overlays and step-aside lists | One list per addon | one marker contract in ForeverCore: one owner per place type |
 
-## 5. Shared code: Forever Core
+## 5. Shared code: ForeverCore
 
-Forever Core owns the code that is shared by every addon, not the features those addons draw.
+ForeverCore owns the code that is shared by every addon, not the features those addons draw.
 
 - **Required, not copied.** Every Forever addon declares `## Dependencies: ForeverCore` and lists ForeverCore under
-  `required-dependencies` in `.pkgmeta`. Forever Core loads first, so exactly one copy of `Core/SafeCall.lua`,
+  `required-dependencies` in `.pkgmeta`. ForeverCore loads first, so exactly one copy of `Core/SafeCall.lua`,
   `Core/Log.lua`, `UI/Report.lua`, `UI/ForeverFamily.lua`, the tracker files and the rest runs in the game.
-- **One source of truth.** A shared change lands in Forever Core and ships with its own release. Nothing is copied into
+- **One source of truth.** A shared change lands in ForeverCore and ships with its own release. Nothing is copied into
   a consumer. The development tooling in `tools/check_core_shared.py`'s `VENDORED` still travels with
   `tools/sync_consumers.py`, and `tools/check_consumers.py` fails on any byte difference.
 - **Nothing addon specific inside core.** A runtime file reads an addon's identity and saved table through
@@ -106,7 +106,7 @@ Forever Core owns the code that is shared by every addon, not the features those
   scale, Lock and position are one setting for the suite.
 - **What stays per addon:** a section's own drawing, its blocks, its strings, and its settings page. Core never learns
   what a quest, a route, a recipe or a creature is.
-- Field Guide Forever receives the development tooling and requires Forever Core for `ForeverCore.MinimapButton`; it
+- Field Guide Forever receives the development tooling and requires ForeverCore for `ForeverCore.MinimapButton`; it
   has no tracker column.
 
 ## 6. Integration contracts
@@ -120,7 +120,7 @@ Forever Core owns the code that is shared by every addon, not the features those
 | Adventure Guide to Legacy | zone completion as a reason | `ZoneSummary`, `Targets`, `Subscribe` |
 | Legacy, SkillUp, Tweaks to Shortest Path | send me somewhere | `Navigate`, `Estimate`, `Nearest` |
 | Tweaks to Shortest Path | tracker sort and quest keys while a route runs | `QuestRoute` |
-| Everything to Forever Core | tracker sections | `ForeverCore.TrackerHost.Attach(module)`, `IsAttached`, `OnAttachmentChanged` |
+| Everything to ForeverCore | tracker sections | `ForeverCore.TrackerHost.Attach(module)`, `IsAttached`, `OnAttachmentChanged` |
 | Polestar to Shortest Path | hand-off of an authored route | `NavigateRoute` with one stop, pinned by a contract spec |
 
 Every one of these is optional at runtime: the caller keeps a fallback that works with the other addon absent.
@@ -164,12 +164,12 @@ Rules that keep this file honest:
 
 | Date | Change | Who |
 |---|---|---|
-| 2026-10-21 | File created: one job per addon, twelve boundary rules, feature to owner table, duplicates resolved, Forever Core ownership and the vendoring rule, integration contracts, naming, the change process | owner approved, maintainer wrote |
-| 2026-10-21 | Forever Core added as the seventh addon and the owner of the shared tracker column, grip, Lock, section order and visual primitives | maintainer, from the owner's 2026-10-21 approval |
+| 2026-10-21 | File created: one job per addon, twelve boundary rules, feature to owner table, duplicates resolved, ForeverCore ownership and the vendoring rule, integration contracts, naming, the change process | owner approved, maintainer wrote |
+| 2026-10-21 | ForeverCore added as the seventh addon and the owner of the shared tracker column, grip, Lock, section order and visual primitives | maintainer, from the owner's 2026-10-21 approval |
 | 2026-10-22 | Round 9: Field Guide proposes route spawns and Shortest Path routes them; `Nearest` belongs to Shortest Path; SkillUp gains the shopping export and one buy trip; Adventure Guide may quote a detour cost. All four are marked new and become fact when their round-9 PR lands | maintainer, from the owner's 2026-10-22 ask ("one task per existing enhancement") |
 | 2026-10-22 | Hoard and Atlas added as the eighth and ninth addons, with their ownership rows and non-goals | maintainer, from the owner's 2026-10-22 ask ("one task for hoard forever and one for atlas forever") |
-| 2026-10-24 | Report and issue UI, its contract spec, the Forever-family link box and its spec assigned to Forever Core for vendoring into all five addons | maintainer, from the owner's 2026-10-24 request to unify shared addon logic |
-| 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to Forever Core as the report window's shared dependency, required by every addon | owner request to complete the shared-logic extraction |
+| 2026-10-24 | Report and issue UI, its contract spec, the Forever-family link box and its spec assigned to ForeverCore for vendoring into all five addons | maintainer, from the owner's 2026-10-24 request to unify shared addon logic |
+| 2026-10-24 | Error capture (`Core/SafeCall.lua`) assigned to ForeverCore as the report window's shared dependency, required by every addon | owner request to complete the shared-logic extraction |
 | 2026-11-01 | Atlas Forever retired before any store release: its painted maps moved to Tweaks, and OpenMap covers the rest | owner request |
 | 2026-11-04 | Hoard Forever retired and archived: Baganator covers bag, bank and alt search (cjber/hoard-forever#50) | owner decision |
 | 2026-11-06 | The shared micro-menu button is replaced by a minimap button: one draggable rim button per addon, sharing one registry and saving its angle and hide flag in the addon's settings (cjber/forever-core#152) | owner decision |

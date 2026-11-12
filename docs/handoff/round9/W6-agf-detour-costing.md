@@ -64,7 +64,7 @@ decides.
 Adventure Guide still chooses; it only quotes travel. Do not order stops by travel inside the planner, do not
 re-order the journey itself, do not call the Shortest Path planner directly or read its internals, and do not add
 a second estimate cache that outlives a reload. If the badge needs a phrase that another addon already owns, keep
-your own copy - shared phrases are vendored from Forever Core, not linked.
+your own copy - shared phrases are vendored from ForeverCore, not linked.
 
 ## Report
 

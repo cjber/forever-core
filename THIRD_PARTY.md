@@ -1,6 +1,6 @@
 # Third-party inputs
 
-Forever Core ships no embedded library and copies no other addon's code. What it reads from another addon in game is
+ForeverCore ships no embedded library and copies no other addon's code. What it reads from another addon in game is
 listed here, with the build-only sources, then the players who helped. The addon itself is GPL-3.0-or-later
 ([LICENSE](LICENSE)).
 

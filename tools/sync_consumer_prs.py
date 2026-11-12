@@ -85,6 +85,8 @@ RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 PKGMETA = ".pkgmeta"
 TOC_DEPENDENCIES = re.compile(r"^##[ \t]*Dependencies[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 CHANGELOG = "CHANGELOG.md"
+# The addon's own release workflow, where the sync inserts the ForeverCore pin gate directly above the packager.
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
 UNRELEASED = re.compile(r"^## \[Unreleased\][ \t]*$", re.MULTILINE)
 RELEASED = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\]", re.MULTILINE)
 SYNC_MARKER = "<!-- forever-core-sync -->"
@@ -686,7 +688,7 @@ def create_commit(
 
 
 def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
-    lines = ["Syncs this addon's copy of Forever Core's development tooling.", ""]
+    lines = ["Syncs this addon's copy of ForeverCore's development tooling.", ""]
     if pin_bump:
         lines += [
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
@@ -694,6 +696,12 @@ def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None =
             "",
             "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and adds a"
             " marked CHANGELOG.md release entry for the release-consumers workflow to publish.",
+            "",
+        ]
+    if RELEASE_WORKFLOW in files:
+        lines += [
+            "It also inserts the ForeverCore pin gate directly above the packager in"
+            f" `{RELEASE_WORKFLOW}`, so a core release that lands after CI still stops the upload.",
             "",
         ]
     lines += [
@@ -807,7 +815,7 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
 
 def summary_markdown(sha: str, results: list[Result]) -> str:
     lines = [
-        "## Forever Core consumer sync",
+        "## ForeverCore consumer sync",
         "",
         f"Core commit: `{sha}`",
         "",

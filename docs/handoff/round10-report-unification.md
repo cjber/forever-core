@@ -1,7 +1,7 @@
-# Brief: unify the in-game report / issue logic into Forever Core
+# Brief: unify the in-game report / issue logic into ForeverCore
 
 Owner ask (2026-10-24, #wow-addons): "Why are they different? Unify the logic for reporting and anything similar
-across all add-ons. No point having it divergent. Maybe we could unify into core as well? Expand forever core for all
+across all add-ons. No point having it divergent. Maybe we could unify into core as well? Expand ForeverCore for all
 things where possible and sensible please."
 
 Read first: `brief.md` (signing, trailers, PR flow, credits, locales), `boundaries.md` (ownership, §5 vendoring rule,
@@ -31,7 +31,7 @@ Forever addons with only its strings changed" - but it has drifted:
    (`command` vs `message`) and its own help lines. `/path issue` and `/tweaks issue` work but are undocumented.
 4. **`tests/report_spec.lua` is duplicated** in all five (316-419 lines) and has drifted 651-696 diff lines apart.
 
-## The home: Forever Core
+## The home: ForeverCore
 
 `forever-core` already owns the vendored shared files (`UI/TrackerHost.lua`, `UI/TrackerLock.lua`, `UI/TrackerOrder.lua`,
 `UI/TrackerQuestie.lua`, two contract specs, `tools/fetch_tracker_ui.py`), synced by `tools/sync_consumers.py` and gated
@@ -40,7 +40,7 @@ addon, addon-specific only in its strings. Move it there.
 
 ## Work
 
-### 1. Forever Core: `UI/Report.lua` becomes the one copy
+### 1. ForeverCore: `UI/Report.lua` becomes the one copy
 - Take the current report/issue module as the base and make it byte-identical across consumers by reading everything
   addon specific through the namespace:
   - window title and hint via phrase-keyed `ns.L`, the way `UI/ForeverFamily.lua` does (see the `PHRASE_KEYED` note in
@@ -53,7 +53,7 @@ addon, addon-specific only in its strings. Move it there.
 - Add a shared command helper so the `report` / `issue|bug|feature` branch is one function, not five copies - e.g.
   `Report.Command(command, argument) -> boolean` that handles those subcommands and returns whether it did. Each addon's
   slash handler calls it first and keeps its own other subcommands (audit, skipped, trainers, criteria, shopping, ...).
-- Keep the existing type annotations and comment voice; update the file header to say it is vendored from Forever Core.
+- Keep the existing type annotations and comment voice; update the file header to say it is vendored from ForeverCore.
 
 ### 2. Vendor the report spec
 `tests/report_spec.lua` moves to core as the contract spec and is vendored too. It must pass against the shared module

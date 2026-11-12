@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-12
+
+- **Addons no longer bring an older ForeverCore with them.** Every Forever addon's zip now carries the newest ForeverCore release, so updating one addon can no longer downgrade the shared code another one needs.
+
+### For addon authors
+
+- **A stale ForeverCore pin fails CI and the release before anything uploads.** `python3 -m tools.forever_tools.core_pin --latest` requires `tools/forever-core.txt` to equal cjber/forever-core's latest published GitHub release and fails closed when that release cannot be read. The package job runs it in every consumer through `tools/check_package.py`, and the sync inserts the same step directly above the packager in each consumer's `release.yml`, so a core release that lands between CI and the upload is still caught. The `.pkgmeta` ForeverCore external and the TOC `## X-Forever-Core:` must name the same tag; an addon with no ForeverCore external is exempt from the bundle comparison but still gets the pin gate. (#514)
+- **`ForeverCore.ProfessionTabs.minor` is 2.** Minor 2 means the native profession pages are hidden beneath a selected addon page and restored when the window is handed back to the client. Require `minor >= 2` before relying on that, and see `docs/api.md`. (#514)
+- **The suite's name is ForeverCore, one word.** `tools/check_core_name.py` fails a change that adds the two-word spelling in any text file, while shipped changelog history is left alone. It is vendored with the other project rules and runs in every consumer's `core-shared` job. (#514)
+
 ## [1.8.0] - 2026-11-12
 
 <!-- discord-image: docs/screenshots/tracker.png -->
