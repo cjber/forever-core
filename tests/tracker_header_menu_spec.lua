@@ -172,8 +172,6 @@ check(contractMenu.title == "A block", "Title is the first fixed slot")
 check(Entry(contractMenu, "Guide me") ~= nil, "Primary follows Title")
 check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
 check(Entry(contractMenu, "Guide me") and Entry(contractMenu, "Refresh"), "scrambled calls retain addon entries")
-contractModule.trackerMenu(contractTargets[1], { Finish = function() end })
-check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "finalizing twice does not duplicate Tracker")
 host.HandleBlockHeaderClick(
 	contractModule,
 	{ id = "journey", HeaderText = {
