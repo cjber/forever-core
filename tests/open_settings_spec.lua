@@ -1,3 +1,4 @@
+-- luacheck: globals SettingsPanel
 local checks = 0
 local function equal(actual, expected, label)
 	checks = checks + 1
