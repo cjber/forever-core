@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-__all__ = ["FILES", "Manifest", "localization_toc_files", "project_toc_files", "read"]
+__all__ = ["FILES", "Layout", "Manifest", "layout", "localization_toc_files", "project_toc_files", "read"]
 
 PKGMETA = ".pkgmeta"
 FALLBACK = "pkgmeta.yaml"
@@ -145,6 +145,87 @@ def _quoted_mapping_keys(text: str, key: str) -> set[str]:
     return quoted
 
 
+_YAML_BOOL = frozenset({"yes", "no", "true", "false", "on", "off"})
+
+
+def _raw_move_syntax(text: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Move entries whose raw YAML the packager reads differently from the normalized key/value.
+
+    `yaml_keyvalue` trims leading spaces but keeps trailing whitespace and a tab after the colon, and it turns an
+    unquoted yes/no/true/false/on/off value into yes/no before move-folders sees it. Those forms do not name the
+    folder the normalized mapping would, so they are refused instead of being silently repaired.
+    """
+    bad_sources = {}
+    bad_targets = {}
+    phase = ""
+    for line in _lines(text):
+        phase = _phase(line, phase)
+        if phase != "move-folders" or not line.startswith(" "):
+            continue
+        stripped = line.lstrip(" ")
+        if stripped.startswith("- "):
+            continue
+        raw_key, found, raw_value = stripped.partition(":")
+        if not found:
+            continue
+        source = _unquote(raw_key.strip())
+        target = _unquote(raw_value.strip())
+        if raw_key != raw_key.rstrip(" \t"):
+            bad_sources[source] = "move source has trailing whitespace the packager keeps"
+        if raw_value != raw_value.rstrip():
+            bad_targets[target] = "move destination has trailing whitespace the packager keeps"
+        leading = raw_value.lstrip(" ")
+        if leading[:1] == "\t":
+            bad_targets[target] = "move destination starts with a tab the packager keeps"
+        if leading[:1] not in ("'", '"') and leading.rstrip(" \t").casefold() in _YAML_BOOL:
+            bad_targets[target] = "move destination is a YAML boolean the packager normalizes"
+    return bad_sources, bad_targets
+
+
+def _external_entries(text: str) -> tuple[tuple[str, str], ...]:
+    """One top-level `externals:` mapping's first-level `(key, url)` pairs.
+
+    BigWigs accepts both `ForeverCore: <url>` and a `ForeverCore:` block holding `url:` and `tag:` children. Only
+    the first-level names are externals; a child key names a property, not a second addon. The first indented
+    entry fixes the block's key indentation, so a nested child is never mistaken for a top-level key. A block
+    form's `url:` child supplies that entry's URL.
+    """
+    entries: list[list[str]] = []
+    phase = ""
+    base = None
+    current: list[str] | None = None
+    for line in _lines(text):
+        previous = phase
+        phase = _phase(line, phase)
+        if phase != previous:
+            base = None
+            current = None
+        if phase != "externals" or not line.startswith(" "):
+            continue
+        stripped = line.lstrip(" ")
+        if stripped.startswith("- "):
+            continue
+        indent = len(line) - len(stripped)
+        if base is None:
+            base = indent
+        name, found, value = stripped.partition(":")
+        if not found:
+            continue
+        if indent == base:
+            key = _unquote(name.strip())
+            if key:
+                current = [key, _unquote(value.strip())]
+                entries.append(current)
+        elif current is not None and _unquote(name.strip()).casefold() == "url" and not current[1]:
+            current[1] = _unquote(value.strip())
+    return tuple((key, value) for key, value in entries)
+
+
+def _external_keys(text: str) -> tuple[str, ...]:
+    """One top-level `externals:` mapping's first-level keys."""
+    return tuple(key for key, _ in _external_entries(text))
+
+
 def _globs(root: Path, entries: list[str]) -> tuple[str, ...]:
     """The packager's colon-separated globs, resolved against the files that exist in `root`."""
     globs = []
@@ -217,18 +298,59 @@ def _matches(name: str, globs: tuple[str, ...]) -> bool:
 
 
 @dataclass(frozen=True)
+class Layout:
+    """Where a package's source-owned folders install, and which top-level folders its externals bind.
+
+    `owned` pairs each release folder with its checkout prefix: the package folder uses the empty prefix, and a
+    moved source-owned folder uses its checkout-relative source. `external` names only the top-level folders a
+    moved external installs; `external_sources` is every declared external's checkout-relative source, so a package
+    walk never mistakes one for source-owned bytes. A layout with no non-empty owned prefix is `mapped == False`:
+    the package still installs one folder and keeps the legacy single-folder identity.
+    """
+
+    package: str
+    owned: tuple[tuple[str, str], ...]
+    external: tuple[str, ...] = ()
+    external_sources: tuple[str, ...] = ()
+
+    @property
+    def mapped(self) -> bool:
+        """Whether `move-folders` installs a source-owned addon as a top-level sibling."""
+        return any(prefix for _, prefix in self.owned)
+
+    def release_path(self, name: str) -> str:
+        """The release-relative path of a checkout-relative file, choosing the most specific owned prefix."""
+        best = None
+        for folder, prefix in self.owned:
+            if prefix and name != prefix and not name.startswith(f"{prefix}/"):
+                continue
+            if best is None or len(prefix) > len(best[1]):
+                best = (folder, prefix)
+        if best is None:
+            raise ValueError(f"{name}: no source-owned folder in the mapped layout owns this path")
+        folder, prefix = best
+        rest = name if not prefix else name[len(prefix) :].lstrip("/")
+        return f"{folder}/{rest}" if rest else folder
+
+    def in_external_source(self, name: str) -> bool:
+        """Whether `name` sits inside a declared external's checkout-relative source."""
+        return any(name == source or name.startswith(f"{source}/") for source in self.external_sources)
+
+
+@dataclass(frozen=True)
 class Manifest:
     """A checkout's package selection: `keeps` is the shipped set, `unchanged` the bytes-kept files.
 
     `ignored` is `.pkgmeta`'s list plus the paths git reports as untracked or ignored, as the packager combines
-    them. `package` and `moved` are `package-as` and `move-folders`, so `relocates` can say whether a checkout
-    path leaves the addon folder the proof names.
+    them. `package`, `moved` and `externals` are `package-as`, `move-folders` and `externals`; `relocates` says
+    whether a checkout path leaves the addon folder the proof names, and `layout` resolves every move.
     """
 
     ignored: tuple[str, ...] = ()
     unchanged: tuple[str, ...] = ()
     package: str = ""
     moved: tuple[tuple[str, str], ...] = ()
+    externals: tuple[str, ...] = ()
 
     def keeps(self, name: str) -> bool:
         """Whether a checkout-relative path ships, dot paths excepted."""
@@ -244,6 +366,10 @@ class Manifest:
             raise ValueError(MOVE_WITHOUT_PACKAGE)
         release = f"{self.package}/{name}"
         return any(release == source or release.startswith(f"{source}/") for source, _ in self.moved)
+
+    def layout(self, root: Path) -> Layout | None:
+        """This manifest's validated folder layout, or None when no move runs."""
+        return layout(root, self)
 
 
 def read(root: Path) -> Manifest | None:
@@ -267,6 +393,7 @@ def read(root: Path) -> Manifest | None:
         _globs(root, _entries(text, "plain-copy")),
         _value(text, "package-as"),
         _mapping(text, "move-folders"),
+        _external_keys(text),
     )
 
 
@@ -423,3 +550,215 @@ def localization_toc_files(root: Path) -> list[Path]:
     the localization check.
     """
     return [path for path in project_toc_files(root) if _interface_filter_eligible(path)]
+
+
+_UNSAFE_COMPONENT = re.compile(r'[<>:"|?*]')
+_ABSOLUTE_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def _relative_problem(value: str, what: str) -> str:
+    """Why `value` is not a safe checkout-relative path, or "" when it is."""
+    if not value:
+        return f"{what}: empty path"
+    if value.startswith(("/", "\\")):
+        return f"{what}: absolute path"
+    if "\\" in value:
+        return f"{what}: backslash in path"
+    if _ABSOLUTE_DRIVE.match(value):
+        return f"{what}: absolute drive path"
+    if any(part in ("", ".", "..") or part.startswith(".") for part in value.split("/")):
+        return f"{what}: dot, parent or empty path component"
+    return ""
+
+
+def _component_problem(value: str, what: str) -> str:
+    """Why `value` is not a safe single release-folder name, or "" when it is."""
+    if not value:
+        return f"{what}: empty folder name"
+    if "/" in value or "\\" in value:
+        return f"{what}: must be one folder name, not a path"
+    if value in (".", "..") or value.startswith("."):
+        return f"{what}: dot or parent folder name"
+    if _ABSOLUTE_DRIVE.match(value):
+        return f"{what}: absolute drive path"
+    if _UNSAFE_COMPONENT.search(value):
+        return f"{what}: contains a character Windows refuses in a folder name"
+    if value.endswith((" ", ".")):
+        return f"{what}: trailing space or dot"
+    return ""
+
+
+def _root_file(directory: Path, name: str) -> Path | None:
+    """A file at the directory's root, exact first, then a single case-insensitive match."""
+    exact = directory / name
+    if exact.is_file():
+        return exact
+    if not directory.is_dir():
+        return None
+    matches = [path for path in directory.iterdir() if path.is_file() and path.name.casefold() == name.casefold()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _external_problem(root: Path, key: str, url: str) -> str:
+    """Why a moved external is not the supported pinned ForeverCore bundle, or "" when it is.
+
+    The candidate deliberately does not hash an external's bytes; only `tools/forever-core.txt` and the policy
+    bind it. This slice therefore supports the one verified external, `ForeverCore`, and only when its declaration
+    is exactly the official `cjber/forever-core` release URL for the pin. A tag alone is not a binding: a foreign
+    host or another repository with the same tag would be labelled bound without the bytes the pin names.
+    """
+    if key != "ForeverCore":
+        return f"external {key} is not the supported ForeverCore external"
+    pin_path = root / "tools/forever-core.txt"
+    pin = pin_path.read_text(encoding="utf-8", errors="replace").strip() if pin_path.is_file() else ""
+    if not pin:
+        return "external ForeverCore is not bound: tools/forever-core.txt is missing"
+    if not pin.startswith("v"):
+        return f"external ForeverCore pin {pin} is not an immutable release tag"
+    expected = f"https://github.com/cjber/forever-core/releases/download/{pin}/ForeverCore-{pin}-forever.zip"
+    if url != expected:
+        return f"external ForeverCore URL is not the official pinned release {expected}"
+    return ""
+
+
+def _case_duplicates(root: Path, prefix: str) -> str:
+    """A problem when a component of `prefix` exists more than once ignoring case, else ""."""
+    current = root
+    for part in prefix.split("/"):
+        if not current.is_dir():
+            return ""
+        matches = [path for path in current.iterdir() if path.name.casefold() == part.casefold()]
+        if len(matches) > 1:
+            names = ", ".join(sorted(path.name for path in matches))
+            return f"move-folders: {prefix} has case-duplicate folders ({names})"
+        if not matches:
+            return ""
+        current = matches[0]
+    return ""
+
+
+def layout(root: Path, manifest: Manifest | None = None) -> Layout | None:
+    """Resolve `move-folders` into a checked release layout, or None when no move runs.
+
+    Every source is a checkout-relative path under `package-as`; every destination is one top-level folder name.
+    A source must be exactly one of a checkout directory (source-owned) or an `externals` key (bound by the pin,
+    absent from the checkout). A source that is both or neither is refused rather than guessed. Source-owned
+    moved folders must ship their own `<target>.toc`, and source overlap, destination collisions (ignoring case),
+    unsafe path components and case-duplicate source folders are refused. An external-only move still returns a
+    layout, but `mapped` is false so a single-folder package keeps its legacy identity. The only supported moved
+    external is `ForeverCore`, and only when its declared `/download/<tag>/` is the immutable tag
+    `tools/forever-core.txt` pins; any other external has no binding the candidate could honestly name, so it is
+    refused.
+    """
+    root = root.resolve()
+    if manifest is None:
+        manifest = read(root)
+    if manifest is None or not manifest.moved:
+        return None
+    if not manifest.package:
+        raise ValueError(MOVE_WITHOUT_PACKAGE)
+    problem = _component_problem(manifest.package, "package-as")
+    if problem:
+        raise ValueError(problem)
+    package = manifest.package
+    text = _policy_text(root)
+    quoted = _quoted_mapping_keys(text, "move-folders")
+    external_values = dict(_external_entries(text))
+    bad_sources, bad_targets = _raw_move_syntax(text)
+    problems: list[str] = []
+    external_by_case: dict[str, str] = {}
+    for key in manifest.externals:
+        problem = _relative_problem(key, f"externals entry {key!r}")
+        if problem:
+            problems.append(problem)
+            continue
+        case = key.casefold()
+        if case in external_by_case:
+            problems.append(f"externals: {key} duplicates {external_by_case[case]} ignoring case")
+        else:
+            external_by_case[case] = key
+    owned: list[tuple[str, str]] = [(package, "")]
+    external_targets: list[str] = []
+    external_sources: list[str] = []
+    sources: list[tuple[str, str, str]] = []
+    targets = {package.casefold(): f"package-as {package}"}
+    source_cases: dict[str, str] = {}
+    for source, target in manifest.moved:
+        label = f"move-folders {source!r}"
+        problem = _relative_problem(source, label)
+        if problem:
+            problems.append(problem)
+            continue
+        if source in quoted:
+            problems.append(f"{label}: quoted move key is not supported by the pinned packager's raw key split")
+            continue
+        if source in bad_sources:
+            problems.append(f"{label}: {bad_sources[source]}")
+            continue
+        if source == package:
+            problems.append(f"{label}: moves the package folder itself")
+            continue
+        if not source.startswith(f"{package}/"):
+            problems.append(f"{label}: source is outside package-as {package}")
+            continue
+        prefix = source[len(package) + 1 :]
+        problem = _relative_problem(prefix, f"{label} source")
+        if problem:
+            problems.append(problem)
+            continue
+        problem = _component_problem(target, f"{label} destination")
+        if problem:
+            problems.append(problem)
+            continue
+        if target in bad_targets:
+            problems.append(f"{label}: {bad_targets[target]}")
+            continue
+        case = target.casefold()
+        if case in targets:
+            problems.append(f"{label}: destination {target} collides with {targets[case]} ignoring case")
+        else:
+            targets[case] = f"destination {target}"
+        source_case = source.casefold()
+        if source_case in source_cases:
+            problems.append(f"{label}: source duplicates {source_cases[source_case]} ignoring case")
+        else:
+            source_cases[source_case] = source
+        sources.append((source, prefix, target))
+        problem = _case_duplicates(root, prefix)
+        if problem:
+            problems.append(problem)
+        local = root / prefix
+        declared = prefix if prefix in manifest.externals else None
+        if declared is not None and local.exists():
+            problems.append(f"{label}: source {prefix} is both an externals entry and a checkout path")
+            continue
+        if declared is None and not local.exists():
+            problems.append(f"{label}: stale source {prefix} is neither in the checkout nor an externals entry")
+            continue
+        if declared is not None:
+            problem = _external_problem(root, declared, external_values.get(declared, ""))
+            if problem:
+                problems.append(f"{label}: {problem}")
+                continue
+            external_targets.append(target)
+            external_sources.append(declared)
+            continue
+        if not local.is_dir():
+            problems.append(f"{label}: source {prefix} is not a checkout folder")
+            continue
+        if _root_file(local, f"{target}.toc") is None or not manifest.keeps(f"{prefix}/{target}.toc"):
+            problems.append(f"{label}: moved folder {prefix} has no shipped {target}.toc beside it")
+        owned.append((target, prefix))
+    for index, (left, left_prefix, _) in enumerate(sources):
+        for right, right_prefix, _ in sources[index + 1 :]:
+            left_case = left_prefix.casefold()
+            right_case = right_prefix.casefold()
+            if (
+                left_case == right_case
+                or left_case.startswith(f"{right_case}/")
+                or right_case.startswith(f"{left_case}/")
+            ):
+                problems.append(f"move-folders: sources {left} and {right} overlap")
+    if problems:
+        raise ValueError("; ".join(problems))
+    return Layout(package, tuple(owned), tuple(external_targets), tuple(external_sources))
