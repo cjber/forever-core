@@ -1134,6 +1134,7 @@ function api.Attach(module, show, contract)
 			and type(module.OnBlockHeaderClick) == "function"
 			and not module.trackerBlockMenuWrapped
 		then
+			---@type fun(self: ForeverTrackerModule, block: any, button: string)
 			local oldBlockClick = module.OnBlockHeaderClick
 			module.trackerBlockMenuWrapped = true
 			module.OnBlockHeaderClick = function(self, block, button)
