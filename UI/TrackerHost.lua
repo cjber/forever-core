@@ -928,6 +928,18 @@ local function NewTrackerMenu(root, module, target)
 			return
 		end
 		slots.finished = true
+		if not slots.title then
+			root:CreateTitle(
+				(
+					target.kind == "block"
+					and target.block
+					and target.block.HeaderText
+					and target.block.HeaderText:GetText()
+				)
+					or (module.Header and module.Header.Text and module.Header.Text:GetText())
+					or "Tracker"
+			)
+		end
 		local function emit(spec)
 			local entry = root:CreateButton(spec.text, spec.fn)
 			if spec.opts and spec.opts.combat and type(entry.SetEnabled) == "function" then
