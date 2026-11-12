@@ -6,8 +6,6 @@ for:
   drag it once, and every addon follows.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors and a log.
-- **Forever Leaderboards.** Each addon can add its board to one shared window, opened from that addon, with weekly and
-  all-time standings and a line on the unit tooltip.
 - **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 

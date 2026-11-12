@@ -55,6 +55,9 @@ local function InitializeSavedVariables()
 	if type(ForeverCoreDB) ~= "table" then
 		ForeverCoreDB = {}
 	end
+	-- Forever Leaderboards and peer stats are gone, so drop the one saved choice core kept for them: the window's
+	-- reach. Nothing else in ForeverCoreDB belonged to them.
+	ForeverCoreDB.leaderboards = nil
 	-- Building the host's table here is also the normalisation the host reads on every access.
 	ns.TrackerHostSettings()
 	-- Core's own journal and log attach first, then the one-time copy of a consumer's old tracker settings, each
