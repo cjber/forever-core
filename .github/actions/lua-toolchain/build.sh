@@ -45,7 +45,9 @@ fi
 echo "$lua51_sha256  $work/lua-5.1.5.tar.gz" | sha256sum -c -
 if [ ! -x "$prefix/bin/luac5.1" ]; then
     tar -xzf "$work/lua-5.1.5.tar.gz" -C "$work"
-    make -C "$work/lua-5.1.5/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" linux
+    make -C "$work/lua-5.1.5/src" clean >/dev/null
+    make -C "$work/lua-5.1.5/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" \
+        MYCFLAGS=-DLUA_USE_LINUX MYLIBS=-ldl luac
     install -m 0755 "$work/lua-5.1.5/src/luac" "$prefix/bin/luac5.1"
 fi
 
