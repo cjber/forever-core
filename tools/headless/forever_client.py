@@ -41,6 +41,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -57,8 +58,6 @@ LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # Battle.net ignores --exec once it is logged in, so the session presses Play: its centre on the WoW: Forever page
 # that --exec opens, in the launcher window gamescope gives it. Another window size means another layout. The point
 # is in the focused window's pixels, which is also the screenshot's pixels, whatever the window's X position.
-LAUNCHER_WINDOW = (1266, 684)
-PLAY_BUTTON = (921, 367)
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
@@ -280,7 +279,13 @@ def slash(state: Mapping, command: str) -> None:
 
 
 def press_play(state: Mapping) -> None:
-    """Click Play in the launcher's main window, the one gamescope sized to LAUNCHER_WINDOW."""
+    """Find and click the visible Play label in the launcher's current screenshot.
+
+    Battle.net changes its page layout with the gamescope size and can show a login
+    dialog before the game page. A fixed point therefore either misses Play or clicks
+    another control. OCR is bounded to the private gamescope screenshot, so the
+    click remains screenshot-bound like the public ``click`` verb.
+    """
     found = subprocess.run(
         ["xdotool", "search", "--name", "^Battle.net$"],
         env={**os.environ, "DISPLAY": state["display"]},
@@ -288,20 +293,37 @@ def press_play(state: Mapping) -> None:
         text=True,
         check=False,
     )
-    for window in found.stdout.split():
-        geometry = subprocess.run(
-            ["xdotool", "getwindowgeometry", "--shell", window],
-            env={**os.environ, "DISPLAY": state["display"]},
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        size = dict(line.split("=", 1) for line in geometry.split())
-        if (int(size.get("WIDTH", 0)), int(size.get("HEIGHT", 0))) == LAUNCHER_WINDOW:
-            x(state, "mousemove", *map(str, PLAY_BUTTON))
-            time.sleep(0.5)
-            x(state, "click", "1")
-            return
+    if not found.stdout.split():
+        raise ClientError("Battle.net launcher window was not found")
+    if shutil.which("tesseract") is None:
+        raise ClientError("tesseract is required to locate Battle.net's Play control")
+    image = shot(state, STATE_DIR / "launcher.png")
+    ocr = subprocess.run(
+        ["tesseract", str(image), "stdout", "--psm", "11", "tsv"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ocr.returncode != 0:
+        raise ClientError(f"could not read the Battle.net Play target: {ocr.stderr.strip()}")
+    targets = []
+    for line in ocr.stdout.splitlines()[1:]:
+        fields = line.split("\t")
+        if len(fields) != 12 or fields[11].strip().casefold() != "play":
+            continue
+        try:
+            left, top, width, height = (int(fields[i]) for i in (6, 7, 8, 9))
+            confidence = float(fields[10])
+        except (ValueError, TypeError):
+            continue
+        if confidence >= 35:
+            targets.append((left, top, width, height, confidence))
+    if len(targets) != 1:
+        raise ClientError(f"expected one visible Play target in the Battle.net screenshot, found {len(targets)}")
+    left, top, width, height, _ = targets[0]
+    x(state, "mousemove", str(left + width // 2), str(top + height // 2))
+    time.sleep(0.5)
+    x(state, "click", "1")
 
 
 def reload(state: Mapping, timeout: float = 120) -> Path:
