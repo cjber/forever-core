@@ -212,6 +212,7 @@ class ForeverClientTest(unittest.TestCase):
         ocr = mock.Mock(returncode=0, stdout=tsv, stderr="")
         with (
             mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc.time, "sleep"),
@@ -233,6 +234,7 @@ class ForeverClientTest(unittest.TestCase):
         ocr = mock.Mock(returncode=0, stdout="header\n" + row + row, stderr="")
         with (
             mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
             mock.patch.object(fc, "x") as x,
             self.assertRaisesRegex(fc.ClientError, "expected one visible Play target"),
