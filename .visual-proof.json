@@ -1,30 +1,31 @@
 {
-  "input_digest": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
-  "runtime_sha256": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
-  "candidate": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "input_digest": "2d55d217c221a24ff2f00efc8feb79d538f216eedb5acac16419d348bbf231b8",
+  "runtime_sha256": "2d55d217c221a24ff2f00efc8feb79d538f216eedb5acac16419d348bbf231b8",
+  "candidate": "60a6e8450d5ee3edc8068d455f58caba81558242a86be7ecf98df8701cc44a41",
+  "tested_artifact": "release-package",
   "client_build": "1.60.1.70888 (Interface 16001)",
   "flows": [
     {
-      "name": "Bidirectional tram map arrows",
+      "name": "ProfessionTabs minor 2 hides the client's profession page",
       "steps": [
-        "Reload installed final Core candidate",
-        "Open Stormwind world map through ForeverCore.OpenMap from addon callback",
-        "Click actual tram arrow at Dwarven District",
-        "Confirm map switches automatically to Ironforge",
-        "Click return tram arrow",
-        "Confirm map switches automatically to Stormwind without manual map selection"
+        "Install the packaged ForeverCore candidate c767f6c and reload",
+        "Print the loaded ForeverCore version and ProfessionTabs.minor: v1.8.0-12-gc767f6c, 2",
+        "Open Cooking and click the client's Cooking side tab",
+        "Confirm the client's own Cooking page shows at its own width with no addon page over it",
+        "Click the SkillUp side tab",
+        "Confirm the widened SkillUp Route page shows with no client recipe list or recipe details beneath it"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-ironforge-2e70e43.png",
-      "sha256": "35372726e44a6475c3f8c732405eb2a18c2014b3c2adf473581e72ca201a5a44"
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/1ebe156d863f7ed6f85a4d3ef6f228737f7f9c4c/core514-skillup-page-60a6e84.png",
+      "sha256": "e9a45c6b74cf16b5cc5f8e6dccf3dbb3c0545ed39be281552c49cfca740c3f66"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-stormwind-2e70e43.png",
-      "sha256": "77d52f3785e6149f724571b9ddb39765eda02e86690a352a70c319e0c4b2aa6a"
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/1ebe156d863f7ed6f85a4d3ef6f228737f7f9c4c/core514-native-page-60a6e84.png",
+      "sha256": "474b96ff83754019dc6d2f987fad17c59df9f42c5a92c754fede58027c885e63"
     }
   ]
 }
