@@ -315,14 +315,15 @@ class ForeverClientTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "client_pid", return_value=None),
             mock.patch.object(fc, "prefix_users", side_effect=[[42], [], [43], [], [], [], [], []]),
+            mock.patch.object(fc, "read_environ", side_effect=lambda pid: {"FOREVER_CLIENT_SESSION": "owned"}),
             mock.patch.object(fc.os, "killpg"),
             mock.patch.object(fc.os, "kill") as kill,
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
-            fc.teardown(game, {}, None, {"display": ":1"})
-        self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])
+            fc.teardown(game, {}, None, {"display": ":1", "token": "owned"})
+        self.assertEqual(kill.call_args_list, [mock.call(43, fc.signal.SIGKILL)])
 
     def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
         clock = FakeClock()
@@ -332,15 +333,28 @@ class ForeverClientTest(unittest.TestCase):
         link.symlink_to(self.state / "build")
         with (
             mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "owned"}),
             mock.patch.object(fc.os, "kill"),
             mock.patch.object(fc.subprocess, "run"),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
             self.assertRaisesRegex(fc.ClientError, "processes survived: 42"),
         ):
-            fc.teardown(None, {}, link, {})
+            fc.teardown(None, {}, link, {"token": "owned"})
         self.assertTrue(state.exists())
         self.assertTrue(link.is_symlink())
+
+    def test_teardown_refuses_foreign_same_prefix_processes_before_wineserver(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "foreign"}),
+            mock.patch.object(fc.os, "killpg"),
+            mock.patch.object(fc.subprocess, "run") as run,
+            self.assertRaisesRegex(fc.ClientError, "foreign or unowned.*42"),
+        ):
+            fc.teardown(game, {}, None, {"token": "owned"})
+        run.assert_not_called()
 
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()

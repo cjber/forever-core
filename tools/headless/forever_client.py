@@ -136,6 +136,16 @@ def prefix_users(prefix: Path = PREFIX, exclude: Iterable[int] = ()) -> list[int
     return [p for p in pids() if p not in skip and read_environ(p).get("WINEPREFIX") == str(prefix)]
 
 
+def prefix_ownership(users: Iterable[int], token: str | None) -> tuple[list[int], list[int]]:
+    """Split prefix users into this session's processes and processes we must never touch."""
+    if not token:
+        return [], list(users)
+    owned, foreign = [], []
+    for pid in users:
+        (owned if read_environ(pid).get("FOREVER_CLIENT_SESSION") == token else foreign).append(pid)
+    return owned, foreign
+
+
 def client_pid() -> int | None:
     return next(
         (p for p in pids() if "Wow.exe" in cmdline(p) and read_environ(p).get("WINEPREFIX") == str(PREFIX)), None
@@ -399,7 +409,15 @@ def teardown(
             gamescope.wait(20)
         except subprocess.TimeoutExpired:
             os.killpg(gamescope.pid, signal.SIGKILL)
-    # The lock and the prefix check make every process in the prefix this session's: end them all.
+    token = state.get("token") if state else None
+    users = prefix_users()
+    _, foreign = prefix_ownership(users, token)
+    if foreign:
+        detail = ", ".join(map(str, foreign))
+        raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
+    if users and not token:
+        raise ClientError("teardown refused: session ownership is unavailable for Wine prefix processes")
+    # Only token-matched processes may be affected. Recheck ownership before every destructive step.
     server = Path(wine.get("WINE", "wine")).with_name("wineserver")
     subprocess.run([str(server), "-k"], env={**os.environ, **wine, "WINEPREFIX": str(PREFIX)}, check=False)
     # Battle.net can respawn its launcher children after the first wineserver shutdown. Keep checking until the
@@ -408,10 +426,14 @@ def teardown(
     empty_since = None
     while True:
         users = prefix_users()
+        owned, foreign = prefix_ownership(users, token)
+        if foreign:
+            detail = ", ".join(map(str, foreign))
+            raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
         now = time.monotonic()
-        if users:
+        if owned:
             empty_since = None
-            for pid in users:
+            for pid in owned:
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except ProcessLookupError:
@@ -560,6 +582,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         state = {
             "pid": os.getpid(),
             "gamescope": gamescope.pid,
+            "token": token,
             "display": genv["DISPLAY"],
             "gamescope_socket": genv["GAMESCOPE_WAYLAND_DISPLAY"],
             "started": started,
