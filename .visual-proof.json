@@ -1,0 +1,30 @@
+{
+  "input_digest": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "runtime_sha256": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "candidate": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "client_build": "1.60.1.70888 (Interface 16001)",
+  "flows": [
+    {
+      "name": "Bidirectional tram map arrows",
+      "steps": [
+        "Reload installed final Core candidate",
+        "Open Stormwind world map through ForeverCore.OpenMap from addon callback",
+        "Click actual tram arrow at Dwarven District",
+        "Confirm map switches automatically to Ironforge",
+        "Click return tram arrow",
+        "Confirm map switches automatically to Stormwind without manual map selection"
+      ],
+      "result": "pass"
+    }
+  ],
+  "images": [
+    {
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-ironforge-2e70e43.png",
+      "sha256": "35372726e44a6475c3f8c732405eb2a18c2014b3c2adf473581e72ca201a5a44"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-stormwind-2e70e43.png",
+      "sha256": "77d52f3785e6149f724571b9ddb39765eda02e86690a352a70c319e0c4b2aa6a"
+    }
+  ]
+}

@@ -233,18 +233,6 @@ RAID_CLASS_COLORS = nil
 ---@return ForeverDataProvider
 function CreateDataProvider(entries) end
 
----@class ForeverScrollBoxView
----@field SetElementInitializer fun(self: ForeverScrollBoxView, template: string, initializer: fun(button: Button, element: any))
----@field SetElementExtent fun(self: ForeverScrollBoxView, extent: number)
----@field SetPadding fun(self: ForeverScrollBoxView, ...: number)
----@return ForeverScrollBoxView
-function CreateScrollBoxListLinearView() end
-
----@class ForeverScrollUtil
----@field InitScrollBoxListWithScrollBar fun(box: Frame, bar: any, view: ForeverScrollBoxView)
----@type ForeverScrollUtil
-ScrollUtil = nil
-
 ---@class ForeverScrollBoxConstants
 ---@field RetainScrollPosition integer
 ---@type ForeverScrollBoxConstants

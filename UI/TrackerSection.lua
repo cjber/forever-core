@@ -74,6 +74,7 @@ function TrackerSection.Create(name, mixin, opts)
 	if type(opts.safeCall) == "function" then
 		module.safeCall = opts.safeCall
 	end
+	local contract = opts.contract
 	local function Attach()
 		local current = ns.TrackerHost
 		if type(current) ~= "table" or type(current.Attach) ~= "function" then
@@ -86,7 +87,7 @@ function TrackerSection.Create(name, mixin, opts)
 				module.legacySettings = old
 			end
 		end
-		current.Attach(module, opts.show)
+		current.Attach(module, opts.show, contract)
 		-- The old table is offered once, then removed, as a consumer's own attach did before core owned the column.
 		if legacy and opts.legacyKey then
 			legacy[opts.legacyKey] = nil
@@ -214,6 +215,34 @@ function TrackerLine.SetHeaderTooltip(module, tip)
 				addNormalLine(GameTooltip, text)
 			else
 				GameTooltip:AddLine(text, nil, nil, nil, true)
+			end
+		end
+		local target = { kind = "block", id = block and block.id, block = block, module = module }
+		local hint
+		if type(module.trackerClick) == "function" and type(module.trackerClickHint) == "function" then
+			local safe = module.safeCall or ns.SafeCall
+			local ok
+			if type(safe) == "function" then
+				ok, hint = safe("tracker click hint", module.trackerClickHint, target)
+			else
+				ok, hint = pcall(module.trackerClickHint, target)
+			end
+			if not ok then
+				hint = nil
+			end
+		end
+		if type(hint) == "string" and hint ~= "" then
+			if addNormalLine then
+				addNormalLine(GameTooltip, ns.L["Click to %s"]:format(hint))
+			else
+				GameTooltip:AddLine(ns.L["Click to %s"]:format(hint), nil, nil, nil, true)
+			end
+		end
+		if module.trackerMenu then
+			if addNormalLine then
+				addNormalLine(GameTooltip, ns.L["Right-click for options"])
+			else
+				GameTooltip:AddLine(ns.L["Right-click for options"], nil, nil, nil, true)
 			end
 		end
 		GameTooltip:Show()

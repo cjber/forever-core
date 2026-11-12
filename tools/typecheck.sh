@@ -11,6 +11,21 @@ if [[ ! -d "$annotations/.git" ]]; then
     git -C "$annotations" fetch --depth=1 origin "$revision"
     git -C "$annotations" checkout --quiet --detach FETCH_HEAD
 fi
+python3 - <<'PYTHON'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, ".agents/skills/wow-forever-addon/tooling")
+from forever_sim.fetch import UI_REVISION, fetch_ui, git
+
+cache = Path(".types/blizzard-ui")
+target = cache / "wow-ui-source"
+if (target / ".git").exists() and git(target, "status", "--porcelain"):
+    raise SystemExit(f"Refusing to overwrite dirty Blizzard UI checkout: {target}")
+source = fetch_ui(cache, offline=False)
+if git(source, "rev-parse", "HEAD") != UI_REVISION or git(source, "status", "--porcelain"):
+    raise SystemExit(f"Expected clean Blizzard UI checkout at {UI_REVISION}: {source}")
+PYTHON
 if [[ "$(git -C "$annotations" rev-parse HEAD)" != "$revision" ]] ||
     [[ -n "$(git -C "$annotations" status --porcelain)" ]]; then
     echo "Expected a clean WoW API checkout at $revision in $annotations" >&2

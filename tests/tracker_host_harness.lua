@@ -252,44 +252,26 @@ function harness.new(options)
 	-- The shared context menu, recorded so a spec can read back what a click offered. An entry with no callback and
 	-- entries of its own is a submenu, as inserting elements into an element description makes one in the client.
 	local function captureMenu(owner, generator)
-		local function Description()
-			local descriptionObject = { entries = {} }
-			function descriptionObject.CreateCheckbox(_, text, isSelected, setSelected)
-				descriptionObject.entries[#descriptionObject.entries + 1] =
-					{ text = text, isSelected = isSelected, setSelected = setSelected }
-				return {}
-			end
-			function descriptionObject.CreateRadio(_, text, isSelected, setSelected)
-				descriptionObject.entries[#descriptionObject.entries + 1] =
-					{ text = text, isSelected = isSelected, setSelected = setSelected }
-				return {}
-			end
-			function descriptionObject.CreateButton(_, text, callback)
-				if callback then
-					local entry = { text = text, callback = callback }
-					descriptionObject.entries[#descriptionObject.entries + 1] = entry
-					return {
-						SetTooltip = function(_, tooltip)
-							entry.tooltip = tooltip
-						end,
-					}
+		local root = ns.NewMenuDescription("root")
+		generator(owner, root)
+		local function Adapt(description)
+			for _, entry in ipairs(description.entries) do
+				entry.callback, entry.setSelected = entry.onClick, entry.onClick
+				if #entry.entries > 0 then
+					entry.submenu = entry
+					Adapt(entry)
 				end
-				local submenu = Description()
-				submenu.text = text
-				descriptionObject.entries[#descriptionObject.entries + 1] = { text = text, submenu = submenu }
-				return submenu
 			end
-			function descriptionObject.CreateTitle(_, text)
-				descriptionObject.title = text
-			end
-			return descriptionObject
 		end
+		Adapt(root)
 		local menu = { owner = owner, entries = {} }
-		local root = Description()
-		if generator then
-			generator(owner, root)
+		for _, entry in ipairs(root.entries) do
+			if entry.kind == "title" then
+				menu.title = entry.text
+			else
+				menu.entries[#menu.entries + 1] = entry
+			end
 		end
-		menu.entries, menu.title = root.entries, root.title
 		menus[#menus + 1] = menu
 		return menu
 	end
@@ -478,6 +460,8 @@ function harness.new(options)
 	end
 	function ctx.loadHost(namespace, path)
 		path = path or "UI/TrackerHost.lua"
+		setfenv(assert(loadfile("UI/ContextMenu.lua")), env)("Test", namespace)
+		namespace.ContextMenu = captureMenu
 		setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", namespace) -- the grip, before the host
 		setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", namespace) -- the section order
 		setfenv(assert(loadfile(path)), env)("Test", namespace)

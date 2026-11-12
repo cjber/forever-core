@@ -32,7 +32,8 @@
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own getter and setter
 
 ---@class ForeverTrackerHostAPI
----@field Attach fun(module: ForeverTrackerModule, show?: ForeverTrackerShowSetting) the section's optional show switch, offered as Hide this section
+---@field Attach fun(module: ForeverTrackerModule, show?: ForeverTrackerShowSetting, contract?: ForeverTrackerMenuContract) the section's optional show switch and declarative menu
+---@field HandleBlockHeaderClick fun(module: ForeverTrackerModule, block: any, button: string): boolean forwards a block title click into the declarative contract
 ---@field IsAttached fun(module: Frame?): boolean
 ---@field GetSettings fun(): ForeverTrackerSettings
 ---@field GetScale fun(): number
@@ -47,11 +48,31 @@
 ---@field SavePosition fun(x: number, y: number)
 ---@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for an addon's debug command
 
+---@class ForeverTrackerTarget
+---@field kind "section"|"block"
+---@field id? any
+---@field block? any
+---@field module ForeverTrackerModule
+
+---@class ForeverTrackerMenuBuilder
+---@field Title fun(self: ForeverTrackerMenuBuilder, text: string)
+---@field Primary fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun())
+---@field Action fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(), opts?: { combat?: boolean }): any
+---@field Open fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(): boolean?, string?): any invokes a callback that may return false and a visible refusal reason
+---@field End fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun()): any
+---@field Submenu fun(self: ForeverTrackerMenuBuilder, text: string): ForeverMenuDescription
+
+---@class ForeverTrackerMenuContract
+---@field menu fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder)
+---@field click? fun(target: ForeverTrackerTarget, button: string): boolean?, string? returns false and a reason when the action cannot run
+---@field clickHint? fun(target: ForeverTrackerTarget): string? the localized action name shown in the block tooltip
+
 ---@class ForeverTrackerOrderAPI
 ---@field Sort fun(modules: ForeverTrackerModule[]) orders the shared column's sections in place
 
 -- Reopened here for the one field core's own host reads from the section it is handed.
 ---@class ForeverTrackerModule : Frame
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized click action
 ---@field legacySettings? ForeverTrackerLegacySettings the addon's old tracker table, copied once by the host
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own menu entries
 ---@field CanUpdate? fun(self: ForeverTrackerModule): boolean whether a refresh may lay the section out now
@@ -75,6 +96,7 @@
 ---@field legacy? table|fun(): table? the saved table holding the addon's old tracker table
 ---@field legacyKey? string the key in `legacy` holding the old tracker table, cleared after it is offered
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for this section
+---@field contract? ForeverTrackerMenuContract the declarative section menu and click behavior
 ---@field onUnattached? fun(module: ForeverTrackerModule) called when the section is still not attached after a few seconds
 
 ---@class ForeverTrackerTextRow
@@ -110,6 +132,7 @@
 ---@field Grip fun(host: Frame, source: ForeverTrackerHostAPI): ForeverTrackerGrip draws the grip on the column it drags
 
 ---@class ForeverTrackerNamespace
+---@field NewMenuDescription fun(kind: ForeverMenuEntryKind, text?: string): ForeverMenuDescription
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerSection? ForeverTrackerSectionAPI
 ---@field TrackerLine? ForeverTrackerLineAPI

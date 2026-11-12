@@ -11,6 +11,13 @@ local _, ns = ...
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
 ---@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
+---@field trackerMenu? fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder) the declarative menu contract
+---@field trackerClick? fun(target: ForeverTrackerTarget, button: string) the declarative click contract
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized click action
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized action name shown in the block
+-- tooltip
+---@field trackerBlockMenuWrapped? boolean
+---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
 ---@class ForeverNativeTrackerHeader : Frame
 ---@field Text FontString
@@ -510,6 +517,12 @@ local function RunSafe(safe, label, fn, ...)
 	return pcall(fn, ...)
 end
 
+local function ReportRefusal(reason)
+	if reason and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage(tostring(reason))
+	end
+end
+
 -- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
 -- column never runs past `available`. Returns whether any section drew. One section's layout error is recorded in its
 -- own journal and leaves the sections below it to lay out, instead of breaking the whole column.
@@ -871,6 +884,167 @@ function api.SavePosition(x, y)
 	host:MarkDirty()
 end
 
+-- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
+-- contract, so a consumer cannot put an action after Tracker or accidentally omit the end action.
+local function NewTrackerMenu(root, module, target)
+	---@class ForeverTrackerMenuSlots
+	---@field title? string
+	---@field primary? ForeverMenuDescription
+	---@field actions ForeverMenuDescription[]
+	---@field open? ForeverMenuDescription
+	---@field ending? ForeverMenuDescription
+	local slots = { actions = {} }
+	local menu = {}
+	local function Entry(text, fn, opts)
+		local entry = ns.NewMenuDescription("button", text)
+		entry.parent = root
+		if type(fn) ~= "function" then
+			return entry
+		end
+		entry.onClick = function()
+			local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
+			if ok and accepted == false then
+				ReportRefusal(reason or text)
+			end
+			return accepted, reason
+		end
+		if opts and opts.combat then
+			entry:SetEnabled(not InCombatLockdown())
+			entry.onClick = function()
+				if InCombatLockdown() then
+					local reason = ns.L["Unavailable in combat"]
+					ReportRefusal(reason)
+					return false, reason
+				end
+				local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
+				if ok and accepted == false then
+					ReportRefusal(reason or text)
+				end
+				return accepted, reason
+			end
+			entry:SetTooltip(function(tooltip)
+				tooltip:SetText(text, 1, 1, 1)
+				if InCombatLockdown() then
+					tooltip:AddLine(ns.L["Unavailable in combat"], nil, nil, nil, true)
+				end
+			end)
+		end
+		return entry
+	end
+	function menu.Title(_, text)
+		slots.title = slots.title or text
+	end
+	function menu.Primary(_, text, fn)
+		slots.primary = slots.primary or Entry(text, fn)
+	end
+	function menu.Action(_, text, fn, opts)
+		local entry = Entry(text, fn, opts)
+		slots.actions[#slots.actions + 1] = entry
+		return entry
+	end
+	function menu:Submenu(text)
+		return self:Action(text)
+	end
+	function menu.Open(_, text, fn)
+		slots.open = slots.open or Entry(text, fn, { combat = true })
+		return slots.open
+	end
+	function menu.End(_, text, fn)
+		if type(fn) == "function" then
+			slots.ending = slots.ending or Entry(text, fn)
+		end
+		return slots.ending
+	end
+	local finished = false
+	local function Finish()
+		if finished then
+			return
+		end
+		finished = true
+		local block = target.block
+		root:CreateTitle(
+			slots.title
+				or (block and block.HeaderText and block.HeaderText:GetText())
+				or (module.Header and module.Header.Text and module.Header.Text:GetText())
+				or ns.L["Tracker"]
+		)
+		local function Append(entry)
+			if entry then
+				root.entries[#root.entries + 1] = entry
+			end
+		end
+		Append(slots.primary)
+		for _, entry in ipairs(slots.actions) do
+			Append(entry)
+		end
+		Append(slots.open)
+		Append(slots.ending)
+		root:CreateDivider()
+		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
+		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()
+			api.SetAttached(not api.IsAttachedToQuestTracker())
+		end)
+		if api.IsLocked and api.SetLocked then
+			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
+				api.SetLocked(not api.IsLocked())
+			end)
+		end
+		local background = tracker:CreateButton(ns.L["Tracker background"])
+		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
+			return api.GetBackdropOpacity() == 0
+		end, function()
+			api.SetBackdropOpacity(0)
+		end)
+		for _, percent in ipairs({ 25, 50, 75, 100 }) do
+			local value = percent / 100
+			background:CreateRadio(percent .. "%", function()
+				return api.GetBackdropOpacity() == value
+			end, function()
+				api.SetBackdropOpacity(value)
+			end)
+		end
+		local show = module.show
+		if
+			target.kind == "section"
+			and type(show) == "table"
+			and type(show.get) == "function"
+			and type(show.set) == "function"
+		then
+			tracker:CreateButton(ns.L["Hide this section"], function()
+				if show.get() then
+					show.set(false)
+				end
+			end)
+		end
+	end
+	return menu, Finish
+end
+
+-- Consumers with a block implementation that has no legacy OnBlockHeaderClick can forward the title event here.
+function api.HandleBlockHeaderClick(module, block, button)
+	if type(module) ~= "table" or type(module.trackerMenu) ~= "function" then
+		return false
+	end
+	local target = { kind = "block", id = block and block.id, block = block, module = module }
+	if button == "LeftButton" and type(module.trackerClick) == "function" then
+		local ok, accepted, reason =
+			RunSafe(module.safeCall, "tracker block click", module.trackerClick, target, button)
+		if ok and accepted == false then
+			ReportRefusal(reason)
+		end
+		return true
+	end
+	if button == "RightButton" then
+		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
+			local builder, finish = NewTrackerMenu(root, module, target)
+			RunSafe(module.safeCall, "tracker block menu", module.trackerMenu, target, builder)
+			finish()
+		end)
+		return true
+	end
+	return false
+end
+
 -- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
 -- column's, without the host learning what the section is.
 ---@param module ForeverTrackerModule
@@ -887,13 +1061,26 @@ local function AddHeaderMenu(module)
 	local hide = L["Hide this section"]
 	header:EnableMouse(true)
 	header:HookScript("OnMouseUp", function(_, button)
+		local target = { kind = "section", module = module }
 		if button ~= "RightButton" then
-			if type(module.OnHeaderClick) == "function" then
+			if type(module.trackerClick) == "function" then
+				local ok, accepted, reason =
+					RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
+				if ok and accepted == false then
+					ReportRefusal(reason)
+				end
+			elseif type(module.OnHeaderClick) == "function" then
 				RunSafe(module.safeCall, "tracker section header", module.OnHeaderClick, module, button)
 			end
 			return
 		end
 		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
+			if module.trackerMenu then
+				local builder, finish = NewTrackerMenu(root, module, target)
+				RunSafe(module.safeCall, "tracker section menu", module.trackerMenu, target, builder)
+				finish()
+				return
+			end
 			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
 				api.SetAttached(not api.IsAttachedToQuestTracker())
 			end)
@@ -960,10 +1147,35 @@ ns.MigrateTrackerSettings = Migrate
 
 ---@param module ForeverTrackerModule
 ---@param show? ForeverTrackerShowSetting the section's own show switch, when it has one
-function api.Attach(module, show)
+function api.Attach(module, show, contract)
 	---@cast module ForeverTrackerModule
+	if type(contract) == "table" and contract.menu and type(module.AddHeaderMenuEntries) == "function" then
+		RunSafe(module.safeCall, "tracker menu contract", function()
+			error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
+		end)
+		return
+	end
 	if show ~= nil then
 		module.show = show
+	end
+	if type(contract) == "table" then
+		module.trackerMenu = contract.menu
+		module.trackerClick = contract.click
+		module.trackerClickHint = contract.clickHint
+		if
+			module.trackerMenu
+			and type(module.OnBlockHeaderClick) == "function"
+			and not module.trackerBlockMenuWrapped
+		then
+			---@type fun(self: ForeverTrackerModule, block: any, button: string)
+			local oldBlockClick = module.OnBlockHeaderClick
+			module.trackerBlockMenuWrapped = true
+			module.OnBlockHeaderClick = function(self, block, button)
+				if not api.HandleBlockHeaderClick(module, block, button) then
+					return oldBlockClick(self, block, button)
+				end
+			end
+		end
 	end
 	if OfferLegacy(module) then
 		Migrate()

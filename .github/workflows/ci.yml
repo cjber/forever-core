@@ -91,6 +91,20 @@ jobs:
       - run: python3 tools/check_menu_scroll.py
       - run: python3 tools/check_api_docs.py
 
+  visual-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify client visual proof
+        env:
+          PYTHONPATH: .agents/skills/wow-forever-addon/tooling
+          VISUAL_BASE: ${{ github.event.pull_request.base.sha || (github.ref == 'refs/heads/main' && github.event.before) || 'origin/main' }}
+        run: python3 tools/check_visual_proof.py --base "$VISUAL_BASE"
+
   packaged:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -107,6 +121,20 @@ jobs:
         with:
           args: -d -z
       - run: python3 tools/check_package.py
+      - name: Parse packaged Lua with the client grammar
+        env:
+          LUA51_LUAC: ${{ runner.tool_cache }}/lua-toolchain/bin/luac5.1
+        run: python3 tools/check_lua51.py .release/ForeverCore
+      - name: Exercise the packaged addon
+        env:
+          FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/forever_sim
+        run: |
+          python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+          cd .release/ForeverCore
+          test -f ForeverCore.toc
+          test "$PWD" != "$GITHUB_WORKSPACE"
+          luajit "$GITHUB_WORKSPACE/.agents/skills/wow-forever-addon/tooling/forever_sim/run.lua" \
+            "$GITHUB_WORKSPACE/tests/sim/exercise_scenario.lua"
 
   secrets:
     runs-on: ubuntu-24.04

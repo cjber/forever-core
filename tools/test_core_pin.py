@@ -90,6 +90,7 @@ class CorePinTest(unittest.TestCase):
         policy = package.Policy(addons=("LegacyForever",))
         with (
             mock.patch.object(package, "check", return_value=[]),
+            mock.patch.object(package.lua51, "check", return_value=[]),
             mock.patch.object(package, "run_specs", return_value=[]),
             contextlib.redirect_stdout(io.StringIO()),
         ):
@@ -101,6 +102,7 @@ class CorePinTest(unittest.TestCase):
         out = io.StringIO()
         with (
             mock.patch.object(package, "check", return_value=[]),
+            mock.patch.object(package.lua51, "check", return_value=[]),
             mock.patch.object(package, "run_specs", return_value=[]),
             contextlib.redirect_stderr(out),
         ):

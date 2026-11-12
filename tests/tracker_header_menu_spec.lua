@@ -4,6 +4,12 @@ local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ headerShown = true })
 local check, drain = t.check, t.drain
 local host, first, second = t.ns.TrackerHost, t.first, t.second
+local messages = {}
+t.env.DEFAULT_CHAT_FRAME = {
+	AddMessage = function(_, message)
+		messages[#messages + 1] = message
+	end,
+}
 
 local function Menu(module)
 	module.Header.scripts.OnMouseUp(module.Header, "RightButton")
@@ -150,5 +156,112 @@ end
 local ownMenu = Menu(safeModule)
 check(ownEntries == 1 and Entry(ownMenu, "Own entry") ~= nil, "a section's own menu entries are added")
 check(safeCalls[#safeCalls] == "tracker section menu", "and they run in its SafeCall")
+
+-- The declarative contract keeps the addon's rows ahead of the shared Tracker submenu and makes combat refusal visible.
+local contractModule = t.module(6)
+local contractTargets
+contractModule.trackerMenu = function(target, builder)
+	contractTargets[#contractTargets + 1] = target
+	if target.kind == "section" then
+		builder:End("End journey", function() end)
+		builder:Submenu("Choices")
+		builder:Title("A block")
+	end
+	builder:Primary("Guide me", function() end)
+	builder:Action("Refresh", function() end, { combat = true })
+	builder:Open("Open panel", function() end)
+end
+contractTargets = {}
+local contractMenu = Menu(contractModule)
+check(contractTargets[1].kind == "section", "the declarative section target names its kind")
+check(contractMenu.title == "A block", "Title is the first fixed slot")
+local labels = {}
+for _, entry in ipairs(contractMenu.entries) do
+	labels[#labels + 1] = entry.text or entry.kind
+end
+check(
+	table.concat(labels, ",") == "Guide me,Choices,Refresh,Open panel,End journey,divider,Tracker",
+	"slots keep exact order"
+)
+host.HandleBlockHeaderClick(
+	contractModule,
+	{ id = "journey", HeaderText = {
+		GetText = function()
+			return "Journey"
+		end,
+	} },
+	"RightButton"
+)
+local blockTarget = contractTargets[#contractTargets]
+check(blockTarget.kind == "block" and blockTarget.id == "journey", "the block target carries kind and id")
+
+-- Construction uses the production description, so disabled state, callbacks and nested rows are real.
+local opens, clicks = 0, 0
+contractModule.trackerMenu = function(_, builder)
+	builder:End("End journey", function() end)
+	builder:Submenu("Choices"):CreateButton("Nested choice", function() end)
+	builder:Open("Open panel", function()
+		opens = opens + 1
+	end)
+	builder:Primary("Guide me", function() end)
+end
+local ready = Menu(contractModule)
+check(Entry(ready, "Open panel"):IsEnabled(), "Open is enabled outside combat")
+Entry(ready, "Open panel").callback()
+check(opens == 1, "Open forwards its action outside combat")
+t.setCombat(true)
+local accepted, combatReason = Entry(ready, "Open panel").callback()
+check(opens == 1, "an existing Open callback refuses a later combat transition")
+check(accepted == false and combatReason == "Unavailable in combat", "a combat refusal returns its reason")
+check(messages[#messages] == "Unavailable in combat", "a combat refusal reports its reason")
+t.setCombat(false)
+contractModule.trackerMenu = function(_, builder)
+	builder:Open("Open panel", function()
+		return false, "the panel is collapsed"
+	end)
+end
+local refused = Menu(contractModule)
+Entry(refused, "Open panel").callback()
+check(messages[#messages]:find("panel is collapsed", 1, true) ~= nil, "a refused Open reports its reason")
+t.setCombat(true)
+local blocked = Menu(contractModule)
+check(not Entry(blocked, "Open panel"):IsEnabled(), "Open is disabled when constructed in combat")
+local tooltipLines = {}
+Entry(blocked, "Open panel").tooltip({
+	SetText = function() end,
+	AddLine = function(_, text)
+		tooltipLines[#tooltipLines + 1] = text
+	end,
+})
+check(tooltipLines[1] == "Unavailable in combat", "a disabled Open explains its refusal")
+t.setCombat(false)
+local choices = Entry(ready, "Choices")
+check(choices.entries[1].text == "Nested choice", "buffering preserves the actual submenu description")
+check(choices.callback == nil, "a submenu title has no empty callback")
+contractModule.trackerClick = function(target, button)
+	check(
+		target.module == contractModule and target.kind == "block" and button == "LeftButton",
+		"left block target has the same module contract"
+	)
+	clicks = clicks + 1
+end
+host.HandleBlockHeaderClick(contractModule, { id = "journey" }, "LeftButton")
+check(clicks == 1, "left block action runs once")
+
+-- Both contracts are rejected through the addon's safe call rather than silently producing two menus.
+local rejected = false
+contractModule.AddHeaderMenuEntries = function() end
+contractModule.safeCall = function(_, fn, ...)
+	local ok = pcall(fn, ...)
+	rejected = not ok
+	return ok
+end
+local previousMenu, previousClick, previousShow =
+	contractModule.trackerMenu, contractModule.trackerClick, contractModule.show
+host.Attach(contractModule, { where = "Rejected show setting" }, { menu = function() end, click = function() end })
+check(rejected, "the old and declarative menu hooks are rejected together")
+check(contractModule.trackerMenu == previousMenu, "rejection preserves the previous menu")
+check(contractModule.trackerClick == previousClick, "rejection preserves the previous click handler")
+check(contractModule.show == previousShow, "rejection preserves the previous show setting")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")

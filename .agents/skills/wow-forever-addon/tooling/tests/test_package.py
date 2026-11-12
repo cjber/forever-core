@@ -1,7 +1,9 @@
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from forever_tools import package
 
@@ -215,6 +217,44 @@ class PackageTest(unittest.TestCase):
         release = self.make({"Addon/tests/a_spec.lua": ""})
         policy = package.Policy(addons=("Addon",), specs=("tests/a_spec.lua",))
         self.assertIn("shipped in the package", package.run_specs(root, release, policy)[0])
+
+    @unittest.skipUnless(shutil.which("luajit"), "needs luajit")
+    def test_specs_always_load_the_packaged_core_instead_of_an_inherited_checkout(self):
+        for spec in ("tests/a_spec.lua", "tests/sim/exercise_scenario.lua"):
+            with self.subTest(spec=spec):
+                root = self.make(
+                    {
+                        spec: 'local p = assert(os.getenv("FOREVER_CORE")); assert(loadfile(p .. "/Core.lua"))()\n',
+                        "tools/forever_sim/run.lua": "assert(loadfile(arg[1]))()\n",
+                    }
+                )
+                (root / "tools/.cache/forever_sim").mkdir(parents=True)
+                release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": "return true\n"})
+                policy = package.Policy(
+                    addons=("Addon", "ForeverCore"), specs=(spec,), support=("tests", "tools/forever_sim")
+                )
+                with mock.patch.dict(os.environ, {"FOREVER_CORE": "/incorrect-checkout"}):
+                    self.assertEqual(package.run_specs(root, release, policy), [])
+
+    @unittest.skipUnless(shutil.which("luajit"), "needs luajit")
+    def test_scenario_specs_use_the_simulator_from_the_packaged_worktree(self):
+        root = self.make(
+            {
+                "tests/sim/exercise_scenario.lua": "scenario('packaged', function() end)\n",
+                "tools/forever_sim/run.lua": "",
+            }
+        )
+        (root / "tools/.cache/forever_sim").mkdir(parents=True)
+        release = self.make({"Addon/Core.lua": "", "Addon/Addon.toc": "Core.lua\n"})
+        policy = package.Policy(
+            addons=("Addon",), specs=("tests/sim/exercise_scenario.lua",), support=("tests", "tools/forever_sim")
+        )
+        with mock.patch.object(package.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            package.run_specs(root, release, policy)
+        self.assertEqual(
+            run.call_args.args[0], ["luajit", "tools/forever_sim/run.lua", "tests/sim/exercise_scenario.lua"]
+        )
 
 
 if __name__ == "__main__":

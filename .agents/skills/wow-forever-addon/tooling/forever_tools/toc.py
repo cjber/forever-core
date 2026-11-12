@@ -37,8 +37,10 @@ def loaded_files(toc_path: Path, root: Path | None = None) -> list[Path]:
         files.add(path)
         if path.suffix.lower() == ".xml":
             for element in ET.parse(path).iter():
-                if element.tag.rsplit("}", 1)[-1] in LOAD_TAGS and "file" in element.attrib:
-                    visit(path.parent / element.attrib["file"].replace("\\", "/"))
+                if element.tag.rsplit("}", 1)[-1] in LOAD_TAGS:
+                    for attribute in ("file", "virtualFile"):
+                        if value := element.attrib.get(attribute):
+                            visit(path.parent / value.replace("\\", "/"))
 
     for line in toc_path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()

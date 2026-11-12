@@ -23,6 +23,7 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 """
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -32,7 +33,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import core_pin, widget_handlers
+from . import core_pin, lua51, widget_handlers
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -307,9 +308,22 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
         for spec in policy.specs:
             if shutil.which("luajit") is None:
                 return ["luajit: not found on PATH; install it to run the specs on the package"]
+            command = ["luajit", spec]
+            environment = os.environ.copy()
+            if "ForeverCore" in policy.addons:
+                environment["FOREVER_CORE"] = str((Path(scratch) / "ForeverCore").resolve())
+            if spec.endswith("_scenario.lua"):
+                command = ["luajit", "tools/forever_sim/run.lua", spec]
+                cache = root / "tools/.cache/forever_sim"
+                if not cache.is_dir():
+                    problems.append(
+                        f"{spec}: missing tools/.cache/forever_sim; fetch the simulator before package checks"
+                    )
+                    continue
+                environment["FOREVER_SIM_CACHE"] = str(cache.resolve())
             try:
                 result = subprocess.run(
-                    ["luajit", spec], cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT
+                    command, cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT, env=environment
                 )
             except subprocess.TimeoutExpired:
                 problems.append(f"{spec}: still running on the packaged files after {SPEC_TIMEOUT} s")
@@ -332,6 +346,8 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     problems += core_pin.check(root)
     # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
     problems += widget_handlers.check_root(args.release_dir, policy.addons)
+    for addon in policy.addons:
+        problems += [f"{addon}: {problem}" for problem in lua51.check(args.release_dir / addon)]
     if not problems:
         problems = run_specs(root, args.release_dir, policy)
     for problem in problems:

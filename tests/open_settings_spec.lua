@@ -1,4 +1,4 @@
--- luacheck: globals SettingsPanel
+-- luacheck: globals C_SettingsUtil SettingsPanel
 local checks = 0
 local function equal(actual, expected, label)
 	checks = checks + 1
@@ -13,14 +13,19 @@ _G.InCombatLockdown = function()
 end
 
 _G.securecallfunction = function(fn, ...)
-	equal(fn, SettingsPanel.OpenToCategory, "secure call uses Blizzard method directly")
+	equal(fn, C_SettingsUtil.OpenSettingsPanel, "secure call uses the restricted client opener")
 
 	secureCalls = secureCalls + 1
 	return fn(...)
 end
-_G.SettingsPanel = {
-	OpenToCategory = function(_, categoryID, element)
+_G.C_SettingsUtil = {
+	OpenSettingsPanel = function(categoryID, element)
 		calls[#calls + 1] = { categoryID, element }
+	end,
+}
+_G.SettingsPanel = {
+	OpenToCategory = function()
+		error("the Lua wrapper must never be called, even when the C opener is missing")
 	end,
 }
 local ns = {}
@@ -36,11 +41,11 @@ combat = true
 equal(ns.OpenSettingsPanel(314), false, "combat blocks settings")
 equal(#calls, 2, "combat makes no call")
 combat = false
-_G.SettingsPanel = nil
+_G.C_SettingsUtil = nil
 equal(ns.OpenSettingsPanel(315), false, "missing panel blocks safely")
-_G.SettingsPanel = {}
+_G.C_SettingsUtil = {}
 equal(ns.OpenSettingsPanel(315), false, "missing method blocks safely")
-_G.SettingsPanel.OpenToCategory = function(_, categoryID, element)
+_G.C_SettingsUtil.OpenSettingsPanel = function(categoryID, element)
 	calls[#calls + 1] = { categoryID, element }
 end
 _G.securecallfunction = nil
