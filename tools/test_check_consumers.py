@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,9 @@ from unittest import mock
 import check_consumers
 
 SHARED = b"# checker\n"
+CORE = Path(__file__).resolve().parent.parent
+WORKFLOW = CORE / "tools/visual-proof.yml"
+TOOLING = CORE / ".agents/skills/wow-forever-addon/tooling/forever_tools"
 
 
 def git(root, *args):
@@ -189,6 +193,100 @@ class CheckConsumersTest(unittest.TestCase):
         ):
             code = check_consumers.main(["--local", str(self.checkouts)])
         self.assertEqual(code, 0, out.getvalue())
+
+
+class VisualWorkflowCheckTest(unittest.TestCase):
+    """The standalone workflow and the full tooling it imports, against a throwaway consumer checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.core = base / "forever-core"
+        (self.core / "tools").mkdir(parents=True)
+        shutil.copyfile(WORKFLOW, self.core / "tools/visual-proof.yml")
+
+        self.checkouts = base / "consumers"
+        self.repo = self.checkouts / "legacy-forever"
+        self.repo.mkdir(parents=True)
+        shutil.copytree(TOOLING, self.repo / "tools/forever_tools")
+        self.write_workflow(WORKFLOW.read_bytes())
+
+        patcher = mock.patch.object(check_consumers, "VENDORED", {check_consumers.VISUAL_WORKFLOW: ("legacy-forever",)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        core_patcher = mock.patch.object(check_consumers, "CORE_ROOT", self.core)
+        core_patcher.start()
+        self.addCleanup(core_patcher.stop)
+
+    def write_workflow(self, data):
+        target = self.repo / check_consumers.VISUAL_WORKFLOW
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    def run_main(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = check_consumers.main(["--local", str(self.checkouts)])
+        return code, out.getvalue()
+
+    def test_a_canonical_workflow_and_full_tooling_pass(self):
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+
+    def test_a_missing_workflow_is_red(self):
+        (self.repo / check_consumers.VISUAL_WORKFLOW).unlink()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("missing canonical visual-proof workflow", out)
+
+    def test_a_drifted_workflow_is_red(self):
+        self.write_workflow(b"name: old inline job\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("drifted from tools/visual-proof.yml", out)
+
+    def test_a_workflow_without_the_imported_tooling_is_red(self):
+        shutil.rmtree(self.repo / "tools/forever_tools")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("tools/forever_tools: missing; sync the full forever_tools package", out)
+
+    def test_a_tooling_copy_missing_an_import_is_red(self):
+        # Adventure Guide and SkillUp already carried visual_proof.py without the pkgmeta.py it imports.
+        (self.repo / "tools/forever_tools/pkgmeta.py").unlink()
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("tools/forever_tools/pkgmeta.py: missing from the full forever_tools sync", out)
+        self.assertNotIn("tools/forever_tools/visual_proof.py:", out)
+
+    def test_remote_tooling_check_reads_the_folder_once_and_compares_blob_ids(self):
+        names = sorted(check_consumers.tooling_sync.read_manifest(TOOLING)["files"])
+        listing = [
+            {
+                "name": name,
+                "type": "file",
+                "sha": check_consumers.blob_sha((TOOLING / name).read_bytes()),
+            }
+            for name in names
+        ]
+        with mock.patch.object(check_consumers, "remote_json", return_value=listing) as remote_json:
+            failures = check_consumers.tooling_sync_problems("legacy-forever", "main", None)
+        self.assertEqual(failures, [])
+        self.assertEqual(remote_json.call_count, 1)
+
+    def test_remote_tooling_check_names_a_missing_import(self):
+        names = sorted(check_consumers.tooling_sync.read_manifest(TOOLING)["files"])
+        listing = [
+            {"name": name, "type": "file", "sha": check_consumers.blob_sha((TOOLING / name).read_bytes())}
+            for name in names
+            if name != "pkgmeta.py"
+        ]
+        with mock.patch.object(check_consumers, "remote_json", return_value=listing):
+            failures = check_consumers.tooling_sync_problems("legacy-forever", "main", None)
+        self.assertTrue(
+            any("tools/forever_tools/pkgmeta.py: missing from the full forever_tools sync" in item for item in failures)
+        )
 
 
 if __name__ == "__main__":

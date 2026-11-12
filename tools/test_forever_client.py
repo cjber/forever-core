@@ -7,6 +7,7 @@ import contextlib
 import fcntl
 import importlib.util
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,96 @@ class ForeverClientTest(unittest.TestCase):
     def setUp(self):
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.runtime = self.state / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.enterContext(mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime)}))
+
+    def test_runtime_directory_fallback_is_existing_owned_private_directory(self):
+        root = self.state / "users"
+        root.mkdir()
+        target = root / str(os.getuid())
+        with self.assertRaises(fc.ClientError):
+            fc.runtime_dir({}, os.getuid(), root)
+        self.assertFalse(target.exists())
+        target.mkdir(mode=0o700)
+        for value in ({}, {"XDG_RUNTIME_DIR": ""}):
+            with contextlib.redirect_stderr(io.StringIO()) as warning:
+                self.assertEqual(fc.runtime_dir(value, os.getuid(), root), target)
+            self.assertIn("using", warning.getvalue())
+
+    def test_explicit_runtime_directory_fails_closed(self):
+        link = self.state / "runtime-link"
+        link.symlink_to(self.runtime)
+        regular = self.state / "file"
+        regular.touch()
+        for path in (Path("relative"), link, regular, self.state / "missing"):
+            with self.subTest(path=path), self.assertRaises(fc.ClientError):
+                fc.runtime_dir({"XDG_RUNTIME_DIR": str(path)}, os.getuid())
+        with self.assertRaises(fc.ClientError):
+            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime)}, os.getuid() + 1)
+        self.runtime.chmod(0o755)
+        with self.assertRaises(fc.ClientError):
+            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime)}, os.getuid())
+        self.assertEqual(self.runtime.stat().st_mode & 0o777, 0o755)
+
+    def test_shot_requires_recorded_runtime_directory(self):
+        with self.assertRaisesRegex(fc.ClientError, "restart"):
+            fc.shot({"gamescope_socket": "wayland-9"}, self.state / "shot.png")
+
+    def test_shot_uses_recorded_runtime_instead_of_calling_shell(self):
+        for host in ("", "/different/runtime"):
+            with (
+                self.subTest(host=host),
+                mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": host}),
+                mock.patch.object(fc.subprocess, "run") as run,
+                mock.patch.object(fc, "_complete_png", return_value=True),
+            ):
+                fc.shot(
+                    {"gamescope_socket": "wayland-9", "runtime_dir": str(self.runtime)},
+                    self.state / "shot.png",
+                )
+                self.assertEqual(run.call_args.kwargs["env"]["XDG_RUNTIME_DIR"], str(self.runtime))
+
+    def test_up_rejects_invalid_runtime_before_network_or_spawn(self):
+        with (
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": "relative"}),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection") as connect,
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+            self.assertRaisesRegex(fc.ClientError, "invalid XDG_RUNTIME_DIR"),
+        ):
+            fc.up(args())
+        connect.assert_not_called()
+        spawn.assert_not_called()
+
+    def test_up_records_runtime_and_keeps_gamescope_off_host_display(self):
+        config = self.state / "env.json"
+        config.write_text(
+            '{"WINE":"/runner/bin/wine","DISPLAY":":host","WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}'
+        )
+        client = self.state / "client"
+        (client / "Interface/AddOns").mkdir(parents=True)
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.signal, "signal"),
+            mock.patch.object(fc.signal, "alarm"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
+            mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")),
+            mock.patch.object(fc, "teardown"),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            spawn.return_value.pid = 123
+            self.assertEqual(fc.up(args(), after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
+        env = spawn.call_args.kwargs["env"]
+        self.assertEqual(env["XDG_RUNTIME_DIR"], str(self.runtime))
+        self.assertNotIn("DISPLAY", env)
+        self.assertNotIn("WAYLAND_DISPLAY", env)
+        self.assertIn(str(self.runtime), (self.state / "session.json").read_text())
 
     def test_wine_env_keeps_the_launch_and_drops_the_desktop(self):
         env = fc.wine_env(
@@ -263,7 +354,7 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.time, "sleep"),
             self.assertRaisesRegex(fc.ClientError, "wrote no screenshot"),
         ):
-            fc.shot({"gamescope_socket": "wayland-9"}, target)
+            fc.shot({"gamescope_socket": "wayland-9", "runtime_dir": str(self.runtime)}, target)
         self.assertFalse(target.exists())
 
     def test_complete_png_requires_the_iend_crc(self):

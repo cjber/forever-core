@@ -21,31 +21,40 @@ def toc_files(root: Path) -> list[Path]:
     ]
 
 
+def _load(path: Path, root: Path, files: set[Path]) -> None:
+    path = path.resolve()
+    path.relative_to(root)
+    if not path.is_file():
+        raise ValueError(f"Missing runtime file: {path}")
+    if path in files:
+        return
+    files.add(path)
+    if path.suffix.lower() == ".xml":
+        for element in ET.parse(path).iter():
+            if element.tag.rsplit("}", 1)[-1] in LOAD_TAGS:
+                for attribute in ("file", "virtualFile"):
+                    if value := element.attrib.get(attribute):
+                        _load(path.parent / value.replace("\\", "/"), root, files)
+
+
+def xml_files(xml_path: Path, root: Path | None = None) -> list[Path]:
+    """Every file one XML document loads, itself included, through nested XML; `root` bounds its paths."""
+    xml_path = xml_path.resolve()
+    root = (root or xml_path.parent).resolve()
+    files: set[Path] = set()
+    _load(xml_path, root, files)
+    return sorted(files)
+
+
 def loaded_files(toc_path: Path, root: Path | None = None) -> list[Path]:
     """Every file one TOC loads, through nested XML; `root` bounds the paths it may name."""
     toc_path = toc_path.resolve()
     root = (root or toc_path.parent).resolve()
     files: set[Path] = set()
-
-    def visit(path: Path) -> None:
-        path = path.resolve()
-        path.relative_to(root)
-        if not path.is_file():
-            raise ValueError(f"Missing runtime file: {path}")
-        if path in files:
-            return
-        files.add(path)
-        if path.suffix.lower() == ".xml":
-            for element in ET.parse(path).iter():
-                if element.tag.rsplit("}", 1)[-1] in LOAD_TAGS:
-                    for attribute in ("file", "virtualFile"):
-                        if value := element.attrib.get(attribute):
-                            visit(path.parent / value.replace("\\", "/"))
-
     for line in toc_path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
-            visit(toc_path.parent / line.replace("\\", "/"))
+            _load(toc_path.parent / line.replace("\\", "/"), root, files)
     return sorted(files)
 
 

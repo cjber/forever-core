@@ -355,8 +355,69 @@ class SettleTest(unittest.TestCase):
     def test_an_unknown_thread_or_missing_reason_is_refused(self):
         with self.assertRaises(SystemExit):
             run(["--settle", "99", "thanks only"], fake_fetch(self.rows()))
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(SystemExit) as missing, contextlib.redirect_stderr(io.StringIO()):
             run(["--settle", "1"], fake_fetch(self.rows()))
+        self.assertEqual(missing.exception.code, 2)
+
+
+class CliTest(unittest.TestCase):
+    """The command line settles help and bad arguments before state, projects or the network."""
+
+    def run_cli(self, argv):
+        output, errors = io.StringIO(), io.StringIO()
+        guard = unittest.mock.Mock(
+            side_effect=AssertionError("the command line read state, projects or the network before it settled")
+        )
+        with (
+            unittest.mock.patch.object(cfwatch, "projects", guard),
+            unittest.mock.patch.object(cfwatch, "load", guard),
+            unittest.mock.patch.object(cfwatch, "save", guard),
+            unittest.mock.patch.object(cfwatch, "state_path", guard),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(errors),
+        ):
+            with self.assertRaises(SystemExit) as exit:
+                cfwatch.main(argv, guard)
+        return exit.exception.code, output.getvalue(), errors.getvalue()
+
+    def test_help_prints_usage_and_exits_zero_before_any_side_effect(self):
+        code, output, errors = self.run_cli(["--help"])
+        self.assertEqual(code, 0)
+        self.assertIn("usage: cfwatch.py", output)
+        self.assertIn("--settle THREAD REASON", output)
+        self.assertEqual(errors, "")
+
+    def test_unknown_or_malformed_arguments_exit_two_before_any_side_effect(self):
+        cases = [
+            ["--nope"],
+            ["--unanswere"],
+            ["--mark", "--unknown"],
+            ["--settle", "1"],
+            ["--settle", "not-a-number", "thanks only"],
+            ["--settle", "1", "   "],
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv):
+                code, output, errors = self.run_cli(argv)
+                self.assertEqual(code, 2)
+                self.assertIn("usage: cfwatch.py", errors)
+                self.assertEqual(output, "")
+
+    def test_every_current_mode_and_combination_still_runs(self):
+        rows = [comment(1, "a question")]
+        modes = [
+            [],
+            ["--mark"],
+            ["--unanswered"],
+            ["--due"],
+            ["--mark", "--unanswered"],
+            ["--settle", "#1", "thanks only"],
+            ["--settle", "#1", "thanks only", "--settle", "1", "answered by another player"],
+        ]
+        for argv in modes:
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as tmp:
+                output = run(argv, fake_fetch(rows), state=tmp)
+                self.assertTrue(output)
 
 
 if __name__ == "__main__":

@@ -229,12 +229,44 @@ class PackageTest(unittest.TestCase):
                     }
                 )
                 (root / "tools/.cache/forever_sim").mkdir(parents=True)
+                pinned = self.make(
+                    {
+                        "ForeverCore.toc": "",
+                        "Core.lua": 'error("the checkout runtime must not load")\n',
+                        "tests/strict_map.lua": 'return "pinned"\n',
+                    }
+                )
                 release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": "return true\n"})
                 policy = package.Policy(
                     addons=("Addon", "ForeverCore"), specs=(spec,), support=("tests", "tools/forever_sim")
                 )
-                with mock.patch.dict(os.environ, {"FOREVER_CORE": "/incorrect-checkout"}):
+                with mock.patch.dict(os.environ, {"FOREVER_CORE": str(pinned)}):
                     self.assertEqual(package.run_specs(root, release, policy), [])
+
+    @unittest.skipUnless(shutil.which("luajit"), "needs luajit")
+    def test_the_package_is_the_runtime_and_only_the_pinned_checkouts_tests_are_support(self):
+        spec = """\
+local p = assert(os.getenv("FOREVER_CORE"))
+local runtime = assert(loadfile(p .. "/Core.lua"))()
+assert(runtime == "packaged", "runtime did not come from the package: " .. tostring(runtime))
+local support = assert(loadfile(p .. "/tests/strict_map.lua"))()
+assert(support == "pinned", "support did not come from the pinned checkout: " .. tostring(support))
+assert(io.open(p .. "/tools/marker.lua") == nil, "a file other than tests/ was copied from the checkout")
+"""
+        root = self.make({"tests/a_spec.lua": spec})
+        pinned = self.make(
+            {
+                "ForeverCore.toc": "",
+                "Core.lua": 'return "checkout"\n',
+                "tests/strict_map.lua": 'return "pinned"\n',
+                "tools/marker.lua": "",
+            }
+        )
+        release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": 'return "packaged"\n'})
+        policy = package.Policy(addons=("Addon", "ForeverCore"), specs=("tests/a_spec.lua",))
+        with mock.patch.dict(os.environ, {"FOREVER_CORE": str(pinned)}):
+            self.assertEqual(package.run_specs(root, release, policy), [])
+        self.assertFalse((release / "ForeverCore/tests").exists(), "the release gained test support")
 
     @unittest.skipUnless(shutil.which("luajit"), "needs luajit")
     def test_scenario_specs_use_the_simulator_from_the_packaged_worktree(self):
@@ -255,6 +287,50 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(
             run.call_args.args[0], ["luajit", "tools/forever_sim/run.lua", "tests/sim/exercise_scenario.lua"]
         )
+
+    def test_the_pinned_core_support_is_required_and_never_substituted(self):
+        root = self.make({"tests/a_spec.lua": ""})
+        release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": ""})
+        policy = package.Policy(addons=("Addon", "ForeverCore"), specs=("tests/a_spec.lua",))
+        with mock.patch.dict(os.environ):
+            os.environ.pop("FOREVER_CORE", None)
+            self.assertEqual(
+                package.run_specs(root, release, policy),
+                [
+                    "FOREVER_CORE: not set; name the pinned ForeverCore checkout whose tests/ the specs load "
+                    "(its version is in tools/forever-core.txt)"
+                ],
+            )
+
+    def test_a_pinned_path_that_is_not_a_core_checkout_is_named(self):
+        root = self.make({"tests/a_spec.lua": ""})
+        release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": ""})
+        pinned = self.make({"tests/strict_map.lua": ""})
+        policy = package.Policy(addons=("Addon", "ForeverCore"), specs=("tests/a_spec.lua",))
+        with mock.patch.dict(os.environ, {"FOREVER_CORE": str(pinned)}):
+            self.assertEqual(
+                package.run_specs(root, release, policy),
+                [f"FOREVER_CORE: {pinned} is not a ForeverCore checkout (no ForeverCore.toc)"],
+            )
+
+    def test_a_pinned_checkout_without_tests_is_named(self):
+        root = self.make({"tests/a_spec.lua": ""})
+        release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": ""})
+        pinned = self.make({"ForeverCore.toc": "", "Core.lua": ""})
+        policy = package.Policy(addons=("Addon", "ForeverCore"), specs=("tests/a_spec.lua",))
+        with mock.patch.dict(os.environ, {"FOREVER_CORE": str(pinned)}):
+            self.assertEqual(
+                package.run_specs(root, release, policy),
+                [f"FOREVER_CORE/tests: not in {pinned}; check out the pinned ForeverCore release there"],
+            )
+
+    def test_core_support_that_ships_is_refused(self):
+        root = self.make({"tests/a_spec.lua": ""})
+        release = self.make({"Addon/Addon.toc": "", "ForeverCore/Core.lua": "", "ForeverCore/tests/strict_map.lua": ""})
+        pinned = self.make({"ForeverCore.toc": "", "tests/strict_map.lua": ""})
+        policy = package.Policy(addons=("Addon", "ForeverCore"), specs=("tests/a_spec.lua",))
+        with mock.patch.dict(os.environ, {"FOREVER_CORE": str(pinned)}):
+            self.assertIn("ForeverCore/tests: shipped in the package", package.run_specs(root, release, policy)[0])
 
 
 if __name__ == "__main__":
