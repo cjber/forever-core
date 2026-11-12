@@ -155,7 +155,7 @@ ForeverCore.ProfessionTabs.Selected() --> string?
 
 - `Register(key, spec)` adds a side tab to the Professions window under the client's own tabs, in registration order.
   `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is your page and `minWidth` raises the
-  one width the window keeps for every profession and tab. Selecting a tab shows only its page and unchecks the
+  one width the window keeps while that custom page is selected. Native pages retain the client's own width. Selecting a tab shows only its page and unchecks the
   client's tabs; a client tab or page takes the window back. A key that is not a non-empty string, or one that is
   already registered, is a programming error raised at the calling line.
 - `SetMinWidth(key, width)` changes the `minWidth` of a registration that is already made, then recomputes and enforces

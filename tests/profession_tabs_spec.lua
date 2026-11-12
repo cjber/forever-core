@@ -276,8 +276,9 @@ assert(tabA.points[4] == 0 and tabA.points[5] == -2, "first tab gap")
 assert(tabB.points[1] == "TOPLEFT" and tabB.points[2] == tabA and tabB.points[3] == "BOTTOMLEFT")
 assert(tabB.points[4] == 0 and tabB.points[5] == -2, "second tab gap")
 
--- One width for every profession and tab, raised by the largest registration. The anchor never moves.
-local width = 900
+-- Registration does not widen the native page. Selecting a custom page raises the window to the largest registered
+-- minimum, and the anchor never moves.
+local width = 673
 local point = { world.frame:GetPoint() }
 assertWidthAndAnchor(world, width, point, "after registering both tabs")
 assert(world.frame.widthCalls > 0, "the window width was never set")
@@ -285,6 +286,7 @@ assert(world.frame.widthCalls > 0, "the window width was never set")
 -- Selecting a tab shows one page, checks one tab and unchecks every client tab.
 world.crafting:SetAlpha(0.4)
 api.Select("commissions")
+width = 900
 assert(api.Selected() == "commissions", api.Selected())
 assertOnePage(pageA, pageB, "Select(commissions)")
 assert(tabA.checked and not tabB.checked, "tab checks after Select(commissions)")
@@ -315,6 +317,7 @@ assertWidthAndAnchor(world, width, point, "after Select(skillup)")
 
 -- A client side tab hands the window back: every registered page hides and every registered tab unchecks.
 pressNative(world.native1)
+width = 673
 assert(world.native1.checked, "the client tab did not check itself")
 assert(not pageA.shown and not pageB.shown, "a registered page stayed shown after a client tab")
 assert(not tabA.checked and not tabB.checked, "a registered tab stayed checked after a client tab")
@@ -334,11 +337,12 @@ assert(api.Selected() == nil, "a tab stayed selected after a client page")
 -- a registered page over it, and the crafting page after it, take the fixed width again.
 assertWidthAndAnchor(world, 673, point, "on the client's book page")
 api.Select("skillup")
+width = 900
 assertWidthAndAnchor(world, width, point, "a registered page over the book page")
 pressNative(world.overview)
 assertWidthAndAnchor(world, 673, point, "back on the book page from a registered page")
 pressNative(world.native1)
-assertWidthAndAnchor(world, width, point, "the crafting page after the book page")
+assertWidthAndAnchor(world, 673, point, "the crafting page after the book page")
 
 -- A profession change resizes the window through the client's own path. The fixed width comes back from
 -- OnSizeChanged and the events, and the anchor stays where it was.
@@ -396,6 +400,13 @@ assert(world.crafting:GetAlpha() == 0.4, "native crafting alpha was not preserve
 assert(not pageA.shown and not pageB.shown, "ShowNative left a registered page shown")
 assert(not tabA.checked and not tabB.checked, "ShowNative left a registered tab checked")
 assert(api.Selected() == nil, "ShowNative left a tab selected")
+
+-- A native crafting page keeps the client's width even when a registered page's minimum is larger. The wider
+-- width belongs only to a selected custom page, not to the native page after handback.
+api.SetMinWidth("commissions", 1050)
+assert(world.frame:GetWidth() == 673, "a native crafting page inherited a custom page's dead width")
+api.SetMinWidth("commissions", nil)
+assert(world.frame:GetWidth() == 673, "clearing a native dead width did not keep the client width")
 
 -- One key is one tab.
 local ok, err = pcall(api.Register, "commissions", { icon = "x", tooltip = "Duplicate", page = pageA })
@@ -465,6 +476,7 @@ lateApi.Register("late", {
 assert(late.frame:GetWidth() == 673, "the module set a width before the client laid its crafting page out")
 assert(late.frame.widthCalls == lateWidthCalls, "the module wrote the window width before the engine's width was known")
 late.crafting:Show()
+lateApi.Select("late")
 assert(late.frame:GetWidth() == 900, "the module did not take the width once the client laid its page out")
 
 -- Optional client pages can be absent on a build. A shown BookPage must still step aside when CraftingPage is nil.

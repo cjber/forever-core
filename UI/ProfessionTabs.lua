@@ -3,9 +3,9 @@ local _, ns = ...
 
 -- A shared side tab for the addon pages that live in the Professions window. Each addon registers a key, its page and
 -- a tab; core places every tab under the client's own side tabs in registration order, and selecting one shows that
--- page in place of the others. The module never shows or hides a native page, so the client keeps its own page and
--- gamepad bookkeeping, and it keeps the crafting page and every registered page at one width while any tab is
--- registered; the client's book page keeps the client's own width.
+-- page in place of the others. Native pages stay in Blizzard's ownership, so the client keeps its own page and
+-- gamepad bookkeeping; custom pages are alpha-hidden around the native page while selected. The window uses the
+-- custom width only while a custom page is selected; native pages keep the client's own width.
 
 ---@class ForeverProfessionTabEntry
 ---@field key string
@@ -20,9 +20,8 @@ local order = {}
 local selectedKey
 local installed = false
 
--- The one width the crafting page and the registered pages keep while any tab is registered. It is the width the
--- client itself gave its crafting page, read from the engine after the client laid the page out, raised to the
--- largest minWidth a registration declares. Nothing reads a page's own Lua or replaces one of the window's methods.
+-- The custom width registered pages use while selected. It is the width the client gave its crafting page, read from
+-- the engine after layout, raised to the largest minWidth a registration declares.
 local baseWidth
 local fixedWidth
 local enforcingWidth = false
@@ -93,17 +92,11 @@ local function CaptureWidth()
 	end
 end
 
--- The fixed width belongs to the crafting page and the registered pages. The client's book page (the Professions
--- overview) fills the window but lays its profession panels out at the client's own width, and the client never
--- resizes the window for it, so it keeps that width: a wider window only stretched empty art past its panels.
----@param window ForeverProfessionsWindow
+-- Native pages keep the client's own width. A custom page may use the wider registered width while selected; after
+-- handback the native page must not retain that width and stretch empty art past its panels.
 ---@return number?
-local function TargetWidth(window)
+local function TargetWidth()
 	if selectedKey then
-		return fixedWidth
-	end
-	local crafting = window.CraftingPage
-	if crafting and crafting:IsShown() then
 		return fixedWidth
 	end
 	return baseWidth
@@ -117,7 +110,7 @@ EnforceWidth = function()
 	if not fixedWidth or not window or enforcingWidth then
 		return
 	end
-	local target = TargetWidth(window)
+	local target = TargetWidth()
 	if not target then
 		return
 	end

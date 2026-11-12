@@ -218,8 +218,8 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	sim:advance(0.2)
 	stable("after a profession change at the raised width")
 
-	-- The client's book page lays its panels out at the client's own width and never resizes the window, so it keeps
-	-- that width; a registered page over it and the crafting page after it take the raised width again.
+	-- The client's book and crafting pages keep the client's own width after handback; a selected registered page alone
+	-- takes the raised width.
 	selectNative(pf.ProfessionsOverviewTab)
 	assert(pf.BookPage:IsShown(), "the overview tab did not show the client's book page")
 	expectedWidth = width
@@ -229,6 +229,7 @@ scenario("the shared Professions tabs keep one page and one window", function(si
 	stable("a registered page over the book page")
 	sim:openProfessions(333)
 	sim:advance(0.2)
+	expectedWidth = width
 	stable("the crafting page after the book page")
 
 	local lowered = sim:runAs(
