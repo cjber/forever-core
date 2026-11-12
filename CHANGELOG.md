@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Addon settings open cleanly.** Opening a settings page no longer shows an interface action failure message.
+
 ### For addon authors
 
 - **Tracker menus have one declarative contract.** Pass `menu` and optional `click` to `TrackerHost.Attach` for section and block targets with fixed Title, Primary, Action, Open, End and Tracker slots. The old section hook remains compatible for one migration release, and combat-only actions are visibly disabled.
