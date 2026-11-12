@@ -13,6 +13,8 @@ end
 local settingsCalls = {}
 local combat = false
 local built = 0
+local panelShown = false
+local visibleCategoryCalls = {}
 local function RawOpenSettingsPanel(categoryID, element)
 	settingsCalls[#settingsCalls + 1] = { categoryID, element }
 end
@@ -28,6 +30,14 @@ _G.InCombatLockdown = function()
 end
 _G.C_SettingsUtil = { OpenSettingsPanel = RawOpenSettingsPanel }
 _G.CreateSecureDelegate = CreateDelegate
+_G.SettingsPanel = {
+	IsShown = function()
+		return panelShown
+	end,
+	OpenToCategory = function(_, categoryID, element)
+		visibleCategoryCalls[#visibleCategoryCalls + 1] = { categoryID, element }
+	end,
+}
 
 local function fresh()
 	local ns = {}
@@ -39,6 +49,8 @@ local function reset()
 	settingsCalls = {}
 	combat = false
 	built = 0
+	panelShown = false
+	visibleCategoryCalls = {}
 	_G.C_SettingsUtil = { OpenSettingsPanel = RawOpenSettingsPanel }
 	_G.CreateSecureDelegate = CreateDelegate
 end
@@ -56,6 +68,16 @@ equal(settingsCalls[2][2], "ForeverCore", "settings: the scroll target is passed
 equal(ns.OpenSettingsPanel(), true, "settings: no category opens the panel")
 equal(settingsCalls[3][1], nil, "settings: no category stays nil")
 equal(built, 1, "settings: the delegate is reused")
+
+-- When the panel is already visible, the client opener does not change the selected page. The secure panel method
+-- is the client's own path for selecting the requested category in that state.
+reset()
+panelShown = true
+ns = fresh()
+equal(ns.OpenSettingsPanel(314, "SkillUp"), true, "visible settings: selects")
+equal(visibleCategoryCalls[1][1], 314, "visible settings: selects the requested category")
+equal(visibleCategoryCalls[1][2], "SkillUp", "visible settings: keeps the row target")
+equal(built, 1, "visible settings: uses one secure delegate")
 
 -- In combat nothing opens, and no delegate is built for a call that cannot run.
 reset()
