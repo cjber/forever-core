@@ -76,7 +76,7 @@
 ---@field kind ForeverMenuEntryKind
 ---@field text? string
 ---@field entries ForeverMenuDescription[]
----@field onClick? fun()
+---@field onClick? fun(): boolean?, string?
 ---@field isSelected? fun(): boolean
 ---@field isEnabled? boolean|fun(): boolean
 ---@field tooltip? fun(tooltip: GameTooltip)
