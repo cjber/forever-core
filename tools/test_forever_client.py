@@ -257,13 +257,15 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_teardown_reaps_children_that_respawn_after_wineserver_shutdown(self):
         game = mock.Mock(pid=1, **{"poll.return_value": None})
+        clock = FakeClock()
         with (
             mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "prefix_users", side_effect=[[42], [43], []]),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [43], [], [], [], [], [], [], [], []]),
             mock.patch.object(fc.os, "killpg"),
             mock.patch.object(fc.os, "kill") as kill,
             mock.patch.object(fc.subprocess, "run"),
-            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
             fc.teardown(game, {}, None, {"display": ":1"})
         self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])

@@ -201,6 +201,12 @@ QUESTS_LABEL = nil
 ---@type ForeverSettings?
 Settings = nil
 
+---@class ForeverSettingsPanel : Frame
+---@field IsShown fun(self: ForeverSettingsPanel): boolean
+---@field OpenToCategory fun(self: ForeverSettingsPanel, categoryID?: number, scrollToElementName?: string)
+---@type ForeverSettingsPanel?
+SettingsPanel = nil
+
 -- The client's initializer for a settings row with a button, which the Forever addons page registers.
 ---@type fun(name: string, buttonText: string, buttonClick: fun(), tooltip?: string, addSearchTags?: boolean): table
 CreateSettingsButtonInitializer = nil

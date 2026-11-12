@@ -1,5 +1,4 @@
 -- luacheck: globals SettingsPanel
----@diagnostic disable: undefined-global
 local _, ns = ...
 
 -- The client's own restricted settings opener, run with secure execution taint. CreateSecureDelegate wraps a Lua
