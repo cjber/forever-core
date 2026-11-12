@@ -1010,6 +1010,27 @@ local function NewTrackerMenu(root, module, target)
 	return menu
 end
 
+-- Consumers with a block implementation that has no legacy OnBlockHeaderClick can forward the title event here.
+function api.HandleBlockHeaderClick(module, block, button)
+	if type(module) ~= "table" or type(module.trackerMenu) ~= "function" then
+		return false
+	end
+	local target = { kind = "block", id = block and block.id, block = block, module = module }
+	if button == "LeftButton" and type(module.trackerClick) == "function" then
+		RunSafe(module.safeCall, "tracker block click", module.trackerClick, target, button)
+		return true
+	end
+	if button == "RightButton" then
+		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
+			local builder = NewTrackerMenu(root, module, target)
+			RunSafe(module.safeCall, "tracker block menu", module.trackerMenu, target, builder)
+			builder:Finish()
+		end)
+		return true
+	end
+	return false
+end
+
 -- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
 -- column's, without the host learning what the section is.
 ---@param module ForeverTrackerModule

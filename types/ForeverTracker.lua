@@ -33,6 +33,7 @@
 
 ---@class ForeverTrackerHostAPI
 ---@field Attach fun(module: ForeverTrackerModule, show?: ForeverTrackerShowSetting, contract?: ForeverTrackerMenuContract) the section's optional show switch and declarative menu
+---@field HandleBlockHeaderClick fun(module: ForeverTrackerModule, block: any, button: string): boolean forwards a block title click into the declarative contract
 ---@field IsAttached fun(module: Frame?): boolean
 ---@field GetSettings fun(): ForeverTrackerSettings
 ---@field GetScale fun(): number

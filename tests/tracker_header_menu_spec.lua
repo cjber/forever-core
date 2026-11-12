@@ -168,6 +168,17 @@ check(contractTargets[1].kind == "section", "the declarative section target name
 check(contractMenu.title == "A block", "Title is the first fixed slot")
 check(contractMenu.entries[1].text == "Guide me", "Primary follows Title")
 check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
+host.HandleBlockHeaderClick(
+	contractModule,
+	{ id = "journey", HeaderText = {
+		GetText = function()
+			return "Journey"
+		end,
+	} },
+	"RightButton"
+)
+local blockTarget = contractTargets[#contractTargets]
+check(blockTarget.kind == "block" and blockTarget.id == "journey", "the block target carries kind and id")
 
 -- Both contracts are rejected through the addon's safe call rather than silently producing two menus.
 local rejected = false
