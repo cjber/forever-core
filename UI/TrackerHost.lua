@@ -878,7 +878,8 @@ end
 -- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
 -- contract, so a consumer cannot put an action after Tracker or accidentally omit the end action.
 local function NewTrackerMenu(root, module, target)
-	local slots = { title = false, primary = false, actions = {}, open = false, ending = false, finished = false }
+	local slots =
+		{ title = false, primary = false, actions = {}, submenus = {}, open = false, ending = false, finished = false }
 	local menu = {}
 	function menu.Title(_, text)
 		if not slots.title then
@@ -921,7 +922,9 @@ local function NewTrackerMenu(root, module, target)
 		return slots.ending
 	end
 	function menu.Submenu(_, text)
-		return root:CreateButton(text)
+		local submenu = root:CreateButton(text)
+		slots.submenus[#slots.submenus + 1] = submenu
+		return submenu
 	end
 	function menu.Finish(_)
 		if slots.finished then
@@ -964,11 +967,22 @@ local function NewTrackerMenu(root, module, target)
 		if slots.ending then
 			emit(slots.ending)
 		end
+		for _, submenu in ipairs(slots.submenus) do
+			for index, entry in ipairs(root.entries) do
+				if entry == submenu then
+					table.remove(root.entries, index)
+					break
+				end
+			end
+		end
 		if type(root.CreateDivider) == "function" then
 			root:CreateDivider()
 		else
 			local divider = root:CreateButton("")
 			divider.kind = "divider"
+		end
+		for index, submenu in ipairs(slots.submenus) do
+			table.insert(root.entries, #root.entries - 1 + index, submenu)
 		end
 		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
 		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()

@@ -156,11 +156,14 @@ local contractModule = t.module(6)
 local contractTargets
 contractModule.trackerMenu = function(target, builder)
 	contractTargets[#contractTargets + 1] = target
-	builder:Title("A block")
+	if target.kind == "section" then
+		builder:End("End journey", function() end)
+		builder:Submenu("Choices")
+		builder:Title("A block")
+	end
 	builder:Primary("Guide me", function() end)
 	builder:Action("Refresh", function() end, { combat = true })
 	builder:Open("Open panel", function() end)
-	builder:End("End journey", function() end)
 end
 contractTargets = {}
 local contractMenu = Menu(contractModule)
@@ -168,6 +171,9 @@ check(contractTargets[1].kind == "section", "the declarative section target name
 check(contractMenu.title == "A block", "Title is the first fixed slot")
 check(contractMenu.entries[1].text == "Guide me", "Primary follows Title")
 check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
+check(Entry(contractMenu, "Guide me") and Entry(contractMenu, "Refresh"), "scrambled calls retain addon entries")
+contractModule.trackerMenu(contractTargets[1], { Finish = function() end })
+check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "finalizing twice does not duplicate Tracker")
 host.HandleBlockHeaderClick(
 	contractModule,
 	{ id = "journey", HeaderText = {
