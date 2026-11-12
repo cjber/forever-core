@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from forever_tools import package
@@ -215,6 +216,23 @@ class PackageTest(unittest.TestCase):
         release = self.make({"Addon/tests/a_spec.lua": ""})
         policy = package.Policy(addons=("Addon",), specs=("tests/a_spec.lua",))
         self.assertIn("shipped in the package", package.run_specs(root, release, policy)[0])
+
+    @unittest.skipUnless(shutil.which("luajit"), "needs luajit")
+    def test_scenario_specs_use_the_simulator_from_the_packaged_worktree(self):
+        root = self.make(
+            {
+                "tests/sim/exercise_scenario.lua": "scenario('packaged', function() end)\n",
+                "tools/forever_sim/run.lua": "",
+            }
+        )
+        release = self.make({"Addon/Core.lua": "", "Addon/Addon.toc": "Core.lua\n"})
+        policy = package.Policy(
+            addons=("Addon",), specs=("tests/sim/exercise_scenario.lua",), support=("tests", "tools/forever_sim")
+        )
+        with mock.patch.object(package.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            package.run_specs(root, release, policy)
+        self.assertEqual(run.call_args.args[0], ["luajit", "tools/forever_sim/run.lua", "tests/sim/exercise_scenario.lua"])
 
 
 if __name__ == "__main__":

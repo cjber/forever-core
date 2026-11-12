@@ -307,9 +307,12 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
         for spec in policy.specs:
             if shutil.which("luajit") is None:
                 return ["luajit: not found on PATH; install it to run the specs on the package"]
+            command = ["luajit", spec]
+            if spec.endswith("_scenario.lua"):
+                command = ["luajit", "tools/forever_sim/run.lua", spec]
             try:
                 result = subprocess.run(
-                    ["luajit", spec], cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT
+                    command, cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT
                 )
             except subprocess.TimeoutExpired:
                 problems.append(f"{spec}: still running on the packaged files after {SPEC_TIMEOUT} s")
