@@ -1,30 +1,27 @@
 {
-  "input_digest": "61c330d0e0b2bf9d611b19579a2a53bb90f3d69820f38d7097f466bbee9743c0",
-  "runtime_sha256": "61c330d0e0b2bf9d611b19579a2a53bb90f3d69820f38d7097f466bbee9743c0",
-  "candidate": "e5b696eb95ad71edbf0b327b9b40438cd2db86ef581a3f871b9f801ceba8c747",
+  "input_digest": "f424c8b9a62f4fd8274a86b7a63e24e714670f4d3be26f27be1d76bce4eae5ba",
+  "runtime_sha256": "f424c8b9a62f4fd8274a86b7a63e24e714670f4d3be26f27be1d76bce4eae5ba",
+  "candidate": "acf66abe4cbb412aad8ac68840300a25ab44ab06cecb2eba3b158fa393acc567",
   "tested_artifact": "source-tree",
   "client_build": "1.60.1.70888 (Interface 16001)",
-  "source_commit": "65ac064ee32ce0faaa16aeec3e4c8d6c6235e960",
-  "notes": "Recorded by the player in their live client from an installed source-tree build of this commit (git archive, version stamped v1.8.2-dev+65ac064) linked in place of the store ForeverCore v1.8.2; check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. The game's own Cooldown Manager was on screen for comparison.",
+  "source_commit": "a9b1a72a52e822ab1ab70539a912fdb998df459a",
+  "notes": "Recorded on Hel Io in the player's live client from an installed source-tree build of this commit (git archive, version stamped v1.9.0-dev+a9b1a72) linked in place of the store ForeverCore v1.9.0; check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. The chat line in the capture shows the version and the error count.",
   "flows": [
     {
-      "name": "CooldownIcon draws the Cooldown Manager frame",
+      "name": "Bolton_wow on the Thanks page",
       "steps": [
-        "Install the candidate in place of ForeverCore v1.8.2 and /reload",
-        "/run a 60x60 frame at CENTER with an ARTWORK texture, then ForeverCore.Art.CooldownIcon(t, 134400, 50)",
-        "A question-mark icon shows with the Cooldown Manager mask and overlay, matching the edge of the client's own Cooldown Manager icons on the same screen"
+        "Install the candidate in place of the store ForeverCore v1.9.0, with every addon's 1.9.0 sync build, and /reload",
+        "Print ForeverCore's version, loaded state and API: v1.9.0-dev+a9b1a72, loaded, API 2; no addon errors this session",
+        "Run ForeverCore.Credits.Open(\"ForeverCore\") and scroll to Bolton_wow",
+        "Bolton_wow shows with 'Map arrows open the destination map again'"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/dc2634da2affb423f15276103559548f/raw/02251df1060b6df3427c1a9a49e6e3fc4af2d0f9/core528-cooldownicon-closeup-65ac064.png",
-      "sha256": "9e484ef575d4b3c029128824e5d5f7a056b1a46590196ed206918e91a03c769d"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/dc2634da2affb423f15276103559548f/raw/02251df1060b6df3427c1a9a49e6e3fc4af2d0f9/core528-cooldownicon-vs-cdm-65ac064.png",
-      "sha256": "5828dd117b7a10f71c5209082d5cc6709e29dc19adfa32fe29f4e6fd6b286f0a"
+      "url": "https://gist.githubusercontent.com/cjber/627a1b4cf36d973bb26ba262c81eb601/raw/67bd0b623f26040eed9f66dd363a477dbb684579/core527-thanks.png",
+      "sha256": "bd6e296bffe8142d989a9ef942868f90fac008cda1251c50355a559640c864da"
     }
   ]
 }
