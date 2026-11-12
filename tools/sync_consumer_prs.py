@@ -42,7 +42,8 @@ once that entry is released, a newer core gets a new entry above it, the patch r
     python3 tools/sync_consumer_prs.py
 
 Set `GH_TOKEN` to the `CONSUMER_SYNC_TOKEN` secret, a fine-grained PAT with Contents, Pull requests, Workflows and
-Actions write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` is vendored,
+Actions write on the consumer repositories (Workflows because `.github/workflows/core-shared-drift.yml` and
+`.github/workflows/visual-proof.yml` are vendored,
 Actions because `tools/release_consumers.py` dispatches each consumer's `release.yml`). The token must also reach the
 private `kiln-forever` repository, which is in the vendoring map; without access its sync is reported as failed in the
 run summary rather than silently leaving that consumer behind. Without a token at all the script prints a notice and

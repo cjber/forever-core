@@ -34,6 +34,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
@@ -42,6 +43,9 @@ TOOLING = CORE_ROOT / ".agents/skills/wow-forever-addon/tooling"
 sys.path.insert(0, str(TOOLING))
 
 from forever_tools import core_pin  # noqa: E402
+from forever_tools import sync as tooling_sync  # noqa: E402
+
+TOOLING_PACKAGE = TOOLING / "forever_tools"
 
 # The shared comparison and the names tools/sync_consumer_prs.py rewrites the same bundle with.
 PIN_PATH = core_pin.PIN_PATH
@@ -55,6 +59,7 @@ core_external = core_pin.core_external
 pkgmeta_field = core_pin.pkgmeta_field
 
 FOREVER_CORE = "forevercore"
+VISUAL_WORKFLOW = ".github/workflows/visual-proof.yml"
 
 
 def digest(data):
@@ -80,6 +85,12 @@ def remote(repo, path, branch):
     url = f"https://raw.githubusercontent.com/cjber/{repo}/{branch}/{path}"
     with urllib.request.urlopen(authorized(url), timeout=60) as response:
         return response.read()
+
+
+def remote_json(url):
+    """One authenticated GitHub API response, decoded as JSON."""
+    with urllib.request.urlopen(authorized(url), timeout=60) as response:
+        return json.loads(response.read())
 
 
 def latest_tag(local):
@@ -263,6 +274,119 @@ def check_packaging(repo, pin, branch, local):
     return failures
 
 
+def canonical_visual_workflow():
+    """Failures in this repository's own visual-proof template, the file every consumer copies."""
+    path = CORE_ROOT / source(VISUAL_WORKFLOW)
+    if not path.is_file():
+        return [f"forever-core: {source(VISUAL_WORKFLOW)}: missing"]
+    return []
+
+
+def blob_sha(data):
+    """The Git blob object id for `data`, the same SHA a repository tree and the Contents API report."""
+    header = f"blob {len(data)}\0".encode()
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def tooling_listing(repo, branch, local):
+    """A consumer's forever_tools files as name -> Git blob SHA, from one read of the folder.
+
+    Remote reads use the Contents API's directory listing, so 39 files cost one authenticated REST call per consumer
+    instead of one per file. The listing carries each blob's object id, which is exact identity: no file body needs to
+    be downloaded to compare it with the canonical producer file.
+    """
+    folder = consumer_path(repo, "tools/forever_tools")
+    if local:
+        base = local / repo / folder
+        if not base.is_dir():
+            return None, None
+        try:
+            return {path.name: blob_sha(path.read_bytes()) for path in base.iterdir() if path.is_file()}, None
+        except OSError as error:
+            return None, f"could not be read: {error}"
+    url = f"https://api.github.com/repos/cjber/{repo}/contents/{quote(folder, safe='/')}?ref={quote(branch, safe='')}"
+    try:
+        listing = remote_json(url)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None, None
+        return None, f"could not be read: {error}"
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        return None, f"could not be read: {error}"
+    if not isinstance(listing, list):
+        return None, "could not be read: the Contents API did not return a directory listing"
+    try:
+        return {entry["name"]: entry["sha"] for entry in listing if entry.get("type") == "file"}, None
+    except (AttributeError, KeyError, TypeError) as error:
+        return None, f"could not be read: malformed directory listing ({error})"
+
+
+def tooling_sync_problems(repo, branch, local):
+    """Every file the canonical forever_tools MANIFEST lists, present and byte-identical in the consumer.
+
+    The visual-proof job imports `visual_proof`, which imports `pkgmeta` and `toc`; checking the manifest the tooling
+    sync already maintains keeps this from duplicating that import graph by hand. A consumer that took the workflow
+    without the full tooling sync fails here instead of at the job's import.
+    """
+    manifest = tooling_sync.read_manifest(TOOLING_PACKAGE)
+    folder = consumer_path(repo, "tools/forever_tools")
+    listing, error = tooling_listing(repo, branch, local)
+    if error:
+        return [f"{repo}: {folder}: {error}"]
+    if listing is None:
+        return [f"{repo}: {folder}: missing; sync the full forever_tools package the visual-proof workflow imports"]
+    failures = []
+    for name in sorted(manifest["files"]):
+        path = f"{folder}/{name}"
+        canonical = TOOLING_PACKAGE / name
+        if not canonical.is_file():
+            failures.append(f"forever-core: {canonical}: missing from the canonical MANIFEST file map")
+            continue
+        expected = blob_sha(canonical.read_bytes())
+        actual = listing.get(name)
+        if actual is None:
+            failures.append(
+                f"{repo}: {path}: missing from the full forever_tools sync the visual-proof workflow imports"
+            )
+        elif actual != expected:
+            failures.append(
+                f"{repo}: {path}: {actual[:12]} here, {expected[:12]} in the canonical tooling; "
+                "sync the full forever_tools package, not the workflow alone"
+            )
+    extras = sorted(set(listing) - set(manifest["files"]) - {"MANIFEST.json"})
+    failures.extend(
+        f"{repo}: {folder}/{name}: not in the canonical MANIFEST file map; sync the full forever_tools package"
+        for name in extras
+    )
+    return failures
+
+
+def check_visual_workflow(repo, branch, local):
+    """A consumer's standalone workflow is present, canonical, and has the checker its job imports."""
+    failures = []
+    target = consumer_path(repo, VISUAL_WORKFLOW)
+    data, error = read_consumer(repo, target, branch, local)
+    if error:
+        failures.append(f"{repo}: {target}: {error}")
+    elif data is None:
+        failures.append(
+            f"{repo}: {target}: missing canonical visual-proof workflow; remove any inline visual-proof job, "
+            "then run tools/sync_consumers.py"
+        )
+    else:
+        expected_path = CORE_ROOT / source(VISUAL_WORKFLOW)
+        if not expected_path.is_file():
+            # `canonical_visual_workflow` already names the missing producer file.
+            return failures
+        expected = expected_path.read_bytes()
+        if digest(data) != digest(expected):
+            failures.append(
+                f"{repo}: {target}: drifted from {source(VISUAL_WORKFLOW)}: "
+                f"consumer {digest(data)[:12]} core {digest(expected)[:12]}"
+            )
+    return failures + tooling_sync_problems(repo, branch, local)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--branch", default="main", help="the consumers' branch to compare (default: main)")
@@ -271,7 +395,13 @@ def main(argv=None):
 
     failures = []
     comparisons = 0
+    if VISUAL_WORKFLOW in VENDORED:
+        failures += canonical_visual_workflow()
     for path, consumers in VENDORED.items():
+        # The visual-proof copy gets its own message and migration check below, so a missing or drifted workflow names
+        # the required status instead of only a digest.
+        if path == VISUAL_WORKFLOW:
+            continue
         mine = (CORE_ROOT / source(path)).read_bytes()
         for repo in consumers:
             comparisons += 1
@@ -306,6 +436,8 @@ def main(argv=None):
     failures += check_pins(pins, arguments.local)
     for repo in repos:
         failures += check_packaging(repo, pins.get(repo), arguments.branch, arguments.local)
+    for repo in VENDORED.get(VISUAL_WORKFLOW, ()):
+        failures += check_visual_workflow(repo, arguments.branch, arguments.local)
 
     if failures:
         print("Consumers differ from this repo:")

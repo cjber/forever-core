@@ -1,0 +1,37 @@
+name: Visual proof
+
+# Vendored from cjber/forever-core (tools/visual-proof.yml); change it there, never here.
+# This job runs on every pull request and every push to main, with no path filter, so the required `visual-proof`
+# context is always emitted. The shared checker decides whether the change needs a recorded client session:
+# documentation-only changes report not required, while runtime UI changes without matching evidence fail.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  visual-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify client visual proof
+        env:
+          # The pull request's exact base commit, or the commit main held before this push. No moving branch.
+          VISUAL_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$VISUAL_BASE" ]; then
+            echo "::error::visual-proof has no event base SHA; refusing to fall back to a moving branch"
+            exit 1
+          fi
+          python3 -m tools.forever_tools.visual_proof --base "$VISUAL_BASE"
