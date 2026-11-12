@@ -21,7 +21,7 @@
     "scenario.lua": "10b20bc3f62ff37e37a048c23570ac83dc4129b88fb98148011954845ee5dff7",
     "script_types.lua": "24540b2a24f0ba9994c2a01d3e2fac555b814e321eade675bf823a734e1ae8f0",
     "sim.lua": "048aa116d228cb2a131e685bcce571eb671869a8ada531d6c8edfbf2ebbaadf4",
-    "stubgen.lua": "2840e71dae76fe88b1185db29ce97265234c53cd35178302eb80b308a9d412a2",
+    "stubgen.lua": "c5b600d0129b5cdff6fd48ce4a8ebb4cc6d47b1434dd497a6ec086b33e62f977",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
     "stubs/Polestar/Polestar.lua": "3dbb87a7003637ca11d16d4c5e101ba44a3226129437046a2622a4dfd1de206f",

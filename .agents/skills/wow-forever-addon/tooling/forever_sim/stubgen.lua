@@ -397,8 +397,11 @@ function M.build(sim)
 			local out
 			if impl then
 				out = { n = 0 }
-				-- The C function's synchronous Blizzard Lua runs in the caller's taint (Taint.callSecure).
-				local r = { Taint.callSecure(impl, ...) }
+				-- SettingsPanel's restricted C opener enters Blizzard's panel callback through an engine-owned
+				-- secure boundary. This is deliberately per-native, not a change to securecallfunction or C APIs generally.
+				local call = qualified == "C_SettingsUtil.OpenSettingsPanel" and Taint.securecallIsolated
+					or Taint.callSecure
+				local r = { call(impl, ...) }
 				out.n = table.maxn(r)
 				for i = 1, out.n do
 					out[i] = r[i]
