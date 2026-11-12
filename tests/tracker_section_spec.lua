@@ -204,6 +204,34 @@ do
 	check(menuLines[1] == "Right-click for options", "menu-only tooltip keeps only its menu hint")
 end
 
+-- A failing click hint is isolated in the addon's journal and cannot break the tooltip.
+do
+	local t = harness.new({ deferReady = true })
+	local check = t.check
+	local errors = RecordErrors(t)
+	local _, TrackerLine = LoadSection(t)
+	local shown = 0
+	t.env.GameTooltip = {
+		SetOwner = function() end,
+		SetText = function() end,
+		AddLine = function() end,
+		Show = function()
+			shown = shown + 1
+		end,
+		Hide = function() end,
+	}
+	local module = {
+		trackerClick = function() end,
+		trackerClickHint = function()
+			error("hint failed")
+		end,
+	}
+	TrackerLine.SetHeaderTooltip(module, { title = "Journey" })
+	module.OnBlockHeaderEnter(module, {})
+	check(shown == 1, "a failed click hint still shows the tooltip")
+	check(#errors == 1 and errors[1].label == "tracker click hint", "a failed click hint is recorded")
+end
+
 -- A header click other than the host's right-click menu reaches the section.
 do
 	local t = harness.new({ deferReady = true })
