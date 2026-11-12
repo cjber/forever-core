@@ -20,6 +20,9 @@ jobs:
   sync:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,3 +35,9 @@ jobs:
           # reports that consumer as failed in the run summary rather than skipping it silently.
           GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
         run: python3 tools/sync_consumer_prs.py
+      # A release starts this workflow after publishing a new core. The scheduled consumer release is a backstop,
+      # not the hand-off: dispatch it now so a landed sync entry is released without waiting for the next cron tick.
+      - name: Start consumer releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-consumers.yml --ref main
