@@ -55,7 +55,7 @@ ForeverCore is built on the game's own UI and the work of other addon authors, l
 
 <!-- forever-credits:start -->
 
-Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs and everyone who reported a bug or asked for a feature.
+Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

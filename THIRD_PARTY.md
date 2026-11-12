@@ -43,6 +43,7 @@ One row per shipped contribution: a player with five shipped items has five rows
 | procque | Questie's quest tracker can be moved again | CurseForge |
 | Fareed | Questie's quest tracker can be moved again | CurseForge |
 | [ZiiMs](https://github.com/ZiiMs) | Tracker column follows EllesmereUI's custom quest tracker | cjber/shortest-path-forever#621; #332 |
+| Bolton_wow | Map arrows open the destination map again | Asked on CurseForge (#486) |
 
 ## Inspired by
 

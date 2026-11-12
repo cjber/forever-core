@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
+
 ## [1.9.0] - 2026-11-12
 
 ### For addon authors
