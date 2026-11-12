@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-__all__ = ["FILES", "Manifest", "project_toc_files", "read"]
+__all__ = ["FILES", "Manifest", "localization_toc_files", "project_toc_files", "read"]
 
 PKGMETA = ".pkgmeta"
 FALLBACK = "pkgmeta.yaml"
@@ -117,6 +117,32 @@ def _mapping(text: str, key: str) -> tuple[tuple[str, str], ...]:
         if found:
             pairs.append((_unquote(name.strip()), _unquote(value.strip())))
     return tuple(pairs)
+
+
+def _policy_text(root: Path) -> str:
+    """The checkout's `.pkgmeta` or fallback text, or "" when it has neither."""
+    for name in FILES:
+        path = root / name
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    return ""
+
+
+def _quoted_mapping_keys(text: str, key: str) -> set[str]:
+    """Mapping keys release.sh leaves quoted, which its raw `#*/` path split then cannot resolve."""
+    quoted = set()
+    phase = ""
+    for line in _lines(text):
+        phase = _phase(line, phase)
+        if phase != key or not line.startswith(" "):
+            continue
+        stripped = line.lstrip(" ")
+        if stripped.startswith("- "):
+            continue
+        name, found, _ = stripped.partition(":")
+        if found and name.strip()[:1] in "'\"":
+            quoted.add(_unquote(name.strip()))
+    return quoted
 
 
 def _globs(root: Path, entries: list[str]) -> tuple[str, ...]:
@@ -244,32 +270,51 @@ def read(root: Path) -> Manifest | None:
     )
 
 
+def _has_interface(path: Path) -> bool:
+    """Whether a TOC carries the base `## Interface:` line release.sh reads before filtering it."""
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    return any(line.startswith("## Interface:") for line in text.splitlines())
+
+
 def project_toc_files(root: Path) -> list[Path]:
-    """The project TOC files release.sh reads for an addon's package metadata and filtered output.
+    """The project TOC files release.sh selects for an addon's package metadata.
 
     This mirrors release.sh's project TOC loops at the pinned BigWigs revision
     `01e8631a69c69d7654c788d152630d5fed9e3812` (lines 1424-1454): the root `<package-as>` TOC and each exact
-    vendor variant, then, for every `move-folders` destination that is a single folder name, the files under the
-    move's source directory named for that destination basename. The vendor list is exact and case-sensitive:
-    the plain name plus `-` and `_` variants of Mainline, Classic, Vanilla, BCC, TBC, Wrath, WOTLKC, Cata, Mists
-    and Camelot. Only existing files are returned, in that order, with duplicates kept once.
+    vendor variant, then, for every supported `move-folders` destination that is a single folder name, the files
+    under the move's source directory named for that destination basename. The vendor list is exact and
+    case-sensitive: the plain name plus `-` and `_` variants of Mainline, Classic, Vanilla, BCC, TBC, Wrath,
+    WOTLKC, Cata, Mists and Camelot. Only existing files are returned, in that order, with duplicates kept once.
 
-    Without `package-as`, release.sh uses the shortest root TOC name, breaking ties by name, and refuses a
-    flavor-suffixed name without a plain fallback. A nested move destination is skipped as release.sh skips it.
+    Without `package-as`, release.sh uses the shortest visible root TOC name, breaking ties by name, and refuses a
+    flavor-suffixed name without a plain fallback; a hidden TOC is never that fallback. No root TOC in that case
+    is refused, and a project with no selected TOC at all is refused rather than reported as empty.
 
-    Only `.lua` files and the project TOCs this returns receive the packager's `@localization@` filter; every
-    other text suffix (`.md`, `.txt`, `.xml`) is copied without that filter.
+    A move key without `/` and a quoted move key are not the path release.sh's raw key split resolves, so this
+    conservative helper skips them instead of reporting a TOC the packager never names. A nested move destination
+    is skipped as release.sh skips it.
+
+    Use `localization_toc_files` for the subset that carries `## Interface:` and therefore reaches the packager's
+    `@localization@` filter (release.sh line 1946); a project TOC without that line is still discovered here.
     """
     root = root.resolve()
     manifest = read(root)
+    text = _policy_text(root)
     package = manifest.package if manifest else ""
     if not package:
-        tocs = sorted(root.glob("*.toc"), key=lambda path: (len(path.name), path.name))
+        tocs = sorted(
+            (path for path in root.glob("*.toc") if not path.name.startswith(".")),
+            key=lambda path: (len(path.name), path.name),
+        )
         if not tocs:
-            return []
+            raise ValueError("Could not find a root addon TOC file; set package-as or supply one")
         package = tocs[0].stem
         if any(package.endswith(suffix) for suffix in PROJECT_TOC_VARIANTS if suffix):
             raise ValueError("Ambiguous addon name: set package-as or supply a plain fallback TOC")
+    quoted = _quoted_mapping_keys(text, "move-folders")
     found: list[Path] = []
     seen: set[Path] = set()
 
@@ -281,9 +326,21 @@ def project_toc_files(root: Path) -> list[Path]:
     for suffix in PROJECT_TOC_VARIANTS:
         add(root / f"{package}{suffix}.toc")
     for source, target in manifest.moved if manifest else ():
-        if "/" in target:
+        if "/" in target or "/" not in source or source in quoted:
             continue
-        directory = source.split("/", 1)[1] if "/" in source else source
+        directory = source.split("/", 1)[1]
         for suffix in PROJECT_TOC_VARIANTS:
             add(root / directory / f"{target}{suffix}.toc")
+    if not found:
+        raise ValueError(f"Could not find a project TOC matching package-as {package}")
     return found
+
+
+def localization_toc_files(root: Path) -> list[Path]:
+    """The project TOCs that reach the packager's `@localization@` filter: those with `## Interface:`.
+
+    Every `.lua` file and these TOCs receive that filter; other text suffixes (`.md`, `.txt`, `.xml`) do not. A
+    project TOC without a base `## Interface:` line is still a project TOC, but release.sh skips its localization
+    filter (line 1946), so it is not returned here.
+    """
+    return [path for path in project_toc_files(root) if _has_interface(path)]

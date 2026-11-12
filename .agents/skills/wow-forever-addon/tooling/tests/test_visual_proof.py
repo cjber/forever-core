@@ -681,20 +681,24 @@ class VisualProofTest(unittest.TestCase):
         with mock.patch.object(pkgmeta.subprocess, "run", return_value=failed):
             self.assertTrue(pkgmeta.read(root).keeps("Core.lua"))
 
+    def toc(self, path, text="Core.lua\n", interface=True):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(("## Interface: 16001\n" if interface else "") + text, encoding="utf-8")
+        return path
+
     def test_project_toc_files_matches_the_packagers_exact_vendor_list(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: LibAHTab\n\n"
             "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
         )
-        (root / "ForeverCore-Mainline.toc").write_text("Core.lua\n", encoding="utf-8")
-        (root / "ForeverCore_Classic.toc").write_text("Core.lua\n", encoding="utf-8")
-        (root / "ForeverCore-Camelot.toc").write_text("Core.lua\n", encoding="utf-8")
-        (root / "ForeverCore-Bogus.toc").write_text("Core.lua\n", encoding="utf-8")
-        (root / "LibAHTab").mkdir()
-        (root / "LibAHTab/LibAHTab.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
-        (root / "LibAHTab/LibAHTab-Wrath.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
-        (root / "LibAHTab/LibAHTab_wotlkc.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
-        (root / "LibAHTab/LibAHTab-Camelot.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        self.toc(root / "ForeverCore-Mainline.toc")
+        self.toc(root / "ForeverCore_Classic.toc")
+        self.toc(root / "ForeverCore-Camelot.toc")
+        self.toc(root / "ForeverCore-Bogus.toc")
+        self.toc(root / "LibAHTab/LibAHTab.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab-Wrath.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab_wotlkc.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab-Camelot.toc", "LibAHTab.lua\n")
         found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
         self.assertEqual(
             found,
@@ -708,24 +712,61 @@ class VisualProofTest(unittest.TestCase):
                 "LibAHTab/LibAHTab-Camelot.toc",
             ],
         )
+        self.assertEqual([path.relative_to(root).as_posix() for path in pkgmeta.localization_toc_files(root)], found)
 
     def test_project_toc_files_skips_a_nested_move_and_derives_an_implicit_package(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: Lib/Nested\n\n"
             "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
         )
-        (root / "LibAHTab").mkdir()
-        (root / "LibAHTab/Nested.toc").write_text("LibAHTab.lua\n", encoding="utf-8")
+        self.toc(root / "LibAHTab/Nested.toc", "LibAHTab.lua\n")
         found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
         self.assertEqual(found, ["ForeverCore.toc"])
         (root / ".pkgmeta").write_text("move-folders:\n  ForeverCore/LibAHTab: LibAHTab\n", encoding="utf-8")
         self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc"])
-        (root / "A.toc").write_text("", encoding="utf-8")
+        self.toc(root / "A.toc")
         self.assertEqual(pkgmeta.project_toc_files(root), [root / "A.toc"])
         (root / "A.toc").unlink()
         (root / "ForeverCore.toc").rename(root / "ForeverCore-Camelot.toc")
         with self.assertRaisesRegex(ValueError, "Ambiguous addon name"):
             pkgmeta.project_toc_files(root)
+
+    def test_project_toc_files_skips_move_key_syntax_the_vendor_cannot_resolve(self):
+        for move in ("  LibAHTab: LibAHTab\n", '  "ForeverCore/LibAHTab": LibAHTab\n'):
+            root = self.checkout(
+                "package-as: ForeverCore\n\nmove-folders:\n"
+                + move
+                + "\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+            )
+            self.toc(root / "LibAHTab/LibAHTab.toc", "LibAHTab.lua\n")
+            self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc"], move)
+
+    def test_project_toc_files_ignores_a_hidden_root_toc_for_the_implicit_package(self):
+        root = self.root()
+        (root / "ForeverCore.toc").unlink()
+        self.toc(root / ".Hidden.toc")
+        self.toc(root / "Visible.toc")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "Visible.toc"])
+        (root / "Visible.toc").unlink()
+        with self.assertRaisesRegex(ValueError, "root addon TOC"):
+            pkgmeta.project_toc_files(root)
+
+    def test_project_toc_files_fails_closed_without_a_selected_root_toc(self):
+        empty = self.elsewhere()
+        with self.assertRaisesRegex(ValueError, "root addon TOC"):
+            pkgmeta.project_toc_files(empty)
+        root = self.checkout()
+        (root / "ForeverCore.toc").unlink()
+        with self.assertRaisesRegex(ValueError, "matching package-as"):
+            pkgmeta.project_toc_files(root)
+
+    def test_localization_toc_files_requires_interface_metadata(self):
+        root = self.checkout()
+        self.toc(root / "ForeverCore-Mainline.toc", interface=False)
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc", root / "ForeverCore-Mainline.toc"])
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("Core.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [])
 
     def test_pkgmeta_yaml_phase_mirrors_release_sh(self):
         root = self.checkout(
