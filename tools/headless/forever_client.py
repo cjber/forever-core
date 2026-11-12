@@ -45,6 +45,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -275,11 +276,31 @@ def _complete_png(path: Path) -> bool:
         return False
 
 
+def runtime_dir(environ: Mapping[str, str], uid: int, root: Path = Path("/run/user")) -> Path:
+    """Use an existing login runtime directory, never repair permissions or create one."""
+    explicit = environ.get("XDG_RUNTIME_DIR")
+    path = Path(explicit) if explicit else root / str(uid)
+    try:
+        info = path.lstat()
+        valid = path.is_absolute() and stat.S_ISDIR(info.st_mode) and info.st_uid == uid
+        valid = valid and stat.S_IMODE(info.st_mode) == 0o700
+    except OSError:
+        valid = False
+    if not valid:
+        raise ClientError(f"invalid XDG_RUNTIME_DIR {path}: need an existing owned directory with mode 0700")
+    if not explicit:
+        print(f"warning: XDG_RUNTIME_DIR is unset; using {path}", file=sys.stderr)
+    return path
+
+
 def shot(state: Mapping, path: Path) -> Path:
+    if "runtime_dir" not in state:
+        raise ClientError("session has no runtime directory recorded; restart the headless session")
+    runtime = runtime_dir({"XDG_RUNTIME_DIR": state["runtime_dir"]}, os.getuid())
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
-    env = {**os.environ, "GAMESCOPE_WAYLAND_DISPLAY": state["gamescope_socket"]}
+    env = {**os.environ, "XDG_RUNTIME_DIR": str(runtime), "GAMESCOPE_WAYLAND_DISPLAY": state["gamescope_socket"]}
     subprocess.run(["gamescopectl", "screenshot", str(path)], env=env, check=True, capture_output=True)
     for _ in range(50):
         if _complete_png(path):
@@ -556,6 +577,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
                 f"the Wine prefix {PREFIX} is in use: {prefix_who(users)}. "
                 "A second client would log the first one out, so no session starts."
             )
+    runtime = runtime_dir(os.environ, os.getuid())
     try:
         socket.create_connection(BATTLE_NET, timeout=10).close()
     except OSError as error:
@@ -589,6 +611,9 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "WINEPREFIX")}
         env.update(wine)
         env.pop("WINEPREFIX", None)
+        env.pop("DISPLAY", None)
+        env.pop("WAYLAND_DISPLAY", None)
+        env["XDG_RUNTIME_DIR"] = str(runtime)
         token = uuid.uuid4().hex
         env["FOREVER_CLIENT_SESSION"] = token
         before = screenshots()
@@ -626,6 +651,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             "gamescope": gamescope.pid,
             "token": token,
             "started": started,
+            "runtime_dir": str(runtime),
         }
         genv = child_env(token)
         state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
@@ -741,7 +767,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ClientError("run needs a command after --")
 
             def run_command(state):
-                env = {**os.environ, "FOREVER_CLIENT_DISPLAY": state["display"]}
+                env = {
+                    **os.environ,
+                    "XDG_RUNTIME_DIR": state["runtime_dir"],
+                    "FOREVER_CLIENT_DISPLAY": state["display"],
+                }
                 return subprocess.run(command, env=env, check=False).returncode
 
             return up(args, after_ready=run_command)
