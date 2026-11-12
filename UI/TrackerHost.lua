@@ -878,7 +878,7 @@ end
 -- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
 -- contract, so a consumer cannot put an action after Tracker or accidentally omit the end action.
 local function NewTrackerMenu(root, module, target)
-	local slots = { title = false, primary = false, actions = {}, open = false, ending = false }
+	local slots = { title = false, primary = false, actions = {}, open = false, ending = false, finished = false }
 	local menu = {}
 	function menu.Title(_, text)
 		if not slots.title then
@@ -890,23 +890,13 @@ local function NewTrackerMenu(root, module, target)
 	end
 	function menu.Primary(_, text, fn)
 		if not slots.primary then
-			root:CreateButton(text, fn)
-			slots.primary = true
+			slots.primary = { text = text, fn = fn }
 		end
 	end
 	function menu.Action(_, text, fn, opts)
-		local entry = root:CreateButton(text, fn)
-		if opts and opts.combat then
-			entry:SetEnabled(not InCombatLockdown())
-			if InCombatLockdown() then
-				entry:SetTooltip(function(tooltip)
-					tooltip:SetText(text, 1, 1, 1)
-					tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true)
-				end)
-			end
-		end
-		slots.actions[#slots.actions + 1] = entry
-		return entry
+		local spec = { text = text, fn = fn, opts = opts }
+		slots.actions[#slots.actions + 1] = spec
+		return spec
 	end
 	function menu.Open(_, text, fn)
 		if not slots.open then
@@ -920,13 +910,13 @@ local function NewTrackerMenu(root, module, target)
 				end
 				fn()
 			end
-			slots.open = menu.Action(menu, text, action, { combat = true })
+			slots.open = { text = text, fn = action, opts = { combat = true } }
 		end
 		return slots.open
 	end
 	function menu.End(_, text, fn)
 		if not slots.ending and type(fn) == "function" then
-			slots.ending = menu.Action(menu, text, fn)
+			slots.ending = { text = text, fn = fn }
 		end
 		return slots.ending
 	end
@@ -934,6 +924,34 @@ local function NewTrackerMenu(root, module, target)
 		return root:CreateButton(text)
 	end
 	function menu.Finish(_)
+		if slots.finished then
+			return
+		end
+		slots.finished = true
+		local function emit(spec)
+			local entry = root:CreateButton(spec.text, spec.fn)
+			if spec.opts and spec.opts.combat and type(entry.SetEnabled) == "function" then
+				entry:SetEnabled(not InCombatLockdown())
+				if InCombatLockdown() then
+					entry:SetTooltip(function(tooltip)
+						tooltip:SetText(spec.text, 1, 1, 1)
+						tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true)
+					end)
+				end
+			end
+		end
+		if slots.primary then
+			emit(slots.primary)
+		end
+		for _, spec in ipairs(slots.actions) do
+			emit(spec)
+		end
+		if slots.open then
+			emit(slots.open)
+		end
+		if slots.ending then
+			emit(slots.ending)
+		end
 		if type(root.CreateDivider) == "function" then
 			root:CreateDivider()
 		else
@@ -1091,6 +1109,7 @@ function api.Attach(module, show, contract)
 			RunSafe(module.safeCall, "tracker menu contract", function()
 				error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
 			end)
+			return
 		end
 		if
 			module.trackerMenu
