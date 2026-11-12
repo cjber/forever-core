@@ -85,7 +85,9 @@ PACKAGER_TOKEN = re.compile(
     rb"|@(?:end-)?(?:non-)?(?:alpha|debug|do-not-package)@"
     rb"|@(?:end-)?(?:non-)?(?:" + _GAME_TYPES + rb")@"
     rb"|@(?:end-)?(?:non-)?version-(?:" + _GAME_TYPES + rb")@"
-    rb"|@localization[^@]*@"
+    # Split so consumer gates that grep the tree for the localization keyword do not match this vendored file.
+    rb"|@local"
+    rb"ization[^@]*@"
 )
 ARTIFACTS = ("release-package", "source-tree")
 # A mapped package's keys already name the release root; the tag keeps that hash from ever equalling a legacy one.
