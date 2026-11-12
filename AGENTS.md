@@ -61,7 +61,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/OpenMap.lua` and `Core/OpenSettings.lua`: core's shared openers for the client's restricted world map and
   settings panel functions, each run through `CreateSecureDelegate`, never in combat. They are runtime files, published
   as `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel`, not vendored into any consumer.
-- `UI/Art.lua`: the icon helper the report window draws its portrait with.
+- `UI/Art.lua`: the icon helper the report window draws its portrait with, and `Art.CooldownIcon`, which gives any
+  icon texture the client's Cooldown Manager frame.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
 - `UI/ForeverFamily.lua`: the Forever addons settings page and link windows, in core's L.
 - `UI/Credits.lua`: the **Thanks** page the Forever addons page opens: every addon's `ns.Credits` merged by player

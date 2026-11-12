@@ -100,6 +100,9 @@ horizontally, BL vertically, BR both, BottomEdge vertically, RightEdge horizonta
 - WowStyle1DropdownTemplate (MenuTemplates.xml:3-37): `common-dropdown-textholder` TOPLEFT (-8, 7) to BOTTOMRIGHT
   (8, -9); `common-dropdown-a-button` at its atlas size at RIGHT (1, -3); text GameFontHighlight 10 high from
   (8, -8) to the arrow's LEFT.
+- Cooldown Manager icon (Blizzard_CooldownViewer/CooldownViewer.xml): the icon masked by
+  `UI-HUD-CoolDownManager-Mask` (set to all points), then `UI-HUD-CoolDownManager-IconOverlay` OVERLAY from TOPLEFT
+  (-9/50 w, +8/50 h) to BOTTOMRIGHT (+9/50 w, -8/50 h). `cooldown_icon` takes the FileDataID and the icon size.
 
 ## Item stats
 

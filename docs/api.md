@@ -61,6 +61,25 @@ It is `2` today. Check a member added in minor 2 before you use it, so the same 
   `version` and `minor` are read from the api table at call time (`minor` is 0 when it has none), and `api` is the
   addon's own table rather than a copy, because it is the callable API. (minor 2)
 
+## `ForeverCore.Art`
+
+```lua
+ForeverCore.Art.minor -- integer
+ForeverCore.Art.Icon(texture, file, size)
+ForeverCore.Art.CooldownIcon(texture, file, size) --> Texture
+```
+
+`minor` is `1` today.
+
+- `Icon(texture, file, size)` draws a file icon whole: it resets the texture's crop, sets `file` (a client path or a
+  FileDataID) and sizes it `size` by `size`. The texture is your own, not one the client already draws in a template.
+- `CooldownIcon(texture, file, size)` does what `Icon` does, then gives the icon the Cooldown Manager's frame: the
+  client's `UI-HUD-CoolDownManager-Mask` atlas as a mask over it and `UI-HUD-CoolDownManager-IconOverlay` on the
+  OVERLAY layer, reaching 9/50 of the icon's width past each side and 8/50 of its height past the top and bottom. It
+  returns the overlay texture, so you can hide or recolour it. The client builds that frame only inside its own Cooldown
+  Manager and offers no template. The mask and overlay are made once per icon texture and reused, so call this again
+  with a new icon or `size` to move the same pair rather than building another one. (minor 1)
+
 ## `ForeverCore.OpenMap`
 
 ```lua
