@@ -22,7 +22,8 @@ class VisualProofTest(unittest.TestCase):
         self.assertEqual(check_visual_proof.verify(self.root(), ["docs/README.md"]), [])
 
     def test_runtime_change_requires_proof(self):
-        problems = check_visual_proof.verify(self.root(), ["UI/Main.lua"])
+        root = self.root()
+        problems = check_visual_proof.verify(root, ["UI/Main.lua"], root / ".visual-proof.json")
         self.assertIn("missing", problems[0])
 
     def test_rejects_stale_and_failed_proof(self):
