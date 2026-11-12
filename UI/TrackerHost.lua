@@ -11,8 +11,10 @@ local _, ns = ...
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
 ---@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
----@field trackerMenu? ForeverTrackerMenuBuilder the declarative menu contract
+---@field trackerMenu? fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder) the declarative menu contract
 ---@field trackerClick? fun(target: ForeverTrackerTarget, button: string) the declarative click contract
+---@field trackerBlockMenuWrapped? boolean
+---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
 ---@class ForeverNativeTrackerHeader : Frame
 ---@field Text FontString
@@ -910,8 +912,9 @@ local function NewTrackerMenu(root, module, target)
 		if not slots.open then
 			local action = function()
 				if InCombatLockdown() then
-					if ns.Report then
-						ns.Report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat")
+					local report = rawget(ns, "Report")
+					if type(report) == "function" then
+						report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat")
 					end
 					return
 				end
