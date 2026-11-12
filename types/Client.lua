@@ -47,6 +47,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
+---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
 
