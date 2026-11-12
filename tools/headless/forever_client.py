@@ -3,7 +3,8 @@
 
 The client runs under gamescope's headless backend: it renders on the real GPU into a display of its own, so no
 window reaches the desktop and the player's mouse and keyboard are never touched. Every verb talks to that display
-only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server.
+only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server. The host also
+needs `tesseract` on PATH to locate the launcher's visible Play control from the private screenshot.
 
     forever_client.py up                  # start, wait until in the world, print READY, hold until stopped
     forever_client.py run -- <command>    # up, run the command with the session's display, then stop
