@@ -11,7 +11,7 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.tool_cache }}/lua-toolchain
-        key: lua-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-luajit-c525bcb9024510cad9e170e12b6209aedb330f83-luacheck-418f48976c73be697fe64b0eba9ea9821ac9bca8-argparse-a5ab54f8161f9f508b058411f64c2c72d974733b-luafilesystem-a186cca5833691e830ed255e38ace8ff6b870dbf
+        key: lua-toolchain-v2-${{ runner.os }}-${{ runner.arch }}-lua51-2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333-luajit-c525bcb9024510cad9e170e12b6209aedb330f83-luacheck-418f48976c73be697fe64b0eba9ea9821ac9bca8-argparse-a5ab54f8161f9f508b058411f64c2c72d974733b-luafilesystem-a186cca5833691e830ed255e38ace8ff6b870dbf
 
     - name: Build the Lua toolchain
       if: steps.cache.outputs.cache-hit != 'true'
@@ -35,3 +35,4 @@ runs:
         echo "$LUA_TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
         "$LUA_TOOLCHAIN_PREFIX/bin/luajit" -v 2>&1 | grep -q "LuaJIT 2.1"
         "$LUA_TOOLCHAIN_PREFIX/bin/luacheck" --version | grep -q "^Luacheck: 1.1.2$"
+        "$LUA_TOOLCHAIN_PREFIX/bin/luac5.1" -v 2>&1 | grep -q "Lua 5.1.5"

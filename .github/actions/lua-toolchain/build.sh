@@ -34,6 +34,21 @@ download() {
 
 mkdir -p "$work" "$prefix/bin" "$prefix/share/lua/5.1" "$prefix/lib/lua/5.1"
 
+# PUC Lua 5.1.5 is the parser used by the game client. Keep it beside LuaJIT:
+# LuaJIT is the execution harness, while this binary is the strict syntax gate.
+lua51_sha256=2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333
+if [ ! -f "$work/lua-5.1.5.tar.gz" ]; then
+    curl --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 300 -sSfL \
+        -o "$work/lua-5.1.5.tar.gz.part" https://www.lua.org/ftp/lua-5.1.5.tar.gz
+    mv "$work/lua-5.1.5.tar.gz.part" "$work/lua-5.1.5.tar.gz"
+fi
+echo "$lua51_sha256  $work/lua-5.1.5.tar.gz" | sha256sum -c -
+if [ ! -x "$prefix/bin/luac5.1" ]; then
+    tar -xzf "$work/lua-5.1.5.tar.gz" -C "$work"
+    make -C "$work/lua-5.1.5/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" linux
+    install -m 0755 "$work/lua-5.1.5/src/luac" "$prefix/bin/luac5.1"
+fi
+
 download LuaJIT/LuaJIT "$luajit_commit" luajit
 luajit_src="$work/LuaJIT-$luajit_commit"
 make -C "$luajit_src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)"

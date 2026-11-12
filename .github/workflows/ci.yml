@@ -87,6 +87,8 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 tools/check_client_load.py
+      - name: Parse packaged Lua with the client grammar
+        run: python3 tools/check_lua51.py
       - run: python3 tools/check_slash_words.py
       - run: python3 tools/check_menu_scroll.py
       - run: python3 tools/check_api_docs.py
