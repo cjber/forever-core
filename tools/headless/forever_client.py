@@ -360,29 +360,24 @@ def teardown(
     # owned prefix is empty and remains empty for a grace period, or retain state and report the exact survivors.
     deadline = time.monotonic() + 20
     empty_since = None
-    users = None
-    while time.monotonic() < deadline:
-        empty_since = None
+    while True:
         users = prefix_users()
-        if not users:
-            break
-        for p in users:
-            try:
-                os.kill(p, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        time.sleep(0.25)
-    while time.monotonic() < deadline:
-        users = prefix_users()
+        now = time.monotonic()
         if users:
             empty_since = None
+            for pid in users:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         elif empty_since is None:
-            empty_since = time.monotonic()
-        elif time.monotonic() - empty_since >= 1:
+            empty_since = now
+        elif now - empty_since >= 1:
             break
+        if now >= deadline:
+            detail = ", ".join(map(str, users)) if users else "prefix did not remain empty"
+            raise ClientError("teardown incomplete: Wine prefix processes survived: " + detail)
         time.sleep(0.25)
-    if users:
-        raise ClientError("teardown incomplete: Wine prefix processes survived: " + ", ".join(map(str, users)))
     if link and link.is_symlink():
         link.unlink()
     state_file().unlink(missing_ok=True)

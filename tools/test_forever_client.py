@@ -260,7 +260,7 @@ class ForeverClientTest(unittest.TestCase):
         clock = FakeClock()
         with (
             mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "prefix_users", side_effect=[[42], [43], [], [], [], [], [], [], [], []]),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [], [43], [], [], [], [], []]),
             mock.patch.object(fc.os, "killpg"),
             mock.patch.object(fc.os, "kill") as kill,
             mock.patch.object(fc.subprocess, "run"),
@@ -269,6 +269,24 @@ class ForeverClientTest(unittest.TestCase):
         ):
             fc.teardown(game, {}, None, {"display": ":1"})
         self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])
+
+    def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
+        clock = FakeClock()
+        state = self.state / "session.json"
+        state.write_text('{"pid": 7}')
+        link = self.state / "addon"
+        link.symlink_to(self.state / "build")
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc.os, "kill"),
+            mock.patch.object(fc.subprocess, "run"),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "processes survived: 42"),
+        ):
+            fc.teardown(None, {}, link, {})
+        self.assertTrue(state.exists())
+        self.assertTrue(link.is_symlink())
 
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()
