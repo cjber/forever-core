@@ -24,9 +24,7 @@ def changed_files(base: str) -> list[str]:
 
 
 def requires_proof(paths: list[str]) -> bool:
-    return any(
-        not path.startswith(DOC_PREFIXES) and path != PROOF.as_posix() for path in paths
-    )
+    return any(not path.startswith(DOC_PREFIXES) and path != PROOF.as_posix() for path in paths)
 
 
 def runtime_files(root: Path) -> list[Path]:
@@ -84,10 +82,7 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         not isinstance(flows, list)
         or not flows
         or any(
-            not isinstance(flow, dict)
-            or not flow.get("name")
-            or not flow.get("steps")
-            or flow.get("result") != "pass"
+            not isinstance(flow, dict) or not flow.get("name") or not flow.get("steps") or flow.get("result") != "pass"
             for flow in flows
         )
     ):
