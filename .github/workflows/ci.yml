@@ -92,7 +92,6 @@ jobs:
       - run: python3 tools/check_api_docs.py
 
   visual-proof:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -103,7 +102,7 @@ jobs:
       - name: Verify client visual proof
         env:
           PYTHONPATH: .agents/skills/wow-forever-addon/tooling
-        run: python3 tools/check_visual_proof.py --base "${{ github.event.pull_request.base.sha }}"
+        run: python3 tools/check_visual_proof.py --base "${{ github.event.pull_request.base.sha || github.event.before }}"
 
   packaged:
     runs-on: ubuntu-24.04

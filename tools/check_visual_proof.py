@@ -13,7 +13,7 @@ from forever_tools import toc
 
 PROOF = Path(".visual-proof.json")
 SHA = re.compile(r"/raw/[0-9a-f]{40}/", re.IGNORECASE)
-DOC_PREFIXES = ("docs/", ".github/", "tools/", "tests/", "CHANGELOG.md", "THIRD_PARTY")
+NON_RUNTIME_PREFIXES = ("docs/", ".github/", "tools/", "tests/", ".agents/", "CHANGELOG.md", "THIRD_PARTY")
 
 
 def changed_files(base: str) -> list[str]:
@@ -23,8 +23,16 @@ def changed_files(base: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def requires_proof(paths: list[str]) -> bool:
-    return any(not path.startswith(DOC_PREFIXES) and path != PROOF.as_posix() for path in paths)
+def requires_proof(root: Path, paths: list[str]) -> bool:
+    graph = {path.relative_to(root).as_posix() for path in runtime_files(root)}
+    return any(
+        path in graph
+        or path == "tools/forever-core.txt"
+        or (path.startswith("media/") and path.endswith((".png", ".tga")))
+        or (path.endswith((".lua", ".xml", ".toc")) and not path.startswith(NON_RUNTIME_PREFIXES))
+        for path in paths
+        if path != PROOF.as_posix()
+    )
 
 
 def runtime_files(root: Path) -> list[Path]:
@@ -62,7 +70,7 @@ def image_hash(url: str) -> str:
 
 
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
-    if not requires_proof(paths):
+    if not requires_proof(root, paths):
         return []
     if not proof_path.is_file():
         return [f"{proof_path}: missing for runtime UI changes"]
@@ -70,13 +78,19 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         proof = json.loads(proof_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         return [f"{proof_path}: invalid JSON: {error}"]
+    if not isinstance(proof, dict):
+        return [f"{proof_path}: top-level proof must be an object"]
     problems = []
     runtime = {path.relative_to(root).as_posix() for path in runtime_files(root)}
     changed_runtime = runtime.intersection(paths)
     if changed_runtime and proof.get("input_digest") != input_digest(root):
         problems.append("visual proof input_digest does not match the runtime TOC graph and Core pin")
-    if not proof.get("client_build") or not proof.get("candidate"):
-        problems.append("visual proof needs client_build and candidate")
+    if not proof.get("client_build"):
+        problems.append("visual proof needs client_build")
+    if not isinstance(proof.get("candidate"), str) or not re.fullmatch(r"[0-9a-f]{64}", proof["candidate"]):
+        problems.append("visual proof candidate must be the installed runtime SHA-256")
+    if proof.get("runtime_sha256") != proof.get("input_digest"):
+        problems.append("visual proof runtime_sha256 must equal the runtime input digest")
     flows = proof.get("flows")
     if (
         not isinstance(flows, list)

@@ -47,7 +47,8 @@ class VisualProofTest(unittest.TestCase):
         proof = {
             "input_digest": check_visual_proof.input_digest(root),
             "client_build": "16001",
-            "candidate": "addon-build",
+            "candidate": "a" * 64,
+            "runtime_sha256": check_visual_proof.input_digest(root),
             "flows": [{"name": "open", "steps": ["open"], "result": "pass"}],
             "images": [
                 {
