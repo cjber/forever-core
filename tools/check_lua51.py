@@ -4,32 +4,57 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-def toc_lua(root: Path) -> list[Path]:
+def toc_files(root: Path) -> list[Path]:
     toc = next(root.glob("*.toc"))
     files: list[Path] = []
-    for raw in toc.read_text(encoding="utf-8-sig").splitlines():
-        name = raw.strip()
-        if name and not name.startswith("#") and name.lower().endswith(".lua"):
-            files.append(root / name.replace("\\", "/"))
+    pending = [root / raw.strip().replace("\\", "/") for raw in toc.read_text(encoding="utf-8-sig").splitlines() if raw.strip() and not raw.strip().startswith("#")]
+    seen: set[Path] = set()
+    while pending:
+        path = pending.pop(0)
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        if path.suffix.lower() == ".lua":
+            files.append(path)
+        elif path.suffix.lower() == ".xml":
+            try:
+                tree = ET.parse(path)
+            except ET.ParseError as error:
+                raise ValueError(f"{path}: invalid XML: {error}") from error
+            for element in tree.iter():
+                for attribute in ("file", "virtualFile"):
+                    name = element.attrib.get(attribute)
+                    if name:
+                        pending.append(path.parent / name.replace("\\", "/"))
     return files
+
+
+def toc_lua(root: Path) -> list[Path]:
+    return toc_files(root)
 
 
 def main(argv: list[str]) -> int:
     parser = Path(os.environ.get("LUA51_LUAC", "luac5.1"))
     if not parser.exists() and not parser.is_absolute():
-        found = subprocess.run(["sh", "-c", f"command -v {parser}"], capture_output=True, text=True).stdout.strip()
+        found = shutil.which(str(parser))
         if found:
             parser = Path(found)
     if not parser.exists():
         print("LUA51_LUAC must point to the pinned Lua 5.1 luac", file=sys.stderr)
         return 2
     roots = [Path(arg) for arg in argv] or [Path.cwd()]
-    files = [path for root in roots for path in (toc_lua(root) if root.is_dir() else [root])]
+    try:
+        files = [path for root in roots for path in (toc_lua(root) if root.is_dir() else [root])]
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
     for path in files:
         result = subprocess.run([str(parser), "-p", str(path)], capture_output=True, text=True)
         if result.returncode:
