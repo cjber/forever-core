@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-12
+
 - **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and
   the short hitch some players saw every 10 seconds is gone. (#443, #512)
+- **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
 
 ### For addon authors
 
+- **`ForeverCore.API` is 2.** `ForeverCore.Leaderboards` and `ForeverCore.PeerStats` remain only as inert stand-ins, so an older release that still calls them loads without errors: they return empty boards, store nothing and send nothing. Remove those calls. See `docs/api.md`. (#443)
 - **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)
 
 ## [1.8.1] - 2026-11-12

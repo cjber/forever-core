@@ -55,6 +55,35 @@ equal(#groups, 1, "a ready on-map quest makes one group")
 equal(groups[1].title, "Ready to turn in", "and it is the ready group")
 equal(IDs(groups[1]), "10", "with the quest in it")
 
+-- The section keeps one tracker block per group title, so a title names exactly one group. The current zone is titled
+-- by its first on-map quest's log header while off-map quests keep their own header, so the same zone arrives twice;
+-- two blocks with one title laid out in one pass would anchor a block under one that already depends on it (#521).
+groups = ns.QuestOrder({
+	record(50, "Here", "Durotar", 300, { onMap = true }),
+	record(51, "Also here", "Durotar", 100),
+	record(52, "Here too", "Durotar", 200),
+	record(53, "Another zone", "Mulgore", 50),
+})
+equal(#groups, 2, "the current zone and its off-map quests make one group")
+equal(groups[1].title, "Durotar", "titled by the zone")
+equal(IDs(groups[1]), "51,52,50", "every Durotar quest in it, nearest first")
+equal(groups[2].title, "Mulgore", "then the other zone")
+equal(IDs(groups[2]), "53", "with its quest")
+-- Every title is unique, whatever the records: that is what keeps one block per group.
+local all = ns.QuestOrder({
+	record(70, "Ready", "Durotar", 100, { ready = true }),
+	record(71, "Here", "Durotar", 200, { onMap = true }),
+	record(72, "Off", "Durotar", 300),
+	record(73, "Other", "Mulgore", 400),
+	record(74, "No header", nil, 500),
+	record(75, "Also no header", nil, 600, { onMap = true }),
+})
+local titles = {}
+for index, group in ipairs(all) do
+	equal(titles[group.title], nil, "group title " .. index .. " is unique")
+	titles[group.title] = true
+end
+
 -- Ties fall to the title, then the quest ID, so the order never changes between runs.
 groups = ns.QuestOrder({
 	record(20, "Beta", "Durotar", 100),
