@@ -150,8 +150,10 @@ ForeverCore.ProfessionTabs.ShowNative()
 ForeverCore.ProfessionTabs.Selected() --> string?
 ```
 
-`minor` is the module's own version: it rises with each member the module adds. It is `1` today, the minor that adds
-`SetMinWidth`. Check that member before you use it: `if (ForeverCore.ProfessionTabs.minor or 0) >= 1 then ... end`.
+`minor` is the module's own version: it rises with each member or behaviour an addon may depend on. It is `2` today.
+Minor 1 added `SetMinWidth`; minor 2 means the native profession pages are hidden beneath a selected addon page and
+restored when the window is handed back to the client. Check it before you rely on either:
+`if (ForeverCore.ProfessionTabs.minor or 0) >= 2 then ... end`.
 
 - `Register(key, spec)` adds a side tab to the Professions window under the client's own tabs, in registration order.
   `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is your page and `minWidth` raises the

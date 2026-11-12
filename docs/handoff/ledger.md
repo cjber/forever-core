@@ -215,6 +215,6 @@
 - boundaries.md: Hoard and Atlas added as addons 8 and 9; round-9 feature rows marked new; two change-log rows.
 
 ## Round 10 (2026-10-24) - report and issue unification
-- Owner asked to unify report, issue and similar duplicated logic across the addon suite, extending Forever Core where sensible.
-- boundaries.md: report/issue UI and Forever-family link box assigned to Forever Core; shared copies and specs mapped to all five addons.
+- Owner asked to unify report, issue and similar duplicated logic across the addon suite, extending ForeverCore where sensible.
+- boundaries.md: report/issue UI and Forever-family link box assigned to ForeverCore; shared copies and specs mapped to all five addons.
 - Implementation and consumer adoption are in progress under `round10-report-unification.md`.

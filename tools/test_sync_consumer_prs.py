@@ -1041,6 +1041,11 @@ class BodyTest(unittest.TestCase):
         for path in files:
             self.assertIn(f"`{path}`", body)
 
+    def test_body_names_the_release_gate_when_the_release_workflow_changes(self):
+        body = sync.pr_body("abc123", ("tools/forever-core.txt", sync.RELEASE_WORKFLOW))
+        self.assertIn("inserts the ForeverCore pin gate directly above the packager", body)
+        self.assertNotIn("inserts the ForeverCore pin gate", sync.pr_body("abc123", ("tools/forever-core.txt",)))
+
     def test_body_names_the_pin_bump(self):
         body = sync.pr_body("abc123", ("tools/forever-core.txt",), ("v1.3.2", "v1.4.0"))
         self.assertIn(

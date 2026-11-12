@@ -77,7 +77,7 @@ file:close()
 local actual = sha256(source)
 check(
 	actual == PINNED,
-	PATH .. " changed (sha256 " .. actual .. "). Update PINNED here after changing Forever Core's one copy."
+	PATH .. " changed (sha256 " .. actual .. "). Update PINNED here after changing ForeverCore's one copy."
 )
 
 -- A headless client: frames remember what the module sets and tests read back; every other method does nothing.

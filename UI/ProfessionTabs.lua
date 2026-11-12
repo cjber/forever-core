@@ -323,8 +323,9 @@ end
 ---@class ForeverProfessionTabsAPI
 local api = {}
 
--- The module's own version, raised with each member it adds. SetMinWidth arrived in minor 1.
-api.minor = 1
+-- The module's own version, raised with each member it adds. SetMinWidth arrived in minor 1; minor 2 means native
+-- profession pages are hidden beneath a selected addon page, and restored when the window is handed back.
+api.minor = 2
 
 ---@param key string
 ---@param spec ForeverProfessionTabSpec

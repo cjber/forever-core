@@ -65,9 +65,9 @@ end
 equal(
 	#ForeverCore.Credits.Players(),
 	distinct,
-	"core's own Data/Credits.lua is registered under Forever Core, once per player"
+	"core's own Data/Credits.lua is registered under ForeverCore, once per player"
 )
-check(ForeverCore.Credits.Line("Forever Core") ~= nil, "and its one-line thanks reads")
+check(ForeverCore.Credits.Line("ForeverCore") ~= nil, "and its one-line thanks reads")
 check(env.ForeverErrorJournal == nil, "ForeverErrorJournal is gone")
 check(env.ForeverDebugLog == nil, "ForeverDebugLog is gone")
 check(env.ForeverMinimapButtons == nil, "ForeverMinimapButtons is gone")

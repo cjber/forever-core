@@ -1,7 +1,7 @@
-# Suite alignment: every addon against the WFA requirements, and the code that should live in Forever Core
+# Suite alignment: every addon against the WFA requirements, and the code that should live in ForeverCore
 
 Owner asked on 2026-10-26 to extend the Atlas/Hoard README alignment to every addon, to find the other stale
-things across the suite, and to move the logic that is duplicated between addons into Forever Core. This brief is
+things across the suite, and to move the logic that is duplicated between addons into ForeverCore. This brief is
 the whole sweep. Read it with `boundaries.md` (ownership, §5 the shared-code rule) and the WFA pack in
 `.agents/skills/wow-forever-addon/SKILL.md`.
 
@@ -26,7 +26,7 @@ current wording and skip it if the earlier PR already closed it.
 Note the Field Guide repo is `cjber/field-guide-forever`, not `bestiary-forever`; `cjber/bestiary-forever`
 redirects to it. forever-core's consumer lists name it correctly already.
 
-## 1. Duplicated Lua logic to move into Forever Core
+## 1. Duplicated Lua logic to move into ForeverCore
 
 Ranked by how much drift it has already caused. Each one is a new file in core plus a vendored copy in every addon
 that needs it, added to `VENDORED` in `tools/check_consumers.py` and `tools/sync_consumers.py` in the same PR, so
@@ -165,7 +165,7 @@ Pick one name for the generated-data job (`generated` is the majority) and one d
 `changelog` (present or absent, consistently), then rename the job and its required check together. Field Guide
 gaining `typecheck` is the one that changes what is tested, so that PR says so.
 
-## 3. Forever Core's own gate is out of date
+## 3. ForeverCore's own gate is out of date
 
 `tools/check_consumers.py` and `tools/sync_consumers.py` still describe the suite as it was before round 9:
 

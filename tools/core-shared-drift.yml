@@ -1,4 +1,4 @@
-name: Forever Core drift
+name: ForeverCore drift
 
 # Vendored from cjber/forever-core (tools/core-shared-drift.yml); change it there, never here.
 # A pull request checks only the vendored tooling it changes, so a hand edit fails while a lag behind core does not
@@ -25,14 +25,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # Forever Core's client load rule (tools/check_client_load.py): every font object exists in the client, and no
+      # ForeverCore's client load rule (tools/check_client_load.py): every font object exists in the client, and no
       # TOC lists Bindings.xml. First, so a vendored file that lags core does not hide it.
       - run: python3 tools/check_client_load.py
-      # Forever Core's slash word rule (tools/check_slash_words.py): an addon word the client's own commands define
+      # ForeverCore's slash word rule (tools/check_slash_words.py): an addon word the client's own commands define
       # never reaches the addon.
       - run: python3 tools/check_slash_words.py
-      # Forever Core's menu rule (tools/check_menu_scroll.py): a menu built from a list scrolls.
+      # ForeverCore's menu rule (tools/check_menu_scroll.py): a menu built from a list scrolls.
       - run: python3 tools/check_menu_scroll.py
+      # ForeverCore's name rule (tools/check_core_name.py): the shared addon is one word. A pull request checks the
+      # lines it adds, so shipped changelog history stays untouched; the scheduled run checks every text file.
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: python3 tools/check_core_name.py --base "origin/$BASE"
+      - if: github.event_name != 'pull_request'
+        run: python3 tools/check_core_name.py
       - if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}

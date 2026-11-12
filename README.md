@@ -1,6 +1,6 @@
-<p align="center"><img src="media/icon-400.png" width="96" height="96" alt="Forever Core icon"></p>
+<p align="center"><img src="media/icon-400.png" width="96" height="96" alt="ForeverCore icon"></p>
 
-<h1 align="center">Forever Core</h1>
+<h1 align="center">ForeverCore</h1>
 
 <p align="center">A library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any Forever addon, and there is nothing to set up.</p>
 
@@ -13,7 +13,7 @@
 
 ## What it is
 
-Forever Core is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
+ForeverCore is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
 so the game loads it first and exactly one copy of each shared file runs. It has no settings page of its own. Your
 Forever addons use it for:
 
@@ -52,7 +52,7 @@ release digest in [`tools/discord_digest.py`](tools/discord_digest.py).
 
 ## Credits
 
-Forever Core is built on the game's own UI and the work of other addon authors, listed with every player who helped in
+ForeverCore is built on the game's own UI and the work of other addon authors, listed with every player who helped in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
 <!-- forever-credits:start -->

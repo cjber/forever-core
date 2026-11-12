@@ -85,10 +85,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The name rule reads the lines a pull request adds, which needs its base commit in the checkout.
+          fetch-depth: 0
           persist-credentials: false
       - run: python3 tools/check_client_load.py
       - run: python3 tools/check_slash_words.py
       - run: python3 tools/check_menu_scroll.py
+      - name: Check the ForeverCore name in this change
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 tools/check_core_name.py --base "$BASE"
+      - run: python3 tools/check_core_name.py
       - run: python3 tools/check_api_docs.py
 
   visual-proof:
