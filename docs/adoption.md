@@ -92,20 +92,23 @@ ForeverCore.TrackerHost.Attach(module, {
 The optional second argument is the section's own show switch, offered as **Hide this section**. A section without one
 keeps the menu it already has.
 
-A third argument supplies the shared menu and click contract:
+A `contract` option supplies the shared menu and click contract:
 
 ```lua
-ForeverCore.TrackerHost.Attach(module, show, {
-	menu = function(target, menu)
-		menu:Title(L["Journey"])
-		menu:Primary(L["Guide me"], function() StartJourney(target) end)
-		menu:Open(L["Open journey"], function()
-			return OpenJourney(target) -- false, localized reason explains a refused open
-		end)
-		menu:End(L["End journey"], function() EndJourney(target) end)
-	end,
-	click = function(target, button) return StartJourney(target) end,
-	clickHint = function(target) return L["guide this journey"] end,
+ForeverCore.TrackerSection.Create("MyAddonObjectiveTracker", ModuleMixin, {
+	show = show,
+	contract = {
+		menu = function(target, menu)
+			menu:Title(L["Journey"])
+			menu:Primary(L["Guide me"], function() StartJourney(target) end)
+			menu:Open(L["Open journey"], function()
+				return OpenJourney(target) -- false, localized reason explains a refused open
+			end)
+			menu:End(L["End journey"], function() EndJourney(target) end)
+		end,
+		click = function(target, button) return StartJourney(target) end,
+		clickHint = function(target) return L["guide this journey"] end,
+	},
 })
 ```
 

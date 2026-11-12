@@ -74,6 +74,7 @@ function TrackerSection.Create(name, mixin, opts)
 	if type(opts.safeCall) == "function" then
 		module.safeCall = opts.safeCall
 	end
+	local contract = opts.contract
 	local function Attach()
 		local current = ns.TrackerHost
 		if type(current) ~= "table" or type(current.Attach) ~= "function" then
@@ -86,7 +87,7 @@ function TrackerSection.Create(name, mixin, opts)
 				module.legacySettings = old
 			end
 		end
-		current.Attach(module, opts.show)
+		current.Attach(module, opts.show, contract)
 		-- The old table is offered once, then removed, as a consumer's own attach did before core owned the column.
 		if legacy and opts.legacyKey then
 			legacy[opts.legacyKey] = nil

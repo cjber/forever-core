@@ -96,6 +96,7 @@
 ---@field legacy? table|fun(): table? the saved table holding the addon's old tracker table
 ---@field legacyKey? string the key in `legacy` holding the old tracker table, cleared after it is offered
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for this section
+---@field contract? ForeverTrackerMenuContract the declarative section menu and click behavior
 ---@field onUnattached? fun(module: ForeverTrackerModule) called when the section is still not attached after a few seconds
 
 ---@class ForeverTrackerTextRow

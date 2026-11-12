@@ -31,11 +31,14 @@ do
 	local old = saved.trackerHost
 	local show = { get = function() end, set = function() end, where = "Spec settings" }
 	local attaches = 0
+	local forwardedContract
 	local attach = t.ns.TrackerHost.Attach
-	t.ns.TrackerHost.Attach = function(module, setting)
+	t.ns.TrackerHost.Attach = function(module, setting, contract)
 		attaches = attaches + 1
-		return attach(module, setting)
+		forwardedContract = contract
+		return attach(module, setting, contract)
 	end
+	local contract = { menu = function() end }
 	local module = TrackerSection.Create("SpecSection", {
 		SetHeader = function(self, text)
 			self.headerText = text
@@ -45,6 +48,7 @@ do
 		lineTemplate = "SpecLine",
 		header = "Spec header",
 		show = show,
+		contract = contract,
 		legacy = saved,
 		legacyKey = "trackerHost",
 	})
@@ -58,8 +62,29 @@ do
 	check(attaches == 1, "Create attaches exactly once")
 	check(t.ns.TrackerHost.IsAttached(module) == true, "the section is attached")
 	check(module.show == show, "the show switch passes straight through")
+	check(forwardedContract == contract, "the declarative contract passes through to the host")
 	check(module.legacySettings == old, "the old tracker table is offered to the host")
 	check(saved.trackerHost == nil, "the old tracker key is cleared after the offer")
+end
+
+-- A contract is retained when the section is created before the host becomes ready and attached later.
+do
+	local t = harness.new({ deferReady = true })
+	local check = t.check
+	local TrackerSection = LoadSection(t)
+	local forwarded
+	local attach = t.ns.TrackerHost.Attach
+	t.ns.TrackerHost.Attach = function(module, show, contract)
+		forwarded = contract
+		return attach(module, show, contract)
+	end
+	local contract = { menu = function() end }
+	local module = TrackerSection.Create("DeferredContractSection", {}, { contract = contract })
+	check(module ~= nil, "deferred Create returns the section")
+	t.ready()
+	t.drain()
+	t.drain()
+	check(forwarded == contract, "deferred attach forwards the declarative contract")
 end
 
 -- No host: the section is refused and the reason is in core's journal.
