@@ -127,6 +127,9 @@ L["Title"] = "Заголовок"
 L["Total"] = "Всего"
 L["Tracker background"] = "Фон отслеживания"
 L["Tracker"] = "Отслеживание"
+L["Click to %s"] = "Нажмите, чтобы %s"
+L["Right-click for options"] =
+	"Щёлкните правой кнопкой мыши для просмотра параметров"
 L["Unavailable in combat"] = "Недоступно в бою"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Использование: /forever debug, /forever debug pin, /forever debug off, /forever debug show"

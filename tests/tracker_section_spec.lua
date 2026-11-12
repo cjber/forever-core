@@ -164,6 +164,46 @@ do
 	check(hides == 1, "leaving the line hides the tooltip")
 end
 
+-- A declarative section click gets the same block-header hints as its shared menu.
+do
+	local t = harness.new({ deferReady = true })
+	local check = t.check
+	local _, TrackerLine = LoadSection(t)
+	local lines = {}
+	t.env.GameTooltip = {
+		SetOwner = function() end,
+		SetText = function(_, text)
+			lines[#lines + 1] = text
+		end,
+		AddLine = function(_, text)
+			lines[#lines + 1] = text
+		end,
+		Show = function() end,
+		Hide = function() end,
+	}
+	local module = {
+		trackerClick = function() end,
+		trackerMenu = function() end,
+		trackerClickHint = function(target)
+			check(target.kind == "block", "the click hint receives a block target")
+			return "Guide me"
+		end,
+	}
+	TrackerLine.SetHeaderTooltip(module, { title = "Journey" })
+	module.OnBlockHeaderEnter(module, {})
+	check(lines[1] == "Journey", "header tooltip keeps its title")
+	check(lines[2] == "Click to Guide me", "header tooltip names the shared left click")
+	check(lines[3] == "Right-click for options", "header tooltip explains the shared menu")
+	local menuOnly = { trackerMenu = function() end }
+	local menuLines = {}
+	t.env.GameTooltip.AddLine = function(_, text)
+		menuLines[#menuLines + 1] = text
+	end
+	TrackerLine.SetHeaderTooltip(menuOnly, { title = "Journey" })
+	menuOnly.OnBlockHeaderEnter(menuOnly, {})
+	check(menuLines[1] == "Right-click for options", "menu-only tooltip keeps only its menu hint")
+end
+
 -- A header click other than the host's right-click menu reaches the section.
 do
 	local t = harness.new({ deferReady = true })

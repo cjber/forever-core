@@ -4,6 +4,12 @@ local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ headerShown = true })
 local check, drain = t.check, t.drain
 local host, first, second = t.ns.TrackerHost, t.first, t.second
+local messages = {}
+t.env.DEFAULT_CHAT_FRAME = {
+	AddMessage = function(_, message)
+		messages[#messages + 1] = message
+	end,
+}
 
 local function Menu(module)
 	module.Header.scripts.OnMouseUp(module.Header, "RightButton")
@@ -204,8 +210,20 @@ check(Entry(ready, "Open panel"):IsEnabled(), "Open is enabled outside combat")
 Entry(ready, "Open panel").callback()
 check(opens == 1, "Open forwards its action outside combat")
 t.setCombat(true)
-Entry(ready, "Open panel").callback()
+local accepted, combatReason = Entry(ready, "Open panel").callback()
 check(opens == 1, "an existing Open callback refuses a later combat transition")
+check(accepted == false and combatReason == "Unavailable in combat", "a combat refusal returns its reason")
+check(messages[#messages] == "Unavailable in combat", "a combat refusal reports its reason")
+t.setCombat(false)
+contractModule.trackerMenu = function(_, builder)
+	builder:Open("Open panel", function()
+		return false, "the panel is collapsed"
+	end)
+end
+local refused = Menu(contractModule)
+Entry(refused, "Open panel").callback()
+check(messages[#messages]:find("panel is collapsed", 1, true) ~= nil, "a refused Open reports its reason")
+t.setCombat(true)
 local blocked = Menu(contractModule)
 check(not Entry(blocked, "Open panel"):IsEnabled(), "Open is disabled when constructed in combat")
 local tooltipLines = {}
@@ -219,6 +237,7 @@ check(tooltipLines[1] == "Unavailable in combat", "a disabled Open explains its 
 t.setCombat(false)
 local choices = Entry(ready, "Choices")
 check(choices.entries[1].text == "Nested choice", "buffering preserves the actual submenu description")
+check(choices.callback == nil, "a submenu title has no empty callback")
 contractModule.trackerClick = function(target, button)
 	check(
 		target.module == contractModule and target.kind == "block" and button == "LeftButton",

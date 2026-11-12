@@ -216,6 +216,24 @@ function TrackerLine.SetHeaderTooltip(module, tip)
 				GameTooltip:AddLine(text, nil, nil, nil, true)
 			end
 		end
+		local target = { kind = "block", id = block and block.id, block = block, module = module }
+		local hint = type(module.trackerClick) == "function"
+			and type(module.trackerClickHint) == "function"
+			and module.trackerClickHint(target)
+		if type(hint) == "string" and hint ~= "" then
+			if addNormalLine then
+				addNormalLine(GameTooltip, ns.L["Click to %s"]:format(hint))
+			else
+				GameTooltip:AddLine(ns.L["Click to %s"]:format(hint), nil, nil, nil, true)
+			end
+		end
+		if module.trackerMenu then
+			if addNormalLine then
+				addNormalLine(GameTooltip, ns.L["Right-click for options"])
+			else
+				GameTooltip:AddLine(ns.L["Right-click for options"], nil, nil, nil, true)
+			end
+		end
 		GameTooltip:Show()
 	end
 	module.OnBlockHeaderLeave = function(self, block)

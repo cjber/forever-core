@@ -13,6 +13,9 @@ local _, ns = ...
 ---@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
 ---@field trackerMenu? fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder) the declarative menu contract
 ---@field trackerClick? fun(target: ForeverTrackerTarget, button: string) the declarative click contract
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized click action
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized action name shown in the block
+-- tooltip
 ---@field trackerBlockMenuWrapped? boolean
 ---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
@@ -514,6 +517,12 @@ local function RunSafe(safe, label, fn, ...)
 	return pcall(fn, ...)
 end
 
+local function ReportRefusal(reason)
+	if reason and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage(tostring(reason))
+	end
+end
+
 -- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
 -- column never runs past `available`. Returns whether any section drew. One section's layout error is recorded in its
 -- own journal and leaves the sections below it to lay out, instead of breaking the whole column.
@@ -889,14 +898,29 @@ local function NewTrackerMenu(root, module, target)
 	local function Entry(text, fn, opts)
 		local entry = ns.NewMenuDescription("button", text)
 		entry.parent = root
-		entry.onClick = fn
+		if type(fn) ~= "function" then
+			return entry
+		end
+		entry.onClick = function()
+			local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
+			if ok and accepted == false then
+				ReportRefusal(reason or text)
+			end
+			return accepted, reason
+		end
 		if opts and opts.combat then
 			entry:SetEnabled(not InCombatLockdown())
 			entry.onClick = function()
 				if InCombatLockdown() then
-					return
+					local reason = ns.L["Unavailable in combat"]
+					ReportRefusal(reason)
+					return false, reason
 				end
-				fn()
+				local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
+				if ok and accepted == false then
+					ReportRefusal(reason or text)
+				end
+				return accepted, reason
 			end
 			entry:SetTooltip(function(tooltip)
 				tooltip:SetText(text, 1, 1, 1)
@@ -1003,7 +1027,11 @@ function api.HandleBlockHeaderClick(module, block, button)
 	end
 	local target = { kind = "block", id = block and block.id, block = block, module = module }
 	if button == "LeftButton" and type(module.trackerClick) == "function" then
-		RunSafe(module.safeCall, "tracker block click", module.trackerClick, target, button)
+		local ok, accepted, reason =
+			RunSafe(module.safeCall, "tracker block click", module.trackerClick, target, button)
+		if ok and accepted == false then
+			ReportRefusal(reason)
+		end
 		return true
 	end
 	if button == "RightButton" then
@@ -1036,7 +1064,11 @@ local function AddHeaderMenu(module)
 		local target = { kind = "section", module = module }
 		if button ~= "RightButton" then
 			if type(module.trackerClick) == "function" then
-				RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
+				local ok, accepted, reason =
+					RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
+				if ok and accepted == false then
+					ReportRefusal(reason)
+				end
 			elseif type(module.OnHeaderClick) == "function" then
 				RunSafe(module.safeCall, "tracker section header", module.OnHeaderClick, module, button)
 			end
@@ -1129,6 +1161,7 @@ function api.Attach(module, show, contract)
 	if type(contract) == "table" then
 		module.trackerMenu = contract.menu
 		module.trackerClick = contract.click
+		module.trackerClickHint = contract.clickHint
 		if
 			module.trackerMenu
 			and type(module.OnBlockHeaderClick) == "function"

@@ -92,6 +92,36 @@ ForeverCore.TrackerHost.Attach(module, {
 The optional second argument is the section's own show switch, offered as **Hide this section**. A section without one
 keeps the menu it already has.
 
+A third argument supplies the shared menu and click contract:
+
+```lua
+ForeverCore.TrackerHost.Attach(module, show, {
+	menu = function(target, menu)
+		menu:Title(L["Journey"])
+		menu:Primary(L["Guide me"], function() StartJourney(target) end)
+		menu:Open(L["Open journey"], function()
+			return OpenJourney(target) -- false, localized reason explains a refused open
+		end)
+		menu:End(L["End journey"], function() EndJourney(target) end)
+	end,
+	click = function(target, button) return StartJourney(target) end,
+	clickHint = function(target) return L["guide this journey"] end,
+})
+```
+
+Targets identify a section or block with `kind`, `module`, and optional `id` and `block`.
+Core orders Title, Primary, Action/Submenu, Open, End, then a divider and **Tracker**.
+`Submenu` returns a normal menu description for nested entries. `Open` is disabled in combat;
+callbacks that return `false, reason` display that localized reason. Expected refusals do not
+create error reports. Set the end callback whenever the action can end, including while paused.
+
+`TrackerLine.SetHeaderTooltip` adds **Click to %s** when `clickHint(target)` supplies the action,
+and **Right-click for options** when the module has a declarative menu. Block implementations
+forward clicks to `TrackerHost.HandleBlockHeaderClick(module, block, button)`; the return value
+says whether the host handled the click. A legacy `OnBlockHeaderClick` is wrapped automatically.
+`AddHeaderMenuEntries` stays supported for migrating consumers, but cannot be combined with a
+new menu contract. A rejected combination leaves the attached module unchanged.
+
 The column's settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale, lock, attached/detached,
 background opacity and the detached position. A consumer whose old version kept its own tracker table offers it once so
 players keep the layout they chose:

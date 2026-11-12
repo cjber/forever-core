@@ -123,6 +123,8 @@ L["Title"] = "Título"
 L["Total"] = "Total"
 L["Tracker background"] = "Fondo del rastreador"
 L["Tracker"] = "Rastreador"
+L["Click to %s"] = "Haz clic para %s"
+L["Right-click for options"] = "Haz clic derecho para ver las opciones"
 L["Unavailable in combat"] = "No disponible en combate"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Uso: /forever debug, /forever debug pin, /forever debug off, /forever debug show"

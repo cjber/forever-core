@@ -58,19 +58,21 @@
 ---@field Title fun(self: ForeverTrackerMenuBuilder, text: string)
 ---@field Primary fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun())
 ---@field Action fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(), opts?: { combat?: boolean }): any
----@field Open fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun()): any
+---@field Open fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(): boolean?, string?): any invokes a callback that may return false and a visible refusal reason
 ---@field End fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun()): any
 ---@field Submenu fun(self: ForeverTrackerMenuBuilder, text: string): ForeverMenuDescription
 
 ---@class ForeverTrackerMenuContract
 ---@field menu fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder)
----@field click? fun(target: ForeverTrackerTarget, button: string)
+---@field click? fun(target: ForeverTrackerTarget, button: string): boolean?, string? returns false and a reason when the action cannot run
+---@field clickHint? fun(target: ForeverTrackerTarget): string? the localized action name shown in the block tooltip
 
 ---@class ForeverTrackerOrderAPI
 ---@field Sort fun(modules: ForeverTrackerModule[]) orders the shared column's sections in place
 
 -- Reopened here for the one field core's own host reads from the section it is handed.
 ---@class ForeverTrackerModule : Frame
+---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized click action
 ---@field legacySettings? ForeverTrackerLegacySettings the addon's old tracker table, copied once by the host
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own menu entries
 ---@field CanUpdate? fun(self: ForeverTrackerModule): boolean whether a refresh may lay the section out now

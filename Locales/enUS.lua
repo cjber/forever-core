@@ -126,6 +126,8 @@ L["Title"] = "Title"
 L["Total"] = "Total"
 L["Tracker background"] = "Tracker background"
 L["Tracker"] = "Tracker"
+L["Click to %s"] = "Click to %s"
+L["Right-click for options"] = "Right-click for options"
 L["Unavailable in combat"] = "Unavailable in combat"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
