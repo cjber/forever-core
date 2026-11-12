@@ -1,66 +1,30 @@
 {
-  "input_digest": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
-  "runtime_sha256": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
-  "candidate": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
+  "input_digest": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "runtime_sha256": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
+  "candidate": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
   "client_build": "1.60.1.70888 (Interface 16001)",
-  "source_commit": "21304539d68a9a8ff5fa01c1f0dd4ab75f21f3d3",
   "flows": [
     {
-      "name": "Tracker section and block contract menus",
+      "name": "Bidirectional tram map arrows",
       "steps": [
-        "Load candidate runtime and confirm metadata dev-483-2130453",
-        "Create temporary QA section through TrackerSection.Create opts.contract before startup events; no direct Attach call",
-        "Right-click section header and inspect title, Primary, choices submenu, Action, Open, End, Tracker order",
-        "Open choices submenu and run Nested QA",
-        "Right-click block header and inspect block target title and same action order"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Safe action refusal and tooltip hints",
-      "steps": [
-        "Choose Open QA panel returning false and inspect readable refusal in chat",
-        "Left-click QA block returning false and inspect readable refusal in chat",
-        "Hover block and inspect title, body, click hint and right-click hint"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Addon settings open without blocked action messages",
-      "steps": [
-        "Open Adventure Guide map panel cog and choose More settings",
-        "Inspect correct addon settings index",
-        "Click Route page Open button and inspect correct settings page",
-        "Reload to flush blocked trace; count remains46 with last event22101.551",
-        "Restore original DevSmoke link and reload to remove temporary QA section"
+        "Reload installed final Core candidate",
+        "Open Stormwind world map through ForeverCore.OpenMap from addon callback",
+        "Click actual tram arrow at Dwarven District",
+        "Confirm map switches automatically to Ironforge",
+        "Click return tram arrow",
+        "Confirm map switches automatically to Stormwind without manual map selection"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-section-menu.png",
-      "sha256": "230082283160dece2ab587c98382f460f93dc47f659d184612025e19f61725e5"
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-ironforge-2e70e43.png",
+      "sha256": "35372726e44a6475c3f8c732405eb2a18c2014b3c2adf473581e72ca201a5a44"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-submenu.png",
-      "sha256": "fe68bf3e9247852281958d2bc9515e3f8d09d9e35c802b9e97dd75cd95919490"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-refusals.png",
-      "sha256": "ca57450afaf3854ac5eb86b88e4103d23a574af792835fb8cd03ce2c1dce12d5"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-block-menu.png",
-      "sha256": "0a80ffb1a6b44ac53caca02654d414c906a088e8ca77e8a095116dc80e0a6ee8"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core485-2130453-agf-settings.png",
-      "sha256": "1b1d42f00110f8c94bf73568600d1de526b9df7bba0bb0114c291e9f32415597"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core485-2130453-agf-route-settings.png",
-      "sha256": "ec65c03e6f824e7a31e3b3954caf8e8d5b5c4d4ef08adf813c0e4f25e4b367de"
+      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-stormwind-2e70e43.png",
+      "sha256": "77d52f3785e6149f724571b9ddb39765eda02e86690a352a70c319e0c4b2aa6a"
     }
   ]
 }

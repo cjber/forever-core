@@ -385,7 +385,6 @@ function M.build(sim)
 	-- Observed client behaviour that overrides the wiki's class, keyed as the pin keys: a widget method by its name,
 	-- a documented function by its qualified name. Each entry cites the issue that saw it.
 	sim.restrictionOverrides = {
-		["C_Map.OpenWorldMap"] = { class = "always", issue = "cjber/adventure-guide-forever#411" },
 		SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
 	}
 	-- Every class of a restriction, the observed override first, then the pin, then the pre-class combat-only rule for

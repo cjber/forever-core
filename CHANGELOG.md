@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-12
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
 - **Addon settings open cleanly.** Opening a settings page no longer shows an interface action failure message.
 
 ### For addon authors

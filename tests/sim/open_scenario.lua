@@ -1,8 +1,6 @@
 -- luacheck: read globals scenario ADDON
--- Under this client a direct C_Map.OpenWorldMap from addon code is refused and blamed on the addon
--- (cjber/adventure-guide-forever#411, cjber/forever-core#333). The shared opener runs it through
--- the client's secure path, so the client performs it and the addon leaves no blocked action. Settings uses
--- SettingsPanel.OpenToCategory through securecallfunction on this build.
+-- C_Map.OpenWorldMap is documented with the pin's nocombat class: a plain out-of-combat addon call opens the map,
+-- and the client refuses it in combat. The shared opener asks the same client function through securecallfunction.
 scenario("the shared opener asks the client to open the map and settings", function(sim)
 	sim.world.maps[1454] = { name = "Durotar", parent = 1414, mapType = 3 }
 	sim.world.maps[1414] = { name = "Kalimdor", parent = 947, mapType = 2 }
@@ -18,33 +16,34 @@ scenario("the shared opener asks the client to open the map and settings", funct
 	assert(type(ns.OpenMap) == "function", "the shared map opener is loaded")
 	assert(type(ns.OpenSettingsPanel) == "function", "the shared settings opener is loaded")
 
-	-- The call the issue saw: addon code asks the restricted C function directly and the client blocks it.
+	-- Out of combat the direct call opens, the way the live client does (#486).
+	sim:runAs(ADDON, "C_Map.OpenWorldMap(1454)")
+	sim:advance(0.2)
+	sim:expectNoErrors(ADDON)
+	assert(sim.G.WorldMapFrame:IsShown(), "the out-of-combat direct call opens the map")
+	sim:closeWorldMap()
+
+	-- In combat the documented restriction refuses it and blames the addon.
+	sim:enterCombat()
 	sim:runAs(ADDON, "C_Map.OpenWorldMap(1454)")
 	sim:advance(0.2)
 	sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'")
 	sim:takeErrors()
-	assert(not sim.G.WorldMapFrame:IsShown(), "the blocked call did not open the map")
+	assert(not sim.G.WorldMapFrame:IsShown(), "the combat call did not open the map")
+	sim:leaveCombat()
 
-	-- The shared opener makes the same request as the client, so nothing is blocked.
+	-- The shared opener makes the same request, so nothing is blocked.
 	local opened = sim:runAs(ADDON, "local ns, map = ...; return ns.OpenMap(map)", ns, 1454)
 	sim:advance(0.3)
 	assert(opened == true, "the opener reports the map opened")
 	assert(sim.G.WorldMapFrame:IsShown(), "the map opens through the shared opener")
 	sim:expectNoErrors(ADDON)
 
-	-- SettingsPanel.OpenToCategory is Blizzard's secure path on this build.
+	-- C_SettingsUtil.OpenSettingsPanel is Blizzard's restricted C path on this build.
 	local panelCalls = 0
-	sim.G.SettingsPanel = {
-		OpenToCategory = function(_, categoryID, element)
-			panelCalls = panelCalls + 1
-			assert(categoryID == 1 and element == nil)
-		end,
-	}
-	sim.G.securecallfunction = function(fn, ...)
-		return fn(...)
-	end
-	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function()
+	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function(categoryID, element)
 		panelCalls = panelCalls + 1
+		assert(categoryID == 1 and element == nil)
 	end
 	local shown = sim:runAs(ADDON, "local ns = ...; return ns.OpenSettingsPanel(1)", ns)
 	assert(shown == true, "the opener reports the settings panel opened")

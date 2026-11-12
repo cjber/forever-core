@@ -66,9 +66,9 @@ ForeverCore.OpenMap(mapID?) --> boolean
 ```
 
 Opens the client's world map, at `mapID` when one is given and at the player's own map otherwise (`0` and `nil` both
-mean the player's map). It runs the client's restricted `C_Map.OpenWorldMap` through `CreateSecureDelegate`, so the
-call executes as the client rather than as your addon. Returns true when the client opened it. It returns false, and
-opens nothing, in combat, on a build without `CreateSecureDelegate`, or when the client function is missing, so you
+mean the player's map). It invokes the client's `C_Map.OpenWorldMap` through `securecallfunction`. Returns true when
+the request was dispatched. It returns false, and
+opens nothing, in combat, on a build without `securecallfunction`, or when the client function is missing, so you
 can say why nothing opened. Call this instead of `C_Map.OpenWorldMap`.
 
 ## `ForeverCore.OpenSettingsPanel`

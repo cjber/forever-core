@@ -177,25 +177,18 @@ test("securecallfunction keeps a tainted caller tainted inside the call", functi
 	check("SimTaintSecureCall")
 end)
 
-test("an observed always-restricted HasRestrictions function blocks a tainted caller and does nothing else", function()
-	local sim = fixtureSim("SimTaintRestrictedOpenWorldMap")
-	local err = sim:expectError(
-		"[ADDON_ACTION_BLOCKED] AddOn 'SimTaintRestrictedOpenWorldMap' tried to call the protected function "
-			.. "'C_Map.OpenWorldMap()'"
-	)
-	assert(err, "the restricted call was refused")
-	assert(not sim.G.WorldMapFrame:IsShown(), "the restricted call did not open the map")
-end)
-
+-- C_Map.OpenWorldMap carries the pin's nocombat class, not an always override: the live client opens a map for a
+-- plain out-of-combat addon call (#486), and the AGF#411 block came from a cleanup-menu callback, a narrower
+-- context this class does not describe. The combat side is the documented refusal.
 test("a nocombat restriction passes out of combat and is refused in combat", function()
 	local sim = fixtureSim("SimRestrictionProbe")
-	sim.restrictionOverrides["C_Map.OpenWorldMap"] = nil
 	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
 	assert(sim.G.WorldMapFrame:IsShown(), "the out-of-combat call opened the map")
 	sim:closeWorldMap()
 	sim:enterCombat()
 	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
 	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
+	assert(not sim.G.WorldMapFrame:IsShown(), "the combat call did not open the map")
 end)
 
 test("a hardware-event restriction is refused from a timer and allowed from input", function()
@@ -215,14 +208,6 @@ test("an always restriction is refused out of combat", function()
 	local sim = fixtureSim("SimRestrictionProbe")
 	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeAlways()")
 	assert(sim:expectError("tried to call the protected function 'CopyToClipboard()'"))
-end)
-
-test("an observed override wins over the wiki class", function()
-	local sim = fixtureSim("SimRestrictionProbe")
-	-- The pin says nocombat; the client has refused C_Map.OpenWorldMap to tainted code out of combat.
-	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeWorldMap()")
-	assert(sim:expectError("tried to call the protected function 'C_Map.OpenWorldMap()'"))
-	assert(sim.restrictionOverrides["C_Map.OpenWorldMap"].issue == "cjber/adventure-guide-forever#411")
 end)
 
 test("a restriction with several classes is refused when any one applies", function()
