@@ -1,82 +1,57 @@
--- Run from the repository root: luajit tests/open_settings_spec.lua
--- The shared settings opener asks the client's own restricted C_SettingsUtil.OpenSettingsPanel to open, through
--- CreateSecureDelegate: called directly from addon code the client refuses it (cjber/adventure-guide-forever#411,
--- cjber/forever-core#333). It never opens in combat, and it reports false when the client cannot open anything.
+-- luacheck: globals SettingsPanel
 local checks = 0
 local function equal(actual, expected, label)
 	checks = checks + 1
-	if actual ~= expected then
-		error(("%s: expected %s, got %s"):format(label, tostring(expected), tostring(actual)), 2)
-	end
+	assert(actual == expected, ("%s: expected %s, got %s"):format(label, tostring(expected), tostring(actual)))
 end
 
-local settingsCalls = {}
 local combat = false
-local built = 0
-local function RawOpenSettingsPanel(categoryID, element)
-	settingsCalls[#settingsCalls + 1] = { categoryID, element }
-end
-local function CreateDelegate(fn)
-	built = built + 1
-	return function(...)
-		return fn(...)
-	end
-end
-
+local calls = {}
+local secureCalls = 0
 _G.InCombatLockdown = function()
 	return combat
 end
-_G.C_SettingsUtil = { OpenSettingsPanel = RawOpenSettingsPanel }
-_G.CreateSecureDelegate = CreateDelegate
 
-local function fresh()
-	local ns = {}
-	assert(loadfile("Core/OpenSettings.lua"))("ForeverCore", ns)
-	return ns
+_G.securecallfunction = function(fn, ...)
+	equal(fn, SettingsPanel.OpenToCategory, "secure call uses Blizzard method directly")
+
+	secureCalls = secureCalls + 1
+	return fn(...)
 end
-
-local function reset()
-	settingsCalls = {}
-	combat = false
-	built = 0
-	_G.C_SettingsUtil = { OpenSettingsPanel = RawOpenSettingsPanel }
-	_G.CreateSecureDelegate = CreateDelegate
-end
-
--- The settings panel: the client's opener is wrapped once and run, with and without a category and scroll target.
-reset()
-local ns = fresh()
-equal(ns.OpenSettingsPanel(313), true, "settings: opens")
-equal(settingsCalls[1][1], 313, "settings: on the requested category")
-equal(settingsCalls[1][2], nil, "settings: with no scroll target")
-equal(built, 1, "settings: through one secure delegate")
-equal(ns.OpenSettingsPanel(313, "ForeverCore"), true, "settings: opens at a row")
-equal(settingsCalls[2][1], 313, "settings: the category is kept")
-equal(settingsCalls[2][2], "ForeverCore", "settings: the scroll target is passed")
-equal(ns.OpenSettingsPanel(), true, "settings: no category opens the panel")
-equal(settingsCalls[3][1], nil, "settings: no category stays nil")
-equal(built, 1, "settings: the delegate is reused")
-
--- In combat nothing opens, and no delegate is built for a call that cannot run.
-reset()
+_G.SettingsPanel = {
+	OpenToCategory = function(_, categoryID, element)
+		calls[#calls + 1] = { categoryID, element }
+	end,
+}
+local ns = {}
+assert(loadfile("Core/OpenSettings.lua"))("ForeverCore", ns)
+equal(ns.OpenSettingsPanel(313, "ForeverCore"), true, "settings opens securely")
+equal(calls[1][1], 313, "category is passed")
+equal(calls[1][2], "ForeverCore", "element is passed")
+equal(secureCalls, 1, "one secure call is used")
+equal(ns.OpenSettingsPanel(), true, "settings opens without a category")
+equal(calls[2][1], nil, "missing category stays nil")
+equal(calls[2][2], nil, "missing element stays nil")
 combat = true
-ns = fresh()
-equal(ns.OpenSettingsPanel(313), false, "combat: no settings")
-equal(#settingsCalls, 0, "combat: the settings opener is not called")
-equal(built, 0, "combat: no delegate is built")
-
--- A build without CreateSecureDelegate leaves it closed and reports it, rather than erroring (#592).
-reset()
-_G.CreateSecureDelegate = nil
-ns = fresh()
-equal(ns.OpenSettingsPanel(313), false, "no delegate: no settings")
-equal(#settingsCalls, 0, "no delegate: the settings opener is not called")
-
--- A client without the C function has nothing to delegate to.
-reset()
-_G.C_SettingsUtil = {}
-ns = fresh()
-equal(ns.OpenSettingsPanel(313), false, "no C_SettingsUtil opener: no settings")
-equal(built, 0, "no C function: no delegate is built")
-
+equal(ns.OpenSettingsPanel(314), false, "combat blocks settings")
+equal(#calls, 2, "combat makes no call")
+combat = false
+_G.SettingsPanel = nil
+equal(ns.OpenSettingsPanel(315), false, "missing panel blocks safely")
+_G.SettingsPanel = {}
+equal(ns.OpenSettingsPanel(315), false, "missing method blocks safely")
+_G.SettingsPanel.OpenToCategory = function(_, categoryID, element)
+	calls[#calls + 1] = { categoryID, element }
+end
+_G.securecallfunction = nil
+equal(ns.OpenSettingsPanel(315), false, "missing secure call blocks safely")
+_G.securecallfunction = function(fn, ...)
+	return fn(...)
+end
+_G.CreateSecureDelegate = function()
+	error("must not be used")
+end
+equal(ns.OpenSettingsPanel(316, "row"), true, "delegate global is ignored")
+equal(calls[3][1], 316, "category reaches Blizzard method")
+equal(calls[3][2], "row", "element reaches Blizzard method")
 print(("open_settings_spec: %d checks passed"):format(checks))

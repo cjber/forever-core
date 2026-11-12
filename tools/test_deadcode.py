@@ -121,6 +121,17 @@ class MediaPatternTest(unittest.TestCase):
                     [("UI/Main.lua", 1, "media reference does not exist: media/Numbers")],
                 )
 
+    def test_an_escaped_nested_texture_path_keeps_repeated_separators(self):
+        with tempfile.TemporaryDirectory(prefix="cb-core-") as directory:
+            root = Path(directory)
+            (root / "ForeverCore.toc").write_text("UI/Main.lua\n")
+            (root / "UI").mkdir()
+            (root / "UI/Main.lua").write_text('local path = "media\\\\legacy-masks\\\\Mask000.tga"\n')
+            (root / "media/legacy-masks").mkdir(parents=True)
+            (root / "media/legacy-masks/Mask000.tga").write_bytes(b"")
+            with patch.object(deadcode, "ROOT", root):
+                self.assertEqual(deadcode.scan(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

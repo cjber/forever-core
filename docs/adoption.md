@@ -129,9 +129,9 @@ for the client and one column's settings move every section together.
 - `ForeverCore.Text.Fold` and `ForeverCore.Text.Rank` are the shared search fold and ranking.
 - `ForeverCore.Family` draws the Forever addons page and its link windows. `Family.Register` and `Family.CreatePanel`
   take the addon's `SafeCall` as their last argument.
-- `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel` open the client's restricted map and settings panel through
-  `CreateSecureDelegate`, never in combat. `Core/OpenMap.lua` and `Core/OpenSettings.lua` are core runtime files, split
-  by what each addon opens; each returns false in combat, without the delegate, or when the client function is missing,
+- `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel` open the client's restricted map and settings panel
+  through their secure client paths, never in combat. `Core/OpenMap.lua` and `Core/OpenSettings.lua` are core runtime
+  files, split by what each addon opens; each returns false in combat or when the client's secure method is missing,
   so the caller can say why nothing opened.
 
 ## Specs

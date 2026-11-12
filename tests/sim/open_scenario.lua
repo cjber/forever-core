@@ -1,8 +1,8 @@
 -- luacheck: read globals scenario ADDON
 -- Under this client a direct C_Map.OpenWorldMap from addon code is refused and blamed on the addon
 -- (cjber/adventure-guide-forever#411, cjber/forever-core#333). The shared opener runs it through
--- CreateSecureDelegate, so the client performs it and the addon leaves no blocked action. The settings panel is the
--- same restricted call, refusing its arguments from tainted code; it goes through the same delegate.
+-- the client's secure path, so the client performs it and the addon leaves no blocked action. Settings uses
+-- SettingsPanel.OpenToCategory through securecallfunction on this build.
 scenario("the shared opener asks the client to open the map and settings", function(sim)
 	sim.world.maps[1454] = { name = "Durotar", parent = 1414, mapType = 3 }
 	sim.world.maps[1414] = { name = "Kalimdor", parent = 947, mapType = 2 }
@@ -32,8 +32,17 @@ scenario("the shared opener asks the client to open the map and settings", funct
 	assert(sim.G.WorldMapFrame:IsShown(), "the map opens through the shared opener")
 	sim:expectNoErrors(ADDON)
 
-	-- A settings panel opened by the client, counted so the scenario does not need the real Options window.
+	-- SettingsPanel.OpenToCategory is Blizzard's secure path on this build.
 	local panelCalls = 0
+	sim.G.SettingsPanel = {
+		OpenToCategory = function(_, categoryID, element)
+			panelCalls = panelCalls + 1
+			assert(categoryID == 1 and element == nil)
+		end,
+	}
+	sim.G.securecallfunction = function(fn, ...)
+		return fn(...)
+	end
 	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function()
 		panelCalls = panelCalls + 1
 	end

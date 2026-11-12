@@ -204,12 +204,16 @@ class ForeverClientTest(unittest.TestCase):
             fc.press({}, ["Escape", "w"])
         x.assert_not_called()
 
-    def test_press_play_moves_in_window_pixels_not_window_relative(self):
+    def test_press_play_clicks_the_screenshot_bound_play_label(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
-        geometry = mock.Mock(stdout="WINDOW=12345\nX=181\nY=328\nWIDTH=1266\nHEIGHT=684\nSCREEN=0\n")
+        tsv = "level\tpage\tblock\tpar\tline\tword\tleft\ttop\twidth\theight\tconf\ttext\n"
+        tsv += "5\t1\t1\t1\t1\t1\t1390\t580\t72\t24\t96.5\tPlay\n"
+        ocr = mock.Mock(returncode=0, stdout=tsv, stderr="")
         with (
-            mock.patch.object(fc.subprocess, "run", side_effect=[found, geometry]),
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc.time, "sleep"),
         ):
@@ -217,11 +221,26 @@ class ForeverClientTest(unittest.TestCase):
         self.assertEqual(
             x.call_args_list,
             [
-                mock.call(state, "mousemove", "921", "367"),
+                mock.call(state, "mousemove", "1426", "592"),
                 mock.call(state, "click", "1"),
             ],
         )
         self.assertNotIn("--window", x.call_args_list[0].args)
+
+    def test_press_play_refuses_ambiguous_ocr_targets(self):
+        state = {"display": ":1"}
+        found = mock.Mock(stdout="12345\n")
+        row = "5\t1\t1\t1\t1\t1\t100\t100\t40\t20\t90\tPlay\n"
+        ocr = mock.Mock(returncode=0, stdout="header\n" + row + row, stderr="")
+        with (
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "x") as x,
+            self.assertRaisesRegex(fc.ClientError, "expected one visible Play target"),
+        ):
+            fc.press_play(state)
+        x.assert_not_called()
 
     def test_a_click_needs_a_screenshot_since_the_last_input(self):
         with mock.patch.object(fc, "x") as x, mock.patch.object(fc, "INPUT_GAP", 0):
@@ -254,6 +273,39 @@ class ForeverClientTest(unittest.TestCase):
             log_out.assert_not_called()
             fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
             log_out.assert_called_once()
+
+    def test_teardown_reaps_children_that_respawn_after_wineserver_shutdown(self):
+        game = mock.Mock(pid=1, **{"poll.return_value": None})
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "prefix_users", side_effect=[[42], [], [43], [], [], [], [], []]),
+            mock.patch.object(fc.os, "killpg"),
+            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc.subprocess, "run"),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+        ):
+            fc.teardown(game, {}, None, {"display": ":1"})
+        self.assertEqual(kill.call_args_list, [mock.call(42, fc.signal.SIGKILL), mock.call(43, fc.signal.SIGKILL)])
+
+    def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
+        clock = FakeClock()
+        state = self.state / "session.json"
+        state.write_text('{"pid": 7}')
+        link = self.state / "addon"
+        link.symlink_to(self.state / "build")
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc.os, "kill"),
+            mock.patch.object(fc.subprocess, "run"),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "processes survived: 42"),
+        ):
+            fc.teardown(None, {}, link, {})
+        self.assertTrue(state.exists())
+        self.assertTrue(link.is_symlink())
 
     def test_verbs_without_a_session_say_how_to_start_one(self):
         err = io.StringIO()

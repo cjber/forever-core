@@ -78,9 +78,9 @@ ForeverCore.OpenSettingsPanel(categoryID?, element?) --> boolean
 ```
 
 Opens the client's settings panel, at `categoryID` and `element` when given. It runs the client's restricted
-`C_SettingsUtil.OpenSettingsPanel` through `CreateSecureDelegate`, on the same terms as `OpenMap`: true when the
-client opened it, and false with nothing opened in combat, without the delegate or when the client function is
-missing. Call this instead of `C_SettingsUtil.OpenSettingsPanel`.
+`SettingsPanel.OpenToCategory` through `securecallfunction`, preserving the client's taint boundary: true when the
+client opened it, and false in combat or when the panel's secure method is missing. Call this instead of opening
+the settings panel directly.
 
 ## `ForeverCore.Credits`
 

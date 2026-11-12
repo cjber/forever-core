@@ -3,7 +3,8 @@
 
 The client runs under gamescope's headless backend: it renders on the real GPU into a display of its own, so no
 window reaches the desktop and the player's mouse and keyboard are never touched. Every verb talks to that display
-only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server.
+only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server. The host also
+needs `tesseract` on PATH to locate the launcher's visible Play control from the private screenshot.
 
     forever_client.py up                  # start, wait until in the world, print READY, hold until stopped
     forever_client.py run -- <command>    # up, run the command with the session's display, then stop
@@ -41,6 +42,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -54,11 +56,8 @@ PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
 LAUNCHER = PREFIX / "drive_c/Program Files (x86)/Battle.net/Battle.net.exe"
 LAUNCH_ARGS = ["--exec=launch_uid wowf"]
-# Battle.net ignores --exec once it is logged in, so the session presses Play: its centre on the WoW: Forever page
-# that --exec opens, in the launcher window gamescope gives it. Another window size means another layout. The point
-# is in the focused window's pixels, which is also the screenshot's pixels, whatever the window's X position.
-LAUNCHER_WINDOW = (1266, 684)
-PLAY_BUTTON = (921, 367)
+# Battle.net ignores --exec once it is logged in, so the session presses the visible Play control on the WoW: Forever
+# page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
@@ -280,7 +279,13 @@ def slash(state: Mapping, command: str) -> None:
 
 
 def press_play(state: Mapping) -> None:
-    """Click Play in the launcher's main window, the one gamescope sized to LAUNCHER_WINDOW."""
+    """Find and click the visible Play label in the launcher's current screenshot.
+
+    Battle.net changes its page layout with the gamescope size and can show a login
+    dialog before the game page. A fixed point therefore either misses Play or clicks
+    another control. OCR is bounded to the private gamescope screenshot, so the
+    click remains screenshot-bound like the public ``click`` verb.
+    """
     found = subprocess.run(
         ["xdotool", "search", "--name", "^Battle.net$"],
         env={**os.environ, "DISPLAY": state["display"]},
@@ -288,20 +293,37 @@ def press_play(state: Mapping) -> None:
         text=True,
         check=False,
     )
-    for window in found.stdout.split():
-        geometry = subprocess.run(
-            ["xdotool", "getwindowgeometry", "--shell", window],
-            env={**os.environ, "DISPLAY": state["display"]},
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        size = dict(line.split("=", 1) for line in geometry.split())
-        if (int(size.get("WIDTH", 0)), int(size.get("HEIGHT", 0))) == LAUNCHER_WINDOW:
-            x(state, "mousemove", *map(str, PLAY_BUTTON))
-            time.sleep(0.5)
-            x(state, "click", "1")
-            return
+    if not found.stdout.split():
+        raise ClientError("Battle.net launcher window was not found")
+    if shutil.which("tesseract") is None:
+        raise ClientError("tesseract is required to locate Battle.net's Play control")
+    image = shot(state, STATE_DIR / "launcher.png")
+    ocr = subprocess.run(
+        ["tesseract", str(image), "stdout", "--psm", "11", "tsv"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ocr.returncode != 0:
+        raise ClientError(f"could not read the Battle.net Play target: {ocr.stderr.strip()}")
+    targets = []
+    for line in ocr.stdout.splitlines()[1:]:
+        fields = line.split("\t")
+        if len(fields) != 12 or fields[11].strip().casefold() != "play":
+            continue
+        try:
+            left, top, width, height = (int(fields[i]) for i in (6, 7, 8, 9))
+            confidence = float(fields[10])
+        except (ValueError, TypeError):
+            continue
+        if confidence >= 0 and width > 0 and height > 0:
+            targets.append((left, top, width, height, confidence))
+    if len(targets) != 1:
+        raise ClientError(f"expected one visible Play target in the Battle.net screenshot, found {len(targets)}")
+    left, top, width, height, _ = targets[0]
+    x(state, "mousemove", str(left + width // 2), str(top + height // 2))
+    time.sleep(0.5)
+    x(state, "click", "1")
 
 
 def reload(state: Mapping, timeout: float = 120) -> Path:
@@ -356,11 +378,28 @@ def teardown(
     # The lock and the prefix check make every process in the prefix this session's: end them all.
     server = Path(wine.get("WINE", "wine")).with_name("wineserver")
     subprocess.run([str(server), "-k"], env={**os.environ, **wine, "WINEPREFIX": str(PREFIX)}, check=False)
-    for p in prefix_users():
-        try:
-            os.kill(p, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    # Battle.net can respawn its launcher children after the first wineserver shutdown. Keep checking until the
+    # owned prefix is empty and remains empty for a grace period, or retain state and report the exact survivors.
+    deadline = time.monotonic() + 20
+    empty_since = None
+    while True:
+        users = prefix_users()
+        now = time.monotonic()
+        if users:
+            empty_since = None
+            for pid in users:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        elif empty_since is None:
+            empty_since = now
+        elif now - empty_since >= 1:
+            break
+        if now >= deadline:
+            detail = ", ".join(map(str, users)) if users else "prefix did not remain empty"
+            raise ClientError("teardown incomplete: Wine prefix processes survived: " + detail)
+        time.sleep(0.25)
     if link and link.is_symlink():
         link.unlink()
     state_file().unlink(missing_ok=True)
