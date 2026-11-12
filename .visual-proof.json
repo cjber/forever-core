@@ -1,47 +1,30 @@
 {
-  "input_digest": "2cab4ecdeca169df0ed33700a0651a762e4c04ed4d2a05c57fe7681b94a8cec7",
-  "runtime_sha256": "2cab4ecdeca169df0ed33700a0651a762e4c04ed4d2a05c57fe7681b94a8cec7",
-  "candidate": "d62a99e5486c397d03bdac6e6f455337fdea6d77451d2de593c407becc8b08f3",
+  "input_digest": "61c330d0e0b2bf9d611b19579a2a53bb90f3d69820f38d7097f466bbee9743c0",
+  "runtime_sha256": "61c330d0e0b2bf9d611b19579a2a53bb90f3d69820f38d7097f466bbee9743c0",
+  "candidate": "e5b696eb95ad71edbf0b327b9b40438cd2db86ef581a3f871b9f801ceba8c747",
   "tested_artifact": "source-tree",
   "client_build": "1.60.1.70888 (Interface 16001)",
-  "source_commit": "e21f4954f7c6b435fbf6609e33ea69ef31d4f9a7",
-  "notes": "Recorded on Hel Io in the player's live client from an installed source-tree build of this commit (git archive, version stamped v1.8.1-dev+e21f495); check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. Loaded with the released Shortest Path Forever 1.34.0, Adventure Guide 1.7.7, Legacy, SkillUp, Field Guide, Commissions and Macro Assist, and a Tweaks Forever dev build. Output printed to a chat tab with no channels.",
+  "source_commit": "65ac064ee32ce0faaa16aeec3e4c8d6c6235e960",
+  "notes": "Recorded by the player in their live client from an installed source-tree build of this commit (git archive, version stamped v1.8.2-dev+65ac064) linked in place of the store ForeverCore v1.8.2; check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. The game's own Cooldown Manager was on screen for comparison.",
   "flows": [
     {
-      "name": "Retired leaderboards answer old calls and nothing errors",
+      "name": "CooldownIcon draws the Cooldown Manager frame",
       "steps": [
-        "Install the candidate in place of ForeverCore v1.8.1 and /reload",
-        "Print the loaded version and ForeverCore.API: v1.8.1-dev+e21f495, 2",
-        "Print type(ForeverCore.Leaderboards.Boards()), ForeverCore.PeerStats.New({}):Revision() and SlashCmdList.FOREVERLEADERBOARDS: table, 0, nil",
-        "Count BugGrabber errors for this session: 0"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Forever addons settings page without the Leaderboards row",
-      "steps": [
-        "Open Options, AddOns, Shortest Path Forever, Forever addons",
-        "The page lists the suggestion checkbox, Thanks, then every Forever addon and Ko-fi, with no Forever Leaderboards row and no gap where it was"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "/forever debug on core's own slash entry",
-      "steps": [
-        "SLASH_FOREVERCORE1 and 2 read /fcore and /forever",
-        "With UIErrorsFrame.AddMessage echoed to the chat tab, typing /forever debug twice shows Debug log is on for this session, then Debug log is off"
+        "Install the candidate in place of ForeverCore v1.8.2 and /reload",
+        "/run a 60x60 frame at CENTER with an ARTWORK texture, then ForeverCore.Art.CooldownIcon(t, 134400, 50)",
+        "A question-mark icon shows with the Cooldown Manager mask and overlay, matching the edge of the client's own Cooldown Manager icons on the same screen"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/70b1c88ae1e605bc72786a04dba661fa862e330c/core519-family-page-e21f495.png",
-      "sha256": "b7301a4b1c80f379c371aea81f1423199aac96c00d680632276904f81e78b36e"
+      "url": "https://gist.githubusercontent.com/cjber/dc2634da2affb423f15276103559548f/raw/02251df1060b6df3427c1a9a49e6e3fc4af2d0f9/core528-cooldownicon-closeup-65ac064.png",
+      "sha256": "9e484ef575d4b3c029128824e5d5f7a056b1a46590196ed206918e91a03c769d"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/70b1c88ae1e605bc72786a04dba661fa862e330c/core519-checks-e21f495.png",
-      "sha256": "3e79bec852eee3aa84719bd2a08b8248a0d69ea9affdefd99c0d566c6a00e6a0"
+      "url": "https://gist.githubusercontent.com/cjber/dc2634da2affb423f15276103559548f/raw/02251df1060b6df3427c1a9a49e6e3fc4af2d0f9/core528-cooldownicon-vs-cdm-65ac064.png",
+      "sha256": "5828dd117b7a10f71c5209082d5cc6709e29dc19adfa32fe29f4e6fd6b286f0a"
     }
   ]
 }
