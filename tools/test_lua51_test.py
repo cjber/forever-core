@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 
+@unittest.skipUnless(os.environ.get("LUA51_LUAC"), "requires the pinned Lua 5.1 parser")
 class Lua51GateTests(unittest.TestCase):
     def run_fixture(self, source: str) -> subprocess.CompletedProcess[str]:
         from tempfile import TemporaryDirectory
