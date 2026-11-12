@@ -129,6 +129,7 @@
 ---@field Grip fun(host: Frame, source: ForeverTrackerHostAPI): ForeverTrackerGrip draws the grip on the column it drags
 
 ---@class ForeverTrackerNamespace
+---@field NewMenuDescription fun(kind: ForeverMenuEntryKind, text?: string): ForeverMenuDescription
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerSection? ForeverTrackerSectionAPI
 ---@field TrackerLine? ForeverTrackerLineAPI

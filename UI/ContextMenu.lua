@@ -13,6 +13,9 @@ local function New(kind, text)
 	return setmetatable({ kind = kind, text = text, entries = {} }, Description) --[[@as ForeverMenuDescription]]
 end
 
+-- Shared description construction lets tracker slots remain detached until their order is final.
+ns.NewMenuDescription = New
+
 ---@param text string
 ---@param action? fun()
 ---@return ForeverMenuDescription

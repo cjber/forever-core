@@ -174,7 +174,7 @@ for _, entry in ipairs(contractMenu.entries) do
 	labels[#labels + 1] = entry.text or entry.kind
 end
 check(
-	table.concat(labels, ",") == "Guide me,Refresh,Open panel,End journey,Choices,divider,Tracker",
+	table.concat(labels, ",") == "Guide me,Choices,Refresh,Open panel,End journey,divider,Tracker",
 	"slots keep exact order"
 )
 host.HandleBlockHeaderClick(
@@ -188,6 +188,46 @@ host.HandleBlockHeaderClick(
 )
 local blockTarget = contractTargets[#contractTargets]
 check(blockTarget.kind == "block" and blockTarget.id == "journey", "the block target carries kind and id")
+
+-- Construction uses the production description, so disabled state, callbacks and nested rows are real.
+local opens, clicks = 0, 0
+contractModule.trackerMenu = function(_, builder)
+	builder:End("End journey", function() end)
+	builder:Submenu("Choices"):CreateButton("Nested choice", function() end)
+	builder:Open("Open panel", function()
+		opens = opens + 1
+	end)
+	builder:Primary("Guide me", function() end)
+end
+local ready = Menu(contractModule)
+check(Entry(ready, "Open panel"):IsEnabled(), "Open is enabled outside combat")
+Entry(ready, "Open panel").callback()
+check(opens == 1, "Open forwards its action outside combat")
+t.setCombat(true)
+Entry(ready, "Open panel").callback()
+check(opens == 1, "an existing Open callback refuses a later combat transition")
+local blocked = Menu(contractModule)
+check(not Entry(blocked, "Open panel"):IsEnabled(), "Open is disabled when constructed in combat")
+local tooltipLines = {}
+Entry(blocked, "Open panel").tooltip({
+	SetText = function() end,
+	AddLine = function(_, text)
+		tooltipLines[#tooltipLines + 1] = text
+	end,
+})
+check(tooltipLines[1] == "Unavailable in combat", "a disabled Open explains its refusal")
+t.setCombat(false)
+local choices = Entry(ready, "Choices")
+check(choices.entries[1].text == "Nested choice", "buffering preserves the actual submenu description")
+contractModule.trackerClick = function(target, button)
+	check(
+		target.module == contractModule and target.kind == "block" and button == "LeftButton",
+		"left block target has the same module contract"
+	)
+	clicks = clicks + 1
+end
+host.HandleBlockHeaderClick(contractModule, { id = "journey" }, "LeftButton")
+check(clicks == 1, "left block action runs once")
 
 -- Both contracts are rejected through the addon's safe call rather than silently producing two menus.
 local rejected = false

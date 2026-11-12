@@ -878,119 +878,84 @@ end
 -- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
 -- contract, so a consumer cannot put an action after Tracker or accidentally omit the end action.
 local function NewTrackerMenu(root, module, target)
-	local slots =
-		{ title = false, primary = false, actions = {}, submenus = {}, open = false, ending = false, finished = false }
+	---@class ForeverTrackerMenuSlots
+	---@field title? string
+	---@field primary? ForeverMenuDescription
+	---@field actions ForeverMenuDescription[]
+	---@field open? ForeverMenuDescription
+	---@field ending? ForeverMenuDescription
+	local slots = { actions = {} }
 	local menu = {}
-	function menu.Title(_, text)
-		if not slots.title then
-			root:CreateTitle(
-				text or (module.Header and module.Header.Text and module.Header.Text:GetText()) or "Tracker"
-			)
-			slots.title = true
-		end
-	end
-	function menu.Primary(_, text, fn)
-		if not slots.primary then
-			slots.primary = { text = text, fn = fn }
-		end
-	end
-	function menu.Action(_, text, fn, opts)
-		local spec = { text = text, fn = fn, opts = opts }
-		slots.actions[#slots.actions + 1] = spec
-		return spec
-	end
-	function menu.Open(_, text, fn)
-		if not slots.open then
-			local action = function()
+	local function Entry(text, fn, opts)
+		local entry = ns.NewMenuDescription("button", text)
+		entry.parent = root
+		entry.onClick = fn
+		if opts and opts.combat then
+			entry:SetEnabled(not InCombatLockdown())
+			entry.onClick = function()
 				if InCombatLockdown() then
-					local report = rawget(ns, "Report")
-					if type(report) == "function" then
-						report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat")
-					end
 					return
 				end
 				fn()
 			end
-			slots.open = { text = text, fn = action, opts = { combat = true } }
+			entry:SetTooltip(function(tooltip)
+				tooltip:SetText(text, 1, 1, 1)
+				if InCombatLockdown() then
+					tooltip:AddLine(ns.L["Unavailable in combat"], nil, nil, nil, true)
+				end
+			end)
 		end
+		return entry
+	end
+	function menu.Title(_, text)
+		slots.title = slots.title or text
+	end
+	function menu.Primary(_, text, fn)
+		slots.primary = slots.primary or Entry(text, fn)
+	end
+	function menu.Action(_, text, fn, opts)
+		local entry = Entry(text, fn, opts)
+		slots.actions[#slots.actions + 1] = entry
+		return entry
+	end
+	function menu:Submenu(text)
+		return self:Action(text)
+	end
+	function menu.Open(_, text, fn)
+		slots.open = slots.open or Entry(text, fn, { combat = true })
 		return slots.open
 	end
 	function menu.End(_, text, fn)
-		if not slots.ending and type(fn) == "function" then
-			slots.ending = { text = text, fn = fn }
+		if type(fn) == "function" then
+			slots.ending = slots.ending or Entry(text, fn)
 		end
 		return slots.ending
 	end
-	function menu.Submenu(_, text)
-		local submenu = root:CreateButton(text)
-		slots.submenus[#slots.submenus + 1] = submenu
-		return submenu
-	end
-	function menu.Finish(_)
-		if slots.finished then
+	local finished = false
+	local function Finish()
+		if finished then
 			return
 		end
-		slots.finished = true
-		if not slots.title then
-			root:CreateTitle(
-				(
-					target.kind == "block"
-					and target.block
-					and target.block.HeaderText
-					and target.block.HeaderText:GetText()
-				)
-					or (module.Header and module.Header.Text and module.Header.Text:GetText())
-					or "Tracker"
-			)
-		end
-		local function emit(spec)
-			local entry = root:CreateButton(spec.text, spec.fn)
-			if spec.opts and spec.opts.combat and type(entry.SetEnabled) == "function" then
-				entry:SetEnabled(not InCombatLockdown())
-				if InCombatLockdown() then
-					entry:SetTooltip(function(tooltip)
-						tooltip:SetText(spec.text, 1, 1, 1)
-						tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true)
-					end)
-				end
+		finished = true
+		local block = target.block
+		root:CreateTitle(
+			slots.title
+				or (block and block.HeaderText and block.HeaderText:GetText())
+				or (module.Header and module.Header.Text and module.Header.Text:GetText())
+				or ns.L["Tracker"]
+		)
+		local function Append(entry)
+			if entry then
+				root.entries[#root.entries + 1] = entry
 			end
 		end
-		if slots.primary then
-			emit(slots.primary)
+		Append(slots.primary)
+		for _, entry in ipairs(slots.actions) do
+			Append(entry)
 		end
-		for _, spec in ipairs(slots.actions) do
-			emit(spec)
-		end
-		if slots.open then
-			emit(slots.open)
-		end
-		if slots.ending then
-			emit(slots.ending)
-		end
-		for _, submenu in ipairs(slots.submenus) do
-			for index, entry in ipairs(root.entries) do
-				if entry == submenu or entry.text == submenu.text then
-					table.remove(root.entries, index)
-					break
-				end
-			end
-		end
-		if type(root.CreateDivider) == "function" then
-			root:CreateDivider()
-		else
-			local divider = root:CreateButton("")
-			divider.kind = "divider"
-		end
-		for _, submenu in ipairs(slots.submenus) do
-			local dividerIndex = #root.entries
-			for index, entry in ipairs(root.entries) do
-				if entry.kind == "divider" then
-					dividerIndex = index
-					break
-				end
-			end
-			table.insert(root.entries, dividerIndex, submenu)
-		end
+		Append(slots.open)
+		Append(slots.ending)
+		root:CreateDivider()
 		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
 		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()
 			api.SetAttached(not api.IsAttachedToQuestTracker())
@@ -1028,7 +993,7 @@ local function NewTrackerMenu(root, module, target)
 			end)
 		end
 	end
-	return menu
+	return menu, Finish
 end
 
 -- Consumers with a block implementation that has no legacy OnBlockHeaderClick can forward the title event here.
@@ -1043,9 +1008,9 @@ function api.HandleBlockHeaderClick(module, block, button)
 	end
 	if button == "RightButton" then
 		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
-			local builder = NewTrackerMenu(root, module, target)
+			local builder, finish = NewTrackerMenu(root, module, target)
 			RunSafe(module.safeCall, "tracker block menu", module.trackerMenu, target, builder)
-			builder:Finish()
+			finish()
 		end)
 		return true
 	end
@@ -1072,17 +1037,16 @@ local function AddHeaderMenu(module)
 		if button ~= "RightButton" then
 			if type(module.trackerClick) == "function" then
 				RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
-			end
-			if type(module.OnHeaderClick) == "function" then
+			elseif type(module.OnHeaderClick) == "function" then
 				RunSafe(module.safeCall, "tracker section header", module.OnHeaderClick, module, button)
 			end
 			return
 		end
 		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
 			if module.trackerMenu then
-				local builder = NewTrackerMenu(root, module, target)
+				local builder, finish = NewTrackerMenu(root, module, target)
 				RunSafe(module.safeCall, "tracker section menu", module.trackerMenu, target, builder)
-				builder:Finish()
+				finish()
 				return
 			end
 			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
@@ -1173,26 +1137,9 @@ function api.Attach(module, show, contract)
 			local oldBlockClick = module.OnBlockHeaderClick
 			module.trackerBlockMenuWrapped = true
 			module.OnBlockHeaderClick = function(self, block, button)
-				if button == "LeftButton" and type(module.trackerClick) == "function" then
-					RunSafe(
-						module.safeCall,
-						"tracker block click",
-						module.trackerClick,
-						{ kind = "block", id = block and block.id, block = block },
-						button
-					)
-					return
+				if not api.HandleBlockHeaderClick(module, block, button) then
+					return oldBlockClick(self, block, button)
 				end
-				if button == "RightButton" then
-					ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
-						local target = { kind = "block", id = block and block.id, block = block, module = module }
-						local builder = NewTrackerMenu(root, module, target)
-						RunSafe(module.safeCall, "tracker block menu", module.trackerMenu, target, builder)
-						builder:Finish()
-					end)
-					return
-				end
-				return oldBlockClick(self, block, button)
 			end
 		end
 	end
