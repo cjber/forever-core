@@ -1,0 +1,36 @@
+# Credential metadata only. Unknown lifecycle facts remain visible as gaps.
+sources:
+  - github: cjber/forever-core
+keys:
+  - id: cf-api-key
+    service: curseforge
+    group: forever-core
+    owner: unknown
+    locations:
+      - github: CF_API_KEY
+    expires: unknown
+    limit: unknown
+  - id: consumer-sync-token
+    service: github
+    group: forever-core
+    owner: unknown
+    locations:
+      - github: CONSUMER_SYNC_TOKEN
+    expires: unknown
+    limit: unknown
+  - id: discord-announce-webhook
+    service: discord
+    group: forever-core
+    owner: unknown
+    locations:
+      - github: DISCORD_ANNOUNCE_WEBHOOK
+    expires: unknown
+    limit: unknown
+  - id: wago-api-token
+    service: wago
+    group: forever-core
+    owner: unknown
+    locations:
+      - github: WAGO_API_TOKEN
+    expires: unknown
+    limit: unknown
