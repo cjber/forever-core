@@ -11,6 +11,8 @@ local _, ns = ...
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
 ---@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
+---@field trackerMenu? ForeverTrackerMenuBuilder the declarative menu contract
+---@field trackerClick? fun(target: ForeverTrackerTarget, button: string) the declarative click contract
 
 ---@class ForeverNativeTrackerHeader : Frame
 ---@field Text FontString
@@ -871,6 +873,77 @@ function api.SavePosition(x, y)
 	host:MarkDirty()
 end
 
+-- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
+-- contract, so a consumer cannot put an action after Tracker or accidentally omit the end action.
+local function NewTrackerMenu(root, module, target)
+	local slots = { title = false, primary = false, actions = {}, open = false, ending = false }
+	local menu = {}
+	function menu:Title(text)
+		if not slots.title then
+			root:CreateTitle(text or (module.Header and module.Header.Text and module.Header.Text:GetText()) or "Tracker")
+			slots.title = true
+		end
+	end
+	function menu:Primary(text, fn)
+		if not slots.primary then
+			root:CreateButton(text, fn)
+			slots.primary = true
+		end
+	end
+	function menu:Action(text, fn, opts)
+		local entry = root:CreateButton(text, fn)
+		if opts and opts.combat then
+			entry:SetEnabled(not InCombatLockdown())
+			if InCombatLockdown() then
+				entry:SetTooltip(function(tooltip) tooltip:SetText(text, 1, 1, 1); tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true) end)
+			end
+		end
+		slots.actions[#slots.actions + 1] = entry
+		return entry
+	end
+	function menu:Open(text, fn)
+		if not slots.open then
+			local action = function()
+				if InCombatLockdown() then
+					if ns.Report then ns.Report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat") end
+					return
+				end
+				fn()
+			end
+			slots.open = menu:Action(text, action, { combat = true })
+		end
+		return slots.open
+	end
+	function menu:End(text, fn)
+		if not slots.ending and type(fn) == "function" then
+			slots.ending = menu:Action(text, fn)
+		end
+		return slots.ending
+	end
+	function menu:Submenu(text)
+		return root:CreateButton(text)
+	end
+	function menu:Finish()
+		root:CreateDivider()
+		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
+		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function() api.SetAttached(not api.IsAttachedToQuestTracker()) end)
+		if api.IsLocked and api.SetLocked then
+			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function() api.SetLocked(not api.IsLocked()) end)
+		end
+		local background = tracker:CreateButton(ns.L["Tracker background"])
+		background:CreateRadio(rawget(_G, "OFF") or "Off", function() return api.GetBackdropOpacity() == 0 end, function() api.SetBackdropOpacity(0) end)
+		for _, percent in ipairs({ 25, 50, 75, 100 }) do
+			local value = percent / 100
+			background:CreateRadio(percent .. "%", function() return api.GetBackdropOpacity() == value end, function() api.SetBackdropOpacity(value) end)
+		end
+		local show = module.show
+		if target.kind == "section" and type(show) == "table" and type(show.get) == "function" and type(show.set) == "function" then
+			tracker:CreateButton(ns.L["Hide this section"], function() if show.get() then show.set(false) end end)
+		end
+	end
+	return menu
+end
+
 -- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
 -- column's, without the host learning what the section is.
 ---@param module ForeverTrackerModule
@@ -887,13 +960,23 @@ local function AddHeaderMenu(module)
 	local hide = L["Hide this section"]
 	header:EnableMouse(true)
 	header:HookScript("OnMouseUp", function(_, button)
+		local target = { kind = "section", module = module }
 		if button ~= "RightButton" then
+			if type(module.trackerClick) == "function" then
+				RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
+			end
 			if type(module.OnHeaderClick) == "function" then
 				RunSafe(module.safeCall, "tracker section header", module.OnHeaderClick, module, button)
 			end
 			return
 		end
 		ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
+			if module.trackerMenu then
+				local builder = NewTrackerMenu(root, module, target)
+				RunSafe(module.safeCall, "tracker section menu", module.trackerMenu, target, builder)
+				builder:Finish()
+				return
+			end
 			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
 				api.SetAttached(not api.IsAttachedToQuestTracker())
 			end)
@@ -960,10 +1043,39 @@ ns.MigrateTrackerSettings = Migrate
 
 ---@param module ForeverTrackerModule
 ---@param show? ForeverTrackerShowSetting the section's own show switch, when it has one
-function api.Attach(module, show)
+function api.Attach(module, show, contract)
 	---@cast module ForeverTrackerModule
 	if show ~= nil then
 		module.show = show
+	end
+	if type(contract) == "table" then
+		module.trackerMenu = contract.menu
+		module.trackerClick = contract.click
+		if module.trackerMenu and type(module.AddHeaderMenuEntries) == "function" then
+			RunSafe(module.safeCall, "tracker menu contract", function()
+				error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
+			end)
+		end
+		if module.trackerMenu and type(module.OnBlockHeaderClick) == "function" and not module.trackerBlockMenuWrapped then
+			local oldBlockClick = module.OnBlockHeaderClick
+			module.trackerBlockMenuWrapped = true
+			module.OnBlockHeaderClick = function(self, block, button)
+				if button == "LeftButton" and type(module.trackerClick) == "function" then
+					RunSafe(module.safeCall, "tracker block click", module.trackerClick, { kind = "block", id = block and block.id, block = block }, button)
+					return
+				end
+				if button == "RightButton" then
+					ns.ContextMenu(module:GetContextMenuParent(), function(_, root)
+						local target = { kind = "block", id = block and block.id, block = block, module = module }
+						local builder = NewTrackerMenu(root, module, target)
+						RunSafe(module.safeCall, "tracker block menu", module.trackerMenu, target, builder)
+						builder:Finish()
+					end)
+					return
+				end
+				return oldBlockClick(self, block, button)
+			end
+		end
 	end
 	if OfferLegacy(module) then
 		Migrate()

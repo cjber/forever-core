@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **Tracker menus have one declarative contract.** Pass `menu` and optional `click` to `TrackerHost.Attach` for section and block targets with fixed Title, Primary, Action, Open, End and Tracker slots. The old section hook remains compatible for one migration release, and combat-only actions are visibly disabled.
+
 ## [1.7.4] - 2026-11-12
 
 - **Profession tabs hide the native controls cleanly.** Switching to a Forever profession page no longer leaves the game's crafting controls visible underneath it, and returning to a native page restores the controls and their original transparency.
