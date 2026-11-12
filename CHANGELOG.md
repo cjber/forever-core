@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-12
+
 ### For addon authors
 
 - **A Cooldown Manager icon frame is one core call.** `ForeverCore.Art` (minor 1) publishes `Icon` and the new
