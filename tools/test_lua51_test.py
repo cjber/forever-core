@@ -73,3 +73,19 @@ class Lua51GateTests(unittest.TestCase):
             (root / "ForeverCore.toc").write_text("Core.xml\n", encoding="utf-8")
             (root / "Core.xml").write_text('<Ui><Script file="Missing.lua" /></Ui>', encoding="utf-8")
             self.assertTrue(lua51.check(root))
+
+    def test_second_addon_toc_is_also_parsed(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        tooling = Path(__file__).resolve().parents[1] / ".agents/skills/wow-forever-addon/tooling"
+        sys.path.insert(0, str(tooling))
+        from forever_tools import lua51
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "First.toc").write_text("Good.lua\n")
+            (root / "Good.lua").write_text("local value = 1")
+            (root / "Child").mkdir()
+            (root / "Child/Second.toc").write_text("Bad.lua\n")
+            (root / "Child/Bad.lua").write_text("local provider = f()\n(provider):Flush()")
+            self.assertTrue(any("ambiguous syntax" in error for error in lua51.check(root)))
