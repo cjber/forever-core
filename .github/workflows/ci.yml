@@ -113,6 +113,8 @@ jobs:
         run: |
           python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
           cd .release/ForeverCore
+          test -f ForeverCore.toc
+          test "$PWD" != "$GITHUB_WORKSPACE"
           luajit "$GITHUB_WORKSPACE/.agents/skills/wow-forever-addon/tooling/forever_sim/run.lua" \
             "$GITHUB_WORKSPACE/tests/sim/exercise_scenario.lua"
 
