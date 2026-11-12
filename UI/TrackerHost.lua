@@ -969,7 +969,7 @@ local function NewTrackerMenu(root, module, target)
 		end
 		for _, submenu in ipairs(slots.submenus) do
 			for index, entry in ipairs(root.entries) do
-				if entry == submenu then
+				if entry == submenu or entry.text == submenu.text then
 					table.remove(root.entries, index)
 					break
 				end
@@ -981,8 +981,15 @@ local function NewTrackerMenu(root, module, target)
 			local divider = root:CreateButton("")
 			divider.kind = "divider"
 		end
-		for index, submenu in ipairs(slots.submenus) do
-			table.insert(root.entries, #root.entries - 1 + index, submenu)
+		for _, submenu in ipairs(slots.submenus) do
+			local dividerIndex = #root.entries
+			for index, entry in ipairs(root.entries) do
+				if entry.kind == "divider" then
+					dividerIndex = index
+					break
+				end
+			end
+			table.insert(root.entries, dividerIndex, submenu)
 		end
 		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
 		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()

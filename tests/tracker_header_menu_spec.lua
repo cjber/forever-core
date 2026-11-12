@@ -169,9 +169,14 @@ contractTargets = {}
 local contractMenu = Menu(contractModule)
 check(contractTargets[1].kind == "section", "the declarative section target names its kind")
 check(contractMenu.title == "A block", "Title is the first fixed slot")
-check(Entry(contractMenu, "Guide me") ~= nil, "Primary follows Title")
-check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
-check(Entry(contractMenu, "Guide me") and Entry(contractMenu, "Refresh"), "scrambled calls retain addon entries")
+local labels = {}
+for _, entry in ipairs(contractMenu.entries) do
+	labels[#labels + 1] = entry.text or entry.kind
+end
+check(
+	table.concat(labels, ",") == "Guide me,Refresh,Open panel,End journey,Choices,divider,Tracker",
+	"slots keep exact order"
+)
 host.HandleBlockHeaderClick(
 	contractModule,
 	{ id = "journey", HeaderText = {
