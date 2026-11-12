@@ -1,15 +1,15 @@
 {
-  "input_digest": "195f39737a14df7f6f0929b3b9afc8c93314e1e43bda9149efcc6099243f1eb3",
-  "runtime_sha256": "195f39737a14df7f6f0929b3b9afc8c93314e1e43bda9149efcc6099243f1eb3",
-  "candidate": "195f39737a14df7f6f0929b3b9afc8c93314e1e43bda9149efcc6099243f1eb3",
+  "input_digest": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
+  "runtime_sha256": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
+  "candidate": "bde3b93c385c47feb01975acd6800dc7341ac2d25d72f084380739693a24694f",
   "client_build": "1.60.1.70888 (Interface 16001)",
-  "source_commit": "916e3745537a232c94b6cec82640766836b3ed81",
+  "source_commit": "21304539d68a9a8ff5fa01c1f0dd4ab75f21f3d3",
   "flows": [
     {
       "name": "Tracker section and block contract menus",
       "steps": [
-        "Load candidate runtime and confirm metadata dev-483-d91133d",
-        "Attach temporary QA section with declarative contract and make it visible",
+        "Load candidate runtime and confirm metadata dev-483-2130453",
+        "Create temporary QA section through TrackerSection.Create opts.contract before startup events; no direct Attach call",
         "Right-click section header and inspect title, Primary, choices submenu, Action, Open, End, Tracker order",
         "Open choices submenu and run Nested QA",
         "Right-click block header and inspect block target title and same action order"
@@ -24,24 +24,43 @@
         "Hover block and inspect title, body, click hint and right-click hint"
       ],
       "result": "pass"
+    },
+    {
+      "name": "Addon settings open without blocked action messages",
+      "steps": [
+        "Open Adventure Guide map panel cog and choose More settings",
+        "Inspect correct addon settings index",
+        "Click Route page Open button and inspect correct settings page",
+        "Reload to flush blocked trace; count remains46 with last event22101.551",
+        "Restore original DevSmoke link and reload to remove temporary QA section"
+      ],
+      "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/b72318bca8da82e0affb2f8a0558d944/raw/3631132372dee3d89fe5d3ea60a6492600156f87/core916-section-menu-in-game.png",
-      "sha256": "5f38bf384d8ca65e83f5d62a03fa7a047b7444c887150e60e8373cbf4e4dec37"
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-section-menu.png",
+      "sha256": "230082283160dece2ab587c98382f460f93dc47f659d184612025e19f61725e5"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/b72318bca8da82e0affb2f8a0558d944/raw/3631132372dee3d89fe5d3ea60a6492600156f87/core916-submenu-click-in-game.png",
-      "sha256": "e44550a14f987bab9b2f7f28cae0b60a59176dfcf347a02c2f3c5e68beb0e6b9"
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-submenu.png",
+      "sha256": "fe68bf3e9247852281958d2bc9515e3f8d09d9e35c802b9e97dd75cd95919490"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/b72318bca8da82e0affb2f8a0558d944/raw/3631132372dee3d89fe5d3ea60a6492600156f87/core916-refusals-in-game.png",
-      "sha256": "342d7cea877327288fb175fecb0dd8c159d57e9424772bf4e96ff7bfad85042c"
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-refusals.png",
+      "sha256": "ca57450afaf3854ac5eb86b88e4103d23a574af792835fb8cd03ce2c1dce12d5"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/b72318bca8da82e0affb2f8a0558d944/raw/3631132372dee3d89fe5d3ea60a6492600156f87/core916-block-menu-in-game.png",
-      "sha256": "6e0d454d611caac056727f92609509385da3ca60b99fb0f022552646eb8745c7"
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core213-factory-block-menu.png",
+      "sha256": "0a80ffb1a6b44ac53caca02654d414c906a088e8ca77e8a095116dc80e0a6ee8"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core485-2130453-agf-settings.png",
+      "sha256": "1b1d42f00110f8c94bf73568600d1de526b9df7bba0bb0114c291e9f32415597"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/7fc2ed1d32eeb2320e3f50eb5fc4ca41/raw/cab8ccff077c30f256f829adcabe2e67bc85b2fb/core485-2130453-agf-route-settings.png",
+      "sha256": "ec65c03e6f824e7a31e3b3954caf8e8d5b5c4d4ef08adf813c0e4f25e4b367de"
     }
   ]
 }
