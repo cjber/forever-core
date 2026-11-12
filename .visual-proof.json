@@ -1,17 +1,18 @@
 {
-  "input_digest": "822e70399b4b08c2313390fa81761f4597e29b5b8cc36cc4ec73ed150a4c0086",
-  "runtime_sha256": "822e70399b4b08c2313390fa81761f4597e29b5b8cc36cc4ec73ed150a4c0086",
-  "candidate": "ec39e624c74decb90b7cd3026d3473557451f182d4b0fbfdb46104f378cc0339",
+  "input_digest": "2cab4ecdeca169df0ed33700a0651a762e4c04ed4d2a05c57fe7681b94a8cec7",
+  "runtime_sha256": "2cab4ecdeca169df0ed33700a0651a762e4c04ed4d2a05c57fe7681b94a8cec7",
+  "candidate": "d62a99e5486c397d03bdac6e6f455337fdea6d77451d2de593c407becc8b08f3",
   "tested_artifact": "source-tree",
   "client_build": "1.60.1.70888 (Interface 16001)",
-  "source_commit": "80a31b39564e14f66d062dd0939d84832aa742a2",
-  "notes": "Recorded in the player's live client from an installed source-tree build of this commit (git archive, version stamped v1.8.1-dev+80a31b3); check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. Installed with the released Shortest Path Forever 1.34.0, Adventure Guide 1.7.7, Legacy, Tweaks, SkillUp, Field Guide, Commissions and Macro Assist.",
+  "source_commit": "e21f4954f7c6b435fbf6609e33ea69ef31d4f9a7",
+  "notes": "Recorded on Hel Io in the player's live client from an installed source-tree build of this commit (git archive, version stamped v1.8.1-dev+e21f495); check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. Loaded with the released Shortest Path Forever 1.34.0, Adventure Guide 1.7.7, Legacy, SkillUp, Field Guide, Commissions and Macro Assist, and a Tweaks Forever dev build. Output printed to a chat tab with no channels.",
   "flows": [
     {
       "name": "Retired leaderboards answer old calls and nothing errors",
       "steps": [
-        "Install the candidate in place of ForeverCore v1.8.1 and enter the world",
-        "Print the loaded version, ForeverCore.API, ForeverCore.Leaderboards.Boards() and ForeverCore.PeerStats.New({}):Revision(): v1.8.1-dev+80a31b3, 2, table, 0; SlashCmdList.FOREVERLEADERBOARDS is nil",
+        "Install the candidate in place of ForeverCore v1.8.1 and /reload",
+        "Print the loaded version and ForeverCore.API: v1.8.1-dev+e21f495, 2",
+        "Print type(ForeverCore.Leaderboards.Boards()), ForeverCore.PeerStats.New({}):Revision() and SlashCmdList.FOREVERLEADERBOARDS: table, 0, nil",
         "Count BugGrabber errors for this session: 0"
       ],
       "result": "pass"
@@ -28,19 +29,19 @@
       "name": "/forever debug on core's own slash entry",
       "steps": [
         "SLASH_FOREVERCORE1 and 2 read /fcore and /forever",
-        "With UIErrorsFrame.AddMessage echoed to chat, typing /forever debug twice shows Debug log is on for this session, then Debug log is off"
+        "With UIErrorsFrame.AddMessage echoed to the chat tab, typing /forever debug twice shows Debug log is on for this session, then Debug log is off"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/4e7a1d3bc3d329be9849629fcb782e9735b98fc2/core519-family-page-80a31b3.png",
-      "sha256": "fba246cc12a014e83e9b8598df2349a0ff64d74182ba655f8a353835d88f3a97"
+      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/70b1c88ae1e605bc72786a04dba661fa862e330c/core519-family-page-e21f495.png",
+      "sha256": "b7301a4b1c80f379c371aea81f1423199aac96c00d680632276904f81e78b36e"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/4e7a1d3bc3d329be9849629fcb782e9735b98fc2/core519-forever-debug-80a31b3.png",
-      "sha256": "3f50b927e84f23940224805b127fea793a0b953b13671408ce37768675db7f97"
+      "url": "https://gist.githubusercontent.com/cjber/62bcd9005066bc66ad42f99f5c3dd32e/raw/70b1c88ae1e605bc72786a04dba661fa862e330c/core519-checks-e21f495.png",
+      "sha256": "3e79bec852eee3aa84719bd2a08b8248a0d69ea9affdefd99c0d566c6a00e6a0"
     }
   ]
 }
