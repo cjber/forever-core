@@ -768,6 +768,43 @@ class VisualProofTest(unittest.TestCase):
         (root / "ForeverCore.toc").write_text("Core.lua\n", encoding="utf-8")
         self.assertEqual(pkgmeta.localization_toc_files(root), [])
 
+    def test_localization_toc_files_accepts_flavor_only_interface(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text(
+            '## Interface-Forever: 16001\n## Notes: @localization(locale="enUS", format="lua_additive_table")@\n'
+            "Core.lua\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("## interface-forever: 16001\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("## Interface: 16001,16002\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+
+    def test_localization_toc_files_refuses_unmodelled_interface_forms(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text(
+            '## Interface:\n## Notes: @localization(locale="enUS")@\nCore.lua\n', encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "would not run"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text("## Interface: not-a-version\nCore.lua\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unsupported Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text("## Interface-Forever: nope\nCore.lua\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unsupported Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text(
+            "#@alpha@\n## Interface: 16001\n#@end-alpha@\nCore.lua\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "conditional Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+
+    def test_localization_toc_files_omits_an_empty_interface_without_tokens(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text("## Interface:\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [])
+
     def test_pkgmeta_yaml_phase_mirrors_release_sh(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nignore:\n  - media/icon.tga\n- media/icon-400.png\n"

@@ -270,13 +270,89 @@ def read(root: Path) -> Manifest | None:
     )
 
 
-def _has_interface(path: Path) -> bool:
-    """Whether a TOC carries the base `## Interface:` line release.sh reads before filtering it."""
+_INTERFACE_BASE = re.compile(r"^## Interface:[ \t]*(.*)$")
+_INTERFACE_FLAVOR = re.compile(r"^## Interface-([A-Za-z]+):[ \t]*(.*)$", re.IGNORECASE)
+_INTERFACE_VALUE = re.compile(r"^[0-9]+(?:,[0-9]+)*$")
+_CONDITIONAL_BLOCK = re.compile(r"^\s*#@(?P<end>end-)?(?P<non>non-)?(?P<kind>alpha|debug)@")
+# release.sh's game_flavor keys; an unknown Interface-Foo: is ignored by the vendor loop.
+_GAME_FLAVORS = frozenset(
+    {
+        "retail",
+        "classic",
+        "bcc",
+        "mainline",
+        "tbc",
+        "vanilla",
+        "wrath",
+        "wotlkc",
+        "cata",
+        "mists",
+        "titan",
+        "forever",
+        "camelot",
+    }
+)
+
+
+def _conditional_interface(text: str) -> bool:
+    """Whether an Interface line sits in an alpha or debug block release.sh may include or remove."""
+    active: list[tuple[str, bool]] = []
+    for line in text.splitlines():
+        directive = _CONDITIONAL_BLOCK.match(line)
+        if directive:
+            token = (directive.group("kind"), bool(directive.group("non")))
+            if directive.group("end"):
+                for index in range(len(active) - 1, -1, -1):
+                    if active[index] == token:
+                        active.pop(index)
+                        break
+            else:
+                active.append(token)
+            continue
+        if active:
+            stripped = line.lstrip(" \t")
+            if stripped.startswith("# "):
+                stripped = stripped[2:]
+            if stripped.startswith("## Interface"):
+                return True
+    return False
+
+
+def _interface_filter_eligible(path: Path) -> bool:
+    """Whether release.sh's localization filter can run on this project TOC, refusing unsupported forms.
+
+    A nonempty base `## Interface:` value is the common case. A flavor-only TOC is supported when a known
+    `## Interface-<flavor>:` line has a nonempty value, because release.sh fills `si_game_type_interface_all` from
+    it even without a base (the `Interface-Forever: 16001` form). An empty base/flavor set is not eligible; if such
+    a TOC still carries `@localization`, it is refused so the unknown filter outcome is never silently omitted.
+    Alpha or debug blocks around an Interface line are refused: release.sh's build-type filters decide whether
+    those lines exist before it reads the metadata, which this narrow check does not model.
+    """
     try:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     except OSError:
         return False
-    return any(line.startswith("## Interface:") for line in text.splitlines())
+    if _conditional_interface(text):
+        raise ValueError(f"{path}: alpha/debug conditional Interface metadata is not modelled")
+    base = ""
+    for line in text.splitlines():
+        match = _INTERFACE_BASE.match(line)
+        if match:
+            base = match.group(1).strip(" \t")
+            break
+    values = [base] if base else []
+    for line in text.splitlines():
+        match = _INTERFACE_FLAVOR.match(line)
+        if match and match.group(1).casefold() in _GAME_FLAVORS:
+            values.append(match.group(2).strip(" \t"))
+    if any(values):
+        for value in values:
+            if value and _INTERFACE_VALUE.fullmatch(value) is None:
+                raise ValueError(f"{path}: unsupported Interface metadata {value!r}")
+        return True
+    if "@localization" in text:
+        raise ValueError(f"{path}: no nonempty Interface metadata, so the vendor localization filter would not run")
+    return False
 
 
 def project_toc_files(root: Path) -> list[Path]:
@@ -337,10 +413,13 @@ def project_toc_files(root: Path) -> list[Path]:
 
 
 def localization_toc_files(root: Path) -> list[Path]:
-    """The project TOCs that reach the packager's `@localization@` filter: those with `## Interface:`.
+    """The project TOCs that reach the packager's `@localization@` filter.
 
     Every `.lua` file and these TOCs receive that filter; other text suffixes (`.md`, `.txt`, `.xml`) do not. A
-    project TOC without a base `## Interface:` line is still a project TOC, but release.sh skips its localization
-    filter (line 1946), so it is not returned here.
+    nonempty base `## Interface:` is the common case, and a known `## Interface-<flavor>:` value is enough on its
+    own because release.sh fills the same interface map from it. An empty metadata set is omitted unless the TOC
+    carries `@localization`, which is refused rather than silently left out. Alpha/debug conditional Interface
+    lines and non-numeric Interface values are refused because release.sh's build-type filters decide them before
+    the localization check.
     """
-    return [path for path in project_toc_files(root) if _has_interface(path)]
+    return [path for path in project_toc_files(root) if _interface_filter_eligible(path)]
