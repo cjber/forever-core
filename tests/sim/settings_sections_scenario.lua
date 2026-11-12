@@ -30,9 +30,39 @@ scenario("native settings section registers from real Core", function(sim)
 	assert(box:GetDataProvider():GetSize() == 1, "native header row exists")
 	local row = assert(box:FindFrame(box:GetDataProvider():Find(1)), "native header frame exists")
 	assert(row.Title:GetText() == "Native section", "native row displays the heading")
+	sim.G.SpellCanTargetItem = sim.G.SpellCanTargetItem or function()
+		return false
+	end
+	sim.G.SpellStopTargeting = sim.G.SpellStopTargeting or function() end
+	local IBM = sim.G.GamepadSharedUtility.InputBindingManager
+	local writes, tainted = 0, {}
+	for _, method in ipairs({ "AddBindingSet", "RemoveSet", "SetCoreBindingSet", "ClearBindings" }) do
+		local original = IBM[method]
+		IBM[method] = function(self, ...)
+			writes = writes + 1
+			if sim.taint.current then
+				tainted[#tainted + 1] = method .. " by " .. sim.taint.current
+			end
+			return original(self, ...)
+		end
+	end
+	sim:input(function()
+		sim.G.SmartNavigation:SelectButton(row)
+	end)
+	sim:advance(0.05)
+	sim:input(function()
+		sim.G.SmartNavigation:AttemptClose()
+	end)
 	sim:input(function()
 		sim.G.SettingsPanel:Close()
 	end)
+	sim:advance(0.2)
+	sim:input(function()
+		sim.G.SetPreferredGamepadInteractTarget(nil)
+	end)
+	sim:advance(0.05)
+	assert(writes > 0, "navigation exercised the binding stack")
+	assert(#tainted == 0, "binding writes remain untainted: " .. table.concat(tainted, "; "))
 	sim:advance(0.1)
 	sim:expectNoErrors(ADDON)
 	sim:expectNoGamepadTaint(ADDON)
