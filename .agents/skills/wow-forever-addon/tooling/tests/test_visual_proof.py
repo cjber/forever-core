@@ -63,6 +63,55 @@ class VisualProofTest(unittest.TestCase):
         (destination / "media/icon.tga").write_bytes((source / "media/icon.tga").read_bytes())
         return destination
 
+    def mapped_checkout(self):
+        """A checkout whose `Lib` folder installs as a sibling and whose `Core` external does too."""
+        root = self.elsewhere()
+        (root / "Main.toc").write_text(
+            "## Interface: 16001\n## Version: @project-version@\nMain.lua\n", encoding="utf-8"
+        )
+        (root / "Main.lua").write_text("main", encoding="utf-8")
+        (root / "Lib").mkdir()
+        (root / "Lib/Lib.toc").write_text(
+            "## Interface: 16001\n## Version: @project-version@\nLib.lua\n", encoding="utf-8"
+        )
+        (root / "Lib/Lib.lua").write_text("lib", encoding="utf-8")
+        (root / "Lib/Unused.lua").write_text("unused\n", encoding="utf-8")
+        (root / "media").mkdir()
+        (root / "media/icon.tga").write_bytes(b"texture")
+        (root / "media/icon-400.png").write_bytes(b"store icon")
+        (root / "tools").mkdir()
+        (root / "tools/forever-core.txt").write_text("v1.0.0\n", encoding="utf-8")
+        (root / ".pkgmeta").write_text(
+            "package-as: Main\n\nmove-folders:\n  Main/Lib: Lib\n  Main/ForeverCore: Core\n\n"
+            "externals:\n  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+            "v1.0.0/ForeverCore-v1.0.0-forever.zip\n\n"
+            "ignore:\n  - media/icon-400.png\n",
+            encoding="utf-8",
+        )
+        return root
+
+    def mapped_package(self, source):
+        """The real BigWigs release root for `mapped_checkout`, written independently of the module."""
+        release = self.elsewhere() / "release"
+        main = release / "Main"
+        main.mkdir(parents=True)
+        toc = (source / "Main.toc").read_text(encoding="utf-8").replace("@project-version@", "v1.0.0")
+        (main / "Main.toc").write_bytes(toc.replace("\n", "\r\n").encode())
+        (main / "Main.lua").write_bytes((source / "Main.lua").read_bytes().replace(b"\n", b"\r\n"))
+        (main / "media").mkdir()
+        (main / "media/icon.tga").write_bytes((source / "media/icon.tga").read_bytes())
+        lib = release / "Lib"
+        lib.mkdir()
+        lib_toc = (source / "Lib/Lib.toc").read_text(encoding="utf-8").replace("@project-version@", "v1.0.0")
+        (lib / "Lib.toc").write_bytes(lib_toc.replace("\n", "\r\n").encode())
+        for name in ("Lib.lua", "Unused.lua"):
+            (lib / name).write_bytes((source / "Lib" / name).read_bytes().replace(b"\n", b"\r\n"))
+        core = release / "Core"
+        core.mkdir()
+        (core / "Core.toc").write_text("## Interface: 16001\nCore.lua\n", encoding="utf-8")
+        (core / "Core.lua").write_text("core", encoding="utf-8")
+        return release
+
     def proof(self, root, **overrides):
         digest = visual_proof.input_digest(root)
         candidate = overrides.pop("candidate", None)
@@ -142,65 +191,341 @@ class VisualProofTest(unittest.TestCase):
         (root / "media/icon.tga").write_bytes(b"tracked change")
         self.assertNotEqual(candidate, visual_proof.candidate_digest(root))
 
-    def test_move_folders_relocating_a_runtime_file_is_refused(self):
+    def test_move_folders_installs_a_source_owned_sibling_with_release_keys(self):
         root = self.checkout(
             "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/Lib: Lib\n\n"
             "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
         )
         (root / "Lib").mkdir()
-        (root / "Lib/Lib.toc").write_text("Lib.lua\n", encoding="utf-8")
+        (root / "Lib/Lib.toc").write_text("## Interface: 16001\nLib.lua\n", encoding="utf-8")
         (root / "Lib/Lib.lua").write_text("lib", encoding="utf-8")
-        problems = visual_proof.unsupported(root)
-        self.assertIn(
-            "Lib/Lib.lua: .pkgmeta move-folders relocates this shipped runtime file, which visual proof cannot model",
-            problems,
-        )
-        with self.assertRaises(ValueError):
-            visual_proof.candidate_digest(root)
-        with self.assertRaises(ValueError):
+        self.assertEqual(visual_proof.unsupported(root), [])
+        packaged = visual_proof.packaged_runtime_files(root)
+        self.assertIn("ForeverCore/Core.lua", packaged)
+        self.assertIn("Lib/Lib.lua", packaged)
+        with self.assertRaisesRegex(ValueError, "compare_package"):
             visual_proof.compare_installed(root, root)
 
-    def test_move_folders_relocating_an_unloaded_shipped_script_is_refused(self):
+    def test_move_folders_binds_an_unloaded_sibling_script(self):
         root = self.checkout(
             "package-as: A\n\nmove-folders:\n  A/Mod: AMod\n\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
         )
         (root / "A.toc").write_text("A.lua\n", encoding="utf-8")
         (root / "A.lua").write_text("a", encoding="utf-8")
         (root / "Mod").mkdir()
+        (root / "Mod/AMod.toc").write_text("## Interface: 16001\n", encoding="utf-8")
         (root / "Mod/Extra.lua").write_text("extra", encoding="utf-8")
         self.assertNotIn(root / "Mod/Extra.lua", visual_proof.runtime_files(root))
-        self.assertIn("Mod/Extra.lua", visual_proof.packaged_runtime_files(root))
-        self.assertEqual(
-            visual_proof.unsupported(root),
-            [
-                "Mod/Extra.lua: .pkgmeta move-folders relocates this shipped runtime file, "
-                "which visual proof cannot model"
-            ],
-        )
-        with self.assertRaisesRegex(ValueError, "Mod/Extra.lua"):
-            visual_proof.candidate_digest(root)
-        with self.assertRaisesRegex(ValueError, "Mod/Extra.lua"):
-            visual_proof.compare_installed(root, root)
+        self.assertIn("AMod/Extra.lua", visual_proof.packaged_runtime_files(root))
+        self.assertEqual(visual_proof.unsupported(root), [])
+        candidate = visual_proof.candidate_digest(root)
+        source = visual_proof.input_digest(root)
+        (root / "Mod/Extra.lua").write_text("changed", encoding="utf-8")
+        self.assertNotEqual(candidate, visual_proof.candidate_digest(root))
+        self.assertNotEqual(source, visual_proof.input_digest(root))
 
-    def test_move_folders_for_an_absent_external_is_not_a_relocation(self):
+    def test_external_only_move_keeps_the_legacy_single_folder_identity(self):
         root = self.checkout(
-            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/ForeverCore: ForeverCore\n\n"
+            "package-as: Main\n\nmove-folders:\n  Main/ForeverCore: ForeverCore\n\n"
+            "externals:\n  ForeverCore: https://github.com/cjber/forever-core/releases/download/"
+            "v1.0.0/ForeverCore-v1.0.0-forever.zip\n\n"
             "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
         )
+        (root / "tools").mkdir()
+        (root / "tools/forever-core.txt").write_text("v1.0.0\n", encoding="utf-8")
+        layout = pkgmeta.read(root).layout(root)
+        self.assertFalse(layout.mapped)
         self.assertEqual(visual_proof.unsupported(root), [])
-        self.assertTrue(visual_proof.candidate_digest(root))
+        packaged = visual_proof.packaged_runtime_files(root)
+        self.assertIn("Core.lua", packaged)
+        self.assertNotIn("ForeverCore/Core.lua", packaged)
+        self.assertEqual(
+            visual_proof.candidate_digest(root),
+            "49ead3c803b4dc40d3b3170fb72843dedd5d15cf6d1e22d537157ff535dbb45c",
+        )
+        self.assertTrue(visual_proof.compare_installed(root, root).equivalent)
 
     @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
-    def test_verify_reports_an_unmodelled_move_folders(self, _image_hash):
-        root = self.checkout(
-            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/Lib: Lib\n\n"
-            "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+    def test_verify_a_mapped_layout_requires_release_package(self, _image_hash):
+        root = self.mapped_checkout()
+        path = self.written(root, self.proof(root, tested_artifact="source-tree"))
+        problems = visual_proof.verify(root, ["Main.lua"], path)
+        self.assertTrue(any("release-package" in problem for problem in problems))
+        path = self.written(root, self.proof(root, tested_artifact="release-package"))
+        self.assertEqual(visual_proof.verify(root, ["Main.lua"], path), [])
+
+    def test_mapped_candidate_is_symmetric_with_the_release_root(self):
+        source = self.mapped_checkout()
+        layout = pkgmeta.read(source).layout(source)
+        self.assertTrue(layout.mapped)
+        release = self.mapped_package(source)
+        self.assertEqual(visual_proof.candidate_digest(source), visual_proof.package_candidate_digest(release, layout))
+        comparison = visual_proof.compare_package(source, release)
+        self.assertTrue(comparison.equivalent, comparison)
+        self.assertEqual(comparison.missing, ())
+        self.assertEqual(comparison.differing, ())
+        self.assertEqual(comparison.extra, ())
+        self.assertEqual(comparison.unexpected_folders, ())
+        self.assertEqual(comparison.external_bound_by_pin, ("Core",))
+        self.assertEqual(comparison.external_missing, ())
+
+    def test_a_mapped_sibling_change_moves_both_identities(self):
+        source = self.mapped_checkout()
+        layout = pkgmeta.read(source).layout(source)
+        release = self.mapped_package(source)
+        candidate = visual_proof.candidate_digest(source)
+        packaged = visual_proof.package_candidate_digest(release, layout)
+        source_digest = visual_proof.input_digest(source)
+        (source / "Lib/Unused.lua").write_text("changed\n", encoding="utf-8")
+        self.assertNotEqual(candidate, visual_proof.candidate_digest(source))
+        self.assertNotEqual(source_digest, visual_proof.input_digest(source))
+        (release / "Lib/Unused.lua").write_text("changed\n", encoding="utf-8")
+        self.assertNotEqual(packaged, visual_proof.package_candidate_digest(release, layout))
+
+    def test_compare_package_reports_missing_extra_and_unexpected_entries(self):
+        source = self.mapped_checkout()
+        release = self.mapped_package(source)
+        (release / "Lib/Lib.lua").unlink()
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Lib/Lib.lua", comparison.missing)
+        self.assertFalse(comparison.equivalent)
+        release = self.mapped_package(source)
+        (release / "Lib/Extra.lua").write_text("extra", encoding="utf-8")
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Lib/Extra.lua", comparison.extra)
+        self.assertFalse(comparison.equivalent)
+        release = self.mapped_package(source)
+        (release / "Lib/Lib.lua").write_bytes(b"edited")
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Lib/Lib.lua", comparison.differing)
+        self.assertFalse(comparison.equivalent)
+        release = self.mapped_package(source)
+        (release / "Lib/Extra.tga").write_bytes(b"extra texture")
+        self.assertTrue(visual_proof.compare_package(source, release).equivalent)
+        release = self.mapped_package(source)
+        (release / "Old").mkdir()
+        comparison = visual_proof.compare_package(source, release)
+        self.assertEqual(comparison.unexpected_folders, ("Old",))
+        self.assertFalse(comparison.equivalent)
+
+    def test_compare_package_checks_external_folder_and_toc_not_bytes(self):
+        source = self.mapped_checkout()
+        release = self.mapped_package(source)
+        (release / "Core/Core.lua").write_text("different external bytes", encoding="utf-8")
+        comparison = visual_proof.compare_package(source, release)
+        self.assertTrue(comparison.equivalent, comparison)
+        self.assertEqual(comparison.external_bound_by_pin, ("Core",))
+        (release / "Core/Core.toc").unlink()
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Core/Core.toc: missing from the external addon folder", comparison.external_missing)
+        self.assertFalse(comparison.equivalent)
+        release = self.mapped_package(source)
+        (release / "Core").rename(release / "Core-moved")
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Core: missing external addon folder", comparison.external_missing)
+        self.assertFalse(comparison.equivalent)
+
+    def test_externals_reads_first_level_keys_not_nested_properties(self):
+        root = self.mapped_checkout()
+        (root / ".pkgmeta").write_text(
+            "package-as: Main\n\nmove-folders:\n  Main/ForeverCore: Core\n\n"
+            "externals:\n  ForeverCore:\n    url: https://github.com/cjber/forever-core/releases/download/"
+            "v1.0.0/ForeverCore-v1.0.0-forever.zip\n    tag: v1.0.0\n",
+            encoding="utf-8",
         )
-        (root / "Lib").mkdir()
-        (root / "Lib/Lib.toc").write_text("Lib.lua\n", encoding="utf-8")
-        (root / "Lib/Lib.lua").write_text("lib", encoding="utf-8")
-        problems = visual_proof.verify(root, ["UI/Main.lua"], self.written(root, self.proof(root, candidate="0" * 64)))
-        self.assertTrue(any("move-folders" in problem for problem in problems))
+        manifest = pkgmeta.read(root)
+        self.assertEqual(manifest.externals, ("ForeverCore",))
+        layout = manifest.layout(root)
+        self.assertEqual(layout.external, ("Core",))
+        self.assertEqual(layout.external_sources, ("ForeverCore",))
+
+    def test_arbitrary_or_unpinned_external_moves_are_refused(self):
+        root = self.mapped_checkout()
+        (root / ".pkgmeta").write_text(
+            "package-as: Main\n\nmove-folders:\n  Main/Other: Other\n\n"
+            "externals:\n  Other: https://example.invalid/download/v1.0.0/Other.zip\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "not the supported ForeverCore external"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / "tools/forever-core.txt").unlink()
+        with self.assertRaisesRegex(ValueError, "not bound"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / "tools/forever-core.txt").write_text("v2.0.0\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "official pinned release"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / "tools/forever-core.txt").write_text("main\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "not an immutable release tag"):
+            pkgmeta.read(root).layout(root)
+
+    def test_external_requires_the_official_repository_url_and_exact_key_case(self):
+        official = "https://github.com/cjber/forever-core/releases/download/v1.0.0/ForeverCore-v1.0.0-forever.zip"
+        for url in (
+            "https://example.invalid/download/v1.0.0/ForeverCore-v1.0.0-forever.zip",
+            "https://github.com/someone/forever-core/releases/download/v1.0.0/ForeverCore-v1.0.0-forever.zip",
+        ):
+            root = self.mapped_checkout()
+            (root / ".pkgmeta").write_text(
+                f"package-as: Main\n\nmove-folders:\n  Main/ForeverCore: Core\n\nexternals:\n  ForeverCore: {url}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "official pinned release"):
+                pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / ".pkgmeta").write_text(
+            f"package-as: Main\n\nmove-folders:\n  Main/ForeverCore: Core\n\nexternals:\n  forevercore: {official}\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "stale source"):
+            pkgmeta.read(root).layout(root)
+
+    def test_raw_move_whitespace_and_yaml_booleans_are_refused(self):
+        cases = {
+            "  Main/Lib : Lib\n": "trailing whitespace",
+            "  Main/Lib: Lib \n": "trailing whitespace",
+            "  Main/Lib:\tLib\n": "starts with a tab",
+            "  Main/Lib: On\n": "YAML boolean",
+            "  Main/Lib: No\n": "YAML boolean",
+        }
+        for move, message in cases.items():
+            root = self.mapped_checkout()
+            (root / ".pkgmeta").write_text(
+                "package-as: Main\n\nmove-folders:\n" + move + "\nignore:\n  - media/icon-400.png\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, message, msg=move):
+                pkgmeta.read(root).layout(root)
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_dot_root_is_resolved_for_support_and_verify(self, _image_hash):
+        root = self.mapped_checkout()
+        self.written(root, self.proof(root, tested_artifact="release-package"))
+        original = Path.cwd()
+        self.addCleanup(os.chdir, original)
+        os.chdir(root)
+        self.assertEqual(visual_proof.unsupported(Path(".")), [])
+        self.assertTrue(visual_proof.candidate_digest(Path(".")))
+        self.assertEqual(visual_proof.verify(Path("."), ["Main.lua"], Path(".visual-proof.json")), [])
+
+    def test_package_candidate_digest_refuses_a_missing_owned_folder(self):
+        source = self.mapped_checkout()
+        layout = pkgmeta.read(source).layout(source)
+        release = self.mapped_package(source)
+        (release / "Lib").rename(release / "Lib-old")
+        with self.assertRaisesRegex(ValueError, "Lib: missing from the package root"):
+            visual_proof.package_candidate_digest(release, layout)
+        comparison = visual_proof.compare_package(source, release)
+        self.assertIn("Lib/Lib.lua", comparison.missing)
+        self.assertFalse(comparison.equivalent)
+
+    def test_package_root_duplicate_case_folders_are_refused(self):
+        source = self.mapped_checkout()
+        layout = pkgmeta.read(source).layout(source)
+        release = self.mapped_package(source)
+        duplicate = release / "lib"
+        duplicate.mkdir()
+        (duplicate / "Lib.toc").write_text("## Interface: 16001\nInjected.lua\n", encoding="utf-8")
+        (duplicate / "Injected.lua").write_text("injected", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate case-insensitive top-level entries"):
+            visual_proof.package_candidate_digest(release, layout)
+        with self.assertRaisesRegex(ValueError, "duplicate case-insensitive top-level entries"):
+            visual_proof.compare_package(source, release)
+        release = self.mapped_package(source)
+        (release / "core").mkdir()
+        (release / "core/Core.toc").write_text("## Interface: 16001\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate case-insensitive top-level entries"):
+            visual_proof.package_candidate_digest(release, layout)
+        with self.assertRaisesRegex(ValueError, "duplicate case-insensitive top-level entries"):
+            visual_proof.compare_package(source, release)
+
+    def test_bad_move_paths_targets_and_overlaps_are_refused(self):
+        cases = {
+            "outside package-as": ("  Other/Lib: Lib\n", "outside package-as"),
+            "parent path": ("  Main/../Lib: Lib\n", "dot, parent"),
+            "absolute path": ("  /Main/Lib: Lib\n", "absolute path"),
+            "backslash path": ("  Main\\\\Lib: Lib\n", "backslash"),
+            "quoted key": ('  "Main/Lib": Lib\n', "quoted move key"),
+            "nested target": ("  Main/Lib: Lib/Sub\n", "one folder name"),
+            "dot target": ("  Main/Lib: .Hidden\n", "dot or parent"),
+            "parent target": ("  Main/Lib: ..\n", "dot or parent"),
+            "package itself": ("  Main: Main\n", "moves the package folder itself"),
+            "duplicate target": ("  Main/Lib: Lib\n  Main/Other: Lib\n", "collides"),
+            "case duplicate target": ("  Main/Lib: Lib\n  Main/Other: LIB\n", "collides"),
+        }
+        for label, (move, message) in cases.items():
+            root = self.mapped_checkout()
+            (root / ".pkgmeta").write_text(
+                "package-as: Main\n\nmove-folders:\n" + move + "\nignore:\n  - media/icon-400.png\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, message, msg=label):
+                pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / ".pkgmeta").write_text(
+            "package-as: Main\n\nmove-folders:\n  Main/Lib: Lib\n  Main/Lib/Sub: Sub\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / ".pkgmeta").write_text("package-as: Main\n\nmove-folders:\n  Main/Missing: Missing\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "stale"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / "ForeverCore").mkdir()
+        (root / "ForeverCore/Core.toc").write_text("## Interface: 16001\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "both an externals entry and a checkout path"):
+            pkgmeta.read(root).layout(root)
+        root = self.mapped_checkout()
+        (root / "lib").mkdir()
+        (root / "lib/Lib.toc").write_text("## Interface: 16001\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "case-duplicate"):
+            pkgmeta.read(root).layout(root)
+
+    def test_mapped_release_paths_that_collide_ignoring_case_are_refused(self):
+        source = self.mapped_checkout()
+        (source / "Lib/Foo.lua").write_text("foo", encoding="utf-8")
+        (source / "Lib/foo.lua").write_text("foo", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "case-collides"):
+            visual_proof.packaged_runtime_files(source)
+        with self.assertRaisesRegex(ValueError, "case-collides"):
+            visual_proof.candidate_digest(source)
+
+    def test_a_moved_folder_without_its_target_toc_is_refused(self):
+        source = self.mapped_checkout()
+        (source / "Lib/Lib.toc").unlink()
+        problems = visual_proof.unsupported(source)
+        self.assertTrue(any("no shipped Lib.toc" in problem for problem in problems), problems)
+        with self.assertRaisesRegex(ValueError, "no shipped Lib.toc"):
+            visual_proof.candidate_digest(source)
+
+    def test_a_toc_loading_a_relocated_path_is_refused(self):
+        source = self.mapped_checkout()
+        with (source / "Main.toc").open("a") as stream:
+            stream.write("Lib/Lib.lua\n")
+        problems = visual_proof.unsupported(source)
+        self.assertTrue(any("installs it under Lib" in problem for problem in problems), problems)
+        with self.assertRaisesRegex(ValueError, "installs it under Lib"):
+            visual_proof.candidate_digest(source)
+        source = self.mapped_checkout()
+        with (source / "Lib/Lib.toc").open("a") as stream:
+            stream.write("../Main.lua\n")
+        problems = visual_proof.unsupported(source)
+        self.assertTrue(any("installs it under Main" in problem for problem in problems), problems)
+        source = self.mapped_checkout()
+        (source / "Bindings.xml").write_text('<Bindings><Script file="Lib/Lib.lua"/></Bindings>', encoding="utf-8")
+        problems = visual_proof.unsupported(source)
+        self.assertTrue(any("installs it under Lib" in problem for problem in problems), problems)
+
+    def test_unmapped_candidate_hash_is_stable(self):
+        root = self.checkout()
+        self.assertEqual(
+            visual_proof.candidate_digest(root),
+            "49ead3c803b4dc40d3b3170fb72843dedd5d15cf6d1e22d537157ff535dbb45c",
+        )
 
     def test_package_extraction_matches_the_source_candidate(self):
         source = self.checkout()
@@ -680,6 +1005,130 @@ class VisualProofTest(unittest.TestCase):
         failed = subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: not a git repository")
         with mock.patch.object(pkgmeta.subprocess, "run", return_value=failed):
             self.assertTrue(pkgmeta.read(root).keeps("Core.lua"))
+
+    def toc(self, path, text="Core.lua\n", interface=True):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(("## Interface: 16001\n" if interface else "") + text, encoding="utf-8")
+        return path
+
+    def test_project_toc_files_matches_the_packagers_exact_vendor_list(self):
+        root = self.checkout(
+            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: LibAHTab\n\n"
+            "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+        )
+        self.toc(root / "ForeverCore-Mainline.toc")
+        self.toc(root / "ForeverCore_Classic.toc")
+        self.toc(root / "ForeverCore-Camelot.toc")
+        self.toc(root / "ForeverCore-Bogus.toc")
+        self.toc(root / "LibAHTab/LibAHTab.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab-Wrath.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab_wotlkc.toc", "LibAHTab.lua\n")
+        self.toc(root / "LibAHTab/LibAHTab-Camelot.toc", "LibAHTab.lua\n")
+        found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
+        self.assertEqual(
+            found,
+            [
+                "ForeverCore.toc",
+                "ForeverCore-Mainline.toc",
+                "ForeverCore_Classic.toc",
+                "ForeverCore-Camelot.toc",
+                "LibAHTab/LibAHTab.toc",
+                "LibAHTab/LibAHTab-Wrath.toc",
+                "LibAHTab/LibAHTab-Camelot.toc",
+            ],
+        )
+        self.assertEqual([path.relative_to(root).as_posix() for path in pkgmeta.localization_toc_files(root)], found)
+
+    def test_project_toc_files_skips_a_nested_move_and_derives_an_implicit_package(self):
+        root = self.checkout(
+            "package-as: ForeverCore\n\nmove-folders:\n  ForeverCore/LibAHTab: Lib/Nested\n\n"
+            "ignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+        )
+        self.toc(root / "LibAHTab/Nested.toc", "LibAHTab.lua\n")
+        found = [path.relative_to(root).as_posix() for path in pkgmeta.project_toc_files(root)]
+        self.assertEqual(found, ["ForeverCore.toc"])
+        (root / ".pkgmeta").write_text("move-folders:\n  ForeverCore/LibAHTab: LibAHTab\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc"])
+        self.toc(root / "A.toc")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "A.toc"])
+        (root / "A.toc").unlink()
+        (root / "ForeverCore.toc").rename(root / "ForeverCore-Camelot.toc")
+        with self.assertRaisesRegex(ValueError, "Ambiguous addon name"):
+            pkgmeta.project_toc_files(root)
+
+    def test_project_toc_files_skips_move_key_syntax_the_vendor_cannot_resolve(self):
+        for move in ("  LibAHTab: LibAHTab\n", '  "ForeverCore/LibAHTab": LibAHTab\n'):
+            root = self.checkout(
+                "package-as: ForeverCore\n\nmove-folders:\n"
+                + move
+                + "\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
+            )
+            self.toc(root / "LibAHTab/LibAHTab.toc", "LibAHTab.lua\n")
+            self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc"], move)
+
+    def test_project_toc_files_ignores_a_hidden_root_toc_for_the_implicit_package(self):
+        root = self.root()
+        (root / "ForeverCore.toc").unlink()
+        self.toc(root / ".Hidden.toc")
+        self.toc(root / "Visible.toc")
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "Visible.toc"])
+        (root / "Visible.toc").unlink()
+        with self.assertRaisesRegex(ValueError, "root addon TOC"):
+            pkgmeta.project_toc_files(root)
+
+    def test_project_toc_files_fails_closed_without_a_selected_root_toc(self):
+        empty = self.elsewhere()
+        with self.assertRaisesRegex(ValueError, "root addon TOC"):
+            pkgmeta.project_toc_files(empty)
+        root = self.checkout()
+        (root / "ForeverCore.toc").unlink()
+        with self.assertRaisesRegex(ValueError, "matching package-as"):
+            pkgmeta.project_toc_files(root)
+
+    def test_localization_toc_files_requires_interface_metadata(self):
+        root = self.checkout()
+        self.toc(root / "ForeverCore-Mainline.toc", interface=False)
+        self.assertEqual(pkgmeta.project_toc_files(root), [root / "ForeverCore.toc", root / "ForeverCore-Mainline.toc"])
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("Core.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [])
+
+    def test_localization_toc_files_accepts_flavor_only_interface(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text(
+            '## Interface-Forever: 16001\n## Notes: @localization(locale="enUS", format="lua_additive_table")@\n'
+            "Core.lua\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("## interface-forever: 16001\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+        (root / "ForeverCore.toc").write_text("## Interface: 16001,16002\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [root / "ForeverCore.toc"])
+
+    def test_localization_toc_files_refuses_unmodelled_interface_forms(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text(
+            '## Interface:\n## Notes: @localization(locale="enUS")@\nCore.lua\n', encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "would not run"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text("## Interface: not-a-version\nCore.lua\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unsupported Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text("## Interface-Forever: nope\nCore.lua\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unsupported Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+        (root / "ForeverCore.toc").write_text(
+            "#@alpha@\n## Interface: 16001\n#@end-alpha@\nCore.lua\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "conditional Interface metadata"):
+            pkgmeta.localization_toc_files(root)
+
+    def test_localization_toc_files_omits_an_empty_interface_without_tokens(self):
+        root = self.checkout()
+        (root / "ForeverCore.toc").write_text("## Interface:\nCore.lua\n", encoding="utf-8")
+        self.assertEqual(pkgmeta.localization_toc_files(root), [])
 
     def test_pkgmeta_yaml_phase_mirrors_release_sh(self):
         root = self.checkout(

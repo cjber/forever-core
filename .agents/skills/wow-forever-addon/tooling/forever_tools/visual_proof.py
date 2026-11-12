@@ -29,15 +29,20 @@ the Core pin, a localization export) and is refused rather than hashed.
 The runtime graph is every TOC under the checkout, each addon's auto-loaded `Bindings.xml` and the XML script
 graph it names (the client reads the file without a TOC entry, WFA-37), and the artwork. Every TOC addon
 contributes, so a second addon the checkout holds (a library with its own TOC) cannot escape the identity.
-Candidate keys are checkout-relative: the installed path for the addon rooted at the checkout, and the secondary
-addon's own checkout path otherwise. `.pkgmeta`'s `move-folders` is not modelled: an entry that relocates a shipped
-runtime file makes the candidate and the comparison refuse, naming the file, because its installed path cannot be
-derived, and `move-folders` with no `package-as` is refused because its keys name a release folder the proof cannot
-derive; an entry whose source the checkout does not hold (the Core external's placement) relocates no runtime
-file. A file the TOC/XML graph loads but `.pkgmeta` ignores is refused too: the package would not run, so it is not
-a package graph the proof may hash. A project TOC's leading UTF-8 BOM and `## Interface-` lines are stripped by the
-packager, so a TOC carrying either is refused instead of hashed, whether or not the policy plain-copies it. The
-embedded Core external is not in the checkout, and the Core pin in `input_digest` binds it.
+Candidate keys are checkout-relative when no source-owned `move-folders` entry runs: the installed path for the
+addon rooted at the checkout, and the secondary addon's own checkout path otherwise, so existing candidates keep
+their exact bytes. A source-owned move installs an addon as a top-level sibling, so keys become release-relative
+(`package-as/name` or `target/name`) and the digest carries a mapped domain tag; `package_candidate_digest` reads
+the same keys from a package extraction and is the only supported extraction identity for that layout. An
+external-only move keeps the legacy single-folder identity; its bytes are absent from the checkout and the Core pin
+in `input_digest` binds them. A move whose source is neither a checkout folder nor a declared external is refused
+as stale, as is a folder that is both. A moved folder needs its own `<target>.toc`, and a root TOC or Bindings
+graph may not load a path the move installs in another addon. A file the TOC/XML graph loads but `.pkgmeta`
+ignores is refused too: the package would not run, so it is not a package graph the proof may hash. A project
+TOC's leading UTF-8 BOM and `## Interface-` lines are stripped by the packager, so a TOC carrying either is refused
+instead of hashed, whether or not the policy plain-copies it. `compare_installed` stays a single-folder comparison;
+a mapped checkout must use `compare_package` on the packager's release root, which also checks the declared external
+addon folders without claiming their bytes.
 """
 
 import argparse
@@ -83,6 +88,8 @@ PACKAGER_TOKEN = re.compile(
     rb"|@localization[^@]*@"
 )
 ARTIFACTS = ("release-package", "source-tree")
+# A mapped package's keys already name the release root; the tag keeps that hash from ever equalling a legacy one.
+MAPPED_DOMAIN = b"forever-mapped-candidate-v1\0"
 
 
 def changed_files(base: str) -> list[str]:
@@ -116,6 +123,30 @@ def _root_file(directory: Path, name: str) -> Path | None:
         names = ", ".join(sorted(path.name for path in matches))
         raise ValueError(f"{directory}: ambiguous case duplicates for {name}: {names}")
     return matches[0] if matches else None
+
+
+def _case_dir(directory: Path, name: str) -> Path | None:
+    """A folder at the directory's root, exact first, then a single case-insensitive match."""
+    exact = directory / name
+    if exact.is_dir():
+        return exact
+    if not directory.is_dir():
+        return None
+    matches = [path for path in directory.iterdir() if path.is_dir() and path.name.casefold() == name.casefold()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _casefold_problems(names) -> list[str]:
+    """Release paths that collide on a case-insensitive client, where only one of them can install."""
+    seen = {}
+    problems = []
+    for name in sorted(names):
+        case = name.casefold()
+        if case in seen:
+            problems.append(f"{name}: case-collides with {seen[case]} in the package")
+        else:
+            seen[case] = name
+    return problems
 
 
 def runtime_files(root: Path) -> list[Path]:
@@ -172,6 +203,28 @@ def _script_map(root: Path, manifest: pkgmeta.Manifest | None) -> dict[str, Path
     return scripts
 
 
+def _present_runtime(root: Path) -> dict[str, Path]:
+    """Every runtime file an installed folder actually holds, without requiring its TOC graph to resolve.
+
+    A package comparison must name a loaded file the extraction lacks as missing, not crash while reading the
+    extraction's TOC. The selection is the same set a complete extraction holds: every TOC, every non-dot Lua or
+    XML file, and every runtime asset outside the development roots.
+    """
+    root = root.resolve()
+    files = {toc_path.relative_to(root).as_posix(): toc_path for toc_path in toc.toc_files(root)}
+    files.update(_script_map(root, None))
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if (
+            path.is_file()
+            and relative.suffix.lower() in ASSET_SUFFIXES
+            and relative.parts[0] not in NON_RUNTIME_ROOTS
+            and not any(part.startswith(".") for part in relative.parts)
+        ):
+            files[relative.as_posix()] = path
+    return files
+
+
 def packaged_runtime_files(root: Path) -> dict[str, Path]:
     """The runtime files a release installs at the addon's folder, keyed by their installed path.
 
@@ -188,6 +241,15 @@ def packaged_runtime_files(root: Path) -> dict[str, Path]:
             raise ValueError("; ".join(excluded))
         files = {name: path for name, path in files.items() if manifest.keeps(name)}
     files.update(_script_map(root, manifest))
+    layout = manifest.layout(root) if manifest is not None else None
+    if layout is not None:
+        files = {name: path for name, path in files.items() if not layout.in_external_source(name)}
+    if layout is not None and layout.mapped:
+        mapped = {layout.release_path(name): path for name, path in files.items()}
+        problems = _casefold_problems(mapped)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return mapped
     return files
 
 
@@ -209,8 +271,10 @@ def _shipped_bytes(path: Path, data: bytes) -> bytes:
     return SHIPPED_VERSION.sub(b"## Version: <packager-version>", data) if path.suffix == ".toc" else data
 
 
-def _digest(files: dict[str, Path], canonical) -> str:
+def _digest(files: dict[str, Path], canonical, domain: bytes = b"") -> str:
     digest = hashlib.sha256()
+    if domain:
+        digest.update(domain)
     for name in sorted(files):
         data = canonical(files[name], files[name].read_bytes())
         key = name.encode()
@@ -250,18 +314,97 @@ def candidate_digest(root: Path) -> str:
     problems = unsupported(root) + unmodeled_directives(root)
     if problems:
         raise ValueError("; ".join(problems))
-    return _digest(packaged_runtime_files(root), _shipped_bytes)
+    manifest = pkgmeta.read(root)
+    layout = manifest.layout(root) if manifest is not None else None
+    domain = MAPPED_DOMAIN if layout is not None and layout.mapped else b""
+    return _digest(packaged_runtime_files(root), _shipped_bytes, domain)
+
+
+def _case_duplicate_entries(release_root: Path, layout: pkgmeta.Layout) -> list[str]:
+    """Top-level owned or external folder names that collide ignoring case in a package root."""
+    problems = []
+    if not release_root.is_dir():
+        return problems
+    entries = list(release_root.iterdir())
+    for name in [folder for folder, _ in layout.owned] + list(layout.external):
+        matches = [entry.name for entry in entries if entry.name.casefold() == name.casefold()]
+        if len(matches) > 1:
+            problems.append(f"{name}: duplicate case-insensitive top-level entries ({', '.join(sorted(matches))})")
+    return problems
+
+
+def _package_files(release_root: Path, layout: pkgmeta.Layout) -> dict[str, Path]:
+    """The source-owned runtime files a release root holds, keyed by their release-relative path."""
+    files = {}
+    for folder, _ in layout.owned:
+        directory = _case_dir(release_root, folder)
+        if directory is None:
+            continue
+        for name, path in _present_runtime(directory).items():
+            if folder == layout.package and layout.in_external_source(name):
+                continue
+            files[f"{folder}/{name}"] = path
+    return files
+
+
+def package_candidate_digest(release_root: Path, layout: pkgmeta.Layout) -> str:
+    """The canonical source-owned runtime a mapped package root installs, with the mapped domain tag.
+
+    `release_root` is the BigWigs packager's output folder: the owned release folders are hashed by their
+    release-relative keys and the declared external folders are left to the Core pin. Every owned folder must be
+    present, and release keys that collide ignoring case are refused. A checkout's `candidate_digest` for the same
+    layout yields the same value; compare the two directly.
+    """
+    if not layout.mapped:
+        raise ValueError("package_candidate_digest needs a source-owned move-folders layout")
+    release_root = release_root.resolve()
+    problems = _case_duplicate_entries(release_root, layout)
+    if problems:
+        raise ValueError("; ".join(problems))
+    for folder, _ in layout.owned:
+        if _case_dir(release_root, folder) is None:
+            raise ValueError(f"{folder}: missing from the package root {release_root}")
+    files = _package_files(release_root, layout)
+    problems = _casefold_problems(files)
+    if problems:
+        raise ValueError("; ".join(problems))
+    return _digest(files, _shipped_bytes, MAPPED_DOMAIN)
+
+
+def _relocated_loads(root: Path, layout: pkgmeta.Layout, manifest: pkgmeta.Manifest) -> list[str]:
+    """TOC or Bindings graph edges that cross into another installed addon after `move-folders` runs."""
+    problems = set()
+    for toc_path in toc.toc_files(root):
+        relative = toc_path.relative_to(root).as_posix()
+        if not manifest.keeps(relative) or layout.in_external_source(relative):
+            continue
+        owner = layout.release_path(relative).split("/", 1)[0]
+        loaded = set(toc.loaded_files(toc_path, root))
+        bindings = _root_file(toc_path.parent, "Bindings.xml")
+        if bindings is not None:
+            loaded.update(toc.xml_files(bindings, root))
+        for path in sorted(loaded):
+            name = path.relative_to(root).as_posix()
+            if layout.in_external_source(name):
+                continue
+            release = layout.release_path(name).split("/", 1)[0]
+            if release != owner:
+                problems.add(
+                    f"{name}: loaded by {relative}, but move-folders installs it under {release} instead of {owner}"
+                )
+    return sorted(problems)
 
 
 def unsupported(root: Path) -> list[str]:
-    """Packaging directives the candidate cannot model, mostly `.pkgmeta`'s `move-folders`.
+    """`move-folders` and package selections the candidate cannot model.
 
-    A relocated shipped runtime file leaves the addon folder the proof names, so the candidate would invent a
-    path the client never installs. Every shipped Lua or XML script counts, loaded or not, since the packager copies
-    both. An entry whose source the checkout does not hold (the Core external's placement) relocates no runtime file
-    and is not reported. `move-folders` without `package-as` is refused outright: its keys are relative to a release
-    folder the proof cannot name.
+    Every move is resolved by `pkgmeta.layout`: a stale source, an unsafe path, overlapping sources, colliding
+    destinations, a source that is both local and external, and a source-owned folder without its own shipped
+    `<target>.toc` are refused. A mapped layout also refuses a TOC or Bindings graph that loads a path installed
+    in another addon, and release keys that collide on a case-insensitive client. An external-only move is
+    harmless: it installs no source-owned addon elsewhere and keeps the legacy single-folder identity.
     """
+    root = root.resolve()
     manifest = pkgmeta.read(root)
     if manifest is None:
         return []
@@ -270,13 +413,21 @@ def unsupported(root: Path) -> list[str]:
     if manifest.moved and not manifest.package:
         problems.append(pkgmeta.MOVE_WITHOUT_PACKAGE)
         return problems
-    shipped = dict(files)
-    shipped.update(_script_map(root, manifest))
-    problems.extend(
-        f"{name}: .pkgmeta move-folders relocates this shipped runtime file, which visual proof cannot model"
-        for name in sorted(shipped)
-        if manifest.keeps(name) and manifest.relocates(name)
-    )
+    try:
+        layout = manifest.layout(root)
+    except ValueError as error:
+        problems.append(str(error))
+        return problems
+    if layout is None:
+        return problems
+    problems.extend(_relocated_loads(root, layout, manifest))
+    if layout.mapped:
+        shipped = {name for name in files if manifest.keeps(name) and not layout.in_external_source(name)}
+        shipped.update(
+            name for name in _script_map(root, manifest) if manifest.keeps(name) and not layout.in_external_source(name)
+        )
+        mapped = {layout.release_path(name): name for name in shipped}
+        problems.extend(_casefold_problems(mapped))
     return problems
 
 
@@ -333,9 +484,21 @@ class Comparison:
 
 
 def compare_installed(source: Path, installed: Path) -> Comparison:
-    """Compare a checkout's shipped runtime with an installed addon folder."""
+    """Compare a checkout's shipped runtime with one installed addon folder.
+
+    A source-owned `move-folders` entry installs another top-level addon, which one folder cannot describe, so a
+    mapped checkout is refused here and must use `compare_package` on the packager's release root. An external-only
+    move installs no source-owned folder elsewhere and keeps this single-folder comparison.
+    """
     source = source.resolve()
     installed = installed.resolve()
+    manifest = pkgmeta.read(source)
+    layout = manifest.layout(source) if manifest is not None else None
+    if layout is not None and layout.mapped:
+        raise ValueError(
+            f"{source}: .pkgmeta move-folders installs a source-owned addon as a sibling folder; "
+            "compare the release root with compare_package(source, release_root) instead"
+        )
     problems = unsupported(source) + unmodeled_directives(source)
     if problems:
         raise ValueError("; ".join(problems))
@@ -373,6 +536,91 @@ def compare_installed(source: Path, installed: Path) -> Comparison:
     )
 
 
+@dataclass(frozen=True)
+class PackageComparison:
+    """A mapped checkout's shipped runtime against the packager's release root, file by file.
+
+    Every owned addon folder is walked by its release-relative key, so a missing sibling, a source-tree install
+    that still nests it under the main folder, and an extra unshipped script are visible. A top-level entry outside
+    the owned and external folders is `unexpected_folders`. An external folder counts only when it exists and ships
+    its own `<folder>.toc`; `external_bound_by_pin` names those folders, and its bytes are deliberately not compared:
+    the Core pin in `input_digest` binds the external addon, not this comparison. `external_missing` reports a
+    declared external whose folder or TOC is absent. Extra assets are reported and harmless, as in a single-folder
+    comparison.
+    """
+
+    equivalent: bool
+    candidate: str
+    missing: tuple[str, ...]
+    differing: tuple[str, ...]
+    extra: tuple[str, ...]
+    unexpected_folders: tuple[str, ...]
+    external_bound_by_pin: tuple[str, ...]
+    external_missing: tuple[str, ...]
+
+
+def compare_package(source: Path, release_root: Path) -> PackageComparison:
+    """Compare a mapped checkout's shipped runtime with a packager release root holding every addon folder."""
+    source = source.resolve()
+    release_root = release_root.resolve()
+    manifest = pkgmeta.read(source)
+    if manifest is None:
+        raise ValueError(f"{source}: no package policy; compare_package needs a mapped checkout")
+    layout = manifest.layout(source)
+    if layout is None or not layout.mapped:
+        raise ValueError(
+            f"{source}: no source-owned move-folders layout; compare one installed folder with compare_installed"
+        )
+    problems = unsupported(source) + unmodeled_directives(source)
+    if problems:
+        raise ValueError("; ".join(problems))
+    duplicates = _case_duplicate_entries(release_root, layout)
+    if duplicates:
+        raise ValueError("; ".join(duplicates))
+    shipped = packaged_runtime_files(source)
+    expected = {folder.casefold() for folder, _ in layout.owned}
+    expected.update(folder.casefold() for folder in layout.external)
+    unexpected = ()
+    if release_root.is_dir():
+        unexpected = tuple(
+            sorted(
+                entry.name
+                for entry in release_root.iterdir()
+                if entry.name.casefold() not in expected and not entry.name.startswith(".")
+            )
+        )
+    present = _package_files(release_root, layout)
+    missing = tuple(sorted(set(shipped) - set(present)))
+    extra = tuple(sorted(set(present) - set(shipped)))
+    differing = []
+    for name in sorted(set(shipped) & set(present)):
+        source_bytes = _shipped_bytes(shipped[name], shipped[name].read_bytes())
+        package_bytes = _shipped_bytes(present[name], present[name].read_bytes())
+        if source_bytes != package_bytes:
+            differing.append(name)
+    external_bound = []
+    external_missing = []
+    for folder in layout.external:
+        directory = _case_dir(release_root, folder)
+        if directory is None:
+            external_missing.append(f"{folder}: missing external addon folder")
+        elif _root_file(directory, f"{folder}.toc") is None:
+            external_missing.append(f"{folder}/{folder}.toc: missing from the external addon folder")
+        else:
+            external_bound.append(folder)
+    unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in extra)
+    return PackageComparison(
+        not missing and not differing and not unshipped and not unexpected and not external_missing,
+        candidate_digest(source),
+        missing,
+        tuple(differing),
+        extra,
+        unexpected,
+        tuple(external_bound),
+        tuple(external_missing),
+    )
+
+
 def image_hash(url: str) -> str:
     if not SHA.search(url):
         raise ValueError(f"image URL is not pinned to a full commit SHA: {url}")
@@ -385,6 +633,7 @@ def image_hash(url: str) -> str:
 
 
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
+    root = root.resolve()
     if not requires_proof(root, paths):
         return []
     if not proof_path.is_file():
@@ -404,10 +653,22 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
     problems.extend(relocations)
     unmodelled = unmodeled_directives(root)
     problems.extend(unmodelled)
+    manifest = pkgmeta.read(root)
+    try:
+        layout = manifest.layout(root) if manifest is not None else None
+    except ValueError:
+        layout = None
+    mapped = layout is not None and layout.mapped
     if not relocations and not unmodelled and proof.get("candidate") != candidate_digest(root):
         problems.append("visual proof candidate does not match the canonical packaged runtime SHA-256")
-    if proof.get("tested_artifact") not in ARTIFACTS:
+    artifact = proof.get("tested_artifact")
+    if artifact not in ARTIFACTS:
         problems.append("visual proof tested_artifact must be release-package or source-tree")
+    elif mapped and artifact != "release-package":
+        problems.append(
+            "visual proof tested_artifact must be release-package when move-folders installs a source-owned "
+            "addon as a sibling folder"
+        )
     if proof.get("runtime_sha256") != proof.get("input_digest"):
         problems.append("visual proof runtime_sha256 must equal the runtime input digest")
     flows = proof.get("flows")
@@ -455,11 +716,25 @@ def main() -> int:
     parser.add_argument(
         "--compare",
         metavar="INSTALLED",
-        help="compare the checkout's shipped runtime with an installed folder "
-        "(extra assets are reported; extra runtime scripts fail)",
+        help="compare the checkout's shipped runtime with one installed folder "
+        "(extra assets are reported; extra runtime scripts fail; a mapped checkout is refused)",
+    )
+    parser.add_argument(
+        "--compare-package",
+        metavar="RELEASE_ROOT",
+        help="compare a mapped checkout's shipped runtime with the packager's release root holding every addon "
+        "folder (external folders are checked for their TOC, never by bytes)",
     )
     args = parser.parse_args()
     root = Path(".")
+    if args.compare_package:
+        try:
+            package_comparison = compare_package(root, Path(args.compare_package))
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        print(json.dumps(asdict(package_comparison), indent=2))
+        return 0 if package_comparison.equivalent else 1
     if args.compare:
         try:
             comparison = compare_installed(root, Path(args.compare))
