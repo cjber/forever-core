@@ -125,12 +125,28 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual((root / ".github/workflows/core-shared-drift.yml").read_bytes(), b"# workflow\n")
 
+    def test_the_visual_proof_workflow_keeps_its_consumer_path(self):
+        self.write(self.core, "tools/visual-proof.yml", b"# visual workflow\n")
+        root = self.consumer()
+        code, out = self.run_sync(only=(".github/workflows/visual-proof.yml",))
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / ".github/workflows/visual-proof.yml").read_bytes(), b"# visual workflow\n")
+        self.assertIn("full forever_tools sync", out)
+
     def test_kiln_does_not_take_the_drift_workflow(self):
         self.write(self.core, "tools/core-shared-drift.yml", b"# workflow\n")
         root = self.kiln_consumer()
         code, out = self.run_sync(only=(".github/workflows/core-shared-drift.yml",))
         self.assertEqual(code, 0, out)
         self.assertFalse((root / "addon/KilnForever/.github/workflows/core-shared-drift.yml").exists())
+
+    def test_kiln_does_not_take_the_visual_proof_workflow(self):
+        self.write(self.core, "tools/visual-proof.yml", b"# visual workflow\n")
+        root = self.kiln_consumer()
+        code, out = self.run_sync(only=(".github/workflows/visual-proof.yml",))
+        self.assertEqual(code, 0, out)
+        self.assertFalse((root / "addon/KilnForever/.github/workflows/visual-proof.yml").exists())
+        self.assertFalse((root / ".github/workflows/visual-proof.yml").exists())
 
     def test_a_module_the_consumer_already_has_is_overwritten(self):
         root = self.consumer()

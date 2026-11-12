@@ -17,7 +17,9 @@ list is never compared with the TOC. Run the packager without uploading (`releas
   (`edit.HighlightText` instead of `function(self) self:HighlightText() end`), which the client calls with the
   handler's arguments;
 - a spec that fails when run against the packaged files instead of the checkout: the package is copied to a scratch
-  folder, the addon's test support (`tests/`) is laid over it, and each spec runs there under LuaJIT.
+  folder, the addon's test support (`tests/`) is laid over it, the pinned ForeverCore checkout's `tests/` (the
+  inherited `FOREVER_CORE`, never a default) is copied beside the packaged ForeverCore, and each spec runs there
+  under LuaJIT. Only test support comes from a checkout: every runtime file is the packaged one.
 
     python3 tools/check_package.py [--release-dir .release]
 """
@@ -56,7 +58,8 @@ class Policy:
     `credits`: (file, heading) pairs the main addon folder must ship, each file holding that ATX heading
     (`has_section`) with text under it; a heading may instead be a tuple, any one of which satisfies the pair.
     `specs`: repository-relative specs to run on the packaged files, with
-    `support` (paths in the checkout, never shipped) laid over a copy of the package first."""
+    `support` (paths in the checkout, never shipped) laid over a copy of the package first. A package that holds
+    ForeverCore also gets the pinned checkout's `tests/` beside it, from the inherited `FOREVER_CORE`."""
 
     addons: tuple[str, ...]
     forbidden: tuple[str, ...] = FORBIDDEN
@@ -284,8 +287,37 @@ def check_loaded(release: Path, folder: Path, toc: Path, addons: tuple[str, ...]
     return problems
 
 
+def add_core_support(scratch: Path, policy: Policy) -> list[str]:
+    """Copy the pinned Core checkout's `tests/` beside the packaged ForeverCore; any problem as one line.
+
+    A consumer's spec loads helpers such as `tests/strict_map.lua` through `FOREVER_CORE`, but a release must not
+    ship `tests/`. The inherited `FOREVER_CORE` names the exact checkout the run pinned (the tag in
+    `tools/forever-core.txt`), so it is the only source: a missing or ambiguous one is reported rather than filled
+    from another checkout, which could be a different version. Only `tests/` is copied; every runtime file, and the
+    release folder itself, is untouched."""
+    if "ForeverCore" not in policy.addons:
+        return []
+    packaged = scratch / "ForeverCore"
+    if (packaged / "tests").exists():
+        return ["ForeverCore/tests: shipped in the package; the specs cannot tell it from the pinned checkout's"]
+    pinned = os.environ.get("FOREVER_CORE", "").strip()
+    if not pinned:
+        return [
+            "FOREVER_CORE: not set; name the pinned ForeverCore checkout whose tests/ the specs load "
+            "(its version is in tools/forever-core.txt)"
+        ]
+    source = Path(pinned).expanduser()
+    if not (source / "ForeverCore.toc").is_file():
+        return [f"FOREVER_CORE: {pinned} is not a ForeverCore checkout (no ForeverCore.toc)"]
+    if not (source / "tests").is_dir():
+        return [f"FOREVER_CORE/tests: not in {pinned}; check out the pinned ForeverCore release there"]
+    shutil.copytree(source / "tests", packaged / "tests")
+    return []
+
+
 def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
-    """Run each spec from a scratch copy of the package with the test support laid over it; failures as lines."""
+    """Run each spec from a scratch copy of the package with the test support laid over it, the pinned Core's
+    `tests/` beside a packaged ForeverCore, and every runtime file from the package; failures as lines."""
     if not policy.specs:
         return []
     problems: list[str] = []
@@ -294,6 +326,9 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
         shutil.copytree(release / policy.addons[0], work)
         for addon in policy.addons[1:]:
             shutil.copytree(release / addon, Path(scratch) / addon)
+        problems = add_core_support(Path(scratch), policy)
+        if problems:
+            return problems
         for name in policy.support:
             source, target = root / name, work / name
             if target.exists():
@@ -311,6 +346,7 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
             command = ["luajit", spec]
             environment = os.environ.copy()
             if "ForeverCore" in policy.addons:
+                # The package is the runtime; add_core_support put the pinned checkout's tests/ beside it.
                 environment["FOREVER_CORE"] = str((Path(scratch) / "ForeverCore").resolve())
             if spec.endswith("_scenario.lua"):
                 command = ["luajit", "tools/forever_sim/run.lua", spec]

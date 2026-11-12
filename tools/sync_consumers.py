@@ -8,7 +8,9 @@ The shared load warning is copied into each addon and wired into its TOC ahead o
 be available even when the loaded ForeverCore cannot provide the API the addon requires.
 
 A consumer whose addon lives below its repo root (kiln-forever, whose repository also carries a bridge) gets every file
-under the addon folder CONSUMER_ROOT names.
+under the addon folder CONSUMER_ROOT names. The visual-proof workflow stays a root file and reaches only the published
+addons; its job imports tools/forever_tools/visual_proof.py, so a rollout that changes it also carries the full
+forever_tools sync, never the workflow alone.
 """
 
 import argparse
@@ -23,6 +25,8 @@ from check_core_shared import CONSUMER_ROOT, VENDORED, source
 CORE_ROOT = Path(__file__).resolve().parent.parent
 WARNING_MODULE = "Core/ForeverRequire.lua"
 LOAD_GUARD = "Core/Require.lua"
+VISUAL_WORKFLOW = ".github/workflows/visual-proof.yml"
+VISUAL_PROOF_MODULE = "tools/forever_tools/visual_proof.py"
 
 
 def consumer_path(repo, path):
@@ -97,6 +101,11 @@ def main(argv=None):
                     toc.write_bytes(text.encode("utf-8"))
     if changed and not arguments.dry_run:
         print("Run each changed consumer's gates and open one PR per consumer for the shared tooling.")
+    if changed and VISUAL_WORKFLOW in selected:
+        print(
+            f"The visual-proof workflow imports {VISUAL_PROOF_MODULE}; its PR must also carry the full forever_tools"
+            " sync, or the job fails on import."
+        )
     verb = "would change" if arguments.dry_run else "changed"
     print(f"{changed} file(s) {verb}.")
     return 0
