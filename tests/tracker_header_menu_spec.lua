@@ -237,7 +237,12 @@ contractModule.safeCall = function(_, fn, ...)
 	rejected = not ok
 	return ok
 end
-host.Attach(contractModule, nil, { menu = contractModule.trackerMenu })
+local previousMenu, previousClick, previousShow =
+	contractModule.trackerMenu, contractModule.trackerClick, contractModule.show
+host.Attach(contractModule, { where = "Rejected show setting" }, { menu = function() end, click = function() end })
 check(rejected, "the old and declarative menu hooks are rejected together")
+check(contractModule.trackerMenu == previousMenu, "rejection preserves the previous menu")
+check(contractModule.trackerClick == previousClick, "rejection preserves the previous click handler")
+check(contractModule.show == previousShow, "rejection preserves the previous show setting")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")

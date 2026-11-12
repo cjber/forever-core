@@ -1117,18 +1117,18 @@ ns.MigrateTrackerSettings = Migrate
 ---@param show? ForeverTrackerShowSetting the section's own show switch, when it has one
 function api.Attach(module, show, contract)
 	---@cast module ForeverTrackerModule
+	if type(contract) == "table" and contract.menu and type(module.AddHeaderMenuEntries) == "function" then
+		RunSafe(module.safeCall, "tracker menu contract", function()
+			error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
+		end)
+		return
+	end
 	if show ~= nil then
 		module.show = show
 	end
 	if type(contract) == "table" then
 		module.trackerMenu = contract.menu
 		module.trackerClick = contract.click
-		if module.trackerMenu and type(module.AddHeaderMenuEntries) == "function" then
-			RunSafe(module.safeCall, "tracker menu contract", function()
-				error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
-			end)
-			return
-		end
 		if
 			module.trackerMenu
 			and type(module.OnBlockHeaderClick) == "function"
