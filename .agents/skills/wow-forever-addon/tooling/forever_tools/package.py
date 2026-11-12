@@ -23,6 +23,7 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 """
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -308,11 +309,20 @@ def run_specs(root: Path, release: Path, policy: Policy) -> list[str]:
             if shutil.which("luajit") is None:
                 return ["luajit: not found on PATH; install it to run the specs on the package"]
             command = ["luajit", spec]
+            environment = None
             if spec.endswith("_scenario.lua"):
                 command = ["luajit", "tools/forever_sim/run.lua", spec]
+                cache = root / "tools/.cache/forever_sim"
+                if not cache.is_dir():
+                    problems.append(
+                        f"{spec}: missing tools/.cache/forever_sim; fetch the simulator before package checks"
+                    )
+                    continue
+                environment = os.environ.copy()
+                environment["FOREVER_SIM_CACHE"] = str(cache.resolve())
             try:
                 result = subprocess.run(
-                    command, cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT
+                    command, cwd=work, capture_output=True, text=True, timeout=SPEC_TIMEOUT, env=environment
                 )
             except subprocess.TimeoutExpired:
                 problems.append(f"{spec}: still running on the packaged files after {SPEC_TIMEOUT} s")

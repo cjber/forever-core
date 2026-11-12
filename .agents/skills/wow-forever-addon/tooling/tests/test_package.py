@@ -225,6 +225,7 @@ class PackageTest(unittest.TestCase):
                 "tools/forever_sim/run.lua": "",
             }
         )
+        (root / "tools/.cache/forever_sim").mkdir(parents=True)
         release = self.make({"Addon/Core.lua": "", "Addon/Addon.toc": "Core.lua\n"})
         policy = package.Policy(
             addons=("Addon",), specs=("tests/sim/exercise_scenario.lua",), support=("tests", "tools/forever_sim")
@@ -232,7 +233,9 @@ class PackageTest(unittest.TestCase):
         with mock.patch.object(package.subprocess, "run") as run:
             run.return_value.returncode = 0
             package.run_specs(root, release, policy)
-        self.assertEqual(run.call_args.args[0], ["luajit", "tools/forever_sim/run.lua", "tests/sim/exercise_scenario.lua"])
+        self.assertEqual(
+            run.call_args.args[0], ["luajit", "tools/forever_sim/run.lua", "tests/sim/exercise_scenario.lua"]
+        )
 
 
 if __name__ == "__main__":
