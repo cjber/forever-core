@@ -19,6 +19,7 @@ its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout,
 checkout is missing, so a new addon is watched with no list to keep here.
 """
 
+import argparse
 import datetime
 import json
 import os
@@ -60,15 +61,34 @@ def save(path, data):
         json.dump(data, handle, indent=1)
 
 
-def settle_requests(argv):
-    """Each `--settle THREAD REASON` pair on the command line, as (thread id, reason)."""
+def build_parser():
+    """The command line: the output modes, and each `--settle THREAD REASON` pair."""
+    parser = argparse.ArgumentParser(
+        prog=Path(__file__).name,
+        description=__doc__.splitlines()[0],
+        allow_abbrev=False,
+    )
+    parser.add_argument("--mark", action="store_true", help="remember every fetched comment as seen")
+    parser.add_argument("--unanswered", action="store_true", help="print threads whose latest post is not the owner's")
+    parser.add_argument("--due", action="store_true", help="print threads whose fix is in a released tag")
+    parser.add_argument(
+        "--settle",
+        nargs=2,
+        action="append",
+        default=[],
+        metavar=("THREAD", "REASON"),
+        help="record that a thread needs no answer, until somebody posts in it again; repeatable",
+    )
+    return parser
+
+
+def settle_requests(parser, values):
+    """Each `--settle THREAD REASON` pair from the command line, as (thread id, reason)."""
     pairs = []
-    for index, arg in enumerate(argv):
-        if arg == "--settle":
-            values = argv[index + 1 : index + 3]
-            if len(values) < 2 or not values[0].lstrip("#").isdigit() or not values[1].strip():
-                raise SystemExit("--settle needs a thread id and a reason")
-            pairs.append((values[0].lstrip("#"), values[1]))
+    for thread, reason in values:
+        if not thread.lstrip("#").isdigit() or not reason.strip():
+            parser.error("--settle needs a thread id and a reason")
+        pairs.append((thread.lstrip("#"), reason))
     return pairs
 
 
@@ -343,11 +363,13 @@ def format_comment(slug, comment):
 
 def main(argv=None, fetch=None):
     argv = sys.argv[1:] if argv is None else argv
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
+    requests = settle_requests(parser, arguments.settle)
     fetch = fetch or get
-    mark = "--mark" in argv
-    show_unanswered = "--unanswered" in argv
-    show_due = "--due" in argv
-    requests = settle_requests(argv)
+    mark = arguments.mark
+    show_unanswered = arguments.unanswered
+    show_due = arguments.due
 
     path = state_path()
     seen = load(path)
