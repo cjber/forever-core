@@ -21,7 +21,7 @@ SPEC.loader.exec_module(fc)
 
 
 def args() -> argparse.Namespace:
-    return argparse.Namespace(wait=False, timeout=5)
+    return argparse.Namespace(wait=False, timeout=5, manual_launcher=False)
 
 
 class FakeClock:
@@ -119,18 +119,34 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.signal, "alarm"),
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
-            mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")),
+            mock.patch.object(fc, "wait_for_world") as wait,
+            mock.patch.object(fc, "client_pid", return_value=None) as client_pid,
+            mock.patch.object(fc, "press_play") as press_play,
+            mock.patch.object(fc, "x") as x,
             mock.patch.object(fc, "teardown"),
             mock.patch.object(fc.subprocess, "Popen") as spawn,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             spawn.return_value.pid = 123
-            self.assertEqual(fc.up(args(), after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
+
+            def waiting(*unused, nudge):
+                nudge()
+                press_play.assert_not_called()
+                client_pid.return_value = 456
+                nudge()
+                return Path("ready.png")
+
+            wait.side_effect = waiting
+            options = args()
+            options.manual_launcher = True
+            self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
+            self.assertEqual(x.call_args.args[1:], ("key", "Return"))
         env = spawn.call_args.kwargs["env"]
         self.assertEqual(env["XDG_RUNTIME_DIR"], str(self.runtime))
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("WAYLAND_DISPLAY", env)
         self.assertIn(str(self.runtime), (self.state / "session.json").read_text())
+        self.assertIn('"manual_launcher": true', (self.state / "session.json").read_text())
 
     def test_wine_env_keeps_the_launch_and_drops_the_desktop(self):
         env = fc.wine_env(
@@ -317,19 +333,64 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
         self.assertNotIn("--window", x.call_args_list[0].args)
+        self.assertTrue((self.state / "last-input").exists())
 
     def test_press_play_waits_for_a_loading_launcher_without_clicking(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
         ocr = mock.Mock(returncode=0, stdout="header\n", stderr="")
         with (
-            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr, found, ocr]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
             mock.patch.object(fc, "x") as x,
+            contextlib.redirect_stderr(io.StringIO()) as warning,
         ):
             fc.press_play(state)
+            fc.press_play(state)
         x.assert_not_called()
+        self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
+        self.assertIn(str(self.state / "launcher.png"), warning.getvalue())
+        self.assertIn("--manual-launcher", warning.getvalue())
+
+    def test_manual_launcher_cli_only_allows_shot_and_left_click_before_ready(self):
+        state = {"manual_launcher": True}
+        with (
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "shot", return_value=self.state / "frame.png") as shot,
+            mock.patch.object(fc, "click") as click,
+            mock.patch.object(fc, "press") as press,
+            mock.patch.object(fc, "slash") as slash,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["shot"]), 0)
+            self.assertEqual(fc.main(["click", "100", "200"]), 0)
+            for command in (["click", "100", "200", "--button", "3"], ["key", "Return"], ["slash", "/fgf"]):
+                self.assertEqual(fc.main(command), 2)
+            shot.assert_called_once()
+            click.assert_called_once_with(state, 100, 200, "1")
+            press.assert_not_called()
+            slash.assert_not_called()
+
+    def test_default_launcher_still_blocks_actions_before_ready(self):
+        with (
+            mock.patch.object(fc, "load_state", return_value={}),
+            mock.patch.object(fc, "shot") as shot,
+            mock.patch.object(fc, "click") as click,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["shot"]), 2)
+            self.assertEqual(fc.main(["click", "100", "200"]), 2)
+            shot.assert_not_called()
+            click.assert_not_called()
+
+    def test_manual_launcher_flag_reaches_up_and_run(self):
+        with mock.patch.object(fc, "up", return_value=0) as up:
+            self.assertEqual(fc.main(["up", "--manual-launcher"]), 0)
+            self.assertTrue(up.call_args.args[0].manual_launcher)
+            self.assertEqual(fc.main(["run", "--manual-launcher", "--", "true"]), 0)
+            self.assertTrue(up.call_args.args[0].manual_launcher)
 
     def test_press_play_refuses_ambiguous_ocr_targets(self):
         state = {"display": ":1"}
@@ -377,6 +438,16 @@ class ForeverClientTest(unittest.TestCase):
             with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
                 fc.click({}, 20, 20, "1")
         self.assertEqual(x.call_count, 1)
+
+    def test_manual_launcher_click_refuses_when_game_process_has_started(self):
+        (self.state / "last-shot").touch()
+        with (
+            mock.patch.object(fc, "client_pid", return_value=456),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "game has started"),
+        ):
+            fc.click({"manual_launcher": True}, 100, 100, "1")
+        send.assert_not_called()
 
     def test_inputs_are_spaced_out(self):
         sleeps = []

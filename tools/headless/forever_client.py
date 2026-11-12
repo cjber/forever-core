@@ -7,6 +7,7 @@ only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's
 needs `tesseract` on PATH to locate the launcher's visible Play control from the private screenshot.
 
     forever_client.py up                  # start, wait until in the world, print READY, hold until stopped
+    forever_client.py up --manual-launcher # inspect and left-click the private launcher instead of OCR
     forever_client.py run -- <command>    # up, run the command with the session's display, then stop
     forever_client.py down                # stop the session and everything it started
     forever_client.py status
@@ -30,6 +31,8 @@ The client is for testing the Forever addons' interface, never for playing, and 
   `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` needs a
   screenshot taken since the last input, so every click aims at UI the agent has just seen. `slash` puts the
   keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
+- `--manual-launcher` disables OCR clicks and permits shots and left clicks before READY, only while the game
+  process is absent. Inspect each private screenshot before clicking. Never click Uninstall or change credentials.
 - Short sessions. A session ends after MAX_SESSION at the latest, and every ending (the test returning, a failure,
   a signal, the cap) logs the character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
@@ -320,6 +323,8 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
         raise ClientError("take a `shot` and read it first: a click must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    if state.get("manual_launcher") and not state.get("ready") and client_pid():
+        raise ClientError("the game has started: wait for READY before clicking")
     send(state, "mousemove", str(px), str(py), "click", button)
 
 
@@ -377,7 +382,7 @@ def slash(state: Mapping, command: str) -> None:
     send(state, "key", "Return")
 
 
-def press_play(state: Mapping) -> None:
+def press_play(state: dict) -> None:
     """Find and click the visible Play label in the launcher's current screenshot.
 
     Battle.net changes its page layout with the gamescope size and can show a login
@@ -395,7 +400,7 @@ def press_play(state: Mapping) -> None:
     if not found.stdout.split():
         raise ClientError("Battle.net launcher window was not found")
     if shutil.which("tesseract") is None:
-        raise ClientError("tesseract is required to locate Battle.net's Play control")
+        raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
     image = shot(state, STATE_DIR / "launcher.png")
     ocr = subprocess.run(
         ["tesseract", str(image), "stdout", "--psm", "11", "tsv"],
@@ -420,6 +425,14 @@ def press_play(state: Mapping) -> None:
     if not targets:
         # The launcher can still be painting its signed-in page. The startup loop
         # retries within its existing deadline; never click an unobserved target.
+        if not state.get("play_target_missing_reported"):
+            print(
+                f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
+                "For screenshot-guided launcher clicks, restart with up --manual-launcher, then use shot and click.",
+                file=sys.stderr,
+                flush=True,
+            )
+            state["play_target_missing_reported"] = True
         return
     if len(targets) != 1:
         raise ClientError(f"expected one visible Play target in the Battle.net screenshot, found {len(targets)}")
@@ -427,6 +440,7 @@ def press_play(state: Mapping) -> None:
     x(state, "mousemove", str(left + width // 2), str(top + height // 2))
     time.sleep(0.5)
     x(state, "click", "1")
+    (STATE_DIR / "last-input").touch()
 
 
 def reload(state: Mapping, timeout: float = 120) -> Path:
@@ -652,6 +666,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             "token": token,
             "started": started,
             "runtime_dir": str(runtime),
+            "manual_launcher": args.manual_launcher,
         }
         genv = child_env(token)
         state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
@@ -661,8 +676,8 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         def at_character_select():
             # Enter at the character list enters the world with the last character; before then it does nothing.
             if client_pid():
-                x(state, "key", "Return")
-            else:
+                send(state, "key", "Return")
+            elif not args.manual_launcher:
                 press_play(state)
 
         try:
@@ -731,6 +746,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--wait", action="store_true", help="queue behind another agent's session")
         p.add_argument(
+            "--manual-launcher",
+            action="store_true",
+            help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+        )
+        p.add_argument(
             "--timeout",
             type=float,
             default=600,
@@ -783,7 +803,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(load_state(), indent=1))
             return 0
         state = load_state()
-        if not state.get("ready"):
+        launcher_action = state.get("manual_launcher") and (
+            args.verb == "shot" or (args.verb == "click" and args.button == "1")
+        )
+        if not state.get("ready") and not launcher_action:
             raise ClientError("the session is not in the world yet: wait for `up` to print READY")
         if args.verb == "shot":
             print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
