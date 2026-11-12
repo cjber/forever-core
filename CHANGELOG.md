@@ -7,6 +7,7 @@
 <!-- discord-image: docs/screenshots/tracker.png -->
 
 - **Addon settings open cleanly.** Opening a settings page no longer shows an interface action failure message.
+- **Map arrows open the destination map again.** Clicking the tram connection switches between Stormwind and Ironforge without asking you to turn the map yourself (#486).
 
 ### For addon authors
 
