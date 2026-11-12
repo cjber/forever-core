@@ -118,7 +118,8 @@ for the client and one column's settings move every section together.
   the panel's `shown` callback in the addon's journal.
 - `ForeverCore.ProfessionTabs.Register(key, spec)` adds a side tab to the Professions window, under the client's own
   tabs and in registration order. `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is the
-  addon's page and `minWidth` raises the one width the window keeps for every profession and tab. A page whose needed
+  addon's page and `minWidth` raises the shared custom-page width above its 850-unit minimum. Native pages use
+  Camelot's 673-unit layout. A page whose needed
   width changes after it registered calls `SetMinWidth(key, width)` (nil clears it), which recomputes and enforces that
   width, waiting for combat to end when it is in combat. Selecting a tab shows only its page and unchecks the client's
   tabs; a client tab or page takes the window back. `Select(key)`, `ShowNative()` and `Selected()` drive and read the

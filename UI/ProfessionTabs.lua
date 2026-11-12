@@ -3,9 +3,9 @@ local _, ns = ...
 
 -- A shared side tab for the addon pages that live in the Professions window. Each addon registers a key, its page and
 -- a tab; core places every tab under the client's own side tabs in registration order, and selecting one shows that
--- page in place of the others. The module never shows or hides a native page, so the client keeps its own page and
--- gamepad bookkeeping, and it keeps the crafting page and every registered page at one width while any tab is
--- registered; the client's book page keeps the client's own width.
+-- page in place of the others. Native pages stay in Blizzard's ownership, so the client keeps its own page and
+-- gamepad bookkeeping; custom pages are alpha-hidden around the native page while selected. The window uses the
+-- custom width only while a custom page is selected; native pages keep the client's own width.
 
 ---@class ForeverProfessionTabEntry
 ---@field key string
@@ -20,16 +20,18 @@ local order = {}
 local selectedKey
 local installed = false
 
--- The one width the crafting page and the registered pages keep while any tab is registered. It is the width the
--- client itself gave its crafting page, read from the engine after the client laid the page out, raised to the
--- largest minWidth a registration declares. Nothing reads a page's own Lua or replaces one of the window's methods.
-local baseWidth
-local fixedWidth
+-- Custom profession pages share the approved 850-unit layout, independent of native page history.
+local CUSTOM_WIDTH = 850
+local fixedWidth = CUSTOM_WIDTH
 local enforcingWidth = false
 
 -- Frame work waits for combat to end, the way UI/TrackerQuests.lua does: a protected native window, or an addon page
 -- with a secure child, refuses SetWidth and Show/Hide under our taint.
 local pending = false
+---@type Frame[]
+local hiddenNativePages = {}
+---@type table<Frame, number>
+local nativePageAlpha = {}
 ---@type Frame?
 local watcher
 
@@ -51,14 +53,9 @@ local function Locked()
 	return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
--- The one width the window keeps: the client's own width for its crafting page, raised by any registration. Until
--- the client has laid its crafting page out there is no width to keep, so nothing is set.
+-- All registered pages share one width. A consumer can request more room, but selection never changes it.
 RecomputeWidth = function()
-	if not baseWidth then
-		fixedWidth = nil
-		return
-	end
-	local width = baseWidth
+	local width = CUSTOM_WIDTH
 	for _, entry in ipairs(order) do
 		local minWidth = entry.spec.minWidth
 		if type(minWidth) == "number" and minWidth > width then
@@ -68,52 +65,19 @@ RecomputeWidth = function()
 	fixedWidth = width
 end
 
--- Read the client's own width for its crafting page once, after the client has shown and laid the page out. From
--- then on the fixed width is ours to keep; reading it again would only read a width we had set.
-local function CaptureWidth()
-	if baseWidth then
-		return
-	end
-	local window = Window()
-	if not window then
-		return
-	end
-	local crafting = window.CraftingPage
-	if not crafting or not crafting:IsShown() then
-		return
-	end
-	local width = window:GetWidth()
-	if type(width) == "number" and width > 1 then
-		baseWidth = width
-		RecomputeWidth()
-	end
-end
-
--- The fixed width belongs to the crafting page and the registered pages. The client's book page (the Professions
--- overview) fills the window but lays its profession panels out at the client's own width, and the client never
--- resizes the window for it, so it keeps that width: a wider window only stretched empty art past its panels.
----@param window ForeverProfessionsWindow
----@return number?
-local function TargetWidth(window)
-	if selectedKey then
-		return fixedWidth
-	end
-	local crafting = window.CraftingPage
-	if crafting and crafting:IsShown() then
-		return fixedWidth
-	end
-	return baseWidth
+-- Camelot/Blizzard_ProfessionsFrame.xml owns the native 673-unit host. Its side-tab path bypasses the
+-- upstream desired-width getter, so custom handback restores that native width without calling Blizzard Lua.
+---@return number
+local function TargetWidth()
+	return selectedKey and fixedWidth or 673
 end
 
 EnforceWidth = function()
-	if not baseWidth then
-		CaptureWidth()
-	end
 	local window = Window()
 	if not fixedWidth or not window or enforcingWidth then
 		return
 	end
-	local target = TargetWidth(window)
+	local target = TargetWidth()
 	if not target then
 		return
 	end
@@ -129,8 +93,46 @@ EnforceWidth = function()
 	end
 end
 
--- Show or hide the registered pages. A native page is never touched: the client shows it, and the gamepad footer and
--- its focus stay secure.
+-- Show or hide the registered pages. When a custom page is selected it occupies the native page's slot, so the
+-- currently shown native pages must step aside or their controls remain visible underneath the addon page.
+local function HideNativePages()
+	local window = Window()
+	if not window then
+		return
+	end
+	local function hide(page)
+		if not page or not page:IsShown() then
+			return
+		end
+		for _, hidden in ipairs(hiddenNativePages) do
+			if hidden == page then
+				return
+			end
+		end
+		hiddenNativePages[#hiddenNativePages + 1] = page
+		nativePageAlpha[page] = page:GetAlpha()
+		page:SetAlpha(0)
+	end
+	local pages = window.Pages or {}
+	for _, page in ipairs(pages) do
+		hide(page)
+	end
+	for _, name in ipairs({ "CraftingPage", "BookPage", "SpecPage", "OrdersPage" }) do
+		hide(window[name])
+	end
+end
+
+local function ClearHiddenNativePages()
+	hiddenNativePages = {}
+	nativePageAlpha = {}
+end
+
+local function RestoreNativePages()
+	for _, page in ipairs(hiddenNativePages) do
+		page:SetAlpha(nativePageAlpha[page] or 1)
+	end
+end
+
 ApplyPages = function()
 	if Locked() then
 		Queue()
@@ -139,6 +141,9 @@ ApplyPages = function()
 	local selected = selectedKey and tabs[selectedKey]
 	for _, entry in ipairs(order) do
 		entry.spec.page:SetShown(entry == selected)
+	end
+	if selected then
+		HideNativePages()
 	end
 end
 
@@ -206,9 +211,8 @@ local function Anchor()
 	end
 end
 
--- The window has laid itself out: keep its width and our column, (re)read from the engine.
+-- The window has laid itself out: keep the selected page width and our tab column.
 local function Layout()
-	CaptureWidth()
 	Anchor()
 	EnforceWidth()
 end
@@ -254,7 +258,8 @@ end
 -- Every native page hands the window back when the client shows it. The client builds a page as the window opens,
 -- so its OnShow is the signal that the client wants its own page, not ours.
 local function NativePageShown()
-	CaptureWidth()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	ns.ProfessionTabs.ShowNative()
 	EnforceWidth()
 end
@@ -262,6 +267,8 @@ end
 -- Every native side tab hands the window back. The tab's own OnMouseUp runs first; our hook then clears our selection
 -- even when the native page was already showing and its OnShow does not fire again.
 local function NativeTabClicked()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	ns.ProfessionTabs.ShowNative()
 end
 
@@ -388,6 +395,8 @@ function api.ShowNative()
 	selectedKey = nil
 	SyncChecked()
 	ApplyPages()
+	RestoreNativePages()
+	ClearHiddenNativePages()
 	EnforceWidth()
 end
 
