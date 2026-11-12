@@ -107,6 +107,14 @@ jobs:
         with:
           args: -d -z
       - run: python3 tools/check_package.py
+      - name: Exercise the packaged addon
+        env:
+          FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/forever_sim
+        run: |
+          python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+          cd .release/ForeverCore
+          luajit "$GITHUB_WORKSPACE/.agents/skills/wow-forever-addon/tooling/forever_sim/run.lua" \
+            "$GITHUB_WORKSPACE/tests/sim/exercise_scenario.lua"
 
   secrets:
     runs-on: ubuntu-24.04
