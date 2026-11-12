@@ -130,25 +130,37 @@ def cmdline(pid: int) -> str:
         return ""
 
 
+def prefix_snapshot(prefix: Path = PREFIX, exclude: Iterable[int] = ()) -> dict[int, dict[str, str]]:
+    """Read prefix membership and ownership together, before a process can exit between separate reads."""
+    skip = set(exclude)
+    found = {}
+    for pid in pids():
+        if pid not in skip:
+            env = read_environ(pid)
+            if env.get("WINEPREFIX") == str(prefix):
+                found[pid] = env
+    return found
+
+
 def prefix_users(prefix: Path = PREFIX, exclude: Iterable[int] = ()) -> list[int]:
     """Processes running in the Wine prefix: a player's client, its launcher, or a wineserver left behind."""
-    skip = set(exclude)
-    return [p for p in pids() if p not in skip and read_environ(p).get("WINEPREFIX") == str(prefix)]
+    return list(prefix_snapshot(prefix, exclude))
 
 
-def prefix_ownership(users: Iterable[int], token: str | None) -> tuple[list[int], list[int]]:
-    """Split prefix users into this session's processes and processes we must never touch."""
+def prefix_ownership(processes: Mapping[int, Mapping[str, str]], token: str | None) -> tuple[list[int], list[int]]:
+    """Split a single prefix snapshot into this session's processes and processes we must never touch."""
     if not token:
-        return [], list(users)
+        return [], list(processes)
     owned, foreign = [], []
-    for pid in users:
-        (owned if read_environ(pid).get("FOREVER_CLIENT_SESSION") == token else foreign).append(pid)
+    for pid, env in processes.items():
+        (owned if env.get("FOREVER_CLIENT_SESSION") == token else foreign).append(pid)
     return owned, foreign
 
 
 def require_owned_prefix(token: str | None) -> list[int]:
-    users = prefix_users()
-    _, foreign = prefix_ownership(users, token)
+    processes = prefix_snapshot()
+    users = list(processes)
+    _, foreign = prefix_ownership(processes, token)
     if foreign:
         detail = ", ".join(map(str, foreign))
         raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
@@ -157,7 +169,7 @@ def require_owned_prefix(token: str | None) -> list[int]:
     return users
 
 
-def kill_owned_pid(pid: int, token: str) -> bool:
+def kill_owned_pid(pid: int, token: str, server: Path) -> bool:
     """Signal a token-matched process through a pidfd, so PID reuse cannot hit a new process."""
     try:
         pidfd = os.pidfd_open(pid)
@@ -166,6 +178,13 @@ def kill_owned_pid(pid: int, token: str) -> bool:
     try:
         env = read_environ(pid)
         if env.get("WINEPREFIX") != str(PREFIX) or env.get("FOREVER_CLIENT_SESSION") != token:
+            return False
+        try:
+            executable = Path(f"/proc/{pid}/exe").readlink().resolve()
+        except OSError:
+            return False
+        # Even a token-owned server can acquire a foreign client after our prefix scan. Let it exit idle.
+        if executable == server:
             return False
         signal.pidfd_send_signal(pidfd, signal.SIGKILL)
         return True
@@ -434,21 +453,15 @@ def teardown(
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
     if state and state.get("ready") and gamescope and gamescope.poll() is None and client_pid():
         log_out(state)
-    if gamescope and gamescope.poll() is None:
-        require_owned_prefix(token)
-        gamescope.terminate()
-        try:
-            gamescope.wait(20)
-        except subprocess.TimeoutExpired:
-            gamescope.kill()
-            gamescope.wait(20)
+    server = Path(wine.get("WINE", "wine")).with_name("wineserver").resolve()
     # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
     # and signal only exact token-owned PIDs, retaining state when a foreign or unverifiable process appears.
     deadline = time.monotonic() + 20
     empty_since = None
     while True:
-        users = prefix_users()
-        owned, foreign = prefix_ownership(users, token)
+        processes = prefix_snapshot()
+        users = list(processes)
+        owned, foreign = prefix_ownership(processes, token)
         if foreign:
             detail = ", ".join(map(str, foreign))
             raise ClientError("teardown refused: foreign or unowned Wine prefix processes: " + detail)
@@ -456,7 +469,7 @@ def teardown(
         if owned:
             empty_since = None
             for pid in owned:
-                kill_owned_pid(pid, token)
+                kill_owned_pid(pid, token, server)
         elif empty_since is None:
             empty_since = now
         elif now - empty_since >= 1:
@@ -465,6 +478,15 @@ def teardown(
             detail = ", ".join(map(str, users)) if users else "prefix did not remain empty"
             raise ClientError("teardown incomplete: Wine prefix processes survived: " + detail)
         time.sleep(0.25)
+    # Do not trigger gamescope's child reaper while a shared Wine server could still serve another client.
+    # Display processes do not inherit WINEPREFIX, so they remain alive until all Wine processes exit naturally.
+    if gamescope and gamescope.poll() is None:
+        gamescope.terminate()
+        try:
+            gamescope.wait(20)
+        except subprocess.TimeoutExpired:
+            gamescope.kill()
+            gamescope.wait(20)
     if link and link.is_symlink():
         link.unlink()
     state_file().unlink(missing_ok=True)
@@ -564,10 +586,11 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
     try:
         if not link.exists():
             link.symlink_to(ADDON)
-        env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY")}
+        env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "WINEPREFIX")}
         env.update(wine)
+        env.pop("WINEPREFIX", None)
         token = uuid.uuid4().hex
-        env.update({"WINEPREFIX": str(PREFIX), "FOREVER_CLIENT_SESSION": token})
+        env["FOREVER_CLIENT_SESSION"] = token
         before = screenshots()
         started = time.time()
         gamescope = subprocess.Popen(
@@ -584,8 +607,9 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
                 # starts, so the child waits for the whole Wine session instead: the launcher, then `wineserver -w`.
                 "sh",
                 "-c",
-                '"$1" "$2" "$3"; exec "$4" -w',
+                'WINEPREFIX="$1" "$2" "$3" "$4"; export WINEPREFIX="$1"; exec "$5" -w',
                 "forever-client",
+                str(PREFIX),
                 wine["WINE"],
                 str(LAUNCHER),
                 *LAUNCH_ARGS,
