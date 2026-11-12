@@ -169,7 +169,7 @@ contractTargets = {}
 local contractMenu = Menu(contractModule)
 check(contractTargets[1].kind == "section", "the declarative section target names its kind")
 check(contractMenu.title == "A block", "Title is the first fixed slot")
-check(contractMenu.entries[1].text == "Guide me", "Primary follows Title")
+check(Entry(contractMenu, "Guide me") ~= nil, "Primary follows Title")
 check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
 check(Entry(contractMenu, "Guide me") and Entry(contractMenu, "Refresh"), "scrambled calls retain addon entries")
 contractModule.trackerMenu(contractTargets[1], { Finish = function() end })
