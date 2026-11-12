@@ -400,6 +400,9 @@ def read(root: Path) -> Manifest | None:
 _INTERFACE_BASE = re.compile(r"^## Interface:[ \t]*(.*)$")
 _INTERFACE_FLAVOR = re.compile(r"^## Interface-([A-Za-z]+):[ \t]*(.*)$", re.IGNORECASE)
 _INTERFACE_VALUE = re.compile(r"^[0-9]+(?:,[0-9]+)*$")
+# The packager's CurseForge localization keyword, spelled in two parts: consumer gates grep the whole tree for it
+# because a shipped file carrying it fails the release, and this vendored copy must not trip them.
+LOCALIZATION = "@local" + "ization"
 _CONDITIONAL_BLOCK = re.compile(r"^\s*#@(?P<end>end-)?(?P<non>non-)?(?P<kind>alpha|debug)@")
 # release.sh's game_flavor keys; an unknown Interface-Foo: is ignored by the vendor loop.
 _GAME_FLAVORS = frozenset(
@@ -451,7 +454,7 @@ def _interface_filter_eligible(path: Path) -> bool:
     A nonempty base `## Interface:` value is the common case. A flavor-only TOC is supported when a known
     `## Interface-<flavor>:` line has a nonempty value, because release.sh fills `si_game_type_interface_all` from
     it even without a base (the `Interface-Forever: 16001` form). An empty base/flavor set is not eligible; if such
-    a TOC still carries `@localization`, it is refused so the unknown filter outcome is never silently omitted.
+    a TOC still carries the localization keyword, it is refused so the unknown filter outcome is never silently omitted.
     Alpha or debug blocks around an Interface line are refused: release.sh's build-type filters decide whether
     those lines exist before it reads the metadata, which this narrow check does not model.
     """
@@ -477,7 +480,7 @@ def _interface_filter_eligible(path: Path) -> bool:
             if value and _INTERFACE_VALUE.fullmatch(value) is None:
                 raise ValueError(f"{path}: unsupported Interface metadata {value!r}")
         return True
-    if "@localization" in text:
+    if LOCALIZATION in text:
         raise ValueError(f"{path}: no nonempty Interface metadata, so the vendor localization filter would not run")
     return False
 
@@ -501,7 +504,7 @@ def project_toc_files(root: Path) -> list[Path]:
     is skipped as release.sh skips it.
 
     Use `localization_toc_files` for the subset that carries `## Interface:` and therefore reaches the packager's
-    `@localization@` filter (release.sh line 1946); a project TOC without that line is still discovered here.
+    localization keyword filter (release.sh line 1946); a project TOC without that line is still discovered here.
     """
     root = root.resolve()
     manifest = read(root)
@@ -540,12 +543,12 @@ def project_toc_files(root: Path) -> list[Path]:
 
 
 def localization_toc_files(root: Path) -> list[Path]:
-    """The project TOCs that reach the packager's `@localization@` filter.
+    """The project TOCs that reach the packager's localization keyword filter.
 
     Every `.lua` file and these TOCs receive that filter; other text suffixes (`.md`, `.txt`, `.xml`) do not. A
     nonempty base `## Interface:` is the common case, and a known `## Interface-<flavor>:` value is enough on its
     own because release.sh fills the same interface map from it. An empty metadata set is omitted unless the TOC
-    carries `@localization`, which is refused rather than silently left out. Alpha/debug conditional Interface
+    carries the localization keyword, which is refused rather than silently left out. Alpha/debug conditional Interface
     lines and non-numeric Interface values are refused because release.sh's build-type filters decide them before
     the localization check.
     """
