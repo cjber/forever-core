@@ -151,4 +151,33 @@ local ownMenu = Menu(safeModule)
 check(ownEntries == 1 and Entry(ownMenu, "Own entry") ~= nil, "a section's own menu entries are added")
 check(safeCalls[#safeCalls] == "tracker section menu", "and they run in its SafeCall")
 
+-- The declarative contract keeps the addon's rows ahead of the shared Tracker submenu and makes combat refusal visible.
+local contractModule = t.module(6)
+local contractTargets
+contractModule.trackerMenu = function(target, builder)
+	contractTargets[#contractTargets + 1] = target
+	builder:Title("A block")
+	builder:Primary("Guide me", function() end)
+	builder:Action("Refresh", function() end, { combat = true })
+	builder:Open("Open panel", function() end)
+	builder:End("End journey", function() end)
+end
+contractTargets = {}
+local contractMenu = Menu(contractModule)
+check(contractTargets[1].kind == "section", "the declarative section target names its kind")
+check(contractMenu.title == "A block", "Title is the first fixed slot")
+check(contractMenu.entries[1].text == "Guide me", "Primary follows Title")
+check(contractMenu.entries[#contractMenu.entries].text == "Tracker", "Tracker is the final shared slot")
+
+-- Both contracts are rejected through the addon's safe call rather than silently producing two menus.
+local rejected = false
+contractModule.AddHeaderMenuEntries = function() end
+contractModule.safeCall = function(_, fn, ...)
+	local ok = pcall(fn, ...)
+	rejected = not ok
+	return ok
+end
+host.Attach(contractModule, nil, { menu = contractModule.trackerMenu })
+check(rejected, "the old and declarative menu hooks are rejected together")
+
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")

@@ -122,6 +122,8 @@ L["This week"] = "Esta semana"
 L["Title"] = "Título"
 L["Total"] = "Total"
 L["Tracker background"] = "Fundo do rastreador"
+L["Tracker"] = "Rastreador"
+L["Unavailable in combat"] = "Indisponível em combate"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Uso: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"

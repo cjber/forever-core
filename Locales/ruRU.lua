@@ -126,6 +126,8 @@ L["This week"] = "На этой неделе"
 L["Title"] = "Заголовок"
 L["Total"] = "Всего"
 L["Tracker background"] = "Фон отслеживания"
+L["Tracker"] = "Отслеживание"
+L["Unavailable in combat"] = "Недоступно в бою"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"Использование: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"

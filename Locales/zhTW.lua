@@ -119,6 +119,8 @@ L["This week"] = "本週"
 L["Title"] = "標題"
 L["Total"] = "總計"
 L["Tracker background"] = "追蹤器背景"
+L["Tracker"] = "追蹤器"
+L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
 	"用法：/forever debug、/forever debug pin、/forever debug off、/forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"

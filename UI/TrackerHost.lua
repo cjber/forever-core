@@ -878,67 +878,100 @@ end
 local function NewTrackerMenu(root, module, target)
 	local slots = { title = false, primary = false, actions = {}, open = false, ending = false }
 	local menu = {}
-	function menu:Title(text)
+	function menu.Title(_, text)
 		if not slots.title then
-			root:CreateTitle(text or (module.Header and module.Header.Text and module.Header.Text:GetText()) or "Tracker")
+			root:CreateTitle(
+				text or (module.Header and module.Header.Text and module.Header.Text:GetText()) or "Tracker"
+			)
 			slots.title = true
 		end
 	end
-	function menu:Primary(text, fn)
+	function menu.Primary(_, text, fn)
 		if not slots.primary then
 			root:CreateButton(text, fn)
 			slots.primary = true
 		end
 	end
-	function menu:Action(text, fn, opts)
+	function menu.Action(_, text, fn, opts)
 		local entry = root:CreateButton(text, fn)
 		if opts and opts.combat then
 			entry:SetEnabled(not InCombatLockdown())
 			if InCombatLockdown() then
-				entry:SetTooltip(function(tooltip) tooltip:SetText(text, 1, 1, 1); tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true) end)
+				entry:SetTooltip(function(tooltip)
+					tooltip:SetText(text, 1, 1, 1)
+					tooltip:AddLine(ns.L["Unavailable in combat"] or "Unavailable in combat", nil, nil, nil, true)
+				end)
 			end
 		end
 		slots.actions[#slots.actions + 1] = entry
 		return entry
 	end
-	function menu:Open(text, fn)
+	function menu.Open(_, text, fn)
 		if not slots.open then
 			local action = function()
 				if InCombatLockdown() then
-					if ns.Report then ns.Report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat") end
+					if ns.Report then
+						ns.Report("tracker menu", ns.L["Unavailable in combat"] or "Unavailable in combat")
+					end
 					return
 				end
 				fn()
 			end
-			slots.open = menu:Action(text, action, { combat = true })
+			slots.open = menu.Action(menu, text, action, { combat = true })
 		end
 		return slots.open
 	end
-	function menu:End(text, fn)
+	function menu.End(_, text, fn)
 		if not slots.ending and type(fn) == "function" then
-			slots.ending = menu:Action(text, fn)
+			slots.ending = menu.Action(menu, text, fn)
 		end
 		return slots.ending
 	end
-	function menu:Submenu(text)
+	function menu.Submenu(_, text)
 		return root:CreateButton(text)
 	end
-	function menu:Finish()
-		root:CreateDivider()
+	function menu.Finish(_)
+		if type(root.CreateDivider) == "function" then
+			root:CreateDivider()
+		else
+			local divider = root:CreateButton("")
+			divider.kind = "divider"
+		end
 		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
-		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function() api.SetAttached(not api.IsAttachedToQuestTracker()) end)
+		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()
+			api.SetAttached(not api.IsAttachedToQuestTracker())
+		end)
 		if api.IsLocked and api.SetLocked then
-			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function() api.SetLocked(not api.IsLocked()) end)
+			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
+				api.SetLocked(not api.IsLocked())
+			end)
 		end
 		local background = tracker:CreateButton(ns.L["Tracker background"])
-		background:CreateRadio(rawget(_G, "OFF") or "Off", function() return api.GetBackdropOpacity() == 0 end, function() api.SetBackdropOpacity(0) end)
+		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
+			return api.GetBackdropOpacity() == 0
+		end, function()
+			api.SetBackdropOpacity(0)
+		end)
 		for _, percent in ipairs({ 25, 50, 75, 100 }) do
 			local value = percent / 100
-			background:CreateRadio(percent .. "%", function() return api.GetBackdropOpacity() == value end, function() api.SetBackdropOpacity(value) end)
+			background:CreateRadio(percent .. "%", function()
+				return api.GetBackdropOpacity() == value
+			end, function()
+				api.SetBackdropOpacity(value)
+			end)
 		end
 		local show = module.show
-		if target.kind == "section" and type(show) == "table" and type(show.get) == "function" and type(show.set) == "function" then
-			tracker:CreateButton(ns.L["Hide this section"], function() if show.get() then show.set(false) end end)
+		if
+			target.kind == "section"
+			and type(show) == "table"
+			and type(show.get) == "function"
+			and type(show.set) == "function"
+		then
+			tracker:CreateButton(ns.L["Hide this section"], function()
+				if show.get() then
+					show.set(false)
+				end
+			end)
 		end
 	end
 	return menu
@@ -1056,12 +1089,22 @@ function api.Attach(module, show, contract)
 				error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
 			end)
 		end
-		if module.trackerMenu and type(module.OnBlockHeaderClick) == "function" and not module.trackerBlockMenuWrapped then
+		if
+			module.trackerMenu
+			and type(module.OnBlockHeaderClick) == "function"
+			and not module.trackerBlockMenuWrapped
+		then
 			local oldBlockClick = module.OnBlockHeaderClick
 			module.trackerBlockMenuWrapped = true
 			module.OnBlockHeaderClick = function(self, block, button)
 				if button == "LeftButton" and type(module.trackerClick) == "function" then
-					RunSafe(module.safeCall, "tracker block click", module.trackerClick, { kind = "block", id = block and block.id, block = block }, button)
+					RunSafe(
+						module.safeCall,
+						"tracker block click",
+						module.trackerClick,
+						{ kind = "block", id = block and block.id, block = block },
+						button
+					)
 					return
 				end
 				if button == "RightButton" then
