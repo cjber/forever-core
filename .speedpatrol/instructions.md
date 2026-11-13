@@ -5,8 +5,8 @@ benchmarks run the headless harness: the specs stub the client API and load the 
 order, and `tools/check_consumers.py` compares every consumer's vendored copy against this repo.
 
 - Keep a change only when it speeds up a file the addons load, or the gate itself.
-- Every change must pass the full gate in `AGENTS.md` under "Commands", with lua-language-server
-  3.19.1 and stylua 2.5.2 first on `PATH`, the versions CI uses.
+- Every change must pass the full gate in `AGENTS.md` under "Commands", with lua-language-server and
+  stylua first on `PATH`, at the versions `tools/toolchain.json` pins.
 - `tests/tracker_host_spec.lua` needs Blizzard's tracker source, fetched by
   `python3 tools/fetch_tracker_ui.py`; it is not part of the timed suite.
 - Vendor changes out with `python3 tools/sync_consumers.py`, then one PR per consumer.

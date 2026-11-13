@@ -17,6 +17,7 @@ ns.Credits = {
 		{ name = "procque", what = "Questie's quest tracker can be moved again" },
 		{ name = "Fareed", what = "Questie's quest tracker can be moved again" },
 		{ name = "ZiiMs", what = "Tracker column follows EllesmereUI's custom quest tracker" },
+		{ name = "Bolton_wow", what = "Map arrows open the destination map again" },
 	},
 	inspired = {
 		{ name = "The game's own objective tracker", what = "The column's left edge, width and header spacing" },

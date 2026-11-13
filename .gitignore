@@ -7,6 +7,8 @@ __pycache__/
 .sloppatrol/runs/
 .types/
 .ruff_cache/
+# uv's project environment for the tools/ project (`uv run --project tools`).
+tools/.venv/
 reference/
 scratch/
 
@@ -14,3 +16,7 @@ scratch/
 .bugpatrol/runs/
 .speedpatrol/runs/
 .sloppatrol/runs/
+
+# !!DevSmoke's generated eval inbox: tools/devsmoke/eval.py writes the snippet there and links it into the client's
+# AddOns as the !!DevSmokeInbox addon. It is the only place a snippet is written, so no tracked file changes.
+tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/

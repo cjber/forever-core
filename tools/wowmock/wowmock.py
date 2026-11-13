@@ -26,6 +26,7 @@ per UI unit.
     minimal_slider(canvas, x, y, 180, 32, 100, 50, 150); ui_panel_button(canvas, x, y, w, h, "Okay")
     basic_panel(ui, "Nearby services", 380, 400)  # canvas and frame origin (x, y)
     edit_mode_checkbox(canvas, x, y, "Label", True); edit_mode_selection(canvas, x, y, w, h, "Name")
+    cooldown_icon(canvas, x, y, 50, 134400)  # Cooldown Manager icon: masked icon plus its overlay at the outset
 
 Widgets return (Canvas, rects) where rects locate interesting parts in UI units, so a scene can place a
 tooltip beside a slot or draw an addon's own textures into a slot (see item_button's `artwork` hook).
@@ -772,7 +773,11 @@ def text_runs(text, default):
 def inline_texture_image(ui, run):
     if run.atlas:
         return ui.atlas(run.atlas)
-    image = ui.texture(run.file.lower().replace("\\", "/") + ("" if "." in run.file[-5:] else ".blp"))
+    # The client takes a FileDataID in a |T escape as well as a path; looking a number up as a path never matches.
+    if run.file.isdigit():
+        image = ui.texture(int(run.file))
+    else:
+        image = ui.texture(run.file.lower().replace("\\", "/") + ("" if "." in run.file[-5:] else ".blp"))
     if run.crop:
         tw, th, left, right, top, bottom = run.crop
         sx, sy = image.width / tw, image.height / th
@@ -974,6 +979,24 @@ def item_button(canvas, x, y, item=None, count=None, hover=False, artwork=None, 
         canvas.draw(
             ui.texture("interface/buttons/buttonhilight-square.blp"), x, y, ITEM_BUTTON, ITEM_BUTTON, blend="ADD"
         )
+
+
+# --------------------------------------------------------------------------------- Cooldown Manager icon
+
+
+def cooldown_icon(canvas, x, y, size, icon):
+    """A Cooldown Manager icon at (x, y) for the FileDataID `icon`: the icon masked by
+    `UI-HUD-CoolDownManager-Mask`, then `UI-HUD-CoolDownManager-IconOverlay` OVERLAY, both from
+    Blizzard_CooldownViewer/CooldownViewer.xml. The overlay reaches 9/50 of `size` past each side and 8/50 past
+    the top and bottom, so it draws as a rect `size + 2 * outset`."""
+    ui = canvas.ui
+    px = canvas.px(size)
+    image = ui.texture(icon).resize((px, px), Image.LANCZOS)
+    mask = ui.atlas("UI-HUD-CoolDownManager-Mask").image.convert("RGBA").resize((px, px), Image.LANCZOS)
+    image.putalpha(ImageChops.multiply(image.getchannel("A"), mask.getchannel("A")))
+    canvas.composite(image, canvas.px(x), canvas.px(y))
+    ox, oy = 9 * size / 50, 8 * size / 50
+    canvas.draw(ui.atlas("UI-HUD-CoolDownManager-IconOverlay"), x - ox, y - oy, size + 2 * ox, size + 2 * oy)
 
 
 # ---------------------------------------------------------------------------------------- container frame

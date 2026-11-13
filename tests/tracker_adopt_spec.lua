@@ -431,17 +431,6 @@ local function Client()
 			GetPlayerMapPosition = function() end,
 			GetMapInfo = function() end,
 		},
-		C_DateAndTime = {
-			GetSecondsUntilWeeklyReset = function()
-				return nil
-			end,
-		},
-		C_ChatInfo = {
-			RegisterAddonMessagePrefix = function() end,
-			SendAddonMessage = function()
-				return 0
-			end,
-		},
 		C_Timer = {
 			After = function(_, fn)
 				table.insert(env.timers, fn)
@@ -488,8 +477,6 @@ local function Client()
 		},
 		Enum = {
 			InputDeviceInterfaceType = { Gamepad = 2 },
-			SendAddonMessageResult = { Success = 0 },
-			TooltipDataType = { Unit = 7 },
 		},
 		CreateFromMixins = function(...)
 			local result = {}
@@ -498,18 +485,6 @@ local function Client()
 			end
 			return result
 		end,
-		CreateDataProvider = function(rows)
-			return { rows = rows }
-		end,
-		CreateScrollBoxListLinearView = function()
-			return {
-				SetElementExtent = function() end,
-				SetElementInitializer = function() end,
-			}
-		end,
-		ScrollUtil = { InitScrollBoxListWithScrollBar = function() end },
-		ScrollBoxConstants = { RetainScrollPosition = 1 },
-		RAID_CLASS_COLORS = { MAGE = { GetRGB = function() end }, HUNTER = { GetRGB = function() end } },
 		NORMAL_FONT_COLOR = { GetRGB = function() end },
 		HIGHLIGHT_FONT_COLOR = { GetRGB = function() end },
 		GRAY_FONT_COLOR = { GetRGB = function() end },

@@ -29,7 +29,14 @@ UNPINNED = "UNPINNED"
 MANIFEST = "MANIFEST.json"
 # The data files vendored byte for byte with the modules: the pinned-build data assets.py reads, the credits
 # opt-out list credits.py reads, and the widget methods widget_handlers.py reads.
-DATA_FILES = ("legacy_chrome.txt", "interface_paths.txt", "backdrops.txt", "credits_opt_out.txt", "widget_methods.txt")
+DATA_FILES = (
+    "legacy_chrome.txt",
+    "interface_paths.txt",
+    "backdrops.txt",
+    "credits_opt_out.txt",
+    "widget_methods.txt",
+    "client_names.txt",
+)
 
 
 def digest(path: Path) -> str:

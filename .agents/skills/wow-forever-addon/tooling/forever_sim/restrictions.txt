@@ -4,6 +4,8 @@
 # The source wiki is CC BY-SA 4.0; this list of names and classes is derived from it.
 # One name per line, then its classes separated by commas: always, nocombat or hwevent, or untagged
 # (today's combat-only rule). The sim refuses the call when any listed class applies.
+# A function is keyed by its qualified name; a widget method by its documented system and name
+# (SimpleButtonAPI_SetEnabled), or by its own name for a block the live client recorded (SetEnabled).
 # Vendored from cjber/forever-core; regenerate it there.
 AssistUnit always
 C_AchievementTelemetry.LinkAchievementInClub untagged

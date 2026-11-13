@@ -204,22 +204,30 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
   history. Every pull-request workflow cancels a PR's superseded runs (top-level `concurrency` grouped on
   the PR number, `cancel-in-progress` only for `pull_request`, so `main` keeps a run per commit) and every
-  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT
-  and luacheck come from `cjber/forever-core/.github/actions/lua-toolchain` at the commit the repo's other core
-  tooling comes from, never from apt. A job
+  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT,
+  luacheck, LuaLS, StyLua and gitleaks come from `cjber/forever-core/.github/actions/toolchain@<sha>` at the commit
+  the repo's other core tooling comes from, never from apt, curl or a tool action: `with: tools: lua luals stylua
+  gitleaks` names what the job needs, and the action reads the vendored `tools/toolchain.json` from the job's own
+  checkout (its `manifest` input defaults to it), so every version comes from that one file. A job
   named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
   one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
   hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,
   not a gate: a repo it patrols keeps `.sloppatrol/sloppatrol.yml`, whose checks are the fast CI checks plus the
   rules script, and `.sloppatrol/instructions.md`, its live roots; nothing else under `.sloppatrol/` is tracked.
-  Dependabot updates `github-actions` monthly, grouped. A `package` job runs the pinned BigWigs packager
+  Dependabot updates `github-actions` daily with a one-day cooldown, grouped per ecosystem, and the vendored
+  `tools/pyproject.toml`'s `uv` group holds the Python tools, which run as
+  `uv run --project tools --frozen --group dev <tool>`. Core's hourly `dependabot-merge` job arms squash auto-merge for
+  a patch or minor update in every addon; a major waits for review under the `major` label. Every other pin sits in the
+  vendored `tools/toolchain.json`, which core's daily `bump-toolchain` workflow moves; a major it proposes also waits
+  for review.
+  A `package` job runs the pinned BigWigs packager
   with `args: -d -z` (no upload) and `tools/check_package.py` (`forever_tools.package`) on its output: every file a
   TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types`, `docs`,
   `ruff.toml`, `stylua.toml` or dot file (`.agents`, `.luacheckrc`) ships, every packaged folder ships a licence file (LICENSE, LICENCE, COPYING or UNLICENSE), THIRD_PARTY.md
   and the WFA-10 and WFA-31 credits sections ship with text under them, and the smoke spec passes on the packaged
   folder. `tools/doctor.py`
-  (`forever_tools.doctor`) checks a machine against every pin in `ci.yml` and `typecheck.sh` and prints a fix for
-  each problem; AGENTS.md lists it under Commands.
+  (`forever_tools.doctor`) checks a machine against every pin in the vendored `tools/toolchain.json` and
+  `tools/pyproject.toml` and prints a fix for each problem; AGENTS.md lists it under Commands.
 - **WFA-16** Releases: a signed `v*` tag runs `release.yml` (BigWigs packager, pinned) with this
   version's CHANGELOG entry as notes (`tools/changelog.py`), uploading to GitHub, CurseForge and
   Wago; the TOC carries `X-Curse-Project-ID` and `X-Wago-ID`. Setup is in `wow-addon-publish`.

@@ -702,7 +702,7 @@ function M.build(sim)
 			table.insert(templates, 1, intrinsic)
 		end
 		local name = node.attr.name
-		local extra = { source = ctx.file }
+		local extra = { source = ctx.file, creator = ctx.creator }
 		local obj = W.new(kind, name, parent, extra)
 		local s = S[obj]
 		if s.isRegion then
@@ -758,7 +758,16 @@ function M.build(sim)
 	end
 
 	local function newContext(file, chunk, taint)
-		return { file = file, chunk = chunk, taint = taint, anchors = {}, loads = {}, post = {} }
+		return {
+			file = file,
+			chunk = chunk,
+			taint = taint,
+			-- A frame an addon's XML declares is the addon's: the chunk name carries the addon's folder.
+			creator = taint or (type(chunk) == "string" and Taint.classify("@" .. chunk)) or nil,
+			anchors = {},
+			loads = {},
+			post = {},
+		}
 	end
 
 	local function finish(ctx)

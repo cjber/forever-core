@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: ForeverCore
-## Notes: Shared code the Forever addons need. Nothing to set up: each Forever addon uses it for its tracker column, settings and leaderboards.
+## Notes: Shared code the Forever addons need. Nothing to set up: each Forever addon uses it for its tracker column and settings.
 ## Author: cjber
 ## Version: @project-version@
 ## Category: Libraries
@@ -27,8 +27,9 @@ Core\SafeCall.lua
 Core\OpenMap.lua
 Core\OpenSettings.lua
 Core\Log.lua
+Core\Capture.lua
+Core\Performance.lua
 Core\Text.lua
-Core\PeerStats.lua
 Core\MinimapButton.lua
 UI\Art.lua
 UI\Report.lua
@@ -47,9 +48,8 @@ UI\TrackerSection.lua
 Core\QuestOrder.lua
 UI\TrackerQuests.lua
 UI\MapCanvas.lua
-Core\LeaderboardsData.lua
+Core\RetiredLeaderboards.lua
 Core\APIKit.lua
-UI\Leaderboards.lua
 UI\QuestLogTabs.lua
 UI\ProfessionTabs.lua
 Expose.lua

@@ -14,9 +14,11 @@ convention and the next read after this page.
 ForeverCore.API -- integer
 ```
 
-The interface version of the table below. It is `1` today. It changes only when a member a third-party addon may
+The interface version of the table below. It is `2` today. It changes only when a member a third-party addon may
 rely on breaks: its arguments, the shape of its result or its meaning. Additions keep it and raise a member's own
-`minor` instead. Refuse to run against a core older than the members you call:
+`minor` instead. Version 2 retired Forever Leaderboards and peer stats: `ForeverCore.Leaderboards` and
+`ForeverCore.PeerStats` remain only as no-op answers for older addon releases, and they store, register and send
+nothing. Refuse to run against a core older than the members you call:
 
 ```lua
 if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
@@ -58,6 +60,25 @@ It is `2` today. Check a member added in minor 2 before you use it, so the same 
 - `Addons()` returns a fresh list, sorted by name, of `{ name, version, minor, api }` for every published addon.
   `version` and `minor` are read from the api table at call time (`minor` is 0 when it has none), and `api` is the
   addon's own table rather than a copy, because it is the callable API. (minor 2)
+
+## `ForeverCore.Art`
+
+```lua
+ForeverCore.Art.minor -- integer
+ForeverCore.Art.Icon(texture, file, size)
+ForeverCore.Art.CooldownIcon(texture, file, size) --> Texture
+```
+
+`minor` is `1` today.
+
+- `Icon(texture, file, size)` draws a file icon whole: it resets the texture's crop, sets `file` (a client path or a
+  FileDataID) and sizes it `size` by `size`. The texture is your own, not one the client already draws in a template.
+- `CooldownIcon(texture, file, size)` does what `Icon` does, then gives the icon the Cooldown Manager's frame: the
+  client's `UI-HUD-CoolDownManager-Mask` atlas as a mask over it and `UI-HUD-CoolDownManager-IconOverlay` on the
+  OVERLAY layer, reaching 9/50 of the icon's width past each side and 8/50 of its height past the top and bottom. It
+  returns the overlay texture, so you can hide or recolour it. The client builds that frame only inside its own Cooldown
+  Manager and offers no template. The mask and overlay are made once per icon texture and reused, so call this again
+  with a new icon or `size` to move the same pair rather than building another one. (minor 1)
 
 ## `ForeverCore.OpenMap`
 
@@ -200,8 +221,10 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`, `Text`,
-`QuestOrder`, `Family` and `Credits`. A section created through `TrackerSection.Create` takes `maxHeight` (`200`
-units when omitted, or `"remaining"` for the column's spare room); the shared host scrolls a taller section under its
-own header and freezes it in combat. [`docs/adoption.md`](adoption.md) describes them for the addons that own a
-tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.
+`QuestLogTabs`, `MinimapButton`, `SettingsPage`, `Text`, `QuestOrder`, `Family` and `Credits`.
+A section created through `TrackerSection.Create` takes `maxHeight` (`200` units when omitted, or `"remaining"` for
+the column's spare room); the shared host scrolls a taller section under its own header and freezes it in combat.
+`Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
+a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
+addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
+instead.

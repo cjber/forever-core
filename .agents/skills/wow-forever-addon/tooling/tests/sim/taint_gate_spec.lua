@@ -210,6 +210,39 @@ test("an always restriction is refused out of combat", function()
 	assert(sim:expectError("tried to call the protected function 'CopyToClipboard()'"))
 end)
 
+-- The live client refused both from shipped builds (cjber/forever-core#538): OpenTradeSkill to tainted code at any
+-- time, and C_UI.Reload to tainted code outside a hardware event.
+test("OpenTradeSkill is refused to tainted code at any time", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeTradeSkill()")
+	assert(sim:expectError("tried to call the protected function 'C_TradeSkillUI.OpenTradeSkill()'"))
+	local before = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeTradeSkill()")
+	end)
+	assert(#sim.errors == before + 1, "a hardware event does not allow the always class")
+end)
+
+test("C_UI.Reload needs a hardware event", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbeReload()")
+	assert(sim:expectError("tried to call the protected function 'C_UI.Reload()'"))
+	local before = #sim.errors
+	sim:input(function()
+		sim:runAs("SimRestrictionProbe", "SimRestrictionProbeReload()")
+	end)
+	for i = before + 1, #sim.errors do
+		assert(not tostring(sim.errors[i].message):find("C_UI.Reload", 1, true), sim.errors[i].message)
+	end
+end)
+
+-- A widget method's observed override is keyed by the method's own name, not the documentation's system name.
+test("an observed widget-method override is refused out of combat", function()
+	local sim = fixtureSim("SimRestrictionProbe")
+	sim:runAs("SimRestrictionProbe", "SimRestrictionProbePassThrough()")
+	assert(sim:expectError("tried to call the protected function 'SimRestrictionProbeFrame:SetPassThroughButtons()'"))
+end)
+
 test("a restriction with several classes is refused when any one applies", function()
 	local sim = fixtureSim("SimRestrictionProbe")
 	-- SimRestrictionProbeWho calls C_FriendList.SendWho, normally hwevent; give it both classes.

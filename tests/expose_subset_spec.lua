@@ -48,7 +48,7 @@ end
 
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "Expose.lua runs without UI/Credits.lua and publishes ForeverCore")
-equal(ForeverCore.API, 1, "the interface version is 1")
+equal(ForeverCore.API, 2, "the interface version is 2")
 check(type(ForeverCore.Register) == "function", "Register is still the per-addon factory")
 check(ns.CreditsPage == nil, "the page never loaded")
 check(ForeverCore.Credits == nil, "ForeverCore.Credits is nil, because the page is what publishes it")

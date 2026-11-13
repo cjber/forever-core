@@ -31,6 +31,7 @@ jobs:
       # Read for release_check.py's CI runs, and write for the consumer sync this job starts itself: a tag a workflow
       # creates with GITHUB_TOKEN fires no push event.
       actions: write
+      statuses: read # release_check.py reads the commit's headless-smoke status
     steps:
       - name: Choose the tag and commit
         id: target
@@ -95,9 +96,10 @@ jobs:
           done
           echo "::error::Full CI on main is still running for $RELEASE_COMMIT after 30 minutes"
           exit 1
-      # release_check.py passes only a commit whose full CI push run on main succeeded, so a manual release cannot
-      # publish a branch, a pull request or an unchecked commit.
-      - name: Verify full CI on the commit
+      # release_check.py passes only a commit whose full CI push run on main succeeded and whose headless-smoke status
+      # is green, so a manual release cannot publish a branch, a pull request, an unchecked commit or a build nobody
+      # loaded in the client.
+      - name: Verify full CI and the headless smoke on the commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_COMMIT: ${{ steps.target.outputs.commit }}

@@ -80,6 +80,24 @@ function Page.Register(name, build, L, safeCall)
 	title:SetPoint("TOPLEFT", 16, -TITLE)
 	title:SetText(Text(panel, name))
 	panel.title = title
+	-- While debug capture is on, the page says so beside its title. It takes no row, so a page's options sit where they
+	-- always do whether the capture is on or off. Built only when core's capture module is loaded, so a spec that loads
+	-- the chrome alone needs no extra client API.
+	local notice = ns.DebugCaptureShortNotice
+	if type(notice) == "function" then
+		local line = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+		line:SetPoint("LEFT", title, "RIGHT", 12, 0)
+		line:SetPoint("RIGHT", -16, 0)
+		line:SetJustifyH("RIGHT")
+		line:SetWordWrap(false)
+		local function RefreshNotice()
+			local text = notice()
+			line:SetText(text or "")
+			line:SetShown(text ~= nil)
+		end
+		panel:HookScript("OnShow", RefreshNotice)
+		RefreshNotice()
+	end
 	Run(panel, "settings page", build, panel, Page)
 	local category = Settings.RegisterCanvasLayoutCategory(panel, Text(panel, name))
 	Settings.RegisterAddOnCategory(category)

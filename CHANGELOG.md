@@ -2,12 +2,74 @@
 
 ## [Unreleased]
 
-- **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
-- **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest.
+- **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest. (#177)
 
 ### For addon authors
 
 - **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
+
+## [1.10.0] - 2026-11-13
+
+- **A bug report can ask for the client's debug logs without a developer's addon.** `/forever debug on` saves the
+  client's current taint log, advanced combat log, chat log and combat log settings, turns each on, and keeps the
+  originals in ForeverCore's saved variables across a reload. The report window and the settings pages built on
+  ForeverCore's page (its own and Field Guide's) say debug capture is on and how to stop it, the report names the client's `Logs` folder, and `/forever debug off` or the
+  next login puts the client's settings back. Nothing is sent anywhere. (#534)
+- **Bug reports now carry a performance table.** The report window reads the client's own add-on profiler once when
+  it opens: every loaded addon that depends on ForeverCore gets its average, current, peak and last frame time, its
+  counts over 1, 5, 10, 50 and 100 ms, and its memory, with the all-addon and whole-application figures above them.
+  A client without those APIs gets one line saying so, and nothing is sampled while playing. (#535)
+- **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
+
+### For addon authors
+
+- **A smoke can click Play itself.** `smoke --manual-launcher` passes the flag through to `up`, so while launcher OCR
+  is not finding Play an agent starts the smoke in the background, takes `shot` and left-clicks Play, exactly as with
+  `up --manual-launcher`; the default and `tools/smoke_queue.py` still click Play by OCR. (#547)
+- **A manual release can waive a failed visual proof.** `tools/release_check.py --skip-visual-proof` accepts a
+  completed full CI run on main whose only failed job is `visual-proof`; every other job must still pass and the
+  `headless-smoke` gate still applies. An addon's Release workflow passes it from a `skip_visual_proof` dispatch input.
+  (#552)
+- **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
+  status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
+  pending one waits and names the command that fills it in, and a failed one prints what it found.
+  `python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>` builds that commit, runs
+  `/forever selftest` and `errors --addon` for each of its addon folders in the headless client, and posts the status;
+  exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
+  reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
+  the status in for every commit a release would ship. (#540)
+- **The simulator exercises every addon with no scenario file, and clicks the addon's own widgets.** `run.lua` runs
+  `sim:exercise()` after the declared scenarios, so an addon no longer needs `tests/sim/exercise_scenario.lua`; a
+  declared scenario still passes the exercise its own commands and saved variables. An addon that depends on
+  ForeverCore gets that checkout loaded for the exercise, from `FOREVER_CORE` or `../forever-core`, so its UI is
+  really built. The exercise hovers, left-clicks and leaves every shown Button the addon created, in and out of
+  combat, so a refused call in a button handler fails the run. `C_TradeSkillUI.OpenTradeSkill` and `C_UI.Reload` are
+  modelled as the client enforces them, and `fetch.py --refresh-restrictions --probe` merges every block a live
+  client recorded into `restrictions.txt`. (#538)
+- **An addon's `ty` run passes over the vendored simulator.** `forever_sim/fetch.py` gives a probe hit a `ProbeHit`
+  dataclass and reads it by attribute, and core's `forever-tools` job type-checks `forever_sim` with `ty` beside
+  `forever_tools`, so an addon whose CI checks its `tools/` with `ty` no longer fails on the vendored file.
+
+## [1.9.0] - 2026-11-12
+
+### For addon authors
+
+- **A Cooldown Manager icon frame is one core call.** `ForeverCore.Art` (minor 1) publishes `Icon` and the new
+  `CooldownIcon`, which draws an icon with the client's own `UI-HUD-CoolDownManager-Mask` and
+  `UI-HUD-CoolDownManager-IconOverlay` atlases and returns the overlay. The mask and overlay are built once per
+  texture, so a refresh moves the same pair instead of stacking another. See `docs/api.md`. (#525)
+- **Mock renders draw `|T` icons given by FileDataID.** `tools/wowmock` looked such an escape up as a path, which
+  never matched and stalled the render; it now reads the ID directly, as the client does. (#524)
+
+## [1.8.2] - 2026-11-12
+
+- **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and
+  the short hitch some players saw every 10 seconds is gone. (#443, #512)
+- **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
+
+### For addon authors
+
+- **`ForeverCore.API` is 2.** `ForeverCore.Leaderboards` and `ForeverCore.PeerStats` remain only as inert stand-ins, so an older release that still calls them loads without errors: they return empty boards, store nothing and send nothing. Remove those calls. See `docs/api.md`. (#443)
 - **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)
 
 ## [1.8.1] - 2026-11-12

@@ -48,9 +48,15 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
 ---@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
----@field leaderboards? {reach?: "group"|"met"}
+---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
+---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
+
+-- Whether the client lets this code read a value it may hold secret (WFA-30).
+---@param value any
+---@return boolean
+function canaccessvalue(value) end
 
 ---@class EditModeManagerFrame : Frame
 ---@field IsEditModeActive fun(self: EditModeManagerFrame): boolean
@@ -221,23 +227,6 @@ InputUtil = nil
 -- The settings page keeps one cursor down its canvas, so every row claims its height.
 ---@class Frame
 ---@field settingsRowY? number
-
--- UI/Leaderboards.lua: the client widgets it builds, declared here because the shared file typechecks in core.
----@class ForeverClassColor
----@field GetRGB fun(self: ForeverClassColor): number, number, number
----@type table<string, ForeverClassColor>?
-RAID_CLASS_COLORS = nil
-
----@class ForeverDataProvider
----@field entries any[]
----@param entries? any[]
----@return ForeverDataProvider
-function CreateDataProvider(entries) end
-
----@class ForeverScrollBoxConstants
----@field RetainScrollPosition integer
----@type ForeverScrollBoxConstants
-ScrollBoxConstants = nil
 
 -- The ForeverProfession* classes type core's view of the window; the client global is left for an addon to type.
 -- UI/ProfessionTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.

@@ -5,6 +5,8 @@ local _, ns = ...
 -- while the switch is on, and a dropped debug line costs no formatting at all. Nothing goes to chat: /forever debug
 -- answers in the client's error frame, /forever debug show opens the report window with every attached addon's latest
 -- lines selected for copying, and the report's own copy carries the last lines that fit after the error journal.
+-- /forever debug on also starts the client-log capture in Core/Capture.lua, so the logs a report asks for begin at
+-- once; /forever debug off stops it and puts the client's settings back.
 --
 -- One copy of this file loads, in ForeverCore. Each registered addon gets its own ring and saved table through
 -- ns.LogFor(name); the debug switch is one state for the character that every ring shares.
@@ -262,6 +264,18 @@ function ns.DebugCommand(argument)
 		end
 		return true
 	end
+	if command == "on" then
+		switch.enabled = true
+		local started = type(ns.StartDebugCapture) == "function" and ns.StartDebugCapture()
+		if started then
+			Notify(
+				L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."]
+			)
+		else
+			Notify(L["Debug capture could not start because ForeverCore has not finished loading."])
+		end
+		return true
+	end
 	if command == "pin" then
 		local already = switch.enabled and switch.pinned
 		switch.enabled = true
@@ -275,14 +289,18 @@ function ns.DebugCommand(argument)
 	if command == "off" then
 		switch.enabled = false
 		SavePin(false)
-		Notify(L["Debug log is off and unpinned."])
+		if type(ns.StopDebugCapture) == "function" and ns.StopDebugCapture() then
+			Notify(L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."])
+		else
+			Notify(L["Debug log is off and unpinned."])
+		end
 		return true
 	end
 	if command == "show" then
 		Notify(ShowText(), true)
 		return true
 	end
-	Notify(L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"])
+	Notify(L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"])
 	return false
 end
 

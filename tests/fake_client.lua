@@ -13,7 +13,19 @@ local function texture()
 	function methods:SetPoint(...)
 		self.points[#self.points + 1] = { ... }
 	end
-	function methods.SetAllPoints() end
+	function methods:ClearAllPoints()
+		self.points, self.point = {}, nil
+	end
+	function methods:SetAllPoints(owner)
+		self.allPoints = owner or true
+	end
+	function methods:GetParent()
+		return self.parent
+	end
+	function methods:AddMaskTexture(mask)
+		self.masks = rawget(self, "masks") or {}
+		self.masks[#self.masks + 1] = mask
+	end
 	function methods:SetSize(width, height)
 		self.width, self.height = width, height
 	end
@@ -255,10 +267,17 @@ local function widget(kind, name, parent, template)
 	function methods:SetTitle(title)
 		self.title = title
 	end
-	function methods:CreateTexture()
+	local function child(self, textureName, drawLayer, objectType)
 		local value_ = texture()
+		value_.name, value_.layer, value_.parent, value_.kind = textureName, drawLayer, self, objectType
 		self.children[#self.children + 1] = value_
 		return value_
+	end
+	function methods:CreateTexture(textureName, drawLayer)
+		return child(self, textureName, drawLayer, "Texture")
+	end
+	function methods:CreateMaskTexture(textureName, drawLayer)
+		return child(self, textureName, drawLayer, "MaskTexture")
 	end
 	function methods:CreateFontString()
 		local value_ = widget("FontString", nil, self)
@@ -424,17 +443,6 @@ local function Client()
 			GetPlayerMapPosition = function() end,
 			GetMapInfo = function() end,
 		},
-		C_DateAndTime = {
-			GetSecondsUntilWeeklyReset = function()
-				return nil
-			end,
-		},
-		C_ChatInfo = {
-			RegisterAddonMessagePrefix = function() end,
-			SendAddonMessage = function()
-				return 0
-			end,
-		},
 		C_Timer = {
 			After = function(_, fn)
 				table.insert(env.timers, fn)
@@ -481,8 +489,6 @@ local function Client()
 		},
 		Enum = {
 			InputDeviceInterfaceType = { Gamepad = 2 },
-			SendAddonMessageResult = { Success = 0 },
-			TooltipDataType = { Unit = 7 },
 		},
 		CreateFromMixins = function(...)
 			local result = {}
@@ -491,18 +497,6 @@ local function Client()
 			end
 			return result
 		end,
-		CreateDataProvider = function(rows)
-			return { rows = rows }
-		end,
-		CreateScrollBoxListLinearView = function()
-			return {
-				SetElementExtent = function() end,
-				SetElementInitializer = function() end,
-			}
-		end,
-		ScrollUtil = { InitScrollBoxListWithScrollBar = function() end },
-		ScrollBoxConstants = { RetainScrollPosition = 1 },
-		RAID_CLASS_COLORS = { MAGE = { GetRGB = function() end }, HUNTER = { GetRGB = function() end } },
 		NORMAL_FONT_COLOR = { GetRGB = function() end },
 		HIGHLIGHT_FONT_COLOR = { GetRGB = function() end },
 		GRAY_FONT_COLOR = { GetRGB = function() end },

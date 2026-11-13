@@ -176,26 +176,433 @@ local function begin()
 	step()
 end
 
-SLASH_DEVSMOKE1 = "/devsmoke"
-SlashCmdList["DEVSMOKE"] = function()
-	begin()
+-- The Agent chat tab: its own window, held in the client's chat dock, so an agent reads the commands' answers there
+-- and General stays clean. A line is kept under 255 characters because that is where the chat box cuts one.
+local MAX_CHAT_WINDOWS = NUM_CHAT_WINDOWS or 10
+local MAX_LINE = 254
+local COOKING_SKILL_LINE = 185
+
+local function trim(text)
+	return type(text) == "string" and text:match("^%s*(.-)%s*$") or ""
 end
 
--- The Forever addons load after this one, so /forever only exists here once PLAYER_LOGIN has fired.
+local function chatFrame(name)
+	for index = 1, MAX_CHAT_WINDOWS do
+		if GetChatWindowInfo(index) == name then
+			return _G["ChatFrame" .. index]
+		end
+	end
+end
+
+local function agentFrame()
+	local frame = chatFrame("Agent")
+	if frame then
+		return frame
+	end
+	if type(FCF_OpenNewWindow) == "function" then
+		local opened = FCF_OpenNewWindow("Agent", true)
+		if type(opened) == "table" then
+			return opened
+		end
+	end
+	return chatFrame("Agent")
+end
+
+local function say(text)
+	local line = tostring(text)
+	if #line > MAX_LINE then
+		line = line:sub(1, MAX_LINE)
+	end
+	local frame = agentFrame()
+	if frame and type(frame.AddMessage) == "function" then
+		frame:AddMessage(line, 1, 1, 1)
+	end
+end
+
+-- A printed or returned value as Agent lines: its own newlines split it, and a piece still past the chat box's cut is
+-- broken into chunks, so no line an agent reads is ever cut by the client.
+local function pushLines(value, lines)
+	local text = tostring(value)
+	for piece in (text .. "\n"):gmatch("(.-)\n") do
+		piece = piece:gsub("\r$", "")
+		if #piece > 0 then
+			local at = 1
+			while at <= #piece do
+				lines[#lines + 1] = piece:sub(at, at + MAX_LINE - 1)
+				at = at + MAX_LINE
+			end
+		end
+	end
+end
+
+-- Every value a function returns, nils included, so each one can be printed.
+local function pack(...)
+	return { n = select("#", ...), ... }
+end
+
+-- The eval inbox: tools/devsmoke/eval.py writes a snippet as the generated !!DevSmokeInbox addon, whose Eval.lua
+-- defines DevSmokeEval. Running it here, under xpcall with print captured, keeps an agent's mistake out of BugGrabber
+-- and puts every line it prints or returns on the Agent tab and in DevSmokeDB.eval.
+local function runEval()
+	local chunk = DevSmokeEval
+	agentFrame()
+	local lines = {}
+	local original = _G.print
+	_G.print = function(...)
+		local parts = {}
+		for index = 1, select("#", ...) do
+			parts[#parts + 1] = tostring((select(index, ...)))
+		end
+		pushLines(table.concat(parts, "\t"), lines)
+	end
+	local returns
+	local message
+	local function capture(reason)
+		message = tostring(reason)
+		return reason
+	end
+	local ok = xpcall(function()
+		returns = pack(chunk())
+	end, capture)
+	_G.print = original
+	local err
+	if ok then
+		for index = 1, returns.n do
+			pushLines(returns[index], lines)
+		end
+	else
+		err = ("%s\n%s"):format(message or "error", debugstack())
+		pushLines(err, lines)
+	end
+	DevSmokeDB = DevSmokeDB or {}
+	DevSmokeDB.eval = { ran = time(), ok = ok, out = lines, err = err }
+	say(("Dev Smoke: eval %s, %d lines"):format(ok and "ok" or "failed", #lines))
+	for _, line in ipairs(lines) do
+		say(line)
+	end
+end
+
+-- The generated Inbox addon is load-on-demand, and the client reads its files only when it loads it: the first
+-- `/devsmoke eval` or login in a session loads the inbox, and DevSmokeEval keeps that chunk, so any snippet written
+-- later needs a /reload. A client without it (no eval yet) simply answers nothing, and the addon list is read first so
+-- a missing folder never makes the client complain about a load.
+local function addonKnown(name)
+	local addons = C_AddOns
+	if type(addons) ~= "table" or type(addons.GetNumAddOns) ~= "function" then
+		return false
+	end
+	for index = 1, addons.GetNumAddOns() do
+		if addons.GetAddOnInfo(index) == name then
+			return true
+		end
+	end
+	return false
+end
+
+local function loadInbox()
+	if DevSmokeEval ~= nil or not addonKnown("!!DevSmokeInbox") then
+		return
+	end
+	local addons = C_AddOns
+	if type(addons.LoadAddOn) == "function" then
+		pcall(addons.LoadAddOn, "!!DevSmokeInbox")
+	end
+end
+
+local function sayEval()
+	loadInbox()
+	if type(DevSmokeEval) ~= "function" then
+		say("Dev Smoke: no eval loaded; run tools/devsmoke/eval.py FILE, then /reload")
+		return
+	end
+	runEval()
+end
+
+local function selectChat(name)
+	local frame = name == "Agent" and agentFrame() or chatFrame(name)
+	if not frame then
+		say(("Dev Smoke: no %s chat tab"):format(name))
+		return
+	end
+	if type(FCF_SelectDockFrame) == "function" then
+		FCF_SelectDockFrame(frame)
+	end
+	say(("Dev Smoke: %s tab selected"):format(name))
+end
+
+local function sayTab(argument)
+	if trim(argument) == "off" then
+		selectChat("General")
+	else
+		selectChat("Agent")
+	end
+end
+
+local function versionOf(name)
+	local ok, version = pcall(C_AddOns.GetAddOnMetadata, name, "Version")
+	if ok and type(version) == "string" and version ~= "" then
+		return version
+	end
+	return "unknown"
+end
+
+local function loadedState(name)
+	if C_AddOns.IsAddOnLoaded(name) then
+		return "loaded"
+	end
+	return "not loaded"
+end
+
+local function sayVersion(name)
+	say(("%s | version %s | %s"):format(name, versionOf(name), loadedState(name)))
+end
+
+-- One line per loaded addon depending on ForeverCore, the way a selftest finds them, plus ForeverCore itself and
+-- LibAHTab, the Auction House tab library Tweaks Forever ships for Auctionator. Both of those are listed even when
+-- the client has not loaded them.
+local function sayVersions()
+	local dependants = {}
+	for index = 1, C_AddOns.GetNumAddOns() do
+		local name = C_AddOns.GetAddOnInfo(index)
+		if type(name) == "string" and name ~= "ForeverCore" and C_AddOns.IsAddOnLoaded(name) and isOurs(name) then
+			dependants[#dependants + 1] = name
+		end
+	end
+	table.sort(dependants)
+	say("Dev Smoke: addons")
+	sayVersion("ForeverCore")
+	sayVersion("LibAHTab")
+	for _, name in ipairs(dependants) do
+		sayVersion(name)
+	end
+end
+
+-- This session's BugGrabber entries, skipping only the error a chat /run line itself raises, whose message starts with
+-- [string ". An addon error triggered from a /run line names the same chunk in its stack and is still counted.
+-- BugGrabber keeps every caught error and stamps each with the session it was last raised in.
+local function sayErrors()
+	local grabber = BugGrabber
+	if type(grabber) ~= "table" or type(grabber.GetDB) ~= "function" then
+		say("Dev Smoke: BugGrabber is not loaded")
+		return
+	end
+	local ok, db = pcall(grabber.GetDB, grabber)
+	local session
+	if type(grabber.GetSessionId) == "function" then
+		local sessionOk, id = pcall(grabber.GetSessionId, grabber)
+		if sessionOk then
+			session = id
+		end
+	end
+	local kept = {}
+	if ok and type(db) == "table" then
+		for _, entry in ipairs(db) do
+			if type(entry) == "table" and (session == nil or entry.session == session) then
+				local message = tostring(entry.message or "")
+				if message:sub(1, 9) ~= '[string "' then
+					kept[#kept + 1] = message
+				end
+			end
+		end
+	end
+	say(("Dev Smoke: %d errors this session"):format(#kept))
+	for index, message in ipairs(kept) do
+		say(("%d: %s"):format(index, message:sub(1, 180)))
+	end
+end
+
+-- Every addon title the Thanks page knows, from the rows its two lists carry.
+local function creditTitles(page)
+	local titles = {}
+	for _, list in ipairs({ page.Players, page.Inspired }) do
+		if type(list) == "function" then
+			local ok, rows = pcall(list)
+			if ok and type(rows) == "table" then
+				for _, row in ipairs(rows) do
+					for _, helped in ipairs(row.helped or {}) do
+						if type(helped.addon) == "string" then
+							titles[helped.addon] = true
+						end
+					end
+				end
+			end
+		end
+	end
+	return titles
+end
+
+-- The addon title is every word but the optional player, matched against the titles the page knows, so a title with
+-- spaces comes through whole.
+local function splitCredit(text, titles)
+	local words = {}
+	for word in text:gmatch("%S+") do
+		words[#words + 1] = word
+	end
+	for last = #words, 1, -1 do
+		local title = table.concat(words, " ", 1, last)
+		if titles[title] then
+			return title, last == #words - 1 and words[#words] or nil
+		end
+	end
+	return text, nil
+end
+
+local function sayThanks(argument)
+	local page = ForeverCore and ForeverCore.Credits
+	if type(page) ~= "table" or type(page.Open) ~= "function" then
+		say("Dev Smoke: the Thanks page is not loaded")
+		return
+	end
+	local text = trim(argument)
+	if text == "" then
+		say("Dev Smoke: usage /devsmoke thanks <addon title> [player]")
+		return
+	end
+	local title, player = splitCredit(text, creditTitles(page))
+	if not page.Open(title) then
+		say(("Dev Smoke: could not open the Thanks page for %s"):format(title))
+		return
+	end
+	if not player then
+		say(("Dev Smoke: Thanks opened for %s"):format(title))
+		return
+	end
+	local window = page.window
+	local content = window and window.contents
+	if type(content) ~= "table" or type(content.GetTop) ~= "function" or type(content.GetParent) ~= "function" then
+		say("Dev Smoke: the Thanks page has no scrollable list")
+		return
+	end
+	for _, item in ipairs(window.rows or {}) do
+		if item.row and item.row.name == player and item.holder and item.holder:IsShown() then
+			local offset = content:GetTop() - item.holder:GetTop()
+			local scroll = content:GetParent()
+			local bar = scroll.ScrollBar
+			local range = type(scroll.GetVerticalScrollRange) == "function" and scroll:GetVerticalScrollRange()
+			-- The client's ScrollFrameTemplate drives a percentage scroll bar, which moves the list and its thumb.
+			if bar and type(bar.SetScrollPercentage) == "function" and type(range) == "number" and range > 0 then
+				bar:SetScrollPercentage(offset / range, true)
+			elseif type(scroll.SetVerticalScroll) == "function" then
+				scroll:SetVerticalScroll(offset)
+			end
+			say(("Dev Smoke: Thanks at %s"):format(player))
+			return
+		end
+	end
+	say(("Dev Smoke: no credit row for %s"):format(player))
+end
+
+-- A profession tab needs its window open, and Cooking opens with no profession known, so it is the one the command
+-- uses when nothing is open.
+local function sayProf(argument)
+	local tab = trim(argument)
+	if tab == "" then
+		say("Dev Smoke: usage /devsmoke prof <tab>")
+		return
+	end
+	local page = ForeverCore and ForeverCore.ProfessionTabs
+	if type(page) ~= "table" or type(page.Select) ~= "function" then
+		say("Dev Smoke: the profession tabs are not loaded")
+		return
+	end
+	local window = ProfessionsFrame
+	if not (window and window:IsShown()) then
+		local tradeSkill = C_TradeSkillUI
+		if type(tradeSkill) ~= "table" or type(tradeSkill.OpenTradeSkill) ~= "function" then
+			say("Dev Smoke: cannot open the Cooking window")
+			return
+		end
+		tradeSkill.OpenTradeSkill(COOKING_SKILL_LINE)
+	end
+	page.Select(tab)
+	say(("Dev Smoke: profession tab %s"):format(tab))
+end
+
+-- Hide every window an agent leaves open, through the client's own panel manager where it has one, so Escape is
+-- never pressed and the game menu never opens.
+local function sayClose()
+	local closed = 0
+	local function hide(frame)
+		if type(frame) ~= "table" or type(frame.IsShown) ~= "function" or not frame:IsShown() then
+			return
+		end
+		frame:Hide()
+		closed = closed + 1
+	end
+	local function hidePanel(frame)
+		if type(frame) ~= "table" or type(frame.IsShown) ~= "function" or not frame:IsShown() then
+			return
+		end
+		if type(HideUIPanel) == "function" then
+			HideUIPanel(frame)
+		else
+			frame:Hide()
+		end
+		closed = closed + 1
+	end
+	local page = ForeverCore and ForeverCore.Credits
+	hide(page and page.window)
+	hidePanel(ProfessionsFrame)
+	hidePanel(WorldMapFrame)
+	local settings = SettingsPanel
+	if type(settings) == "table" and type(settings.IsShown) == "function" and settings:IsShown() then
+		if type(settings.Close) == "function" then
+			settings:Close()
+		else
+			settings:Hide()
+		end
+		closed = closed + 1
+	end
+	say(("Dev Smoke: closed %d windows"):format(closed))
+end
+
+local COMMANDS = {
+	tab = sayTab,
+	versions = sayVersions,
+	errors = sayErrors,
+	thanks = sayThanks,
+	prof = sayProf,
+	close = sayClose,
+	eval = sayEval,
+}
+
+local USAGE = "Dev Smoke: /devsmoke, tab [off], versions, errors, eval, thanks <addon> [player], prof <tab>, close"
+
+SLASH_DEVSMOKE1 = "/devsmoke"
+SlashCmdList["DEVSMOKE"] = function(message)
+	local command, rest = trim(message):match("^(%S*)%s*(.-)$")
+	if command == "" then
+		begin()
+		return
+	end
+	local handler = COMMANDS[command]
+	if handler then
+		handler(rest)
+		return
+	end
+	say(("Dev Smoke: unknown command %s"):format(command))
+	say(USAGE)
+end
+
+-- The Forever addons load after this one, so core's command only exists here once PLAYER_LOGIN has fired. The eval
+-- runs after that hook and after the Agent tab is made, so a login with an inbox written by eval.py reports itself.
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function()
-	local original = SlashCmdList and SlashCmdList["FOREVERLEADERBOARDS"]
-	if type(original) ~= "function" then
-		return
-	end
-	SlashCmdList["FOREVERLEADERBOARDS"] = function(message, ...)
-		local command = type(message) == "string" and message:match("^%s*(%S+)") or nil
-		if command == "selftest" then
-			begin()
-			return
+	local original = SlashCmdList and SlashCmdList["FOREVERCORE"]
+	if type(original) == "function" then
+		SlashCmdList["FOREVERCORE"] = function(message, ...)
+			local command = type(message) == "string" and message:match("^%s*(%S+)") or nil
+			if command == "selftest" then
+				begin()
+				return
+			end
+			return original(message, ...)
 		end
-		return original(message, ...)
+	end
+	loadInbox()
+	if type(DevSmokeEval) == "function" then
+		runEval()
 	end
 end)
 

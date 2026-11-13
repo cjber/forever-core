@@ -348,7 +348,17 @@ function M.install(Sim)
 		local tracker = G.CreateFrame("Frame", "SimContainerTokenTracker", G.UIParent)
 		tracker.SetIsCombinedInventory = function() end
 		tracker.MarkDirty = function() end
+		tracker.CleanDirty = function() end
+		-- The client's container frames ask this before they lay the tracker out; the sim shows no token tracker.
+		tracker.ShouldShow = function()
+			return false
+		end
 		manager.TokenTracker = tracker
+		-- The bag layout reads the bank's frame to keep bags clear of it. The bank UI is not booted, so it is closed.
+		if not G.BankFrame then
+			local bank = G.CreateFrame("Frame", "BankFrame", G.UIParent)
+			bank:Hide()
+		end
 	end
 
 	-- The Professions window's right-hand profession tabs, then a selected recipe.
@@ -412,6 +422,11 @@ function M.install(Sim)
 		local G = self.G
 		local frame = G.MerchantFrame
 		if frame then
+			-- The merchant closes the stack-split popup when its tab changes; that addon is not booted, so it is closed.
+			if not G.StackSplitFrame then
+				local split = G.CreateFrame("Frame", "StackSplitFrame", G.UIParent)
+				split:Hide()
+			end
 			self:showPanel(frame)
 			self.events.fire("MERCHANT_SHOW")
 			self:advance(0.1)
@@ -639,13 +654,57 @@ function M.install(Sim)
 		return sim
 	end
 
+	-- Drives every widget the addons under test created themselves, as a player would: every shown Button (a check
+	-- box and a menu row are Buttons too) gets OnEnter, a left click and OnLeave, once each in the current combat
+	-- state. A click that opens new frames is walked in the same pass, and the pass ends when no unwalked frame is
+	-- left: frames are bounded by that state alone, so a cycle an addon creates is the addon's own.
+	function Sim:exerciseWidgets(addons)
+		if not addons then
+			addons = {}
+			for _, entry in ipairs(self.registered) do
+				if entry.kind == "addon" then
+					addons[#addons + 1] = entry.name
+				end
+			end
+		end
+		local W = self.widgets
+		local mine = {}
+		for _, addon in ipairs(addons) do
+			mine[addon] = true
+		end
+		local walked = {}
+		local index = 1
+		while index <= #W.all do
+			local frame = W.all[index]
+			index = index + 1
+			local s = W.state[frame]
+			if
+				s
+				and s.isFrame
+				and mine[s.creator]
+				and W.isA(s.kind, "Button")
+				and not walked[frame]
+				and W.isVisible(frame)
+			then
+				walked[frame] = true
+				self:hover(frame)
+				self:click(frame, "LeftButton")
+				self:leave()
+				self:advance(0.02)
+			end
+		end
+		return self
+	end
+
 	-- Drives every surface a player reaches without addon-specific knowledge, with the gamepad interface off and
 	-- then on: each addon's own slash commands, Professions with every side tab and a selected recipe, the trainer,
 	-- merchant tabs, bags, the character panel and its tabs, the objective tracker, the quest log, the world map,
-	-- and a target change, a soft-interact change and a binding-set change after each. The same runs in combat for
-	-- the commands and map, then again on a fresh client after /reload. Fails on an error either client caused.
+	-- and a target change, a soft-interact change and a binding-set change after each, with the addons' own widgets
+	-- driven after every command and every surface that opens. The same runs in combat for the commands and map, then
+	-- again on a fresh client after /reload. Fails on an error either client caused.
 	function Sim:exercise(opts)
 		opts = opts or {}
+		self.exerciseRan = true
 		local addons = opts.addons
 		if not addons then
 			addons = {}
@@ -689,9 +748,12 @@ function M.install(Sim)
 		local function surfaces(sim)
 			for _, command in ipairs(bare) do
 				sim:slash(command)
+				sim:exerciseWidgets(addons)
 				sim:slash(command)
+				sim:exerciseWidgets(addons)
 			end
 			sim:openProfessions()
+			sim:exerciseWidgets(addons)
 			sim:selectProfessionTabs()
 			if #sim:recipeRows() > 0 then
 				sim:hoverRecipe(1)
@@ -699,32 +761,39 @@ function M.install(Sim)
 			sim:closeProfessions()
 			touch(sim)
 			sim:openTrainer()
+			sim:exerciseWidgets(addons)
 			touch(sim)
 			sim:closeTrainer()
 			touch(sim)
 			sim:openMerchant()
+			sim:exerciseWidgets(addons)
 			sim:selectMerchantTabs()
 			touch(sim)
 			sim:closeMerchant()
 			touch(sim)
 			sim:openBags()
+			sim:exerciseWidgets(addons)
 			touch(sim)
 			sim:closeBags()
 			touch(sim)
 			sim:openCharacter()
+			sim:exerciseWidgets(addons)
 			sim:selectCharacterTabs()
 			touch(sim)
 			sim:closeCharacter()
 			touch(sim)
 			sim:openObjectiveTracker()
+			sim:exerciseWidgets(addons)
 			touch(sim)
 			sim:closeObjectiveTracker()
 			touch(sim)
 			sim:openQuestLog()
+			sim:exerciseWidgets(addons)
 			touch(sim)
 			sim:closeQuestLog()
 			touch(sim)
 			sim:openWorldMap()
+			sim:exerciseWidgets(addons)
 			sim:zoomMap(2)
 			sim:panMap(0.1, 0.1)
 			touch(sim)
@@ -738,8 +807,10 @@ function M.install(Sim)
 			sim:enterCombat()
 			for _, command in ipairs(bare) do
 				sim:slash(command)
+				sim:exerciseWidgets(addons)
 			end
 			sim:openWorldMap()
+			sim:exerciseWidgets(addons)
 			sim:closeWorldMap()
 			sim:pressEscape()
 			sim:leaveCombat()

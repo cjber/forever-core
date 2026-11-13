@@ -1,8 +1,8 @@
 # Depending on ForeverCore
 
 ForeverCore is a standalone addon every Forever addon requires. It loads once, before its consumers, and owns the
-shared runtime: the tracker column, the report and issue windows, the error journal and debug log, Forever
-Leaderboards, the minimap button, the quest log side tabs, the settings-page chrome and the family page.
+shared runtime: the tracker column, the report and issue windows, the error journal and debug log, the minimap
+button, the quest log side tabs, the settings-page chrome and the family page.
 
 Nothing is vendored any more. An addon no longer carries a copy of a shared file, so there is exactly one copy of each
 in the game and a fix reaches players with ForeverCore's next release.
@@ -57,7 +57,8 @@ core.MapCanvas.Pool(map, mixin, { marker = "route" })
 
 `Register` is idempotent: the same addon name returns the same context. Saved variables load after the files, so
 `spec.db` is optional; call `core.Attach(db)` from `ADDON_LOADED`. The journal lives under `db.errors` and the log ring
-under `db.log`.
+under `db.log`. The report text core builds also carries the performance table it reads when the window opens, and
+the debug-capture line while `/forever debug on` is active; an addon's own lines need do nothing for either.
 
 One global error handler serves every registered addon. It attributes an error to the addon whose
 `AddOns/<addonName>/` folder its message or stack names, and the same for `ADDON_ACTION_BLOCKED` and
@@ -144,9 +145,6 @@ for the client and one column's settings move every section together.
 
 ## Other modules
 
-- `ForeverCore.Leaderboards:Register(key, spec)` registers one board; `Core/LeaderboardsData.lua` supplies overall
-  points, standings and the unit tooltip. `ForeverCore.PeerStats.New(config)` and `PeerStats.Listen(owner, config)`
-  are the transport behind those boards.
 - `ForeverCore.MinimapButton.Create(spec)` draws the addon's minimap button on the one shared ring. Pass `spec.safeCall`
   (the `SafeCall` from `ForeverCore.Register`) so its click and refresh failures land in the addon's own journal.
 - `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as

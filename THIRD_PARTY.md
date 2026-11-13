@@ -16,13 +16,16 @@ listed here, with the build-only sources, then the players who helped. The addon
 | Input | Used for | Pin | Licence |
 |---|---|---|---|
 | [Blizzard UI source](https://github.com/Gethe/wow-ui-source) | The native objective-tracker integration spec | `REVISION` in `tools/fetch_tracker_ui.py` | Blizzard Entertainment's; fetched, never committed |
-| [Ketho's WoW API annotations](https://github.com/Ketho/vscode-wow-api) | lua-language-server types in `tools/typecheck.sh` | `revision` in `tools/typecheck.sh` | MIT |
+| [Ketho's WoW API annotations](https://github.com/Ketho/vscode-wow-api) | lua-language-server types in `tools/typecheck.sh` | `tools.annotations.commit` in `tools/toolchain.json` | MIT |
 | [FrameXML annotations](https://github.com/NumyAddon/FramexmlAnnotations) | FrameXML types, the Ketho checkout's `Annotations/FrameXML` submodule | The gitlink in that Ketho revision | MIT |
 | [wago.tools](https://wago.tools) | The listfile and backdrop art facts behind `tools/legacy_chrome.txt` | `BUILD` in `tools/gen_legacy_chrome.py` | Blizzard Entertainment's game data |
 
 CI tools (StyLua, ruff, luacheck, lua-language-server, actionlint, zizmor, gitleaks, the BigWigs packager) are pinned in
-`.github/workflows/`, `.github/actions/lua-toolchain/` and `tools/typecheck.sh`; they check the addon and are never part
-of it.
+`tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock`, the `uses:` SHAs in `.github/workflows/`, and
+`.github/actions/toolchain/`; they check the addon and are never part of it. Dependabot moves the `uses:` SHAs and the
+`uv` group, the `bump-toolchain` workflow moves `tools/toolchain.json`, and a major version either one proposes waits
+for review. The action reads the calling repository's `tools/toolchain.json`, so a SHA move and a manifest sync that
+land in either order install the pins that checkout's own tools check for.
 
 ## Players
 
@@ -43,6 +46,7 @@ One row per shipped contribution: a player with five shipped items has five rows
 | procque | Questie's quest tracker can be moved again | CurseForge |
 | Fareed | Questie's quest tracker can be moved again | CurseForge |
 | [ZiiMs](https://github.com/ZiiMs) | Tracker column follows EllesmereUI's custom quest tracker | cjber/shortest-path-forever#621; #332 |
+| Bolton_wow | Map arrows open the destination map again | Asked on CurseForge (#486) |
 
 ## Inspired by
 

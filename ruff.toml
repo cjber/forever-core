@@ -1,6 +1,8 @@
 # The Python under tools/ generates the addon's data and runs CI's checks; it is never shipped (.pkgmeta ignores tools).
 line-length = 120
 target-version = "py310"
+# uv keeps the tools/ project's generated environment at tools/.venv; ruff's default excludes do not name a nested one.
+extend-exclude = ["tools/.venv"]
 
 [lint]
 select = ["E", "F", "I", "UP", "B"]

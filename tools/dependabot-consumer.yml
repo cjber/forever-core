@@ -1,0 +1,17 @@
+version: 2
+
+# Vendored from cjber/forever-core (tools/dependabot-consumer.yml); change it there, never here.
+# Daily, one day after a release, grouped, and capped, so the board stays readable. Actions are the only ecosystem a
+# consumer owns: its tools/pyproject.toml, tools/uv.lock and tools/toolchain.json are vendored from core, so core moves
+# those pins.
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 1
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 20
