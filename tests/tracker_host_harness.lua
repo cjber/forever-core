@@ -196,7 +196,11 @@ function harness.new(options)
 			return texture
 		end
 		function f:SetShown(value)
-			self.shown = value
+			if value then
+				self:Show()
+			else
+				self:Hide()
+			end
 		end
 		function f:StartMoving()
 			self.moving = true
@@ -206,9 +210,17 @@ function harness.new(options)
 		end
 		f.Show = function(self)
 			self.shown = true
+			local handler = self.scripts.OnShow
+			if handler then
+				handler(self)
+			end
 		end
 		f.Hide = function(self)
 			self.shown = false
+			local handler = self.scripts.OnHide
+			if handler then
+				handler(self)
+			end
 		end
 		frames[#frames + 1] = f
 		return f

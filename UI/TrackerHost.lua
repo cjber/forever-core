@@ -1585,6 +1585,12 @@ end)
 ObjectiveTrackerFrame:HookScript("OnSizeChanged", function()
 	host:MarkDirty()
 end)
+-- The layout takes the native tracker's top while it is hidden and its NineSlice's bottom while it is shown, so showing
+-- or hiding it moves the column even when Edit Mode's fixed height means its size never changes and OnSizeChanged never
+-- fires. Hooking the frame's own scripts leaves its Show and Hide methods, and the module layout they run, untouched.
+-- MarkDirty's deferred pass runs after that layout, so the NineSlice already reads the new bottom when it is anchored.
+ObjectiveTrackerFrame:HookScript("OnShow", host.MarkDirty)
+ObjectiveTrackerFrame:HookScript("OnHide", host.MarkDirty)
 -- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI move the native frame with no event of
 -- their own. An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so
 -- any move of the native frame resizes the probe and its OnSizeChanged reflows the column.

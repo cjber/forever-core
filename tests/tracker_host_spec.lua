@@ -157,6 +157,37 @@ userScaled.ready()
 userScaled.drain()
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.2) < 1e-9, "the user's scale multiplies the source scale")
 
+-- #177: the layout takes the native tracker's top while it is hidden and its NineSlice's bottom while it is shown, so a
+-- visibility change must reflow the column even though Edit Mode's fixed height means the frame's size never changes.
+local visibility = harness.new({ headerShown = true })
+local visibilityHost, visibilityNative = visibility.host, visibility.native
+visibility.check(
+	visibilityHost.point[2] == visibilityNative.NineSlice and visibilityHost.point[3] == "BOTTOM",
+	"a shown native tracker holds the column under its quests"
+)
+local heightWhileShown = visibilityNative:GetHeight()
+visibilityNative:Hide()
+visibility.drain()
+visibility.check(
+	visibilityHost.point[1] == "TOP"
+		and visibilityHost.point[2] == visibilityNative
+		and visibilityHost.point[3] == "TOP",
+	"hiding the native tracker moves the column to its top"
+)
+visibility.check(visibilityNative:GetHeight() == heightWhileShown, "the hidden tracker keeps its Edit Mode height")
+visibilityNative:Show()
+visibility.drain()
+visibility.check(
+	visibilityHost.point[1] == "TOP"
+		and visibilityHost.point[2] == visibilityNative.NineSlice
+		and visibilityHost.point[3] == "BOTTOM",
+	"showing the native tracker moves the column back under its quests"
+)
+visibility.check(
+	visibilityNative:GetHeight() == heightWhileShown,
+	"the shown tracker still has no size change to report"
+)
+
 -- The room-below pass must not be a probe: Blizzard's EndLayout hides a section that fits nothing and
 -- FreeUnusedBlocks releases every block, so a second layout would replay each header's add animation and rebuild every
 -- block. Issue #438. The section uses Blizzard's own module mixin, which the native tracker source supplies.
