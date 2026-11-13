@@ -147,6 +147,12 @@ if SlashCmdList ~= nil then
 			end
 			return
 		end
+		if command:lower() == "profile" then
+			if ns.Profile ~= nil then
+				ns.Profile.Show()
+			end
+			return
+		end
 		if command:lower() == "debug" then
 			if type(ns.DebugCommand) == "function" then
 				ns.DebugCommand(text:match("^%s*%S+%s*(.*)$"))

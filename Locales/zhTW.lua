@@ -121,3 +121,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"除錯擷取已關閉，用戶端設定已還原；除錯記錄已關閉並取消固定。"
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"無法啟動除錯擷取，因為 ForeverCore 尚未完成載入。"
+L["No Forever addon has recorded anything for this character yet."] =
+	"還沒有任何 Forever 附加元件為這個角色記錄內容。"
+L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
+	"連結已選取。按 Ctrl+C（Mac 上為 Cmd+C），然後在瀏覽器中開啟。不會傳送任何內容。"
+L["Your Forever profile"] = "你的 Forever 個人檔案"

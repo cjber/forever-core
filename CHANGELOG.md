@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **`/forever profile` gives your character a card you can share.** It gathers what your Forever addons have
+  recorded for this character (quests turned in, distance travelled, recipes learned, creatures met and more) into one
+  link, already selected for Ctrl+C. Open it in a browser to see the card. Nothing is sent and nothing is saved: the
+  card is drawn from the link itself, so sharing the link is sharing the card. Addons you do not use are left out.
+  (#443)
+
 ### For addon authors
 
 - **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
