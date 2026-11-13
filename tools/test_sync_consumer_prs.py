@@ -706,6 +706,70 @@ class InPlaceSyncTest(unittest.TestCase):
         self.assertIn("could not fetch forever-core-sync", result.detail)
         self.assertFalse(any("--input" in call[1] for call in calls), "nothing is committed over an unread branch")
 
+    def run_fresh(self, root, git_calls, listings, commit):
+        """A sync whose open PR goes away mid-run; `listings` are the successive sync PR listings."""
+        with (
+            mock.patch.object(sync, "clone", side_effect=lambda repo, workspace: workspace / repo),
+            mock.patch.object(sync, "open_sync_prs", side_effect=listings),
+            mock.patch.object(sync, "git", side_effect=git_calls),
+            mock.patch.object(sync, "sync_checkout"),
+            mock.patch.object(
+                sync, "staged_changes", return_value=([{"path": "UI/TrackerHost.lua", "contents": "eA=="}], [])
+            ),
+            mock.patch.object(sync, "create_commit", side_effect=commit) as create,
+            mock.patch.object(sync, "point_branch") as point,
+            mock.patch.object(sync, "delete_branch"),
+            mock.patch.object(sync, "left_alone") as alone,
+            mock.patch.object(
+                sync, "open_or_update_pr", return_value=(8, "https://example.test/pull/8", "opened", None)
+            ) as opened,
+        ):
+            result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+        return result, create, point, alone, opened
+
+    def test_a_pr_whose_branch_is_already_gone_gets_a_fresh_branch_from_main(self):
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[0] == "fetch":
+                return subprocess.CompletedProcess(args, 128, "", "fatal: couldn't find remote ref refs/heads/x")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result, create, point, alone, opened = self.run_fresh(
+                Path(directory), fake_git, [[self.PULL]], lambda *args: "commitoid"
+            )
+
+        self.assertEqual((result.status, result.url), ("opened", "https://example.test/pull/8"))
+        self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "mainoid"))
+        point.assert_any_call("legacy-forever", sync.BRANCH, "commitoid")
+        alone.assert_not_called()
+        self.assertIsNone(opened.call_args.args[2], "the merged PR is not refreshed; a new one is opened")
+
+    def test_a_pr_that_merges_before_the_commit_is_synced_again_from_the_new_main(self):
+        heads = iter(["mainoid\n", "newmainoid\n"])
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, next(heads), "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def commit(repo, branch, expected, *rest):
+            if branch == sync.BRANCH:
+                raise sync.SyncError("gh api graphql failed: gh: Branch not found")
+            return "commitoid"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, create, point, alone, opened = self.run_fresh(root, fake_git, [[self.PULL], [], []], commit)
+
+        self.assertEqual(result.status, "opened")
+        self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "newmainoid"))
+        alone.assert_not_called()
+        self.assertIsNone(opened.call_args.args[2])
+
 
 class ToolingTest(unittest.TestCase):
     def test_only_packages_with_a_manifest_are_synced(self):
