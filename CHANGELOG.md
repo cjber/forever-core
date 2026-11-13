@@ -8,8 +8,27 @@
   card is drawn from the link itself, so sharing the link is sharing the card. Addons you do not use are left out.
   (#443)
 
+## [1.11.0] - 2026-11-13
+
 ### For addon authors
 
+- **Step markers numbered 1 to 25, an empty ring and a ring with a diamond, for every Forever addon.**
+  `ForeverCore.Art.Marker(number)` answers the gold numbered marker for a step, `ForeverCore.Art.Ring()` the empty ring
+  a place a route visits twice stacks behind its marker, and `ForeverCore.Art.Diamond()` that ring with the goal pin's
+  diamond in it for a step that has no number next, all drawn from core's `media/Numbers`. The numbered files and the
+  ring are byte for byte the ones Adventure Guide Forever and Shortest Path Forever ship, so an addon can drop its own
+  copy and read core's instead; `ForeverCore.Art.minor` is 2. `tools/export_markers.py` writes them from
+  `tools/marker_source`, and its `--check` fails when a committed marker differs. (#570)
+- **A visual proof is one command, on a release prep or a Core pin bump.** `tools/headless/forever_client.py proof
+  --repo <repo> --ref <sha> --checkout <tree> --flow "update notice=<slash command or Lua file>"` builds and links the
+  commit as `smoke` does, reloads once, runs each named flow (a Forever addon's own slash command, or a Lua file
+  through `!!DevSmoke`), screenshots each and uploads the PNGs to a new secret gist. It writes
+  `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
+  checks the installed build with `visual_proof --compare`; every AddOns slot is put back and the checkout is never
+  committed or pushed. A release preparation and a sync pull request that moves the ForeverCore pin run it, so the
+  required `visual-proof` check passes without `--admin`; `tools/sync_consumer_prs.py` prints the command for a sync
+  pull request whose changed files need a proof, because it cannot drive the client itself. ForeverCore has no shared
+  opener for an addon's update notice, so the flow is always named. (#563)
 - **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
   pull request, and when that PR merged and its branch was deleted before the commit, the commit failed with "Branch
   not found". The sync now opens a fresh branch and pull request from the new `main` instead. (#559)

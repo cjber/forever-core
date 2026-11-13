@@ -32,6 +32,7 @@ python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WF
 python3 tools/check_core_name.py          # the shared addon is ForeverCore, one word, in every text file
 python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
+python3 tools/export_markers.py --check   # media/Numbers holds the step markers tools/marker_source draws
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
 python3 tools/gen_widget_methods.py       # regenerate the widget-method data from the pinned API annotations
 python3 tools/bump_toolchain.py --dry-run # every pin tools/toolchain.json holds, against its recorded upstream
@@ -41,6 +42,8 @@ python3 tools/lint_client_calls.py        # refuse a call of a client function t
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
+                                          # record the checkout's .visual-proof.json from a client session
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
@@ -48,7 +51,7 @@ python3 tools/check_package.py            # .release/ForeverCore holds every loa
                                           # and no widget method that takes parameters passed as a script handler
 uv run --project tools --frozen --group dev ruff check tools &&
 uv run --project tools --frozen --group dev ruff format --check tools
-python3 -m unittest discover -s tools -p "test_*.py"
+uv run --project tools --frozen --group dev python -m unittest discover -s tools -p "test_*.py"
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
@@ -75,8 +78,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/OpenMap.lua` and `Core/OpenSettings.lua`: core's shared openers for the client's restricted world map and
   settings panel functions, each run through `CreateSecureDelegate`, never in combat. They are runtime files, published
   as `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel`, not vendored into any consumer.
-- `UI/Art.lua`: the icon helper the report window draws its portrait with, and `Art.CooldownIcon`, which gives any
-  icon texture the client's Cooldown Manager frame.
+- `UI/Art.lua`: the icon helper the report window draws its portrait with, `Art.CooldownIcon`, which gives any icon
+  texture the client's Cooldown Manager frame, and the suite's step marker paths (`Art.Marker`, `Art.Ring`,
+  `Art.Diamond`) from `media/Numbers`.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
   Its text carries the performance table from `Core/Performance.lua` and, while debug capture is on, the line that
   names the client's `Logs` folder and how to stop the capture.
@@ -152,6 +156,11 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data from the wago.tools listfile for
   1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule lives in
   `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
+- `tools/export_markers.py` and `tools/marker_source/`: the suite's step markers in `media/Numbers`, the gold numbers 1
+  to 25, the empty `Ring` and the `Diamond` ring with the goal pin's diamond in it, keyed from AI-assisted originals
+  made for these addons with no Blizzard art. The numbered files and the ring are byte for byte what Adventure Guide
+  Forever and Shortest Path Forever ship, so an addon reads them from core instead of carrying its own. `--check` fails
+  a committed marker that differs from what the sources draw, and `tools/test_export_markers.py` is its spec.
 - `tools/gen_widget_methods.py`: regenerates `forever_tools/widget_methods.txt`, every method the client's API
   annotations declare on a widget class that takes a parameter, from the Ketho vscode-wow-api checkout
   `tools/typecheck.sh` pins. The vendored `forever_tools/widget_handlers.py` uses it to fail a `SetScript`/`HookScript`
@@ -250,7 +259,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
   in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
   branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
-  `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green.
+  `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green. A sync PR that changes runtime
+  files or moves the pin cannot record the visual proof itself, so the run prints the `forever_client.py proof`
+  command for that PR's head and the release session runs it and commits `.visual-proof.json`.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
@@ -268,9 +279,15 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
   addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
-  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. Exit 3 means the client is in
-  use and nothing was posted. A stop that ran no handler leaves that record behind, and the next `up`, `run`, `smoke`
-  or `build-dev` replays it before it touches AddOns. `tools/test_forever_client.py` is its spec.
+  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. `proof --repo R --ref SHA
+  --checkout PATH --flow NAME=SLASH_OR_LUA_FILE` builds and links the same way, reloads, runs each flow (a Forever
+  addon's slash command or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new
+  secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
+  sha256s before running `visual_proof --compare` against the installed build; it never commits or pushes the
+  checkout, and there is no default flow because ForeverCore has no shared opener for an addon's update notice. Exit 3
+  means the client is in use and nothing was posted or recorded. A stop that ran no handler leaves that record behind,
+  and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays it before it touches AddOns.
+  `tools/test_forever_client.py` is its spec.
 - `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
   read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time and stopped
   at the first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
@@ -340,9 +357,13 @@ consumers' `tools/`; edit it here, then run `sync.py update --source <this check
 Every version needs a `CHANGELOG.md` entry before its `v*` tag. `.github/workflows/release.yml` waits for full CI on
 the commit, checks it with `tools/release_check.py`, writes the version's notes with `tools/changelog.py`, and runs the
 packager with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so the GitHub release, CurseForge and Wago all get the
-same words. CurseForge is the published description and gallery; Wago is an upload mirror with a fixed stub pointing
-at CurseForge. A core version bump reaches consumers through the stores, since they require it; nothing is copied into
-them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
+same words. A release preparation that edits the update notice or a locale records the visual proof its runtime change
+needs with `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <tree> --flow
+"update notice=<slash command or Lua file>"` and commits the `.visual-proof.json` it writes, so the required
+`visual-proof` check passes without an admin merge; a sync PR that moves the ForeverCore pin runs the command its own
+run prints. See `wow-forever-addon/in-game.md`. CurseForge is the published description and gallery; Wago is an upload
+mirror with a fixed stub pointing at CurseForge. A core version bump reaches consumers through the stores, since they
+require it; nothing is copied into them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
 
 ## Load order
 

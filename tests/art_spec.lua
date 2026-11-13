@@ -1,5 +1,6 @@
 -- The icon helper: a file icon drawn whole, and the Cooldown Manager's icon frame built from the client's own two
--- atlases. The mask and overlay are made once per icon texture, and the overlay moves when the icon is resized.
+-- atlases. The mask and overlay are made once per icon texture, and the overlay moves when the icon is resized. Then
+-- the shared step markers: the gold numbers 1 to 25, the empty ring and the ring with the goal pin's diamond.
 local checks = 0
 local function check(value, message)
 	assert(value, message)
@@ -17,7 +18,7 @@ local env = FakeClient.new()
 local ns = {}
 assert(loadfile("UI/Art.lua"))("ForeverCore", ns)
 local Art = assert(ns.Art, "UI/Art.lua publishes ns.Art")
-equal(Art.minor, 1, "the module's minor is 1")
+equal(Art.minor, 2, "the module's minor is 2")
 
 local frame = env.CreateFrame("Frame")
 local icon = frame:CreateTexture(nil, "ARTWORK")
@@ -73,5 +74,17 @@ equal(icon.texCoord[4], 1, "bottom")
 equal(icon.texture, 999, "a bare icon sets its file")
 equal(icon.width, 37, "and its width")
 equal(icon.height, 37, "and its height")
+
+-- The shared step markers, drawn straight from core's media/Numbers: the gold numbers 1 to 25, an empty ring and the
+-- ring with the goal pin's diamond in it. A step with no art answers nil so the caller keeps its own.
+equal(Art.Marker(1), [[Interface\AddOns\ForeverCore\media\Numbers\1]], "step 1 is the first gold marker")
+equal(Art.Marker(25), [[Interface\AddOns\ForeverCore\media\Numbers\25]], "step 25 is the last gold marker")
+equal(Art.Marker(0), nil, "there is no marker below 1")
+equal(Art.Marker(26), nil, "and none above 25")
+equal(Art.Marker(1.5), nil, "a step that is not a whole number has no marker")
+equal(Art.Marker("1"), nil, "and neither does a string")
+equal(Art.Marker(nil), nil, "nor a missing step")
+equal(Art.Ring(), [[Interface\AddOns\ForeverCore\media\Numbers\Ring]], "the empty ring")
+equal(Art.Diamond(), [[Interface\AddOns\ForeverCore\media\Numbers\Diamond]], "the ring with the goal pin's diamond")
 
 print(("art_spec: %d checks passed"):format(checks))
