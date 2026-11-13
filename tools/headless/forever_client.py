@@ -30,7 +30,9 @@ fills in. It starts the client the way `up` does, and `--manual-launcher` is pas
 OCR is not finding Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes
 `shot` and clicks Play itself. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the
 player's game or another session) so nothing is posted and a caller retries later. The AddOns folder is shared: every
-slot the smoke borrows is put back exactly as it was, including a store install it moved aside.
+slot the smoke borrows is put back exactly as it was, including a store install it moved aside. A stop that never
+reaches Python's handlers leaves that record behind, and the next `up`, `run`, `smoke` or `build-dev` replays it
+before it touches AddOns.
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -673,6 +675,63 @@ def link_record_path() -> Path:
     return STATE_DIR / LINK_RECORD
 
 
+def process_start(pid: int) -> int | None:
+    """A process's start time in clock ticks since boot, which tells a live process from one that reused its pid."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return int(stat.rsplit(")", 1)[1].split()[19])  # starttime is field 22, the 20th after the command name
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def owner_alive(owner: object) -> bool:
+    """Whether the session that wrote a link record still runs; a reused pid is told apart by its start time."""
+    pid = owner.get("pid") if isinstance(owner, Mapping) else None
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        pass  # another user's pid, or a number no process can have: the start time below decides
+    started = owner.get("started")
+    return process_start(pid) == started if isinstance(started, int) else True
+
+
+def link_record() -> dict | None:
+    """The way back a session wrote before it borrowed an AddOns slot, or None.
+
+    The record names its owner by pid and start time. A record an older version wrote is the bare list of links and
+    names no owner: it is replayed only while no session holds the client.
+    """
+    path = link_record_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise ClientError(
+            f"cannot read {path} ({error}): put the AddOns folder back by hand, then remove that file"
+        ) from None
+    if isinstance(data, list):
+        return {"owner": None, "links": data}
+    links = data.get("links") if isinstance(data, dict) else None
+    if not isinstance(links, list) or any(not isinstance(link, dict) or "slot" not in link for link in links):
+        raise ClientError(f"{path} is not a link record: put the AddOns folder back by hand, then remove that file")
+    return data
+
+
+def write_link_record(records: Sequence[dict]) -> None:
+    """Record the way back before each change, naming this session, in one replace so a kill cannot truncate it."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = link_record_path()
+    owner = {"pid": os.getpid(), "started": process_start(os.getpid())}
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps({"owner": owner, "links": list(records)}))
+    os.replace(temporary, path)
+
+
 def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
     """Point each addon folder in AddOns at the build, recording exactly what was there to put back.
 
@@ -697,7 +756,7 @@ def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
                 slot.rename(aside)
                 record["was"] = {"moved": str(aside)}
             records.append(record)
-            link_record_path().write_text(json.dumps(records))
+            write_link_record(records)
             slot.symlink_to(folder)
     except BaseException:
         restore_links(records)
@@ -735,6 +794,51 @@ def restore_links(records: Sequence[dict]) -> None:
         link_record_path().unlink(missing_ok=True)
 
 
+def describe_restore(record: Mapping) -> str:
+    """One slot a replay put back, for the line the next session prints."""
+    name = Path(record["slot"]).name
+    was = record.get("was")
+    if was is None:
+        return f"{name} (the link removed)"
+    if "link" in was:
+        return f"{name} (link back to {was['link']})"
+    return f"{name} (store install back)"
+
+
+def recover_links() -> int:
+    """Put back a record a session stopped without its teardown left, and say what it put back.
+
+    A stop that never reaches Python's handlers (SIGKILL, a signal aimed at the wrapping shell, a hangup before the
+    handler was installed) leaves the links a smoke borrowed in AddOns and the store install at `.smoke-backup`. The
+    record names the session that wrote it by pid and start time, so a record whose session still runs is left to that
+    session's own teardown, and this session's own record is left alone too: the smoke reading it here is the one that
+    just linked. Anything else is replayed through `restore_links`, the one teardown, before AddOns is used again.
+    """
+    record = link_record()
+    if record is None:
+        return 0
+    owner = record.get("owner")
+    if owner == {"pid": os.getpid(), "started": process_start(os.getpid())}:
+        return 0
+    # A record an older version wrote names no owner, so the client lock and the prefix decide: while any session
+    # holds the client, that record may be its live smoke.
+    if owner_alive(owner) or (owner is None and client_in_use()):
+        print(
+            f"forever_client: {link_record_path()} belongs to a running session; its links are left alone",
+            file=sys.stderr,
+        )
+        return 0
+    links = record["links"]
+    restore_links(links)
+    put_back = [describe_restore(link) for link in links if link.get("restored")]
+    if put_back:
+        detail = ", ".join(put_back)
+        print(f"forever_client: put back the AddOns links a stopped session left behind: {detail}", flush=True)
+    elif not links:
+        link_record_path().unlink(missing_ok=True)
+    return len(put_back)
+
+
 def client_in_use() -> str | None:
     """Why no session can start now, or None: the player's client, another session's lock, or Wine in the prefix."""
     users = prefix_users()
@@ -755,8 +859,8 @@ def client_in_use() -> str | None:
 
 
 def stop_handlers() -> dict[int, object]:
-    """Turn SIGTERM and SIGINT into a KeyboardInterrupt so a smoke puts the AddOns links back before it exits."""
-    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+    """Turn SIGTERM, SIGHUP and SIGINT into a KeyboardInterrupt so a stopped smoke puts the AddOns links back."""
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
 
     def on_signal(_signum, _frame):
         raise KeyboardInterrupt
@@ -851,6 +955,7 @@ def smoke(args: argparse.Namespace) -> int:
     if not root.is_dir():
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    recover_links()
     busy = client_in_use()
     if busy:
         print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
@@ -1045,6 +1150,7 @@ def at_character_select(state: Mapping, manual_launcher: bool) -> None:
 
 
 def up(args: argparse.Namespace, after_ready=None) -> int:
+    recover_links()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock = open(STATE_DIR / "lock", "w")
     if args.wait:
@@ -1093,6 +1199,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGHUP, on_signal)
     signal.signal(signal.SIGALRM, on_signal)
     signal.alarm(MAX_SESSION)
     log = open(STATE_DIR / "session.log", "w")
@@ -1166,7 +1273,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         return 0
     finally:
         signal.alarm(0)
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGALRM):
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGALRM):
             signal.signal(signum, signal.SIG_IGN)
         teardown(gamescope, wine, link, state)
         print("stopped: logged out, gamescope, Wine and the dev addon link are gone", flush=True)
@@ -1374,6 +1481,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(load_state(), indent=1))
             return 0
         if args.verb == "build-dev":
+            # A hand link follows this build, so a record a stopped session left is replayed before it.
+            recover_links()
             root = WORKSPACE / args.repo
             commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
             release = tag_name(root, commit)

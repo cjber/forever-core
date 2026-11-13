@@ -46,7 +46,7 @@ python3 $FC down          # logs out, stops gamescope and every Wine process, re
 ```
 
 `run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
-whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 minute cap, ends it the same way.
+whatever the command returns. Stopping `up` with SIGTERM, SIGHUP, Ctrl-C or the 30 minute cap ends it the same way.
 
 ## Smoking a release commit
 
@@ -73,7 +73,10 @@ itself.
   posted then, so a caller runs it again later.
 - The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
   moved back from `<folder>.smoke-backup`. The record of what it borrowed is `~/.local/state/forever-client/smoke-links.json`
-  while the session runs, kept only if a restore could not finish.
+  while the session runs, kept only if a restore could not finish. A stop that never reaches Python's own handlers
+  (SIGKILL, or a signal aimed at the shell around it) leaves that record and its links behind; the next `up`, `run`,
+  `smoke` or `build-dev` puts them back before it touches AddOns and says what it restored, and a record whose session
+  is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
 head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never fights

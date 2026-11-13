@@ -24,6 +24,14 @@
   dependency provides in `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per function with the folder
   in the root TOC's `## OptionalDeps`. The lint refuses a call of a client function the Forever client does not have,
   which type-checks against the retail annotations and then fails in game with `attempt to call a nil value`. (#539)
+- **A stopped smoke no longer leaves its AddOns links behind.** A smoke that is killed where no Python handler runs
+  (SIGKILL, or a signal aimed at the shell around it) used to leave the build linked over `ForeverCore` and the store
+  install at `<folder>.smoke-backup` until someone noticed. The record `~/.local/state/forever-client/smoke-links.json`
+  now names the session that wrote it, by pid and start time, and the next `up`, `run`, `smoke` or `build-dev` replays
+  it through the one `restore_links` teardown before it touches AddOns, then says what it put back. A record whose
+  session is still running, including the smoke's own `up`, is left to that session, and a record it cannot read
+  refuses instead of guessing. SIGTERM, SIGHUP and SIGINT all restore in-process, and `up` handles a hangup like the
+  others. (#555)
 
 ## [1.10.0] - 2026-11-13
 

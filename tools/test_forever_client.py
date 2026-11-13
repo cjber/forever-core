@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,18 @@ SPEC.loader.exec_module(fc)
 
 def args() -> argparse.Namespace:
     return argparse.Namespace(wait=False, timeout=5, manual_launcher=False)
+
+
+def dead_pid() -> int:
+    """A pid no process owns any more: a child that has exited and been reaped, so it reads as gone."""
+    for _attempt in range(5):
+        child = subprocess.Popen(["true"])
+        child.wait()
+        try:
+            os.kill(child.pid, 0)
+        except ProcessLookupError:
+            return child.pid
+    raise AssertionError("no exited child's pid reads as gone")
 
 
 class FakeClock:
@@ -118,7 +131,7 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc, "CLIENT", client),
             mock.patch.object(fc, "prefix_users", return_value=[]),
             mock.patch.object(fc.socket, "create_connection"),
-            mock.patch.object(fc.signal, "signal"),
+            mock.patch.object(fc.signal, "signal") as install,
             mock.patch.object(fc.signal, "alarm"),
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
@@ -145,6 +158,8 @@ class ForeverClientTest(unittest.TestCase):
             options.manual_launcher = True
             self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
             self.assertEqual(x.call_args.args[1:], ("key", "Return"))
+        handled = {call.args[0] for call in install.call_args_list}
+        self.assertEqual(handled, {fc.signal.SIGTERM, fc.signal.SIGHUP, fc.signal.SIGINT, fc.signal.SIGALRM})
         env = spawn.call_args.kwargs["env"]
         command = spawn.call_args.args[0]
         self.assertEqual(command[command.index("--") + 1 :], ["/faugus/umu-run", str(fc.LAUNCHER), *fc.LAUNCH_ARGS])
@@ -232,6 +247,20 @@ class ForeverClientTest(unittest.TestCase):
             self.assertRaisesRegex(fc.ClientError, r"player's client is running .*pid 43"),
         ):
             fc.up(args())
+
+    def test_up_puts_back_a_record_a_stopped_session_left_before_it_checks_the_client(self):
+        addons = self.state / "AddOns"
+        addons.mkdir()
+        slot = addons / "LegacyForever"
+        slot.symlink_to(self.state / "build")
+        fc.link_record_path().write_text(
+            json.dumps({"owner": {"pid": dead_pid(), "started": 1}, "links": [{"slot": str(slot), "was": None}]})
+        )
+        with mock.patch.object(fc, "prefix_users", return_value=[42]), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(fc.ClientError, "in use"):
+                fc.up(args())
+        self.assertFalse(slot.is_symlink())
+        self.assertFalse(fc.link_record_path().exists())
 
     def test_up_fails_fast_without_a_network(self):
         with (
@@ -833,6 +862,7 @@ class BuildDevTest(unittest.TestCase):
         self.workspace = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
         self.enterContext(mock.patch.object(fc, "BUILD_ROOT", self.workspace / "test-artifacts"))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.workspace / "state"))
         self.repo = self.workspace / "legacy-forever"
         (self.repo / "Core").mkdir(parents=True)
         (self.repo / "tools").mkdir()
@@ -896,6 +926,23 @@ class BuildDevTest(unittest.TestCase):
             self.assertEqual(fc.main(["build-dev", "legacy-forever", "v1.2.3"]), 0)
         build.assert_not_called()
         self.assertIn("is release v1.2.3", out.getvalue())
+
+    def test_build_dev_cli_puts_back_a_record_a_stopped_session_left(self):
+        # The build is linked by hand next, so the leftover record is replayed before anything links this one.
+        addons = self.workspace / "AddOns"
+        addons.mkdir()
+        slot = addons / "LegacyForever"
+        slot.symlink_to(self.workspace / "test-artifacts/legacy-forever-dev")
+        fc.link_record_path().parent.mkdir(parents=True)
+        fc.link_record_path().write_text(
+            json.dumps({"owner": {"pid": dead_pid(), "started": 1}, "links": [{"slot": str(slot), "was": None}]})
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(fc.main(["build-dev", "legacy-forever", "v1.2.3"]), 0)
+        self.assertFalse(slot.is_symlink())
+        self.assertFalse(fc.link_record_path().exists())
+        self.assertIn("LegacyForever (the link removed)", out.getvalue())
 
 
 class AddonFoldersTest(unittest.TestCase):
@@ -995,6 +1042,123 @@ class LinkBuildTest(unittest.TestCase):
             fc.link_build(self.folders, self.addons)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
+    def killed_session(self, store: bool = True) -> Path:
+        """What a session SIGKILLed after it linked leaves: its link in the slot and a record naming a gone process."""
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to(self.build)
+        if store:
+            aside = self.addons / "LegacyForever.smoke-backup"
+            aside.mkdir()
+            (aside / "LegacyForever.toc").write_text("## Version: 1.0.0\n")
+            was = {"moved": str(aside)}
+        else:
+            was = {"link": "/store/LegacyForever"}
+        fc.link_record_path().write_text(
+            json.dumps({"owner": {"pid": dead_pid(), "started": 1}, "links": [{"slot": str(slot), "was": was}]})
+        )
+        return slot
+
+    def test_the_record_names_the_session_that_wrote_it(self):
+        records = fc.link_build(self.folders, self.addons)
+        record = json.loads(fc.link_record_path().read_text())
+        self.assertEqual(record["owner"], {"pid": os.getpid(), "started": fc.process_start(os.getpid())})
+        self.assertEqual(record["links"], records)
+
+    def test_a_record_from_a_killed_session_puts_the_store_install_back(self):
+        slot = self.killed_session()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue((slot / "LegacyForever.toc").exists())
+        self.assertFalse((self.addons / "LegacyForever.smoke-backup").exists())
+        self.assertFalse(fc.link_record_path().exists())
+        self.assertIn("put back the AddOns links a stopped session left behind", out.getvalue())
+        self.assertIn("LegacyForever (store install back)", out.getvalue())
+
+    def test_a_record_from_a_killed_session_puts_a_link_back_at_its_own_target(self):
+        slot = self.killed_session(store=False)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertEqual(os.readlink(slot), "/store/LegacyForever")
+        self.assertFalse(fc.link_record_path().exists())
+
+    def older_record(self) -> Path:
+        """A record an older version wrote: the bare list of links, naming no owner."""
+        slot = self.killed_session()
+        record = json.loads(fc.link_record_path().read_text())
+        fc.link_record_path().write_text(json.dumps(record["links"]))
+        return slot
+
+    def test_a_record_an_older_version_wrote_without_an_owner_is_replayed(self):
+        slot = self.older_record()
+        with (
+            mock.patch.object(fc, "client_in_use", return_value=None),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue((slot / "LegacyForever.toc").exists())
+
+    def test_an_ownerless_record_is_left_alone_while_a_session_holds_the_client(self):
+        # An older version's live smoke writes this record too, so it may not be stale while the client is held.
+        slot = self.older_record()
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "client_in_use", return_value="another session holds the client"),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.recover_links(), 0)
+        self.assertTrue(slot.is_symlink())
+        self.assertTrue(fc.link_record_path().exists())
+        self.assertIn("belongs to a running session", err.getvalue())
+
+    def test_the_session_that_wrote_a_record_leaves_its_own_links_alone(self):
+        # The smoke reads the record back when its own `up` starts: it must not undo the links it has just made.
+        fc.link_build(self.folders, self.addons)
+        self.assertEqual(fc.recover_links(), 0)
+        self.assertTrue((self.addons / "LegacyForever").is_symlink())
+        self.assertTrue(fc.link_record_path().exists())
+
+    def test_a_record_from_a_session_that_still_runs_is_left_alone(self):
+        slot = self.killed_session()
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        record = json.loads(fc.link_record_path().read_text())
+        record["owner"] = {"pid": sleeper.pid, "started": fc.process_start(sleeper.pid)}
+        fc.link_record_path().write_text(json.dumps(record))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(fc.recover_links(), 0)
+        self.assertTrue(slot.is_symlink())
+        self.assertTrue(fc.link_record_path().exists())
+        self.assertIn("belongs to a running session", err.getvalue())
+
+    def test_a_reused_pid_does_not_keep_a_dead_sessions_links_in_place(self):
+        slot = self.killed_session()
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        record = json.loads(fc.link_record_path().read_text())
+        record["owner"] = {"pid": sleeper.pid, "started": fc.process_start(sleeper.pid) - 1}
+        fc.link_record_path().write_text(json.dumps(record))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
+
+    def test_an_empty_record_is_removed_with_nothing_to_put_back(self):
+        fc.link_record_path().write_text(json.dumps({"owner": {"pid": dead_pid(), "started": 1}, "links": []}))
+        self.assertEqual(fc.recover_links(), 0)
+        self.assertFalse(fc.link_record_path().exists())
+
+    def test_a_record_that_cannot_be_read_refuses_instead_of_guessing(self):
+        for text in ("{", "{}", '{"links": [{"was": null}]}'):
+            with self.subTest(record=text):
+                fc.link_record_path().write_text(text)
+                with self.assertRaisesRegex(fc.ClientError, "put the AddOns folder back by hand"):
+                    fc.recover_links()
+
 
 class ClientInUseTest(unittest.TestCase):
     def setUp(self):
@@ -1018,6 +1182,20 @@ class ClientInUseTest(unittest.TestCase):
     def test_a_free_client_is_none(self):
         with mock.patch.object(fc, "prefix_users", return_value=[]):
             self.assertIsNone(fc.client_in_use())
+
+
+class StopHandlersTest(unittest.TestCase):
+    """A stop aimed at the Python process always puts the AddOns links back, however it arrives."""
+
+    def test_a_ctrl_c_a_sigterm_and_a_hangup_all_raise_the_restore(self):
+        previous = fc.stop_handlers()
+        try:
+            for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                handler = signal.getsignal(signum)
+                with self.assertRaises(KeyboardInterrupt):
+                    handler(signum, None)
+        finally:
+            fc.restore_handlers(previous)
 
 
 class SmokeTest(unittest.TestCase):
@@ -1131,6 +1309,43 @@ class SmokeTest(unittest.TestCase):
         code, _printed, _build = self.run_smoke(busy=None)
         self.assertEqual(code, 0)
         self.posted.assert_called_once()
+
+    def leftover(self) -> Path:
+        """What a SIGKILLed smoke leaves: the store install aside, its link in the slot, and the record."""
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to(self.build)
+        aside = self.addons / "LegacyForever.smoke-backup"
+        aside.mkdir()
+        (aside / "LegacyForever.toc").write_text("## Version: 1.0.0\n")
+        fc.link_record_path().write_text(
+            json.dumps(
+                {
+                    "owner": {"pid": dead_pid(), "started": 1},
+                    "links": [{"slot": str(slot), "was": {"moved": str(aside)}}],
+                }
+            )
+        )
+        return slot
+
+    def test_a_leftover_record_is_put_back_before_the_smoke_links(self):
+        slot = self.leftover()
+        code, printed, _build = self.run_smoke()
+        self.assertEqual(code, 0)
+        self.posted.assert_called_once()
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue((slot / "LegacyForever.toc").exists())
+        self.assertFalse(fc.link_record_path().exists())
+        self.assertIn("store install back", printed)
+
+    def test_a_leftover_record_is_put_back_even_when_the_client_is_in_use(self):
+        slot = self.leftover()
+        code, _printed, build = self.run_smoke(busy="the player's client is running (Wow.exe, pid 43)")
+        self.assertEqual(code, 3)
+        build.assert_not_called()
+        self.posted.assert_not_called()
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue((slot / "LegacyForever.toc").exists())
+        self.assertFalse(fc.link_record_path().exists())
 
     def test_a_sigterm_restores_the_links_and_posts_nothing(self):
         def stop(_options, after_ready=None):
