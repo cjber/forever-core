@@ -265,7 +265,11 @@ function M.build(sim)
 		if handler then
 			local wasDispatching = dispatching
 			dispatching = true
+			-- The handler is a callback, not part of the code that raised: an addon handler (core's SafeCall) must not
+			-- leave its own taint on the rest of the raising execution, as the client's error handler does not.
+			local savedTaint, savedOrigin = Taint.current, Taint.origin
 			pcall(handler, message)
+			Taint.set(savedTaint, savedOrigin)
 			dispatching = wasDispatching
 		end
 		if sim.verbose then
@@ -386,6 +390,10 @@ function M.build(sim)
 	-- a documented function by its qualified name. Each entry cites the issue that saw it.
 	sim.restrictionOverrides = {
 		SetPassThroughButtons = { class = "always", issue = "cjber/adventure-guide-forever#534" },
+		-- BugGrabber on the live client logged both from shipped builds (cjber/forever-core#538): OpenTradeSkill
+		-- refused to tainted code at any time, and C_UI.Reload refused to tainted code outside a hardware event.
+		["C_TradeSkillUI.OpenTradeSkill"] = { class = "always", issue = "cjber/forever-core#538" },
+		["C_UI.Reload"] = { class = "hwevent", issue = "cjber/forever-core#538" },
 	}
 	-- Every class of a restriction, the observed override first, then the pin, then the pre-class combat-only rule for
 	-- an untagged name. A function can carry several classes, and any one that applies refuses the call.

@@ -71,7 +71,7 @@ class UpdateCases:
     def data_file(self):
         """The first data file the package vendors beside its modules, such as restrictions.txt."""
         text = (self.producer / "sync.py").read_text(encoding="utf-8")
-        return re.search(r'^DATA_FILES = \("([^"]+)"', text, re.MULTILINE).group(1)
+        return re.search(r'^DATA_FILES = \(\s*"([^"]+)"', text, re.MULTILINE).group(1)
 
     def test_update_copies_a_file_only_the_producer_manifest_lists(self):
         repository(self.root, {"README": "x"})
@@ -94,8 +94,9 @@ class UpdateCases:
         data = self.data_file()
         script = self.copy / "sync.py"
         text = script.read_text(encoding="utf-8")
-        self.assertIn(f'DATA_FILES = ("{data}"', text)
-        script.write_text(text.replace(f'DATA_FILES = ("{data}"', 'DATA_FILES = ("never_vendored.txt"', 1))
+        pattern = re.compile(r'(DATA_FILES = \(\s*)"' + re.escape(data) + '"')
+        self.assertTrue(pattern.search(text), text)
+        script.write_text(pattern.sub(r'\1"never_vendored.txt"', text, count=1))
 
         result = self.sync("update", "--source", str(self.root))
 

@@ -13,6 +13,28 @@
   A client without those APIs gets one line saying so, and nothing is sampled while playing. (#535)
 - **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
 
+### For addon authors
+
+- **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
+  status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
+  pending one waits and names the command that fills it in, and a failed one prints what it found.
+  `python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>` builds that commit, runs
+  `/forever selftest` and `errors --addon` for each of its addon folders in the headless client, and posts the status;
+  exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
+  reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
+  the status in for every commit a release would ship. (#540)
+- **The simulator exercises every addon with no scenario file, and clicks the addon's own widgets.** `run.lua` runs
+  `sim:exercise()` after the declared scenarios, so an addon no longer needs `tests/sim/exercise_scenario.lua`; a
+  declared scenario still passes the exercise its own commands and saved variables. An addon that depends on
+  ForeverCore gets that checkout loaded for the exercise, from `FOREVER_CORE` or `../forever-core`, so its UI is
+  really built. The exercise hovers, left-clicks and leaves every shown Button the addon created, in and out of
+  combat, so a refused call in a button handler fails the run. `C_TradeSkillUI.OpenTradeSkill` and `C_UI.Reload` are
+  modelled as the client enforces them, and `fetch.py --refresh-restrictions --probe` merges every block a live
+  client recorded into `restrictions.txt`. (#538)
+- **An addon's `ty` run passes over the vendored simulator.** `forever_sim/fetch.py` gives a probe hit a `ProbeHit`
+  dataclass and reads it by attribute, and core's `forever-tools` job type-checks `forever_sim` with `ty` beside
+  `forever_tools`, so an addon whose CI checks its `tools/` with `ty` no longer fails on the vendored file.
+
 ## [1.9.0] - 2026-11-12
 
 ### For addon authors

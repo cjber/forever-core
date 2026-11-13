@@ -1,7 +1,11 @@
 version: 2
+
+# Daily, one day after a release, grouped per ecosystem, and capped so the board stays readable. Everything the
+# ecosystems do not cover lives in tools/toolchain.json and moves through the bump-toolchain workflow instead.
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # The workflows and the local composite actions in .github/actions/*.
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: daily
     cooldown:
@@ -9,3 +13,16 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    open-pull-requests-limit: 20
+
+  - package-ecosystem: uv
+    # The Python tool project sits under tools/, the folder .pkgmeta already ignores.
+    directory: /tools
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 1
+    groups:
+      python:
+        patterns: ["*"]
+    open-pull-requests-limit: 20

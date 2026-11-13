@@ -1,6 +1,6 @@
 std = "lua51"
 max_line_length = 120
-exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**"}
+exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", "tools/.venv/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**", "tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/**"}
 globals = {
 	"EventUtil",
 	-- UI/TrackerHost.lua: the companion tracker registry a store build's vendored host still uses.
@@ -128,10 +128,11 @@ files["tools/devsmoke/"] = {
 		"HideUIPanel",
 		"C_TradeSkillUI",
 		"C_AddOns",
+		"DevSmokeEval",
 	},
 	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
 }
-files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" } }
+files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval" } }
 
 -- Tracker colours.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"

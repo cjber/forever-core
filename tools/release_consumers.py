@@ -15,7 +15,11 @@ minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `mai
 - no `release.yml` run is queued or in progress;
 - no `release.yml` run for `main`'s head already finished with a failure, which the cron would otherwise dispatch
   again every 20 minutes forever;
-- the `ci.yml` push run on `main`'s head concluded success, which is the release's own gate.
+- the `ci.yml` push run on `main`'s head concluded success, which is the release's own gate;
+- the newest `headless-smoke` commit status on that same commit is `success`, which is the record that the headless
+  client loaded that build, ran `/forever selftest` and found no Lua errors in the addon's folders. A commit without
+  one is reported as waiting and retried by the next run, never as failed, so a release waits for the smoke instead of
+  turning the job red.
 
 The consumers are discovered the same way `tools/sync_consumer_prs.py` discovers them, so a new addon needs no edit
 here. The run dispatches only, never tags or writes, so it is idempotent and safe on a 20-minute schedule: a consumer
@@ -52,6 +56,8 @@ MARKER = "<!-- forever-core-sync -->"
 CHANGELOG = "CHANGELOG.md"
 RELEASE_WORKFLOW = "release.yml"
 CI_WORKFLOW = "ci.yml"
+# The commit status `forever_client.py smoke` posts, which `tools/smoke_queue.py` fills in ahead of a release.
+SMOKE_CONTEXT = "headless-smoke"
 HEADING = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\][^\r\n]*$", re.MULTILINE)
 
 
@@ -132,12 +138,14 @@ def decide(
     release_pending: bool,
     ci_state: str,
     release_failed: bool = False,
+    smoke: str = "success",
 ) -> Decision:
     """The release decision for one consumer, from what main holds and what its workflows report.
 
     Pure, so the whole rule is unit-tested without the network: only a marked newest entry with no notes under
-    `## [Unreleased]`, whose tag is missing, whose release is idle, whose head has no failed release run and whose full
-    CI on main's head passed is dispatched.
+    `## [Unreleased]`, whose tag is missing, whose release is idle, whose head has no failed release run, whose full
+    CI on main's head passed and whose head carries a green `headless-smoke` status is dispatched. A missing smoke is a
+    reason to wait for `tools/smoke_queue.py` and try again, never a failure.
     """
     if changelog is None:
         return Decision(reason="main has no CHANGELOG.md")
@@ -164,6 +172,8 @@ def decide(
         return Decision(reason="main has no head commit")
     if ci_state != "completed/success":
         return Decision(reason=f"{CI_WORKFLOW} on main's head {head[:7]} is {ci_state}")
+    if smoke != "success":
+        return Decision(reason=f"waiting for {SMOKE_CONTEXT} on {head[:7]}, which is {smoke}")
     return Decision(version, head, f"releases v{version} at {head}")
 
 
@@ -210,11 +220,25 @@ def ci_runs(repo: str, sha: str) -> dict:
     return api_json(f"repos/{OWNER}/{repo}/actions/workflows/{CI_WORKFLOW}/runs?head_sha={sha}&event=push&per_page=100")
 
 
+def smoke_status(repo: str, sha: str) -> str:
+    """The state of the newest `headless-smoke` status on `sha`, or `missing` before any smoke has posted one.
+
+    `tools/smoke_queue.py` reads the same status to choose what to smoke, and a release waits for it rather than
+    failing, so a commit that has not been in the client yet is simply not released this run.
+    """
+    statuses = api_json(f"repos/{OWNER}/{repo}/commits/{sha}/statuses")
+    for status in statuses:
+        if status.get("context") == SMOKE_CONTEXT:
+            return str(status.get("state") or "unknown")
+    return "missing"
+
+
 def plan(repo: str) -> Decision:
     """Read one consumer's state and decide whether to release it now, with as few API reads as the rule allows.
 
     `main`'s head is read first and the changelog at that exact commit, so a merge that lands between two reads can
-    never dispatch a release for an intent the commit does not carry. The commit CI is checked on is the same one.
+    never dispatch a release for an intent the commit does not carry. CI and the smoke status are both read for that
+    same commit, and the smoke status only once CI is green, which is the only path to a dispatch.
     """
     head = main_head(repo)
     changelog = read_changelog(repo, head)
@@ -229,7 +253,9 @@ def plan(repo: str) -> Decision:
         return decide(changelog, head, False, False, "none", release_failed=True)
     if tag_exists(repo, f"v{version}"):
         return decide(changelog, None, True, False, "none")
-    return decide(changelog, head, False, False, ci_state(ci_runs(repo, head), head))
+    state = ci_state(ci_runs(repo, head), head)
+    smoke = smoke_status(repo, head) if state == "completed/success" else "missing"
+    return decide(changelog, head, False, False, state, smoke=smoke)
 
 
 def dispatch(repo: str, version: str, commit: str) -> None:

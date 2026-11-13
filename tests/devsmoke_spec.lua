@@ -672,9 +672,102 @@ equal(#DevSmokeDB.runs, runsBeforeUnknown, "an unknown subcommand starts no run"
 equal(unknown[1], "Dev Smoke: unknown command wat", "an unknown subcommand is reported")
 equal(
 	unknown[2],
-	"Dev Smoke: /devsmoke, tab [off], versions, errors, thanks <addon> [player], prof <tab>, close",
+	"Dev Smoke: /devsmoke, tab [off], versions, errors, eval, thanks <addon> [player], prof <tab>, close",
 	"the usage lists every command"
 )
+
+-- /devsmoke eval runs the chunk the generated !!DevSmokeInbox addon defines: what it prints and every value it
+-- returns reach the Agent tab and DevSmokeDB.eval, and an error is caught there instead of reaching BugGrabber.
+local specPrint = _G.print
+DevSmokeEval = function()
+	print("a printed line")
+	return "a returned value", 42
+end
+local evalLines = command("eval")
+equal(evalLines[1], "Dev Smoke: eval ok, 3 lines", "a passing eval reports its line count")
+equal(evalLines[2], "a printed line", "a printed line reaches the tab")
+equal(evalLines[3], "a returned value", "the first returned value follows it")
+equal(evalLines[4], "42", "every returned value is shown")
+equal(DevSmokeDB.eval.ok, true, "a passing snippet is recorded")
+equal(DevSmokeDB.eval.out[1], "a printed line", "the printed line is saved")
+equal(DevSmokeDB.eval.out[2], "a returned value", "the returned value is saved")
+equal(DevSmokeDB.eval.out[3], "42", "the last returned value is saved")
+equal(DevSmokeDB.eval.err, nil, "a passing snippet records no error")
+check(type(DevSmokeDB.eval.ran) == "number", "the run time is recorded")
+equal(_G.print, specPrint, "print is restored after a passing eval")
+
+local beforeEvalBugs = #bugErrors
+DevSmokeEval = function()
+	print("before the error")
+	error("boom from eval")
+end
+evalLines = command("eval")
+equal(evalLines[1], "Dev Smoke: eval failed, 3 lines", "a failing eval reports its lines")
+equal(evalLines[2], "before the error", "output before the error is kept")
+check(evalLines[3]:find("boom from eval", 1, true) ~= nil, "the error message reaches the tab")
+equal(evalLines[4], "stack trace", "the stack follows the message")
+equal(DevSmokeDB.eval.ok, false, "a failing snippet is recorded")
+check(DevSmokeDB.eval.err:find("boom from eval", 1, true) ~= nil, "the error is saved")
+check(DevSmokeDB.eval.err:find("stack trace", 1, true) ~= nil, "the stack is saved")
+equal(#bugErrors, beforeEvalBugs, "an eval error never reaches BugGrabber")
+equal(_G.print, specPrint, "print is restored after a failing eval")
+
+DevSmokeEval = function()
+	print(string.rep("x", 600))
+end
+evalLines = command("eval")
+equal(#evalLines, 4, "a long line is split into three Agent lines")
+equal(#evalLines[2], 254, "the first chunk reaches the cut")
+equal(#evalLines[3], 254, "the second chunk reaches the cut")
+equal(#evalLines[4], 92, "the rest is its own line")
+equal(#DevSmokeDB.eval.out, 3, "the saved output is split the same way")
+equal(DevSmokeDB.eval.out[3]:sub(-1), "x", "the split keeps every character")
+
+local ranBefore = DevSmokeDB.eval.ran
+DevSmokeEval = function()
+	return "again"
+end
+evalLines = command("eval")
+equal(evalLines[2], "again", "a second eval reruns the loaded chunk")
+check(DevSmokeDB.eval.ran > ranBefore, "a rerun records a new time")
+
+DevSmokeEval = nil
+evalLines = command("eval")
+equal(
+	evalLines[1],
+	"Dev Smoke: no eval loaded; run tools/devsmoke/eval.py FILE, then /reload",
+	"an empty inbox says how to fill it"
+)
+
+-- At login the addon asks for the load-on-demand inbox and runs the chunk it defines, without a command.
+addAddon("!!DevSmokeInbox")
+local inboxLoads = {}
+local addonAPI = C_AddOns
+rawset(addonAPI, "LoadAddOn", function(name)
+	inboxLoads[#inboxLoads + 1] = name
+	DevSmokeEval = function()
+		return "from the inbox"
+	end
+	return true
+end)
+DevSmokeEval = nil
+local beforeLoginLines = #agentMessages()
+fire("PLAYER_LOGIN")
+equal(inboxLoads[1], "!!DevSmokeInbox", "login asks for the generated inbox")
+local loginLines = {}
+for index = beforeLoginLines + 1, #agentMessages() do
+	loginLines[#loginLines + 1] = agentMessages()[index]
+end
+equal(loginLines[1], "Dev Smoke: eval ok, 1 lines", "the login eval reports itself")
+equal(loginLines[2], "from the inbox", "the login runs the chunk the inbox defined")
+
+-- The client reads the inbox once a session: a later /devsmoke eval reruns the loaded chunk and asks for no reload,
+-- so a snippet written after it needs /reload.
+local reloadsBefore = #inboxLoads
+local laterEval = command("eval")
+equal(laterEval[2], "from the inbox", "a later eval reruns the chunk the inbox loaded")
+equal(#inboxLoads, reloadsBefore, "a later eval does not load the inbox again")
+
 for _, message in ipairs(agentMessages()) do
 	check(#message < 255, "every Agent line stays under 255 characters")
 end

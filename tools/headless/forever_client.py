@@ -17,8 +17,18 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
+    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, reload, print DevSmokeDB.eval
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
-    forever_client.py capture-env         # record the Wine environment from a client Lutris started
+    forever_client.py capture-env         # record the launch from the player's client started in Faugus
+    forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
+    forever_client.py smoke --repo R --ref SHA  # build that commit, selftest it, post the headless-smoke status
+
+`smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
+over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
+commit as the `headless-smoke` commit status, which `tools/release_check.py` requires and `tools/smoke_queue.py`
+fills in. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the player's game or another
+session) so nothing is posted and a caller retries later. The AddOns folder is shared: every slot the smoke borrows is
+put back exactly as it was, including a store install it moved aside.
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -42,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.util
 import json
 import os
 import re
@@ -52,10 +63,37 @@ import stat
 import struct
 import subprocess
 import sys
+import tarfile
 import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+
+# The workspace checkout of each addon repository, and the test builds beside it: the same places the workspace's
+# rebuild-dev.sh used, now built here so a build has one implementation.
+WORKSPACE = Path.home() / "drive/proj/wow"
+BUILD_ROOT = WORKSPACE / "test-artifacts"
+# The development folders a dev build drops, so the client loads the addon and nothing that builds it.
+DEV_FOLDERS = (
+    "tools",
+    "tests",
+    "docs",
+    "types",
+    ".bugpatrol",
+    ".sloppatrol",
+    ".speedpatrol",
+    ".github",
+    ".agents",
+    ".luacheckrc",
+    ".luarc.json",
+    ".pkgmeta",
+)
+PACKAGE_AS = re.compile(r"^package-as:\s*(\S+)\s*$", re.MULTILINE)
+# The smoke's record: a commit status on the repository, in this context, which the release gate reads.
+SMOKE_OWNER = "cjber"
+SMOKE_CONTEXT = "headless-smoke"
+SMOKE_REPO = re.compile(r"^[A-Za-z0-9._-]+$")
+STATUS_LIMIT = 140
 
 PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
@@ -75,6 +113,8 @@ LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exit
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
 FOREVER_ADDONS = (
+    # The dev addon behind /devsmoke: its commands are the suite's own test surface.
+    "!!DevSmoke",
     "AdventureGuideForever",
     "CommissionsForever",
     "FieldGuideForever",
@@ -91,11 +131,21 @@ UI_KEYS = {"Return", "Escape", "BackSpace"}
 SLASH_ASSIGN = re.compile(r"SLASH_\w+\s*=(.*)$", re.MULTILINE)
 SLASH_WORD = re.compile(r'"(/[^"\s]+)"')
 
-# The Wine environment Lutris gives the client, minus what belongs to one run or to the desktop. DISPLAY and
+# The player's client is a Faugus Launcher game: Faugus runs its `umu-run`, which starts Battle.net under the game's
+# Proton runner in the Steam runtime. `capture-env` records that launch from the running `umu-run` process: the
+# script and the environment Faugus gives it, minus what belongs to one run or to the desktop. DISPLAY and
 # WAYLAND_DISPLAY above all: the session's own come from gamescope, and an inherited Wayland socket would let Wine
 # open a window on the player's desktop.
-KEEP_PREFIXES = ("WINE", "DXVK_", "VKD3D_", "__GL", "__GLX", "PROTON_", "STAGING_", "LD_", "VK_")
-DROP = {"WINESERVERSOCKET", "WINEPRELOADRESERVE", "WINELOADERNOEXEC", "DISPLAY", "WAYLAND_DISPLAY"}
+KEEP_PREFIXES = ("WINE", "DXVK_", "VKD3D_", "__GL", "__GLX", "PROTON", "STAGING_", "LD_", "VK_", "UMU_", "GAMEID")
+DROP = {
+    "WINESERVERSOCKET",
+    "WINEPRELOADRESERVE",
+    "WINELOADERNOEXEC",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "UMU_INVOCATION_ID",
+    "PROTON_VERB",
+}
 
 
 class ClientError(Exception):
@@ -114,6 +164,13 @@ def read_environ(pid: int) -> dict[str, str]:
         return {}
     pairs = (item.split(b"=", 1) for item in raw.split(b"\0") if b"=" in item)
     return {k.decode(errors="replace"): v.decode(errors="replace") for k, v in pairs}
+
+
+def in_prefix(env: Mapping[str, str], prefix: Path = PREFIX) -> bool:
+    """Whether a process runs in the prefix. Proton gives its Wine processes `<prefix>/pfx/`, which umu links back
+    to the prefix itself, so the paths are compared resolved, not as written."""
+    value = env.get("WINEPREFIX")
+    return bool(value) and Path(value).resolve() == prefix.resolve()
 
 
 def pids() -> Iterable[int]:
@@ -141,7 +198,7 @@ def prefix_snapshot(prefix: Path = PREFIX, exclude: Iterable[int] = ()) -> dict[
     for pid in pids():
         if pid not in skip:
             env = read_environ(pid)
-            if env.get("WINEPREFIX") == str(prefix):
+            if in_prefix(env, prefix):
                 found[pid] = env
     return found
 
@@ -181,7 +238,7 @@ def kill_owned_pid(pid: int, token: str, server: Path) -> bool:
         return False
     try:
         env = read_environ(pid)
-        if env.get("WINEPREFIX") != str(PREFIX) or env.get("FOREVER_CLIENT_SESSION") != token:
+        if not in_prefix(env) or env.get("FOREVER_CLIENT_SESSION") != token:
             return False
         try:
             executable = Path(f"/proc/{pid}/exe").readlink().resolve()
@@ -199,9 +256,7 @@ def kill_owned_pid(pid: int, token: str, server: Path) -> bool:
 
 
 def client_pid() -> int | None:
-    return next(
-        (p for p in pids() if "Wow.exe" in cmdline(p) and read_environ(p).get("WINEPREFIX") == str(PREFIX)), None
-    )
+    return next((p for p in pids() if "Wow.exe" in cmdline(p) and in_prefix(read_environ(p))), None)
 
 
 # --- session state ---------------------------------------------------------------------------------------------
@@ -454,6 +509,384 @@ def reload(state: Mapping, timeout: float = 120) -> Path:
     return wait_for_world(before, timeout)
 
 
+# --- dev builds ------------------------------------------------------------------------------------------------
+
+
+def git(repo_root: Path, *args: str) -> str:
+    """One git read from a repository's checkout, its failure a ClientError the agent can read."""
+    try:
+        return subprocess.check_output(["git", "-C", str(repo_root), *args], text=True, stderr=subprocess.PIPE).strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise ClientError(f"git {' '.join(args)} in {repo_root}: {detail.strip()}") from None
+
+
+def tag_name(repo_root: Path, commit: str) -> str | None:
+    """The release tag naming exactly this commit, or None."""
+    try:
+        found = subprocess.check_output(
+            ["git", "-C", str(repo_root), "describe", "--tags", "--exact-match", commit],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return found or None
+
+
+def dev_version(repo_root: Path, commit: str) -> str:
+    """`<tag>-dev+<sha>`, so wowaddon returns the dev link to the store release once a newer one ships."""
+    try:
+        tag = subprocess.check_output(
+            ["git", "-C", str(repo_root), "describe", "--tags", "--abbrev=0", commit],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        tag = "v0.0.0"  # a repository with no release yet
+    return f"{tag}-dev+{git(repo_root, 'rev-parse', '--short', commit)}"
+
+
+def stamp_tocs(build: Path, version: str) -> None:
+    """Replace the packager's `@project-version@` in every TOC, keeping the file's own line endings."""
+    for toc in sorted(build.rglob("*.toc")):
+        raw = toc.read_bytes()
+        if b"@project-version@" in raw:
+            toc.write_bytes(raw.replace(b"@project-version@", version.encode()))
+
+
+def unpack(archive: Path, destination: Path) -> None:
+    """Unpack a git archive; Python 3.12 and later take the `data` member filter that makes it refuse escapes."""
+    with tarfile.open(archive) as tree:
+        try:
+            tree.extractall(destination, filter="data")
+        except TypeError:
+            tree.extractall(destination)
+
+
+def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root: Path | None = None) -> Path:
+    """Write the dev build of `commit` to `test-artifacts/<repo>-dev`, as `rebuild-dev.sh` did.
+
+    The build is the commit's own tree without the development folders, with every TOC stamped `<tag>-dev+<sha>`, so
+    `wowaddon` returns the dev link to the store release once one newer than the tag ships. The new build is unpacked
+    beside the old one and swapped in, so a failed build leaves the previous one in place.
+    """
+    root = repo_root or WORKSPACE / repo
+    folder = destination or BUILD_ROOT / f"{repo}-dev"
+    sha = git(root, "rev-parse", "--verify", f"{commit}^{{commit}}")
+    version = dev_version(root, sha)
+    staging = folder.with_name(f"{folder.name}.new")
+    previous = folder.with_name(f"{folder.name}.old")
+    archive = folder.with_name(f"{folder.name}.tar")
+    for stale in (staging, previous, archive):
+        if stale.is_dir() and not stale.is_symlink():
+            shutil.rmtree(stale)
+        elif stale.exists() or stale.is_symlink():
+            stale.unlink()
+    staging.mkdir(parents=True)
+    try:
+        try:
+            subprocess.run(
+                ["git", "-C", str(root), "archive", "--format=tar", f"--output={archive}", sha],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", "") or str(error)
+            raise ClientError(f"git archive {sha[:7]} in {root} failed: {detail.strip()}") from None
+        unpack(archive, staging)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
+    for name in DEV_FOLDERS:
+        victim = staging / name
+        if victim.is_dir() and not victim.is_symlink():
+            shutil.rmtree(victim)
+        elif victim.exists() or victim.is_symlink():
+            victim.unlink()
+    stamp_tocs(staging, version)
+    if folder.exists() or folder.is_symlink():
+        folder.rename(previous)
+    staging.rename(folder)
+    if previous.exists() or previous.is_symlink():
+        shutil.rmtree(previous) if previous.is_dir() and not previous.is_symlink() else previous.unlink()
+    print(f"{repo} <- {sha[:7]} ({version}) in {folder}", flush=True)
+    return folder
+
+
+def package_name(repo_root: Path, commit: str) -> str | None:
+    """The addon folder `.pkgmeta` ships in `package-as`, or None for a repository without one."""
+    try:
+        text = git(repo_root, "show", f"{commit}:.pkgmeta")
+    except ClientError:
+        return None
+    found = PACKAGE_AS.search(text)
+    return found.group(1) if found else None
+
+
+def addon_folders(build: Path, package: str | None = None) -> list[tuple[str, Path]]:
+    """Each addon folder the build ships, as its name and the folder to link into AddOns.
+
+    `package-as` names the addon. A repository without one (Kiln Forever keeps it under `addon/`) ships every TOC
+    folder that is not a library the packager moves in from elsewhere.
+    """
+    found = sorted((toc.stem, toc.parent) for toc in build.rglob("*.toc"))
+    if package:
+        chosen = [(name, parent) for name, parent in found if name == package]
+        if chosen:
+            return chosen
+    return [(name, parent) for name, parent in found if not name.startswith("Lib")]
+
+
+# --- the AddOns links a smoke session borrows -------------------------------------------------------------------
+
+LINK_RECORD = "smoke-links.json"
+
+
+def addons_dir() -> Path:
+    return CLIENT / "Interface/AddOns"
+
+
+def link_record_path() -> Path:
+    return STATE_DIR / LINK_RECORD
+
+
+def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
+    """Point each addon folder in AddOns at the build, recording exactly what was there to put back.
+
+    The AddOns folder is shared with the player and with other sessions: a store install is a real directory, so it is
+    moved aside rather than replaced, and a link is put back at the very target it had. The record is written before
+    each change, so a session killed outright leaves the way back on disk at `smoke-links.json`.
+    """
+    addons.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    records: list[dict] = []
+    try:
+        for name, folder in folders:
+            slot = addons / name
+            aside = addons / f"{name}.smoke-backup"
+            if aside.is_symlink() or aside.exists():
+                raise ClientError(f"{aside} is left over from an earlier smoke session: put it back first")
+            record: dict = {"slot": str(slot), "was": None}
+            if slot.is_symlink():
+                record["was"] = {"link": os.readlink(slot)}
+                slot.unlink()
+            elif slot.exists():
+                slot.rename(aside)
+                record["was"] = {"moved": str(aside)}
+            records.append(record)
+            link_record_path().write_text(json.dumps(records))
+            slot.symlink_to(folder)
+    except BaseException:
+        restore_links(records)
+        raise
+    return records
+
+
+def restore_links(records: Sequence[dict]) -> None:
+    """Put every slot back exactly as it was, newest change first; a slot a smoke never made is left alone."""
+    for record in reversed(records):
+        if record.get("restored"):
+            continue
+        slot = Path(record["slot"])
+        was = record["was"]
+        if was is None:
+            if slot.is_symlink():
+                slot.unlink()
+        elif "link" in was:
+            if slot.is_symlink():
+                slot.unlink()
+            elif slot.exists():
+                print(f"forever_client: {slot} is not the link a smoke session made; left alone", file=sys.stderr)
+                continue
+            slot.symlink_to(was["link"])
+        else:
+            aside = Path(was["moved"])
+            if slot.is_symlink():
+                slot.unlink()
+            elif slot.exists():
+                print(f"forever_client: {slot} is not the link a smoke session made; left alone", file=sys.stderr)
+                continue
+            aside.rename(slot)
+        record["restored"] = True
+    if records and all(record.get("restored") for record in records):
+        link_record_path().unlink(missing_ok=True)
+
+
+def client_in_use() -> str | None:
+    """Why no session can start now, or None: the player's client, another session's lock, or Wine in the prefix."""
+    users = prefix_users()
+    if users:
+        return prefix_who(users)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        lock = open(STATE_DIR / "lock", "w")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return "another session holds the client"
+    finally:
+        lock.close()
+    return None
+
+
+def stop_handlers() -> dict[int, object]:
+    """Turn SIGTERM and SIGINT into a KeyboardInterrupt so a smoke puts the AddOns links back before it exits."""
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+
+    def on_signal(_signum, _frame):
+        raise KeyboardInterrupt
+
+    for signum in previous:
+        signal.signal(signum, on_signal)
+    return previous
+
+
+def restore_handlers(previous: Mapping[int, object]) -> None:
+    for signum, handler in previous.items():
+        signal.signal(signum, handler)
+
+
+# --- the release smoke ------------------------------------------------------------------------------------------
+
+
+def errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -> subprocess.CompletedProcess:
+    """Reload so the client writes its SavedVariables, then read this session's Lua errors (exit 1 when any)."""
+    reload(state)
+    tool = Path(__file__).resolve().parents[1] / "forever_errors.py"
+    command = [sys.executable, str(tool), "--since", str(state["started"])]
+    if addon:
+        command += ["--addon", addon]
+    if as_json:
+        command += ["--json"]
+    return subprocess.run(command, check=False, capture_output=True, text=True)
+
+
+def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[str, int]:
+    """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run."""
+    counts: dict[str, int] = {}
+    for name, _folder in folders:
+        completed = errors(state, name, as_json=True)
+        if completed.returncode not in (0, 1):
+            raise ClientError(f"errors --addon {name} failed ({completed.returncode}): {completed.stderr.strip()}")
+        try:
+            groups = json.loads(completed.stdout or "[]")
+        except ValueError:
+            raise ClientError(f"errors --addon {name} printed no JSON: {completed.stdout.strip()[:200]}") from None
+        counts[name] = len(groups)
+    return counts
+
+
+def smoke_description(counts: Mapping[str, int]) -> str:
+    """The commit status's text: the error count, or that the addon folders are clean."""
+    total = sum(counts.values())
+    if not total:
+        folders = len(counts)
+        return f"clean: no Lua errors in {folders} addon folder{'s' if folders != 1 else ''}"
+    named = ", ".join(f"{count} {name}" for name, count in counts.items() if count)
+    return f"{total} Lua error{'s' if total != 1 else ''}: {named}"[:STATUS_LIMIT]
+
+
+def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
+    """Record the smoke's result on the commit: the release gate reads this context and nothing else."""
+    try:
+        completed = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{SMOKE_OWNER}/{repo}/statuses/{commit}",
+                "-f",
+                f"state={'success' if ok else 'failure'}",
+                "-f",
+                f"context={SMOKE_CONTEXT}",
+                "-f",
+                f"description={description[:STATUS_LIMIT]}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise ClientError(f"cannot run gh to post {SMOKE_CONTEXT} on {repo}@{commit[:7]}: {error}") from None
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"could not post {SMOKE_CONTEXT} on {SMOKE_OWNER}/{repo}@{commit[:7]}: {detail}")
+
+
+def smoke(args: argparse.Namespace) -> int:
+    """Build a repository's commit, test it in the client, and record the result as a commit status.
+
+    Exit 0 is a clean commit and 1 a failure that was recorded; 3 means the client is in use, so nothing is posted and
+    a caller retries later. A smoke that could not run at all (no checkout, no such ref) raises ClientError and posts
+    nothing either.
+    """
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    busy = client_in_use()
+    if busy:
+        print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
+        return 3
+    folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-smoke", repo_root=root)
+    folders = addon_folders(folder, package_name(root, commit))
+    if not folders:
+        raise ClientError(f"{folder} ships no addon folder")
+    outcome: dict = {"counts": {}, "error": None}
+    previous = stop_handlers()
+    try:
+        records = link_build(folders, addons_dir())
+        try:
+
+            def checks(state):
+                slash(state, "/forever selftest")
+                # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
+                outcome["counts"] = smoke_counts(state, folders)
+                return 0
+
+            options = argparse.Namespace(wait=False, manual_launcher=False, timeout=args.timeout)
+            try:
+                up(options, after_ready=checks)
+            except ClientError as error:
+                busy = client_in_use()
+                if not outcome["counts"] and busy:
+                    print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
+                    return 3
+                outcome["error"] = str(error)
+        finally:
+            restore_links(records)
+    except KeyboardInterrupt:
+        print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
+        return 1
+    finally:
+        restore_handlers(previous)
+    counts = outcome["counts"]
+    if outcome["error"]:
+        print(f"{repo}@{commit[:7]}: {outcome['error']}", file=sys.stderr)
+    if not counts and not outcome["error"]:
+        # `up` returns normally when a signal ends the session it holds, so a stopped smoke is not a result.
+        print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
+        return 1
+    if not counts:
+        description = f"no result: {outcome['error'] or 'the session ended before the checks ran'}"
+        post_status(repo, commit, False, description)
+        print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
+        return 1
+    ok = not any(counts.values())
+    description = smoke_description(counts)
+    post_status(repo, commit, ok, description)
+    print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
+    return 0 if ok else 1
+
+
 # --- session lifecycle -----------------------------------------------------------------------------------------
 
 
@@ -493,7 +926,7 @@ def teardown(
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
     if state and state.get("ready") and gamescope and gamescope.poll() is None and client_pid():
         log_out(state)
-    server = Path(wine.get("WINE", "wine")).with_name("wineserver").resolve()
+    server = wineserver(wine)
     # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
     # and signal only exact token-owned PIDs, retaining state when a foreign or unverifiable process appears.
     deadline = time.monotonic() + 20
@@ -606,9 +1039,15 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         ) from None
     if not CONFIG.exists():
         raise ClientError(
-            f"no Wine environment recorded: run `forever_client.py capture-env` while Lutris runs the client ({CONFIG})"
+            f"no launch recorded: start Battle.net from Faugus, then run `forever_client.py capture-env` ({CONFIG})"
         )
-    wine = json.loads(CONFIG.read_text())
+    launch = json.loads(CONFIG.read_text())
+    if "umu_run" not in launch:
+        raise ClientError(
+            f"{CONFIG} records an older Wine launch: start Battle.net from Faugus, "
+            "then run `forever_client.py capture-env`"
+        )
+    wine = launch["env"]
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
     gamescope: subprocess.Popen | None = None
@@ -629,7 +1068,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             link.symlink_to(ADDON)
         env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "WINEPREFIX")}
         env.update(wine)
-        env.pop("WINEPREFIX", None)
+        env["WINEPREFIX"] = str(PREFIX)
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
         env["XDG_RUNTIME_DIR"] = str(runtime)
@@ -648,16 +1087,11 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
                 str(HEIGHT),
                 "--",
                 # Gamescope's reaper ends every process once its child exits, and Battle.net exits as the game
-                # starts, so the child waits for the whole Wine session instead: the launcher, then `wineserver -w`.
-                "sh",
-                "-c",
-                'WINEPREFIX="$1" "$2" "$3" "$4"; export WINEPREFIX="$1"; exec "$5" -w',
-                "forever-client",
-                str(PREFIX),
-                wine["WINE"],
+                # starts. umu-run's Proton `waitforexitandrun` returns only once the prefix's wineserver has, so the
+                # child lasts the whole Wine session: the launcher, then the game.
+                launch["umu_run"],
                 str(LAUNCHER),
                 *LAUNCH_ARGS,
-                str(Path(wine["WINE"]).with_name("wineserver")),
             ],
             cwd=LAUNCHER.parent,
             env=env,
@@ -724,16 +1158,36 @@ def down() -> int:
     raise ClientError(f"session {state['pid']} did not stop within {limit} s")
 
 
+def wineserver(wine: Mapping[str, str]) -> Path:
+    """The Proton runner's wineserver, which serves every Wine process of a session it started."""
+    return (Path(wine.get("PROTONPATH", "")) / "files/bin/wineserver").resolve()
+
+
+def umu_launch() -> tuple[int, str] | None:
+    """The running `umu-run` that started Battle.net in the prefix, and its script, or None."""
+    for pid in pids():
+        try:
+            argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        words = [w.decode(errors="replace") for w in argv if w]
+        script = next((w for w in words[:2] if Path(w).name == "umu-run"), None)
+        if script and any(w.endswith("Battle.net.exe") for w in words) and in_prefix(read_environ(pid)):
+            return pid, script
+    return None
+
+
 def capture_env() -> int:
-    pid = client_pid()
-    if not pid:
-        raise ClientError("no client is running: start it from Lutris once, then run capture-env")
+    found = umu_launch()
+    if not found:
+        raise ClientError("Battle.net is not running from Faugus: start it there once, then run capture-env")
+    pid, script = found
     env = wine_env(read_environ(pid))
-    if "WINE" not in env:
-        raise ClientError(f"process {pid} has no WINE variable; is it a Lutris launch?")
+    if "PROTONPATH" not in env:
+        raise ClientError(f"process {pid} has no PROTONPATH; is it Faugus's umu-run launch?")
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(env, indent=1, sort_keys=True))
-    print(f"recorded {len(env)} variables from {pid} to {CONFIG}")
+    CONFIG.write_text(json.dumps({"umu_run": script, "env": env}, indent=1, sort_keys=True))
+    print(f"recorded {script} and {len(env)} variables from {pid} to {CONFIG}")
     return 0
 
 
@@ -742,6 +1196,77 @@ def saved_variables(addon: str) -> list[Path]:
     return sorted(account.glob(f"*/SavedVariables/{addon}.lua")) + sorted(
         account.glob(f"*/*/*/SavedVariables/{addon}.lua")
     )
+
+
+def load_tool(name: str, path: Path):
+    """A sibling Python tool, loaded once by path so one process shares it across calls."""
+    module = sys.modules.get(name)
+    if module is not None:
+        return module
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ClientError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def devsmoke_eval():
+    """tools/devsmoke/eval.py: the snippet compiler and Inbox writer the `eval` verb runs."""
+    return load_tool("devsmoke_eval", Path(__file__).resolve().parents[1] / "devsmoke/eval.py")
+
+
+def saved_eval() -> dict:
+    """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke."""
+    files = saved_variables("!!DevSmoke")
+    if not files:
+        raise ClientError("no SavedVariables for !!DevSmoke: the client writes them at a reload or logout")
+    lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    for path in sorted(files, key=lambda candidate: candidate.stat().st_mtime, reverse=True):
+        try:
+            variables = lua.load_lua(path)
+        except (OSError, lua.LuaSyntaxError) as error:
+            raise ClientError(f"could not read {path}: {error}") from None
+        smoke = variables.get("DevSmokeDB")
+        data = smoke.get("eval") if isinstance(smoke, dict) else None
+        if isinstance(data, dict):
+            return data
+    raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
+
+
+def _text(value) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _ordered(table) -> list:
+    """A parsed Lua table's values, numeric keys in their own order, the way the client wrote them."""
+    if not isinstance(table, dict):
+        return []
+    keys = list(table)
+    if all(isinstance(key, int) for key in keys):
+        keys.sort()
+    return [table[key] for key in keys]
+
+
+def format_eval(data: Mapping) -> tuple[str, bool]:
+    """DevSmokeDB.eval as the lines the Agent tab showed, and whether the snippet succeeded."""
+    ok = data.get("ok") is True
+    lines = [f"DevSmokeDB.eval: {'ok' if ok else 'failed'}, ran {_text(data.get('ran'))}"]
+    lines.extend(_text(value) for value in _ordered(data.get("out")))
+    error = _text(data.get("err"))
+    if error:
+        lines.append("error:")
+        lines.extend(error.splitlines())
+    return "\n".join(lines), ok
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -779,8 +1304,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("command")
     p = sub.add_parser("sv")
     p.add_argument("addon")
+    p = sub.add_parser("eval")
+    p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
     p = sub.add_parser("errors")
     p.add_argument("--addon")
+    p = sub.add_parser("build-dev", help="write test-artifacts/<repo>-dev from a ref")
+    p.add_argument("repo", help="the repository under ~/drive/proj/wow")
+    p.add_argument("ref")
+    p = sub.add_parser("smoke", help="build the commit a release would ship, test it, and post its status")
+    p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
+    p.add_argument("--ref", required=True, help="the commit the next release would ship")
+    p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
     args = parser.parse_args(argv)
 
     try:
@@ -807,6 +1341,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.verb == "status":
             print(json.dumps(load_state(), indent=1))
             return 0
+        if args.verb == "build-dev":
+            root = WORKSPACE / args.repo
+            commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+            release = tag_name(root, commit)
+            if release:
+                # A ref at a release tag is that release: point the client back at the store build instead.
+                print(
+                    f"{args.repo}: {args.ref} is release {release}; "
+                    "run: wowaddon --flavor forever sync after removing its dev link"
+                )
+                return 0
+            build_dev(args.repo, commit, repo_root=root)
+            return 0
+        if args.verb == "smoke":
+            return smoke(args)
         state = load_state()
         launcher_action = state.get("manual_launcher") and (
             args.verb == "shot" or (args.verb == "click" and args.button == "1")
@@ -829,13 +1378,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ClientError(f"no SavedVariables for {args.addon}: it writes them at a reload or logout")
             for f in files:
                 print(f"-- {f}\n{f.read_text(errors='replace')}")
-        elif args.verb == "errors":
+        elif args.verb == "eval":
+            tool = devsmoke_eval()
+            try:
+                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
+            except tool.EvalError as error:
+                raise ClientError(str(error)) from None
+            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
             reload(state)
-            tool = Path(__file__).resolve().parents[1] / "forever_errors.py"
-            cmd = [sys.executable, str(tool), "--since", str(state["started"])]
-            if args.addon:
-                cmd += ["--addon", args.addon]
-            return subprocess.run(cmd, check=False).returncode
+            report, ok = format_eval(saved_eval())
+            print(report)
+            return 0 if ok else 1
+        elif args.verb == "errors":
+            completed = errors(state, args.addon)
+            sys.stdout.write(completed.stdout)
+            sys.stderr.write(completed.stderr)
+            return completed.returncode
         return 0
     except ClientError as error:
         print(f"forever_client: {error}", file=sys.stderr)

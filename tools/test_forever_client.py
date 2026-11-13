@@ -7,7 +7,9 @@ import contextlib
 import fcntl
 import importlib.util
 import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -106,7 +108,8 @@ class ForeverClientTest(unittest.TestCase):
     def test_up_records_runtime_and_keeps_gamescope_off_host_display(self):
         config = self.state / "env.json"
         config.write_text(
-            '{"WINE":"/runner/bin/wine","DISPLAY":":host","WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner","GAMEID":"umu-x","DISPLAY":":host",'
+            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -142,6 +145,10 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
             self.assertEqual(x.call_args.args[1:], ("key", "Return"))
         env = spawn.call_args.kwargs["env"]
+        command = spawn.call_args.args[0]
+        self.assertEqual(command[command.index("--") + 1 :], ["/faugus/umu-run", str(fc.LAUNCHER), *fc.LAUNCH_ARGS])
+        self.assertEqual(env["WINEPREFIX"], str(fc.PREFIX))
+        self.assertEqual((env["PROTONPATH"], env["GAMEID"]), ("/runner", "umu-x"))
         self.assertEqual(env["XDG_RUNTIME_DIR"], str(self.runtime))
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("WAYLAND_DISPLAY", env)
@@ -169,6 +176,52 @@ class ForeverClientTest(unittest.TestCase):
                 "DXVK_LOG_LEVEL": "error",
                 "LD_PRELOAD": "libgamemodeauto.so.0",
             },
+        )
+
+    def test_up_asks_for_a_faugus_capture_over_an_older_wine_launch(self):
+        config = self.state / "env.json"
+        config.write_text('{"WINE":"/runner/bin/wine"}')
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+            self.assertRaisesRegex(fc.ClientError, "start Battle.net from Faugus"),
+        ):
+            fc.up(args())
+        spawn.assert_not_called()
+
+    def test_proton_pfx_link_counts_as_the_prefix(self):
+        prefix = self.state / "battlenet"
+        prefix.mkdir()
+        (prefix / "pfx").symlink_to(".")
+        self.assertTrue(fc.in_prefix({"WINEPREFIX": f"{prefix}/pfx/"}, prefix))
+        self.assertTrue(fc.in_prefix({"WINEPREFIX": str(prefix)}, prefix))
+        self.assertFalse(fc.in_prefix({"WINEPREFIX": str(self.state)}, prefix))
+        self.assertFalse(fc.in_prefix({}, prefix))
+
+    def test_capture_env_records_faugus_umu_launch(self):
+        config = self.state / "env.json"
+        environ = {
+            "WINEPREFIX": str(fc.PREFIX),
+            "PROTONPATH": "/runner",
+            "GAMEID": "umu-x",
+            "UMU_USE_STEAM": "1",
+            "UMU_INVOCATION_ID": "once",
+            "HOME": "/home/x",
+        }
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "umu_launch", return_value=(7, "/faugus/umu-run")),
+            mock.patch.object(fc, "read_environ", return_value=environ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.capture_env(), 0)
+        recorded = json.loads(config.read_text())
+        self.assertEqual(recorded["umu_run"], "/faugus/umu-run")
+        self.assertEqual(
+            recorded["env"],
+            {"WINEPREFIX": str(fc.PREFIX), "PROTONPATH": "/runner", "GAMEID": "umu-x", "UMU_USE_STEAM": "1"},
         )
 
     def test_up_refuses_while_the_players_client_runs(self):
@@ -251,13 +304,15 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
         addons = self.state / "AddOns"
+        (addons / "!!DevSmoke").mkdir(parents=True)
+        (addons / "!!DevSmoke/Core.lua").write_text('SLASH_DEVSMOKE1 = "/devsmoke"\n')
         (addons / "FieldGuideForever").mkdir(parents=True)
         (addons / "FieldGuideForever/Core.lua").write_text('SLASH_FIELDGUIDEFOREVER1 = "/fgf"\n')
         (addons / "ForeverCore").mkdir()
         (addons / "ForeverCore/Expose.lua").write_text('SLASH_FOREVERCORE1 = "/fcore"\n')
         (addons / "SomeoneElse").mkdir()
         (addons / "SomeoneElse/Core.lua").write_text('SLASH_OTHER1 = "/other"\n')
-        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload"):
+        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload", "/devsmoke eval"):
             fc.allowed_command(ok, addons)
         for refused in (
             "/other",
@@ -515,14 +570,9 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
-            fc.teardown(game, {}, None, {"display": ":1", "token": "owned"})
-        self.assertEqual(
-            kill.call_args_list,
-            [
-                mock.call(42, "owned", Path("wineserver").resolve()),
-                mock.call(43, "owned", Path("wineserver").resolve()),
-            ],
-        )
+            fc.teardown(game, {"PROTONPATH": "/runner"}, None, {"display": ":1", "token": "owned"})
+        server = Path("/runner/files/bin/wineserver").resolve()
+        self.assertEqual(kill.call_args_list, [mock.call(42, "owned", server), mock.call(43, "owned", server)])
 
     def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
         clock = FakeClock()
@@ -622,6 +672,508 @@ class ForeverClientTest(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(fc.main(["shot"]), 2)
         self.assertIn("forever_client.py up", err.getvalue())
+
+    def saved_smoke(self, eval_table: str | None) -> Path:
+        saved = fc.CLIENT / "WTF/Account/1/SavedVariables"
+        saved.mkdir(parents=True)
+        path = saved / "!!DevSmoke.lua"
+        body = "DevSmokeDB = {\n"
+        if eval_table is not None:
+            body += '\t["eval"] = ' + eval_table + ",\n"
+        path.write_text(body + "}\n")
+        return path
+
+    def eval_tool(self, error=Exception):
+        tool = mock.Mock(
+            write_snippet=mock.Mock(
+                return_value={
+                    "chunk": Path("/checkout/!!DevSmokeInbox/Eval.lua"),
+                    "snippet": Path("probe.lua"),
+                    "lines": 2,
+                }
+            )
+        )
+        tool.EvalError = error
+        return tool
+
+    def test_eval_writes_reloads_and_reports_the_saved_output(self):
+        client = self.state / "client"
+        with mock.patch.object(fc, "CLIENT", client):
+            self.saved_smoke('{\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n\t["out"] = { "a printed line", "42" },\n}')
+            tool = self.eval_tool()
+            state = {"ready": 1.0}
+            out = io.StringIO()
+            with (
+                mock.patch.object(fc, "load_state", return_value=state),
+                mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+                mock.patch.object(fc, "reload") as reload,
+                contextlib.redirect_stdout(out),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 0)
+        reload.assert_called_once_with(state)
+        tool.write_snippet.assert_called_once_with(Path("probe.lua"), addons=client / "Interface/AddOns")
+        printed = out.getvalue()
+        self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
+        self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
+
+    def test_eval_reports_a_failed_snippet_and_exits_one(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke(
+                '{\n\t["ran"] = 7,\n\t["ok"] = false,\n\t["out"] = { "before" },\n\t["err"] = "boom\\nstack",\n}'
+            )
+            out = io.StringIO()
+            with (
+                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+                mock.patch.object(fc, "reload"),
+                contextlib.redirect_stdout(out),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 1)
+        self.assertIn("DevSmokeDB.eval: failed, ran 7\nbefore\nerror:\nboom\nstack", out.getvalue())
+
+    def test_eval_refuses_a_snippet_the_compiler_rejects(self):
+        class Refused(Exception):
+            pass
+
+        tool = self.eval_tool(Refused)
+        tool.write_snippet.side_effect = Refused("probe.lua:2: 'end' expected")
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload") as reload,
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        reload.assert_not_called()
+        self.assertIn("probe.lua:2: 'end' expected", err.getvalue())
+
+    def test_eval_without_a_session_says_how_to_start_one(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        self.assertIn("forever_client.py up", err.getvalue())
+
+    def test_eval_without_saved_variables_says_so(self):
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+            mock.patch.object(fc, "reload"),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        self.assertIn("no SavedVariables for !!DevSmoke", err.getvalue())
+
+    def test_format_eval_orders_the_saved_lines(self):
+        report, ok = fc.format_eval({"ran": 7, "ok": True, "out": {2: "second", 1: "first"}})
+        self.assertTrue(ok)
+        self.assertEqual(report, "DevSmokeDB.eval: ok, ran 7\nfirst\nsecond")
+
+    def test_format_eval_puts_the_error_after_the_output(self):
+        report, ok = fc.format_eval({"ran": 7, "ok": False, "out": {1: "before"}, "err": "boom\nstack"})
+        self.assertFalse(ok)
+        self.assertEqual(report, "DevSmokeDB.eval: failed, ran 7\nbefore\nerror:\nboom\nstack")
+
+    def test_saved_eval_is_missing_when_the_snippet_did_not_run(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke(None)
+            with self.assertRaisesRegex(fc.ClientError, "DevSmokeDB.eval is missing"):
+                fc.saved_eval()
+
+
+class BuildDevTest(unittest.TestCase):
+    """The dev build rebuild-dev.sh made, now one function: the commit's tree, stripped and stamped."""
+
+    def setUp(self):
+        self.workspace = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
+        self.enterContext(mock.patch.object(fc, "BUILD_ROOT", self.workspace / "test-artifacts"))
+        self.repo = self.workspace / "legacy-forever"
+        (self.repo / "Core").mkdir(parents=True)
+        (self.repo / "tools").mkdir()
+        (self.repo / "docs").mkdir()
+        (self.repo / "LegacyForever.toc").write_bytes(b"## Version: @project-version@\r\nCore\\Core.lua\r\n")
+        (self.repo / "Core/Core.lua").write_text("-- the addon\n")
+        (self.repo / "Core/Spec.lua").write_text("-- shipped\n")
+        (self.repo / "tools/spec.py").write_text("print(1)\n")
+        (self.repo / "docs/readme.md").write_text("# docs\n")
+        (self.repo / ".pkgmeta").write_text("package-as: LegacyForever\n")
+        (self.repo / "reference").mkdir()
+        (self.repo / "reference/Other.toc").write_text("## Version: @project-version@\n")
+        self.git("init", "-q")
+        self.git("add", "-A")
+        self.git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "one")
+        self.git("tag", "v1.2.3")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+
+    def test_the_build_is_the_tree_without_the_development_folders(self):
+        built = fc.build_dev("legacy-forever", "HEAD")
+        self.assertEqual(built, self.workspace / "test-artifacts/legacy-forever-dev")
+        self.assertEqual((built / "Core/Core.lua").read_text(), "-- the addon\n")
+        self.assertFalse((built / "tools").exists())
+        self.assertFalse((built / "docs").exists())
+        self.assertFalse((built / ".pkgmeta").exists())
+        stamped = (built / "LegacyForever.toc").read_bytes()
+        self.assertNotIn(b"@project-version@", stamped)
+        self.assertTrue(stamped.endswith(b"Core\\Core.lua\r\n"), stamped)
+        self.assertRegex(stamped, rb"## Version: v1\.2\.3-dev\+[0-9a-f]{1,}\r\n")
+
+    def test_the_build_replaces_the_previous_one_atomically(self):
+        first = fc.build_dev("legacy-forever", "HEAD")
+        (self.repo / "Core/Core.lua").write_text("-- changed\n")
+        self.git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qam", "two")
+        again = fc.build_dev("legacy-forever", "HEAD")
+        self.assertEqual(first, again)
+        self.assertEqual((again / "Core/Core.lua").read_text(), "-- changed\n")
+        self.assertFalse((self.workspace / "test-artifacts/legacy-forever-dev.new").exists())
+        self.assertFalse((self.workspace / "test-artifacts/legacy-forever-dev.old").exists())
+
+    def test_a_build_that_fails_leaves_the_previous_build_in_place(self):
+        built = fc.build_dev("legacy-forever", "HEAD")
+        with self.assertRaisesRegex(fc.ClientError, "git"):
+            fc.build_dev("legacy-forever", "no-such-ref")
+        self.assertEqual((built / "Core/Core.lua").read_text(), "-- the addon\n")
+
+    def test_a_repository_with_no_release_is_stamped_v0_0_0(self):
+        self.git("tag", "-d", "v1.2.3")
+        built = fc.build_dev("legacy-forever", "HEAD")
+        self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: v0\.0\.0-dev\+")
+
+    def test_build_dev_cli_refuses_a_release_tag(self):
+        out = io.StringIO()
+        with (
+            mock.patch.object(fc, "WORKSPACE", self.workspace),
+            mock.patch.object(fc, "build_dev") as build,
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertEqual(fc.main(["build-dev", "legacy-forever", "v1.2.3"]), 0)
+        build.assert_not_called()
+        self.assertIn("is release v1.2.3", out.getvalue())
+
+
+class AddonFoldersTest(unittest.TestCase):
+    def test_package_as_names_the_one_folder_the_build_ships(self):
+        build = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (build / "LegacyForever.toc").write_text("")
+        (build / "reference").mkdir()
+        (build / "reference/Other.toc").write_text("")
+        (build / "LibAHTab").mkdir()
+        (build / "LibAHTab/LibAHTab.toc").write_text("")
+        self.assertEqual(fc.addon_folders(build, "LegacyForever"), [("LegacyForever", build)])
+
+    def test_a_repository_without_pkgmeta_links_every_non_library_toc_folder(self):
+        build = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        addon = build / "addon/KilnForever"
+        addon.mkdir(parents=True)
+        (addon / "KilnForever.toc").write_text("")
+        (build / "LibAHTab").mkdir()
+        (build / "LibAHTab/LibAHTab.toc").write_text("")
+        self.assertEqual(fc.addon_folders(build), [("KilnForever", addon)])
+
+    def test_package_name_reads_the_addon_out_of_pkgmeta(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        (root / ".pkgmeta").write_text("package-as: FieldGuideForever\n")
+        (root / "FieldGuideForever.toc").write_text("")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(root), "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-qm", "one"],
+            check=True,
+        )
+        self.assertEqual(fc.package_name(root, "HEAD"), "FieldGuideForever")
+        self.assertIsNone(fc.package_name(root, "HEAD~5"))
+
+
+class LinkBuildTest(unittest.TestCase):
+    """The AddOns folder is shared, so every borrowed slot goes back exactly as it was."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.addons = self.state / "AddOns"
+        self.addons.mkdir()
+        self.build = self.state / "build"
+        self.build.mkdir()
+        self.folders = [("LegacyForever", self.build)]
+
+    def test_a_link_is_put_back_at_the_very_target_it_had(self):
+        store = self.state / "store/LegacyForever"
+        store.mkdir(parents=True)
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to("../store/LegacyForever")
+        records = fc.link_build(self.folders, self.addons)
+        self.assertEqual(slot.readlink(), self.build)
+        self.assertTrue(fc.link_record_path().exists())
+        fc.restore_links(records)
+        self.assertEqual(os.readlink(slot), "../store/LegacyForever")
+        self.assertFalse(fc.link_record_path().exists())
+
+    def test_a_store_install_is_moved_aside_and_moved_back(self):
+        slot = self.addons / "LegacyForever"
+        slot.mkdir()
+        (slot / "LegacyForever.toc").write_text("## Version: 1.0.0\n")
+        records = fc.link_build(self.folders, self.addons)
+        self.assertEqual(slot.readlink(), self.build)
+        self.assertTrue((self.addons / "LegacyForever.smoke-backup/LegacyForever.toc").exists())
+        fc.restore_links(records)
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue((slot / "LegacyForever.toc").exists())
+        self.assertFalse((self.addons / "LegacyForever.smoke-backup").exists())
+
+    def test_nothing_there_is_a_link_a_smoke_removes_again(self):
+        records = fc.link_build(self.folders, self.addons)
+        self.assertTrue((self.addons / "LegacyForever").is_symlink())
+        fc.restore_links(records)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.assertFalse((self.addons / "LegacyForever").is_symlink())
+
+    def test_restoring_twice_changes_nothing_and_a_foreign_slot_is_left_alone(self):
+        records = fc.link_build(self.folders, self.addons)
+        fc.restore_links(records)
+        fc.restore_links(records)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to(self.build)
+        other = [{"slot": str(slot), "was": {"link": "/somewhere/else"}}]
+        slot.unlink()
+        slot.mkdir()  # something else took the slot after the smoke died
+        with contextlib.redirect_stderr(io.StringIO()) as warning:
+            fc.restore_links(other)
+        self.assertIn("left alone", warning.getvalue())
+        self.assertTrue(slot.is_dir())
+
+    def test_a_leftover_backup_refuses_before_anything_changes(self):
+        (self.addons / "LegacyForever.smoke-backup").mkdir()
+        with self.assertRaisesRegex(fc.ClientError, "left over from an earlier smoke session"):
+            fc.link_build(self.folders, self.addons)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+
+class ClientInUseTest(unittest.TestCase):
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+
+    def test_the_players_client_is_named(self):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[43]),
+            mock.patch.object(fc, "client_pid", return_value=43),
+        ):
+            self.assertIn("player's client is running", fc.client_in_use())
+
+    def test_another_sessions_lock_is_named(self):
+        holder = open(self.state / "lock", "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        with mock.patch.object(fc, "prefix_users", return_value=[]):
+            self.assertEqual(fc.client_in_use(), "another session holds the client")
+
+    def test_a_free_client_is_none(self):
+        with mock.patch.object(fc, "prefix_users", return_value=[]):
+            self.assertIsNone(fc.client_in_use())
+
+
+class SmokeTest(unittest.TestCase):
+    """The release smoke: build, selftest, errors per folder, one commit status, links put back."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.client = self.state / "client"
+        self.addons = self.client / "Interface/AddOns"
+        self.addons.mkdir(parents=True)
+        self.enterContext(mock.patch.object(fc, "CLIENT", self.client))
+        self.build = self.state / "build"
+        self.build.mkdir()
+        self.workspace = self.state / "workspace"
+        (self.workspace / "legacy-forever").mkdir(parents=True)
+        self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
+        self.posted = mock.Mock()
+        self.up = mock.Mock(side_effect=self.start_session)
+
+    def start_session(self, options, after_ready=None):
+        state = {"started": 1.0, "ready": 2.0, "display": ":1"}
+        return after_ready(state) if after_ready else 0
+
+    def report(self, *counts):
+        """`errors --addon` answering with one live group per count, as forever_errors.py --json does."""
+        answers = [
+            mock.Mock(returncode=1 if count else 0, stdout=json.dumps([{"signature": "x"}] * count), stderr="")
+            for count in counts
+        ]
+        return mock.patch.object(fc, "errors", side_effect=answers)
+
+    def smoke(self, argv=None):
+        options = {"repo": "legacy-forever", "ref": "main", "timeout": 600}
+        options.update(argv or {})
+        return fc.smoke(argparse.Namespace(**options))
+
+    def run_smoke(self, answers=(0,), busy=None, later=None, up=None):
+        with (
+            mock.patch.object(fc, "git", return_value="0123456789abcdef0123456789abcdef01234567"),
+            mock.patch.object(fc, "client_in_use", side_effect=[busy, later, None, None]),
+            mock.patch.object(fc, "build_dev", return_value=self.build) as build,
+            mock.patch.object(fc, "package_name", return_value="LegacyForever"),
+            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
+            mock.patch.object(fc, "up", up or self.up),
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "post_status", self.posted),
+            mock.patch.object(fc, "stop_handlers", return_value={}),
+            mock.patch.object(fc, "restore_handlers"),
+            self.report(*answers),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            code = self.smoke()
+        return code, out.getvalue(), build
+
+    def test_a_clean_commit_posts_success_and_exits_zero(self):
+        code, printed, _build = self.run_smoke()
+        self.assertEqual(code, 0)
+        self.posted.assert_called_once_with(
+            "legacy-forever",
+            "0123456789abcdef0123456789abcdef01234567",
+            True,
+            "clean: no Lua errors in 1 addon folder",
+        )
+        self.assertIn("headless-smoke posted", printed)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_errors_post_failure_with_the_count(self):
+        code, _printed, _build = self.run_smoke(answers=(3,))
+        self.assertEqual(code, 1)
+        self.posted.assert_called_once()
+        self.assertFalse(self.posted.call_args.args[2])
+        self.assertEqual(self.posted.call_args.args[3], "3 Lua errors: 3 LegacyForever")
+
+    def test_a_client_in_use_posts_nothing_and_exits_three(self):
+        code, printed, build = self.run_smoke(busy="the player's client is running (Wow.exe, pid 43)")
+        self.assertEqual(code, 3)
+        self.posted.assert_not_called()
+        build.assert_not_called()
+        self.assertIn("client in use", printed)
+
+    def test_the_session_stops_at_once_when_wine_fills_with_the_players_client(self):
+        def start(_options, after_ready=None):
+            raise fc.ClientError("the Wine prefix is in use")
+
+        code, _printed, _build = self.run_smoke(up=start, later="the player's client is running")
+        self.assertEqual(code, 3)
+        self.posted.assert_not_called()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_session_that_cannot_start_posts_failure(self):
+        def start(_options, after_ready=None):
+            raise fc.ClientError("the world did not load within 600 s")
+
+        code, _printed, _build = self.run_smoke(up=start)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.posted.call_args.args[2], False)
+        self.assertIn("no result: the world did not load", self.posted.call_args.args[3])
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_client_in_use_that_clears_during_the_build_still_posts(self):
+        code, _printed, _build = self.run_smoke(busy=None)
+        self.assertEqual(code, 0)
+        self.posted.assert_called_once()
+
+    def test_a_sigterm_restores_the_links_and_posts_nothing(self):
+        def stop(_options, after_ready=None):
+            raise KeyboardInterrupt
+
+        code, _printed, _build = self.run_smoke(up=stop)
+        self.assertEqual(code, 1)
+        self.posted.assert_not_called()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_session_up_returns_from_without_a_result_posts_nothing(self):
+        # `up` turns SIGTERM into a normal return after its own teardown, so an empty result is a stopped session.
+        code, _printed, _build = self.run_smoke(up=lambda _options, after_ready=None: 0)
+        self.assertEqual(code, 1)
+        self.posted.assert_not_called()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_the_selftest_runs_before_the_errors_are_read(self):
+        calls = []
+
+        def start(_options, after_ready=None):
+            return after_ready({"started": 1.0, "ready": 2.0})
+
+        with (
+            mock.patch.object(fc, "git", return_value="a" * 40),
+            mock.patch.object(fc, "client_in_use", return_value=None),
+            mock.patch.object(fc, "build_dev", return_value=self.build),
+            mock.patch.object(fc, "package_name", return_value="LegacyForever"),
+            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
+            mock.patch.object(fc, "up", side_effect=start),
+            mock.patch.object(fc, "slash", side_effect=lambda _state, command: calls.append(command)),
+            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
+            mock.patch.object(fc, "post_status"),
+            mock.patch.object(fc, "stop_handlers", return_value={}),
+            mock.patch.object(fc, "restore_handlers"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(self.smoke(), 0)
+        self.assertEqual(calls, ["/forever selftest"])
+        read.assert_called_once_with(mock.ANY, "LegacyForever", as_json=True)
+
+    def test_a_smoke_rejects_a_repository_name_that_is_a_path(self):
+        with self.assertRaisesRegex(fc.ClientError, "repository name"):
+            self.smoke({"repo": "../etc"})
+
+    def test_a_missing_checkout_says_where_it_looked(self):
+        with self.assertRaisesRegex(fc.ClientError, "no checkout of other-repo"):
+            self.smoke({"repo": "other-repo"})
+
+    def test_an_errors_read_that_prints_no_json_fails_the_smoke(self):
+        with (
+            mock.patch.object(fc, "git", return_value="a" * 40),
+            mock.patch.object(fc, "client_in_use", return_value=None),
+            mock.patch.object(fc, "build_dev", return_value=self.build),
+            mock.patch.object(fc, "package_name", return_value="LegacyForever"),
+            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
+            mock.patch.object(fc, "up", side_effect=self.start_session),
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
+            mock.patch.object(fc, "post_status") as posted,
+            mock.patch.object(fc, "stop_handlers", return_value={}),
+            mock.patch.object(fc, "restore_handlers"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = self.smoke()
+        self.assertEqual(code, 1)
+        self.assertIn("printed no JSON", posted.call_args.args[3])
+
+    def test_a_description_stays_under_the_status_limit(self):
+        counts = {f"Addon{index}": 9 for index in range(20)}
+        description = fc.smoke_description(counts)
+        self.assertLessEqual(len(description), 140)
+        self.assertTrue(description.startswith("180 Lua errors"))
+
+    def test_the_status_is_posted_on_the_exact_commit(self):
+        with mock.patch.object(
+            fc.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="{}", stderr="")
+        ) as run:
+            fc.post_status("legacy-forever", "a" * 40, False, "2 Lua errors: 2 LegacyForever")
+        self.assertEqual(run.call_args.args[0][:2], ["gh", "api"])
+        self.assertEqual(run.call_args.args[0][2], f"repos/cjber/legacy-forever/statuses/{'a' * 40}")
+        for value in (
+            "state=failure",
+            "context=headless-smoke",
+            "description=2 Lua errors: 2 LegacyForever",
+        ):
+            self.assertIn(value, run.call_args.args[0])
+
+    def test_a_status_that_cannot_be_posted_is_an_error(self):
+        failed = mock.Mock(returncode=1, stdout="", stderr="gh: Bad credentials (HTTP 401)")
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=failed),
+            self.assertRaisesRegex(fc.ClientError, "could not post headless-smoke.*Bad credentials"),
+        ):
+            fc.post_status("legacy-forever", "a" * 40, True, "clean")
 
 
 if __name__ == "__main__":
