@@ -1420,6 +1420,20 @@ apply = function()
 	ApplyNativeModules(active)
 end
 
+-- The client's own ObjectiveTrackerManager adds the game's quest modules from its own ContinueAfterAllEvents pass on
+-- the same two events this file waits for, so this file's first pass can run before the tracker holds a module to
+-- take. A module joining the tracker changes its size, which is the signal the host already reflows the column from,
+-- so take them from that same signal while the list is active and this file is ready. Each module is checked against
+-- the tracker on every pass and the take defers in combat, so a pass that finds nothing costs nothing and a module
+-- that joined later is still taken.
+if type(host.OnNativeSizeChanged) == "function" then
+	host.OnNativeSizeChanged(function()
+		if ready and TrackerQuests.Enabled() and not ownedByOther then
+			ApplyNativeModules(true)
+		end
+	end)
+end
+
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true
 	RegisterSettings()

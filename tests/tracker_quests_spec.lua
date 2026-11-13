@@ -87,6 +87,8 @@ local function continueAfterAllEvents(fn)
 end
 local combat = false
 local addons = {}
+-- The host's native-size signal, which UI/TrackerHost.lua runs from its ObjectiveTrackerFrame OnSizeChanged hook.
+local sizeCallbacks = {}
 local ns = {
 	L = setmetatable({}, {
 		__index = function(_, key)
@@ -96,6 +98,9 @@ local ns = {
 	TrackerHost = {
 		IsAttached = function()
 			return true
+		end,
+		OnNativeSizeChanged = function(callback)
+			sizeCallbacks[#sizeCallbacks + 1] = callback
 		end,
 	},
 	TrackerSection = {
@@ -167,6 +172,15 @@ check(tracker:HasModule(quests) == false, "the deferred pass takes the game's mo
 check(quests.available == 0 and quests.shown == false, "and hides it")
 check(tracker:HasModule(campaign) == false, "and the campaign module with it")
 
+-- The client's own ObjectiveTrackerManager adds its modules at PLAYER_ENTERING_WORLD, which can come after the list's
+-- first pass. A later pass checks the tracker again and takes a module it finds there, so no empty header survives that
+-- ordering.
+tracker:AddModule(quests)
+check(tracker:HasModule(quests) == true, "the client's manager can add a module back after the list's first pass")
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(tracker:HasModule(quests) == false, "the next pass takes it out again")
+check(quests.shown == false, "and the client's layout hides it")
+
 -- Another tracker owning the quest list gives the game's modules back, the same as turning the list off.
 addons["!KalielsTracker"] = true
 quests.dirty = nil
@@ -174,5 +188,33 @@ section:OnEvent("PLAYER_ENTERING_WORLD")
 check(quests.dirty == true, "another tracker owning the list gives the game's quest module back")
 check(tracker:HasModule(quests) == true, "and it is in the tracker again")
 addons["!KalielsTracker"] = nil
+
+-- The client's own ObjectiveTrackerManager adds its modules from its own ContinueAfterAllEvents pass on the same two
+-- events this file waits for, so the list's first pass can find an empty tracker and take nothing. A module joining
+-- later changes the tracker's size, the signal the host already watches, and the take runs again from it; without
+-- that, the game's full quest list stays above the Forever one.
+tracker.modules = {}
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(TrackerQuests.Enabled() and #tracker.modules == 0, "the list is on and ready before the tracker holds a module")
+tracker:AddModule(campaign)
+tracker:AddModule(quests)
+for _, callback in ipairs(sizeCallbacks) do
+	callback()
+end
+check(tracker:HasModule(quests) == false, "a quest module that joins after the first pass is taken on the size change")
+check(tracker:HasModule(campaign) == false, "and the campaign module with it")
+check(quests.available == 0 and quests.shown == false, "the joined module is laid out in no room and hidden")
+check(campaign.available == 0 and campaign.shown == false, "and so is the campaign module")
+
+-- With the list off the same signal leaves the game's modules alone; turning it on takes what the tracker holds.
+TrackerQuests.SetEnabled(false)
+tracker.modules = {}
+tracker:AddModule(quests)
+for _, callback in ipairs(sizeCallbacks) do
+	callback()
+end
+check(tracker:HasModule(quests) == true, "a size change leaves the game's module alone while the list is off")
+TrackerQuests.SetEnabled(true)
+check(tracker:HasModule(quests) == false, "turning the list on takes it again")
 
 print("tracker_quests_spec: " .. checks .. " checks passed")

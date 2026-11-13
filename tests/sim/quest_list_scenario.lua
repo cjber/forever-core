@@ -750,3 +750,169 @@ scenario("the Forever quest list scrolls one block and freezes in combat", funct
 	sim:expectNoErrors(ADDON)
 	sim:expectNoGamepadTaint(ADDON)
 end)
+
+-- The client's own ObjectiveTrackerManager adds its modules from its own ContinueAfterAllEvents pass on the same two
+-- events this file waits for, so the list's first pass can run over a tracker that holds nothing. When that Init adds
+-- the game's Quests and Campaign modules later, the tracker changes size, and the list must take them from that
+-- signal: otherwise the native quest list stays above it and, in the live client, leaves the Forever section no room
+-- and hides it, so no later pass of its own ever runs. The sim's tracker keeps the height it was given when its
+-- modules change, so the scenario models the resize the client's own managed frame makes.
+scenario("the Forever quest list takes native modules that join after its first pass", function(sim)
+	local Enum = sim.G.Enum
+	local NORMAL = Enum.QuestClassification.Normal
+	local entries, byID = {}, {}
+	local function add(entry)
+		entries[#entries + 1] = entry
+		if entry.questID then
+			byID[entry.questID] = entry
+		end
+	end
+	local function header(title)
+		return {
+			title = title,
+			questLogIndex = #entries + 1,
+			questID = 0,
+			isHeader = true,
+			isOnMap = true,
+			hasLocalPOI = false,
+			level = 0,
+			questClassification = NORMAL,
+		}
+	end
+	local function quest(questID)
+		return {
+			title = "Joined Quest " .. questID,
+			questLogIndex = #entries + 1,
+			questID = questID,
+			isHeader = false,
+			isOnMap = true,
+			hasLocalPOI = false,
+			level = 10,
+			questClassification = NORMAL,
+		}
+	end
+	add(header("Durotar"))
+	local watches = {}
+	for questID = 301, 302 do
+		add(quest(questID))
+		watches[#watches + 1] = questID
+	end
+
+	sim.impl["C_QuestLog.GetNumQuestLogEntries"] = function()
+		return #entries, #watches
+	end
+	sim.impl["C_QuestLog.GetInfo"] = function(index)
+		return entries[index]
+	end
+	sim.impl["C_QuestLog.GetLogIndexForQuestID"] = function(questID)
+		local entry = byID[questID]
+		return entry and entry.questLogIndex
+	end
+	sim.impl["C_QuestLog.GetQuestIDForLogIndex"] = function(index)
+		for _, entry in ipairs(entries) do
+			if entry.questLogIndex == index then
+				return entry.questID
+			end
+		end
+	end
+	sim.impl["C_QuestLog.GetNumQuestWatches"] = function()
+		return #watches
+	end
+	sim.impl["C_QuestLog.GetQuestIDForQuestWatchIndex"] = function(index)
+		return watches[index]
+	end
+	sim.impl["C_QuestLog.IsComplete"] = function()
+		return false
+	end
+	sim.impl["C_QuestLog.ReadyForTurnIn"] = function()
+		return false
+	end
+	sim.impl["C_QuestLog.IsFailed"] = function()
+		return false
+	end
+	sim.impl["C_QuestLog.GetDistanceSqToQuest"] = function(questID)
+		return questID * 10
+	end
+	sim.impl["C_QuestLog.GetTitleForQuestID"] = function(questID)
+		local entry = byID[questID]
+		return entry and entry.title
+	end
+	sim.impl["C_QuestLog.GetQuestDifficultyLevel"] = function()
+		return 10
+	end
+	sim.impl["C_QuestLog.IsEliteQuest"] = function()
+		return false
+	end
+	sim.impl["C_QuestLog.GetQuestTagInfo"] = function()
+		return nil
+	end
+	sim.impl["C_QuestLog.GetNextWaypointText"] = function()
+		return nil
+	end
+	sim.impl["C_QuestLog.GetQuestObjectives"] = function()
+		return {}
+	end
+	sim.impl["C_QuestInfoSystem.GetQuestClassification"] = function()
+		return NORMAL
+	end
+	sim.impl["GetNumQuestLeaderBoards"] = function()
+		return 0
+	end
+	sim.impl["C_SuperTrack.GetSuperTrackedQuestID"] = function()
+		return 0
+	end
+	sim.impl["C_SuperTrack.SetSuperTrackedQuestID"] = function() end
+	sim.G.GetQuestProgressBarPercent = function()
+		return 50
+	end
+	sim.G.GetQuestLogSpecialItemInfo = function()
+		return nil
+	end
+	sim.G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", 0, -100)
+	sim.G.ObjectiveTrackerFrame:SetHeight(400)
+
+	-- The manager's own pass adds no module at login, so the list's first pass runs over an empty tracker, as it does
+	-- when this file's ContinueAfterAllEvents callback wins the race against ObjectiveTrackerManager:Init.
+	local manager = assert(sim.G.ObjectiveTrackerManager, "the sim models the client's ObjectiveTrackerManager")
+	manager.canAddModules = false
+	sim:login({ savedVariables = { ForeverCoreDB = { questList = true } } })
+	sim:advance(0.5)
+
+	local tracker = sim.G.ObjectiveTrackerFrame
+	local section = assert(sim.G.ForeverCoreQuestTracker, "the Forever quest section exists")
+	local function Blocks()
+		local out = {}
+		local block = section.firstBlock
+		while block do
+			out[#out + 1] = block
+			block = block.nextBlock
+		end
+		return out
+	end
+	assert(#tracker.modules == 0, "the client's tracker holds no module when the list's first pass runs")
+	assert(section:IsShown() and section.Header:IsVisible(), "the list draws over the empty tracker")
+	assert(#Blocks() == 3, "the list draws its zone and both quests over the empty tracker")
+	assert(sim.G.QuestObjectiveTracker.Header:IsVisible() == false, "the game's own Quests header is not drawn")
+
+	-- Init then adds its modules, the game's Quests and Campaign among them, and the tracker grows by their room.
+	local height = tracker:GetHeight()
+	local questModule, campaignModule = sim.G.QuestObjectiveTracker, sim.G.CampaignQuestObjectiveTracker
+	manager.canAddModules = true
+	manager:Init()
+	tracker:SetHeight(height + questModule:GetContentsHeight() + campaignModule:GetContentsHeight())
+	sim:advance(0.2)
+
+	assert(
+		tracker:HasModule(questModule) == false,
+		"the game's quest module that joins after the first pass is taken on the size change"
+	)
+	assert(tracker:HasModule(campaignModule) == false, "and the game's campaign module with it")
+	assert(questModule.Header:IsVisible() == false, "the game's own Quests header is not left above the list")
+	assert(section:IsShown() and section.Header:IsVisible(), "the Forever list draws after the modules join")
+	assert(#Blocks() == 3, "and keeps its zone and both quests")
+
+	sim:setGamepad(true)
+	sim:gamepadNavigate()
+	sim:expectNoErrors(ADDON)
+	sim:expectNoGamepadTaint(ADDON)
+end)
