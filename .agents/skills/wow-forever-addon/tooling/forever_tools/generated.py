@@ -13,7 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
@@ -108,7 +108,9 @@ def same_tree(left: Path, right: Path) -> bool:
 
 
 @contextmanager
-def scratch_tree(root: Path, shared: Path, cache: str, prefix: str, temporary_root: Path | None) -> Iterator[Path]:
+def scratch_tree(
+    root: Path, shared: Path, cache: str, prefix: str, temporary_root: Path | None
+) -> Generator[Path, None, None]:
     """A disposable copy of the tracked tree, seeded with an independent copy of the shared input cache."""
     with tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_root) as temporary:
         scratch = Path(temporary)
