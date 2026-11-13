@@ -124,6 +124,7 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
             mock.patch.object(fc, "wait_for_world") as wait,
             mock.patch.object(fc, "client_pid", return_value=None) as client_pid,
+            mock.patch.object(fc, "game_focused", return_value=True),
             mock.patch.object(fc, "press_play") as press_play,
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc, "teardown"),
@@ -460,6 +461,48 @@ class ForeverClientTest(unittest.TestCase):
             self.assertRaisesRegex(fc.ClientError, "expected one visible Play target"),
         ):
             fc.press_play(state)
+        x.assert_not_called()
+
+    def test_character_select_nudge_waits_while_the_launcher_has_focus(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "client_pid", return_value=456),
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="Battle.net\n")),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.at_character_select(state, False)
+        x.assert_not_called()
+
+    def test_character_select_nudge_enters_the_world_when_the_game_has_focus(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "client_pid", return_value=456),
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="World of Warcraft\n")),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.at_character_select(state, False)
+        self.assertEqual(x.call_args_list, [mock.call(state, "key", "Return")])
+
+    def test_character_select_nudge_presses_play_with_the_automatic_launcher(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "press_play") as press_play,
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.at_character_select(state, False)
+        press_play.assert_called_once_with(state)
+        x.assert_not_called()
+
+    def test_character_select_nudge_leaves_the_manual_launcher_alone(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "press_play") as press_play,
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.at_character_select(state, True)
+        press_play.assert_not_called()
         x.assert_not_called()
 
     def test_shot_does_not_return_a_stale_or_incomplete_png(self):
