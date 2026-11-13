@@ -683,7 +683,7 @@ legacySection.legacySettings = { scale = 0.8, locked = true }
 coreHost.Attach(legacySection)
 legacySection.legacySettings = nil
 env.ForeverCoreDB = {}
-coreNs.MigrateTrackerSettings()
+coreNs.Start()
 equal(env.ForeverCoreDB.trackerHost.scale, 0.8, "vendored first: the old scale reaches ForeverCoreDB")
 check(env.ForeverCoreDB.trackerHost.locked == true, "and the old lock")
 check(env.ForeverCoreDB.trackerHost.migrated == true, "once")

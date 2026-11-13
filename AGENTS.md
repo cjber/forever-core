@@ -49,8 +49,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 
 ## Layout
 
-- `Core.lua`: ForeverCore's own install of the host's settings (`ns.TrackerHostSettings`), the one `ADDON_LOADED`
-  handler that makes `ForeverCoreDB`, and the hooks that attach core's journal and log and run the tracker migration.
+- `Core.lua`: ForeverCore's own install of the host's settings (`ns.TrackerHostSettings`), the one authoritative
+  `ns.store`/`ns.Store()` seam with the explicit `ns.Start()`/`ns.Login()` lifecycle, the transitional
+  `ADDON_LOADED` handler for the unwrapped standalone, and the hooks that attach core's journal and log and run the
+  tracker migration.
 - `Expose.lua`: the public `ForeverCore` table (`API = 1`), its modules, `Register` and `/fcore`; the last file the TOC
   loads, because it publishes what the modules built.
 - `Core/SafeCall.lua`: one global error handler for every registered addon, attributing by `AddOns/<name>/`; the
@@ -60,6 +62,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/OpenMap.lua` and `Core/OpenSettings.lua`: core's shared openers for the client's restricted world map and
   settings panel functions, each run through `CreateSecureDelegate`, never in combat. They are runtime files, published
   as `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel`, not vendored into any consumer.
+- `Core/Loader.lua`: the schema 1 registry every embedded ForeverCore copy shares (`ForeverCoreLoader`). Copies
+  register a sealed build with no side effects, one election runs only the chosen copy, and a legacy 1.8 table is
+  adopted unchanged. `docs/handoff/embedded-core-loader.md` is the boot, staging and storage contract.
 - `UI/Art.lua`: the icon helper the report window draws its portrait with.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
 - `UI/ForeverFamily.lua`: the Forever addons settings page and link windows, in core's L.

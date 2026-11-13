@@ -166,10 +166,65 @@
 ---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 
+---@class ForeverCoreLoaderNamespace
+---@field folder string
+---@field root string
+---@field copy ForeverCoreLoaderCopy
+---@field mode "standalone"|"elected"
+---@field Start fun()
+---@field Login fun()
+---@field ForeverCore ForeverCoreAPI?
+
+---@class ForeverCoreLoaderCopy
+---@field folder string
+---@field build number
+---@field digest? string
+---@field root string
+---@field sealed boolean
+---@field rejected? string
+---@field Define fun(self: ForeverCoreLoaderCopy, chunk: fun(identity: string, namespace: ForeverCoreLoaderNamespace)): ForeverCoreLoaderCopy|false, string?
+---@field Seal fun(self: ForeverCoreLoaderCopy): boolean, string?
+
+---@class ForeverCoreLoaderSelection
+---@field mode "elected"|"standalone"|"legacy"
+---@field build? number
+---@field folder? string
+---@field root? string
+---@field core ForeverCoreAPI?
+
+---@class ForeverCoreLoaderOffer
+---@field folder string
+---@field globalName string
+
+---@class ForeverCoreLoader
+---@field schema integer
+---@field Begin fun(folder: string, build: number, digest?: string): ForeverCoreLoaderCopy
+---@field Activate fun(): ForeverCoreAPI?
+---@field OnReady fun(callback: fun(core: ForeverCoreAPI?, selected: ForeverCoreLoaderSelection?)): boolean?
+---@field OfferStore fun(folder: string, globalName: string): boolean, string?
+---@field Offers fun(): ForeverCoreLoaderOffer[]
+---@field Selected fun(): ForeverCoreLoaderSelection?
+---@field Namespace fun(): ForeverCoreLoaderNamespace?
+---@field Facade fun(): ForeverCoreAPI?
+---@field Error fun(): string?
+---@field CallbackError fun(): string?
+---@field LoginError fun(): string?
+---@field Rejections fun(): { folder: string, reason: string }[]
+
+---@type ForeverCoreLoader
+ForeverCoreLoader = nil
+
 ---@type ForeverCoreAPI
 ForeverCore = nil
 
 ---@class ForeverTrackerNamespace
+---@field copy? ForeverCoreLoaderCopy
+---@field mode? "standalone"|"elected"
+---@field store? table
+---@field Store fun(): table?
+---@field Start fun()
+---@field Login fun()
+---@field ForeverCore? ForeverCoreAPI
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule

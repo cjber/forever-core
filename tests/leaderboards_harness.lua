@@ -429,8 +429,19 @@ function harness.PhraseLocale()
 	})
 end
 
-function harness.Load(path, dataPath)
-	local ns = { L = harness.PhraseLocale() }
+function harness.Load(path, dataPath, store)
+	local ns = { L = harness.PhraseLocale(), store = store }
+	if store ~= nil then
+		-- Elected runtime: the namespace store is the only store, and the global is not consulted.
+		ns.Store = function()
+			return ns.store
+		end
+	else
+		-- Standalone fixture: the configured saved table is the store.
+		ns.Store = function()
+			return harness.env.ForeverCoreDB
+		end
+	end
 	setfenv(assert(loadfile(dataPath or DATA_PATH)), harness.env)("Test", ns)
 	setfenv(assert(loadfile(path or PATH)), harness.env)("Test", ns)
 	return ns.Leaderboards, ns

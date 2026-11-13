@@ -11,6 +11,7 @@
 ## X-Wago-ID: RNL4RQNo
 ## SavedVariables: ForeverCoreDB
 
+Core\Loader.lua
 Core.lua
 Locales\enUS.lua
 Locales\deDE.lua

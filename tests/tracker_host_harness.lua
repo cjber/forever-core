@@ -232,6 +232,10 @@ function harness.new(options)
 	function ns.TrackerHostSettings()
 		return hostSettings
 	end
+	-- Isolated fixture for Core.lua's real store seam. A spec that cares about migration supplies options.store.
+	function ns.Store()
+		return options.store
+	end
 	local forbidden = setmetatable({}, {
 		__index = function(_, key)
 			error("native manager accessed: " .. key)

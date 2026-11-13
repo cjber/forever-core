@@ -217,6 +217,8 @@ files["Locales/*.lua"] = { max_line_length = false }
 -- ForeverCore: the shared files publish these globals, and Core.lua's saved table.
 globals[#globals + 1] = "ForeverCore"
 globals[#globals + 1] = "ForeverCoreDB"
+-- Core/Loader.lua: the schema 1 registry every embedded ForeverCore copy shares.
+globals[#globals + 1] = "ForeverCoreLoader"
 -- UI/Leaderboards.lua: the window's slash commands.
 globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS1"
 globals[#globals + 1] = "SLASH_FOREVERLEADERBOARDS2"

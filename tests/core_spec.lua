@@ -28,6 +28,7 @@ for _, path in ipairs(files) do
 	end
 end
 for _, path in ipairs({
+	"Core/Loader.lua",
 	"Core.lua",
 	"Core/SafeCall.lua",
 	"Core/Log.lua",
@@ -155,10 +156,13 @@ check(
 	"a fresh install docks the column with no backdrop"
 )
 check(ns.TrackerHostSettings() ~= settings, "a table with no saved variables is never kept")
+check(ns.Store() == nil, "a pre-saved-variables read caches no placeholder store")
 
--- With saved variables, one table is kept and repaired.
+-- With saved variables, Start adopts that table and repairs it in place.
 env.ForeverCoreDB = { trackerHost = { attached = false, scale = 0 / 0, locked = "yes" } }
+ns.Start()
 local saved = ns.TrackerHostSettings()
+check(ns.Store() == env.ForeverCoreDB, "Start adopts the saved table as the one store")
 check(saved.attached == false, "a saved detach survives")
 check(saved.scale == 1, "a broken scale falls back to 1")
 check(saved.locked == false, "a broken Lock switch falls back to off")

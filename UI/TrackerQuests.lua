@@ -20,19 +20,21 @@ local apply
 
 ---@return boolean
 local function Enabled()
-	return type(ForeverCoreDB) == "table" and ForeverCoreDB.questList == true
+	local db = ns.Store()
+	return type(db) == "table" and db.questList == true
 end
 
 ---@param value boolean
 local function SetEnabled(value)
 	value = not not value
-	if type(ForeverCoreDB) ~= "table" then
-		ForeverCoreDB = {}
-	end
-	if ForeverCoreDB.questList == value then
+	local db = ns.Store()
+	if type(db) ~= "table" then
 		return
 	end
-	ForeverCoreDB.questList = value
+	if db.questList == value then
+		return
+	end
+	db.questList = value
 	if apply then
 		apply()
 	end

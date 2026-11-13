@@ -114,17 +114,25 @@ function core.Register(addonName, spec)
 	return context
 end
 
--- Core's own errors and lines are recorded under ForeverCore. Core.lua's one ADDON_LOADED handler calls this once the
--- saved table exists, so a first install attaches exactly like a later one.
+-- Core's own errors and lines are recorded under ForeverCore. Core.lua's Start (converted copies) or its one
+-- ADDON_LOADED handler (transitional unwrapped standalone) calls this once the store exists, so a first install
+-- attaches exactly like a later one.
 local self = core.Register("ForeverCore")
 ns.AttachCoreDb = function()
-	if type(ForeverCoreDB) ~= "table" then
+	local store = ns.Store()
+	if type(store) ~= "table" then
 		return
 	end
-	self.Attach(ForeverCoreDB)
+	self.Attach(store)
 end
 
-ForeverCore = core
+-- A converted copy hands its facade to the loader on the namespace only; Boot publishes the global once. The
+-- unwrapped standalone path keeps its old global publication until packaging conversion, labelled transitional.
+if ns.copy ~= nil then
+	ns.ForeverCore = core
+else
+	ForeverCore = core
+end
 
 if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE1 = "/fcore"

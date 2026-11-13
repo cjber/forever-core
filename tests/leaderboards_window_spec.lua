@@ -310,6 +310,36 @@ do
 	equal(fresh.reach, "met", "an unknown saved value opens on the widest reach")
 end
 
+-- Elected mode: the namespace store is the only store. A poisoned global must never be read or written, even when the
+-- player changes the saved reach.
+do
+	Client()
+	local store = { leaderboards = { reach = "group" } }
+	harness.env.ForeverCoreDB = setmetatable({}, {
+		__index = function()
+			error("read global ForeverCoreDB")
+		end,
+		__newindex = function()
+			error("wrote global ForeverCoreDB")
+		end,
+	})
+	local manager = { includeRelayed = false }
+	local elected, ns = Load(nil, nil, store)
+	ns.PeerStats = {
+		Manager = function()
+			return manager
+		end,
+	}
+	elected:Register("one", spec("one", { row("Me", 1, nil, true, "HUNTER") }, {}))
+	elected:Open("one")
+	equal(elected.reach, "group", "elected mode restores the namespace store reach")
+	local root = harness.MenuRoot()
+	elected.window.reachDropdown.menu(elected.window.reachDropdown, root)
+	root.radios[2].onClick()
+	equal(store.leaderboards.reach, "met", "elected mode saves into the namespace store")
+	check(rawget(harness.env.ForeverCoreDB, "leaderboards") == nil, "elected mode writes no global store")
+end
+
 -- Each dropdown under the gamepad interface: a press steps to its next choice instead of opening a menu, which would
 -- taint the gamepad focus (#267).
 ---@param gamepad boolean

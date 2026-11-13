@@ -125,28 +125,28 @@ local function Strings()
 	return data.Strings()
 end
 
--- The widest reach is the one a player sees first; a saved choice is kept in ForeverCoreDB and restored when the
+-- The widest reach is the one a player sees first; a saved choice is kept in the runtime store and restored when the
 -- window is first built, after the saved variables have arrived.
 local DEFAULT_REACH = "met"
 local reachRestored = false
 
 ---@return ForeverLeaderboardsReach
 local function SavedReach()
-	local saved = type(ForeverCoreDB) == "table"
-		and type(ForeverCoreDB.leaderboards) == "table"
-		and ForeverCoreDB.leaderboards.reach
+	local store = ns.Store()
+	local saved = type(store) == "table" and type(store.leaderboards) == "table" and store.leaderboards.reach
 	return saved == "group" and "group" or DEFAULT_REACH
 end
 
 ---@param reach ForeverLeaderboardsReach
 local function SaveReach(reach)
-	if type(ForeverCoreDB) ~= "table" then
+	local store = ns.Store()
+	if type(store) ~= "table" then
 		return
 	end
-	local saved = ForeverCoreDB.leaderboards
+	local saved = store.leaderboards
 	if type(saved) ~= "table" then
 		saved = {}
-		ForeverCoreDB.leaderboards = saved
+		store.leaderboards = saved
 	end
 	saved.reach = reach
 end

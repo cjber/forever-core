@@ -38,11 +38,13 @@ end
 -- Saved variables are not there while the files load, so the copy waits for ForeverCore's ADDON_LOADED.
 local pendingLegacy
 
--- Copy the first legacy table offered into ForeverCoreDB.trackerHost, once. Each field is taken only when it has the
--- shape the host reads; the rest keep the fresh defaults. Later offers are ignored. True when it copied.
+-- Copy the first legacy table offered into the runtime store's trackerHost, once. Each field is taken only when it has
+-- the shape the host reads; the rest keep the fresh defaults. Later offers are ignored. True when it copied. The store
+-- comes from Core.lua's ns.Store(); in a converted elected copy that is the supplied table, never the global.
 ---@return boolean
 local function CopyLegacy()
-	if type(ForeverCoreDB) ~= "table" or pendingLegacy == nil then
+	local db = ns.Store()
+	if type(db) ~= "table" or pendingLegacy == nil then
 		return false
 	end
 	local legacy = pendingLegacy
@@ -111,7 +113,7 @@ if type(existing) == "table" then
 	if type(api.SetBackdropOpacity) ~= "function" then
 		function api.SetBackdropOpacity(_) end
 	end
-	-- The consumer drops its own tracker table once it attaches, so keep the first one offered for ForeverCoreDB,
+	-- The consumer drops its own tracker table once it attaches, so keep the first one offered for the runtime store,
 	-- the same as core's own host does: the settings are not lost while the older column is the one drawing.
 	local attach = api.Attach
 	function api.Attach(module, show)
@@ -1142,7 +1144,8 @@ local function Migrate()
 	end
 end
 
--- Core.lua's one ADDON_LOADED handler calls this after ForeverCoreDB exists, so a first install completes the copy.
+-- Core.lua's Start (converted copies) or its one ADDON_LOADED handler (transitional unwrapped standalone) calls this
+-- after the runtime store exists, so a first install completes the copy.
 ns.MigrateTrackerSettings = Migrate
 
 ---@param module ForeverTrackerModule
