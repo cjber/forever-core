@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-13
+
 ### For addon authors
 
 - **Step markers numbered 1 to 25, an empty ring and a ring with a diamond, for every Forever addon.**
