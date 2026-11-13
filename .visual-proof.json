@@ -1,34 +1,45 @@
 {
-  "input_digest": "8b2cdb6a2194d1268597f646ddd216063abf3fefde343c002d53332bd7f9a6a6",
-  "runtime_sha256": "8b2cdb6a2194d1268597f646ddd216063abf3fefde343c002d53332bd7f9a6a6",
-  "candidate": "e790eb2bfadd868cdb68ce0383fd75b0c7d245371ac61e27021b328c90267f74",
+  "input_digest": "9bb01ebcd7c1e187b72ab8d1fc9e6ac2f6cdee0bbd52453c91358c5abc19b3a9",
+  "runtime_sha256": "9bb01ebcd7c1e187b72ab8d1fc9e6ac2f6cdee0bbd52453c91358c5abc19b3a9",
+  "candidate": "873c0fced1521ab00aab9c3c4c17e5ea4532ca3037b4aa64370be01daffad8f7",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "8ec6f7f6d9cc9c9939d30bb143a3e3dfa5736980",
+  "source_commit": "3945412f9b2c13086db627685dec636fe98c9ece",
   "flows": [
     {
-      "name": "step markers",
+      "name": "quest list on",
       "steps": [
-        "../../../.cache/agent-scratch/wow-sweep/proofs/markers.lua"
+        "/home/cjber/.cache/agent-scratch/proof-e6a4/flows/look.lua"
       ],
       "result": "pass"
     },
     {
-      "name": "report",
+      "name": "quest list off",
       "steps": [
-        "/forever"
+        "/fcore quests"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list on again",
+      "steps": [
+        "/fcore quests"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/af122d278cbc5cc1f601539a554bf5ad/raw/82afa640715d67aedb8a2ef747051083bfe27f41/1-step-markers.png",
-      "sha256": "45aa0de5a00d532c2279b19f0fbe2676ca8285b451a284ef0a584dbff8c2b960"
+      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/1-quest-list-on.png",
+      "sha256": "af5a8380213cc1922f9d286c4c92a7fb77e580e3422a37344e8bc40925a7e09f"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/af122d278cbc5cc1f601539a554bf5ad/raw/82afa640715d67aedb8a2ef747051083bfe27f41/2-report.png",
-      "sha256": "adb22f530d1257f561e18ac79f85afa3054c6eb5e6f53abd2426206dad7977aa"
+      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/2-quest-list-off.png",
+      "sha256": "ec77b335424a6b39576da65f2a0ab14c8dfa96969a76852f2c221e5fbb7cf859"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/3-quest-list-on-again.png",
+      "sha256": "ebfbfac9a41e5ab0881621b0f5bc7d07e0eafe8d423888a0a21b9f7722c24e04"
     }
   ]
 }
