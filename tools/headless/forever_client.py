@@ -1036,6 +1036,11 @@ def smoke(args: argparse.Namespace) -> int:
 # --- the visual proof ------------------------------------------------------------------------------------------
 
 
+def lua_flow(action: str) -> bool:
+    """Whether a flow's action is a Lua file: an absolute path starts with "/" as a slash command does (#573)."""
+    return action.endswith(".lua")
+
+
 def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     """`--flow NAME=SLASH_OR_LUA_FILE` entries: a name for the proof and the in-game action that shows it."""
     flows = []
@@ -1044,15 +1049,18 @@ def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
         if not separator or not name.strip() or not action.strip():
             raise ClientError(f"--flow takes NAME=SLASH_OR_LUA_FILE, not {value!r}")
         action = action.strip()
-        if not action.startswith("/") and not Path(action).is_file():
-            raise ClientError(f"--flow {name.strip()}: no Lua file at {action}")
+        if lua_flow(action):
+            if not Path(action).is_file():
+                raise ClientError(f"--flow {name.strip()}: no Lua file at {action}")
+        elif not action.startswith("/"):
+            raise ClientError(f"--flow {name.strip()}: {action} is neither a slash command nor a .lua file")
         flows.append((name.strip(), action))
     return flows
 
 
 def run_flow(state: Mapping, action: str) -> None:
     """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke."""
-    if action.startswith("/"):
+    if not lua_flow(action):
         slash(state, action)
         # The client reads typed input on its own frames and reports nothing back while it runs, so the screenshot
         # waits this long for the command to run and its window to draw (#573). A Lua flow needs no wait: !!DevSmoke

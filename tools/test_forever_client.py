@@ -1457,7 +1457,8 @@ class ProofHelpersTest(unittest.TestCase):
             fc.parse_flows([f"update notice={lua}", "map=/lf"]),
             [("update notice", str(lua)), ("map", "/lf")],
         )
-        for bad in ("/lf", "= /lf", "map=", "map=missing.lua"):
+        self.assertEqual(fc.parse_flows([f"absolute={lua.resolve()}"]), [("absolute", str(lua.resolve()))])
+        for bad in ("/lf", "= /lf", "map=", "map=missing.lua", "map=lf", "map=/nowhere/missing.lua"):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
                 fc.parse_flows([bad])
 
@@ -1496,6 +1497,15 @@ class ProofHelpersTest(unittest.TestCase):
         reload.assert_called_once_with("state")
         tool.write_snippet.assert_called_once_with(Path("notice.lua"), addons=self.state / "client/Interface/AddOns")
         self.assertIn("DevSmokeDB.eval: ok, ran 1", out.getvalue())
+
+    def test_run_flow_runs_a_lua_file_given_by_its_absolute_path(self):
+        with (
+            mock.patch.object(fc, "slash") as slash,
+            mock.patch.object(fc, "devsmoke_eval", side_effect=RuntimeError("evaluated")),
+            self.assertRaisesRegex(RuntimeError, "evaluated"),
+        ):
+            fc.run_flow({}, "/home/me/notice.lua")
+        slash.assert_not_called()
 
     def test_run_flow_reports_a_failed_lua_snippet(self):
         tool = mock.Mock()
