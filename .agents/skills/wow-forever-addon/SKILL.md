@@ -128,9 +128,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 ### Docs
 
-- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI and
-  release badges; then Features, Install, Usage (slash commands), optional sections for how the
-  numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
+- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI, release
+  and CurseForge downloads badges (`img.shields.io/curseforge/dt/<X-Curse-Project-ID>`, linked to the
+  store page; ForeverCore itself has none, as every addon pulls it in); then Features, Install, Usage
+  (slash commands), optional sections for how the numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
   bullet led by a bold name, at most ~60 words; depth moves to `docs/`. `## Credits` is a short paragraph that
   thanks, by name and with a link, the data sources, the addons whose ideas a feature took (even when no code was
   copied, saying so), translators and the people who reported bugs or asked for features (GitHub handles and named
