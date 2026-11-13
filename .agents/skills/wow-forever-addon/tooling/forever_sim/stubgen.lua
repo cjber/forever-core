@@ -337,7 +337,8 @@ function M.build(sim)
 	end
 
 	-- The wiki's classes for a restricted function, overridden by observed client behaviour. A name with no applying
-	-- class keeps the pre-class combat-only rule.
+	-- class keeps the pre-class combat-only rule; an override applies even where the documentation carries neither
+	-- HasRestrictions nor IsProtectedFunction, since the live client refused the call.
 	local function restrictedNow(name)
 		local classes
 		if sim.restrictionClasses then
@@ -351,7 +352,8 @@ function M.build(sim)
 	local function stub(qualified, fdoc)
 		local nargs = #(fdoc.Arguments or {})
 		local protected = fdoc.IsProtectedFunction or protectedNames[qualified]
-		local restricted = fdoc.HasRestrictions
+		local overridden = (sim.restrictionOverrides or {})[qualified] ~= nil
+		local restricted = fdoc.HasRestrictions or overridden
 		local secretArgs = fdoc.SecretArguments
 		local returns = fdoc.Returns or {}
 		local f = function(...)

@@ -219,6 +219,105 @@ local function say(text)
 	end
 end
 
+-- A printed or returned value as Agent lines: its own newlines split it, and a piece still past the chat box's cut is
+-- broken into chunks, so no line an agent reads is ever cut by the client.
+local function pushLines(value, lines)
+	local text = tostring(value)
+	for piece in (text .. "\n"):gmatch("(.-)\n") do
+		piece = piece:gsub("\r$", "")
+		if #piece > 0 then
+			local at = 1
+			while at <= #piece do
+				lines[#lines + 1] = piece:sub(at, at + MAX_LINE - 1)
+				at = at + MAX_LINE
+			end
+		end
+	end
+end
+
+-- Every value a function returns, nils included, so each one can be printed.
+local function pack(...)
+	return { n = select("#", ...), ... }
+end
+
+-- The eval inbox: tools/devsmoke/eval.py writes a snippet as the generated !!DevSmokeInbox addon, whose Eval.lua
+-- defines DevSmokeEval. Running it here, under xpcall with print captured, keeps an agent's mistake out of BugGrabber
+-- and puts every line it prints or returns on the Agent tab and in DevSmokeDB.eval.
+local function runEval()
+	local chunk = DevSmokeEval
+	agentFrame()
+	local lines = {}
+	local original = _G.print
+	_G.print = function(...)
+		local parts = {}
+		for index = 1, select("#", ...) do
+			parts[#parts + 1] = tostring((select(index, ...)))
+		end
+		pushLines(table.concat(parts, "\t"), lines)
+	end
+	local returns
+	local message
+	local function capture(reason)
+		message = tostring(reason)
+		return reason
+	end
+	local ok = xpcall(function()
+		returns = pack(chunk())
+	end, capture)
+	_G.print = original
+	local err
+	if ok then
+		for index = 1, returns.n do
+			pushLines(returns[index], lines)
+		end
+	else
+		err = ("%s\n%s"):format(message or "error", debugstack())
+		pushLines(err, lines)
+	end
+	DevSmokeDB = DevSmokeDB or {}
+	DevSmokeDB.eval = { ran = time(), ok = ok, out = lines, err = err }
+	say(("Dev Smoke: eval %s, %d lines"):format(ok and "ok" or "failed", #lines))
+	for _, line in ipairs(lines) do
+		say(line)
+	end
+end
+
+-- The generated Inbox addon is load-on-demand, and the client reads its files only when it loads it: the first
+-- `/devsmoke eval` or login in a session loads the inbox, and DevSmokeEval keeps that chunk, so any snippet written
+-- later needs a /reload. A client without it (no eval yet) simply answers nothing, and the addon list is read first so
+-- a missing folder never makes the client complain about a load.
+local function addonKnown(name)
+	local addons = C_AddOns
+	if type(addons) ~= "table" or type(addons.GetNumAddOns) ~= "function" then
+		return false
+	end
+	for index = 1, addons.GetNumAddOns() do
+		if addons.GetAddOnInfo(index) == name then
+			return true
+		end
+	end
+	return false
+end
+
+local function loadInbox()
+	if DevSmokeEval ~= nil or not addonKnown("!!DevSmokeInbox") then
+		return
+	end
+	local addons = C_AddOns
+	if type(addons.LoadAddOn) == "function" then
+		pcall(addons.LoadAddOn, "!!DevSmokeInbox")
+	end
+end
+
+local function sayEval()
+	loadInbox()
+	if type(DevSmokeEval) ~= "function" then
+		say("Dev Smoke: no eval loaded; run tools/devsmoke/eval.py FILE, then /reload")
+		return
+	end
+	runEval()
+end
+
 local function selectChat(name)
 	local frame = name == "Agent" and agentFrame() or chatFrame(name)
 	if not frame then
@@ -464,9 +563,10 @@ local COMMANDS = {
 	thanks = sayThanks,
 	prof = sayProf,
 	close = sayClose,
+	eval = sayEval,
 }
 
-local USAGE = "Dev Smoke: /devsmoke, tab [off], versions, errors, thanks <addon> [player], prof <tab>, close"
+local USAGE = "Dev Smoke: /devsmoke, tab [off], versions, errors, eval, thanks <addon> [player], prof <tab>, close"
 
 SLASH_DEVSMOKE1 = "/devsmoke"
 SlashCmdList["DEVSMOKE"] = function(message)
@@ -484,21 +584,25 @@ SlashCmdList["DEVSMOKE"] = function(message)
 	say(USAGE)
 end
 
--- The Forever addons load after this one, so core's command only exists here once PLAYER_LOGIN has fired.
+-- The Forever addons load after this one, so core's command only exists here once PLAYER_LOGIN has fired. The eval
+-- runs after that hook and after the Agent tab is made, so a login with an inbox written by eval.py reports itself.
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function()
 	local original = SlashCmdList and SlashCmdList["FOREVERCORE"]
-	if type(original) ~= "function" then
-		return
-	end
-	SlashCmdList["FOREVERCORE"] = function(message, ...)
-		local command = type(message) == "string" and message:match("^%s*(%S+)") or nil
-		if command == "selftest" then
-			begin()
-			return
+	if type(original) == "function" then
+		SlashCmdList["FOREVERCORE"] = function(message, ...)
+			local command = type(message) == "string" and message:match("^%s*(%S+)") or nil
+			if command == "selftest" then
+				begin()
+				return
+			end
+			return original(message, ...)
 		end
-		return original(message, ...)
+	end
+	loadInbox()
+	if type(DevSmokeEval) == "function" then
+		runEval()
 	end
 end)
 

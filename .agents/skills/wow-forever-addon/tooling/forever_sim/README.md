@@ -15,7 +15,9 @@ in `stubs/` are our own stand-ins, written from what those addons do in public.
 ```sh
 python3 tools/forever_sim/fetch.py [--locale deDE]   # once; CI caches it
 python3 tools/forever_sim/fetch.py --refresh-restrictions   # after the wiki's classes change; commit restrictions.txt
-luajit tools/forever_sim/run.lua                     # every tests/sim/*_scenario.lua
+python3 tools/forever_sim/fetch.py --refresh-restrictions \
+    --probe ~/path/SavedVariables/ForeverProbe.lua          # also merge every block the live client recorded
+luajit tools/forever_sim/run.lua                     # every tests/sim/*_scenario.lua, then the exercise
 luajit tools/forever_sim/run.lua -v --only=tooltip   # one scenario, with the client's errors
 ```
 
@@ -37,7 +39,11 @@ end)
 The runner registers the repository's addon (its TOC), runs each scenario on a fresh client and fails it on an
 error in the scenario, on any client error the addon caused (raised in its code, or in Blizzard code its
 taint reached), and on any protected call refused because of a field the addon wrote. `allowErrors` and
-`allowGamepadTaint` options turn those checks off for a scenario that asserts on them itself.
+`allowGamepadTaint` options turn those checks off for a scenario that asserts on them itself. After the declared
+scenarios, and whether or not `tests/sim` holds any, the runner runs `sim:exercise()` for the repository's addon.
+An addon whose TOC lists ForeverCore in `## Dependencies` gets that checkout loaded for the exercise, from
+`$FOREVER_CORE` or the sibling `../forever-core`, so the addon's UI is really built and the exercise means
+something; the walk still covers only the repository's own widgets.
 
 ## Steps and checks
 
@@ -57,7 +63,8 @@ taint reached), and on any protected call refused because of a field the addon w
 | `sim:slashCommands(addon)` | the slash commands `addon` registered, as their first aliases, sorted |
 | `sim:slash("/cmd rest")` | a typed slash command as the chat box runs it: aliases match in any case, the handler gets the remainder as fresh input |
 | `sim:reload()` | a fresh client with the same options, addons and stubs, logged in with what `/reload` would have saved |
-| `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, Escape, and a target, soft-interact and binding-set change after each; then the same after a reload |
+| `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, Escape, and a target, soft-interact and binding-set change after each; the addon's own buttons are hovered, clicked and left after every command and every surface that opens; then the same after a reload |
+| `sim:exerciseWidgets(addons)` | every shown Button the named addons' own code created (menu rows and check boxes included): OnEnter, a left click, OnLeave, once each and in the current combat state, with frames a click opens walked in the same pass |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
@@ -67,18 +74,24 @@ taint reached), and on any protected call refused because of a field the addon w
 `items`, `spells`, `maps`, `waypoint`, `achievements`. `sim.impl["C_Namespace.Function"] = function(...) end`
 answers any API directly; the documented rules (below) still apply to what it returns.
 
-An addon repo exercises its own surfaces with one shared step, in `tests/sim/exercise_scenario.lua`:
-
-```lua
-scenario("every surface, in and out of combat and across a reload", function(sim) sim:exercise() end)
-```
-
+An addon repo needs no scenario file for the shared exercise: the runner runs it after the declared scenarios.
 `sim:exercise` logs in, runs each registered addon's slash commands twice (a toggle opens then closes) and the
 scenario's own `commands`, opens Professions with every side tab and a selected recipe, the trainer, merchant
 tabs, bags, character tabs, the objective tracker, the quest log and the world map, and fires a target change,
-a soft-interact change and a binding-set change after each. It does that with the gamepad interface off and then
-on, repeats the commands and map in combat, then reloads and runs both interfaces again. It fails on an error
-either client caused; pass `addons`, `commands`, `savedVariables` or `allowErrors` to narrow or widen it.
+a soft-interact change and a binding-set change after each. After every command and every surface that opens, it
+hovers, left-clicks and leaves every shown Button the addon's own code created (a check box and a menu row are
+Buttons too), once each and in the current combat state; a click that opens new frames is walked in the same
+pass. It does that with the gamepad interface off and then on, repeats the commands and map in combat, then
+reloads and runs both interfaces again. It fails on an error either client caused; pass `addons`, `commands`,
+`savedVariables` or `allowErrors` to narrow or widen it.
+
+An addon that needs its own options declares the exercise, and the runner uses that instead of its automatic one:
+
+```lua
+scenario("every surface with my own commands", function(sim)
+	sim:exercise{ commands = { "/myaddon reset" }, savedVariables = "tests/sim/fixtures/settings.lua" }
+end)
+```
 
 ## What it models
 
@@ -110,7 +123,10 @@ either client caused; pass `addons`, `commands`, `savedVariables` or `allowError
   `protected,hwevent` is `always,hwevent`), and the call is refused when any of them applies. Only `protected` is
   `always`: a tag the sim cannot model (`noscript`, which blocks `/run` and `loadstring` rather than addon file code,
   `secureframe`, `restrictedframe`, or a state such as an instance) stays untagged. A name observed to differ from
-  the wiki is overridden beside the global and widget rules, with the issue that saw it.
+  the wiki is overridden beside the global and widget rules, with the issue that saw it. A widget method is keyed by
+  its documented system (`SimpleButtonAPI_SetEnabled`) or, for a block the live client recorded, by its own name
+  (`SetEnabled`): `fetch.py --refresh-restrictions --probe <ForeverProbe SavedVariables>` merges every call the
+  client refused into the pin, classed from the recorded event and combat state.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region

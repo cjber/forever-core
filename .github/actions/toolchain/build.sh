@@ -3,7 +3,9 @@
 #
 #   build.sh <prefix> [work-dir]
 #
-# Every source is a GitHub archive at a pinned commit, so the build needs no Ubuntu mirror and no luarocks.org.
+# Every source is a GitHub archive at the commit tools/toolchain.json pins, so the build needs no Ubuntu mirror and no
+# luarocks.org. TOOLCHAIN_MANIFEST must name the manifest to read: the calling repository's tools/toolchain.json,
+# which the action resolves from its `manifest` input.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -11,16 +13,36 @@ if [ "$#" -lt 1 ]; then
     exit 2
 fi
 
+if [ -z "${TOOLCHAIN_MANIFEST:-}" ]; then
+    echo "build.sh: TOOLCHAIN_MANIFEST must name the repository's tools/toolchain.json" >&2
+    exit 2
+fi
+
 prefix=$1
 work=${2:-"${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lua-toolchain-build"}
+manifest=$TOOLCHAIN_MANIFEST
 
-# The v2.1 commit behind Ubuntu's 2.1.0+git20231223.c525bcb package.
-luajit_commit=c525bcb9024510cad9e170e12b6209aedb330f83
-# lunarmodules/luacheck v1.1.2, luarocks/argparse 0.7.2 (the mpeterv/argparse repository's new home) and
-# lunarmodules/luafilesystem v1.9.0.
-luacheck_commit=418f48976c73be697fe64b0eba9ea9821ac9bca8
-argparse_commit=a5ab54f8161f9f508b058411f64c2c72d974733b
-luafilesystem_commit=a186cca5833691e830ed255e38ace8ff6b870dbf
+# One pin table, read from the manifest: the LuaJIT commit, and the release, commit and repository of each Lua module.
+declare -A pin
+while IFS=$'\t' read -r key value; do
+    pin[$key]=$value
+done < <(python3 - "$manifest" <<'PY'
+import json
+import sys
+
+tools = json.load(open(sys.argv[1], encoding="utf-8"))["tools"]
+lua51 = tools["lua51"]
+print(f"lua51_version\t{lua51['version']}")
+print(f"lua51_url\t{lua51['url'].format(version=lua51['version'])}")
+print(f"lua51_sha256\t{lua51['sha256']}")
+for name in ("luajit", "luacheck", "argparse", "luafilesystem"):
+    entry = tools[name]
+    print(f"{name}_repo\t{entry['upstream']['repo']}")
+    print(f"{name}_commit\t{entry['commit']}")
+lua_branch = tools["luajit"]["upstream"]["branch"]
+print(f"luajit_line\t{lua_branch.removeprefix('v')}")
+PY
+)
 
 download() {
     local repo=$1 commit=$2 name=$3
@@ -36,33 +58,34 @@ mkdir -p "$work" "$prefix/bin" "$prefix/share/lua/5.1" "$prefix/lib/lua/5.1"
 
 # PUC Lua 5.1.5 is the parser used by the game client. Keep it beside LuaJIT:
 # LuaJIT is the execution harness, while this binary is the strict syntax gate.
-lua51_sha256=2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333
-if [ ! -f "$work/lua-5.1.5.tar.gz" ]; then
+lua51_archive="$work/lua-${pin[lua51_version]}.tar.gz"
+if [ ! -f "$lua51_archive" ]; then
     curl --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 300 -sSfL \
-        -o "$work/lua-5.1.5.tar.gz.part" https://www.lua.org/ftp/lua-5.1.5.tar.gz
-    mv "$work/lua-5.1.5.tar.gz.part" "$work/lua-5.1.5.tar.gz"
+        -o "$lua51_archive.part" "${pin[lua51_url]}"
+    mv "$lua51_archive.part" "$lua51_archive"
 fi
-echo "$lua51_sha256  $work/lua-5.1.5.tar.gz" | sha256sum -c -
+echo "${pin[lua51_sha256]}  $lua51_archive" | sha256sum -c -
+lua51_src="$work/lua-${pin[lua51_version]}"
 if [ ! -x "$prefix/bin/luac5.1" ]; then
-    tar -xzf "$work/lua-5.1.5.tar.gz" -C "$work"
-    make -C "$work/lua-5.1.5/src" clean >/dev/null
-    make -C "$work/lua-5.1.5/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" \
+    tar -xzf "$lua51_archive" -C "$work"
+    make -C "$lua51_src/src" clean >/dev/null
+    make -C "$lua51_src/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" \
         MYCFLAGS=-DLUA_USE_LINUX MYLIBS=-ldl luac
-    install -m 0755 "$work/lua-5.1.5/src/luac" "$prefix/bin/luac5.1"
+    install -m 0755 "$lua51_src/src/luac" "$prefix/bin/luac5.1"
 fi
 
-download LuaJIT/LuaJIT "$luajit_commit" luajit
-luajit_src="$work/LuaJIT-$luajit_commit"
+download "${pin[luajit_repo]}" "${pin[luajit_commit]}" luajit
+luajit_src="$work/LuaJIT-${pin[luajit_commit]}"
 make -C "$luajit_src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)"
 make -C "$luajit_src" install PREFIX="$prefix"
 
-download lunarmodules/luacheck "$luacheck_commit" luacheck
-download luarocks/argparse "$argparse_commit" argparse
-download lunarmodules/luafilesystem "$luafilesystem_commit" luafilesystem
+download "${pin[luacheck_repo]}" "${pin[luacheck_commit]}" luacheck
+download "${pin[argparse_repo]}" "${pin[argparse_commit]}" argparse
+download "${pin[luafilesystem_repo]}" "${pin[luafilesystem_commit]}" luafilesystem
 
-luacheck_src="$work/luacheck-$luacheck_commit"
-argparse_src="$work/argparse-$argparse_commit"
-luafilesystem_src="$work/luafilesystem-$luafilesystem_commit"
+luacheck_src="$work/luacheck-${pin[luacheck_commit]}"
+argparse_src="$work/argparse-${pin[argparse_commit]}"
+luafilesystem_src="$work/luafilesystem-${pin[luafilesystem_commit]}"
 
 # luacheck and argparse are pure Lua; luafilesystem is one C file built against the LuaJIT headers just installed.
 cp -R "$luacheck_src/src/luacheck" "$prefix/share/lua/5.1/"

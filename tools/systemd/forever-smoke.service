@@ -1,0 +1,14 @@
+[Unit]
+Description=Smoke each Forever addon commit a release would ship, in the headless client
+Documentation=https://github.com/cjber/forever-core/blob/main/.agents/skills/wow-forever-addon/in-game.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# A client session renders on the GPU for minutes, so the queue stays out of the way of the desktop meanwhile.
+Nice=10
+# The checkout that holds core's own tools and the addon workspaces beside it. Edit this line if they live elsewhere.
+ExecStart=/usr/bin/env python3 %h/drive/proj/wow/forever-core/tools/smoke_queue.py
+# A smoke is a login, a selftest, one reload per addon folder and a logout, each session capped at 30 minutes.
+TimeoutStartSec=3h
