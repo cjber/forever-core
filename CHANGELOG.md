@@ -22,6 +22,9 @@
   combat, so a refused call in a button handler fails the run. `C_TradeSkillUI.OpenTradeSkill` and `C_UI.Reload` are
   modelled as the client enforces them, and `fetch.py --refresh-restrictions --probe` merges every block a live
   client recorded into `restrictions.txt`. (#538)
+- **An addon's `ty` run passes over the vendored simulator.** `forever_sim/fetch.py` gives a probe hit a `ProbeHit`
+  dataclass and reads it by attribute, and core's `forever-tools` job type-checks `forever_sim` with `ty` beside
+  `forever_tools`, so an addon whose CI checks its `tools/` with `ty` no longer fails on the vendored file.
 
 ## [1.9.0] - 2026-11-12
 

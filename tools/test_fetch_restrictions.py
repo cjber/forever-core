@@ -124,6 +124,15 @@ class ProbeTest(unittest.TestCase):
             },
         )
 
+    def test_a_hit_carries_the_event_the_combat_state_and_its_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_probe(
+                Path(directory),
+                "\t\t{ kind = 'ADDON_ACTION_BLOCKED', combat = true, args = { 'TweaksForever', 'C_UI.Reload()' } },",
+            )
+            hits = fetch.probe_hits(path)
+        self.assertEqual(hits, [fetch.ProbeHit("ADDON_ACTION_BLOCKED", True, ("TweaksForever", "C_UI.Reload()"))])
+
     def test_the_merge_keeps_the_wikis_classes_and_adds_the_clients(self):
         merged = fetch.merge_probe(
             {"C_Map.OpenWorldMap": ["nocombat"], "CopyToClipboard": ["always"]},

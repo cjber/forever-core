@@ -58,4 +58,4 @@ jobs:
       - if: matrix.python == '3.10'
         run: |
           uv run --project "$GITHUB_WORKSPACE/tools" --frozen --group dev \
-            ty check --python-version 3.10 --extra-search-path . forever_tools
+            ty check --python-version 3.10 --extra-search-path . forever_tools forever_sim

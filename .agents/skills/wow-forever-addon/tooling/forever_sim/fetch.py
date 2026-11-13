@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -311,12 +312,21 @@ FORBIDDEN_EVENTS = frozenset({"ADDON_ACTION_FORBIDDEN", "MACRO_ACTION_FORBIDDEN"
 CLASS_ORDER = ("always", "nocombat", "hwevent")
 
 
-def probe_hits(path: Path) -> list[dict[str, object]]:
+@dataclass(frozen=True)
+class ProbeHit:
+    """One call ForeverProbe recorded: the event that named it, the combat state and the event's payload fields."""
+
+    kind: str
+    combat: bool
+    args: tuple[str, ...]
+
+
+def probe_hits(path: Path) -> list[ProbeHit]:
     """The calls ForeverProbe recorded, through LuaJIT.
 
-    The file is a SavedVariables chunk, so LuaJIT reads it rather than a regex. Each hit is {kind, combat, args},
-    with the event's payload fields. A "message" hit is DisplayInterfaceActionBlockedMessage, which the client calls
-    with no arguments, so it names no call.
+    The file is a SavedVariables chunk, so LuaJIT reads it rather than a regex. Each hit carries the event that named
+    it, the combat state and the event's payload fields. A "message" hit is DisplayInterfaceActionBlockedMessage,
+    which the client calls with no arguments, so it names no call.
     """
     script = """
 local path = assert(os.getenv("FOREVER_PROBE_FILE"), "no probe file")
@@ -348,7 +358,7 @@ end
     hits = []
     for line in result.stdout.splitlines():
         fields = line.split("\t")
-        hits.append({"kind": fields[0], "combat": fields[1] == "combat", "args": fields[2:]})
+        hits.append(ProbeHit(kind=fields[0], combat=fields[1] == "combat", args=tuple(fields[2:])))
     return hits
 
 
@@ -387,13 +397,12 @@ def probe_blocks(path: Path) -> dict[str, list[str]]:
     """name -> the classes the live client's own blocks give it."""
     blocks: dict[str, list[str]] = {}
     for hit in probe_hits(path):
-        kind = str(hit["kind"])
-        classes = probe_classes(kind, bool(hit["combat"]))
+        classes = probe_classes(hit.kind, hit.combat)
         if classes is None:
             continue
-        args = [str(arg) for arg in hit["args"]]
+        args = hit.args
         # ADDON_*: addon name then call. MACRO_*: the call alone.
-        payload = args[1] if kind in ADDON_EVENTS and len(args) > 1 else (args[0] if args else "")
+        payload = args[1] if hit.kind in ADDON_EVENTS and len(args) > 1 else (args[0] if args else "")
         name = probe_name(payload)
         if name is None:
             continue
