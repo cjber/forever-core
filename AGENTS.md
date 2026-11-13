@@ -64,13 +64,22 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/SafeCall.lua`: one global error handler for every registered addon, attributing by `AddOns/<name>/`; the
   per-addon context's `SafeCall`, `RecordError`, `CaughtErrors` and journal live here.
 - `Core/Log.lua`: the structured log and its 200-line saved ring per addon, the one `/forever debug` switch and the
-  lines the report copies.
+  lines the report copies. `/forever debug on` starts the client-log capture and `/forever debug off` restores it.
+- `Core/Capture.lua`: the client-log capture behind `/forever debug on`: it saves the previous `taintLog` and
+  `advancedCombatLogging` CVars and the chat and combat logging switches in `ForeverCoreDB.debugCapture`, turns them
+  on the way `!!DevSessionLog` does, and puts them back on `/forever debug off` or at the next login (`PLAYER_ENTERING_WORLD` with `isInitialLogin`; a reload keeps it). The originals are
+  saved only on the first change, so a reload never records the capture's own values.
+- `Core/Performance.lua`: the report's performance section: every loaded addon that depends on ForeverCore gets the
+  `C_AddOnProfiler` metrics and its memory, with the all-addon and application figures above them. It is read once
+  when the report window opens, never sampled in the background.
 - `Core/OpenMap.lua` and `Core/OpenSettings.lua`: core's shared openers for the client's restricted world map and
   settings panel functions, each run through `CreateSecureDelegate`, never in combat. They are runtime files, published
   as `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel`, not vendored into any consumer.
 - `UI/Art.lua`: the icon helper the report window draws its portrait with, and `Art.CooldownIcon`, which gives any
   icon texture the client's Cooldown Manager frame.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
+  Its text carries the performance table from `Core/Performance.lua` and, while debug capture is on, the line that
+  names the client's `Logs` folder and how to stop the capture.
 - `UI/ForeverFamily.lua`: the Forever addons settings page and link windows, in core's L.
 - `UI/Credits.lua`: the **Thanks** page the Forever addons page opens: every addon's `ns.Credits` merged by player
   name into one compact row per player, with every addon's line on hover and a short **Inspired by** group, a
@@ -104,7 +113,7 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/MinimapButton.lua`: the one minimap ring; each addon draws one button.
 - `Core/Text.lua`: the shared search fold and ranking.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
-  calling addon's L.
+  calling addon's L, and carries the debug-capture notice while `/forever debug on` is active.
 - `UI/MapCanvas.lua`: read-only drawings on the world map, with each addon's markers keyed on its name.
 - `Locales/`: core's own phrases in enUS and the nine shipped locales. A consumer keeps its own locale file for its own
   copy; the phrases here are the only ones core owns.

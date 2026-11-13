@@ -95,11 +95,42 @@ L["Click to %s"] = "Нажмите, чтобы %s"
 L["Right-click for options"] =
 	"Щёлкните правой кнопкой мыши для просмотра параметров"
 L["Unavailable in combat"] = "Недоступно в бою"
-L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
-	"Использование: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
+L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
+	"Использование: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] =
 	"Что произошло или что вы хотели бы видеть"
 L.MINIMAP_UNAVAILABLE =
 	"Миникарта недоступна; пользовательская кнопка пропущена."
 L["MENU_BACK"] = "Назад"
+
+L["1 ms"] = "1 мс"
+L["5 ms"] = "5 мс"
+L["10 ms"] = "10 мс"
+L["50 ms"] = "50 мс"
+L["100 ms"] = "100 мс"
+L["Addon"] = "Аддон"
+L["Application"] = "Приложение"
+L["Last"] = "Последняя"
+L["Memory KB"] = "Память КБ"
+L["Memory: not available on this client."] = "Память: недоступна в этом клиенте."
+L["Peak"] = "Пик"
+L["Recent"] = "Недавняя"
+L["Session"] = "Сессия"
+L["Performance (read when this window opened):"] =
+	"Производительность (прочитано при открытии окна):"
+L["Performance: not available on this client."] =
+	"Производительность: недоступна в этом клиенте."
+L["Performance: the client's add-on profiler is off."] =
+	"Производительность: профилировщик аддонов клиента выключен."
+L["%d more rows not shown."] = "Не показано строк: %d."
+L["Debug capture is on: /forever debug off stops it."] =
+	"Запись отладки включена: /forever debug off её выключает."
+L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
+	"Запись отладки включена. Приложите к отчёту файлы из папки Logs клиента. Отключите её командой /forever debug off."
+L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."] =
+	"Запись отладки включена. Журналы клиента находятся в папке Logs; отключите её командой /forever debug off."
+L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."] =
+	"Запись отладки выключена, настройки клиента восстановлены; журнал отладки выключен и откреплён."
+L["Debug capture could not start because ForeverCore has not finished loading."] =
+	"Не удалось запустить запись отладки: ForeverCore ещё не загрузился."

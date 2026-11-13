@@ -88,9 +88,36 @@ L["Tracker"] = "追踪器"
 L["Click to %s"] = "点击%s"
 L["Right-click for options"] = "右键查看选项"
 L["Unavailable in combat"] = "战斗中不可用"
-L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
-	"用法：/forever debug、/forever debug pin、/forever debug off、/forever debug show"
+L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
+	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] = "发生了什么，或你想要的功能"
 L.MINIMAP_UNAVAILABLE = "小地图不可用，已跳过自定义按钮。"
 L["MENU_BACK"] = "返回"
+
+L["1 ms"] = "1 毫秒"
+L["5 ms"] = "5 毫秒"
+L["10 ms"] = "10 毫秒"
+L["50 ms"] = "50 毫秒"
+L["100 ms"] = "100 毫秒"
+L["Addon"] = "插件"
+L["Application"] = "应用程序"
+L["Last"] = "最后"
+L["Memory KB"] = "内存 KB"
+L["Memory: not available on this client."] = "内存：此客户端不可用。"
+L["Peak"] = "峰值"
+L["Recent"] = "近期"
+L["Session"] = "会话"
+L["Performance (read when this window opened):"] = "性能（打开此窗口时读取）："
+L["Performance: not available on this client."] = "性能：此客户端不可用。"
+L["Performance: the client's add-on profiler is off."] = "性能：客户端的插件性能分析器已关闭。"
+L["%d more rows not shown."] = "另有 %d 行未显示。"
+L["Debug capture is on: /forever debug off stops it."] = "调试记录已开启：/forever debug off 可将其关闭。"
+L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
+	"调试捕获已开启。请将客户端 Logs 文件夹中的文件附在报告中。使用 /forever debug off 关闭。"
+L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."] =
+	"调试捕获已开启。客户端日志位于其 Logs 文件夹中；使用 /forever debug off 关闭。"
+L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."] =
+	"调试捕获已关闭，客户端设置已恢复；调试日志已关闭并取消固定。"
+L["Debug capture could not start because ForeverCore has not finished loading."] =
+	"无法启动调试捕获，因为 ForeverCore 尚未完成加载。"

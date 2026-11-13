@@ -32,6 +32,14 @@
 ---@field ShowNative fun()
 ---@field Selected fun(): string?
 
+-- The client's own values saved before /forever debug on, from Core/Capture.lua.
+---@class ForeverDebugCaptureState
+---@field on boolean true while debug capture is on
+---@field taintLog? string the taint log CVar before the capture
+---@field advancedCombatLogging? string the advanced combat log CVar before the capture
+---@field chat? boolean chat logging before the capture
+---@field combat? boolean combat logging before the capture
+
 -- The Forever quest list's pure ordering model, in Core/QuestOrder.lua.
 ---@class ForeverQuestRecord
 ---@field questID number

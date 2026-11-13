@@ -48,8 +48,14 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
+---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
+
+-- Whether the client lets this code read a value it may hold secret (WFA-30).
+---@param value any
+---@return boolean
+function canaccessvalue(value) end
 
 ---@class EditModeManagerFrame : Frame
 ---@field IsEditModeActive fun(self: EditModeManagerFrame): boolean

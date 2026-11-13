@@ -98,6 +98,9 @@ read_globals = {
 	"GetPlayerFacing",
 	"GetCVar",
 	"GetCVarBool",
+	"SetCVar",
+	"LoggingChat",
+	"LoggingCombat",
 	"GetMinimapShape",
 	"C_Minimap",
 }
