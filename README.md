@@ -18,7 +18,8 @@ so the game loads it first and exactly one copy of each shared file runs. It has
 Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows.
+  drag it once, and every addon follows. The column can also list your watched quests itself, with progress, folds,
+  item buttons and scrolling, when you turn it on with `/fcore quests`.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -33,8 +34,9 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no quest, route, profession or challenge sections of its own. Sections belong to the addon that owns the
-feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon
+It draws no route, profession or challenge sections of its own; the optional quest list is the one section core keeps,
+because it replaces the game's quest list rather than adding a feature. Every other section belongs to the addon that
+owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon
 through `ForeverCore.Register` and the modules on the `ForeverCore` table; see [`docs/adoption.md`](docs/adoption.md).
 The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).

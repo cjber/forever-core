@@ -239,9 +239,10 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	local host = frames[4]
 	local module = frame()
 	module.uiOrder = -1
-	local used = 0
+	local used, updates = 0, 0
 	module.SetContainer = noop
 	module.Update = function(_, available)
+		updates = updates + 1
 		used = fill and math.max(0, math.floor(available)) or (available >= 227 and 227 or 0)
 	end
 	module.SetParent = function(self, parent)
@@ -318,20 +319,29 @@ local function scenario(anchor, scale, uiScale, userScale, fill)
 	host:MarkDirty()
 	drain()
 	still("a native restore in combat leaves the column still")
-	-- Quests grow in combat: the column follows the native content down.
+	-- Quests grow in combat: the column holds with its protected item buttons, then follows the native content on
+	-- the first pass after combat.
+	local updatesBeforeCombat = updates
 	nineSlice.height = 320
 	host:MarkDirty()
 	drain()
-	top, contentBottom = below()
-	if fits then
-		check(math.abs(top - contentBottom) < 0.01, "the column follows growing quests in combat: " .. label)
-	end
+	check(updates == updatesBeforeCombat, "growing quests in combat run no layout: " .. label)
 	nineSlice.height = 300
 	rawHeight(native, 300)
 	combat = false
 	host.scripts.OnEvent(host, "PLAYER_REGEN_ENABLED")
 	drain()
 	still("leaving combat leaves the column still")
+	nineSlice.height = 320
+	host:MarkDirty()
+	drain()
+	check(updates > updatesBeforeCombat, "the first pass after combat lays the column out: " .. label)
+	top, contentBottom = below()
+	if fits then
+		check(math.abs(top - contentBottom) < 0.01, "the column follows growing quests after combat: " .. label)
+	end
+	nineSlice.height = 300
+	rawHeight(native, 300)
 	-- When the quests run to the tracker's own bottom, the column still starts at that edge.
 	nineSlice.height = native.height
 	host:MarkDirty()

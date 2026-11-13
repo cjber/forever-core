@@ -65,6 +65,9 @@ function TrackerSection.Create(name, mixin, opts)
 		end
 	end
 	module.uiOrder = opts.order
+	if opts.maxHeight ~= nil then
+		module.trackerMaxHeight = opts.maxHeight
+	end
 	if opts.lineTemplate ~= nil then
 		module.lineTemplate = opts.lineTemplate
 	end

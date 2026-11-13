@@ -71,6 +71,24 @@
 ---@field UpdateQuest fun(self: ForeverQuestTrackerModule, record: ForeverQuestRecord): boolean
 ---@field AddHeaderMenuEntries fun(self: ForeverQuestTrackerModule, root: any)
 ---@field OnBlockHeaderClick fun(self: ForeverQuestTrackerModule, block: any, mouseButton: string)
+---@field thinBarPool? any[]
+---@field activeThinBars? any[]
+---@field itemButtons? ForeverQuestItemButton[]
+---@field combatChangeQueued? boolean
+
+-- UI/TrackerQuests.lua's secure quest item button, the client's item look on SecureActionButtonTemplate.
+---@class ForeverQuestItemButton : Button
+---@field foreverIndex integer
+---@field questLogIndex? number
+---@field charges? number
+---@field rangeTimer? number
+---@field foreverBlock? any
+---@field Glow Texture
+---@field HotKey FontString
+---@field icon Texture
+---@field Count FontString
+---@field Cooldown Cooldown
+---@field SetUp fun(self: ForeverQuestItemButton, questLogIndex: number)
 
 -- UI/SettingsPage.lua, the shared settings canvas a consumer's settings page is drawn on.
 ---@class ForeverSettingsPageModule

@@ -137,8 +137,14 @@ files["tools/devsmoke/"] = {
 }
 files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval", "DevSmokeEvalRun" } }
 
--- Tracker colours.
+-- Tracker colours and the quest item button's client helpers.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"
+read_globals[#read_globals + 1] = "GetQuestLogSpecialItemCooldown"
+read_globals[#read_globals + 1] = "IsQuestLogSpecialItemInRange"
+read_globals[#read_globals + 1] = "CooldownFrame_Set"
+read_globals[#read_globals + 1] = "SetItemButtonTexture"
+read_globals[#read_globals + 1] = "SetItemButtonTextureVertexColor"
+read_globals[#read_globals + 1] = "SetItemButtonCount"
 -- MapCanvas.lua: the gamepad's map cursor.
 read_globals[#read_globals + 1] = "SoftCursor"
 -- Shared-workspace arrow: Blizzard_QuestNavigation/SuperTrackedFrame.lua:291.
@@ -249,3 +255,18 @@ read_globals[#read_globals + 1] = "SetQuestTitleLevelAndDifficultyColor"
 read_globals[#read_globals + 1] = "GetQuestLogCompletionText"
 read_globals[#read_globals + 1] = "IsQuestSequenced"
 read_globals[#read_globals + 1] = "QuestMapFrame_GetFocusedQuestID"
+read_globals[#read_globals + 1] = "UnitFullName"
+read_globals[#read_globals + 1] = "UnitName"
+read_globals[#read_globals + 1] = "GetRealmName"
+read_globals[#read_globals + 1] = "IsInGroup"
+read_globals[#read_globals + 1] = "GetQuestLink"
+read_globals[#read_globals + 1] = "QuestMapQuestOptions_AbandonQuest"
+read_globals[#read_globals + 1] = "QuestMapFrame_OpenToQuestDetails"
+read_globals[#read_globals + 1] = "QuestUtil"
+read_globals[#read_globals + 1] = "IsModifiedClick"
+read_globals[#read_globals + 1] = "GetQuestLogSpecialItemInfo"
+read_globals[#read_globals + 1] = "GetNumQuestLeaderBoards"
+read_globals[#read_globals + 1] = "GetQuestLogLeaderBoard"
+read_globals[#read_globals + 1] = "ObjectiveTrackerAnimLineState"
+read_globals[#read_globals + 1] = "PlaySound"
+read_globals[#read_globals + 1] = "SOUNDKIT"

@@ -47,6 +47,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
 ---@field questList? boolean
+---@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
 ---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
 ---@type ForeverCoreSavedVariables?

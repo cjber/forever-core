@@ -235,6 +235,8 @@ These are on the `ForeverCore` table for the Forever addons themselves. They are
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
 `QuestLogTabs`, `MinimapButton`, `SettingsPage`, `SettingsSections`, `Text`, `QuestOrder`, `Family` and `Credits`.
+A section created through `TrackerSection.Create` takes `maxHeight` (`200` units when omitted, or `"remaining"` for
+the column's spare room); the shared host scrolls a taller section under its own header and freezes it in combat.
 `Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
 a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
