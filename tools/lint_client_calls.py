@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Refuse calls of client functions the Forever client does not answer (forever_tools.client_calls).
 
 LuaLS checks against the retail annotations and only types/ adds to them, so a retail-only function type-checks and

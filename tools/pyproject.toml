@@ -20,6 +20,8 @@ dev = [
   "actionlint-py==1.7.12.25",
   "pillow==13.0.0",
   "ruff==0.16.8",
+  "shellcheck-py==0.11.0.1",
+  "shfmt-py==4.2.0",
   "ty==0.0.83",
   "zizmor==1.30.1",
 ]

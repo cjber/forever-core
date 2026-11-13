@@ -178,24 +178,37 @@ class CheckCoreSharedTest(unittest.TestCase):
         self.assertIn("addon/KilnForever/tools/check_core_shared.py: consumer", out)
         self.assertNotIn("tools/check_client_load.py", out)
 
-    def test_only_the_checker_reaches_kiln_forever(self):
+    def test_kiln_forever_takes_the_checker_and_the_tool_pins(self):
         paths = set(check_core_shared.paths_for("kiln-forever"))
-        self.assertEqual(paths, {"tools/check_core_shared.py"})
-
-    def test_the_tool_pins_and_dependabot_config_reach_every_published_consumer(self):
-        for path, origin in (
-            ("tools/toolchain.json", "tools/toolchain.json"),
-            ("tools/pyproject.toml", "tools/pyproject.toml"),
-            ("tools/uv.lock", "tools/uv.lock"),
-            (".github/dependabot.yml", "tools/dependabot-consumer.yml"),
-        ):
+        self.assertEqual(
+            paths,
+            {"tools/check_core_shared.py", "tools/toolchain.json", "tools/pyproject.toml", "tools/uv.lock"},
+        )
+        for path in sorted(paths - {"tools/check_core_shared.py"}):
             with self.subTest(path=path):
-                self.assertEqual(check_core_shared.VENDORED[path], check_core_shared.SUITE_CONSUMERS)
-                self.assertEqual(check_core_shared.source(path), origin)
+                self.assertEqual(check_core_shared.consumer_path("kiln-forever", path), f"addon/KilnForever/{path}")
+
+    def test_the_tool_pins_reach_every_published_consumer(self):
+        for path in ("tools/toolchain.json", "tools/pyproject.toml", "tools/uv.lock"):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    check_core_shared.VENDORED[path],
+                    check_core_shared.SUITE_CONSUMERS + check_core_shared.KILN_CONSUMERS,
+                )
+                self.assertEqual(check_core_shared.source(path), path)
                 for repo in check_core_shared.SUITE_CONSUMERS:
                     self.assertIn(path, check_core_shared.paths_for(repo))
                     self.assertEqual(check_core_shared.consumer_path(repo, path), path)
-                self.assertNotIn(path, check_core_shared.paths_for("kiln-forever"))
+                self.assertIn(path, check_core_shared.paths_for("kiln-forever"))
+
+    def test_the_dependabot_config_reaches_every_published_consumer(self):
+        path = ".github/dependabot.yml"
+        self.assertEqual(check_core_shared.VENDORED[path], check_core_shared.SUITE_CONSUMERS)
+        self.assertEqual(check_core_shared.source(path), "tools/dependabot-consumer.yml")
+        for repo in check_core_shared.SUITE_CONSUMERS:
+            self.assertIn(path, check_core_shared.paths_for(repo))
+            self.assertEqual(check_core_shared.consumer_path(repo, path), path)
+        self.assertNotIn(path, check_core_shared.paths_for("kiln-forever"))
 
     def test_the_visual_proof_workflow_reaches_every_published_consumer(self):
         path = ".github/workflows/visual-proof.yml"
