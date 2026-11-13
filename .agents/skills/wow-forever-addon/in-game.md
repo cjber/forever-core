@@ -64,7 +64,9 @@ code, `forever_client.py build-dev <repo> <ref>`, writes `test-artifacts/<repo>-
 build's addon folders at it in `Interface/AddOns`, then runs `up`, `/forever selftest`, `errors --addon <folder>` for
 each of the repo's addon folders, and `down`. It posts the result with
 `gh api repos/cjber/<repo>/statuses/<sha> -f state=success|failure -f context=headless-smoke -f description=...`,
-the error count or "clean".
+the error count or "clean". `--manual-launcher` is passed through to `up`, so while launcher OCR is not finding Play
+(cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes `shot`, and clicks Play
+itself.
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
 - Exit 3 means the client cannot start: the player's game is running, or another agent's session holds it. Nothing is

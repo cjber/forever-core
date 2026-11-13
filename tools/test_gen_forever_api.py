@@ -13,6 +13,8 @@ from forever_sim.fetch import BUILD, UI_REVISION
 
 ROOT = Path(__file__).resolve().parent.parent
 COMMITTED = ROOT / ".agents" / "skills" / "wow-forever-addon" / "tooling" / "forever_tools" / "client_names.txt"
+COMMITTED_PROBE = ROOT / "tools" / "forever_probe_api.lua"
+COMMITTED_BUILD = "1.60.1.70938"
 UI_CHECKOUTS = (
     ROOT / ".types" / "blizzard-ui" / "wow-ui-source",
     ROOT / "tools" / ".cache" / "forever_sim" / "wow-ui-source",
@@ -118,6 +120,15 @@ class GeneratorTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertNotIn(name, names)
 
+    def test_the_committed_probe_table_is_merged_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, out = self.generate(Path(directory))
+            text = out.read_text()
+        self.assertEqual(gen_forever_api.PROBE, COMMITTED_PROBE)
+        self.assertIn(f"Merged with a ForeverProbe dump from build {COMMITTED_BUILD}", text)
+        names = self.names(text)
+        self.assertIn("C_ItemInteraction.ClearPendingItem", names)
+
     def test_a_probe_dump_merges_its_build_and_names(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -126,6 +137,7 @@ class GeneratorTest(unittest.TestCase):
             _, out = self.generate(root, "--probe", str(probe))
             text = out.read_text()
         self.assertIn("9.9.9.99999", text)
+        self.assertNotIn(COMMITTED_BUILD, text)
         self.assertIn("ProbeGlobal", self.names(text))
         self.assertIn("C_Probe.Thing", self.names(text))
 

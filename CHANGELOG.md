@@ -6,6 +6,9 @@
 
 ### For addon authors
 
+- **A smoke can click Play itself.** `smoke --manual-launcher` passes the flag through to `up`, so while launcher OCR
+  is not finding Play an agent starts the smoke in the background, takes `shot` and left-clicks Play, exactly as with
+  `up --manual-launcher`; the default and `tools/smoke_queue.py` still click Play by OCR. (#547)
 - **A manual release can waive a failed visual proof.** `tools/release_check.py --skip-visual-proof` accepts a
   completed full CI run on main whose only failed job is `visual-proof`; every other job must still pass and the
   `headless-smoke` gate still applies. An addon's Release workflow passes it from a `skip_visual_proof` dispatch input.

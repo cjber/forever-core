@@ -1008,11 +1008,11 @@ class SmokeTest(unittest.TestCase):
         return mock.patch.object(fc, "errors", side_effect=answers)
 
     def smoke(self, argv=None):
-        options = {"repo": "legacy-forever", "ref": "main", "timeout": 600}
+        options = {"repo": "legacy-forever", "ref": "main", "timeout": 600, "manual_launcher": False}
         options.update(argv or {})
         return fc.smoke(argparse.Namespace(**options))
 
-    def run_smoke(self, answers=(0,), busy=None, later=None, up=None):
+    def run_smoke(self, answers=(0,), busy=None, later=None, up=None, main_argv=None):
         with (
             mock.patch.object(fc, "git", return_value="0123456789abcdef0123456789abcdef01234567"),
             mock.patch.object(fc, "client_in_use", side_effect=[busy, later, None, None]),
@@ -1027,7 +1027,7 @@ class SmokeTest(unittest.TestCase):
             self.report(*answers),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            code = self.smoke()
+            code = fc.main(main_argv) if main_argv else self.smoke()
         return code, out.getvalue(), build
 
     def test_a_clean_commit_posts_success_and_exits_zero(self):
@@ -1041,6 +1041,15 @@ class SmokeTest(unittest.TestCase):
         )
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_manual_launcher_flag_reaches_up(self):
+        argv = ["smoke", "--repo", "legacy-forever", "--ref", "main"]
+        code, _printed, _build = self.run_smoke(main_argv=argv)
+        self.assertEqual(code, 0)
+        self.assertFalse(self.up.call_args.args[0].manual_launcher)
+        code, _printed, _build = self.run_smoke(main_argv=[*argv, "--manual-launcher"])
+        self.assertEqual(code, 0)
+        self.assertTrue(self.up.call_args.args[0].manual_launcher)
 
     def test_errors_post_failure_with_the_count(self):
         code, _printed, _build = self.run_smoke(answers=(3,))

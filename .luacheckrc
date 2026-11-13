@@ -1,6 +1,7 @@
 std = "lua51"
 max_line_length = 120
-exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", "tools/.venv/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**", "tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/**"}
+-- tools/forever_probe_api.lua is committed data: the ForeverProbeDB.api table read by tools/gen_forever_api.py.
+exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", "tools/.venv/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**", "tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/**", "tools/forever_probe_api.lua" }
 globals = {
 	"EventUtil",
 	-- UI/TrackerHost.lua: the companion tracker registry a store build's vendored host still uses.

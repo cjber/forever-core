@@ -155,11 +155,12 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   every documented `C_X.Y` and global function, every global function Blizzard's UI Lua defines, every bare global
   that UI calls and every `C_X.Y` it reads, documented or not. Global tables, named frames, strings, colors and
   constants are not callable, so they stay out: a plain read of one is not a nil call, and a method call on a frame is
-  never checked. `--probe ForeverProbe.lua` merges the client dump ForeverProbe writes in forever-dev
-  (`ForeverProbeDB.api`), whose build is recorded in the header, and is the one source for a real client function
-  neither the documentation nor Blizzard's UI names. `--check` fails when the committed file differs from a fresh
-  generation, and the `check` CI job runs it that way. Regenerate the file after the UI pin or a probe changes; never
-  hand-edit it.
+  never checked. `tools/forever_probe_api.lua` is the `ForeverProbeDB.api` table of the client dump ForeverProbe writes
+  in forever-dev, committed as data on build 1.60.1.70938 and merged by every run; `--probe ForeverProbe.lua` merges a
+  newer dump instead. It is the one source for a real client function neither the documentation nor Blizzard's UI
+  names, and its build is recorded in the header. `--check` fails when the committed file differs from a fresh
+  generation, and the `check` CI job runs it that way. Regenerate the file after the UI pin moves or a probe table is
+  refreshed; never hand-edit it.
 - `forever_tools/client_calls.py` and `tools/lint_client_calls.py`: the client-call lint, run by `tools/typecheck.sh`
   beside LuaLS, because LuaLS checks against the retail `vscode-wow-api` annotations and this client lacks some of
   those functions. Every bare global the runtime files call (`Name(...)`, which is where `attempt to call a nil value`
