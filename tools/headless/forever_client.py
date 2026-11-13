@@ -26,9 +26,11 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
 commit as the `headless-smoke` commit status, which `tools/release_check.py` requires and `tools/smoke_queue.py`
-fills in. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the player's game or another
-session) so nothing is posted and a caller retries later. The AddOns folder is shared: every slot the smoke borrows is
-put back exactly as it was, including a store install it moved aside.
+fills in. It starts the client the way `up` does, and `--manual-launcher` is passed through to it, so while launcher
+OCR is not finding Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes
+`shot` and clicks Play itself. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the
+player's game or another session) so nothing is posted and a caller retries later. The AddOns folder is shared: every
+slot the smoke borrows is put back exactly as it was, including a store install it moved aside.
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -41,8 +43,9 @@ The client is for testing the Forever addons' interface, never for playing, and 
   `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` needs a
   screenshot taken since the last input, so every click aims at UI the agent has just seen. `slash` puts the
   keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
-- `--manual-launcher` disables OCR clicks and permits shots and left clicks before READY, only while the game
-  process is absent. Inspect each private screenshot before clicking. Never click Uninstall or change credentials.
+- `--manual-launcher` (`up`, `run`, `smoke`) disables OCR clicks and permits shots and left clicks before READY,
+  only while the game process is absent. Inspect each private screenshot before clicking. Never click Uninstall or
+  change credentials.
 - Short sessions. A session ends after MAX_SESSION at the latest, and every ending (the test returning, a failure,
   a signal, the cap) logs the character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
@@ -823,7 +826,7 @@ def smoke(args: argparse.Namespace) -> int:
 
     Exit 0 is a clean commit and 1 a failure that was recorded; 3 means the client is in use, so nothing is posted and
     a caller retries later. A smoke that could not run at all (no checkout, no such ref) raises ClientError and posts
-    nothing either.
+    nothing either. `--manual-launcher` reaches `up` unchanged, so the caller can take `shot` and click Play itself.
     """
     repo = args.repo
     if not SMOKE_REPO.fullmatch(repo):
@@ -852,7 +855,7 @@ def smoke(args: argparse.Namespace) -> int:
                 outcome["counts"] = smoke_counts(state, folders)
                 return 0
 
-            options = argparse.Namespace(wait=False, manual_launcher=False, timeout=args.timeout)
+            options = argparse.Namespace(wait=False, manual_launcher=args.manual_launcher, timeout=args.timeout)
             try:
                 up(options, after_ready=checks)
             except ClientError as error:
@@ -1315,6 +1318,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
     p.add_argument("--ref", required=True, help="the commit the next release would ship")
     p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
+    p.add_argument(
+        "--manual-launcher",
+        action="store_true",
+        help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+    )
     args = parser.parse_args(argv)
 
     try:

@@ -6,6 +6,9 @@
 
 ### For addon authors
 
+- **A smoke can click Play itself.** `smoke --manual-launcher` passes the flag through to `up`, so while launcher OCR
+  is not finding Play an agent starts the smoke in the background, takes `shot` and left-clicks Play, exactly as with
+  `up --manual-launcher`; the default and `tools/smoke_queue.py` still click Play by OCR. (#547)
 - **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
   status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
   pending one waits and names the command that fills it in, and a failed one prints what it found.
