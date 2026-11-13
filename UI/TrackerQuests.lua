@@ -4,8 +4,9 @@ local _, ns = ...
 -- The optional Forever quest list: the watched quests, campaign quests included, grouped ready-to-turn-in first, then
 -- this zone, then every other zone, each nearest first. It is a section of the shared Forever column, built from the
 -- game's own ObjectiveTrackerModuleTemplate and QuestObjectiveTrackerMixin so its header, lines, POI button, fonts,
--- colours, completed fade and layout are the game's. The game's own Quests and Campaign modules are only collapsed
--- while this list is on, through their own SetCollapsed, never moved, hidden, reparented or hooked.
+-- colours, completed fade and layout are the game's. While this list is on, the game's own Quests and Campaign modules
+-- leave the client's tracker through its own RemoveModule, so no empty Quests header is left above this one, and come
+-- back through its AddModule when the list is off. Nothing is hooked, moved or reparented.
 --
 -- The list adds the parts a player misses from a third-party tracker: a thin progress fill under every unfinished
 -- count, one fold per quest and per zone saved for the character, a height cap with scrolling, the game's quest item
@@ -54,7 +55,7 @@ ns.TrackerQuests = TrackerQuests
 -- the false a file loaded too early would read.
 local settingsRegistered = false
 local TOOLTIP = "Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the "
-	.. "rest by zone, nearest first. The game's own quest list is collapsed while this is on."
+	.. "rest by zone, nearest first. The game's own quest list is hidden while this is on."
 local function RegisterSettings()
 	if settingsRegistered or not ns.SettingsPage then
 		return
@@ -101,44 +102,70 @@ local function OtherOwner()
 	return C_AddOns.IsAddOnLoaded("!KalielsTracker") == true
 end
 
----@param collapsed boolean
-local function SetNativeCollapsed(collapsed)
-	local quests = rawget(_G, "QuestObjectiveTracker")
-	if quests and quests.SetCollapsed then
-		quests:SetCollapsed(collapsed)
-	end
-	local campaign = rawget(_G, "CampaignQuestObjectiveTracker")
-	if campaign and campaign.SetCollapsed then
-		campaign:SetCollapsed(collapsed)
+-- The game's own quest modules, by the names the client's tracker holds them under. The Forever list replaces them
+-- while it is on and gives them back when it is off.
+local NATIVE_MODULES = { "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }
+
+-- What the game's own Quests and Campaign modules do while the Forever list is on. Collapsing them is not enough: a
+-- collapsed module still draws its header over an empty contents frame, which is the bare "Quests" header a player saw
+-- above the Forever list's own "Quests 11/30". So each module leaves the tracker's module list, which stops the
+-- client's own layout from laying it out or showing it again, and its own Update is called with no available height:
+-- it adds no block, and its EndLayout hides it, exactly as the client leaves a module with no room left in the column.
+-- Giving the list back is the same pair of the client's methods in reverse, so the game's own Quests section returns
+-- as it was, folded or not, just as if the Forever list had never been on.
+--
+-- Every call is a public method of the client's own objective tracker, made out of combat only, from the same deferred
+-- pass this file already used to collapse the modules: the container's RemoveModule and AddModule, and the module's
+-- Update. No Blizzard function is hooked, no protected frame is reparented or hidden by addon code, and no secure quest
+-- item button is shown, hidden or moved here: the module hides itself through its own layout, so nothing the client
+-- does later with its own frames is tainted.
+--
+-- Each module is checked against the tracker on every pass rather than remembered by one flag: the client's own
+-- ObjectiveTrackerManager adds its modules at PLAYER_ENTERING_WORLD, and this file's first pass can run before that,
+-- so a module is taken whenever the tracker holds it, and only a module taken here is given back.
+---@type table<string, boolean>
+local taken = {}
+---@param drawn boolean whether the game's own quest modules should draw
+local function SetNativeModulesDrawn(drawn)
+	local tracker = ObjectiveTrackerFrame
+	for _, name in ipairs(NATIVE_MODULES) do
+		local module = rawget(_G, name)
+		if module then
+			if drawn then
+				if taken[name] then
+					tracker:AddModule(module)
+					module:MarkDirty()
+					taken[name] = nil
+				end
+			elseif tracker:HasModule(module) then
+				tracker:RemoveModule(module)
+				module:Update(0)
+				taken[name] = true
+			end
+		end
 	end
 end
 
 local ready = false
 local ownedByOther = false
-local collapsedByUs = false
 local section
 ---@type boolean?
-local pendingCollapse
+local pendingNative
 
----@param active boolean
-local function ApplyNativeCollapse(active)
+-- The game's modules are taken out and given back only out of combat. A change asked for in combat is remembered and
+-- applied at PLAYER_REGEN_ENABLED, which this section's own OnEvent already runs apply() from, like every other
+-- deferred layout change: the secure item buttons inside the game's modules never move while the player is fighting.
+---@param replace boolean whether the Forever list replaces the game's own modules
+local function ApplyNativeModules(replace)
 	if InCombatLockdown() then
-		pendingCollapse = active
+		pendingNative = replace
 		return
 	end
-	if pendingCollapse ~= nil then
-		active = pendingCollapse
+	if pendingNative ~= nil then
+		replace = pendingNative
 	end
-	pendingCollapse = nil
-	if active then
-		if not collapsedByUs then
-			SetNativeCollapsed(true)
-			collapsedByUs = true
-		end
-	elseif collapsedByUs then
-		SetNativeCollapsed(false)
-		collapsedByUs = false
-	end
+	pendingNative = nil
+	SetNativeModulesDrawn(not replace)
 end
 
 -- The character the folds are saved for. ForeverCoreDB is account wide, so every saved fold lives under one key per
@@ -1390,7 +1417,7 @@ apply = function()
 		HideItems(section)
 	end
 	section:MarkDirty()
-	ApplyNativeCollapse(active)
+	ApplyNativeModules(active)
 end
 
 EventUtil.ContinueAfterAllEvents(function()

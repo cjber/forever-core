@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest. (#177)
+- **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest. The game's own Quests and Campaign sections leave the tracker while the list is on, so its own header is the only one above it. (#177)
 
 ### For addon authors
 

@@ -23,10 +23,15 @@ local _, ns = ...
 ---@field Text FontString
 ---@field MinimizeButton Button
 
+-- The client's own objective tracker is the module container its Quests and Campaign sections belong to, so taking a
+-- module out of it and giving it back are the container's own methods (UI/TrackerQuests.lua calls both).
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field Header ForeverNativeTrackerHeader
 ---@field NineSlice Frame?
 ---@field isCollapsed? boolean
+---@field AddModule fun(self: ForeverNativeTrackerFrame, module: any)
+---@field RemoveModule fun(self: ForeverNativeTrackerFrame, module: any)
+---@field HasModule fun(self: ForeverNativeTrackerFrame, module: any): boolean
 
 -- Sharing the native tracker collection also shares its Edit Mode execution path.
 -- Keep our sections and their frame pools entirely outside that collection.

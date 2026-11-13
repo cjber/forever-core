@@ -281,8 +281,23 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	assert(blocks[6].id == 103 and blocks[6].text:find("Other One", 1, true), "the other zone quest follows")
 	assert(blocks[6].text:find("(10 yd)", 1, true), "the other zone quest shows its distance")
 
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == true, "the game's quest module is collapsed")
-	assert(sim.G.CampaignQuestObjectiveTracker:IsCollapsed() == true, "the game's campaign module is collapsed")
+	-- The game's own quest modules leave the client's tracker collection while the Forever list draws: a collapsed
+	-- module still drew its own empty "Quests" header above this list's header, so they are taken out and asked to lay
+	-- out in no room, and the client's own layout hides them. They come back when the list is off.
+	local tracker = sim.G.ObjectiveTrackerFrame
+	local function NativeDrawn()
+		return tracker:HasModule(sim.G.QuestObjectiveTracker) and sim.G.QuestObjectiveTracker:IsShown()
+	end
+	assert(NativeDrawn() == false, "the game's quest module is not in the tracker and draws nothing")
+	assert(
+		tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == false,
+		"the game's campaign module leaves the tracker too"
+	)
+	assert(
+		sim.G.QuestObjectiveTracker.Header:IsVisible() == false,
+		"the game's own Quests header is off screen, so only the Forever list's header shows"
+	)
+	assert(section.Header:IsVisible() == true, "the Forever list's own Quests header is the one that shows")
 
 	local questBlock
 	for _, block in pairs(section.usedBlocks["ObjectiveTrackerQuestPOIBlockTemplate"] or {}) do
@@ -431,16 +446,16 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	local settled = Text(Blocks())
 	-- The section's own OnEvent, not the game's: if Mixin copies before OnEvent is defined, the section keeps
 	-- QuestObjectiveTrackerMixin:OnEvent, which only marks the module dirty. Another tracker taking the list makes
-	-- our OnEvent run apply(), which expands the game's modules and empties the Forever list; the game's does not.
+	-- our OnEvent run apply(), which gives the game's modules back and empties the Forever list; the game's does not.
 	sim.loader.loaded["!KalielsTracker"] = {}
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == false, "the section's own OnEvent applies the new owner")
+	assert(NativeDrawn() == true, "the section's own OnEvent gives the game's quest module back")
 	assert(#Blocks() == 0, "and empties the Forever list when another tracker owns it")
 	sim.loader.loaded["!KalielsTracker"] = nil
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == true, "giving the list back collapses the quest module again")
+	assert(NativeDrawn() == false, "giving the list back takes the game's quest module out again")
 	assert(Text(Blocks()) == settled, "and rebuilds the Forever list")
 
 	sim:enterCombat()
@@ -452,11 +467,11 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == false, "turning the list off expands the quest module")
-	assert(sim.G.CampaignQuestObjectiveTracker:IsCollapsed() == false, "and the campaign module")
+	assert(NativeDrawn() == true, "turning the list off draws the game's own quest module again")
+	assert(tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == true, "and gives the campaign module back as well")
 	assert(#Blocks() == 0, "and empties the Forever list")
-	-- The taint check for the collapse: the game's own tracker builds its secure quest item button while the list is
-	-- off, in combat, and again with the list on and the game's modules collapsed by it.
+	-- The taint check for the takeover: the game's own tracker builds its secure quest item button while the list is
+	-- off, in combat, and the same with the list on and its modules taken out of the tracker by it.
 	sim.impl["GetQuestLogSpecialItemInfo"] = function(questLogIndex)
 		if questLogIndex == 3 then
 			return "item:5512", 5512, 1, true
@@ -484,11 +499,11 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	assert(nativeItemButton ~= nil, "the game's tracker built its secure quest item button")
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == true, "turning the list on collapses the quest module again")
+	assert(NativeDrawn() == false, "turning the list on takes the quest module out of the tracker again")
 	CombatQuestRefresh()
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(sim.G.QuestObjectiveTracker:IsCollapsed() == false, "turning the list off again expands the quest module")
+	assert(NativeDrawn() == true, "turning the list off again draws the game's own quest module")
 
 	sim:setGamepad(true)
 	sim:gamepadNavigate()
