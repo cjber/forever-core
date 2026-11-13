@@ -17,6 +17,7 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
+    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, reload, print DevSmokeDB.eval
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the Wine environment from a client Lutris started
 
@@ -42,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.util
 import json
 import os
 import re
@@ -75,6 +77,8 @@ LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exit
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
 FOREVER_ADDONS = (
+    # The dev addon behind /devsmoke: its commands are the suite's own test surface.
+    "!!DevSmoke",
     "AdventureGuideForever",
     "CommissionsForever",
     "FieldGuideForever",
@@ -744,6 +748,77 @@ def saved_variables(addon: str) -> list[Path]:
     )
 
 
+def load_tool(name: str, path: Path):
+    """A sibling Python tool, loaded once by path so one process shares it across calls."""
+    module = sys.modules.get(name)
+    if module is not None:
+        return module
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ClientError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def devsmoke_eval():
+    """tools/devsmoke/eval.py: the snippet compiler and Inbox writer the `eval` verb runs."""
+    return load_tool("devsmoke_eval", Path(__file__).resolve().parents[1] / "devsmoke/eval.py")
+
+
+def saved_eval() -> dict:
+    """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke."""
+    files = saved_variables("!!DevSmoke")
+    if not files:
+        raise ClientError("no SavedVariables for !!DevSmoke: the client writes them at a reload or logout")
+    lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    for path in sorted(files, key=lambda candidate: candidate.stat().st_mtime, reverse=True):
+        try:
+            variables = lua.load_lua(path)
+        except (OSError, lua.LuaSyntaxError) as error:
+            raise ClientError(f"could not read {path}: {error}") from None
+        smoke = variables.get("DevSmokeDB")
+        data = smoke.get("eval") if isinstance(smoke, dict) else None
+        if isinstance(data, dict):
+            return data
+    raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
+
+
+def _text(value) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _ordered(table) -> list:
+    """A parsed Lua table's values, numeric keys in their own order, the way the client wrote them."""
+    if not isinstance(table, dict):
+        return []
+    keys = list(table)
+    if all(isinstance(key, int) for key in keys):
+        keys.sort()
+    return [table[key] for key in keys]
+
+
+def format_eval(data: Mapping) -> tuple[str, bool]:
+    """DevSmokeDB.eval as the lines the Agent tab showed, and whether the snippet succeeded."""
+    ok = data.get("ok") is True
+    lines = [f"DevSmokeDB.eval: {'ok' if ok else 'failed'}, ran {_text(data.get('ran'))}"]
+    lines.extend(_text(value) for value in _ordered(data.get("out")))
+    error = _text(data.get("err"))
+    if error:
+        lines.append("error:")
+        lines.extend(error.splitlines())
+    return "\n".join(lines), ok
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="verb", required=True)
@@ -779,6 +854,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("command")
     p = sub.add_parser("sv")
     p.add_argument("addon")
+    p = sub.add_parser("eval")
+    p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
     p = sub.add_parser("errors")
     p.add_argument("--addon")
     args = parser.parse_args(argv)
@@ -829,6 +906,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ClientError(f"no SavedVariables for {args.addon}: it writes them at a reload or logout")
             for f in files:
                 print(f"-- {f}\n{f.read_text(errors='replace')}")
+        elif args.verb == "eval":
+            tool = devsmoke_eval()
+            try:
+                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
+            except tool.EvalError as error:
+                raise ClientError(str(error)) from None
+            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+            reload(state)
+            report, ok = format_eval(saved_eval())
+            print(report)
+            return 0 if ok else 1
         elif args.verb == "errors":
             reload(state)
             tool = Path(__file__).resolve().parents[1] / "forever_errors.py"

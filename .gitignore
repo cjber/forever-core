@@ -15,3 +15,7 @@ scratch/
 .bugpatrol/runs/
 .speedpatrol/runs/
 .sloppatrol/runs/
+
+# !!DevSmoke's generated eval inbox: tools/devsmoke/eval.py writes the snippet there and links it into the client's
+# AddOns as the !!DevSmokeInbox addon. It is the only place a snippet is written, so no tracked file changes.
+tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/

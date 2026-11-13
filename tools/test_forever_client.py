@@ -251,13 +251,15 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
         addons = self.state / "AddOns"
+        (addons / "!!DevSmoke").mkdir(parents=True)
+        (addons / "!!DevSmoke/Core.lua").write_text('SLASH_DEVSMOKE1 = "/devsmoke"\n')
         (addons / "FieldGuideForever").mkdir(parents=True)
         (addons / "FieldGuideForever/Core.lua").write_text('SLASH_FIELDGUIDEFOREVER1 = "/fgf"\n')
         (addons / "ForeverCore").mkdir()
         (addons / "ForeverCore/Expose.lua").write_text('SLASH_FOREVERCORE1 = "/fcore"\n')
         (addons / "SomeoneElse").mkdir()
         (addons / "SomeoneElse/Core.lua").write_text('SLASH_OTHER1 = "/other"\n')
-        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload"):
+        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload", "/devsmoke eval"):
             fc.allowed_command(ok, addons)
         for refused in (
             "/other",
@@ -622,6 +624,115 @@ class ForeverClientTest(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(fc.main(["shot"]), 2)
         self.assertIn("forever_client.py up", err.getvalue())
+
+    def saved_smoke(self, eval_table: str | None) -> Path:
+        saved = fc.CLIENT / "WTF/Account/1/SavedVariables"
+        saved.mkdir(parents=True)
+        path = saved / "!!DevSmoke.lua"
+        body = "DevSmokeDB = {\n"
+        if eval_table is not None:
+            body += '\t["eval"] = ' + eval_table + ",\n"
+        path.write_text(body + "}\n")
+        return path
+
+    def eval_tool(self, error=Exception):
+        tool = mock.Mock(
+            write_snippet=mock.Mock(
+                return_value={
+                    "chunk": Path("/checkout/!!DevSmokeInbox/Eval.lua"),
+                    "snippet": Path("probe.lua"),
+                    "lines": 2,
+                }
+            )
+        )
+        tool.EvalError = error
+        return tool
+
+    def test_eval_writes_reloads_and_reports_the_saved_output(self):
+        client = self.state / "client"
+        with mock.patch.object(fc, "CLIENT", client):
+            self.saved_smoke('{\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n\t["out"] = { "a printed line", "42" },\n}')
+            tool = self.eval_tool()
+            state = {"ready": 1.0}
+            out = io.StringIO()
+            with (
+                mock.patch.object(fc, "load_state", return_value=state),
+                mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+                mock.patch.object(fc, "reload") as reload,
+                contextlib.redirect_stdout(out),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 0)
+        reload.assert_called_once_with(state)
+        tool.write_snippet.assert_called_once_with(Path("probe.lua"), addons=client / "Interface/AddOns")
+        printed = out.getvalue()
+        self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
+        self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
+
+    def test_eval_reports_a_failed_snippet_and_exits_one(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke(
+                '{\n\t["ran"] = 7,\n\t["ok"] = false,\n\t["out"] = { "before" },\n\t["err"] = "boom\\nstack",\n}'
+            )
+            out = io.StringIO()
+            with (
+                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+                mock.patch.object(fc, "reload"),
+                contextlib.redirect_stdout(out),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 1)
+        self.assertIn("DevSmokeDB.eval: failed, ran 7\nbefore\nerror:\nboom\nstack", out.getvalue())
+
+    def test_eval_refuses_a_snippet_the_compiler_rejects(self):
+        class Refused(Exception):
+            pass
+
+        tool = self.eval_tool(Refused)
+        tool.write_snippet.side_effect = Refused("probe.lua:2: 'end' expected")
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload") as reload,
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        reload.assert_not_called()
+        self.assertIn("probe.lua:2: 'end' expected", err.getvalue())
+
+    def test_eval_without_a_session_says_how_to_start_one(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        self.assertIn("forever_client.py up", err.getvalue())
+
+    def test_eval_without_saved_variables_says_so(self):
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+            mock.patch.object(fc, "reload"),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        self.assertIn("no SavedVariables for !!DevSmoke", err.getvalue())
+
+    def test_format_eval_orders_the_saved_lines(self):
+        report, ok = fc.format_eval({"ran": 7, "ok": True, "out": {2: "second", 1: "first"}})
+        self.assertTrue(ok)
+        self.assertEqual(report, "DevSmokeDB.eval: ok, ran 7\nfirst\nsecond")
+
+    def test_format_eval_puts_the_error_after_the_output(self):
+        report, ok = fc.format_eval({"ran": 7, "ok": False, "out": {1: "before"}, "err": "boom\nstack"})
+        self.assertFalse(ok)
+        self.assertEqual(report, "DevSmokeDB.eval: failed, ran 7\nbefore\nerror:\nboom\nstack")
+
+    def test_saved_eval_is_missing_when_the_snippet_did_not_run(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke(None)
+            with self.assertRaisesRegex(fc.ClientError, "DevSmokeDB.eval is missing"):
+                fc.saved_eval()
 
 
 if __name__ == "__main__":

@@ -219,7 +219,11 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from
   this checkout. It opens and closes every loaded addon that depends on ForeverCore (read from the client, so a new
   addon is covered with no list to update) and the world map, saving a pass or fail per surface in `DevSmokeDB`,
-  which `tools/forever_errors.py` and `tools/forever_perf.py` read. `tests/devsmoke_spec.lua` is its spec.
+  which `tools/forever_errors.py` and `tools/forever_perf.py` read. A snippet from `tools/devsmoke/eval.py FILE` is
+  written to the gitignored `!!DevSmokeInbox` folder inside it, linked into AddOns as a load-on-demand addon of the
+  same name, and run under `xpcall` at login and on `/devsmoke eval` (its `print` output and returns go to the Agent
+  tab and `DevSmokeDB.eval`). The client reads the inbox once a session, so a snippet written after that needs
+  `/reload`. `tests/devsmoke_spec.lua` is its spec, `tools/test_devsmoke_eval.py` the writer's.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.
