@@ -274,6 +274,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   producer here, vendored byte for byte into each repo as `tools/forever_tools/` and pinned by
   `MANIFEST.json`. Edit it here, never in a repo; `python3 tools/forever_tools/sync.py check` runs
   in `typecheck.sh`. A repo's own `tools/` keeps only thin entry points and its generators.
+  The client-call lint is one: every published addon runs the vendored `tools/lint_client_calls.py`
+  (`forever_tools.client_calls`) from its own `tools/typecheck.sh`, refusing a call of a client function the Forever
+  client does not have, which type-checks against the retail annotations and then fails in game.
 - **WFA-30** Values the client may return as secrets (unit GUIDs and names, tooltip unit data) are read
   through the repo's one helper, `ns.Readable` (the value, or nil when it is secret), and every tooltip hook
   returns first when `ns.Usable(tooltip)` is false (nil or forbidden). Both live in a small file with no other

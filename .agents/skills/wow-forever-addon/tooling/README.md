@@ -28,7 +28,7 @@ version that either one proposes waits for review.
 | `multivalue` | `select()` and multi-return expansion lint; `Rules` carries the addon's policy |
 | `art` | Art lint (WFA-27): raw texture, atlas and markup calls outside the addon's art helper files need an `art-ok` reason |
 | `readable` | Secret-value lint (WFA-30): `UnitGUID`, `UnitName` and tooltip data reads go through the `Readable` guard, tooltip hooks check `IsForbidden`; `Policy` names the guard and safe units |
-| `client_calls` | Client-call lint: every bare global the runtime files call (`Name(...)`) and every `C_X.Y` they read exists in `client_names.txt` (generated in forever-core from the pinned Blizzard UI source and an optional probe dump), a Lua 5.1 or WoW global from the pinned annotations, a global the addon or ForeverCore defines, or a global function the addon's `tools/client_optional.txt` declares for an addon in its `## OptionalDeps`; a method call and a plain read are not calls and are not checked; a deliberate exception carries `-- client-ok: <reason>` |
+| `client_calls` | Client-call lint: every bare global the runtime files call (`Name(...)`) and every `C_X.Y` they read exists in `client_names.txt` (generated in forever-core from the pinned Blizzard UI source and an optional probe dump), a Lua 5.1 or WoW global from the pinned annotations, a global the addon or ForeverCore defines, or a global function the addon's `tools/client_optional.txt` declares for an addon in its `## OptionalDeps`; a method call and a plain read are not calls and are not checked; a deliberate exception carries `-- client-ok: <reason>`. Every published addon runs the vendored `tools/lint_client_calls.py` from its own `tools/typecheck.sh` |
 | `pkgmeta` | The files a checkout's `.pkgmeta` ships, with the packager's own `ignore` and `plain-copy` rules: a directory entry becomes `entry/*`, a missing one matches file and directory, and dot paths are always pruned |
 | `visual_proof` | The actual-client visual proof gate: the source runtime digest (TOC graph, Core pin and packaging policy), the canonical packaged runtime digest (`.pkgmeta` selection plus the packager's line endings and TOC version), the checkout-to-installed comparison, its fail-closed token check, and the exact pull request base commit (event SHA, or the PR's base through the API when the payload has none) |
 | `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Players` (or the older `## Ideas and contributors`) ship with text under them, the ForeverCore pin, `.pkgmeta` external and TOC field agree, no widget method that takes parameters is passed straight as a script handler, specs pass on the packaged files |
@@ -50,8 +50,9 @@ version that either one proposes waits for review.
 | `sync` | `check`, `update`, `pin`, `manifest` |
 
 A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_art.py`,
-`lint_multivalue.py`, `lint_secret.py`, `typecheck_coverage.py`, `check_package.py`, `check_screenshots.py`,
-`check_editorconfig.py`, `check_family.py`, `check_locales.py`, `check_store_page.py`, `doctor.py`) and add only per-addon policy such as `RUNTIME_DIRS`.
+`lint_multivalue.py`, `lint_secret.py`, `lint_client_calls.py`, `typecheck_coverage.py`, `check_package.py`,
+`check_screenshots.py`, `check_editorconfig.py`, `check_family.py`, `check_locales.py`, `check_store_page.py`,
+`doctor.py`) and add only per-addon policy such as `RUNTIME_DIRS`.
 
 The packaged-zip check runs in its own CI job, after the pinned packager builds without uploading:
 

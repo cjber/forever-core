@@ -9,6 +9,12 @@
   recorded visual proof, say) was dropped without a word. The sync now runs on the open pull request's own head and
   adds its commit on top, so those commits stay, and a pull request it cannot update in place is left exactly as it is
   with a comment saying why. (#531)
+- **The client-call lint reaches every addon.** `tools/lint_client_calls.py` is now vendored into every published
+  addon through the sync, so `tools/check_core_shared.py` fails a copy that is missing or differs from core. Add
+  `python3 tools/lint_client_calls.py` to the addon's own `tools/typecheck.sh`, and declare a global an optional
+  dependency provides in `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per function with the folder
+  in the root TOC's `## OptionalDeps`. The lint refuses a call of a client function the Forever client does not have,
+  which type-checks against the retail annotations and then fails in game with `attempt to call a nil value`. (#539)
 
 ## [1.10.0] - 2026-11-13
 

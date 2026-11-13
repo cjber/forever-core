@@ -170,14 +170,15 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   names, and its build is recorded in the header. `--check` fails when the committed file differs from a fresh
   generation, and the `check` CI job runs it that way. Regenerate the file after the UI pin moves or a probe table is
   refreshed; never hand-edit it.
-- `forever_tools/client_calls.py` and `tools/lint_client_calls.py`: the client-call lint, run by `tools/typecheck.sh`
-  beside LuaLS, because LuaLS checks against the retail `vscode-wow-api` annotations and this client lacks some of
-  those functions. Every bare global the runtime files call (`Name(...)`, which is where `attempt to call a nil value`
-  comes from) and every read of `C_X.Y` must be in `client_names.txt`, a Lua 5.1 or WoW global the pinned annotations
-  define, or a global the addon or ForeverCore defines (assigned, a `CreateFrame(type, "Name")` frame, a frame one of
-  ForeverCore's three naming helpers builds from the addon's string, an XML `name=`, or a TOC `## SavedVariables`). A
-  method call (`Name:Method(...)`) makes the global a table, and a plain read of a string, table or constant is
-  neither: neither is checked. An addon whose global comes from an optional dependency declares it in
+- `forever_tools/client_calls.py` and `tools/lint_client_calls.py`: the client-call lint, vendored into every
+  published addon and run by each addon's own `tools/typecheck.sh` beside LuaLS, because LuaLS checks against the
+  retail `vscode-wow-api` annotations and this client lacks some of those functions. Every bare global the runtime
+  files call (`Name(...)`, which is where `attempt to call a nil value` comes from) and every read of `C_X.Y`
+  must be in `client_names.txt`, a Lua 5.1 or WoW global the pinned annotations define, or a global the addon or
+  ForeverCore defines (assigned, a `CreateFrame(type, "Name")` frame, a frame one of ForeverCore's three naming
+  helpers builds from the addon's string, an XML `name=`, or a TOC `## SavedVariables`). A method call
+  (`Name:Method(...)`) makes the global a table, and a plain read of a string, table or constant is neither: neither is
+  checked. An addon whose global comes from an optional dependency declares it in
   `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per global function it calls, and the folder must be
   in the root TOC's `## OptionalDeps` (exact, `client-optional-folder` otherwise); a declared name it never calls fails
   (`client-optional-unused`). A deliberate exception carries `-- client-ok: <reason>`; a waiver that excuses nothing
