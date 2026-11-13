@@ -7,11 +7,14 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
 from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_core_shared
 import sync_consumer_prs as sync
@@ -706,6 +709,70 @@ class InPlaceSyncTest(unittest.TestCase):
         self.assertIn("could not fetch forever-core-sync", result.detail)
         self.assertFalse(any("--input" in call[1] for call in calls), "nothing is committed over an unread branch")
 
+    def run_fresh(self, root, git_calls, listings, commit):
+        """A sync whose open PR goes away mid-run; `listings` are the successive sync PR listings."""
+        with (
+            mock.patch.object(sync, "clone", side_effect=lambda repo, workspace: workspace / repo),
+            mock.patch.object(sync, "open_sync_prs", side_effect=listings),
+            mock.patch.object(sync, "git", side_effect=git_calls),
+            mock.patch.object(sync, "sync_checkout"),
+            mock.patch.object(
+                sync, "staged_changes", return_value=([{"path": "UI/TrackerHost.lua", "contents": "eA=="}], [])
+            ),
+            mock.patch.object(sync, "create_commit", side_effect=commit) as create,
+            mock.patch.object(sync, "point_branch") as point,
+            mock.patch.object(sync, "delete_branch"),
+            mock.patch.object(sync, "left_alone") as alone,
+            mock.patch.object(
+                sync, "open_or_update_pr", return_value=(8, "https://example.test/pull/8", "opened", None)
+            ) as opened,
+        ):
+            result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+        return result, create, point, alone, opened
+
+    def test_a_pr_whose_branch_is_already_gone_gets_a_fresh_branch_from_main(self):
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[0] == "fetch":
+                return subprocess.CompletedProcess(args, 128, "", "fatal: couldn't find remote ref refs/heads/x")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result, create, point, alone, opened = self.run_fresh(
+                Path(directory), fake_git, [[self.PULL]], lambda *args: "commitoid"
+            )
+
+        self.assertEqual((result.status, result.url), ("opened", "https://example.test/pull/8"))
+        self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "mainoid"))
+        point.assert_any_call("legacy-forever", sync.BRANCH, "commitoid")
+        alone.assert_not_called()
+        self.assertIsNone(opened.call_args.args[2], "the merged PR is not refreshed; a new one is opened")
+
+    def test_a_pr_that_merges_before_the_commit_is_synced_again_from_the_new_main(self):
+        heads = iter(["mainoid\n", "newmainoid\n"])
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, next(heads), "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def commit(repo, branch, expected, *rest):
+            if branch == sync.BRANCH:
+                raise sync.SyncError("gh api graphql failed: gh: Branch not found")
+            return "commitoid"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, create, point, alone, opened = self.run_fresh(root, fake_git, [[self.PULL], [], []], commit)
+
+        self.assertEqual(result.status, "opened")
+        self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "newmainoid"))
+        alone.assert_not_called()
+        self.assertIsNone(opened.call_args.args[2])
+
 
 class ToolingTest(unittest.TestCase):
     def test_only_packages_with_a_manifest_are_synced(self):
@@ -1231,6 +1298,72 @@ class MainTest(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(sync.main(), 0)
         self.assertIn("CONSUMER_SYNC_TOKEN is not set", out.getvalue())
+
+
+class VisualProofHintTest(unittest.TestCase):
+    """A sync PR that changes runtime files prints the proof command the release session has to run."""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (self.root / "LegacyForever.toc").write_text("## Interface: 16001\n## Version: 1.0.0\n")
+        (self.root / "UI").mkdir()
+        (self.root / "UI/WhatsNew.lua").write_text("-- notice\n")
+
+    def test_a_runtime_change_without_a_proof_asks_for_one(self):
+        self.assertTrue(sync.proof_needed(self.root, ["UI/WhatsNew.lua"]))
+        self.assertTrue(sync.proof_needed(self.root, ["tools/forever-core.txt"]))
+        self.assertFalse(sync.proof_needed(self.root, ["docs/readme.md"]))
+        self.assertFalse(sync.proof_needed(self.root, ["tools/some_tool.py"]))
+
+    def test_a_proof_recorded_for_the_synced_tree_is_enough(self):
+        (self.root / ".visual-proof.json").write_text(json.dumps({"input_digest": sync.input_digest(self.root)}))
+        self.assertFalse(sync.proof_needed(self.root, ["UI/WhatsNew.lua"]))
+        (self.root / ".visual-proof.json").write_text(json.dumps({"input_digest": "0" * 64}))
+        self.assertTrue(sync.proof_needed(self.root, ["UI/WhatsNew.lua"]))
+
+    def test_the_hint_names_the_exact_command_and_head(self):
+        hint = sync.proof_hint("legacy-forever", "f" * 40)
+        self.assertIn(f"proof --repo legacy-forever --ref {'f' * 40}", hint)
+        self.assertIn("--checkout", hint)
+        self.assertIn("--flow", hint)
+        self.assertIn(".visual-proof.json", hint)
+        self.assertIn("visual-proof", hint)
+
+    def test_a_sync_pr_that_moves_the_pin_prints_the_hint(self):
+        clone = self.root / "legacy-forever"
+        clone.mkdir()
+        (clone / "LegacyForever.toc").write_text("## Interface: 16001\n## Version: 1.0.0\n")
+        (clone / "UI").mkdir()
+        (clone / "UI/WhatsNew.lua").write_text("-- notice\n")
+        (clone / "tools").mkdir()
+        (clone / "tools/forever-core.txt").write_text("v1.4.0\n")
+
+        def fake_git(_root, *args, check=True):
+            if "rev-parse" in args:
+                return subprocess.CompletedProcess(args, 0, "a" * 40 + "\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        out = io.StringIO()
+        with (
+            mock.patch.object(sync, "clone", return_value=clone),
+            mock.patch.object(sync, "open_sync_prs", return_value=[]),
+            mock.patch.object(sync, "git", side_effect=fake_git),
+            mock.patch.object(sync, "sync_checkout"),
+            mock.patch.object(
+                sync,
+                "staged_changes",
+                return_value=([{"path": "tools/forever-core.txt", "contents": "eA=="}], []),
+            ),
+            mock.patch.object(sync, "point_branch"),
+            mock.patch.object(sync, "create_commit", return_value="f" * 40),
+            mock.patch.object(
+                sync, "open_or_update_pr", return_value=(9, "https://example.test/pull/9", "opened", None)
+            ),
+            contextlib.redirect_stdout(out),
+        ):
+            result = sync.sync_consumer("legacy-forever", self.root, self.root, "a" * 40)
+        self.assertEqual(result.status, "opened")
+        self.assertIn(f"proof --repo legacy-forever --ref {'f' * 40}", out.getvalue())
 
 
 if __name__ == "__main__":

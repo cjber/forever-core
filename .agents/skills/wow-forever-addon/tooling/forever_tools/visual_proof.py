@@ -1,4 +1,8 @@
-"""Verify human-recorded in-game visual proof for runtime UI changes.
+"""Verify the in-game visual proof a runtime UI change carries.
+
+The proof is `.visual-proof.json`: the flows checked in the WoW: Forever client with the candidate build installed,
+their screenshots at full-SHA gist URLs (the same images the pull request shows) with each image's sha256, and the
+digests below that bind them to the exact runtime the session loaded.
 
 The proof separates what the checkout supplies from what a release installs:
 

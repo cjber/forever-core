@@ -22,6 +22,8 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
     forever_client.py smoke --repo R --ref SHA  # build that commit, selftest it, post the headless-smoke status
+    forever_client.py proof --repo R --ref SHA --checkout PATH --flow NAME=SLASH_OR_LUA_FILE
+                                          # record the checkout's .visual-proof.json from a client session
 
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
@@ -30,7 +32,17 @@ fills in. It starts the client the way `up` does, and `--manual-launcher` is pas
 OCR is not finding Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes
 `shot` and clicks Play itself. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the
 player's game or another session) so nothing is posted and a caller retries later. The AddOns folder is shared: every
-slot the smoke borrows is put back exactly as it was, including a store install it moved aside.
+slot the smoke borrows is put back exactly as it was, including a store install it moved aside. A stop that never
+reaches Python's handlers leaves that record behind, and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays
+it before it touches AddOns.
+
+`proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It builds and links the
+candidate the way `smoke` does, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` (a Forever addon's own slash
+command, or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new secret gist, and
+writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256,
+then checks the installed folder with `visual_proof --compare`. It never commits or pushes the checkout. There is no
+default flow: ForeverCore has no shared opener for an addon's update notice, so the flow is named on the command line
+and `wow-forever-addon/in-game.md` shows it.
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -56,6 +68,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -98,6 +111,15 @@ SMOKE_OWNER = "cjber"
 SMOKE_CONTEXT = "headless-smoke"
 SMOKE_REPO = re.compile(r"^[A-Za-z0-9._-]+$")
 STATUS_LIMIT = 140
+# The visual proof a release prep or a Core pin bump records: `.visual-proof.json` in the checkout the proof is for,
+# its screenshots in a secret gist, and the client build the session's own log names.
+PROOF_FILE = ".visual-proof.json"
+PROOF_SCRATCH = Path.home() / ".cache/agent-scratch"
+GIST_OWNER = "cjber"
+GIST_URL = re.compile(r"https://gist\.github\.com/[^/\s]+/([0-9a-f]+)")
+GIST_DESCRIPTION = "WoW: Forever visual proof"
+CLIENT_BUILD_LINE = re.compile(r"World of Warcraft \S+ \S+ (\d+(?:\.\d+)+)")
+INTERFACE_LINE = re.compile(r"(?m)^## Interface:\s*(\d+)\s*$")
 
 PREFIX = Path.home() / "Games/battlenet"
 CLIENT = PREFIX / "drive_c/Program Files (x86)/World of Warcraft/_forever_"
@@ -673,6 +695,63 @@ def link_record_path() -> Path:
     return STATE_DIR / LINK_RECORD
 
 
+def process_start(pid: int) -> int | None:
+    """A process's start time in clock ticks since boot, which tells a live process from one that reused its pid."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return int(stat.rsplit(")", 1)[1].split()[19])  # starttime is field 22, the 20th after the command name
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def owner_alive(owner: object) -> bool:
+    """Whether the session that wrote a link record still runs; a reused pid is told apart by its start time."""
+    pid = owner.get("pid") if isinstance(owner, Mapping) else None
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        pass  # another user's pid, or a number no process can have: the start time below decides
+    started = owner.get("started")
+    return process_start(pid) == started if isinstance(started, int) else True
+
+
+def link_record() -> dict | None:
+    """The way back a session wrote before it borrowed an AddOns slot, or None.
+
+    The record names its owner by pid and start time. A record an older version wrote is the bare list of links and
+    names no owner: it is replayed only while no session holds the client.
+    """
+    path = link_record_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise ClientError(
+            f"cannot read {path} ({error}): put the AddOns folder back by hand, then remove that file"
+        ) from None
+    if isinstance(data, list):
+        return {"owner": None, "links": data}
+    links = data.get("links") if isinstance(data, dict) else None
+    if not isinstance(links, list) or any(not isinstance(link, dict) or "slot" not in link for link in links):
+        raise ClientError(f"{path} is not a link record: put the AddOns folder back by hand, then remove that file")
+    return data
+
+
+def write_link_record(records: Sequence[dict]) -> None:
+    """Record the way back before each change, naming this session, in one replace so a kill cannot truncate it."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = link_record_path()
+    owner = {"pid": os.getpid(), "started": process_start(os.getpid())}
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps({"owner": owner, "links": list(records)}))
+    os.replace(temporary, path)
+
+
 def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
     """Point each addon folder in AddOns at the build, recording exactly what was there to put back.
 
@@ -697,7 +776,7 @@ def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
                 slot.rename(aside)
                 record["was"] = {"moved": str(aside)}
             records.append(record)
-            link_record_path().write_text(json.dumps(records))
+            write_link_record(records)
             slot.symlink_to(folder)
     except BaseException:
         restore_links(records)
@@ -735,6 +814,51 @@ def restore_links(records: Sequence[dict]) -> None:
         link_record_path().unlink(missing_ok=True)
 
 
+def describe_restore(record: Mapping) -> str:
+    """One slot a replay put back, for the line the next session prints."""
+    name = Path(record["slot"]).name
+    was = record.get("was")
+    if was is None:
+        return f"{name} (the link removed)"
+    if "link" in was:
+        return f"{name} (link back to {was['link']})"
+    return f"{name} (store install back)"
+
+
+def recover_links() -> int:
+    """Put back a record a session stopped without its teardown left, and say what it put back.
+
+    A stop that never reaches Python's handlers (SIGKILL, a signal aimed at the wrapping shell, a hangup before the
+    handler was installed) leaves the links a smoke borrowed in AddOns and the store install at `.smoke-backup`. The
+    record names the session that wrote it by pid and start time, so a record whose session still runs is left to that
+    session's own teardown, and this session's own record is left alone too: the smoke reading it here is the one that
+    just linked. Anything else is replayed through `restore_links`, the one teardown, before AddOns is used again.
+    """
+    record = link_record()
+    if record is None:
+        return 0
+    owner = record.get("owner")
+    if owner == {"pid": os.getpid(), "started": process_start(os.getpid())}:
+        return 0
+    # A record an older version wrote names no owner, so the client lock and the prefix decide: while any session
+    # holds the client, that record may be its live smoke.
+    if owner_alive(owner) or (owner is None and client_in_use()):
+        print(
+            f"forever_client: {link_record_path()} belongs to a running session; its links are left alone",
+            file=sys.stderr,
+        )
+        return 0
+    links = record["links"]
+    restore_links(links)
+    put_back = [describe_restore(link) for link in links if link.get("restored")]
+    if put_back:
+        detail = ", ".join(put_back)
+        print(f"forever_client: put back the AddOns links a stopped session left behind: {detail}", flush=True)
+    elif not links:
+        link_record_path().unlink(missing_ok=True)
+    return len(put_back)
+
+
 def client_in_use() -> str | None:
     """Why no session can start now, or None: the player's client, another session's lock, or Wine in the prefix."""
     users = prefix_users()
@@ -755,8 +879,8 @@ def client_in_use() -> str | None:
 
 
 def stop_handlers() -> dict[int, object]:
-    """Turn SIGTERM and SIGINT into a KeyboardInterrupt so a smoke puts the AddOns links back before it exits."""
-    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+    """Turn SIGTERM, SIGHUP and SIGINT into a KeyboardInterrupt so a stopped smoke puts the AddOns links back."""
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
 
     def on_signal(_signum, _frame):
         raise KeyboardInterrupt
@@ -851,6 +975,7 @@ def smoke(args: argparse.Namespace) -> int:
     if not root.is_dir():
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    recover_links()
     busy = client_in_use()
     if busy:
         print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
@@ -904,6 +1029,260 @@ def smoke(args: argparse.Namespace) -> int:
     post_status(repo, commit, ok, description)
     print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
     return 0 if ok else 1
+
+
+# --- the visual proof ------------------------------------------------------------------------------------------
+
+
+def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
+    """`--flow NAME=SLASH_OR_LUA_FILE` entries: a name for the proof and the in-game action that shows it."""
+    flows = []
+    for value in values:
+        name, separator, action = value.partition("=")
+        if not separator or not name.strip() or not action.strip():
+            raise ClientError(f"--flow takes NAME=SLASH_OR_LUA_FILE, not {value!r}")
+        action = action.strip()
+        if not action.startswith("/") and not Path(action).is_file():
+            raise ClientError(f"--flow {name.strip()}: no Lua file at {action}")
+        flows.append((name.strip(), action))
+    return flows
+
+
+def run_flow(state: Mapping, action: str) -> None:
+    """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke."""
+    if action.startswith("/"):
+        slash(state, action)
+        return
+    tool = devsmoke_eval()
+    try:
+        written = tool.write_snippet(Path(action), addons=CLIENT / "Interface/AddOns")
+    except tool.EvalError as error:
+        raise ClientError(str(error)) from None
+    print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+    reload(state)
+    report, ok = format_eval(saved_eval())
+    print(report)
+    if not ok:
+        raise ClientError(f"flow snippet {action} failed: {report}")
+
+
+def flow_slug(name: str) -> str:
+    """A flow name as a screenshot file name, so each image is recognisable in the gist."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.casefold()).strip("-")
+    return slug or "flow"
+
+
+def client_build(folder: Path) -> str:
+    """The client build the session ran, from the client's own log, and the interface its addons target."""
+    version = None
+    try:
+        for line in (CLIENT / "Logs/gx.log").read_text(errors="replace").splitlines():
+            match = CLIENT_BUILD_LINE.search(line)
+            if match:
+                version = match.group(1)
+    except OSError:
+        version = None
+    if not version:
+        raise ClientError(f"the client wrote no build line to {CLIENT / 'Logs/gx.log'}")
+    interface = None
+    for toc in sorted(folder.glob("*.toc")):
+        match = INTERFACE_LINE.search(toc.read_text(errors="replace"))
+        if match:
+            interface = match.group(1)
+            break
+    return f"{version} (Interface {interface})" if interface else version
+
+
+def run_tool(command: Sequence[str], purpose: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """One shell tool for the proof upload, its failure a ClientError the agent can read."""
+    try:
+        completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
+    except OSError as error:
+        raise ClientError(f"cannot {purpose}: {error}") from None
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"could not {purpose}: {detail}")
+    return completed
+
+
+def create_gist(description: str, workspace: Path) -> str:
+    """A new secret gist holding its README, and its id: `gh gist create` prints the gist's URL."""
+    workspace.mkdir(parents=True, exist_ok=True)
+    readme = workspace / "README.md"
+    readme.write_text(f"# {GIST_DESCRIPTION}\n\n{description}\n", encoding="utf-8")
+    completed = run_tool(["gh", "gist", "create", "--desc", description, str(readme)], "create the proof gist")
+    match = GIST_URL.search(completed.stdout)
+    if not match:
+        raise ClientError(f"gh gist create printed no gist URL: {completed.stdout.strip()[:200]}")
+    return match.group(1)
+
+
+def upload_screenshots(gist: str, screenshots: Sequence[Path], description: str) -> list[dict]:
+    """Push the PNGs to the gist and name each one by the full commit SHA its raw URL is pinned to."""
+    scratch = PROOF_SCRATCH / f"visual-proof-{gist}"
+    PROOF_SCRATCH.mkdir(parents=True, exist_ok=True)
+    run_tool(["git", "clone", f"https://gist.github.com/{gist}.git", str(scratch)], "clone the proof gist")
+    for image in screenshots:
+        shutil.copyfile(image, scratch / image.name)
+    run_tool(["git", "-C", str(scratch), "add", "-A"], "add the proof screenshots")
+    run_tool(["git", "-C", str(scratch), "commit", "-m", description], "commit the proof screenshots")
+    run_tool(["git", "-C", str(scratch), "push", "origin", "HEAD"], "push the proof screenshots")
+    commit = run_tool(["git", "-C", str(scratch), "rev-parse", "HEAD"], "read the proof gist commit").stdout.strip()
+    return [
+        {
+            "url": f"https://gist.githubusercontent.com/{GIST_OWNER}/{gist}/raw/{commit}/{image.name}",
+            "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+        }
+        for image in screenshots
+    ]
+
+
+def visual_proof_tool(checkout: Path) -> list[str]:
+    """The visual proof checker of `checkout`, or this repository's own wrapper for a checkout without one."""
+    wrapper = checkout / "tools/check_visual_proof.py"
+    if wrapper.is_file():
+        return [sys.executable, str(wrapper)]
+    if (checkout / "tools/forever_tools/visual_proof.py").is_file():
+        return [sys.executable, "-m", "tools.forever_tools.visual_proof"]
+    core = Path(__file__).resolve().parents[2] / "tools/check_visual_proof.py"
+    if core.is_file():
+        return [sys.executable, str(core)]
+    raise ClientError(f"no visual proof checker in {checkout} or beside this tool")
+
+
+def visual_proof_run(checkout: Path, *args: str) -> subprocess.CompletedProcess:
+    """One read of the checkout's own visual proof checker, run at the checkout so `.` is that tree."""
+    try:
+        return subprocess.run(
+            [*visual_proof_tool(checkout), *args], cwd=checkout, text=True, capture_output=True, check=False
+        )
+    except OSError as error:
+        raise ClientError(f"cannot run visual_proof in {checkout}: {error}") from None
+
+
+def proof_digests(checkout: Path) -> dict:
+    """`visual_proof --digests`: the source identity and the canonical packaged runtime."""
+    completed = visual_proof_run(checkout, "--digests")
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"visual proof --digests failed in {checkout}: {detail}")
+    try:
+        return json.loads(completed.stdout)
+    except ValueError:
+        raise ClientError(f"visual proof --digests printed no JSON: {completed.stdout.strip()[:200]}") from None
+
+
+def proof_compare(checkout: Path, installed: Path) -> dict:
+    """`visual_proof --compare`: the checkout's shipped runtime against the installed addon folder."""
+    completed = visual_proof_run(checkout, "--compare", str(installed))
+    try:
+        comparison = json.loads(completed.stdout)
+    except ValueError:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"visual proof --compare printed no JSON in {checkout}: {detail[:200]}") from None
+    if not comparison.get("equivalent"):
+        problems = [
+            f"{key}: {', '.join(comparison.get(key) or [])}"
+            for key in ("missing", "differing", "extra")
+            if comparison.get(key)
+        ]
+        raise ClientError(f"{installed} does not match {checkout}: {'; '.join(problems) or 'not equivalent'}")
+    return comparison
+
+
+def proof(args: argparse.Namespace) -> int:
+    """Record a commit's in-game visual proof into the checkout the pull request carries.
+
+    The build and the AddOns links are the smoke's, so every borrowed slot is put back on any exit. The session
+    reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist. The proof is
+    written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
+    """
+    flows = parse_flows(args.flow)
+    if not flows:
+        raise ClientError(
+            "proof needs at least one --flow: ForeverCore has no shared opener for an addon's update notice, so name "
+            'it here, such as --flow "update notice=/lf" or --flow "update notice=notice.lua"'
+        )
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    checkout = Path(args.checkout).resolve()
+    if not checkout.is_dir():
+        raise ClientError(f"no checkout at {checkout}: --checkout is the tree the proof is written to")
+    commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    head = git(checkout, "rev-parse", "--verify", "HEAD")
+    if head != commit:
+        raise ClientError(f"{checkout} is at {head[:7]}, not {repo}@{commit[:7]}: check out the proof's commit first")
+    recover_links()
+    busy = client_in_use()
+    if busy:
+        print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
+        return 3
+    folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-proof", repo_root=root)
+    folders = addon_folders(folder, package_name(root, commit))
+    if not folders:
+        raise ClientError(f"{folder} ships no addon folder")
+    screenshots: list[Path] = []
+    shots_folder = PROOF_SCRATCH / f"proof-{repo}-{commit[:7]}"
+    previous = stop_handlers()
+    try:
+        records = link_build(folders, addons_dir())
+        try:
+
+            def record(state):
+                reload(state)
+                for index, (name, action) in enumerate(flows, start=1):
+                    run_flow(state, action)
+                    screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
+                return 0
+
+            options = argparse.Namespace(wait=False, manual_launcher=args.manual_launcher, timeout=args.timeout)
+            try:
+                up(options, after_ready=record)
+            except ClientError:
+                busy = client_in_use()
+                if not screenshots and busy:
+                    print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
+                    return 3
+                raise
+        finally:
+            restore_links(records)
+    except KeyboardInterrupt:
+        print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
+        return 1
+    finally:
+        restore_handlers(previous)
+    if not screenshots:
+        # `up` turns a signal into a normal return after its own teardown, so an empty run is a stopped session.
+        print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
+        return 1
+    digests = proof_digests(checkout)
+    description = f"Visual proof for {repo} at {commit} (flows: {', '.join(name for name, _ in flows)})"
+    gist = create_gist(description, shots_folder)
+    images = upload_screenshots(gist, screenshots, description)
+    proof_data = {
+        "input_digest": digests["input_digest"],
+        "runtime_sha256": digests["input_digest"],
+        "candidate": digests["candidate"],
+        "client_build": client_build(folders[0][1]),
+        "tested_artifact": "source-tree",
+        "source_commit": commit,
+        "flows": [{"name": name, "steps": [action], "result": "pass"} for name, action in flows],
+        "images": images,
+    }
+    target = checkout / PROOF_FILE
+    target.write_text(json.dumps(proof_data, indent=2) + "\n", encoding="utf-8")
+    try:
+        proof_compare(checkout, folders[0][1])
+    except ClientError:
+        # A proof that does not describe the installed build must never be left where it could be committed.
+        target.unlink(missing_ok=True)
+        raise
+    print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
+    return 0
 
 
 # --- session lifecycle -----------------------------------------------------------------------------------------
@@ -1045,6 +1424,7 @@ def at_character_select(state: Mapping, manual_launcher: bool) -> None:
 
 
 def up(args: argparse.Namespace, after_ready=None) -> int:
+    recover_links()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock = open(STATE_DIR / "lock", "w")
     if args.wait:
@@ -1093,6 +1473,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGHUP, on_signal)
     signal.signal(signal.SIGALRM, on_signal)
     signal.alarm(MAX_SESSION)
     log = open(STATE_DIR / "session.log", "w")
@@ -1166,7 +1547,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         return 0
     finally:
         signal.alarm(0)
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGALRM):
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGALRM):
             signal.signal(signum, signal.SIG_IGN)
         teardown(gamescope, wine, link, state)
         print("stopped: logged out, gamescope, Wine and the dev addon link are gone", flush=True)
@@ -1347,6 +1728,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
     )
+    p = sub.add_parser("proof", help="record a commit's .visual-proof.json from a client session")
+    p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
+    p.add_argument("--ref", required=True, help="the commit the proof is for")
+    p.add_argument("--checkout", required=True, type=Path, help="the checkout of that commit the proof is written to")
+    p.add_argument(
+        "--flow",
+        action="append",
+        default=[],
+        metavar="NAME=SLASH_OR_LUA_FILE",
+        help="one flow to capture: a Forever addon slash command, or a Lua file run through !!DevSmoke",
+    )
+    p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
+    p.add_argument(
+        "--manual-launcher",
+        action="store_true",
+        help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1374,6 +1772,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(load_state(), indent=1))
             return 0
         if args.verb == "build-dev":
+            # A hand link follows this build, so a record a stopped session left is replayed before it.
+            recover_links()
             root = WORKSPACE / args.repo
             commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
             release = tag_name(root, commit)
@@ -1388,6 +1788,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.verb == "smoke":
             return smoke(args)
+        if args.verb == "proof":
+            return proof(args)
         state = load_state()
         launcher_action = state.get("manual_launcher") and (
             args.verb == "shot" or (args.verb == "click" and args.button == "1")

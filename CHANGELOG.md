@@ -7,6 +7,25 @@
 ### For addon authors
 
 - **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
+- **A visual proof is one command, on a release prep or a Core pin bump.** `tools/headless/forever_client.py proof
+  --repo <repo> --ref <sha> --checkout <tree> --flow "update notice=<slash command or Lua file>"` builds and links the
+  commit as `smoke` does, reloads once, runs each named flow (a Forever addon's own slash command, or a Lua file
+  through `!!DevSmoke`), screenshots each and uploads the PNGs to a new secret gist. It writes
+  `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
+  checks the installed build with `visual_proof --compare`; every AddOns slot is put back and the checkout is never
+  committed or pushed. A release preparation and a sync pull request that moves the ForeverCore pin run it, so the
+  required `visual-proof` check passes without `--admin`; `tools/sync_consumer_prs.py` prints the command for a sync
+  pull request whose changed files need a proof, because it cannot drive the client itself. ForeverCore has no shared
+  opener for an addon's update notice, so the flow is always named. (#563)
+- **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
+  pull request, and when that PR merged and its branch was deleted before the commit, the commit failed with "Branch
+  not found". The sync now opens a fresh branch and pull request from the new `main` instead. (#559)
+- **An addon whose CI lives outside core's can install its tools from the shared toolchain action.** The action's `lua`
+  set also installs the PUC Lua 5.1.5 interpreter as `lua5.1`, beside the `luac5.1` compiler it already built, and
+  `verify.sh` checks both against the manifest. Every cache key now hashes the action's own `build.sh` and `install.sh`
+  as well as the tool's pins, so an edited script no longer restores a cache it did not build. Kiln Forever now
+  receives `tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock` under `addon/KilnForever/`, as the
+  published addons do, so its CI reads the one pin manifest and the one `uv` group.
 - **A sync PR keeps the commits added to it.** `tools/sync_consumer_prs.py` rebuilt every consumer's
   `forever-core-sync` branch from `main` on each push to core `main`, so a commit pushed to an open sync pull request (a
   recorded visual proof, say) was dropped without a word. The sync now runs on the open pull request's own head and
@@ -18,6 +37,14 @@
   dependency provides in `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per function with the folder
   in the root TOC's `## OptionalDeps`. The lint refuses a call of a client function the Forever client does not have,
   which type-checks against the retail annotations and then fails in game with `attempt to call a nil value`. (#539)
+- **A stopped smoke no longer leaves its AddOns links behind.** A smoke that is killed where no Python handler runs
+  (SIGKILL, or a signal aimed at the shell around it) used to leave the build linked over `ForeverCore` and the store
+  install at `<folder>.smoke-backup` until someone noticed. The record `~/.local/state/forever-client/smoke-links.json`
+  now names the session that wrote it, by pid and start time, and the next `up`, `run`, `smoke` or `build-dev` replays
+  it through the one `restore_links` teardown before it touches AddOns, then says what it put back. A record whose
+  session is still running, including the smoke's own `up`, is left to that session, and a record it cannot read
+  refuses instead of guessing. SIGTERM, SIGHUP and SIGINT all restore in-process, and `up` handles a hangup like the
+  others. (#555)
 
 ## [1.10.0] - 2026-11-13
 

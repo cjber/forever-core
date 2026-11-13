@@ -27,6 +27,11 @@ the addon's specs and CI test against the core a player runs. The pin change rid
 says what moved. A pin that is newer, equal or not a `vX.Y.Z` tag is left alone, and a run that cannot read the latest
 release leaves every pin alone rather than failing the tooling sync.
 
+A sync PR that changes runtime files or moves the pin cannot record the visual proof the consumer's `visual-proof` job
+needs, because this script never drives the client. When the tree the PR now carries has no proof for its own input
+digest, the run prints the `python3 tools/headless/forever_client.py proof ...` command for that PR's head, and the
+release session runs it and commits the `.visual-proof.json` it writes.
+
 The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
 (adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
@@ -75,6 +80,7 @@ from check_consumers import (
     pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
+from forever_tools.visual_proof import input_digest, requires_proof
 
 OWNER = "cjber"
 CORE_REPO = "forever-core"
@@ -692,6 +698,36 @@ def create_commit(
     return created_oid(api("graphql", "--input", str(body)))
 
 
+VISUAL_PROOF = ".visual-proof.json"
+
+
+def proof_needed(root: Path, files: list[str]) -> bool:
+    """Whether this sync PR changes runtime files without a proof recorded for the tree it now carries.
+
+    `requires_proof` is the visual-proof job's own rule, so the hint names exactly the PRs whose check would fail.
+    A recorded proof is only valid for its own input digest, which the Core pin is part of, so a pin bump invalidates
+    it and the check asks for a new one.
+    """
+    if not requires_proof(root, files):
+        return False
+    try:
+        proof = json.loads((root / VISUAL_PROOF).read_text(encoding="utf-8"))
+        return proof.get("input_digest") != input_digest(root)
+    except (OSError, ValueError):
+        return True
+
+
+def proof_hint(repo: str, ref: str) -> str:
+    """The command that records the proof a sync PR needs, with its flow named by hand."""
+    return (
+        f"{repo}: this PR changes runtime files, so `visual-proof` needs a proof recorded on its head. Fetch\n"
+        f"`{BRANCH}` and check it out, then run:\n"
+        f"  python3 tools/headless/forever_client.py proof --repo {repo} --ref {ref} "
+        f'--checkout <the checkout of {ref}> --flow "update notice=<slash command or Lua file>"\n'
+        f"Commit the {VISUAL_PROOF} it writes to the PR."
+    )
+
+
 def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
     lines = ["Syncs this addon's copy of ForeverCore's development tooling.", ""]
     if pin_bump:
@@ -828,14 +864,17 @@ def auto_merge_warning(node_id: str) -> str | None:
     return None
 
 
-def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None) -> Result:
+def sync_consumer(
+    repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None, retry: bool = True
+) -> Result:
     """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
 
     An open sync PR is updated in place: the sync runs on that PR's own head and its commit is added on top, so a
     commit pushed to the PR since the last sync is never dropped. The commit is made straight on `forever-core-sync`
     with that head as its expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left
     untouched and a comment on the PR says why. A consumer with no open PR has its branch rebuilt from `main` on a
-    scratch branch, which is safe because there is no PR whose commits could be lost.
+    scratch branch, which is safe because there is no PR whose commits could be lost. A PR that merges or closes while
+    the sync runs takes its branch with it; then the sync starts over once from the new `main`, as if no PR were open.
     """
     try:
         root = clone(repo, workspace)
@@ -844,7 +883,10 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
         pull = listed[0] if listed else None
         base = main
         if pull is not None:
-            base = fetch_branch(root, BRANCH) or main
+            base = fetch_branch(root, BRANCH)
+            if base is None:
+                # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
+                pull, base = None, main
         git(root, "checkout", "-B", BRANCH, base)
         bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
@@ -858,21 +900,27 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
         body = pr_body(sha, files, pin_bump)
         if pull is not None:
             try:
-                create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
+                oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
             except (SyncError, json.JSONDecodeError, OSError) as error:
+                if retry and not open_sync_prs(repo):
+                    # The PR merged or closed between the listing and the commit and took its branch: start over on the
+                    # new `main` in a fresh clone.
+                    return sync_consumer(repo, core_root, workspace / "retry", sha, latest, retry=False)
                 return left_alone(repo, pull, str(error))
             status = "updated in place"
         else:
             point_branch(repo, SCRATCH_BRANCH, main)
             try:
-                commit = create_commit(repo, SCRATCH_BRANCH, main, sha, additions, deletions, workspace)
+                oid = create_commit(repo, SCRATCH_BRANCH, main, sha, additions, deletions, workspace)
                 # Move the sync branch while the scratch ref still holds the commit, so it is never unreferenced.
-                point_branch(repo, BRANCH, commit)
+                point_branch(repo, BRANCH, oid)
             finally:
                 delete_branch(repo, SCRATCH_BRANCH)
             status = "opened"
         number, url, _, node_id = open_or_update_pr(repo, body, pull)
         warning = auto_merge_warning(node_id) if node_id else None
+        if proof_needed(root, list(files)):
+            print(proof_hint(repo, oid))
         return Result(repo, status, files, url, warning)
     except (SyncError, json.JSONDecodeError, OSError) as error:
         return Result(repo, "failed", detail=str(error))

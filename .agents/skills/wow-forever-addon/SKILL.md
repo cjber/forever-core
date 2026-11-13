@@ -128,9 +128,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 ### Docs
 
-- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI and
-  release badges; then Features, Install, Usage (slash commands), optional sections for how the
-  numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
+- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI, release
+  and CurseForge downloads badges (`img.shields.io/curseforge/dt/<X-Curse-Project-ID>`, linked to the
+  store page; ForeverCore itself has none, as every addon pulls it in); then Features, Install, Usage
+  (slash commands), optional sections for how the numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
   bullet led by a bold name, at most ~60 words; depth moves to `docs/`. `## Credits` is a short paragraph that
   thanks, by name and with a link, the data sources, the addons whose ideas a feature took (even when no code was
   copied, saying so), translators and the people who reported bugs or asked for features (GitHub handles and named
@@ -205,10 +206,11 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   history. Every pull-request workflow cancels a PR's superseded runs (top-level `concurrency` grouped on
   the PR number, `cancel-in-progress` only for `pull_request`, so `main` keeps a run per commit) and every
   job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT,
-  luacheck, LuaLS, StyLua and gitleaks come from `cjber/forever-core/.github/actions/toolchain@<sha>` at the commit
-  the repo's other core tooling comes from, never from apt, curl or a tool action: `with: tools: lua luals stylua
-  gitleaks` names what the job needs, and the action reads the vendored `tools/toolchain.json` from the job's own
-  checkout (its `manifest` input defaults to it), so every version comes from that one file. A job
+  the PUC Lua 5.1.5 compiler and interpreter, luacheck, LuaLS, StyLua and gitleaks come from
+  `cjber/forever-core/.github/actions/toolchain@<sha>` at the commit the repo's other core tooling comes from, never
+  from apt, curl or a tool action: `with: tools: lua luals stylua gitleaks` names what the job needs, and the action
+  reads the vendored `tools/toolchain.json` from the job's own checkout (its `manifest` input defaults to it), so every
+  version comes from that one file. A job
   named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
   one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
   hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,
@@ -233,7 +235,12 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Wago; the TOC carries `X-Curse-Project-ID` and `X-Wago-ID`. Setup is in `wow-addon-publish`.
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
-  100%.
+  100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
+  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges:
+  `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's tree>
+  --flow "update notice=<the addon's slash command or Lua file>"` builds the commit, runs the flow, uploads its
+  screenshots to a secret gist and writes `.visual-proof.json`; commit that file with the change (the full flow is in
+  [in-game.md](in-game.md)). The required `visual-proof` check then passes without an admin merge.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
   commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and

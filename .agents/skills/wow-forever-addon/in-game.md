@@ -46,7 +46,7 @@ python3 $FC down          # logs out, stops gamescope and every Wine process, re
 ```
 
 `run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
-whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 minute cap, ends it the same way.
+whatever the command returns. Stopping `up` with SIGTERM, SIGHUP, Ctrl-C or the 30 minute cap ends it the same way.
 
 ## Smoking a release commit
 
@@ -73,7 +73,10 @@ itself.
   posted then, so a caller runs it again later.
 - The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
   moved back from `<folder>.smoke-backup`. The record of what it borrowed is `~/.local/state/forever-client/smoke-links.json`
-  while the session runs, kept only if a restore could not finish.
+  while the session runs, kept only if a restore could not finish. A stop that never reaches Python's own handlers
+  (SIGKILL, or a signal aimed at the shell around it) leaves that record and its links behind; the next `up`, `run`,
+  `smoke` or `build-dev` puts them back before it touches AddOns and says what it restored, and a record whose session
+  is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
 head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never fights
@@ -95,6 +98,40 @@ runs the queue now, and `journalctl --user -u forever-smoke.service` has its lin
 session: it needs `gh` logged in without a prompt (put a token in an `EnvironmentFile` if the login lives in a
 keyring), and the GPU and Wine prefix reachable from the user manager. A commit whose build or session fails is named
 by the client tool and the queue moves on; the client being in use is the only reason it stops early.
+
+## Recording a visual proof
+
+Every pull request that changes what the player sees needs a `.visual-proof.json`, and the required `visual-proof`
+job fails without one. A release preparation edits the update notice (`UI/WhatsNew.lua` or `ns.WHATS_NEW`) and every
+locale, and a sync pull request moves the ForeverCore pin the recorded proof binds, so both need a new proof. One
+command records it in the headless client and writes the file into the checkout the pull request carries:
+
+```sh
+FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
+python3 $FC proof --repo legacy-forever --ref <sha> --checkout ~/drive/proj/wow/legacy-forever \
+  --flow "update notice=/lf"
+```
+
+`proof` builds that commit's dev archive under `test-artifacts/<repo>-proof` as `smoke` does, points the build's
+addon folders at it in `Interface/AddOns`, starts the client, reloads once, and then for each flow runs the flow and
+takes a screenshot. A flow is a Forever addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs;
+anything longer than a `/run` line belongs in a file, exactly as `eval` takes it. The PNGs go to a new secret gist,
+and `<checkout>/.visual-proof.json` gets their full-SHA raw URLs and sha256s beside `visual_proof --digests`' input and
+candidate digests and the client build. It then runs `visual_proof --compare` against the installed build, so a
+mismatch fails before the proof is committed. Every AddOns slot is put back exactly as it was, and the checkout is
+never committed or pushed: commit `.visual-proof.json` yourself, in the pull request it proves.
+
+There is no default flow. ForeverCore has no shared opener for an addon's update notice: every addon prints it as one
+chat line at login, and a dev build's stamped version does not equal the addon's `WHATS_NEW_VERSION`, so that line
+does not fire on its own in a proof session. Name the flow that shows the changed text: the addon's own slash command
+(the `SLASH_` globals in its files, such as `/lf` or `/fgf`), or a Lua file through `!!DevSmoke` for anything a chat
+command cannot reach, written as the eval section below shows. Exit 3 means the client is in use (the player's game or
+another session), so nothing was recorded and a later run tries again; exit 1 is a session that stopped before its
+flows ran, and exit 2 is a failure the tool names. `--manual-launcher` is passed through to `up` while launcher OCR is
+not finding Play.
+
+`tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
+proof it prints this command for the pull request's head, and the release session runs it and commits the result.
 
 ## The Agent chat tab and /devsmoke
 

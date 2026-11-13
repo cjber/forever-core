@@ -35,6 +35,7 @@ PY
     "$prefix/bin/luajit" -v 2>&1 | grep -q "LuaJIT $line"
     "$prefix/bin/luacheck" --version | grep -q "^Luacheck: $luacheck$"
     "$prefix/bin/luac5.1" -v 2>&1 | grep -q "Lua $lua51"
+    "$prefix/bin/lua5.1" -v 2>&1 | grep -q "Lua $lua51"
     ;;
 luals)
     version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["tools"]["luals"]["version"])' "$manifest")

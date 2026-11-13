@@ -7,14 +7,17 @@ description: Install the tool pins the calling repository's tools/toolchain.json
 # in-game visual proof. That is the same file the caller's `tools/typecheck.sh` and `tools/forever_tools/doctor.py`
 # read, so a Dependabot move of this action's SHA and a sync of the manifest cannot disagree. The caller checks out
 # first, or the first step fails saying so. Every download's sha256 is checked, and each tool is cached under a key
-# hashed from that tool's manifest entry, so bumping a pin also moves the cache.
+# hashed from that tool's manifest entry and from this action's own build.sh and install.sh, so bumping a pin or editing
+# a script also moves the cache.
 #
 #   - uses: ./.github/actions/toolchain
 #     with:
 #       tools: lua luals
 inputs:
   tools:
-    description: Space-separated tools to install from the manifest, out of lua, luals, stylua and gitleaks.
+    description: >-
+      Space-separated tools to install from the manifest, out of lua (LuaJIT, the PUC Lua 5.1.5 compiler luac5.1 and
+      interpreter lua5.1, and luacheck), luals, stylua and gitleaks.
     required: false
     default: lua
   manifest:
@@ -35,7 +38,7 @@ outputs:
     description: The Bun version to pass to oven-sh/setup-bun.
     value: ${{ steps.pins.outputs.bun }}
   lua_prefix:
-    description: The prefix holding lua's bin/, including luajit and luac5.1.
+    description: The prefix holding lua's bin/, including luajit, luac5.1 and lua5.1.
     value: ${{ steps.pins.outputs.lua_prefix }}
 
 runs:
