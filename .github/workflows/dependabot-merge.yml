@@ -1,0 +1,33 @@
+name: Dependabot merge
+
+# Dependabot's patch and minor updates land without a person, in this repository and in every consumer. It is one
+# central job rather than a workflow vendored into each addon: a merge enabled with `GITHUB_TOKEN` creates no push run
+# on main, and `tools/release_check.py` releases only a commit with a green CI push run, so such a merge would block
+# the next release; a run triggered by Dependabot itself cannot read Actions secrets either. The job enables the merge
+# with the same fine-grained token the consumer sync uses, so the merge is a normal push that runs CI.
+on:
+  schedule:
+    - cron: "11 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Arm auto-merge for every patch and minor update
+        env:
+          # The token the consumer sync uses: Contents and Pull requests write on forever-core and every consumer.
+          # Without it the script prints a notice and the job stays green.
+          GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
+        run: python3 tools/dependabot_merge.py

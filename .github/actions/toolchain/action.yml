@@ -1,0 +1,188 @@
+name: Toolchain
+description: Install the tool pins the calling repository's toolchain.json records, from that manifest alone.
+
+# The manifest is the one place a tool version lives, and the calling repository owns it: this action reads the
+# `manifest` input, `toolchain.json` unless the caller names another file, resolved against `$GITHUB_WORKSPACE`. That is
+# the same file the caller's `tools/typecheck.sh` and `tools/forever_tools/doctor.py` read, so a Dependabot move of this
+# action's SHA and a sync of the manifest cannot disagree. The caller checks out first, or the first step fails saying
+# so. Every download's sha256 is checked, and each tool is cached under a key hashed from that tool's manifest entry, so
+# bumping a pin also moves the cache.
+#
+#   - uses: ./.github/actions/toolchain
+#     with:
+#       tools: lua luals
+inputs:
+  tools:
+    description: Space-separated tools to install from the manifest, out of lua, luals, stylua and gitleaks.
+    required: false
+    default: lua
+  manifest:
+    description: >-
+      The manifest to read, resolved against the workspace unless absolute. Defaults to the calling repository's
+      toolchain.json, the one its own tools/ scripts read.
+    required: false
+    default: toolchain.json
+
+outputs:
+  python:
+    description: The Python version to pass to actions/setup-python.
+    value: ${{ steps.pins.outputs.python }}
+  node:
+    description: The Node version to pass to actions/setup-node.
+    value: ${{ steps.pins.outputs.node }}
+  bun:
+    description: The Bun version to pass to oven-sh/setup-bun.
+    value: ${{ steps.pins.outputs.bun }}
+  lua_prefix:
+    description: The prefix holding lua's bin/, including luajit and luac5.1.
+    value: ${{ steps.pins.outputs.lua_prefix }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the manifest
+      id: pins
+      shell: bash
+      env:
+        MANIFEST_INPUT: ${{ inputs.manifest }}
+      run: |
+        manifest=$MANIFEST_INPUT
+        case $manifest in
+        /*) ;;
+        *) manifest=$GITHUB_WORKSPACE/$manifest ;;
+        esac
+        if [ ! -f "$manifest" ]; then
+          echo "::error::toolchain: no manifest at $manifest. Check out the repository before this action, or set its manifest input." >&2
+          exit 1
+        fi
+        echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+        python3 "$GITHUB_ACTION_PATH/pins.py" "$manifest" "$RUNNER_TOOL_CACHE" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the Lua toolchain
+      id: lua-restore
+      if: contains(format(' {0} ', inputs.tools), ' lua ')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.pins.outputs.lua_prefix }}
+        key: toolchain-lua-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.lua_key }}
+
+    - name: Build the Lua toolchain
+      if: contains(format(' {0} ', inputs.tools), ' lua ') && steps.lua-restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+        LUA_TOOLCHAIN_PREFIX: ${{ steps.pins.outputs.lua_prefix }}
+      run: bash "$GITHUB_ACTION_PATH/build.sh" "$LUA_TOOLCHAIN_PREFIX" "$RUNNER_TEMP/lua-toolchain-build"
+
+    - name: Save the Lua toolchain
+      if: contains(format(' {0} ', inputs.tools), ' lua ') && steps.lua-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.pins.outputs.lua_prefix }}
+        key: ${{ steps.lua-restore.outputs.cache-primary-key }}
+
+    - name: Check the Lua toolchain
+      if: contains(format(' {0} ', inputs.tools), ' lua ')
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+        TOOLCHAIN_PREFIX: ${{ steps.pins.outputs.lua_prefix }}
+      run: | # zizmor: ignore[github-env] the prefix is under runner.tool_cache, never an expression
+        echo "$TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
+        bash "$GITHUB_ACTION_PATH/verify.sh" lua "$TOOLCHAIN_PREFIX"
+
+    - name: Restore LuaLS
+      id: luals-restore
+      if: contains(format(' {0} ', inputs.tools), ' luals ')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/luals
+        key: toolchain-luals-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.luals_key }}
+
+    - name: Install LuaLS
+      if: contains(format(' {0} ', inputs.tools), ' luals ') && steps.luals-restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh" luals "$RUNNER_TOOL_CACHE/toolchain/luals"
+
+    - name: Save LuaLS
+      if: contains(format(' {0} ', inputs.tools), ' luals ') && steps.luals-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/luals
+        key: ${{ steps.luals-restore.outputs.cache-primary-key }}
+
+    - name: Check LuaLS
+      if: contains(format(' {0} ', inputs.tools), ' luals ')
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+        TOOLCHAIN_PREFIX: ${{ runner.tool_cache }}/toolchain/luals
+      run: | # zizmor: ignore[github-env] the prefix is under runner.tool_cache, never an expression
+        echo "$TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
+        bash "$GITHUB_ACTION_PATH/verify.sh" luals "$TOOLCHAIN_PREFIX"
+
+    - name: Restore StyLua
+      id: stylua-restore
+      if: contains(format(' {0} ', inputs.tools), ' stylua ')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/stylua
+        key: toolchain-stylua-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.stylua_key }}
+
+    - name: Install StyLua
+      if: contains(format(' {0} ', inputs.tools), ' stylua ') && steps.stylua-restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh" stylua "$RUNNER_TOOL_CACHE/toolchain/stylua"
+
+    - name: Save StyLua
+      if: contains(format(' {0} ', inputs.tools), ' stylua ') && steps.stylua-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/stylua
+        key: ${{ steps.stylua-restore.outputs.cache-primary-key }}
+
+    - name: Check StyLua
+      if: contains(format(' {0} ', inputs.tools), ' stylua ')
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+        TOOLCHAIN_PREFIX: ${{ runner.tool_cache }}/toolchain/stylua
+      run: | # zizmor: ignore[github-env] the prefix is under runner.tool_cache, never an expression
+        echo "$TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
+        bash "$GITHUB_ACTION_PATH/verify.sh" stylua "$TOOLCHAIN_PREFIX"
+
+    - name: Restore gitleaks
+      id: gitleaks-restore
+      if: contains(format(' {0} ', inputs.tools), ' gitleaks ')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/gitleaks
+        key: toolchain-gitleaks-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.gitleaks_key }}
+
+    - name: Install gitleaks
+      if: contains(format(' {0} ', inputs.tools), ' gitleaks ') && steps.gitleaks-restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh" gitleaks "$RUNNER_TOOL_CACHE/toolchain/gitleaks"
+
+    - name: Save gitleaks
+      if: contains(format(' {0} ', inputs.tools), ' gitleaks ') && steps.gitleaks-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/toolchain/gitleaks
+        key: ${{ steps.gitleaks-restore.outputs.cache-primary-key }}
+
+    - name: Check gitleaks
+      if: contains(format(' {0} ', inputs.tools), ' gitleaks ')
+      shell: bash
+      env:
+        TOOLCHAIN_MANIFEST: ${{ steps.pins.outputs.manifest }}
+        TOOLCHAIN_PREFIX: ${{ runner.tool_cache }}/toolchain/gitleaks
+      run: | # zizmor: ignore[github-env] the prefix is under runner.tool_cache, never an expression
+        echo "$TOOLCHAIN_PREFIX/bin" >> "$GITHUB_PATH"
+        bash "$GITHUB_ACTION_PATH/verify.sh" gitleaks "$TOOLCHAIN_PREFIX"

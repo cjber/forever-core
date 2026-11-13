@@ -21,8 +21,12 @@ CORE = {
     ".agents/skills/wow-forever-addon/check_copy.py": b"core copy\n",
     "tools/core-shared-drift.yml": b"core workflow\n",
     "tools/visual-proof.yml": b"core visual workflow\n",
+    "tools/dependabot-consumer.yml": b"core dependabot\n",
     "tools/deadcode.py": b"core deadcode\n",
     "tools/deadcode-allow.txt": b"core allow\n",
+    "toolchain.json": b"core toolchain\n",
+    "pyproject.toml": b"core pyproject\n",
+    "uv.lock": b"core lock\n",
     "docs/discord-button.png": b"discord\n",
     "docs/github-sponsors-button.png": b"sponsors\n",
     "docs/kofi-button.png": b"kofi\n",
@@ -79,7 +83,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("17 vendored files match", out)
+        self.assertIn("21 vendored files match", out)
 
     def test_check_copy_comes_from_the_skill_pack(self):
         self.assertEqual(
@@ -88,7 +92,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         )
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("17 vendored files match", out)
+        self.assertIn("21 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["tools/check_client_load.py"] = b"core client load, newer\n"
@@ -153,7 +157,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("17 vendored files match", out)
+        self.assertIn("21 vendored files match", out)
 
     def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
         git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")
@@ -176,6 +180,21 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_only_the_checker_reaches_kiln_forever(self):
         paths = set(check_core_shared.paths_for("kiln-forever"))
         self.assertEqual(paths, {"tools/check_core_shared.py"})
+
+    def test_the_tool_pins_and_dependabot_config_reach_every_published_consumer(self):
+        for path, origin in (
+            ("toolchain.json", "toolchain.json"),
+            ("pyproject.toml", "pyproject.toml"),
+            ("uv.lock", "uv.lock"),
+            (".github/dependabot.yml", "tools/dependabot-consumer.yml"),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(check_core_shared.VENDORED[path], check_core_shared.SUITE_CONSUMERS)
+                self.assertEqual(check_core_shared.source(path), origin)
+                for repo in check_core_shared.SUITE_CONSUMERS:
+                    self.assertIn(path, check_core_shared.paths_for(repo))
+                    self.assertEqual(check_core_shared.consumer_path(repo, path), path)
+                self.assertNotIn(path, check_core_shared.paths_for("kiln-forever"))
 
     def test_the_visual_proof_workflow_reaches_every_published_consumer(self):
         path = ".github/workflows/visual-proof.yml"

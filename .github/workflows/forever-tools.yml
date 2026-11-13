@@ -8,22 +8,32 @@ on:
 permissions:
   contents: read
 
-# PyPI answers 502/504 under load; pip's own retries cover it.
-env:
-  PIP_RETRIES: 5
-  PIP_DEFAULT_TIMEOUT: 60
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The Python version CI pins lives in toolchain.json, which the action below reads from this checkout; the matrix
+  # adds the oldest version the tooling supports.
+  pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.toolchain.outputs.python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
+        id: toolchain
+
   check:
+    needs: pins
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       matrix:
-        python: ['3.10', '3.14']
+        python: ["3.10", "${{ needs.pins.outputs.python }}"]
     defaults:
       run:
         working-directory: .agents/skills/wow-forever-addon/tooling
@@ -34,12 +44,14 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       # forever_tools.locales parses each translation with LuaJIT, and its tests run that path.
-      - uses: ./.github/actions/lua-toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
+      - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
       - run: python3 -m unittest discover -s tests -t .
       - run: python3 forever_tools/sync.py check --allow-unpinned
-      - run: pipx run ruff==0.16.8 check .
-      - run: pipx run ruff==0.16.8 format --check .
-      # tweaks-forever type-checks its tools/ with ty, the vendored copy included.
+      - run: uv run --frozen --group dev ruff check .
+      - run: uv run --frozen --group dev ruff format --check .
+      # tweaks-forever type-checks its tools/ with ty, the vendored copy included. uv's project root is the repository,
+      # so this folder is passed as a search path for the package's relative imports.
       - if: matrix.python == '3.10'
-        run: pipx run ty==0.0.83 check --python-version 3.10 forever_tools
+        run: uv run --frozen --group dev ty check --python-version 3.10 --extra-search-path . forever_tools

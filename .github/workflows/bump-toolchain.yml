@@ -1,0 +1,36 @@
+name: Bump toolchain
+
+# Every pin toolchain.json holds moves to its newest upstream release in one pull request. The bumper skips a release
+# younger than a day and verifies every sha256. The PR auto-merges once this repository's own checks are green, unless a
+# pin crosses a major version: that one waits for review under the `major` label. Dependabot owns the actions and the
+# uv group's Python tools, so this workflow leaves uv.lock alone.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bump-toolchain
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Move every pin to its newest upstream release
+        env:
+          # The same fine-grained token the consumer sync uses, so the pull request it opens runs CI like any other.
+          GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
+        run: python3 tools/bump_toolchain.py
+      - name: Open or update the bump pull request
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
+        run: python3 tools/bump_toolchain.py --publish

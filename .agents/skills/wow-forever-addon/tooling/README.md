@@ -7,6 +7,15 @@ Offline, stdlib-only Python (3.10+) shared by the WoW: Forever addon repos. Each
 `forever_tools/` byte for byte as `tools/forever_tools/`; `MANIFEST.json` holds a sha256 per file and
 the producer commit the copy came from.
 
+The same sync also copies core's `toolchain.json` (every tool pin, with how to find its newer version), `pyproject.toml`
+and `uv.lock` (ruff, ty, zizmor, actionlint-py and Pillow as a `[dependency-groups] dev` group) to the repository root,
+because the vendored `tools/typecheck.sh`, `tools/forever_sim/gen_script_types.py` and `tools/forever_tools/doctor.py`
+read them. The scripts name a tool, never a version: CI's `cjber/forever-core/.github/actions/toolchain@<sha>` reads
+this repository's own `toolchain.json` through its `manifest` input, so the tools it installs are the ones those scripts
+check for even when Dependabot moves the action's SHA and the sync moves the file in separate pull requests. Core's
+daily `bump-toolchain` workflow moves the pins, and Dependabot updates the actions and the uv group; a major version
+that either one proposes waits for review.
+
 ## Modules
 
 | Module | Does |
@@ -22,7 +31,7 @@ the producer commit the copy came from.
 | `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Players` (or the older `## Ideas and contributors`) ship with text under them, the ForeverCore pin, `.pkgmeta` external and TOC field agree, no widget method that takes parameters is passed straight as a script handler, specs pass on the packaged files |
 | `widget_handlers` | The script-handler lint: a `SetScript`/`HookScript` handler that is a widget's own client method read taking parameters (`edit.HighlightText`, `frame["SetText"]`) rather than a function the addon wrote fails, with the wrapping closure as its fix; a method that declares none (`frame.StopMovingOrSizing`) ignores the handler's arguments and passes. The method set comes from `widget_methods.txt`, generated in forever-core by `tools/gen_widget_methods.py` from the pinned Ketho API annotations |
 | `core_pin` | The release gate: a consumer's ForeverCore pin (`tools/forever-core.txt`) names core's latest published GitHub release, and the `.pkgmeta` external and `## X-Forever-Core:` name the same tag; `--latest` fails closed when that release cannot be read, and an addon with no external is exempt only from the bundle comparison |
-| `doctor` | Every tool pin in `ci.yml` and `typecheck.sh` checked on this machine, each problem with its fix |
+| `doctor` | Every tool pin in the vendored `toolchain.json` and `pyproject.toml` checked on this machine, each problem with its fix |
 | `screens` | `docs/screenshots/scenes.sha256`: each image's hash beside its scene dump's, and the CI check for a stale image |
 | `editorconfig` | The family `.editorconfig` template and its check against `stylua.toml` and `ruff.toml` |
 | `locales` | The translation check (WFA-34): every `Locales/<locale>.lua` parses, is loaded by the TOC, uses only the template's keys and keeps English's placeholders and escapes; prints each locale's coverage |
@@ -51,7 +60,9 @@ The packaged-zip check runs in its own CI job, after the pinned packager builds 
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: cjber/forever-core/.github/actions/lua-toolchain@<sha> # pinned as the repo's other actions
+      - uses: cjber/forever-core/.github/actions/toolchain@<sha> # pinned as the repo's other actions
+        with:
+          tools: lua
       - run: printf 'Package check\n' > .release-notes.md # .pkgmeta's manual-changelog
       - uses: BigWigsMods/packager@<sha> # the release workflow's pin
         with:
