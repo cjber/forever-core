@@ -18,7 +18,7 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
-    forever_client.py capture-env         # record the Wine environment from a client Lutris started
+    forever_client.py capture-env         # record the launch from the player's client started in Faugus
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -91,11 +91,21 @@ UI_KEYS = {"Return", "Escape", "BackSpace"}
 SLASH_ASSIGN = re.compile(r"SLASH_\w+\s*=(.*)$", re.MULTILINE)
 SLASH_WORD = re.compile(r'"(/[^"\s]+)"')
 
-# The Wine environment Lutris gives the client, minus what belongs to one run or to the desktop. DISPLAY and
+# The player's client is a Faugus Launcher game: Faugus runs its `umu-run`, which starts Battle.net under the game's
+# Proton runner in the Steam runtime. `capture-env` records that launch from the running `umu-run` process: the
+# script and the environment Faugus gives it, minus what belongs to one run or to the desktop. DISPLAY and
 # WAYLAND_DISPLAY above all: the session's own come from gamescope, and an inherited Wayland socket would let Wine
 # open a window on the player's desktop.
-KEEP_PREFIXES = ("WINE", "DXVK_", "VKD3D_", "__GL", "__GLX", "PROTON_", "STAGING_", "LD_", "VK_")
-DROP = {"WINESERVERSOCKET", "WINEPRELOADRESERVE", "WINELOADERNOEXEC", "DISPLAY", "WAYLAND_DISPLAY"}
+KEEP_PREFIXES = ("WINE", "DXVK_", "VKD3D_", "__GL", "__GLX", "PROTON", "STAGING_", "LD_", "VK_", "UMU_", "GAMEID")
+DROP = {
+    "WINESERVERSOCKET",
+    "WINEPRELOADRESERVE",
+    "WINELOADERNOEXEC",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "UMU_INVOCATION_ID",
+    "PROTON_VERB",
+}
 
 
 class ClientError(Exception):
@@ -114,6 +124,13 @@ def read_environ(pid: int) -> dict[str, str]:
         return {}
     pairs = (item.split(b"=", 1) for item in raw.split(b"\0") if b"=" in item)
     return {k.decode(errors="replace"): v.decode(errors="replace") for k, v in pairs}
+
+
+def in_prefix(env: Mapping[str, str], prefix: Path = PREFIX) -> bool:
+    """Whether a process runs in the prefix. Proton gives its Wine processes `<prefix>/pfx/`, which umu links back
+    to the prefix itself, so the paths are compared resolved, not as written."""
+    value = env.get("WINEPREFIX")
+    return bool(value) and Path(value).resolve() == prefix.resolve()
 
 
 def pids() -> Iterable[int]:
@@ -141,7 +158,7 @@ def prefix_snapshot(prefix: Path = PREFIX, exclude: Iterable[int] = ()) -> dict[
     for pid in pids():
         if pid not in skip:
             env = read_environ(pid)
-            if env.get("WINEPREFIX") == str(prefix):
+            if in_prefix(env, prefix):
                 found[pid] = env
     return found
 
@@ -181,7 +198,7 @@ def kill_owned_pid(pid: int, token: str, server: Path) -> bool:
         return False
     try:
         env = read_environ(pid)
-        if env.get("WINEPREFIX") != str(PREFIX) or env.get("FOREVER_CLIENT_SESSION") != token:
+        if not in_prefix(env) or env.get("FOREVER_CLIENT_SESSION") != token:
             return False
         try:
             executable = Path(f"/proc/{pid}/exe").readlink().resolve()
@@ -199,9 +216,7 @@ def kill_owned_pid(pid: int, token: str, server: Path) -> bool:
 
 
 def client_pid() -> int | None:
-    return next(
-        (p for p in pids() if "Wow.exe" in cmdline(p) and read_environ(p).get("WINEPREFIX") == str(PREFIX)), None
-    )
+    return next((p for p in pids() if "Wow.exe" in cmdline(p) and in_prefix(read_environ(p))), None)
 
 
 # --- session state ---------------------------------------------------------------------------------------------
@@ -493,7 +508,7 @@ def teardown(
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
     if state and state.get("ready") and gamescope and gamescope.poll() is None and client_pid():
         log_out(state)
-    server = Path(wine.get("WINE", "wine")).with_name("wineserver").resolve()
+    server = wineserver(wine)
     # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
     # and signal only exact token-owned PIDs, retaining state when a foreign or unverifiable process appears.
     deadline = time.monotonic() + 20
@@ -606,9 +621,15 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         ) from None
     if not CONFIG.exists():
         raise ClientError(
-            f"no Wine environment recorded: run `forever_client.py capture-env` while Lutris runs the client ({CONFIG})"
+            f"no launch recorded: start Battle.net from Faugus, then run `forever_client.py capture-env` ({CONFIG})"
         )
-    wine = json.loads(CONFIG.read_text())
+    launch = json.loads(CONFIG.read_text())
+    if "umu_run" not in launch:
+        raise ClientError(
+            f"{CONFIG} records an older Wine launch: start Battle.net from Faugus, "
+            "then run `forever_client.py capture-env`"
+        )
+    wine = launch["env"]
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
     gamescope: subprocess.Popen | None = None
@@ -629,7 +650,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
             link.symlink_to(ADDON)
         env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "WINEPREFIX")}
         env.update(wine)
-        env.pop("WINEPREFIX", None)
+        env["WINEPREFIX"] = str(PREFIX)
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
         env["XDG_RUNTIME_DIR"] = str(runtime)
@@ -648,16 +669,11 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
                 str(HEIGHT),
                 "--",
                 # Gamescope's reaper ends every process once its child exits, and Battle.net exits as the game
-                # starts, so the child waits for the whole Wine session instead: the launcher, then `wineserver -w`.
-                "sh",
-                "-c",
-                'WINEPREFIX="$1" "$2" "$3" "$4"; export WINEPREFIX="$1"; exec "$5" -w',
-                "forever-client",
-                str(PREFIX),
-                wine["WINE"],
+                # starts. umu-run's Proton `waitforexitandrun` returns only once the prefix's wineserver has, so the
+                # child lasts the whole Wine session: the launcher, then the game.
+                launch["umu_run"],
                 str(LAUNCHER),
                 *LAUNCH_ARGS,
-                str(Path(wine["WINE"]).with_name("wineserver")),
             ],
             cwd=LAUNCHER.parent,
             env=env,
@@ -724,16 +740,36 @@ def down() -> int:
     raise ClientError(f"session {state['pid']} did not stop within {limit} s")
 
 
+def wineserver(wine: Mapping[str, str]) -> Path:
+    """The Proton runner's wineserver, which serves every Wine process of a session it started."""
+    return (Path(wine.get("PROTONPATH", "")) / "files/bin/wineserver").resolve()
+
+
+def umu_launch() -> tuple[int, str] | None:
+    """The running `umu-run` that started Battle.net in the prefix, and its script, or None."""
+    for pid in pids():
+        try:
+            argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        words = [w.decode(errors="replace") for w in argv if w]
+        script = next((w for w in words[:2] if Path(w).name == "umu-run"), None)
+        if script and any(w.endswith("Battle.net.exe") for w in words) and in_prefix(read_environ(pid)):
+            return pid, script
+    return None
+
+
 def capture_env() -> int:
-    pid = client_pid()
-    if not pid:
-        raise ClientError("no client is running: start it from Lutris once, then run capture-env")
+    found = umu_launch()
+    if not found:
+        raise ClientError("Battle.net is not running from Faugus: start it there once, then run capture-env")
+    pid, script = found
     env = wine_env(read_environ(pid))
-    if "WINE" not in env:
-        raise ClientError(f"process {pid} has no WINE variable; is it a Lutris launch?")
+    if "PROTONPATH" not in env:
+        raise ClientError(f"process {pid} has no PROTONPATH; is it Faugus's umu-run launch?")
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(env, indent=1, sort_keys=True))
-    print(f"recorded {len(env)} variables from {pid} to {CONFIG}")
+    CONFIG.write_text(json.dumps({"umu_run": script, "env": env}, indent=1, sort_keys=True))
+    print(f"recorded {script} and {len(env)} variables from {pid} to {CONFIG}")
     return 0
 
 
