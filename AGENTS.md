@@ -51,7 +51,7 @@ python3 tools/check_package.py            # .release/ForeverCore holds every loa
                                           # and no widget method that takes parameters passed as a script handler
 uv run --project tools --frozen --group dev ruff check tools &&
 uv run --project tools --frozen --group dev ruff format --check tools
-python3 -m unittest discover -s tools -p "test_*.py"
+uv run --project tools --frozen --group dev python -m unittest discover -s tools -p "test_*.py"
 ```
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
