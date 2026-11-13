@@ -1466,10 +1466,15 @@ class ProofHelpersTest(unittest.TestCase):
         self.assertEqual(fc.flow_slug("***"), "flow")
 
     def test_run_flow_sends_a_slash_command_without_an_eval(self):
-        with mock.patch.object(fc, "slash") as slash, mock.patch.object(fc, "devsmoke_eval") as tool:
+        with (
+            mock.patch.object(fc, "slash") as slash,
+            mock.patch.object(fc, "devsmoke_eval") as tool,
+            mock.patch.object(fc.time, "sleep") as sleep,
+        ):
             fc.run_flow({}, "/lf")
         slash.assert_called_once_with({}, "/lf")
         tool.assert_not_called()
+        sleep.assert_called_once_with(fc.SLASH_SETTLE_SECONDS)
 
     def test_run_flow_writes_reloads_and_checks_a_lua_snippet(self):
         tool = mock.Mock()
@@ -1723,6 +1728,7 @@ class ProofTest(unittest.TestCase):
             mock.patch.object(fc, "proof_compare", self.compare),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
+            mock.patch.object(fc.time, "sleep"),
             contextlib.redirect_stdout(io.StringIO()) as out,
             contextlib.redirect_stderr(io.StringIO()) as err,
         ):
@@ -1831,6 +1837,13 @@ class ProofTest(unittest.TestCase):
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.create_gist.assert_not_called()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
+
+    def test_a_flow_that_fails_in_the_world_reports_its_own_error_not_a_busy_client(self):
+        # In the world the session holds the client's lock itself, so client_in_use would name it as another's.
+        self.busy = [None, "another session holds the client", "another session holds the client"]
+        self.slash_error = "refused /lf"
+        with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
+            self.run_proof()
 
     def test_a_lua_flow_takes_a_shot_after_the_snippet_ran(self):
         lua = self.state / "notice.lua"
