@@ -71,8 +71,10 @@ typing a long `/run` line:
   first, as the workspace `AGENTS.md` says.
 - `!!ForeverHeadless`, linked in only for the session, takes a screenshot each time the world loads; that file is
   the sign the client is in the world.
-- The Wine environment comes from `~/.config/forever-client/env.json`. `capture-env` records it from a client Lutris
-  started, and is needed again only when the Lutris runner changes.
+- The launch is the player's own: Faugus Launcher's Battle.net game, which runs `umu-run` with the game's Proton
+  runner on the prefix `~/Games/battlenet`. `capture-env` records it into `~/.config/forever-client/env.json` while
+  Battle.net runs from Faugus, and is needed again only when the game's runner in Faugus changes. One Wine build per
+  prefix: a launch with another Wine logs Battle.net out.
 - Battle.net needs the network, so run the tool outside the agent sandbox; `up` checks Battle.net is reachable
   before it starts anything.
 - The launcher logs in on its own and opens the WoW: Forever page, but ignores the launch it was started with, so
