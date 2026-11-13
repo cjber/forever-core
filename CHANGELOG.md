@@ -6,6 +6,10 @@
 
 ### For addon authors
 
+- **A manual release can waive a failed visual proof.** `tools/release_check.py --skip-visual-proof` accepts a
+  completed full CI run on main whose only failed job is `visual-proof`; every other job must still pass and the
+  `headless-smoke` gate still applies. An addon's Release workflow passes it from a `skip_visual_proof` dispatch input.
+  (#552)
 - **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
   status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
   pending one waits and names the command that fills it in, and a failed one prints what it found.
