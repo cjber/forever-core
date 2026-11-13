@@ -104,9 +104,28 @@ files["tests/"] = { std = "+luajit" }
 -- The headless test client's dev addon (tools/headless): it closes a chat box and takes the ready screenshot.
 files["tools/headless/"] = { read_globals = { "ChatEdit_DeactivateChat", "Screenshot" } }
 -- The !!DevSmoke dev addon (tools/devsmoke) and its spec: the client's error frame, its error handler, the world map
--- toggle, the secure-value check, the addon's saved runs and its slash alias.
+-- toggle, the secure-value check, the addon's saved runs and its slash alias; the Agent chat tab's window functions,
+-- BugGrabber's own API, and the panels the close command hides.
 files["tools/devsmoke/"] = {
-	read_globals = { "UIErrorsFrame", "seterrorhandler", "ToggleWorldMap", "issecurevariable", "debugstack", "time" },
+	read_globals = {
+		"UIErrorsFrame",
+		"seterrorhandler",
+		"ToggleWorldMap",
+		"issecurevariable",
+		"debugstack",
+		"time",
+		"NUM_CHAT_WINDOWS",
+		"GetChatWindowInfo",
+		"FCF_OpenNewWindow",
+		"FCF_SelectDockFrame",
+		"BugGrabber",
+		"ProfessionsFrame",
+		"WorldMapFrame",
+		"SettingsPanel",
+		"HideUIPanel",
+		"C_TradeSkillUI",
+		"C_AddOns",
+	},
 	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
 }
 files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" } }

@@ -47,6 +47,24 @@ python3 $FC down          # logs out, stops gamescope and every Wine process, re
 `run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
 whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 minute cap, ends it the same way.
 
+## The Agent chat tab and /devsmoke
+
+The dev addon `!!DevSmoke` prints short lines to a chat tab named **Agent**, made on first use with no channels, so
+General stays clean and no line needs a `/run` long enough for the chat box's 255 character cut. Use these instead of
+typing a long `/run` line:
+
+| Command | What it does |
+|---|---|
+| `/devsmoke tab` | selects the Agent tab |
+| `/devsmoke tab off` | goes back to General |
+| `/devsmoke versions` | one line per loaded addon depending on ForeverCore, plus ForeverCore and LibAHTab: folder, Version metadata, loaded state |
+| `/devsmoke errors` | this session's BugGrabber entries, leaving out the chat `/run` line's own errors: the count and the first 180 characters of each |
+| `/devsmoke thanks <addon title> [player]` | opens the Thanks page filtered to the addon, scrolled to the named player's row |
+| `/devsmoke prof <tab>` | opens the Cooking window when no profession window is open, then selects the addon's tab |
+| `/devsmoke close` | hides the Thanks window, the Professions window, the world map and the Settings panel, so Escape is never pressed |
+
+`/devsmoke` on its own still runs the same selftest as `/forever selftest`.
+
 ## What it relies on
 
 - The addon under test is the build linked into `_forever_/Interface/AddOns`: rebuild the `test-artifacts` link
