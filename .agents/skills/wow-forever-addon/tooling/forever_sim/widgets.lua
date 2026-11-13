@@ -975,6 +975,23 @@ function M.build(sim)
 	end
 	local function getHeight(self)
 		local s = st(self)
+		-- A FontString with no explicit height takes its text height, even when a RIGHT or CENTER anchor places it
+		-- vertically. Only TOP and BOTTOM together stretch it, as the client does.
+		if s.kind == "FontString" and (Secret.unwrap(s.height) or 0) <= 0 then
+			local hasTop, hasBottom = false, false
+			for _, p in ipairs(s.points) do
+				local vertical = POINTS[p.point] and POINTS[p.point][2]
+				if vertical == "TOP" then
+					hasTop = true
+				elseif vertical == "BOTTOM" then
+					hasBottom = true
+				end
+			end
+			if not (hasTop and hasBottom) then
+				local _, h = textSize(s)
+				return h
+			end
+		end
 		local r = #s.points > 1 and rect(self)
 		if r then
 			return r[4] / effectiveScale(self)
@@ -1348,8 +1365,29 @@ function M.build(sim)
 	impl.Frame.SetAttributeNoHandler = function(self, name, value)
 		st(self).attributes[name] = value
 	end
-	impl.Frame.GetAttribute = function(self, name)
-		return st(self).attributes[name]
+	-- SecureTemplates reads a modified attribute with GetAttribute(prefix, name, suffix), the client's secure form.
+	-- The client returns the first existing of prefix..name..suffix, *name..suffix, prefix..name*, *name*, then name.
+	-- The plain GetAttribute(name) reads the exact key, as addon code does.
+	impl.Frame.GetAttribute = function(self, name, attributeName, suffix)
+		local attributes = st(self).attributes
+		if attributeName == nil then
+			return attributes[name]
+		end
+		local prefix = tostring(name)
+		local key = tostring(attributeName)
+		suffix = tostring(suffix or "")
+		for _, candidate in ipairs({
+			prefix .. key .. suffix,
+			"*" .. key .. suffix,
+			prefix .. key .. "*",
+			"*" .. key .. "*",
+			key,
+		}) do
+			local value = attributes[candidate]
+			if value ~= nil then
+				return value
+			end
+		end
 	end
 	impl.Frame.CreateTexture = function(self, name, layer, template, sublevel)
 		return sim.templates.createRegion("Texture", name, self, template, layer, sublevel)

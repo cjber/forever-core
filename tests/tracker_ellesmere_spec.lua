@@ -411,14 +411,21 @@ for _, uiScale in ipairs({ 1, 0.8 }) do
 		check(clears(detached.host, detached.ellesmere), label .. ": the detached column clears the list")
 		check(hostLeft > listLeft and near(detachedTop, listTop), label .. ": beside it, level with its top")
 
-		-- In combat the list may still resize; only our frames move.
+		-- A filter change in combat holds the column; it follows the list on the first pass after combat.
 		local late = scenario(with({ ellesmere = { point = "TOPRIGHT", x = -24, y = -100, height = 200 } }))
+		local before = { bounds(late.host) }
 		late.setCombat(true)
 		late.ellesmere.height = 140
 		late.ellesmere.hooks.OnSizeChanged(late.ellesmere)
 		late.drain()
-		belowEllesmere(late, label .. " after a filter change in combat")
+		local held = { bounds(late.host) }
+		for index = 1, 4 do
+			check(near(before[index], held[index]), label .. ": a filter change in combat holds the column")
+		end
 		late.setCombat(false)
+		late.host:MarkDirty()
+		late.drain()
+		belowEllesmere(late, label .. " after a filter change as combat ends")
 
 		-- Questie is still the fallback when EllesmereUI's custom tracker is not there.
 		local questie = scenario(with({ questie = { point = "TOPRIGHT", x = -24, y = -100, height = 300 } }))

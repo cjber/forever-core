@@ -34,6 +34,21 @@ local function eq(a, b, label)
 	end
 end
 
+test("widgets: GetAttribute reads the secure prefix and suffix form", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	frame:SetAttribute("type", "item")
+	frame:SetAttribute("shift-type1", "shifted")
+	frame:SetAttribute("*action2", "wildcard")
+	eq(frame:GetAttribute("type"), "item", "plain attribute")
+	eq(frame:GetAttribute("", "type", ""), "item", "secure form without modifiers")
+	eq(frame:GetAttribute("shift-", "type", "1"), "shifted", "secure form with a modifier and button")
+	eq(frame:GetAttribute("*", "action", "2"), "wildcard", "secure wildcard form")
+	eq(frame:GetAttribute("", "missing", ""), nil, "missing secure attribute")
+end)
+
 test("widgets: scroll callbacks only report changed offsets", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
