@@ -20,7 +20,10 @@ Forever addons use it for:
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
   drag it once, and every addon follows.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
-  build, the character, the place, recent errors and a log.
+  build, the character, the place, recent errors, a performance table and a log.
+- **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
+  `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
+  developer's addon.
 - **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 

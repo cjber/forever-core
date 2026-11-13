@@ -57,7 +57,8 @@ core.MapCanvas.Pool(map, mixin, { marker = "route" })
 
 `Register` is idempotent: the same addon name returns the same context. Saved variables load after the files, so
 `spec.db` is optional; call `core.Attach(db)` from `ADDON_LOADED`. The journal lives under `db.errors` and the log ring
-under `db.log`.
+under `db.log`. The report text core builds also carries the performance table it reads when the window opens, and
+the debug-capture line while `/forever debug on` is active; an addon's own lines need do nothing for either.
 
 One global error handler serves every registered addon. It attributes an error to the addon whose
 `AddOns/<addonName>/` folder its message or stack names, and the same for `ADDON_ACTION_BLOCKED` and

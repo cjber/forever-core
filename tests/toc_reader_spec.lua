@@ -43,6 +43,8 @@ equal(
 		"lua Core/OpenMap.lua",
 		"lua Core/OpenSettings.lua",
 		"lua Core/Log.lua",
+		"lua Core/Capture.lua",
+		"lua Core/Performance.lua",
 		"lua Core/Text.lua",
 		"lua Core/MinimapButton.lua",
 		"lua UI/Art.lua",

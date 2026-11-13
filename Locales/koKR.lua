@@ -91,9 +91,38 @@ L["Tracker"] = "추적기"
 L["Click to %s"] = "%s하려면 클릭"
 L["Right-click for options"] = "우클릭하여 옵션 보기"
 L["Unavailable in combat"] = "전투 중에는 사용할 수 없음"
-L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
-	"사용법: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
+L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
+	"사용법: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] = "무슨 일이 있었는지 또는 원하는 기능"
 L.MINIMAP_UNAVAILABLE = "미니맵을 사용할 수 없어 사용자 지정 버튼을 건너뜁니다."
 L["MENU_BACK"] = "뒤로"
+
+L["1 ms"] = "1 ms"
+L["5 ms"] = "5 ms"
+L["10 ms"] = "10 ms"
+L["50 ms"] = "50 ms"
+L["100 ms"] = "100 ms"
+L["Addon"] = "애드온"
+L["Application"] = "애플리케이션"
+L["Last"] = "마지막"
+L["Memory KB"] = "메모리 KB"
+L["Memory: not available on this client."] = "메모리: 이 클라이언트에서는 사용할 수 없습니다."
+L["Peak"] = "최대"
+L["Recent"] = "최근"
+L["Session"] = "세션"
+L["Performance (read when this window opened):"] = "성능(이 창을 열 때 읽음):"
+L["Performance: not available on this client."] = "성능: 이 클라이언트에서는 사용할 수 없습니다."
+L["Performance: the client's add-on profiler is off."] =
+	"성능: 클라이언트의 애드온 프로파일러가 꺼져 있습니다."
+L["%d more rows not shown."] = "표시되지 않은 행 %d개."
+L["Debug capture is on: /forever debug off stops it."] =
+	"디버그 기록이 켜져 있습니다: /forever debug off로 끕니다."
+L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
+	"디버그 캡처가 켜져 있습니다. 클라이언트의 Logs 폴더에 있는 파일을 보고서에 첨부하세요. /forever debug off로 끌 수 있습니다."
+L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."] =
+	"디버그 캡처가 켜져 있습니다. 클라이언트의 로그는 Logs 폴더에 있습니다. /forever debug off로 끌 수 있습니다."
+L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."] =
+	"디버그 캡처가 꺼졌고 클라이언트 설정이 복원되었습니다. 디버그 로그도 꺼졌고 고정이 해제되었습니다."
+L["Debug capture could not start because ForeverCore has not finished loading."] =
+	"ForeverCore 로드가 끝나지 않아 디버그 캡처를 시작할 수 없습니다."

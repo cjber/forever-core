@@ -27,6 +27,8 @@ Core\SafeCall.lua
 Core\OpenMap.lua
 Core\OpenSettings.lua
 Core\Log.lua
+Core\Capture.lua
+Core\Performance.lua
 Core\Text.lua
 Core\MinimapButton.lua
 UI\Art.lua

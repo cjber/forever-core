@@ -193,7 +193,7 @@ check(copies[1]:find("show-60", 1, true) ~= nil, "the newest line is shown")
 equal(again.DebugCommand("bogus"), false, "an unknown argument is not a subcommand")
 equal(
 	shown[#shown],
-	"Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show",
+	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show",
 	"an unknown argument shows the usage on screen"
 )
 -- show lists every attached addon's lines under its name, in one module.

@@ -91,9 +91,36 @@ L["Tracker"] = "Verfolgung"
 L["Click to %s"] = "Klicken, um %s"
 L["Right-click for options"] = "Rechtsklick für Optionen"
 L["Unavailable in combat"] = "Im Kampf nicht verfügbar"
-L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
-	"Verwendung: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
+L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
+	"Verwendung: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] = "Was passiert ist oder was Ihr Euch wünscht"
 L.MINIMAP_UNAVAILABLE = "Minimap nicht verfügbar; eigene Schaltfläche wird übersprungen."
 L["MENU_BACK"] = "Zurück"
+
+L["1 ms"] = "1 ms"
+L["5 ms"] = "5 ms"
+L["10 ms"] = "10 ms"
+L["50 ms"] = "50 ms"
+L["100 ms"] = "100 ms"
+L["Addon"] = "Addon"
+L["Application"] = "Anwendung"
+L["Last"] = "Letzte"
+L["Memory KB"] = "Speicher KB"
+L["Memory: not available on this client."] = "Speicher: auf diesem Client nicht verfügbar."
+L["Peak"] = "Spitze"
+L["Recent"] = "Aktuell"
+L["Session"] = "Sitzung"
+L["Performance (read when this window opened):"] = "Leistung (gelesen beim Öffnen dieses Fensters):"
+L["Performance: not available on this client."] = "Leistung: auf diesem Client nicht verfügbar."
+L["Performance: the client's add-on profiler is off."] = "Leistung: der Addon-Profiler des Clients ist aus."
+L["%d more rows not shown."] = "%d weitere Zeilen nicht angezeigt."
+L["Debug capture is on: /forever debug off stops it."] = "Debug-Aufzeichnung ist an: /forever debug off beendet sie."
+L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
+	"Die Debug-Aufzeichnung ist an. Hängt die Dateien aus dem Logs-Ordner des Clients an Euren Bericht an. Schaltet sie mit /forever debug off aus."
+L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."] =
+	"Die Debug-Aufzeichnung ist an. Die Protokolle des Clients liegen in seinem Logs-Ordner; schaltet sie mit /forever debug off aus."
+L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."] =
+	"Die Debug-Aufzeichnung ist aus und die Einstellungen des Clients sind wiederhergestellt; das Debug-Protokoll ist aus und nicht mehr dauerhaft aktiviert."
+L["Debug capture could not start because ForeverCore has not finished loading."] =
+	"Die Debug-Aufzeichnung konnte nicht starten, weil ForeverCore noch nicht fertig geladen ist."

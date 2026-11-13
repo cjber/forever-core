@@ -91,9 +91,38 @@ L["Tracker"] = "Rastreador"
 L["Click to %s"] = "Haz clic para %s"
 L["Right-click for options"] = "Haz clic derecho para ver las opciones"
 L["Unavailable in combat"] = "No disponible en combate"
-L["Usage: /forever debug, /forever debug pin, /forever debug off, /forever debug show"] =
-	"Uso: /forever debug, /forever debug pin, /forever debug off, /forever debug show"
+L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
+	"Uso: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] = "Qué pasó o qué te gustaría"
 L.MINIMAP_UNAVAILABLE = "Minimapa no disponible; se omite el botón personalizado."
 L["MENU_BACK"] = "Volver"
+
+L["1 ms"] = "1 ms"
+L["5 ms"] = "5 ms"
+L["10 ms"] = "10 ms"
+L["50 ms"] = "50 ms"
+L["100 ms"] = "100 ms"
+L["Addon"] = "Addon"
+L["Application"] = "Aplicación"
+L["Last"] = "Última"
+L["Memory KB"] = "Memoria KB"
+L["Memory: not available on this client."] = "Memoria: no disponible en este cliente."
+L["Peak"] = "Máximo"
+L["Recent"] = "Reciente"
+L["Session"] = "Sesión"
+L["Performance (read when this window opened):"] = "Rendimiento (leído al abrir esta ventana):"
+L["Performance: not available on this client."] = "Rendimiento: no disponible en este cliente."
+L["Performance: the client's add-on profiler is off."] =
+	"Rendimiento: el generador de perfiles de complementos del cliente está desactivado."
+L["%d more rows not shown."] = "%d filas más sin mostrar."
+L["Debug capture is on: /forever debug off stops it."] =
+	"La captura de depuración está activa: /forever debug off la detiene."
+L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
+	"La captura de depuración está activada. Adjunta a tu informe los archivos de la carpeta Logs del cliente. Desactívala con /forever debug off."
+L["Debug capture is on. The client's logs are in its Logs folder; turn it off with /forever debug off."] =
+	"La captura de depuración está activada. Los registros del cliente están en su carpeta Logs; desactívala con /forever debug off."
+L["Debug capture is off and the client's settings are back; the debug log is off and unpinned."] =
+	"La captura de depuración está desactivada y la configuración del cliente ha vuelto; el registro de depuración está desactivado y sin fijar."
+L["Debug capture could not start because ForeverCore has not finished loading."] =
+	"La captura de depuración no pudo iniciarse porque ForeverCore aún no ha terminado de cargarse."
