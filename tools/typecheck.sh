@@ -44,6 +44,10 @@ if [[ "$(lua-language-server --version)" != "$luals" ]]; then
     exit 1
 fi
 
+# The annotations declare retail APIs this client lacks; check every runtime call against the client's own names
+# before LuaLS, so a retail-only call is refused with its line instead of passing.
+python3 tools/lint_client_calls.py
+
 # A fresh output path prevents a crashed server from reusing an earlier clean report.
 report_dir=$(mktemp -d)
 trap 'rm -rf "$report_dir"' EXIT

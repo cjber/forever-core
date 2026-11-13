@@ -36,6 +36,8 @@ python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinne
 python3 tools/gen_widget_methods.py       # regenerate the widget-method data from the pinned API annotations
 python3 tools/bump_toolchain.py --dry-run # every pin toolchain.json holds, against its recorded upstream
 python3 tools/dependabot_merge.py --dry-run # Dependabot's open PRs in core and every consumer, no changes
+python3 tools/gen_forever_api.py          # regenerate forever_tools/client_names.txt from the pinned UI source
+python3 tools/lint_client_calls.py        # refuse a call of a client function the Forever client does not have
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
@@ -145,6 +147,29 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   addon wrote; a method that declares none (`frame.StopMovingOrSizing`) ignores the handler's arguments and passes.
   Every consumer's package job runs it over the packaged files, and `tools/test_gen_widget_methods.py` keeps the data
   matching the pin.
+- `tools/gen_forever_api.py` and `forever_tools/client_names.txt`: the Forever client's callable names, generated
+  from the same pinned Blizzard UI source the simulator fetches (`forever_sim/fetch.py`, one pin). The file holds
+  every documented `C_X.Y` and global function, every global function Blizzard's UI Lua defines, every bare global
+  that UI calls and every `C_X.Y` it reads, documented or not. Global tables, named frames, strings, colors and
+  constants are not callable, so they stay out: a plain read of one is not a nil call, and a method call on a frame is
+  never checked. `--probe ForeverProbe.lua` merges the client dump ForeverProbe writes in forever-dev
+  (`ForeverProbeDB.api`), whose build is recorded in the header, and is the one source for a real client function
+  neither the documentation nor Blizzard's UI names. `--check` fails when the committed file differs from a fresh
+  generation, and the `check` CI job runs it that way. Regenerate the file after the UI pin or a probe changes; never
+  hand-edit it.
+- `forever_tools/client_calls.py` and `tools/lint_client_calls.py`: the client-call lint, run by `tools/typecheck.sh`
+  beside LuaLS, because LuaLS checks against the retail `vscode-wow-api` annotations and this client lacks some of
+  those functions. Every bare global the runtime files call (`Name(...)`, which is where `attempt to call a nil value`
+  comes from) and every read of `C_X.Y` must be in `client_names.txt`, a Lua 5.1 or WoW global the pinned annotations
+  define, or a global the addon or ForeverCore defines (assigned, a `CreateFrame(type, "Name")` frame, a frame one of
+  ForeverCore's three naming helpers builds from the addon's string, an XML `name=`, or a TOC `## SavedVariables`). A
+  method call (`Name:Method(...)`) makes the global a table, and a plain read of a string, table or constant is
+  neither: neither is checked. An addon whose global comes from an optional dependency declares it in
+  `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per global function it calls, and the folder must be
+  in the root TOC's `## OptionalDeps` (exact, `client-optional-folder` otherwise); a declared name it never calls fails
+  (`client-optional-unused`). A deliberate exception carries `-- client-ok: <reason>`; a waiver that excuses nothing
+  fails (`client-waiver-unused`). `tools/test_gen_forever_api.py` and the tooling's `test_client_calls.py` are the
+  specs.
 - `tools/core-shared-drift.yml`: the drift workflow each consumer keeps under `.github/workflows/`, running the client
   load rule, the menu rule, the name rule and the tooling check on every PR (`--base`) and on a schedule. Its
   `core-shared` job is required in every consumer. It lives outside `.github/workflows` so it never runs here; the

@@ -44,6 +44,10 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: luacheck .
       - run: python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py
+      # The client's callable names are generated data: a hand edit, or a UI pin that moved without regenerating,
+      # fails here. The UI source is fetched at its pin into the gitignored cache.
+      - name: Client names data
+        run: python3 tools/gen_forever_api.py --check
       # The host spec runs Blizzard's own tracker source, fetched at a pinned revision.
       - name: Native tracker integration
         run: |
