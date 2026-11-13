@@ -235,7 +235,12 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Wago; the TOC carries `X-Curse-Project-ID` and `X-Wago-ID`. Setup is in `wow-addon-publish`.
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
-  100%.
+  100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
+  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges:
+  `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's tree>
+  --flow "update notice=<the addon's slash command or Lua file>"` builds the commit, runs the flow, uploads its
+  screenshots to a secret gist and writes `.visual-proof.json`; commit that file with the change (the full flow is in
+  [in-game.md](in-game.md)). The required `visual-proof` check then passes without an admin merge.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
   commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and

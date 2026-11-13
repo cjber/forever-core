@@ -41,6 +41,8 @@ python3 tools/lint_client_calls.py        # refuse a call of a client function t
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
+                                          # record the checkout's .visual-proof.json from a client session
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
@@ -250,7 +252,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
   in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
   branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
-  `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green.
+  `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green. A sync PR that changes runtime
+  files or moves the pin cannot record the visual proof itself, so the run prints the `forever_client.py proof`
+  command for that PR's head and the release session runs it and commits `.visual-proof.json`.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
@@ -268,9 +272,15 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
   addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
-  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. Exit 3 means the client is in
-  use and nothing was posted. A stop that ran no handler leaves that record behind, and the next `up`, `run`, `smoke`
-  or `build-dev` replays it before it touches AddOns. `tools/test_forever_client.py` is its spec.
+  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. `proof --repo R --ref SHA
+  --checkout PATH --flow NAME=SLASH_OR_LUA_FILE` builds and links the same way, reloads, runs each flow (a Forever
+  addon's slash command or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new
+  secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
+  sha256s before running `visual_proof --compare` against the installed build; it never commits or pushes the
+  checkout, and there is no default flow because ForeverCore has no shared opener for an addon's update notice. Exit 3
+  means the client is in use and nothing was posted or recorded. A stop that ran no handler leaves that record behind,
+  and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays it before it touches AddOns.
+  `tools/test_forever_client.py` is its spec.
 - `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
   read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time and stopped
   at the first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
@@ -340,9 +350,13 @@ consumers' `tools/`; edit it here, then run `sync.py update --source <this check
 Every version needs a `CHANGELOG.md` entry before its `v*` tag. `.github/workflows/release.yml` waits for full CI on
 the commit, checks it with `tools/release_check.py`, writes the version's notes with `tools/changelog.py`, and runs the
 packager with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so the GitHub release, CurseForge and Wago all get the
-same words. CurseForge is the published description and gallery; Wago is an upload mirror with a fixed stub pointing
-at CurseForge. A core version bump reaches consumers through the stores, since they require it; nothing is copied into
-them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
+same words. A release preparation that edits the update notice or a locale records the visual proof its runtime change
+needs with `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <tree> --flow
+"update notice=<slash command or Lua file>"` and commits the `.visual-proof.json` it writes, so the required
+`visual-proof` check passes without an admin merge; a sync PR that moves the ForeverCore pin runs the command its own
+run prints. See `wow-forever-addon/in-game.md`. CurseForge is the published description and gallery; Wago is an upload
+mirror with a fixed stub pointing at CurseForge. A core version bump reaches consumers through the stores, since they
+require it; nothing is copied into them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
 
 ## Load order
 

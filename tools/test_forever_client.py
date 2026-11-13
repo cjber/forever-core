@@ -1443,5 +1443,437 @@ class SmokeTest(unittest.TestCase):
             fc.post_status("legacy-forever", "a" * 40, True, "clean")
 
 
+class ProofHelpersTest(unittest.TestCase):
+    """The pieces of `proof` that hold without a client or a network."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "PROOF_SCRATCH", self.state / "scratch"))
+
+    def test_parse_flows_takes_a_named_slash_command_and_a_lua_file(self):
+        lua = self.state / "notice.lua"
+        lua.write_text("print('shown')\n")
+        self.assertEqual(
+            fc.parse_flows([f"update notice={lua}", "map=/lf"]),
+            [("update notice", str(lua)), ("map", "/lf")],
+        )
+        for bad in ("/lf", "= /lf", "map=", "map=missing.lua"):
+            with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
+                fc.parse_flows([bad])
+
+    def test_flow_slug_is_a_file_name(self):
+        self.assertEqual(fc.flow_slug("Update notice!"), "update-notice")
+        self.assertEqual(fc.flow_slug("***"), "flow")
+
+    def test_run_flow_sends_a_slash_command_without_an_eval(self):
+        with mock.patch.object(fc, "slash") as slash, mock.patch.object(fc, "devsmoke_eval") as tool:
+            fc.run_flow({}, "/lf")
+        slash.assert_called_once_with({}, "/lf")
+        tool.assert_not_called()
+
+    def test_run_flow_writes_reloads_and_checks_a_lua_snippet(self):
+        tool = mock.Mock()
+        tool.write_snippet.return_value = {
+            "chunk": Path("/x/!!DevSmokeInbox/Eval.lua"),
+            "snippet": Path("notice.lua"),
+            "lines": 3,
+        }
+        tool.EvalError = Exception
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "saved_eval", return_value={"ok": True, "ran": 1}),
+            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: ok, ran 1", True)),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            fc.run_flow("state", "notice.lua")
+        reload.assert_called_once_with("state")
+        tool.write_snippet.assert_called_once_with(Path("notice.lua"), addons=self.state / "client/Interface/AddOns")
+        self.assertIn("DevSmokeDB.eval: ok, ran 1", out.getvalue())
+
+    def test_run_flow_reports_a_failed_lua_snippet(self):
+        tool = mock.Mock()
+        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": Path("notice.lua"), "lines": 3}
+        tool.EvalError = Exception
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "saved_eval", return_value={"ok": False}),
+            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: failed\nerror:\nboom", False)),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(fc.ClientError, "flow snippet notice.lua failed"),
+        ):
+            fc.run_flow("state", "notice.lua")
+
+    def test_client_build_reads_the_session_log_and_the_toc_interface(self):
+        client = self.state / "client"
+        (client / "Logs").mkdir(parents=True)
+        (client / "Logs/gx.log").write_text("11/13 14:59:14.102  [0] World of Warcraft Retail x86_64 1.60.1.70938\n")
+        addon = self.state / "addon"
+        addon.mkdir()
+        (addon / "LegacyForever.toc").write_text("## Interface: 16001\r\n## Version: 1.0.0\r\n")
+        with mock.patch.object(fc, "CLIENT", client):
+            self.assertEqual(fc.client_build(addon), "1.60.1.70938 (Interface 16001)")
+
+    def test_client_build_refuses_a_session_log_without_a_build_line(self):
+        client = self.state / "client"
+        (client / "Logs").mkdir(parents=True)
+        (client / "Logs/gx.log").write_text("no build here\n")
+        addon = self.state / "addon"
+        addon.mkdir()
+        with mock.patch.object(fc, "CLIENT", client), self.assertRaisesRegex(fc.ClientError, "wrote no build line"):
+            fc.client_build(addon)
+
+    def test_run_tool_reports_the_tools_own_error(self):
+        failed = mock.Mock(returncode=1, stdout="", stderr="gh: not logged in")
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=failed),
+            self.assertRaisesRegex(fc.ClientError, "could not create the proof gist: gh: not logged in"),
+        ):
+            fc.run_tool(["gh", "gist", "create"], "create the proof gist")
+
+    def test_create_gist_puts_a_readme_in_the_new_secret_gist(self):
+        completed = mock.Mock(returncode=0, stdout="https://gist.github.com/cjber/abc123\n", stderr="")
+        with mock.patch.object(fc, "run_tool", return_value=completed) as run:
+            gist = fc.create_gist("proof for legacy-forever", self.state / "shots")
+        self.assertEqual(gist, "abc123")
+        self.assertIn("--desc", run.call_args.args[0])
+        self.assertIn("# WoW: Forever visual proof", (self.state / "shots/README.md").read_text())
+
+    def test_create_gist_refuses_output_without_a_gist_url(self):
+        completed = mock.Mock(returncode=0, stdout="created something\n", stderr="")
+        with (
+            mock.patch.object(fc, "run_tool", return_value=completed),
+            self.assertRaisesRegex(fc.ClientError, "printed no gist URL"),
+        ):
+            fc.create_gist("proof", self.state / "shots")
+
+    def test_upload_screenshots_pins_each_url_to_the_gist_commit(self):
+        shots = self.state / "shots"
+        shots.mkdir()
+        image = shots / "1-update-notice.png"
+        image.write_bytes(b"\x89PNG\r\n\x1a\nbody")
+        other = shots / "2-map.png"
+        other.write_bytes(b"\x89PNG\r\n\x1a\nmap")
+
+        def fake_run(command, purpose, cwd=None):
+            if command[:2] == ["git", "clone"]:
+                Path(command[-1]).mkdir(parents=True)
+            if "rev-parse" in command:
+                return mock.Mock(returncode=0, stdout="f" * 40 + "\n", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(fc, "run_tool", side_effect=fake_run):
+            images = fc.upload_screenshots("abc123", [image, other], "proof")
+        commit = "f" * 40
+        self.assertEqual(
+            [item["url"] for item in images],
+            [
+                f"https://gist.githubusercontent.com/cjber/abc123/raw/{commit}/1-update-notice.png",
+                f"https://gist.githubusercontent.com/cjber/abc123/raw/{commit}/2-map.png",
+            ],
+        )
+        self.assertEqual(images[0]["sha256"], fc.hashlib.sha256(image.read_bytes()).hexdigest())
+        self.assertEqual(images[1]["sha256"], fc.hashlib.sha256(other.read_bytes()).hexdigest())
+
+    def test_visual_proof_tool_uses_the_checkouts_own_checker(self):
+        checkout = self.state / "checkout"
+        wrapper = checkout / "tools/check_visual_proof.py"
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text("")
+        self.assertEqual(fc.visual_proof_tool(checkout), [sys.executable, str(wrapper)])
+        wrapper.unlink()
+        tooling = checkout / "tools/forever_tools/visual_proof.py"
+        tooling.parent.mkdir()
+        tooling.write_text("")
+        self.assertEqual(fc.visual_proof_tool(checkout), [sys.executable, "-m", "tools.forever_tools.visual_proof"])
+
+    def test_visual_proof_tool_falls_back_to_cores_own_checker(self):
+        checkout = self.state / "checkout"
+        checkout.mkdir()
+        self.assertEqual(Path(fc.visual_proof_tool(checkout)[1]).name, "check_visual_proof.py")
+
+    def test_proof_digests_reads_the_json_or_names_the_failure(self):
+        ok = mock.Mock(returncode=0, stdout=json.dumps({"input_digest": "a", "candidate": "b"}), stderr="")
+        with mock.patch.object(fc, "visual_proof_run", return_value=ok):
+            self.assertEqual(fc.proof_digests(self.state), {"input_digest": "a", "candidate": "b"})
+        for failed in (
+            mock.Mock(returncode=1, stdout="", stderr="unsupported TOC"),
+            mock.Mock(returncode=0, stdout="oops", stderr=""),
+        ):
+            with (
+                self.subTest(returncode=failed.returncode),
+                mock.patch.object(fc, "visual_proof_run", return_value=failed),
+                self.assertRaises(fc.ClientError),
+            ):
+                fc.proof_digests(self.state)
+
+    def test_proof_compare_accepts_only_an_equivalent_installed_folder(self):
+        good = mock.Mock(returncode=0, stdout=json.dumps({"equivalent": True}), stderr="")
+        with mock.patch.object(fc, "visual_proof_run", return_value=good):
+            self.assertTrue(fc.proof_compare(self.state, self.state / "installed")["equivalent"])
+        bad = mock.Mock(
+            returncode=1,
+            stdout=json.dumps({"equivalent": False, "missing": ["UI/A.lua"], "differing": [], "extra": []}),
+            stderr="",
+        )
+        with (
+            mock.patch.object(fc, "visual_proof_run", return_value=bad),
+            self.assertRaisesRegex(fc.ClientError, "missing: UI/A.lua"),
+        ):
+            fc.proof_compare(self.state, self.state / "installed")
+        invalid = mock.Mock(returncode=1, stdout="not json", stderr="")
+        with (
+            mock.patch.object(fc, "visual_proof_run", return_value=invalid),
+            self.assertRaisesRegex(fc.ClientError, "printed no JSON"),
+        ):
+            fc.proof_compare(self.state, self.state / "installed")
+
+
+class ProofTest(unittest.TestCase):
+    """`proof`: smoke's build and links, one reload, a shot per flow, a gist and the checkout's proof file."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state / "state"))
+        self.enterContext(mock.patch.object(fc, "PROOF_SCRATCH", self.state / "scratch"))
+        self.enterContext(mock.patch.object(fc, "BUILD_ROOT", self.state / "builds"))
+        self.client = self.state / "client"
+        self.addons = self.client / "Interface/AddOns"
+        self.addons.mkdir(parents=True)
+        self.enterContext(mock.patch.object(fc, "CLIENT", self.client))
+        self.workspace = self.state / "workspace"
+        (self.workspace / "legacy-forever").mkdir(parents=True)
+        self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
+        self.checkout = self.state / "checkout"
+        self.checkout.mkdir()
+        self.build = self.state / "build"
+        (self.build / "UI").mkdir(parents=True)
+        (self.build / "LegacyForever.toc").write_text("## Interface: 16001\n## Version: 1.0.0\n")
+        (self.build / "UI/WhatsNew.lua").write_text("-- notice\n")
+        self.commit = "a" * 40
+        self.head = self.commit
+        self.git_calls = []
+        self.slashes = []
+        self.shot_paths = []
+        self.busy = [None, None]
+        self.slash_error = None
+        self.reload = mock.Mock()
+        self.proof_digests = mock.Mock(return_value={"input_digest": "digest", "candidate": "candidate"})
+        self.create_gist = mock.Mock(return_value="abc123")
+        self.upload = mock.Mock(
+            return_value=[{"url": "https://gist.example/raw/" + "f" * 40 + "/1-update-notice.png", "sha256": "0" * 64}]
+        )
+        self.client_build = mock.Mock(return_value="1.60.1.70938 (Interface 16001)")
+        self.compare = mock.Mock(return_value={"equivalent": True})
+        self.build_dev = mock.Mock(return_value=self.build)
+        self.up = mock.Mock(side_effect=self.start_session)
+
+    def start_session(self, options, after_ready=None):
+        if after_ready:
+            return after_ready({"started": 1.0, "ready": 2.0, "display": ":1"})
+        return 0
+
+    def options(self, **overrides):
+        values = {
+            "repo": "legacy-forever",
+            "ref": "main",
+            "checkout": self.checkout,
+            "flow": ["update notice=/lf"],
+            "timeout": 600,
+            "manual_launcher": False,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def fake_git(self, root, *args):
+        self.git_calls.append((root, *args))
+        return self.head if root == self.checkout else self.commit
+
+    def fake_slash(self, _state, command):
+        if self.slash_error:
+            raise fc.ClientError(self.slash_error)
+        self.slashes.append(command)
+
+    def fake_shot(self, _state, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + path.name.encode())
+        self.shot_paths.append(path)
+        return path
+
+    def run_proof(self, **overrides):
+        up = overrides.pop("up", None)
+        with (
+            mock.patch.object(fc, "git", side_effect=self.fake_git),
+            mock.patch.object(fc, "client_in_use", side_effect=self.busy),
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc, "build_dev", self.build_dev),
+            mock.patch.object(fc, "package_name", return_value="LegacyForever"),
+            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
+            mock.patch.object(fc, "up", up or self.up),
+            mock.patch.object(fc, "reload", self.reload),
+            mock.patch.object(fc, "slash", side_effect=self.fake_slash),
+            mock.patch.object(fc, "shot", side_effect=self.fake_shot),
+            mock.patch.object(fc, "proof_digests", self.proof_digests),
+            mock.patch.object(fc, "create_gist", self.create_gist),
+            mock.patch.object(fc, "upload_screenshots", self.upload),
+            mock.patch.object(fc, "client_build", self.client_build),
+            mock.patch.object(fc, "proof_compare", self.compare),
+            mock.patch.object(fc, "stop_handlers", return_value={}),
+            mock.patch.object(fc, "restore_handlers"),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+            contextlib.redirect_stderr(io.StringIO()) as err,
+        ):
+            code = fc.proof(self.options(**overrides))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_the_manual_launcher_flag_reaches_up(self):
+        code, _printed, _err = self.run_proof(manual_launcher=True)
+        self.assertEqual(code, 0)
+        self.assertTrue(self.up.call_args.args[0].manual_launcher)
+
+    def test_the_build_is_the_smokes_build_beside_the_others(self):
+        code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.build_dev.call_args.kwargs["destination"].name, "legacy-forever-proof")
+
+    def test_a_repository_name_that_is_a_path_is_refused(self):
+        with self.assertRaisesRegex(fc.ClientError, "repository name"):
+            self.run_proof(repo="../etc")
+
+    def test_a_missing_repository_checkout_says_where_it_looked(self):
+        with self.assertRaisesRegex(fc.ClientError, "no checkout of other-repo"):
+            self.run_proof(repo="other-repo")
+
+    def test_a_proof_records_the_flows_their_screenshots_and_the_digests(self):
+        code, printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        proof = json.loads((self.checkout / ".visual-proof.json").read_text())
+        self.assertEqual(proof["input_digest"], "digest")
+        self.assertEqual(proof["runtime_sha256"], "digest")
+        self.assertEqual(proof["candidate"], "candidate")
+        self.assertEqual(proof["client_build"], "1.60.1.70938 (Interface 16001)")
+        self.assertEqual(proof["tested_artifact"], "source-tree")
+        self.assertEqual(proof["source_commit"], self.commit)
+        self.assertEqual(proof["flows"], [{"name": "update notice", "steps": ["/lf"], "result": "pass"}])
+        self.assertEqual(proof["images"], self.upload.return_value)
+        self.assertEqual(self.slashes, ["/lf"])
+        self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
+        self.reload.assert_called_once()
+        self.client_build.assert_called_once_with(self.build)
+        self.compare.assert_called_once_with(self.checkout, self.build)
+        self.assertIn("wrote", printed)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_proof_compare_that_fails_removes_the_proof_it_wrote(self):
+        self.compare.side_effect = fc.ClientError("installed build differs")
+        with self.assertRaisesRegex(fc.ClientError, "installed build differs"):
+            self.run_proof()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_the_checkout_is_never_committed_or_pushed(self):
+        code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.assertTrue(all(call[1] == "rev-parse" for call in self.git_calls), self.git_calls)
+
+    def test_a_busy_client_records_nothing(self):
+        self.busy = ["the player's client is running (Wow.exe, pid 43)"]
+        code, printed, _err = self.run_proof()
+        self.assertEqual(code, 3)
+        self.build_dev.assert_not_called()
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+        self.assertIn("client in use", printed)
+
+    def test_proof_needs_a_named_flow(self):
+        with self.assertRaisesRegex(fc.ClientError, "needs at least one --flow"):
+            fc.proof(self.options(flow=[]))
+        self.build_dev.assert_not_called()
+
+    def test_a_checkout_at_another_commit_is_refused(self):
+        self.head = "b" * 40
+        with self.assertRaisesRegex(fc.ClientError, "check out the proof's commit first"):
+            self.run_proof()
+        self.build_dev.assert_not_called()
+
+    def test_a_missing_checkout_says_what_it_is_for(self):
+        with self.assertRaisesRegex(fc.ClientError, "no checkout at"):
+            fc.proof(self.options(checkout=self.state / "missing"))
+
+    def test_a_session_that_stops_before_the_flows_records_nothing(self):
+        code, _printed, err = self.run_proof(up=lambda _options, after_ready=None: 0)
+        self.assertEqual(code, 1)
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+        self.assertIn("stopped before it finished", err)
+
+    def test_a_client_that_fills_while_the_build_links_stops_at_once(self):
+        def start(_options, after_ready=None):
+            raise fc.ClientError("the Wine prefix is in use")
+
+        self.busy = [None, "the player's client is running (Wow.exe, pid 43)"]
+        code, printed, _err = self.run_proof(up=start)
+        self.assertEqual(code, 3)
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.assertIn("client in use", printed)
+
+    def test_a_failed_flow_puts_the_links_back_and_records_nothing(self):
+        def start(options, after_ready=None):
+            return after_ready({"display": ":1"})
+
+        self.slash_error = "refused /lf"
+        with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
+            self.run_proof(up=start)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+
+    def test_a_lua_flow_takes_a_shot_after_the_snippet_ran(self):
+        lua = self.state / "notice.lua"
+        lua.write_text("print('shown')\n")
+        with (
+            mock.patch.object(fc, "devsmoke_eval") as tool,
+            mock.patch.object(fc, "saved_eval", return_value={"ok": True}),
+            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: ok", True)),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            tool.return_value.write_snippet.return_value = {
+                "chunk": Path("/x/Eval.lua"),
+                "snippet": lua,
+                "lines": 1,
+            }
+            tool.return_value.EvalError = Exception
+            code, _printed, _err = self.run_proof(flow=[f"update notice={lua}"])
+        self.assertEqual(code, 0)
+        self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
+
+    def test_the_cli_passes_the_proof_options_through(self):
+        with mock.patch.object(fc, "proof", return_value=3) as proof:
+            code = fc.main(
+                [
+                    "proof",
+                    "--repo",
+                    "legacy-forever",
+                    "--ref",
+                    "main",
+                    "--checkout",
+                    str(self.checkout),
+                    "--flow",
+                    "update notice=/lf",
+                    "--manual-launcher",
+                ]
+            )
+        self.assertEqual(code, 3)
+        options = proof.call_args.args[0]
+        self.assertEqual(options.repo, "legacy-forever")
+        self.assertEqual(options.checkout, self.checkout)
+        self.assertEqual(options.flow, ["update notice=/lf"])
+        self.assertTrue(options.manual_launcher)
+
+
 if __name__ == "__main__":
     unittest.main()
