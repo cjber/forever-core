@@ -828,14 +828,17 @@ def auto_merge_warning(node_id: str) -> str | None:
     return None
 
 
-def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None) -> Result:
+def sync_consumer(
+    repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None, retry: bool = True
+) -> Result:
     """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
 
     An open sync PR is updated in place: the sync runs on that PR's own head and its commit is added on top, so a
     commit pushed to the PR since the last sync is never dropped. The commit is made straight on `forever-core-sync`
     with that head as its expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left
     untouched and a comment on the PR says why. A consumer with no open PR has its branch rebuilt from `main` on a
-    scratch branch, which is safe because there is no PR whose commits could be lost.
+    scratch branch, which is safe because there is no PR whose commits could be lost. A PR that merges or closes while
+    the sync runs takes its branch with it; then the sync starts over once from the new `main`, as if no PR were open.
     """
     try:
         root = clone(repo, workspace)
@@ -844,7 +847,10 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
         pull = listed[0] if listed else None
         base = main
         if pull is not None:
-            base = fetch_branch(root, BRANCH) or main
+            base = fetch_branch(root, BRANCH)
+            if base is None:
+                # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
+                pull, base = None, main
         git(root, "checkout", "-B", BRANCH, base)
         bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
@@ -860,6 +866,10 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
             try:
                 create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
             except (SyncError, json.JSONDecodeError, OSError) as error:
+                if retry and not open_sync_prs(repo):
+                    # The PR merged or closed between the listing and the commit and took its branch: start over on the
+                    # new `main` in a fresh clone.
+                    return sync_consumer(repo, core_root, workspace / "retry", sha, latest, retry=False)
                 return left_alone(repo, pull, str(error))
             status = "updated in place"
         else:

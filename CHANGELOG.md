@@ -4,6 +4,9 @@
 
 ### For addon authors
 
+- **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
+  pull request, and when that PR merged and its branch was deleted before the commit, the commit failed with "Branch
+  not found". The sync now opens a fresh branch and pull request from the new `main` instead. (#559)
 - **An addon whose CI lives outside core's can install its tools from the shared toolchain action.** The action's `lua`
   set also installs the PUC Lua 5.1.5 interpreter as `lua5.1`, beside the `luac5.1` compiler it already built, and
   `verify.sh` checks both against the manifest. Every cache key now hashes the action's own `build.sh` and `install.sh`
