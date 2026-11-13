@@ -50,7 +50,7 @@ check(type(ForeverCore.Register) == "function", "Register is the per-addon facto
 check(type(ForeverCore.ContextMenu) == "function", "ContextMenu is the shared menu")
 check(ForeverCore.ContextMenu == ns.ContextMenu, "and it is the module UI/ContextMenu.lua built")
 check(ForeverCore.Art == ns.Art, "ForeverCore publishes the Art helper")
-check(ForeverCore.Art.minor == 1, "its minor is 1")
+check(ForeverCore.Art.minor == 2, "its minor is 2")
 check(rawequal(env.ForeverTrackerHost, ns.TrackerHost), "ForeverTrackerHost publishes core's one host")
 check(env.ForeverFamily == nil, "ForeverFamily is gone")
 check(env.ForeverLeaderboards == nil, "ForeverLeaderboards is gone")

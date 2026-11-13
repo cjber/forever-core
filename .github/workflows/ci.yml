@@ -58,7 +58,8 @@ jobs:
       # tools/.venv, which every linter ignores.
       - run: uv run --project tools --frozen --group dev ruff check tools
       - run: uv run --project tools --frozen --group dev ruff format --check tools
-      - run: python3 -m unittest discover -s tools -p "test_*.py"
+      # The tools' tests run in the dev group too: the step marker export's spec draws with Pillow.
+      - run: uv run --project tools --frozen --group dev python -m unittest discover -s tools -p "test_*.py"
       # A merge that edits a section whose v* tag already shipped fails here: new notes belong under Unreleased.
       - run: python3 tools/changelog.py --check
       # The wowmock renderer's tests draw images, so they run with Pillow from the dev group.
