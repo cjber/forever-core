@@ -128,9 +128,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 
 ### Docs
 
-- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI and
-  release badges; then Features, Install, Usage (slash commands), optional sections for how the
-  numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
+- **WFA-10** README shape: centred 96 px icon, `<h1 align="center">`, one-line pitch, CI, release
+  and CurseForge downloads badges (`img.shields.io/curseforge/dt/<X-Curse-Project-ID>`, linked to the
+  store page; ForeverCore itself has none, as every addon pulls it in); then Features, Install, Usage
+  (slash commands), optional sections for how the numbers or data work, Works alongside, Development, Credits, Licence. Under 1,200 words: a feature is one
   bullet led by a bold name, at most ~60 words; depth moves to `docs/`. `## Credits` is a short paragraph that
   thanks, by name and with a link, the data sources, the addons whose ideas a feature took (even when no code was
   copied, saying so), translators and the people who reported bugs or asked for features (GitHub handles and named
@@ -204,28 +205,42 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   lua-language-server, ruff for the Python tools, actionlint and zizmor, and gitleaks over the full
   history. Every pull-request workflow cancels a PR's superseded runs (top-level `concurrency` grouped on
   the PR number, `cancel-in-progress` only for `pull_request`, so `main` keeps a run per commit) and every
-  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT
-  and luacheck come from `cjber/forever-core/.github/actions/lua-toolchain` at the commit the repo's other core
-  tooling comes from, never from apt. A job
+  job sets `timeout-minutes`. Extra checks (shellcheck) are welcome. Downloaded binaries are pinned by sha256. LuaJIT,
+  the PUC Lua 5.1.5 compiler and interpreter, luacheck, LuaLS, StyLua and gitleaks come from
+  `cjber/forever-core/.github/actions/toolchain@<sha>` at the commit the repo's other core tooling comes from, never
+  from apt, curl or a tool action: `with: tools: lua luals stylua gitleaks` names what the job needs, and the action
+  reads the vendored `tools/toolchain.json` from the job's own checkout (its `manifest` input defaults to it), so every
+  version comes from that one file. A job
   named `project-rules` runs `tools/changelog.py --check` and the repo's own rules, the ones no linter covers, as
   one stdlib script, `tools/repo_rules.py` (the merge base from `--base "origin/$BASE"` where a rule reads it). A
   hit is exempt only where the rule says so, with a `rule-ignore: <id> - <reason>` marker. Sloppatrol is a patrol,
   not a gate: a repo it patrols keeps `.sloppatrol/sloppatrol.yml`, whose checks are the fast CI checks plus the
   rules script, and `.sloppatrol/instructions.md`, its live roots; nothing else under `.sloppatrol/` is tracked.
-  Dependabot updates `github-actions` monthly, grouped. A `package` job runs the pinned BigWigs packager
+  Dependabot updates `github-actions` daily with a one-day cooldown, grouped per ecosystem, and the vendored
+  `tools/pyproject.toml`'s `uv` group holds the Python tools, which run as
+  `uv run --project tools --frozen --group dev <tool>`. Core's hourly `dependabot-merge` job arms squash auto-merge for
+  a patch or minor update in every addon; a major waits for review under the `major` label. Every other pin sits in the
+  vendored `tools/toolchain.json`, which core's daily `bump-toolchain` workflow moves; a major it proposes also waits
+  for review.
+  A `package` job runs the pinned BigWigs packager
   with `args: -d -z` (no upload) and `tools/check_package.py` (`forever_tools.package`) on its output: every file a
   TOC or XML loads and every `Interface\AddOns\<addon>\` path is in the zip, no `tests`, `tools`, `types`, `docs`,
   `ruff.toml`, `stylua.toml` or dot file (`.agents`, `.luacheckrc`) ships, every packaged folder ships a licence file (LICENSE, LICENCE, COPYING or UNLICENSE), THIRD_PARTY.md
   and the WFA-10 and WFA-31 credits sections ship with text under them, and the smoke spec passes on the packaged
   folder. `tools/doctor.py`
-  (`forever_tools.doctor`) checks a machine against every pin in `ci.yml` and `typecheck.sh` and prints a fix for
-  each problem; AGENTS.md lists it under Commands.
+  (`forever_tools.doctor`) checks a machine against every pin in the vendored `tools/toolchain.json` and
+  `tools/pyproject.toml` and prints a fix for each problem; AGENTS.md lists it under Commands.
 - **WFA-16** Releases: a signed `v*` tag runs `release.yml` (BigWigs packager, pinned) with this
   version's CHANGELOG entry as notes (`tools/changelog.py`), uploading to GitHub, CurseForge and
   Wago; the TOC carries `X-Curse-Project-ID` and `X-Wago-ID`. Setup is in `wow-addon-publish`.
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
-  100%.
+  100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
+  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges:
+  `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's tree>
+  --flow "update notice=<the addon's slash command or Lua file>"` builds the commit, runs the flow, uploads its
+  screenshots to a secret gist and writes `.visual-proof.json`; commit that file with the change (the full flow is in
+  [in-game.md](in-game.md)). The required `visual-proof` check then passes without an admin merge.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
   commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
@@ -266,6 +281,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   producer here, vendored byte for byte into each repo as `tools/forever_tools/` and pinned by
   `MANIFEST.json`. Edit it here, never in a repo; `python3 tools/forever_tools/sync.py check` runs
   in `typecheck.sh`. A repo's own `tools/` keeps only thin entry points and its generators.
+  The client-call lint is one: every published addon runs the vendored `tools/lint_client_calls.py`
+  (`forever_tools.client_calls`) from its own `tools/typecheck.sh`, refusing a call of a client function the Forever
+  client does not have, which type-checks against the retail annotations and then fails in game.
 - **WFA-30** Values the client may return as secrets (unit GUIDs and names, tooltip unit data) are read
   through the repo's one helper, `ns.Readable` (the value, or nil when it is secret), and every tooltip hook
   returns first when `ns.Usable(tooltip)` is false (nil or forbidden). Both live in a small file with no other

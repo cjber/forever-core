@@ -6,12 +6,13 @@ local checkout) with this repo's copy and names every mismatch. Consumers are co
 needs `GH_TOKEN` to be readable, and is otherwise reported as missing rather than crashing); `--local` supports an
 offline check against local clones.
 
-Once per consumer, deduplicated from VENDORED, two more checks follow the copies, because a consumer's own config
+Once per consumer, deduplicated from VENDORED, a few more checks follow the copies, because a consumer's own config
 drifts the same way:
 
 - `tools/forever-core.txt`, when the consumer carries it, must name core's latest published release tag, so the
-  addon's specs and CI test against the core a player runs. The tag comes from the GitHub API, read with the same
-  token as the files; with `--local` it is this checkout's newest `v*` tag from `git describe`.
+  addon's specs and CI test against the core a player runs. The tag comes from `forever_tools.core_pin.latest_release`,
+  the same read every consumer's package and release gates use; with `--local` it is this checkout's newest `v*` tag
+  from `git describe`. A latest release that cannot be read fails this gate rather than skipping the check.
 - `.pkgmeta`, when the consumer's root TOC lists ForeverCore in `## Dependencies`, must ship ForeverCore inside the
   addon's own zip, because a store update does not reliably deliver a required dependency: CurseForge can skip it on
   an update, and the packager sends Wago no dependency list at all. So `externals:` must download
@@ -20,6 +21,8 @@ drifts the same way:
   one owner holds the folder.
 - The same root TOC must carry `## X-Forever-Core: <pin>`, the tag the bundled folder is, so a player's other Forever
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
+- Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
+  its BigWigs packager, so a core release that lands after CI is caught before the upload.
 
 Those three copies are compared by `forever_tools.core_pin`, the same function the vendored package check runs in each
 consumer, so this gate and a consumer's own CI agree on the rule.
@@ -60,6 +63,11 @@ pkgmeta_field = core_pin.pkgmeta_field
 
 FOREVER_CORE = "forevercore"
 VISUAL_WORKFLOW = ".github/workflows/visual-proof.yml"
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
+# The step `tools/sync_consumers.py` inserts directly above the packager. It is the consumer's own file, so this gate
+# verifies the step is still there and still last before the upload rather than comparing its bytes.
+RELEASE_GATE = "Verify the ForeverCore pin is core's latest release"
+RELEASE_GATE_COMMAND = "tools.forever_tools.core_pin --latest"
 
 
 def digest(data):
@@ -94,17 +102,17 @@ def remote_json(url):
 
 
 def latest_tag(local):
-    """Core's newest published release tag, or None when it cannot be read and the pin check must be skipped."""
+    """Core's newest published release tag, or `LatestReleaseUnavailable` when it cannot be read.
+
+    The GitHub API read is `forever_tools.core_pin.latest_release`, the function every consumer's package and release
+    gate calls, so this gate and a consumer's own CI agree on both the tag and how a failed read behaves: it fails.
+    """
     if local:
-        return local_latest_tag()
-    try:
-        with urllib.request.urlopen(
-            authorized("https://api.github.com/repos/cjber/forever-core/releases/latest"), timeout=60
-        ) as response:
-            return json.loads(response.read())["tag_name"]
-    except (OSError, urllib.error.URLError, TimeoutError, KeyError, TypeError, json.JSONDecodeError) as error:
-        print(f"Could not read forever-core's latest release ({error}); skipping the pin check.")
-        return None
+        tag = local_latest_tag()
+        if tag is None:
+            raise core_pin.LatestReleaseUnavailable("this checkout has no readable newest v* tag")
+        return tag
+    return core_pin.latest_release()
 
 
 def local_latest_tag():
@@ -117,7 +125,7 @@ def local_latest_tag():
         check=False,
     )
     if shown.returncode:
-        print(f"Could not read this checkout's newest v* tag ({shown.stderr.strip()}); skipping the pin check.")
+        print(f"Could not read this checkout's newest v* tag ({shown.stderr.strip()}).")
         return None
     return shown.stdout.strip() or None
 
@@ -217,19 +225,20 @@ def read_pins(consumers, branch, local):
 
 
 def check_pins(pins, local):
-    """Every consumer's pin names core's latest release."""
+    """Every consumer's pin names core's latest release; an unreadable latest release is itself a failure."""
     failures = []
     if not pins:
         return failures
-    latest = latest_tag(local)
-    if latest is None:
-        return failures
+    try:
+        latest = latest_tag(local)
+    except core_pin.LatestReleaseUnavailable as error:
+        return [f"forever-core: could not read the latest published release ({error}); the pin check cannot pass"]
     for repo in sorted(pins):
         pin = pins[repo]
-        if pin != latest:
-            failures.append(
-                f"{repo}: {consumer_path(repo, PIN_PATH)}: pin {pin or '(empty)'}, core's latest release is {latest}"
-            )
+        failures += [
+            f"{repo}: {failure}"
+            for failure in core_pin.compare_latest(pin, latest, pin_path=consumer_path(repo, PIN_PATH))
+        ]
     return failures
 
 
@@ -272,6 +281,40 @@ def check_packaging(repo, pin, branch, local):
             " one owner for the folder"
         )
     return failures
+
+
+def check_release_gate(repo, branch, local):
+    """A consumer's own release workflow runs the pin gate directly above the packager.
+
+    The workflow is not vendorable: each addon keeps its own. This is the one check that the step `sync_consumers.py`
+    inserts is still present and still the last thing before the upload, so a hand edit cannot quietly reopen the gap
+    between a green CI run and a stale pin. A workflow with no BigWigs packager step (kiln-forever's own tar build)
+    has no packager to gate and is left alone.
+    """
+    path = consumer_path(repo, RELEASE_WORKFLOW)
+    data, error = read_consumer(repo, path, branch, local)
+    if error:
+        return [f"{repo}: {path}: {error}"]
+    if data is None:
+        return []
+    text = data.decode("utf-8", "replace")
+    packager = text.find("BigWigsMods/packager@")
+    if packager < 0:
+        return []
+    gate = text.find(RELEASE_GATE)
+    if gate < 0:
+        return [
+            f"{repo}: {path}: no ForeverCore pin gate; insert `- name: {RELEASE_GATE}` running"
+            f" `python3 -m {RELEASE_GATE_COMMAND}` directly above the packager"
+        ]
+    if gate > packager:
+        return [f"{repo}: {path}: the ForeverCore pin gate is after the packager; move it directly above the upload"]
+    if text.find(RELEASE_GATE_COMMAND, gate, packager) < 0:
+        return [
+            f"{repo}: {path}: the ForeverCore pin gate must run `python3 -m {RELEASE_GATE_COMMAND}` directly above"
+            " the packager"
+        ]
+    return []
 
 
 def canonical_visual_workflow():
@@ -438,6 +481,10 @@ def main(argv=None):
         failures += check_packaging(repo, pins.get(repo), arguments.branch, arguments.local)
     for repo in VENDORED.get(VISUAL_WORKFLOW, ()):
         failures += check_visual_workflow(repo, arguments.branch, arguments.local)
+    # The published addons are the ones with a visual-proof workflow, and every one of them packages with BigWigs.
+    # Kiln Forever's own tar build has no packager to gate, so it is not in this list.
+    for repo in VENDORED.get(VISUAL_WORKFLOW, ()):
+        failures += check_release_gate(repo, arguments.branch, arguments.local)
 
     if failures:
         print("Consumers differ from this repo:")

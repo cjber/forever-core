@@ -14,9 +14,11 @@ convention and the next read after this page.
 ForeverCore.API -- integer
 ```
 
-The interface version of the table below. It is `1` today. It changes only when a member a third-party addon may
+The interface version of the table below. It is `2` today. It changes only when a member a third-party addon may
 rely on breaks: its arguments, the shape of its result or its meaning. Additions keep it and raise a member's own
-`minor` instead. Refuse to run against a core older than the members you call:
+`minor` instead. Version 2 retired Forever Leaderboards and peer stats: `ForeverCore.Leaderboards` and
+`ForeverCore.PeerStats` remain only as no-op answers for older addon releases, and they store, register and send
+nothing. Refuse to run against a core older than the members you call:
 
 ```lua
 if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
@@ -58,6 +60,38 @@ It is `2` today. Check a member added in minor 2 before you use it, so the same 
 - `Addons()` returns a fresh list, sorted by name, of `{ name, version, minor, api }` for every published addon.
   `version` and `minor` are read from the api table at call time (`minor` is 0 when it has none), and `api` is the
   addon's own table rather than a copy, because it is the callable API. (minor 2)
+
+## `ForeverCore.Art`
+
+```lua
+ForeverCore.Art.minor -- integer
+ForeverCore.Art.Icon(texture, file, size)
+ForeverCore.Art.CooldownIcon(texture, file, size) --> Texture
+ForeverCore.Art.Marker(number) --> string?
+ForeverCore.Art.Ring() --> string
+ForeverCore.Art.Diamond() --> string
+```
+
+`minor` is `2` today. Minor 1 added `Icon` and `CooldownIcon`; minor 2 added the three step markers, `Marker`, `Ring`
+and `Diamond`. Check it before you use them: `if (ForeverCore.Art.minor or 1) >= 2 then ... end`.
+
+- `Icon(texture, file, size)` draws a file icon whole: it resets the texture's crop, sets `file` (a client path or a
+  FileDataID) and sizes it `size` by `size`. The texture is your own, not one the client already draws in a template.
+- `CooldownIcon(texture, file, size)` does what `Icon` does, then gives the icon the Cooldown Manager's frame: the
+  client's `UI-HUD-CoolDownManager-Mask` atlas as a mask over it and `UI-HUD-CoolDownManager-IconOverlay` on the
+  OVERLAY layer, reaching 9/50 of the icon's width past each side and 8/50 of its height past the top and bottom. It
+  returns the overlay texture, so you can hide or recolour it. The client builds that frame only inside its own Cooldown
+  Manager and offers no template. The mask and overlay are made once per icon texture and reused, so call this again
+  with a new icon or `size` to move the same pair rather than building another one. (minor 1)
+- `Marker(number)` is the gold numbered step marker for a whole `number` from 1 to 25:
+  `Interface\AddOns\ForeverCore\media\Numbers\<number>`. It returns nil for anything else, so a route with more steps
+  keeps the art it already draws for them. The markers are square, 64 pixels across and centred at their native
+  aspect, and are the same files Adventure Guide Forever and Shortest Path Forever ship, so one addon's step looks
+  like the next. Draw one with `Icon(texture, Marker(number), size)`. (minor 2)
+- `Ring()` is the empty ring, `Interface\AddOns\ForeverCore\media\Numbers\Ring`: a place a route visits twice stacks
+  it behind its numbered marker. (minor 2)
+- `Diamond()` is that ring with the goal pin's diamond in it,
+  `Interface\AddOns\ForeverCore\media\Numbers\Diamond`, for the step that has no number next. (minor 2)
 
 ## `ForeverCore.OpenMap`
 
@@ -150,8 +184,10 @@ ForeverCore.ProfessionTabs.ShowNative()
 ForeverCore.ProfessionTabs.Selected() --> string?
 ```
 
-`minor` is the module's own version: it rises with each member the module adds. It is `1` today, the minor that adds
-`SetMinWidth`. Check that member before you use it: `if (ForeverCore.ProfessionTabs.minor or 0) >= 1 then ... end`.
+`minor` is the module's own version: it rises with each member or behaviour an addon may depend on. It is `2` today.
+Minor 1 added `SetMinWidth`; minor 2 means the native profession pages are hidden beneath a selected addon page and
+restored when the window is handed back to the client. Check it before you rely on either:
+`if (ForeverCore.ProfessionTabs.minor or 0) >= 2 then ... end`.
 
 - `Register(key, spec)` adds a side tab to the Professions window under the client's own tabs, in registration order.
   `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is your page and `minWidth` raises the
@@ -198,6 +234,8 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `PeerStats`, `Leaderboards`, `LeaderboardsData`, `MinimapButton`, `SettingsPage`, `SettingsSections`, `Text`,
-`QuestOrder`, `Family` and `Credits`. [`docs/adoption.md`](adoption.md) describes them for the addons that own a
-tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu` instead.
+`QuestLogTabs`, `MinimapButton`, `SettingsPage`, `SettingsSections`, `Text`, `QuestOrder`, `Family` and `Credits`.
+`Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
+a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
+addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
+instead.

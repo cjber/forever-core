@@ -1,4 +1,4 @@
-"""Keep the three copies of a consumer's ForeverCore release in step.
+"""Keep the copies of a consumer's ForeverCore release in step, against core's latest published release.
 
 A consumer that bundles core commits the release tag in three places: `tools/forever-core.txt` (the tag its specs and
 CI check out), the `.pkgmeta` ForeverCore external (the zip the packager ships) and the root TOC's
@@ -6,14 +6,23 @@ CI check out), the `.pkgmeta` ForeverCore external (the zip the packager ships) 
 literally, so no build step can derive one from another; this module is the one comparison every copy is checked
 against.
 
-    python3 -m tools.forever_tools.core_pin [root]
+    python3 -m tools.forever_tools.core_pin [root]            the three copies name one release
+    python3 -m tools.forever_tools.core_pin --latest [root]   and that release is core's latest published one
 
-A consumer whose `.pkgmeta` ships no ForeverCore external bundles no core, so it is skipped.
+`--latest` is the release gate. It reads `cjber/forever-core`'s latest published GitHub release (with `GH_TOKEN` or
+`GITHUB_TOKEN` when either is set) and fails closed when that release cannot be read, so an unknown latest release can
+never pass a stale pin. The consumer's package job runs it, and its release workflow runs it again directly before the
+packager uploads. A consumer whose `.pkgmeta` ships no ForeverCore external bundles no core, so the bundle comparison
+is skipped; its pin is still checked against the latest release.
 """
 
 import argparse
+import json
+import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 __all__ = [
@@ -21,13 +30,18 @@ __all__ = [
     "CORE_FIELD",
     "CORE_FOLDER",
     "EXTERNAL_TAG",
+    "LATEST_RELEASE_URL",
+    "LatestReleaseUnavailable",
     "PIN_PATH",
     "PKGMETA",
     "TOC_CORE_FIELD",
     "check",
+    "check_latest",
     "compare",
+    "compare_latest",
     "core_external",
     "external_tag",
+    "latest_release",
     "main",
     "pkgmeta_field",
     "toc_field",
@@ -44,6 +58,54 @@ CORE_EXTERNAL = re.compile(r"^(?P<indent>[ \t]*)ForeverCore:[ \t]*\S+[^\r\n]*", 
 EXTERNAL_TAG = re.compile(r"/download/(?P<tag>[^/\s]+)/", re.IGNORECASE)
 TOC_CORE_FIELD = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 TOC_CORE_VALUE = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[ \t]*(?P<value>\S+)", re.IGNORECASE | re.MULTILINE)
+# The release the whole suite bundles: every consumer's zip must carry this one, newest, published ForeverCore.
+LATEST_RELEASE_URL = "https://api.github.com/repos/cjber/forever-core/releases/latest"
+
+
+class LatestReleaseUnavailable(RuntimeError):
+    """Core's latest published release could not be read, so no pin may be called current."""
+
+
+def latest_release(fetch=None):
+    """The tag of cjber/forever-core's latest published GitHub release.
+
+    `fetch` replaces the network read in tests and must return the tag. Any read failure, an unreadable body or a
+    missing tag raises `LatestReleaseUnavailable` with the reason, so callers fail closed instead of skipping the gate.
+    """
+    if fetch is not None:
+        try:
+            tag = fetch()
+        except LatestReleaseUnavailable:
+            raise
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise LatestReleaseUnavailable(str(error)) from error
+    else:
+        request = urllib.request.Request(
+            LATEST_RELEASE_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "forever-core-pin"},
+        )
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if token:
+            request.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                tag = json.loads(response.read()).get("tag_name")
+        except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, AttributeError) as error:
+            raise LatestReleaseUnavailable(str(error)) from error
+    if not isinstance(tag, str) or not tag.strip():
+        raise LatestReleaseUnavailable(f"{LATEST_RELEASE_URL} named no release tag")
+    return tag.strip()
+
+
+def compare_latest(pin, latest, *, pin_path=PIN_PATH):
+    """The failure when `pin` does not name `latest`, core's latest published release."""
+    pin = (pin or "").strip()
+    if pin == latest:
+        return []
+    return [
+        f"{pin_path}: pin {pin or '(empty)'}, core's latest release is {latest}; move it to {latest}"
+        " so this addon ships the ForeverCore every other Forever addon has"
+    ]
 
 
 def pkgmeta_field(text, name):
@@ -132,22 +194,28 @@ def compare(
     return failures
 
 
-def check(root):
-    """Failures in a consumer checkout's three copies of its ForeverCore release tag, relative to `root`."""
+def check(root, latest=None):
+    """Failures in a consumer checkout's ForeverCore pin and bundle, relative to `root`.
+
+    With `latest`, the pin must name that release, whether or not the addon bundles core: a consumer without a
+    ForeverCore external still tests and builds against the core its pin names. Without it, only the pin's agreement
+    with the shipped external and the TOC field is checked, so the plain command needs no network.
+    """
     root = Path(root)
-    pkgmeta_path = root / PKGMETA
-    if not pkgmeta_path.is_file():
-        return []
-    pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace")
-    if not external_line(pkgmeta):
-        return []
     pin_path = root / PIN_PATH
     pin = pin_path.read_text(encoding="utf-8", errors="replace").strip() if pin_path.is_file() else ""
+    failures = compare_latest(pin, latest) if latest is not None and pin_path.is_file() else []
+    pkgmeta_path = root / PKGMETA
+    if not pkgmeta_path.is_file():
+        return failures
+    pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace")
+    if not external_line(pkgmeta):
+        return failures
     package = pkgmeta_field(pkgmeta, "package-as")
     toc_name = f"{package}.toc" if package else "the root TOC"
     toc_path = root / toc_name
     toc = toc_path.read_text(encoding="utf-8", errors="replace") if package and toc_path.is_file() else ""
-    return compare(
+    failures += compare(
         pin,
         pkgmeta,
         toc,
@@ -155,21 +223,53 @@ def check(root):
         pkgmeta_path=PKGMETA,
         toc_path=toc_name,
     )
+    return failures
 
 
-def main(root=None):
+def check_latest(root, fetch=None):
+    """The release gate: `root`'s pin names core's latest published release, and its bundle agrees.
+
+    A latest release that cannot be read is a failure with its reason, never a skipped check: passing a pin against an
+    unknown latest release is exactly how an addon shipped a core older than the one every player has. A checkout with
+    neither a pin nor a ForeverCore external does not use core at all, so it is left alone without a network read.
+    """
+    root = Path(root)
+    pkgmeta_path = root / PKGMETA
+    pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace") if pkgmeta_path.is_file() else ""
+    if not (root / PIN_PATH).is_file() and not external_line(pkgmeta):
+        return []
+    try:
+        latest = latest_release(fetch)
+    except LatestReleaseUnavailable as error:
+        return [
+            f"{PIN_PATH}: could not read cjber/forever-core's latest published release ({error});"
+            " refusing to pass the pin against an unknown release"
+        ]
+    return check(root, latest)
+
+
+def main(root=None, latest=False, fetch=None):
     """Check `root` (the current directory by default) and report every copy that disagrees."""
     root = Path.cwd() if root is None else Path(root)
-    failures = check(root)
+    failures = check_latest(root, fetch) if latest else check(root)
     for failure in failures:
         print(failure, file=sys.stderr)
     if failures:
         return 1
-    print("ForeverCore pin: the pin, the .pkgmeta external and the TOC field agree, or this addon bundles no core")
+    if latest:
+        print("ForeverCore pin: the pin names core's latest published release, and the bundle agrees")
+    else:
+        print("ForeverCore pin: the pin, the .pkgmeta external and the TOC field agree, or this addon bundles no core")
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("root", nargs="?", type=Path, default=Path.cwd(), help="the consumer checkout (default: .)")
-    sys.exit(main(parser.parse_args().root))
+    parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="also require the pin to name cjber/forever-core's latest published release (the release gate)",
+    )
+    arguments = parser.parse_args()
+    sys.exit(main(arguments.root, arguments.latest))

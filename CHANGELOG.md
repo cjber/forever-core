@@ -4,7 +4,138 @@
 
 ### For addon authors
 
+- **A Lua proof flow reports its own snippet's result, not the session before it.** `--flow NAME=file.lua` and
+  `forever_client.py eval` reload once to run a snippet and then read `DevSmokeDB.eval`, but SavedVariables reach disk
+  only at the next reload, so the file still held the previous eval: a snippet that raised passed the proof on an
+  earlier run's success, and a clean one failed on an earlier run's error. `tools/devsmoke/eval.py` now stamps every
+  generated `Eval.lua` with a fresh run token, `!!DevSmoke` copies it into `DevSmokeDB.eval.run`, and the reader reloads
+  once more and answers only the record carrying that token. A failed flow fails the proof with the snippet's own
+  error, before any gist or `.visual-proof.json` exists. (#580)
 - Native settings pages can register section headings through `SettingsSections.Register`, using Blizzard's row layout and focus handling (#488).
+
+## [1.11.0] - 2026-11-13
+
+### For addon authors
+
+- **Step markers numbered 1 to 25, an empty ring and a ring with a diamond, for every Forever addon.**
+  `ForeverCore.Art.Marker(number)` answers the gold numbered marker for a step, `ForeverCore.Art.Ring()` the empty ring
+  a place a route visits twice stacks behind its marker, and `ForeverCore.Art.Diamond()` that ring with the goal pin's
+  diamond in it for a step that has no number next, all drawn from core's `media/Numbers`. The numbered files and the
+  ring are byte for byte the ones Adventure Guide Forever and Shortest Path Forever ship, so an addon can drop its own
+  copy and read core's instead; `ForeverCore.Art.minor` is 2. `tools/export_markers.py` writes them from
+  `tools/marker_source`, and its `--check` fails when a committed marker differs. (#570)
+- **A visual proof is one command, on a release prep or a Core pin bump.** `tools/headless/forever_client.py proof
+  --repo <repo> --ref <sha> --checkout <tree> --flow "update notice=<slash command or Lua file>"` builds and links the
+  commit as `smoke` does, reloads once, runs each named flow (a Forever addon's own slash command, or a Lua file
+  through `!!DevSmoke`), screenshots each and uploads the PNGs to a new secret gist. It writes
+  `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
+  checks the installed build with `visual_proof --compare`; every AddOns slot is put back and the checkout is never
+  committed or pushed. A release preparation and a sync pull request that moves the ForeverCore pin run it, so the
+  required `visual-proof` check passes without `--admin`; `tools/sync_consumer_prs.py` prints the command for a sync
+  pull request whose changed files need a proof, because it cannot drive the client itself. ForeverCore has no shared
+  opener for an addon's update notice, so the flow is always named. (#563)
+- **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
+  pull request, and when that PR merged and its branch was deleted before the commit, the commit failed with "Branch
+  not found". The sync now opens a fresh branch and pull request from the new `main` instead. (#559)
+- **An addon whose CI lives outside core's can install its tools from the shared toolchain action.** The action's `lua`
+  set also installs the PUC Lua 5.1.5 interpreter as `lua5.1`, beside the `luac5.1` compiler it already built, and
+  `verify.sh` checks both against the manifest. Every cache key now hashes the action's own `build.sh` and `install.sh`
+  as well as the tool's pins, so an edited script no longer restores a cache it did not build. Kiln Forever now
+  receives `tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock` under `addon/KilnForever/`, as the
+  published addons do, so its CI reads the one pin manifest and the one `uv` group.
+- **A sync PR keeps the commits added to it.** `tools/sync_consumer_prs.py` rebuilt every consumer's
+  `forever-core-sync` branch from `main` on each push to core `main`, so a commit pushed to an open sync pull request (a
+  recorded visual proof, say) was dropped without a word. The sync now runs on the open pull request's own head and
+  adds its commit on top, so those commits stay, and a pull request it cannot update in place is left exactly as it is
+  with a comment saying why. (#531)
+- **The client-call lint reaches every addon.** `tools/lint_client_calls.py` is now vendored into every published
+  addon through the sync, so `tools/check_core_shared.py` fails a copy that is missing or differs from core. Add
+  `python3 tools/lint_client_calls.py` to the addon's own `tools/typecheck.sh`, and declare a global an optional
+  dependency provides in `tools/client_optional.txt`, one `Name  OwningAddonFolder` line per function with the folder
+  in the root TOC's `## OptionalDeps`. The lint refuses a call of a client function the Forever client does not have,
+  which type-checks against the retail annotations and then fails in game with `attempt to call a nil value`. (#539)
+- **A stopped smoke no longer leaves its AddOns links behind.** A smoke that is killed where no Python handler runs
+  (SIGKILL, or a signal aimed at the shell around it) used to leave the build linked over `ForeverCore` and the store
+  install at `<folder>.smoke-backup` until someone noticed. The record `~/.local/state/forever-client/smoke-links.json`
+  now names the session that wrote it, by pid and start time, and the next `up`, `run`, `smoke` or `build-dev` replays
+  it through the one `restore_links` teardown before it touches AddOns, then says what it put back. A record whose
+  session is still running, including the smoke's own `up`, is left to that session, and a record it cannot read
+  refuses instead of guessing. SIGTERM, SIGHUP and SIGINT all restore in-process, and `up` handles a hangup like the
+  others. (#555)
+
+## [1.10.0] - 2026-11-13
+
+- **A bug report can ask for the client's debug logs without a developer's addon.** `/forever debug on` saves the
+  client's current taint log, advanced combat log, chat log and combat log settings, turns each on, and keeps the
+  originals in ForeverCore's saved variables across a reload. The report window and the settings pages built on
+  ForeverCore's page (its own and Field Guide's) say debug capture is on and how to stop it, the report names the client's `Logs` folder, and `/forever debug off` or the
+  next login puts the client's settings back. Nothing is sent anywhere. (#534)
+- **Bug reports now carry a performance table.** The report window reads the client's own add-on profiler once when
+  it opens: every loaded addon that depends on ForeverCore gets its average, current, peak and last frame time, its
+  counts over 1, 5, 10, 50 and 100 ms, and its memory, with the all-addon and whole-application figures above them.
+  A client without those APIs gets one line saying so, and nothing is sampled while playing. (#535)
+- **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
+
+### For addon authors
+
+- **A smoke can click Play itself.** `smoke --manual-launcher` passes the flag through to `up`, so while launcher OCR
+  is not finding Play an agent starts the smoke in the background, takes `shot` and left-clicks Play, exactly as with
+  `up --manual-launcher`; the default and `tools/smoke_queue.py` still click Play by OCR. (#547)
+- **A manual release can waive a failed visual proof.** `tools/release_check.py --skip-visual-proof` accepts a
+  completed full CI run on main whose only failed job is `visual-proof`; every other job must still pass and the
+  `headless-smoke` gate still applies. An addon's Release workflow passes it from a `skip_visual_proof` dispatch input.
+  (#552)
+- **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
+  status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
+  pending one waits and names the command that fills it in, and a failed one prints what it found.
+  `python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>` builds that commit, runs
+  `/forever selftest` and `errors --addon` for each of its addon folders in the headless client, and posts the status;
+  exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
+  reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
+  the status in for every commit a release would ship. (#540)
+- **The simulator exercises every addon with no scenario file, and clicks the addon's own widgets.** `run.lua` runs
+  `sim:exercise()` after the declared scenarios, so an addon no longer needs `tests/sim/exercise_scenario.lua`; a
+  declared scenario still passes the exercise its own commands and saved variables. An addon that depends on
+  ForeverCore gets that checkout loaded for the exercise, from `FOREVER_CORE` or `../forever-core`, so its UI is
+  really built. The exercise hovers, left-clicks and leaves every shown Button the addon created, in and out of
+  combat, so a refused call in a button handler fails the run. `C_TradeSkillUI.OpenTradeSkill` and `C_UI.Reload` are
+  modelled as the client enforces them, and `fetch.py --refresh-restrictions --probe` merges every block a live
+  client recorded into `restrictions.txt`. (#538)
+- **An addon's `ty` run passes over the vendored simulator.** `forever_sim/fetch.py` gives a probe hit a `ProbeHit`
+  dataclass and reads it by attribute, and core's `forever-tools` job type-checks `forever_sim` with `ty` beside
+  `forever_tools`, so an addon whose CI checks its `tools/` with `ty` no longer fails on the vendored file.
+
+## [1.9.0] - 2026-11-12
+
+### For addon authors
+
+- **A Cooldown Manager icon frame is one core call.** `ForeverCore.Art` (minor 1) publishes `Icon` and the new
+  `CooldownIcon`, which draws an icon with the client's own `UI-HUD-CoolDownManager-Mask` and
+  `UI-HUD-CoolDownManager-IconOverlay` atlases and returns the overlay. The mask and overlay are built once per
+  texture, so a refresh moves the same pair instead of stacking another. See `docs/api.md`. (#525)
+- **Mock renders draw `|T` icons given by FileDataID.** `tools/wowmock` looked such an escape up as a path, which
+  never matched and stalled the render; it now reads the ID directly, as the client does. (#524)
+
+## [1.8.2] - 2026-11-12
+
+- **Forever Leaderboards and stats sharing are gone from every Forever addon.** Nothing is sent to other players, and
+  the short hitch some players saw every 10 seconds is gone. (#443, #512)
+- **The Forever quest list draws one heading per zone.** When some of a zone's quests were on your map and others were tracked from elsewhere, the zone's heading was built twice, once per group, which could throw an interface action failure while the tracker laid itself out. Each zone now draws one heading with all its quests under it. Thanks to user_efwsfml273dlvfm5 on CurseForge for the report. (#521)
+
+### For addon authors
+
+- **`ForeverCore.API` is 2.** `ForeverCore.Leaderboards` and `ForeverCore.PeerStats` remain only as inert stand-ins, so an older release that still calls them loads without errors: they return empty boards, store nothing and send nothing. Remove those calls. See `docs/api.md`. (#443)
+- **Every addon repo carries the same `.github/FUNDING.yml`.** It is now a vendored file, so `tools/check_core_shared.py` fails an addon that lacks it or differs from core, and `tools/sync_consumers.py` copies it in. (#517)
+
+## [1.8.1] - 2026-11-12
+
+- **Addons no longer bring an older ForeverCore with them.** Every Forever addon's zip now carries the newest ForeverCore release, so updating one addon can no longer downgrade the shared code another one needs.
+
+### For addon authors
+
+- **A stale ForeverCore pin fails CI and the release before anything uploads.** `python3 -m tools.forever_tools.core_pin --latest` requires `tools/forever-core.txt` to equal cjber/forever-core's latest published GitHub release and fails closed when that release cannot be read. The package job runs it in every consumer through `tools/check_package.py`, and the sync inserts the same step directly above the packager in each consumer's `release.yml`, so a core release that lands between CI and the upload is still caught. The `.pkgmeta` ForeverCore external and the TOC `## X-Forever-Core:` must name the same tag; an addon with no ForeverCore external is exempt from the bundle comparison but still gets the pin gate. (#514)
+- **`ForeverCore.ProfessionTabs.minor` is 2.** Minor 2 means the native profession pages are hidden beneath a selected addon page and restored when the window is handed back to the client. Require `minor >= 2` before relying on that, and see `docs/api.md`. (#514)
+- **The suite's name is ForeverCore, one word.** `tools/check_core_name.py` fails a change that adds the two-word spelling in any text file, while shipped changelog history is left alone. It is vendored with the other project rules and runs in every consumer's `core-shared` job. (#514)
 
 ## [1.8.0] - 2026-11-12
 

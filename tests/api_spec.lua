@@ -45,10 +45,12 @@ for _, path in ipairs(tocFiles()) do
 end
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "the TOC publishes ForeverCore")
-equal(ForeverCore.API, 1, "the interface version is 1")
+equal(ForeverCore.API, 2, "the interface version is 2")
 check(type(ForeverCore.Register) == "function", "Register is the per-addon factory")
 check(type(ForeverCore.ContextMenu) == "function", "ContextMenu is the shared menu")
 check(ForeverCore.ContextMenu == ns.ContextMenu, "and it is the module UI/ContextMenu.lua built")
+check(ForeverCore.Art == ns.Art, "ForeverCore publishes the Art helper")
+check(ForeverCore.Art.minor == 2, "its minor is 2")
 check(rawequal(env.ForeverTrackerHost, ns.TrackerHost), "ForeverTrackerHost publishes core's one host")
 check(env.ForeverFamily == nil, "ForeverFamily is gone")
 check(env.ForeverLeaderboards == nil, "ForeverLeaderboards is gone")
@@ -65,9 +67,9 @@ end
 equal(
 	#ForeverCore.Credits.Players(),
 	distinct,
-	"core's own Data/Credits.lua is registered under Forever Core, once per player"
+	"core's own Data/Credits.lua is registered under ForeverCore, once per player"
 )
-check(ForeverCore.Credits.Line("Forever Core") ~= nil, "and its one-line thanks reads")
+check(ForeverCore.Credits.Line("ForeverCore") ~= nil, "and its one-line thanks reads")
 check(env.ForeverErrorJournal == nil, "ForeverErrorJournal is gone")
 check(env.ForeverDebugLog == nil, "ForeverDebugLog is gone")
 check(env.ForeverMinimapButtons == nil, "ForeverMinimapButtons is gone")

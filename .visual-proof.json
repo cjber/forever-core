@@ -1,30 +1,34 @@
 {
-  "input_digest": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
-  "runtime_sha256": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
-  "candidate": "2e70e438d677c120d9bd05237efe057567dc433f50ad1fe74dce8298782ce8a8",
-  "client_build": "1.60.1.70888 (Interface 16001)",
+  "input_digest": "8b2cdb6a2194d1268597f646ddd216063abf3fefde343c002d53332bd7f9a6a6",
+  "runtime_sha256": "8b2cdb6a2194d1268597f646ddd216063abf3fefde343c002d53332bd7f9a6a6",
+  "candidate": "e790eb2bfadd868cdb68ce0383fd75b0c7d245371ac61e27021b328c90267f74",
+  "client_build": "1.60.1.70938 (Interface 16001)",
+  "tested_artifact": "source-tree",
+  "source_commit": "8ec6f7f6d9cc9c9939d30bb143a3e3dfa5736980",
   "flows": [
     {
-      "name": "Bidirectional tram map arrows",
+      "name": "step markers",
       "steps": [
-        "Reload installed final Core candidate",
-        "Open Stormwind world map through ForeverCore.OpenMap from addon callback",
-        "Click actual tram arrow at Dwarven District",
-        "Confirm map switches automatically to Ironforge",
-        "Click return tram arrow",
-        "Confirm map switches automatically to Stormwind without manual map selection"
+        "../../../.cache/agent-scratch/wow-sweep/proofs/markers.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "report",
+      "steps": [
+        "/forever"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-ironforge-2e70e43.png",
-      "sha256": "35372726e44a6475c3f8c732405eb2a18c2014b3c2adf473581e72ca201a5a44"
+      "url": "https://gist.githubusercontent.com/cjber/af122d278cbc5cc1f601539a554bf5ad/raw/82afa640715d67aedb8a2ef747051083bfe27f41/1-step-markers.png",
+      "sha256": "45aa0de5a00d532c2279b19f0fbe2676ca8285b451a284ef0a584dbff8c2b960"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/328823e9708f8e8ea7847dc01bd53905/raw/821217f45218933538a3fe7e2af918632629a929/core486-tram-stormwind-2e70e43.png",
-      "sha256": "77d52f3785e6149f724571b9ddb39765eda02e86690a352a70c319e0c4b2aa6a"
+      "url": "https://gist.githubusercontent.com/cjber/af122d278cbc5cc1f601539a554bf5ad/raw/82afa640715d67aedb8a2ef747051083bfe27f41/2-report.png",
+      "sha256": "adb22f530d1257f561e18ac79f85afa3054c6eb5e6f53abd2426206dad7977aa"
     }
   ]
 }

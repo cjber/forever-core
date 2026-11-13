@@ -84,7 +84,7 @@ Nothing in PR 1 changes the UI, so no screenshot is needed. Say that in the PR b
 5. Important: the route replaces any journey another addon owns (Shortest Path has one journey slot and marks
    the replaced owner's journey `\"replaced\"`). That is acceptable **only** because the player pressed the
    button. Do not auto-start a hunt, do not append stops to another owner's route, and do not add a passive
-   overlay (that waits on the Forever Core marker contract).
+   overlay (that waits on the ForeverCore marker contract).
 6. Per repo AGENTS.md a user-facing feature needs a mocked scene and a README screenshot: add the scene to
    `tools/mockups.py`, render, run `tools/visual_audit.py` and `tools/check_screenshots.py --record`, then open
    the PNG at full resolution and look at it - overlap, clipping, truncation, rows drawn outside the panel. Fix

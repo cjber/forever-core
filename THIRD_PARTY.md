@@ -1,6 +1,6 @@
 # Third-party inputs
 
-Forever Core ships no embedded library and copies no other addon's code. What it reads from another addon in game is
+ForeverCore ships no embedded library and copies no other addon's code. What it reads from another addon in game is
 listed here, with the build-only sources, then the players who helped. The addon itself is GPL-3.0-or-later
 ([LICENSE](LICENSE)).
 
@@ -11,18 +11,31 @@ listed here, with the build-only sources, then the players who helped. The addon
 | Questie, if installed | The quest list the shared tracker column steps beside | QuestieDB carries no licence; nothing is copied |
 | EQ Objective Tracker, if installed | Its quest list and layout API, which the shared column also steps beside | Read only through its public API and frames; nothing is copied |
 
+## Made for these addons
+
+| Input | Used for | Source | Licence |
+|---|---|---|---|
+| AI-assisted originals | The step markers in `media/Numbers/`: numbers 1 to 25, the empty `Ring.tga` and the pin's diamond on `Diamond.tga` | `tools/marker_source/` and `tools/export_markers.py` | This addon's own; no Blizzard art |
+
+The marker art is original work made for these addons with AI assistance, as Adventure Guide Forever and Shortest
+Path Forever describe the same numbered markers for their own use. None of it is Blizzard art. Only the exported
+textures ship; `tools/marker_source/` holds the sources and `tools/export_markers.py` keys and exports them.
+
 ## Build and test only
 
 | Input | Used for | Pin | Licence |
 |---|---|---|---|
 | [Blizzard UI source](https://github.com/Gethe/wow-ui-source) | The native objective-tracker integration spec | `REVISION` in `tools/fetch_tracker_ui.py` | Blizzard Entertainment's; fetched, never committed |
-| [Ketho's WoW API annotations](https://github.com/Ketho/vscode-wow-api) | lua-language-server types in `tools/typecheck.sh` | `revision` in `tools/typecheck.sh` | MIT |
+| [Ketho's WoW API annotations](https://github.com/Ketho/vscode-wow-api) | lua-language-server types in `tools/typecheck.sh` | `tools.annotations.commit` in `tools/toolchain.json` | MIT |
 | [FrameXML annotations](https://github.com/NumyAddon/FramexmlAnnotations) | FrameXML types, the Ketho checkout's `Annotations/FrameXML` submodule | The gitlink in that Ketho revision | MIT |
 | [wago.tools](https://wago.tools) | The listfile and backdrop art facts behind `tools/legacy_chrome.txt` | `BUILD` in `tools/gen_legacy_chrome.py` | Blizzard Entertainment's game data |
 
 CI tools (StyLua, ruff, luacheck, lua-language-server, actionlint, zizmor, gitleaks, the BigWigs packager) are pinned in
-`.github/workflows/`, `.github/actions/lua-toolchain/` and `tools/typecheck.sh`; they check the addon and are never part
-of it.
+`tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock`, the `uses:` SHAs in `.github/workflows/`, and
+`.github/actions/toolchain/`; they check the addon and are never part of it. Dependabot moves the `uses:` SHAs and the
+`uv` group, the `bump-toolchain` workflow moves `tools/toolchain.json`, and a major version either one proposes waits
+for review. The action reads the calling repository's `tools/toolchain.json`, so a SHA move and a manifest sync that
+land in either order install the pins that checkout's own tools check for.
 
 ## Players
 
@@ -43,6 +56,7 @@ One row per shipped contribution: a player with five shipped items has five rows
 | procque | Questie's quest tracker can be moved again | CurseForge |
 | Fareed | Questie's quest tracker can be moved again | CurseForge |
 | [ZiiMs](https://github.com/ZiiMs) | Tracker column follows EllesmereUI's custom quest tracker | cjber/shortest-path-forever#621; #332 |
+| Bolton_wow | Map arrows open the destination map again | Asked on CurseForge (#486) |
 
 ## Inspired by
 

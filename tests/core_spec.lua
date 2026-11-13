@@ -34,9 +34,8 @@ for _, path in ipairs({
 	"Core/OpenMap.lua",
 	"Core/OpenSettings.lua",
 	"Core/Text.lua",
-	"Core/PeerStats.lua",
 	"Core/MinimapButton.lua",
-	"Core/LeaderboardsData.lua",
+	"Core/RetiredLeaderboards.lua",
 	"Core/APIKit.lua",
 	"Core/QuestOrder.lua",
 	"UI/Art.lua",
@@ -53,7 +52,6 @@ for _, path in ipairs({
 	"UI/TrackerEqot.lua",
 	"UI/TrackerQuests.lua",
 	"UI/MapCanvas.lua",
-	"UI/Leaderboards.lua",
 	"UI/QuestLogTabs.lua",
 	"UI/ProfessionTabs.lua",
 	"Locales/enUS.lua",
@@ -166,6 +164,11 @@ check(saved.locked == false, "a broken Lock switch falls back to off")
 check(saved.backdropOpacity == 0, "a broken backdrop opacity falls back to off")
 check(env.ForeverCoreDB.trackerHost == saved, "the saved table is the one kept")
 
+-- The retired leaderboards choice is cleared when core loads, so no dead data lingers.
+env.ForeverCoreDB.leaderboards = { reach = "met" }
+coreFrames[1].scripts.OnEvent(coreFrames[1], "ADDON_LOADED", "ForeverCore")
+check(env.ForeverCoreDB.leaderboards == nil, "the old leaderboards choice is cleared on load")
+
 -- A first install has no ForeverCoreDB at ForeverCore's ADDON_LOADED: Core.lua's one handler makes the table, then runs
 -- core's attach and the tracker migration through the hooks those files register, in that order.
 env.ForeverCoreDB = nil
@@ -190,8 +193,8 @@ ns.TrackerHost = { name = "host" }
 ns.TrackerSection, ns.TrackerLine = { name = "section" }, { name = "line" }
 ns.TrackerLock, ns.TrackerOrder = { name = "lock" }, { name = "order" }
 ns.TrackerQuestie, ns.TrackerEqot, ns.TrackerQuests = { name = "questie" }, { name = "eqot" }, { name = "quests" }
-ns.QuestLogTabs, ns.ProfessionTabs, ns.PeerStats = { name = "tabs" }, { name = "professions" }, { name = "peers" }
-ns.Leaderboards, ns.LeaderboardsData = { name = "boards" }, { name = "data" }
+ns.QuestLogTabs, ns.ProfessionTabs = { name = "tabs" }, { name = "professions" }
+ns.RetiredLeaderboards, ns.RetiredPeerStats = { name = "retired boards" }, { name = "retired peers" }
 ns.MinimapButton, ns.SettingsPage, ns.SettingsSections =
 	{ name = "minimap" }, { name = "settings" }, { name = "sections" }
 ns.Text, ns.QuestOrder = { name = "text" }, function()
@@ -263,7 +266,7 @@ check(#coreFrames == framesBeforeExpose, "Expose registers no second ADDON_LOADE
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "Expose.lua publishes the core")
 check(ForeverCore.name == "ForeverCore", "the core knows its name")
-check(ForeverCore.API == 1, "the interface starts at version 1")
+check(ForeverCore.API == 2, "the interface is version 2 after the leaderboards retired")
 for _, field in ipairs({
 	"TrackerHost",
 	"TrackerSection",
@@ -277,7 +280,6 @@ for _, field in ipairs({
 	"ProfessionTabs",
 	"PeerStats",
 	"Leaderboards",
-	"LeaderboardsData",
 	"MinimapButton",
 	"SettingsPage",
 	"SettingsSections",
@@ -297,6 +299,10 @@ check(
 		and ForeverCore.TrackerSection == ns.TrackerSection
 		and ForeverCore.TrackerLine == ns.TrackerLine,
 	"and the modules"
+)
+check(
+	ForeverCore.Leaderboards == ns.RetiredLeaderboards and ForeverCore.PeerStats == ns.RetiredPeerStats,
+	"and the retired leaderboards shims"
 )
 check(ForeverCore.Attach == nil, "the old Attach helper is gone")
 check(ForeverCore.Defaults == nil, "the old Defaults field is gone")

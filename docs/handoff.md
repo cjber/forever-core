@@ -1,4 +1,4 @@
-# Publishing Forever Core changes
+# Publishing ForeverCore changes
 
 ForeverCore is the one copy of the suite's shared runtime. Runtime changes land here and ship with ForeverCore's own
 release; every consumer requires it, so no consumer carries a copy to update. The development tooling in

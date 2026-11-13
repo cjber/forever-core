@@ -1,6 +1,6 @@
 -- UI/ForeverFamily.lua now loads once, in ForeverCore, and reads core's own L. A change to the module is made here
 -- with this spec; no consumer keeps a copy.
-local PINNED = "54ccc667bd752a4b4b7ad6406b10a7b21840c16be9a083329a7f495e6ad0b7f2"
+local PINNED = "3be647a7ed972c2f15b34f7ff24ea6845300776b86ee2fc81fc881af944fa329"
 local PATH = "UI/ForeverFamily.lua"
 
 local bit = require("bit")
@@ -77,7 +77,7 @@ file:close()
 local actual = sha256(source)
 check(
 	actual == PINNED,
-	PATH .. " changed (sha256 " .. actual .. "). Update PINNED here after changing Forever Core's one copy."
+	PATH .. " changed (sha256 " .. actual .. "). Update PINNED here after changing ForeverCore's one copy."
 )
 
 -- A headless client: frames remember what the module sets and tests read back; every other method does nothing.
@@ -418,13 +418,6 @@ check(
 )
 
 -- CreatePanel: the settings page, built on first show and read again each time.
-local openedBoards = {}
-ns.Leaderboards = {
-	Open = function(_, key)
-		openedBoards[#openedBoards + 1] = key
-		return true
-	end,
-}
 local openedCredits = 0
 local creditTitles = {}
 ns.CreditsPage = {
@@ -455,15 +448,6 @@ check(panel.name == PANEL, "the page is named from its addon's folder")
 check(rawget(env, "Text") == nil, "and its template never lands on the bare global Text")
 check(env[PANEL .. "Text"] ~= nil, "its template's Text is named from the page")
 check(Texts(panel):find("Forever addons", 1, true), "the page has its title")
-check(Texts(panel):find("Forever Leaderboards", 1, true), "the page has a Forever Leaderboards row")
-check(
-	Texts(panel):find(
-		"See where you stand on every Forever addon's board. Untick Share my progress there to keep your progress private.",
-		1,
-		true
-	),
-	"with the sharing note"
-)
 local check_ = Children(panel, "CheckButton")[1]
 check(check_ and check_.checked, "Suggest my other Forever addons starts on")
 check(Texts(panel):find("Suggest my other Forever addons", 1, true), "the setting is labelled")
@@ -479,22 +463,13 @@ check_:Click()
 check(saved.suggestFamily == true, "ticking turns them on")
 local copies = Children(panel, "Button", "SharedButtonSmallTemplate")
 local icons = Children(panel, "Texture")
-check(#copies == 11 and #icons == 11, "the leaderboards row, the Thanks row, a row per addon, then Ko-fi")
-local openButton = copies[1]
-check(openButton.text == "Open", "the leaderboards row has an Open button")
-openButton:Click()
-check(openedBoards[1] == "overall", "Open shows the overall leaderboards")
-local thanksButton = copies[2]
+check(#copies == 10 and #icons == 10, "the Thanks row, a row per addon, then Ko-fi")
+local thanksButton = copies[1]
 check(thanksButton.text == "Open", "the Thanks row has an Open button")
 check(Texts(panel):find("The players who helped each Forever addon.", 1, true), "the Thanks row says what it shows")
 thanksButton:Click()
 check(openedCredits == 1, "Open shows the Thanks page")
 check(creditTitles[1].title == "Legacy Forever", "filtered to the page's own addon")
-local boards = ns.Leaderboards
-ns.Leaderboards = nil
-openButton:Click()
-check(#openedBoards == 1, "with no leaderboards module, the press does nothing")
-ns.Leaderboards = boards
 local credits = ns.CreditsPage
 ns.CreditsPage = nil
 thanksButton:Click()
@@ -505,30 +480,30 @@ local corePanel = Family.CreatePanel(nil, function()
 	return saved
 end, "ForeverCore")
 corePanel:Show()
-Children(corePanel, "Button", "SharedButtonSmallTemplate")[2]:Click()
+Children(corePanel, "Button", "SharedButtonSmallTemplate")[1]:Click()
 check(openedCredits == 2 and creditTitles[#creditTitles].title == nil, "ForeverCore's own page opens every addon")
 local unknownPanel = Family.CreatePanel(nil, function()
 	return saved
 end, "NotAForeverAddon")
 unknownPanel:Show()
-Children(unknownPanel, "Button", "SharedButtonSmallTemplate")[2]:Click()
+Children(unknownPanel, "Button", "SharedButtonSmallTemplate")[1]:Click()
 check(openedCredits == 3 and creditTitles[#creditTitles].title == nil, "an unknown folder opens every addon")
 local text = Texts(panel)
 check(text:find("This addon", 1, true), "the addon's own row says so")
 check(text:find("On", 1, true) and text:find("Not installed", 1, true), "the others show their state")
-check(copies[6].shown == false and copies[1].shown, "no Copy link on the addon's own row")
-check(icons[4].texture == "Interface\\AddOns\\AdventureGuideForever\\media\\Icon", "an installed addon's icon")
-check(icons[5].texture == "Interface\\Icons\\INV_Misc_QuestionMark", "a missing one's is neutral")
+check(copies[5].shown == false and copies[1].shown, "no Copy link on the addon's own row")
+check(icons[3].texture == "Interface\\AddOns\\AdventureGuideForever\\media\\Icon", "an installed addon's icon")
+check(icons[4].texture == "Interface\\Icons\\INV_Misc_QuestionMark", "a missing one's is neutral")
 addons.SkillUpForever = "off"
 panel:Show()
 check(Texts(panel):find("Installed, turned off", 1, true), "the states are read again on each show")
-check(icons[5].texture == "Interface\\AddOns\\SkillUpForever\\media\\Icon", "and the icons")
-copies[5]:Click()
+check(icons[4].texture == "Interface\\AddOns\\SkillUpForever\\media\\Icon", "and the icons")
+copies[4]:Click()
 check(window:IsShown() and window.title == "SkillUp Forever", "Copy link opens that addon's address")
-check(icons[11].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row has a coin")
-check(text:find(Family.SUPPORT.line, 1, true) and copies[11].shown, "its line and Copy link button")
+check(icons[10].texture == "Interface\\Icons\\INV_Misc_Coin_01", "the Ko-fi row has a coin")
+check(text:find(Family.SUPPORT.line, 1, true) and copies[10].shown, "its line and Copy link button")
 never:Show()
-copies[11]:Click()
+copies[10]:Click()
 check(window:IsShown() and window.title == "Ko-fi" and edit.text == "https://ko-fi.com/cjber", "Ko-fi's address")
 check(edit.focused and edit.highlighted and not never:IsShown(), "selected, with no hint to dismiss")
 check(window.portrait.texture == "Interface\\Icons\\INV_Misc_Coin_01", "and the coin in the portrait")
@@ -572,19 +547,12 @@ for _, label in ipairs(familyCalls) do
 	seenFamily[label] = true
 end
 check(seenFamily["family saved variables"], "the saved-variable reader runs in the addon's SafeCall")
-local safeOpen, safeThanks
+local safeThanks
 for _, button in ipairs(Children(safePanel, "Button", "SharedButtonSmallTemplate")) do
 	if button.text == "Open" then
-		if not safeOpen then
-			safeOpen = button
-		elseif not safeThanks then
-			safeThanks = button
-		end
+		safeThanks = safeThanks or button
 	end
 end
-familyCalls = {}
-safeOpen:Click()
-check(familyCalls[#familyCalls] == "family leaderboards", "the leaderboards opener runs in the addon's SafeCall")
 familyCalls = {}
 safeThanks:Click()
 check(familyCalls[#familyCalls] == "family credits", "the Thanks opener runs in the addon's SafeCall")
@@ -597,17 +565,10 @@ check(familyCalls[#familyCalls] == "family dismiss", "a dismiss callback runs in
 
 -- Register: the page as a canvas, or as the client's own rows with the gamepad interface on.
 Client()
-local registeredBoards = {}
 local openedThanks = 0
 local thanksTitles = {}
 local registering = Load({
 	L = PhraseLocale(),
-	Leaderboards = {
-		Open = function(_, key)
-			registeredBoards[#registeredBoards + 1] = key
-			return true
-		end,
-	},
 	CreditsPage = {
 		Open = function(title)
 			openedThanks = openedThanks + 1
@@ -694,21 +655,9 @@ check(lazyPage.rows[1].setting.get() == true, "a db function's table is read")
 lazyPage.rows[1].setting.set(false)
 check(lazy.suggestFamily == false, "and written")
 
--- The leaderboards row follows the hint setting, then one row per other addon in order, then Ko-fi last.
-local boardsRow = gamepadPage.rows[2]
-check(boardsRow.name == "Forever Leaderboards", "the leaderboards row follows the hint setting")
-check(boardsRow.buttonText == "Open", "with an Open button")
-check(
-	boardsRow.tooltip
-		== "See where you stand on every Forever addon's board. "
-			.. "Untick Share my progress there to keep your progress private.",
-	"and the sharing note"
-)
-check(boardsRow.addSearchTags == false, "and no search tags")
-boardsRow.click()
-check(registeredBoards[1] == "overall", "it opens the overall leaderboards")
-local thanksRow = gamepadPage.rows[3]
-check(thanksRow.name == "Thanks", "the Thanks row follows the leaderboards row")
+-- The Thanks row follows the hint setting, then one row per other addon in order, then Ko-fi last.
+local thanksRow = gamepadPage.rows[2]
+check(thanksRow.name == "Thanks", "the Thanks row follows the hint setting")
 check(thanksRow.buttonText == "Open", "with an Open button")
 check(thanksRow.tooltip == "The players who helped each Forever addon.", "and says what it shows")
 check(thanksRow.addSearchTags == false, "and no search tags")
@@ -716,10 +665,10 @@ thanksRow.click()
 check(openedThanks == 1, "it opens the Thanks page")
 check(thanksTitles[1].title == "Legacy Forever", "filtered to the page's own addon")
 local corePage = registering.Register(category, {}, "ForeverCore")
-corePage.rows[3].click()
+corePage.rows[2].click()
 check(openedThanks == 2 and thanksTitles[#thanksTitles].title == nil, "ForeverCore's own page opens every addon")
 local unknownPage = registering.Register(category, {}, "NotAForeverAddon")
-unknownPage.rows[3].click()
+unknownPage.rows[2].click()
 check(openedThanks == 3 and thanksTitles[#thanksTitles].title == nil, "an unknown folder opens every addon")
 local others = {}
 for _, addon in ipairs(registering.ADDONS) do
@@ -727,12 +676,9 @@ for _, addon in ipairs(registering.ADDONS) do
 		others[#others + 1] = addon
 	end
 end
-check(
-	#gamepadPage.rows == #others + 4,
-	"a setting, the leaderboards row, the Thanks row, a row per other addon, and Ko-fi"
-)
+check(#gamepadPage.rows == #others + 3, "a setting, the Thanks row, a row per other addon, and Ko-fi")
 for index, addon in ipairs(others) do
-	local row = gamepadPage.rows[index + 3]
+	local row = gamepadPage.rows[index + 2]
 	check(row.name == addon.name, "row " .. index .. " is " .. addon.name)
 	check(row.buttonText == "Copy link" and row.tooltip == addon.line, "with its line and a Copy link button")
 	check(row.addSearchTags == false, "and no search tags")
@@ -742,7 +688,7 @@ check(
 	support.name == "Ko-fi" and support.buttonText == "Copy link" and support.tooltip == registering.SUPPORT.line,
 	"Ko-fi comes last"
 )
-gamepadPage.rows[4].click()
+gamepadPage.rows[3].click()
 check(named.ForeverFamilyLink:IsShown(), "an addon row opens its link window")
 
 -- Translations: a client whose core L holds only some phrases still reads every line.
@@ -770,9 +716,7 @@ check(Texts(page):find("Nicht installiert", 1, true), "a translated phrase is us
 check(Texts(page):find("Plans the quickest way anywhere", 1, true) == nil, "the addon's line is not the key")
 local translatedButtons = Children(page, "Button")
 check(
-	translatedButtons[1].text == "Open"
-		and translatedButtons[2].text == "Open"
-		and translatedButtons[3].text == "Link kopieren",
+	translatedButtons[1].text == "Open" and translatedButtons[2].text == "Link kopieren",
 	"the buttons read the same L"
 )
 Translated.ShowLink(nil, nil, "ShortestPathForever")

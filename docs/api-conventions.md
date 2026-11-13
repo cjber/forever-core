@@ -131,10 +131,9 @@ A read returns a fresh table on every call. A caller may keep it or change it; i
 A place is a `map` field holding a uiMapID and `x`, `y` normalized from 0 to 1. A place with no known position leaves
 `x` and `y` nil rather than guessing.
 
-`Stats()` returns rows with `addon`, `metric`, `subject`, `value` and `eventUnix`. `Leaderboard(limit)` returns
-`{ metric, scope, sharing, total, rows }`, where each row has `rank`, `name`, `value`, `eventUnix` and `self` (true on
-this character's row). Adventure Guide's [`docs/api.md`](https://github.com/cjber/adventure-guide-forever/blob/main/docs/api.md)
-is the reference for both shapes.
+`Stats()` returns rows with `addon`, `metric`, `subject`, `value` and `eventUnix`. Adventure Guide's
+[`docs/api.md`](https://github.com/cjber/adventure-guide-forever/blob/main/docs/api.md) is the reference for that
+shape.
 
 ## What every addon carries
 

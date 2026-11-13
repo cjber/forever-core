@@ -10,17 +10,27 @@ For each consumer this clones `main`, runs the same three syncs a maintainer wou
 repository, then the consumer's own `forever_tools/sync.py update` and `forever_sim/sync.py update`, each preceded by a
 copy of this checkout's own `sync.py` so the updater that runs is the one being installed), regenerates the consumer's
 `Locales/phrases.txt` when it has `tools/phrases.py` and its README.md and docs/curseforge.md family block when it has
-`tools/check_family.py`, and, if anything changed, creates the commit on a scratch branch through the GraphQL
-`createCommitOnBranch` mutation from that `main` HEAD, then moves `forever-core-sync` to it in one ref update and opens
-or refreshes the PR with squash auto-merge enabled. Building the commit on a scratch branch keeps `forever-core-sync`
-away from a commit that equals `main`, which would make the PR empty and have GitHub close it. GitHub signs commits made
-through the API, so the consumer's `required_signatures` ruleset accepts the sync. The consumer's own checks remain the
-gate: a sync that breaks one stays open as a red PR and is named in the run summary.
+`tools/check_family.py`, and, if anything changed, commits the result through the GraphQL `createCommitOnBranch`
+mutation and opens or refreshes the PR with squash auto-merge enabled.
+
+An open sync PR is updated in place: the sync runs on that PR's own head and the refreshed files are added on top of it,
+so any commit pushed to the PR since the last sync stays on the branch. A PR the sync cannot update in place is left
+exactly as it is, with a comment that says why, and the branch is never forced anywhere else. A consumer with no open PR
+has its sync commit built on a scratch branch from `main` and moves `forever-core-sync` to it in one ref update; the
+scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR empty and have
+GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures` ruleset accepts the
+sync. The consumer's own checks remain the gate: a sync that breaks one stays open as a red PR and is named in the run
+summary.
 
 The run also moves every consumer's ForeverCore pin, `tools/forever-core.txt`, to core's latest published release, so
 the addon's specs and CI test against the core a player runs. The pin change rides in the same commit and PR, which
 says what moved. A pin that is newer, equal or not a `vX.Y.Z` tag is left alone, and a run that cannot read the latest
 release leaves every pin alone rather than failing the tooling sync.
+
+A sync PR that changes runtime files or moves the pin cannot record the visual proof the consumer's `visual-proof` job
+needs, because this script never drives the client. When the tree the PR now carries has no proof for its own input
+digest, the run prints the `python3 tools/headless/forever_client.py proof ...` command for that PR's head, and the
+release session runs it and commits the `.visual-proof.json` it writes.
 
 The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
@@ -70,6 +80,7 @@ from check_consumers import (
     pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
+from forever_tools.visual_proof import input_digest, requires_proof
 
 OWNER = "cjber"
 CORE_REPO = "forever-core"
@@ -85,6 +96,8 @@ RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 PKGMETA = ".pkgmeta"
 TOC_DEPENDENCIES = re.compile(r"^##[ \t]*Dependencies[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 CHANGELOG = "CHANGELOG.md"
+# The addon's own release workflow, where the sync inserts the ForeverCore pin gate directly above the packager.
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
 UNRELEASED = re.compile(r"^## \[Unreleased\][ \t]*$", re.MULTILINE)
 RELEASED = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\]", re.MULTILINE)
 SYNC_MARKER = "<!-- forever-core-sync -->"
@@ -685,8 +698,38 @@ def create_commit(
     return created_oid(api("graphql", "--input", str(body)))
 
 
+VISUAL_PROOF = ".visual-proof.json"
+
+
+def proof_needed(root: Path, files: list[str]) -> bool:
+    """Whether this sync PR changes runtime files without a proof recorded for the tree it now carries.
+
+    `requires_proof` is the visual-proof job's own rule, so the hint names exactly the PRs whose check would fail.
+    A recorded proof is only valid for its own input digest, which the Core pin is part of, so a pin bump invalidates
+    it and the check asks for a new one.
+    """
+    if not requires_proof(root, files):
+        return False
+    try:
+        proof = json.loads((root / VISUAL_PROOF).read_text(encoding="utf-8"))
+        return proof.get("input_digest") != input_digest(root)
+    except (OSError, ValueError):
+        return True
+
+
+def proof_hint(repo: str, ref: str) -> str:
+    """The command that records the proof a sync PR needs, with its flow named by hand."""
+    return (
+        f"{repo}: this PR changes runtime files, so `visual-proof` needs a proof recorded on its head. Fetch\n"
+        f"`{BRANCH}` and check it out, then run:\n"
+        f"  python3 tools/headless/forever_client.py proof --repo {repo} --ref {ref} "
+        f'--checkout <the checkout of {ref}> --flow "update notice=<slash command or Lua file>"\n'
+        f"Commit the {VISUAL_PROOF} it writes to the PR."
+    )
+
+
 def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
-    lines = ["Syncs this addon's copy of Forever Core's development tooling.", ""]
+    lines = ["Syncs this addon's copy of ForeverCore's development tooling.", ""]
     if pin_bump:
         lines += [
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
@@ -694,6 +737,12 @@ def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None =
             "",
             "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and adds a"
             " marked CHANGELOG.md release entry for the release-consumers workflow to publish.",
+            "",
+        ]
+    if RELEASE_WORKFLOW in files:
+        lines += [
+            "It also inserts the ForeverCore pin gate directly above the packager in"
+            f" `{RELEASE_WORKFLOW}`, so a core release that lands after CI still stops the upload.",
             "",
         ]
     lines += [
@@ -711,18 +760,32 @@ def open_sync_prs(repo: str) -> list[dict]:
     return api_json(f"repos/{OWNER}/{repo}/pulls?head={OWNER}:{BRANCH}&state=open")
 
 
+def fetch_branch(root: Path, branch: str) -> str | None:
+    """Fetch `branch` from `origin` at one commit deep and return its tip, or None when the remote has no such branch.
+
+    The clone is `--depth=1`, so the branch's own commits are not in it; this brings the head the open sync PR points
+    at. A failed read fails closed: a sync that cannot read the branch must never fall back to rebuilding it from
+    `main`, because that would drop whatever commits the open PR carries.
+    """
+    result = git(root, "fetch", "--depth=1", "origin", f"refs/heads/{branch}", check=False)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        if "couldn't find remote ref" in detail:
+            return None
+        raise SyncError(f"{root.name}: could not fetch {branch}: {detail}")
+    return git(root, "rev-parse", "FETCH_HEAD").stdout.strip()
+
+
+def comment(repo: str, number: int, body: str) -> None:
+    api(f"repos/{OWNER}/{repo}/issues/{number}/comments", "--method", "POST", "-f", f"body={body}")
+
+
 def close_stale_prs(repo: str, sha: str) -> list[int]:
     """Close the sync PR an earlier run left open once the consumer already matches core, and drop its branch."""
     closed = []
     for pull in open_sync_prs(repo):
         number = pull["number"]
-        api(
-            f"repos/{OWNER}/{repo}/issues/{number}/comments",
-            "--method",
-            "POST",
-            "-f",
-            f"body=main already matches forever-core {sha}; nothing left to sync.",
-        )
+        comment(repo, number, f"main already matches forever-core {sha}; nothing left to sync.")
         api(f"repos/{OWNER}/{repo}/pulls/{number}", "--method", "PATCH", "-f", "state=closed")
         closed.append(number)
     if closed:
@@ -730,10 +793,33 @@ def close_stale_prs(repo: str, sha: str) -> list[int]:
     return closed
 
 
-def open_or_update_pr(repo: str, body: str) -> tuple[int, str, str, str | None]:
-    listed = open_sync_prs(repo)
-    if listed:
-        pull = listed[0]
+def left_alone(repo: str, pull: dict, reason: str) -> Result:
+    """Leave an open sync PR exactly as it is and say why in a comment, so a person can resolve it.
+
+    The branch is untouched: every commit on it, the sync's own and the ones pushed to the PR, is still there and the
+    PR is still open. The next push to forever-core checks it again, so a hand fix needs no second dispatch.
+    """
+    number = pull["number"]
+    detail = reason
+    body = (
+        "This sync could not add the refreshed shared files on top of this pull request, so it left the branch exactly"
+        f" as it is.\n\nReason: {reason}\n\n"
+        "Nothing was force-pushed and every commit on the branch is still here. Resolve it by hand, or merge or close"
+        " this pull request; the sync checks it again on the next push to forever-core."
+    )
+    try:
+        comment(repo, number, body)
+    except (SyncError, OSError) as error:
+        detail = f"{reason}; could not comment on the pull request: {error}"
+    return Result(repo, "left alone", url=pull.get("html_url"), detail=detail)
+
+
+def open_or_update_pr(repo: str, body: str, pull: dict | None = None) -> tuple[int, str, str, str | None]:
+    """Refresh the open sync PR, or open one; `pull` is a listing the caller already read, so it is not read twice."""
+    if pull is None:
+        listed = open_sync_prs(repo)
+        pull = listed[0] if listed else None
+    if pull is not None:
         number, url = pull["number"], pull["html_url"]
         api(
             f"repos/{OWNER}/{repo}/pulls/{number}",
@@ -778,28 +864,63 @@ def auto_merge_warning(node_id: str) -> str | None:
     return None
 
 
-def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None) -> Result:
-    """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit."""
+def sync_consumer(
+    repo: str, core_root: Path, workspace: Path, sha: str, latest: str | None = None, retry: bool = True
+) -> Result:
+    """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
+
+    An open sync PR is updated in place: the sync runs on that PR's own head and its commit is added on top, so a
+    commit pushed to the PR since the last sync is never dropped. The commit is made straight on `forever-core-sync`
+    with that head as its expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left
+    untouched and a comment on the PR says why. A consumer with no open PR has its branch rebuilt from `main` on a
+    scratch branch, which is safe because there is no PR whose commits could be lost. A PR that merges or closes while
+    the sync runs takes its branch with it; then the sync starts over once from the new `main`, as if no PR were open.
+    """
     try:
         root = clone(repo, workspace)
-        head = git(root, "rev-parse", "HEAD").stdout.strip()
-        git(root, "checkout", "-B", BRANCH)
+        main = git(root, "rev-parse", "HEAD").stdout.strip()
+        listed = open_sync_prs(repo)
+        pull = listed[0] if listed else None
+        base = main
+        if pull is not None:
+            base = fetch_branch(root, BRANCH)
+            if base is None:
+                # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
+                pull, base = None, main
+        git(root, "checkout", "-B", BRANCH, base)
         bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
         if not additions and not deletions:
+            if pull is not None and base != main:
+                return Result(repo, "up to date", detail="the open PR already carries the newest shared files")
             closed = close_stale_prs(repo, sha)
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
-        point_branch(repo, SCRATCH_BRANCH, head)
-        try:
-            commit = create_commit(repo, SCRATCH_BRANCH, head, sha, additions, deletions, workspace)
-            # Move the sync branch while the scratch ref still holds the commit, so it is never unreferenced.
-            point_branch(repo, BRANCH, commit)
-        finally:
-            delete_branch(repo, SCRATCH_BRANCH)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         pin_bump = (bumped, latest) if bumped and latest else None
-        number, url, status, node_id = open_or_update_pr(repo, pr_body(sha, files, pin_bump))
+        body = pr_body(sha, files, pin_bump)
+        if pull is not None:
+            try:
+                oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
+            except (SyncError, json.JSONDecodeError, OSError) as error:
+                if retry and not open_sync_prs(repo):
+                    # The PR merged or closed between the listing and the commit and took its branch: start over on the
+                    # new `main` in a fresh clone.
+                    return sync_consumer(repo, core_root, workspace / "retry", sha, latest, retry=False)
+                return left_alone(repo, pull, str(error))
+            status = "updated in place"
+        else:
+            point_branch(repo, SCRATCH_BRANCH, main)
+            try:
+                oid = create_commit(repo, SCRATCH_BRANCH, main, sha, additions, deletions, workspace)
+                # Move the sync branch while the scratch ref still holds the commit, so it is never unreferenced.
+                point_branch(repo, BRANCH, oid)
+            finally:
+                delete_branch(repo, SCRATCH_BRANCH)
+            status = "opened"
+        number, url, _, node_id = open_or_update_pr(repo, body, pull)
         warning = auto_merge_warning(node_id) if node_id else None
+        if proof_needed(root, list(files)):
+            print(proof_hint(repo, oid))
         return Result(repo, status, files, url, warning)
     except (SyncError, json.JSONDecodeError, OSError) as error:
         return Result(repo, "failed", detail=str(error))
@@ -807,7 +928,7 @@ def sync_consumer(repo: str, core_root: Path, workspace: Path, sha: str, latest:
 
 def summary_markdown(sha: str, results: list[Result]) -> str:
     lines = [
-        "## Forever Core consumer sync",
+        "## ForeverCore consumer sync",
         "",
         f"Core commit: `{sha}`",
         "",
@@ -822,6 +943,8 @@ def summary_markdown(sha: str, results: list[Result]) -> str:
     lines += [
         "",
         "A PR left open is waiting on that addon's own checks; a red check keeps it open rather than landing.",
+        "A PR reported as left alone was not touched: it keeps every commit it had, and its comment says what stopped"
+        " the sync.",
     ]
     return "\n".join(lines) + "\n"
 

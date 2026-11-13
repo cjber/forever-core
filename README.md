@@ -1,6 +1,6 @@
-<p align="center"><img src="media/icon-400.png" width="96" height="96" alt="Forever Core icon"></p>
+<p align="center"><img src="media/icon-400.png" width="96" height="96" alt="ForeverCore icon"></p>
 
-<h1 align="center">Forever Core</h1>
+<h1 align="center">ForeverCore</h1>
 
 <p align="center">A library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any Forever addon, and there is nothing to set up.</p>
 
@@ -13,16 +13,17 @@
 
 ## What it is
 
-Forever Core is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
+ForeverCore is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
 so the game loads it first and exactly one copy of each shared file runs. It has no settings page of its own. Your
 Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
   drag it once, and every addon follows.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
-  build, the character, the place, recent errors and a log.
-- **Forever Leaderboards.** Each addon can add its board to one shared window, opened from that addon, with weekly and
-  all-time standings and a line on the unit tooltip.
+  build, the character, the place, recent errors, a performance table and a log.
+- **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
+  `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
+  developer's addon.
 - **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 
@@ -48,16 +49,19 @@ the same diagnostic the addons print from their own slash commands.
 ## Development
 
 The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md) and the Discord
-release digest in [`tools/discord_digest.py`](tools/discord_digest.py).
+release digest in [`tools/discord_digest.py`](tools/discord_digest.py). Every tool pin lives in `tools/toolchain.json` and is
+installed by `.github/actions/toolchain` from the manifest of whichever repository calls it; a daily `bump-toolchain`
+workflow moves them, and an hourly `dependabot-merge` job arms auto-merge for Dependabot's patch and minor updates in
+this repo and every Forever addon, while a major waits for review.
 
 ## Credits
 
-Forever Core is built on the game's own UI and the work of other addon authors, listed with every player who helped in
+ForeverCore is built on the game's own UI and the work of other addon authors, listed with every player who helped in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
 <!-- forever-credits:start -->
 
-Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs and everyone who reported a bug or asked for a feature.
+Thanks to iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

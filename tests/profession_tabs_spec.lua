@@ -240,7 +240,9 @@ local world = newWorld()
 local ns = {}
 local api = load(ns)
 assert(api, "no profession tabs API")
-assert(api.minor == 1, "the module's minor is 1")
+-- Minor 2 is the native-page hiding contract: an addon can tell a core that hides the native profession pages beneath
+-- its selected page (and restores them on hand-back) from the older core that drew over them.
+assert(api.minor == 2, "the module's minor is 2")
 
 local pageA = newFrame("ForeverCommissionsPage")
 local pageB = newFrame("ForeverSkillUpPage")

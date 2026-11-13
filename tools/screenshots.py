@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render Forever Core's Thanks window from UI/Credits.lua and the credits it lists.
+"""Render ForeverCore's Thanks window from UI/Credits.lua and the credits it lists.
 
     python3 tools/screenshots.py
     python3 tools/screenshots.py --preview ~/.cache/agent-scratch/thanks \

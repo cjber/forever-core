@@ -1,13 +1,14 @@
 -- The core's public face, loaded after the shared files so it can publish what they built. Every Forever addon reads
 -- ForeverCore for the modules it shares and calls ForeverCore.Register for the services that belong to it alone, and
--- /fcore prints the tracker's diagnostic.
+-- /fcore prints the tracker's diagnostic while /forever debug drives the shared log.
 
 local _, ns = ...
 
 local core = {}
 core.name = "ForeverCore"
--- Raised when a change breaks the interface below, so an addon can refuse to run against an older core.
-core.API = 1
+-- Raised when a change breaks the interface below, so an addon can refuse to run against an older core. Version 2
+-- retired Forever Leaderboards and peer stats; theirs are the no-op answers in Core/RetiredLeaderboards.lua.
+core.API = 2
 
 core.TrackerHost = ns.TrackerHost
 core.TrackerSection = ns.TrackerSection
@@ -19,9 +20,8 @@ core.TrackerEqot = ns.TrackerEqot
 core.TrackerQuests = ns.TrackerQuests
 core.QuestLogTabs = ns.QuestLogTabs
 core.ProfessionTabs = ns.ProfessionTabs
-core.PeerStats = ns.PeerStats
-core.Leaderboards = ns.Leaderboards
-core.LeaderboardsData = ns.LeaderboardsData
+core.PeerStats = ns.RetiredPeerStats
+core.Leaderboards = ns.RetiredLeaderboards
 core.MinimapButton = ns.MinimapButton
 core.SettingsPage = ns.SettingsPage
 core.SettingsSections = ns.SettingsSections
@@ -33,12 +33,13 @@ core.OpenSettingsPanel = ns.OpenSettingsPanel
 core.Family = ns.Family
 core.Credits = ns.CreditsPage
 core.ContextMenu = ns.ContextMenu
+core.Art = ns.Art
 
 -- Core's own credits are its generated Data/Credits.lua, loaded before this file onto ns.Credits; in an addon's own
 -- namespace that same table is what it hands to ForeverCore.Credits.Register.
 -- An addon's spec can load core without UI/Credits.lua, so the page is optional there.
 if ns.CreditsPage then
-	ns.CreditsPage.Register("Forever Core", ns.Credits)
+	ns.CreditsPage.Register("ForeverCore", ns.Credits)
 end
 
 -- One context per addon name, so Register twice returns the same tables and the same window.
@@ -129,11 +130,27 @@ ForeverCore = core
 
 if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE1 = "/fcore"
+	-- A consumer that already owns /forever keeps it.
+	local foreverTaken = false
+	for index = 1, 9 do
+		if rawget(_G, "SLASH_FOREVER" .. index) ~= nil then
+			foreverTaken = true
+			break
+		end
+	end
+	SLASH_FOREVERCORE2 = not foreverTaken and "/forever" or nil
 	SlashCmdList.FOREVERCORE = function(message)
-		local command = tostring(message or ""):match("^%s*(%S*)")
+		local text = tostring(message or "")
+		local command = text:match("^%s*(%S*)")
 		if command:lower() == "quests" then
 			if ns.TrackerQuests ~= nil then
 				ns.TrackerQuests.Toggle()
+			end
+			return
+		end
+		if command:lower() == "debug" then
+			if type(ns.DebugCommand) == "function" then
+				ns.DebugCommand(text:match("^%s*%S+%s*(.*)$"))
 			end
 			return
 		end

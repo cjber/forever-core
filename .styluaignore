@@ -3,3 +3,7 @@ Nav/
 .agents/
 .docs-unused/
 docs/
+tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/
+tools/.venv/
+# Committed data: the ForeverProbeDB.api table of a ForeverProbe dump, read by tools/gen_forever_api.py.
+tools/forever_probe_api.lua

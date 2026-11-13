@@ -92,7 +92,7 @@ reaches it through `ForeverCore.Register(name).MapCanvas`. Don't copy Polestar's
 ## Cross-addon markers (H's point 2): `core.MapCanvas.Markers(map)`
 - Each addon has its own canvas context from `ForeverCore.Register(name).MapCanvas`. A pool created with a `marker`
   kind is listed only for that owner, so another addon can read the positions without sharing a global.
-- **Read the owner's list; never write into another addon's table.** The context is module state in Forever Core, keyed
+- **Read the owner's list; never write into another addon's table.** The context is module state in ForeverCore, keyed
   by addon name, so there is no family global to replace and no direct field write to taint.
   ```lua
   local core = ForeverCore.Register("TweaksForever")
@@ -110,7 +110,7 @@ reaches it through `ForeverCore.Register(name).MapCanvas`. Don't copy Polestar's
   Keep `EnumeratePinsByTemplate("FlightPointPinTemplate")` for Blizzard's own pins. Add the class names to the
   addon's types file; no new global belongs in `.luacheckrc`.
 
-## Specs (Forever Core's `tests/map_canvas_spec.lua`)
+## Specs (ForeverCore's `tests/map_canvas_spec.lua`)
 - Freeze the fixture map before the addon's Init: `setmetatable(WorldMapFrame, {__index = old, __newindex = error})`.
   Snapshot every value reachable from WorldMapFrame (3 deep) before, run everything, then compare (catches changed
   existing keys such as `dataProviders` entries).

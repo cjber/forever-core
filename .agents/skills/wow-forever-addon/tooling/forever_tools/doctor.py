@@ -1,16 +1,18 @@
 """Check this machine against every tool pin the gate uses, and say how to fix each one that is off.
 
-The pins are read from the repository itself, never retyped here: `.github/workflows/ci.yml` (StyLua, ruff,
-actionlint, zizmor, gitleaks, lua-language-server, the apt packages) and `tools/typecheck.sh` (the LuaLS version
-and the Ketho WoW API annotations checkout). `tools/typecheck.sh` stops at its first problem; this reports them
-all, one line each with its fix, then exits 1 if any tool the gate needs is missing or at the wrong version.
-Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py` and the shared renderer in
-`FOREVER_CORE`) are reported but never fail it.
+The pins are read from the repository itself, never retyped here: `tools/toolchain.json` (StyLua, gitleaks,
+lua-language-server, LuaJIT, luacheck and the Ketho WoW API annotations revision) and `tools/pyproject.toml`'s
+`[dependency-groups] dev` (ruff, ty, zizmor, actionlint-py), the two files CI and the scripts read. `tools/typecheck.sh`
+stops at its first problem; this reports them all, one line each with its fix, then exits 1 if any tool the gate needs
+is missing or at the wrong version.
+Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py` or tools/pyproject.toml's dev group, and the
+shared renderer in `FOREVER_CORE`) are reported but never fail it.
 
     python3 tools/doctor.py
 """
 
 import importlib.metadata
+import json
 import os
 import re
 import shutil
@@ -19,7 +21,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__all__ = ["Finding", "Tool", "check", "main", "pins"]
+__all__ = ["Finding", "Tool", "check", "dev_group", "main", "pins"]
+
+DEFAULT_ANNOTATIONS = ".types/vscode-wow-api"
+DEPENDENCY = re.compile(r'^\s*"([A-Za-z0-9_.\-]+)==([^"]+)"', re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -59,55 +64,82 @@ def first(pattern: str, text: str) -> str | None:
     return next((group for group in match.groups() if group), None) if match else None
 
 
+def dev_group(path: Path) -> dict[str, str]:
+    """The `[dependency-groups] dev` pins in tools/pyproject.toml, as name -> version.
+
+    Parsed line by line rather than with tomllib: the tooling still supports Python 3.10, which has no TOML module,
+    and the group holds only `"name==version"` strings.
+    """
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    section = re.search(r"^\[dependency-groups\]\s*$([\s\S]*?)(?=^\[|\Z)", text, re.MULTILINE)
+    if section is None:
+        return {}
+    group = re.search(r"^dev\s*=\s*\[([\s\S]*?)^\]", section.group(1), re.MULTILINE)
+    return dict(DEPENDENCY.findall(group.group(1))) if group else {}
+
+
+def annotations_directory(root: Path) -> str:
+    """Where tools/typecheck.sh checks the annotations out, or the family default."""
+    typecheck = root / "tools/typecheck.sh"
+    text = typecheck.read_text(encoding="utf-8") if typecheck.is_file() else ""
+    return first(r"^annotations=['\"]?([^'\"\s]+)", text) or DEFAULT_ANNOTATIONS
+
+
 def pins(root: Path) -> Pins:
-    """Every pin in ci.yml and typecheck.sh, and the screenshot Pillow pin, as tools to check."""
-    ci_path, typecheck_path = root / ".github/workflows/ci.yml", root / "tools/typecheck.sh"
-    ci = ci_path.read_text(encoding="utf-8") if ci_path.is_file() else ""
-    typecheck = typecheck_path.read_text(encoding="utf-8") if typecheck_path.is_file() else ""
+    """Every pin in tools/toolchain.json and tools/pyproject.toml, and the screenshot Pillow pin, as tools to check."""
+    manifest_path, pyproject_path = root / "tools" / "toolchain.json", root / "tools" / "pyproject.toml"
     found = Pins()
-    if not ci_path.is_file():
-        found.missing.append(".github/workflows/ci.yml: not found, so no CI pins were read")
-    if not typecheck_path.is_file():
-        found.missing.append("tools/typecheck.sh: not found, so no typecheck pins were read")
-    stylua = first(r"stylua-action@\S+[^\n]*\n(?:[ \t]+[^\n]*\n)*?[ \t]+version:\s*['\"]?([\d.]+)", ci)
-    if stylua:
-        found.tools.append(
-            Tool("stylua", ("stylua", "--version"), stylua, f"cargo install stylua --locked --version {stylua}")
-        )
-    for name, pattern, command, fix in (
-        ("ruff", r"\bruff(?:==|@)([\d.]+)", ("ruff", "--version"), "pipx install ruff=={v}"),
-        ("zizmor", r"\bzizmor(?:==|@)([\d.]+)", ("zizmor", "--version"), "pipx install zizmor=={v}"),
-        (
-            "actionlint",
-            r"(?:\bactionlint-py==(\d+\.\d+\.\d+)|actionlint/releases/download/v([\d.]+)/)",
-            ("actionlint", "--version"),
-            "pipx install actionlint-py (the {v} release)",
-        ),
-        (
-            "shellcheck",
-            r"\bshellcheck-py==(\d+\.\d+\.\d+)",
-            ("shellcheck", "--version"),
-            "pipx install shellcheck-py (the {v} release)",
-        ),
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        tools = manifest["tools"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        found.missing.append("tools/toolchain.json: not found or unreadable, so no toolchain pins were read")
+        tools = {}
+    python_pins = dev_group(pyproject_path)
+    if not pyproject_path.is_file():
+        found.missing.append("tools/pyproject.toml: not found, so no Python tool pins were read")
+    for name, fix in (
+        ("ruff", "uv sync --project tools --group dev"),
+        ("ty", "uv sync --project tools --group dev"),
+        ("zizmor", "uv sync --project tools --group dev"),
     ):
-        version = first(pattern, ci)
-        if version:
-            found.tools.append(Tool(name, command, version, fix.format(v=version)))
-    shfmt = first(r"\bshfmt-py==([\d.]+)", ci)
-    if shfmt:
-        found.tools.append(Tool("shfmt", ("shfmt", "--version"), None, f"pipx install shfmt-py=={shfmt}"))
-    gitleaks = first(r"(?:gitleaks/releases/download/v|GITLEAKS_VERSION:\s*['\"]?)(\d+\.\d+\.\d+)", ci)
-    if gitleaks:
+        if name in python_pins:
+            found.tools.append(
+                Tool(name, (name, "--version"), python_pins[name], f"{fix} (tools/pyproject.toml pins {name})")
+            )
+    if "actionlint-py" in python_pins:
+        # The wheel carries the upstream actionlint release as its first three parts; its fourth part is the wheel's.
+        version = ".".join(python_pins["actionlint-py"].split(".")[:3])
+        found.tools.append(
+            Tool(
+                "actionlint",
+                ("actionlint", "--version"),
+                version,
+                "uv sync --project tools --group dev (actionlint-py)",
+            )
+        )
+    if "stylua" in tools:
+        stylua = tools["stylua"]
+        found.tools.append(
+            Tool(
+                "stylua",
+                ("stylua", "--version"),
+                stylua["version"],
+                f"cargo install stylua --locked --version {stylua['version']}",
+            )
+        )
+    if "gitleaks" in tools:
+        gitleaks = tools["gitleaks"]["version"]
         fix = (
             f"download gitleaks_{gitleaks}_linux_x64.tar.gz from github.com/gitleaks/gitleaks/releases/tag/v{gitleaks}"
             if linux()
             else f"brew install gitleaks (then check `gitleaks version` says {gitleaks})"
         )
         found.tools.append(Tool("gitleaks", ("gitleaks", "version"), gitleaks, fix))
-    luals = first(r"(?:lua-language-server/releases/download/|LUALS_VERSION:\s*['\"]?)(\d+\.\d+\.\d+)", ci) or first(
-        r"--version\)\"? != ['\"]?(\d+\.\d+\.\d+)", typecheck
-    )
-    if luals:
+    if "luals" in tools:
+        luals = tools["luals"]["version"]
         found.tools.append(
             Tool(
                 "lua-language-server",
@@ -116,25 +148,21 @@ def pins(root: Path) -> Pins:
                 f"unpack github.com/LuaLS/lua-language-server/releases/tag/{luals} and put its bin/ on PATH",
             )
         )
-    packages = set(re.findall(r"apt-get install -y ([^\n&|;]+)", ci))
-    wanted = {word for line in packages for word in line.split()}
-    if "luajit" in wanted:
+    if "luajit" in tools:
         fix = "sudo apt-get install -y luajit" if linux() else "brew install luajit"
         found.tools.append(Tool("luajit", ("luajit", "-v"), None, fix))
-    if "lua-check" in wanted or re.search(r"^\s*-? ?run: luacheck", ci, re.MULTILINE):
+    if "luacheck" in tools:
         fix = "sudo apt-get install -y lua-check" if linux() else "brew install luarocks && luarocks install luacheck"
-        found.tools.append(Tool("luacheck", ("luacheck", "--version"), None, fix))
-    revision = first(r"^revision=['\"]?([0-9a-f]{40})", typecheck)
-    directory = first(r"^(?:annotations|library)=['\"]?([^'\"\s]+)", typecheck)
-    if revision and directory:
-        if "$" in directory:
-            found.missing.append(f"tools/typecheck.sh: the annotations path {directory} is not a plain path to check")
-        else:
-            found.annotations = (directory, revision)
+        found.tools.append(Tool("luacheck", ("luacheck", "--version"), tools["luacheck"]["version"], fix))
+    annotations = tools.get("annotations")
+    if annotations:
+        found.annotations = (annotations_directory(root), annotations["commit"])
+    pillow = ""
     screenshots = root / "tools/screenshots.py"
     if screenshots.is_file():
         text = screenshots.read_text(encoding="utf-8")
-        found.pillow = first(r"PILLOW\s*=\s*['\"]([\d.]+)['\"]", text) or first(r"pillow==([\d.]+)", text) or ""
+        pillow = first(r"PILLOW\s*=\s*['\"]([\d.]+)['\"]", text) or first(r"pillow==([\d.]+)", text) or ""
+    found.pillow = pillow or python_pins.get("pillow")
     return found
 
 
@@ -189,9 +217,9 @@ def check_screenshots(pillow: str) -> list[Finding]:
         installed = None
     fix = f"python3 -m pip install --user pillow=={pillow}" if pillow else "python3 -m pip install --user pillow"
     if installed is None:
-        findings.append(Finding(False, "Pillow: not installed (tools/screenshots.py only)", fix, optional=True))
+        findings.append(Finding(False, "Pillow: not installed (the rendering tools only)", fix, optional=True))
     elif pillow and installed != pillow:
-        text = f"Pillow: {installed}, tools/screenshots.py pins {pillow} for byte-identical PNGs"
+        text = f"Pillow: {installed}, the gate pins {pillow} for byte-identical PNGs"
         findings.append(Finding(False, text, fix, optional=True))
     else:
         findings.append(Finding(True, f"Pillow: {installed}"))
@@ -201,7 +229,7 @@ def check_screenshots(pillow: str) -> list[Finding]:
         findings.append(
             Finding(
                 False,
-                f"FOREVER_CORE: shared renderer not found at {renderer} (tools/screenshots.py only)",
+                f"FOREVER_CORE: shared renderer not found at {renderer} (the rendering tools only)",
                 "set FOREVER_CORE to the forever-core checkout",
                 optional=True,
             )

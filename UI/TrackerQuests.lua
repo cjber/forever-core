@@ -56,7 +56,7 @@ local function RegisterSettings()
 		return
 	end
 	settingsRegistered = true
-	ns.SettingsPage.Register(L["Forever Core"], function(panel, page)
+	ns.SettingsPage.Register(L["ForeverCore"], function(panel, page)
 		page.AddCheck(panel, L["Forever quest list"], TrackerQuests.Enabled, TrackerQuests.SetEnabled, L[TOOLTIP])
 	end, L)
 end

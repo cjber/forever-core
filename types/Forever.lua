@@ -25,12 +25,20 @@
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
 
 ---@class ForeverProfessionTabsAPI
----@field minor integer raised with each member this module adds
+---@field minor integer raised with each member or behaviour an addon may depend on; 2 hides the native pages
 ---@field Register fun(key: string, spec: ForeverProfessionTabSpec): ForeverProfessionTab
 ---@field SetMinWidth fun(key: string, width: number?)
 ---@field Select fun(key: string)
 ---@field ShowNative fun()
 ---@field Selected fun(): string?
+
+-- The client's own values saved before /forever debug on, from Core/Capture.lua.
+---@class ForeverDebugCaptureState
+---@field on boolean true while debug capture is on
+---@field taintLog? string the taint log CVar before the capture
+---@field advancedCombatLogging? string the advanced combat log CVar before the capture
+---@field chat? boolean chat logging before the capture
+---@field combat? boolean combat logging before the capture
 
 -- The Forever quest list's pure ordering model, in Core/QuestOrder.lua.
 ---@class ForeverQuestRecord
@@ -143,7 +151,7 @@
 ---@field Addons fun(): ForeverCoreAPIEntry[]
 
 ---@class ForeverCoreAPI
----@field API integer the interface version; 1 is the first
+---@field API integer the interface version; 2 retired leaderboards and peer stats
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerSection? ForeverTrackerSectionAPI
@@ -156,9 +164,6 @@
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI
----@field PeerStats? ForeverPeerStatsNamespace
----@field Leaderboards? ForeverLeaderboardsAPI
----@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field SettingsSections? ForeverSettingsSectionsAPI
@@ -170,6 +175,7 @@
 ---@field Family? ForeverFamilyAPI
 ---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
+---@field Art? ForeverArt
 
 ---@type ForeverCoreAPI
 ForeverCore = nil
@@ -179,8 +185,6 @@ ForeverCore = nil
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field MapCanvas? ForeverCanvasAPI
----@field Leaderboards? ForeverLeaderboardsAPI
----@field LeaderboardsData? ForeverLeaderboardsData
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI

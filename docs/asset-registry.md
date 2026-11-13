@@ -127,7 +127,11 @@ Retail origin alone, a matching prefix or a `c60` suffix does not establish appr
    source before framing: preserve a baked bevel, or apply `interface/common/whiteiconframe.blp`
    once when the host uses it for an otherwise unframed icon. Never stack WhiteIconFrame over a
    source that already owns its bevel. Portraits use `TempPortraitAlphaMask` and the host portrait
-   frame. See [ui-composition.md](ui-composition.md) for the one-owner and crop rules.
+   frame. See [ui-composition.md](ui-composition.md) for the one-owner and crop rules. An icon
+   texture an addon draws itself uses `ForeverCore.Art.CooldownIcon` when it wants the Cooldown
+   Manager's frame, which makes that helper the single border owner. A FontString icon
+   (`|T...|t`) cannot take a mask or overlay, so it crops the bevel with `:64:64:5:59:5:59`
+   instead.
 
 ### Composition limits
 
@@ -200,8 +204,7 @@ primitive, not chrome — allowed.
 Each addon represents itself in game with one client icon, declared once in its TOC as
 `## X-Forever-Icon: Interface\Icons\<name>` and read with
 `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`. The minimap button, the Professions or side tab,
-the window portrait, the leaderboard tab and the addon compartment all draw that value, and no shipped Lua
-repeats the path. The TOC `## IconTexture` stays the drawn `media/Icon` for the TOC, the addon list, the
+the window portrait and the addon compartment all draw that value, and no shipped Lua repeats the path. The TOC `## IconTexture` stays the drawn `media/Icon` for the TOC, the addon list, the
 compartment, the report window and the stores; that is the addon's store identity, not its in-game one.
 
 | Addon | `X-Forever-Icon` |

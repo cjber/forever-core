@@ -5,6 +5,8 @@ files["tests/sim/fixtures"] = {
 	allow_defined_top = true,
 	globals = { "SimTrackerDB", "SimSecureFrame" },
 	read_globals = {
+		"C_Map",
+		"C_UI",
 		"CreateFrame",
 		"CreateFromMixins",
 		"C_Timer",

@@ -88,6 +88,8 @@ Steps and what trips agents up:
    DOM file input behind it, so `file_upload` has nothing to target (don't click it: the stray picker
    blocks the tab). Ask the user to click "Upload image" and pick the repo's 400×400 PNG
    (`media/icon-400.png` in cjber's addons), either here or later at `#/projects/<ID>/general`.
+   On the same page set **Donation Method** to Ko-fi with the username `cjber`, then Save. No upload or
+   release sets it, so a project created without it shows no donation button.
 3. **Description**: set the textarea with `form_input` to `docs/curseforge.md`, then **type** a little
    text at the end (click the textarea, `ctrl+End`, type a newline). `form_input` alone does not update
    React state, so the step validates as empty. The description ends with the support buttons; add no
@@ -182,8 +184,42 @@ images, then the rest of `docs/gallery.md`.
 ## X-Wago-ID: <wago id>
 ```
 
-Before the version bump, smoke the build in the client when it is running, under the game lock, and only
-when the player is not playing (a deskpilot screenshot first):
+Before the version bump, the exact commit being released needs a green `headless-smoke` commit status on
+cjber/<repo>, and every release, manual or automatic, refuses without one: `tools/release_check.py` checks it
+beside full CI in the release workflow. One command posts it, and the `forever-smoke` timer
+(`tools/smoke_queue.py`) fills it in for every commit a release would ship:
+
+```sh
+python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>
+```
+
+It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way `rebuild-dev.sh` did, links the
+build's addon folders over `Interface/AddOns`, runs `/forever selftest`, reads `errors --addon <folder>` for each
+of them and posts the result as the `headless-smoke` status. Exit 0 is a clean commit, exit 1 a failure the status
+records with its error count, and exit 3 means the player's client or another session holds the client: nothing is
+posted then, so run it again later. Every link it borrowed is put back exactly as it was, store installs included.
+
+Read the record with `gh api repos/cjber/<repo>/commits/<sha>/statuses`. Missing or pending means waiting, a
+failure means fix the error and smoke the next commit. `python3 tools/smoke_queue.py --dry-run` lists the commits
+that would be smoked next, and the `smoke` command above re-runs one commit at once.
+
+A release preparation that edits the update notice or a locale also records the visual proof its runtime change
+needs, so the required `visual-proof` check passes without an admin merge. One command builds and loads the commit,
+runs the flow, uploads the screenshots to a secret gist and writes `.visual-proof.json` into the pull request's
+checkout; commit that file with the change:
+
+```sh
+python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's checkout> \
+  --flow "update notice=<the addon's slash command or Lua file>"
+```
+
+`--flow` is the addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs. ForeverCore has no shared
+opener for an addon's update notice, so there is no default. Exit 3 means the client is in use, so nothing was
+recorded and a later run tries again. The command also restores every `AddOns` link it borrowed and never commits or
+pushes the checkout. `wow-forever-addon/in-game.md` has the full flow, including the sync pull request that moves the
+ForeverCore pin.
+
+By hand, in a session, the same checks are:
 
 1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
    note `date +%s`, then `/reload`.

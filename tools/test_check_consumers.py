@@ -184,7 +184,7 @@ class CheckConsumersTest(unittest.TestCase):
         code, out = self.run_main()
         self.assertEqual(code, 0, out)
 
-    def test_an_unreadable_latest_release_skips_the_pin_check_without_failing(self):
+    def test_an_unreadable_latest_release_fails_the_pin_check(self):
         self.pin.write_text("v1.3.2\n", encoding="utf-8")
         out = io.StringIO()
         with (
@@ -192,7 +192,13 @@ class CheckConsumersTest(unittest.TestCase):
             contextlib.redirect_stdout(out),
         ):
             code = check_consumers.main(["--local", str(self.checkouts)])
-        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(code, 1, out.getvalue())
+        self.assertIn("the pin check cannot pass", out.getvalue())
+
+    def test_the_pin_check_uses_the_shared_latest_release_read(self):
+        with mock.patch.object(check_consumers.core_pin, "latest_release", return_value="v1.4.0") as latest:
+            self.assertEqual(check_consumers.latest_tag(None), "v1.4.0")
+        latest.assert_called_once_with()
 
 
 class VisualWorkflowCheckTest(unittest.TestCase):
@@ -287,6 +293,69 @@ class VisualWorkflowCheckTest(unittest.TestCase):
         self.assertTrue(
             any("tools/forever_tools/pkgmeta.py: missing from the full forever_tools sync" in item for item in failures)
         )
+
+
+class ReleaseGateCheckTest(unittest.TestCase):
+    """The pin gate the sync inserts into a consumer's own release workflow, above the packager."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.workflow = self.checkouts / "legacy-forever" / ".github" / "workflows" / "release.yml"
+        self.workflow.parent.mkdir(parents=True)
+
+    def write(self, gate_before=True, gate=True, packager=True):
+        lines = ["name: Release", "", "jobs:", "  release:", "    steps:"]
+        if gate_before and gate:
+            lines += [
+                "      - name: Verify the ForeverCore pin is core's latest release",
+                "        run: python3 -m tools.forever_tools.core_pin --latest",
+            ]
+        if packager:
+            lines.append("      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0")
+        if not gate_before and gate:
+            lines += [
+                "      - name: Verify the ForeverCore pin is core's latest release",
+                "        run: python3 -m tools.forever_tools.core_pin --latest",
+            ]
+        self.workflow.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def check(self):
+        return check_consumers.check_release_gate("legacy-forever", "main", self.checkouts)
+
+    def test_the_gate_above_the_packager_passes(self):
+        self.write()
+        self.assertEqual(self.check(), [])
+
+    def test_a_missing_gate_fails(self):
+        self.write(gate=False)
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("no ForeverCore pin gate", failures[0])
+        self.assertIn("tools.forever_tools.core_pin --latest", failures[0])
+
+    def test_a_gate_after_the_packager_fails(self):
+        self.write(gate_before=False)
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("after the packager", failures[0])
+
+    def test_a_gate_without_the_latest_command_fails(self):
+        self.workflow.write_text(
+            "jobs:\n  release:\n    steps:\n"
+            "      - name: Verify the ForeverCore pin is core's latest release\n"
+            "        run: python3 -m tools.forever_tools.core_pin\n"
+            "      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812\n",
+            encoding="utf-8",
+        )
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("must run `python3 -m tools.forever_tools.core_pin --latest`", failures[0])
+
+    def test_a_workflow_without_a_packager_is_left_alone(self):
+        self.write(packager=False, gate=False)
+        self.assertEqual(self.check(), [])
 
 
 if __name__ == "__main__":

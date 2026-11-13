@@ -6,6 +6,8 @@
 ---@field ReportLines? fun(): string[]
 ---@field SafeCallFor? fun(name: string): ForeverSafeCallContext
 ---@field LogFor? fun(name: string): ForeverDebugLogContext
+---@field DebugCaptureNotice? fun(): string?
+---@field PerformanceLines? fun(fresh?: boolean): string[]
 local ns = select(2, ...)
 
 -- `/report` shows one block of text, already selected, for the player to copy into a bug report. The text opens with
@@ -17,8 +19,8 @@ local L, Art = ns.L, ns.Art
 -- One Discord or forum message; a GitHub issue field takes it whole.
 local LIMIT = 2000
 -- The addon's own lines and the caught errors each stop here, leaving room for the header and the addon list. The log
--- section follows the errors; it adds the newest 50 lines only while they fit.
-local LINES_LIMIT, ERRORS_LIMIT, LOG_SHOWN = 1000, 600, 50
+-- section follows the errors; it adds the newest 50 lines only while they fit. The performance table has its own cap.
+local LINES_LIMIT, ERRORS_LIMIT, LOG_SHOWN, PERFORMANCE_LIMIT = 1000, 600, 50, 1100
 local WIDTH, HEIGHT = 460, 380
 
 ---@class ForeverReportSpec
@@ -114,6 +116,13 @@ local function NewReport(name, spec)
 		local lines = {
 			("%s %s | WoW %s (%s) %s | %s"):format(name, version, gameVersion, build, tostring(interface), GetLocale()),
 		}
+		local notice = ns.DebugCaptureNotice
+		if type(notice) == "function" then
+			local capture = notice()
+			if type(capture) == "string" and capture ~= "" then
+				lines[#lines + 1] = capture
+			end
+		end
 		local _, class = UnitClass("player")
 		local _, race = UnitRace("player")
 		lines[#lines + 1] = ("Character: level %d %s %s, %s"):format(
@@ -317,18 +326,39 @@ local function NewReport(name, spec)
 	end
 
 	-- The whole report: the header, the addon's `lines` (at most LINES_LIMIT characters), the caught errors (at most
-	-- ERRORS_LIMIT), the newest log lines that fit, then the other addons in what room is left. Each section has its
-	-- own cap, so long addon lines never push the errors out.
+	-- ERRORS_LIMIT), the performance table read when the window opened, the newest log lines that fit, then the other
+	-- addons in what room is left. Each section has its own cap, so long addon lines never push the errors out.
 	---@param lines string[]
 	---@return string
 	function Report.Text(lines)
 		local header = table.concat(Header(), "\n")
 		local own = ns.CutText(table.concat(lines, "\n"), LINES_LIMIT)
 		local errors = ns.CutText(table.concat(Errors(), "\n"), ERRORS_LIMIT)
-		-- Three separators between the four sections and one before the addon list.
-		local room = math.max(LIMIT - (#header + #own + #errors + 4), 0)
+		local performance = ""
+		if type(ns.PerformanceLines) == "function" then
+			local ok, read = pcall(ns.PerformanceLines)
+			if ok and type(read) == "table" and read[1] then
+				-- Whole rows only: a row cut short reads as a different number. The rows that do not fit are counted.
+				local kept, size = {}, 0
+				local more = L["%d more rows not shown."]
+				for index, line in ipairs(read) do
+					-- A row that is not the last leaves room for the count line: the phrase, its newline, and up to
+					-- three digits where "%d" stands.
+					local reserve = index < #read and #more + 2 or 0
+					if size + #line + 1 + reserve > PERFORMANCE_LIMIT then
+						kept[#kept + 1] = more:format(#read - index + 1)
+						break
+					end
+					kept[#kept + 1] = line
+					size = size + #line + 1
+				end
+				performance = table.concat(kept, "\n")
+			end
+		end
+		-- Four separators between the five sections and one before the addon list.
+		local room = math.max(LIMIT - (#header + #own + #errors + #performance + 5), 0)
 		local logged = Logs(room)
-		local text = table.concat({ header, own, errors, logged }, "\n")
+		local text = table.concat({ header, own, errors, performance, logged }, "\n")
 		text = text .. "\n" .. Addons(math.max(LIMIT - #text - 1, 0))
 		return ns.CutText(text, LIMIT)
 	end
@@ -395,6 +425,14 @@ local function NewReport(name, spec)
 		scroll:SetScrollChild(edit)
 		editBox, window = edit, frame
 		return frame
+	end
+
+	-- The performance table is read when a report window opens, never while the player plays: the report command and
+	-- the issue composer each take one fresh sample, and everything they build afterwards reuses it.
+	local function SamplePerformance()
+		if type(ns.PerformanceLines) == "function" then
+			pcall(ns.PerformanceLines, true)
+		end
 	end
 
 	-- Show `text` in the window, all of it selected for Ctrl+C.
@@ -683,6 +721,7 @@ local function NewReport(name, spec)
 	function Report.Compose(kind)
 		local frame = IssueWindow()
 		kind = kind or "bug"
+		SamplePerformance()
 		if kind ~= issueKind then
 			SetIssueKind(kind)
 		else
@@ -699,6 +738,7 @@ local function NewReport(name, spec)
 	function Report.Command(command, argument)
 		if command == "report" then
 			local ok, lines = safe:SafeCall("report lines", ExtraLines)
+			SamplePerformance()
 			Report.Show(Report.Text(ok and lines or { "Report lines failed: " .. tostring(lines) }))
 			return true
 		end

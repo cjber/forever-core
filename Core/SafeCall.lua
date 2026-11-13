@@ -44,6 +44,21 @@ local function Cut(text, limit)
 end
 ns.CutText = Cut
 
+-- The value the client handed over, or nil when it holds it secret. A secret cannot be compared, indexed, concatenated
+-- or formatted, so every read of a value that may be secret goes through here (WFA-30).
+---@param value any
+---@return any
+function ns.Readable(value)
+	local canAccess = rawget(_G, "canaccessvalue")
+	if type(canAccess) == "function" then
+		local ok, allowed = pcall(canAccess, value)
+		if not ok or not allowed then
+			return nil
+		end
+	end
+	return value
+end
+
 -- The client provides time(); the specs fall back to os.time.
 ---@return integer
 local function Now()
