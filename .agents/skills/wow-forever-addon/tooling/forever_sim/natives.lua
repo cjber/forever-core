@@ -354,6 +354,26 @@ function M.build(sim)
 				return 0
 			end,
 		},
+		-- The buyback half of the merchant: no item was sold, so the tab has none. MerchantFrame_UpdateBuybackInfo
+		-- reads both even then, and MerchantFrame_UpdateMerchantInfo calls GetBuybackItemInfo(0) for its "sell" slot.
+		{
+			"GetNumBuybackItems",
+			function()
+				return 0
+			end,
+		},
+		{
+			"GetBuybackItemInfo",
+			function()
+				return nil
+			end,
+		},
+		{
+			"GetBuybackItemLink",
+			function()
+				return nil
+			end,
+		},
 		{
 			"GetNumSpecializations",
 			function()
@@ -396,11 +416,43 @@ function M.build(sim)
 				return true
 			end,
 		},
+		-- The merchant's repair buttons: the sim's player needs no repair, so no repair cost and no repair all.
+		{
+			"GetRepairAllCost",
+			function()
+				return 0, false
+			end,
+		},
+		{
+			"CanMerchantRepair",
+			function()
+				return false
+			end,
+		},
+		{
+			"CanGuildBankRepair",
+			function()
+				return false
+			end,
+		},
+		{
+			"RepairAllItems",
+			function() end,
+		},
 		{
 			"GetMerchantFilter",
 			function()
 				return nil
 			end,
+		},
+		-- The merchant's item filter: the sim's merchant carries no items, so the filter is whatever and resets to all.
+		{
+			"SetMerchantFilter",
+			function() end,
+		},
+		{
+			"ResetSetMerchantFilter",
+			function() end,
 		},
 		{
 			"CloseMerchant",
@@ -729,6 +781,14 @@ function M.build(sim)
 	G.SpellCanTargetItem = function()
 		return false
 	end
+	-- The SecureActionButtonTemplate click tests both when it targets an item after a spell; the sim targets no item.
+	G.SpellCanTargetItemID = function()
+		return false
+	end
+	-- The macro UI's slot counts: the sim holds no macros, so neither tab has one.
+	G.GetNumMacros = function()
+		return 0, 0
+	end
 	G.SpellStopTargeting = function() end
 	G.debuglocals = function()
 		return ""
@@ -742,6 +802,18 @@ function M.build(sim)
 	G.GetNumDisplayChannels = function()
 		return 0
 	end
+	-- The battleground ids PVP and group-finder code walks: no battleground in the sim.
+	G.GetMaxBattlefieldID = function()
+		return 0
+	end
+	-- The tutorial flags: the sim's player has seen no tutorial prompt.
+	G.IsTutorialFlagged = function()
+		return false
+	end
+	-- The scenario tracker's world-state timers: no timer is running, so it is called with no ids.
+	G.GetWorldElapsedTimers = function() end
+	-- The trainer's service list: no service, so a click on one teaches nothing.
+	G.SelectTrainerService = function() end
 
 	-- Functions from Blizzard addons the sim does not boot (sim.SKIP_DEPS) that booted UI calls while loading;
 	-- each is recorded in sim.gaps when called.

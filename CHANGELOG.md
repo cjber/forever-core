@@ -14,6 +14,14 @@
   exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
   reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
   the status in for every commit a release would ship. (#540)
+- **The simulator exercises every addon with no scenario file, and clicks the addon's own widgets.** `run.lua` runs
+  `sim:exercise()` after the declared scenarios, so an addon no longer needs `tests/sim/exercise_scenario.lua`; a
+  declared scenario still passes the exercise its own commands and saved variables. An addon that depends on
+  ForeverCore gets that checkout loaded for the exercise, from `FOREVER_CORE` or `../forever-core`, so its UI is
+  really built. The exercise hovers, left-clicks and leaves every shown Button the addon created, in and out of
+  combat, so a refused call in a button handler fails the run. `C_TradeSkillUI.OpenTradeSkill` and `C_UI.Reload` are
+  modelled as the client enforces them, and `fetch.py --refresh-restrictions --probe` merges every block a live
+  client recorded into `restrictions.txt`. (#538)
 
 ## [1.9.0] - 2026-11-12
 

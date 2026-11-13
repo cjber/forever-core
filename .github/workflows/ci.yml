@@ -140,8 +140,9 @@ jobs:
           cd .release/ForeverCore
           test -f ForeverCore.toc
           test "$PWD" != "$GITHUB_WORKSPACE"
-          luajit "$GITHUB_WORKSPACE/.agents/skills/wow-forever-addon/tooling/forever_sim/run.lua" \
-            "$GITHUB_WORKSPACE/tests/sim/exercise_scenario.lua"
+          # The runner exercises the repository's addon from its TOC after the declared scenarios, so a packaged
+          # build with no tests/sim is exercised too.
+          luajit "$GITHUB_WORKSPACE/.agents/skills/wow-forever-addon/tooling/forever_sim/run.lua"
 
   secrets:
     runs-on: ubuntu-24.04
