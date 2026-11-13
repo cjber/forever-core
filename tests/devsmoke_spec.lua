@@ -677,8 +677,11 @@ equal(
 )
 
 -- /devsmoke eval runs the chunk the generated !!DevSmokeInbox addon defines: what it prints and every value it
--- returns reach the Agent tab and DevSmokeDB.eval, and an error is caught there instead of reaching BugGrabber.
+-- returns reach the Agent tab and DevSmokeDB.eval, and an error is caught there instead of reaching BugGrabber. The
+-- chunk's DevSmokeEvalRun token is copied into DevSmokeDB.eval.run, so a reader with only the SavedVariables file can
+-- tell this snippet's own result from an earlier session's (#580).
 local specPrint = _G.print
+DevSmokeEvalRun = "run-1"
 DevSmokeEval = function()
 	print("a printed line")
 	return "a returned value", 42
@@ -693,6 +696,7 @@ equal(DevSmokeDB.eval.out[1], "a printed line", "the printed line is saved")
 equal(DevSmokeDB.eval.out[2], "a returned value", "the returned value is saved")
 equal(DevSmokeDB.eval.out[3], "42", "the last returned value is saved")
 equal(DevSmokeDB.eval.err, nil, "a passing snippet records no error")
+equal(DevSmokeDB.eval.run, "run-1", "the eval carries the token its chunk was written with")
 check(type(DevSmokeDB.eval.ran) == "number", "the run time is recorded")
 equal(_G.print, specPrint, "print is restored after a passing eval")
 
@@ -724,14 +728,27 @@ equal(#DevSmokeDB.eval.out, 3, "the saved output is split the same way")
 equal(DevSmokeDB.eval.out[3]:sub(-1), "x", "the split keeps every character")
 
 local ranBefore = DevSmokeDB.eval.ran
+DevSmokeEvalRun = "run-2"
 DevSmokeEval = function()
 	return "again"
 end
 evalLines = command("eval")
 equal(evalLines[2], "again", "a second eval reruns the loaded chunk")
 check(DevSmokeDB.eval.ran > ranBefore, "a rerun records a new time")
+equal(DevSmokeDB.eval.run, "run-2", "a rerun records the token of the chunk it ran")
+
+-- The token is read before the chunk runs, so a snippet that reuses the name cannot move its result onto another run.
+DevSmokeEvalRun = "run-3"
+DevSmokeEval = function()
+	DevSmokeEvalRun = "the snippet's own value"
+	return "sneaky"
+end
+evalLines = command("eval")
+equal(DevSmokeDB.eval.run, "run-3", "a snippet that writes the token's name cannot change its own attribution")
+equal(evalLines[2], "sneaky", "the snippet still runs and returns its value")
 
 DevSmokeEval = nil
+DevSmokeEvalRun = nil
 evalLines = command("eval")
 equal(
 	evalLines[1],
@@ -745,6 +762,7 @@ local inboxLoads = {}
 local addonAPI = C_AddOns
 rawset(addonAPI, "LoadAddOn", function(name)
 	inboxLoads[#inboxLoads + 1] = name
+	DevSmokeEvalRun = "run-4"
 	DevSmokeEval = function()
 		return "from the inbox"
 	end
@@ -760,6 +778,7 @@ for index = beforeLoginLines + 1, #agentMessages() do
 end
 equal(loginLines[1], "Dev Smoke: eval ok, 1 lines", "the login eval reports itself")
 equal(loginLines[2], "from the inbox", "the login runs the chunk the inbox defined")
+equal(DevSmokeDB.eval.run, "run-4", "the login eval carries the token the inbox's chunk was written with")
 
 -- The client reads the inbox once a session: a later /devsmoke eval reruns the loaded chunk and asks for no reload,
 -- so a snippet written after it needs /reload.

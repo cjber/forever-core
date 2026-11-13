@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A Lua proof flow reports its own snippet's result, not the session before it.** `--flow NAME=file.lua` and
+  `forever_client.py eval` reload once to run a snippet and then read `DevSmokeDB.eval`, but SavedVariables reach disk
+  only at the next reload, so the file still held the previous eval: a snippet that raised passed the proof on an
+  earlier run's success, and a clean one failed on an earlier run's error. `tools/devsmoke/eval.py` now stamps every
+  generated `Eval.lua` with a fresh run token, `!!DevSmoke` copies it into `DevSmokeDB.eval.run`, and the reader reloads
+  once more and answers only the record carrying that token. A failed flow fails the proof with the snippet's own
+  error, before any gist or `.visual-proof.json` exists. (#580)
+
 ## [1.11.0] - 2026-11-13
 
 ### For addon authors
