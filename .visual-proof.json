@@ -1,78 +1,23 @@
 {
-  "input_digest": "a465356fee435a5eeebf30620cac11e8bbae2841e88323b68f1881e4142f60bd",
-  "runtime_sha256": "a465356fee435a5eeebf30620cac11e8bbae2841e88323b68f1881e4142f60bd",
-  "candidate": "19f72df701f865481314d1d63d81d9d4d93d11d42315624daca5bb560d206c51",
-  "tested_artifact": "source-tree",
+  "input_digest": "6fe3a32c1077bbb279fd67c28c56cff2caaa2f2bb6c56fd41dc72f27df4292ae",
+  "runtime_sha256": "6fe3a32c1077bbb279fd67c28c56cff2caaa2f2bb6c56fd41dc72f27df4292ae",
+  "candidate": "24ba3ea3e889277ca600d0258dc54e579ff959f5ff6f5d453fcd933d924ed887",
   "client_build": "1.60.1.70938 (Interface 16001)",
-  "source_commit": "7491a76cfd57e75d28c3b47cc5c757d95688dcd3",
-  "notes": "Recorded on Hel Io (account WORLDOFCILLIAN, EU) through the headless client from an installed source-tree build of this commit (git archive, version v1.9.0-dev+7491a76) linked in place of the store ForeverCore v1.9.0; check_visual_proof --compare reported no missing or differing runtime files, the install additionally carries the ignored store icon media/icon-400.png. The Tweaks report is used because reports are per addon; its ClassLevels and WhisperTabs login errors are tweaks-forever#548, not this change.",
+  "tested_artifact": "source-tree",
+  "source_commit": "383bb8355e333ae71800eaf41b3dad028d00fb3f",
   "flows": [
     {
-      "name": "Debug capture on",
+      "name": "profile",
       "steps": [
-        "/forever debug on",
-        "The on-screen notice says capture is on, where the logs are and how to turn it off"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Report while capture is on",
-      "steps": [
-        "/tweaks report",
-        "The second line says debug capture is on and to attach the Logs folder files",
-        "Scroll to the end: the Performance table lists All addons, Application and each addon with session, recent, peak, last, spike counts and memory"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Settings notice",
-      "steps": [
-        "Options > AddOns > ForeverCore",
-        "The short notice sits beside the page title and takes no row; the page's option stays in place"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Capture survives /reload",
-      "steps": [
-        "/reload",
-        "/tweaks report: the debug capture line is still there"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "Debug capture off",
-      "steps": [
-        "/forever debug off",
-        "The notice says capture is off and the client's settings are back"
+        "/forever profile"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/debug-on-notice.png",
-      "sha256": "286506fe10b4f6e12d7c70c5c7675dce75ed722b2659417d76d8877cc029d472"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/report-debug-line.png",
-      "sha256": "3e9b48409190f620c2936bafeedc57bfb552200365ce84a2060dd007c8fa6479"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/report-performance.png",
-      "sha256": "87dca614556b6ebc9241646629d81437bab912b3d53ad32aea49f8791ab9cd4e"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/settings-notice.png",
-      "sha256": "c5a3b61164d2c7512da5ecdcb10e0c91e7e21e83400fcfb17c98ccece582f8a0"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/report-after-reload.png",
-      "sha256": "11a382adc069152b94c51027cee5aed2a9ea971f4045d905980924ee11931abe"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/152fd51ec0189b8a804526d5d4be0a12/raw/5d647554084b13cdea298bfa8e5c19be957d0703/debug-off-notice.png",
-      "sha256": "400d0b4e61ec6b7f4facbd01b199c4f6bcd302bb73830f37d4571f5c411d66c4"
+      "url": "https://gist.githubusercontent.com/cjber/39b605fb30c1fcc7c30a87e0f5fe9e71/raw/f1d0a92cc378bf5572a3f4f9c37b37a754312485/1-profile.png",
+      "sha256": "e00ca8bc6c6842ad9d325754be6d0d2b86de5baa685c1f2c4307826198f7d268"
     }
   ]
 }
