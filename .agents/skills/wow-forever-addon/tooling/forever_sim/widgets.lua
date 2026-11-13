@@ -2083,6 +2083,21 @@ function M.build(sim)
 		return unpack(st(self).endPoint or {})
 	end
 
+	-- ModelScene.
+	-- FrameAPIModelSceneFrameDocumentation types Set/GetViewInsets as one uiRect, but the client's own callers use
+	-- four uiUnits: ScriptAnimatedModelScene.lua:69 sets (left, right, top, bottom) and :132 reads them back, as do
+	-- Blizzard_CatalogShop_Model.lua:207/:350 and Blizzard_PerksProgramModel.lua:174.
+	impl.ModelScene.SetViewInsets = function(self, left, right, top, bottom)
+		st(self).viewInsets = { left = left, right = right, top = top, bottom = bottom }
+	end
+	impl.ModelScene.GetViewInsets = function(self)
+		local insets = st(self).viewInsets
+		if not insets then
+			return 0, 0, 0, 0
+		end
+		return insets.left, insets.right, insets.top, insets.bottom
+	end
+
 	-- Animations.
 	impl.FrameScriptObject.GetParent = impl.Object.GetParent
 	impl.AnimationGroup.CreateAnimation = function(self, kind, name, template)

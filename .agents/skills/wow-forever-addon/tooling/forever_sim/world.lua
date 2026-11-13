@@ -157,6 +157,14 @@ function M.build(sim)
 		local x = unit(u)
 		return x and (x.healthMax or 100) or 0
 	end
+	impl.UnitPowerBarTimerInfo = function(u, index)
+		local x = Secret.unwrap(u) == "player" and W.player or unit(u)
+		local timer = x and x.powerBarTimers and x.powerBarTimers[Secret.unwrap(index) or 0]
+		-- MayReturnNothing in UnitDocumentation.lua: the empty result terminates Blizzard's timer enumeration.
+		if timer then
+			return timer.duration, timer.expiration, timer.barID, timer.auraID
+		end
+	end
 	impl.UnitAffectingCombat = function(u)
 		return Secret.unwrap(u) == "player" and sim.inCombat or false
 	end

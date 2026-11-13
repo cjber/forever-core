@@ -464,6 +464,35 @@ function M.build(sim)
 				end
 			end
 		end
+		-- The child form, `<Mixins><Mixin key="..."/></Mixins>` (UI.xsd's MixinsType), applies in the order the
+		-- file lists them; Blizzard's gamepad flyout XML uses it instead of the mixin attribute. A key naming a
+		-- table source, a secure delegate or a partition is not modelled, and is reported instead of being
+		-- treated as the plain global mixin it is not.
+		for _, mixins in ipairs(childrenNamed(node, "Mixins")) do
+			for _, child in ipairs(childrenNamed(mixins, "Mixin")) do
+				local name = child.attr.key
+				local source = child.attr.source
+				local unsupported = (source and source ~= "auto" and ("source=" .. source))
+					or (child.attr.secureDelegates == "true" and "secureDelegates=true")
+					or (child.attr.inboundPartition and "inboundPartition")
+					or (child.attr.targetPartition and "targetPartition")
+				local mixin = name and G[name]
+				if unsupported then
+					warn(
+						string.format(
+							"%s: mixin %s uses %s, which the sim does not model",
+							ctx.file,
+							tostring(name),
+							unsupported
+						)
+					)
+				elseif type(mixin) == "table" then
+					G.Mixin(obj, mixin)
+				else
+					warn(string.format("%s: mixin %s is not defined", ctx.file, tostring(name)))
+				end
+			end
+		end
 		for _, kvs in ipairs(childrenNamed(node, "KeyValues")) do
 			for _, kv in ipairs(childrenNamed(kvs, "KeyValue")) do
 				local k, v = keyValue(kv)

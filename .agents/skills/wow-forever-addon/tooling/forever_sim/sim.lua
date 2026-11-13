@@ -38,7 +38,6 @@ Sim.CORE = {
 	"Blizzard_UIPanelTemplates",
 	"Blizzard_UIParentPanelManager",
 	"Blizzard_GameTooltip",
-	"Blizzard_SplashFrame",
 	"Blizzard_ItemButton",
 	"Blizzard_FrameXMLUtil",
 	"Blizzard_Flyout",
@@ -55,15 +54,26 @@ Sim.CORE = {
 	"Blizzard_FrameXML/DeprecatedTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",
+	-- SplashFrame's OnLoad disables alerts through AlertFrame, so it loads after the alert frames it names.
+	"Blizzard_SplashFrame",
 	"Blizzard_FrameXML/Mainline/NavigationBar.lua",
 	"Blizzard_FrameXML/Mainline/NavigationBar.xml",
 	-- The quest session dialog the quest log updates when it is shown, loaded by the client at startup.
 	"Blizzard_FrameXML/QuestSession.lua",
 	"Blizzard_FrameXML/QuestSession.xml",
 	"Blizzard_ActionBar/Shared/ActionButtonUtil.lua",
+	-- ActionButtonTemplate inherits QuickKeybindButtonTemplate, which its own addon defines.
+	"Blizzard_QuickKeybind",
+	-- ActionButton's UpdateSpellAlert calls ActionButtonSpellAlertManager, defined beside its button code.
+	"Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.lua",
+	"Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.xml",
 	"Blizzard_ActionBar/Shared/ActionButton.lua",
 	"Blizzard_ActionBar/Shared/ActionButtonComponentTemplate.xml",
 	"Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml",
+	-- PetActionButtonMixin, which the gamepad pet buttons mix in through GamepadActionBarPetButtonMixin.
+	"Blizzard_ActionBar/Shared/PetActionBar.lua",
+	"Blizzard_ActionBar/Shared/SpellFlyout.lua",
+	"Blizzard_ActionBar/Shared/SpellFlyout.xml",
 	-- The Escape handler registry Blizzard_ActionBar loads at startup: addons register into its file-local list.
 	"Blizzard_GameMenuEsc",
 	-- The gamepad action bars are real: they are where UpdateInteractIcons makes its protected call. The action
@@ -79,6 +89,9 @@ Sim.CORE = {
 		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame"
 		.. "|QuestFrameTemplates|QuestFrame|QuestInfo|CharacterFrame|MerchantFrame|SkillsFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
+	-- EncounterBar lives in Blizzard_UnitFrame's UnitPowerBarAlt files; UIWidgets' power-bar layout anchors to it.
+	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.lua",
+	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.xml",
 	"Blizzard_WorldMap",
 	"Blizzard_ObjectiveTracker",
 	"Blizzard_ContentTracking",

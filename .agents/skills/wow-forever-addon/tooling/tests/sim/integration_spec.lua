@@ -746,5 +746,61 @@ test("the GameRule enum carries the world map strata and the map opens without a
 	eq(sim.G.WorldMapFrame:GetFrameStrata(), "MEDIUM", "the game rule's strata")
 end)
 
+test("a bare client boots without an error", function()
+	local sim = Sim.new()
+	sim:expectNoErrors()
+end)
+
+test("unit power timers terminate at the end of the configured list", function()
+	local sim = Sim.new()
+	eq(select("#", sim.G.UnitPowerBarTimerInfo("player", 1)), 0, "no active timers")
+	sim.world.player.powerBarTimers = { { duration = 10, expiration = 20, barID = 30, auraID = 40 } }
+	local duration, expiration, barID, auraID = sim.G.UnitPowerBarTimerInfo("player", 1)
+	local Secret = require("veil")
+	assert(Secret.is(barID), "the documented SecretReturns wrapper is preserved")
+	eq(Secret.unwrap(duration), 10, "duration")
+	eq(Secret.unwrap(expiration), 20, "expiration")
+	eq(Secret.unwrap(barID), 30, "bar ID")
+	eq(Secret.unwrap(auraID), 40, "aura ID")
+	eq(select("#", sim.G.UnitPowerBarTimerInfo("player", 2)), 0, "end of timers")
+	eq(select("#", sim.G.UnitPowerBarTimerInfo("target", 1)), 0, "unknown unit")
+end)
+
+test("gamepad flyout XML applies its child <Mixins>", function()
+	local sim = Sim.new()
+	local methods = {
+		GamepadSpellFlyout = "ShowAllRanks",
+		GamepadPetActionFlyout = "UpdateButtons",
+		GamepadPetSpellFlyout = "UpdateButtons",
+	}
+	for name, method in pairs(methods) do
+		local flyout = sim.G[name]
+		assert(flyout, name .. " is created")
+		eq(type(flyout.OnLoad), "function", name .. ".OnLoad from its <Mixins> child")
+		eq(type(flyout[method]), "function", name .. "." .. method .. " from its <Mixins> child")
+	end
+	local bar = sim.G.GamepadMainActionBarFrame.PageUnit.TopCenteredAnchor.PossessBar
+	assert(bar, "the gamepad possess bar is created")
+	local button = bar.actionButtons[1]
+	eq(type(button.UpdateButtonState), "function", "PetActionButtonMixin on a gamepad pet button")
+	assert(button.QuickKeybindHighlightTexture, "QuickKeybindButtonTemplate's overlay region on the button")
+end)
+
+test("a model scene's view insets are four uiUnits", function()
+	local sim = Sim.new()
+	local scene = sim.G.CreateFrame("ModelScene", nil, sim.G.UIParent)
+	local left, right, top, bottom = scene:GetViewInsets()
+	eq(left, 0, "default left")
+	eq(right, 0, "default right")
+	eq(top, 0, "default top")
+	eq(bottom, 0, "default bottom")
+	scene:SetViewInsets(1, 2, 3, 4)
+	left, right, top, bottom = scene:GetViewInsets()
+	eq(left, 1, "left")
+	eq(right, 2, "right")
+	eq(top, 3, "top")
+	eq(bottom, 4, "bottom")
+end)
+
 print(string.format("integration_spec: %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
