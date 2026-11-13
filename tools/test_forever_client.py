@@ -108,7 +108,8 @@ class ForeverClientTest(unittest.TestCase):
     def test_up_records_runtime_and_keeps_gamescope_off_host_display(self):
         config = self.state / "env.json"
         config.write_text(
-            '{"WINE":"/runner/bin/wine","DISPLAY":":host","WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner","GAMEID":"umu-x","DISPLAY":":host",'
+            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -144,6 +145,10 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
             self.assertEqual(x.call_args.args[1:], ("key", "Return"))
         env = spawn.call_args.kwargs["env"]
+        command = spawn.call_args.args[0]
+        self.assertEqual(command[command.index("--") + 1 :], ["/faugus/umu-run", str(fc.LAUNCHER), *fc.LAUNCH_ARGS])
+        self.assertEqual(env["WINEPREFIX"], str(fc.PREFIX))
+        self.assertEqual((env["PROTONPATH"], env["GAMEID"]), ("/runner", "umu-x"))
         self.assertEqual(env["XDG_RUNTIME_DIR"], str(self.runtime))
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("WAYLAND_DISPLAY", env)
@@ -171,6 +176,52 @@ class ForeverClientTest(unittest.TestCase):
                 "DXVK_LOG_LEVEL": "error",
                 "LD_PRELOAD": "libgamemodeauto.so.0",
             },
+        )
+
+    def test_up_asks_for_a_faugus_capture_over_an_older_wine_launch(self):
+        config = self.state / "env.json"
+        config.write_text('{"WINE":"/runner/bin/wine"}')
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+            self.assertRaisesRegex(fc.ClientError, "start Battle.net from Faugus"),
+        ):
+            fc.up(args())
+        spawn.assert_not_called()
+
+    def test_proton_pfx_link_counts_as_the_prefix(self):
+        prefix = self.state / "battlenet"
+        prefix.mkdir()
+        (prefix / "pfx").symlink_to(".")
+        self.assertTrue(fc.in_prefix({"WINEPREFIX": f"{prefix}/pfx/"}, prefix))
+        self.assertTrue(fc.in_prefix({"WINEPREFIX": str(prefix)}, prefix))
+        self.assertFalse(fc.in_prefix({"WINEPREFIX": str(self.state)}, prefix))
+        self.assertFalse(fc.in_prefix({}, prefix))
+
+    def test_capture_env_records_faugus_umu_launch(self):
+        config = self.state / "env.json"
+        environ = {
+            "WINEPREFIX": str(fc.PREFIX),
+            "PROTONPATH": "/runner",
+            "GAMEID": "umu-x",
+            "UMU_USE_STEAM": "1",
+            "UMU_INVOCATION_ID": "once",
+            "HOME": "/home/x",
+        }
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "umu_launch", return_value=(7, "/faugus/umu-run")),
+            mock.patch.object(fc, "read_environ", return_value=environ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.capture_env(), 0)
+        recorded = json.loads(config.read_text())
+        self.assertEqual(recorded["umu_run"], "/faugus/umu-run")
+        self.assertEqual(
+            recorded["env"],
+            {"WINEPREFIX": str(fc.PREFIX), "PROTONPATH": "/runner", "GAMEID": "umu-x", "UMU_USE_STEAM": "1"},
         )
 
     def test_up_refuses_while_the_players_client_runs(self):
@@ -519,14 +570,9 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
-            fc.teardown(game, {}, None, {"display": ":1", "token": "owned"})
-        self.assertEqual(
-            kill.call_args_list,
-            [
-                mock.call(42, "owned", Path("wineserver").resolve()),
-                mock.call(43, "owned", Path("wineserver").resolve()),
-            ],
-        )
+            fc.teardown(game, {"PROTONPATH": "/runner"}, None, {"display": ":1", "token": "owned"})
+        server = Path("/runner/files/bin/wineserver").resolve()
+        self.assertEqual(kill.call_args_list, [mock.call(42, "owned", server), mock.call(43, "owned", server)])
 
     def test_teardown_retains_state_and_link_when_owned_processes_survive(self):
         clock = FakeClock()
