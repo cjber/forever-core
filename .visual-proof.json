@@ -1,45 +1,23 @@
 {
-  "input_digest": "9bb01ebcd7c1e187b72ab8d1fc9e6ac2f6cdee0bbd52453c91358c5abc19b3a9",
-  "runtime_sha256": "9bb01ebcd7c1e187b72ab8d1fc9e6ac2f6cdee0bbd52453c91358c5abc19b3a9",
-  "candidate": "873c0fced1521ab00aab9c3c4c17e5ea4532ca3037b4aa64370be01daffad8f7",
+  "input_digest": "ce1f2786591500a624ce8db6312dd18009a24bd75f5bec0a08be84d441ab5e68",
+  "runtime_sha256": "ce1f2786591500a624ce8db6312dd18009a24bd75f5bec0a08be84d441ab5e68",
+  "candidate": "37f18b7591c7d0366b0007a54b9987389b89ed4cf6b908027111be5270f64ffd",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "3945412f9b2c13086db627685dec636fe98c9ece",
+  "source_commit": "c74abc1c4bea29c9abd62553156cdcd1a9392ceb",
   "flows": [
     {
-      "name": "quest list on",
+      "name": "settings",
       "steps": [
-        "/home/cjber/.cache/agent-scratch/proof-e6a4/flows/look.lua"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "quest list off",
-      "steps": [
-        "/fcore quests"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "quest list on again",
-      "steps": [
-        "/fcore quests"
+        "/forever"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/1-quest-list-on.png",
-      "sha256": "af5a8380213cc1922f9d286c4c92a7fb77e580e3422a37344e8bc40925a7e09f"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/2-quest-list-off.png",
-      "sha256": "ec77b335424a6b39576da65f2a0ab14c8dfa96969a76852f2c221e5fbb7cf859"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/f912fa3afc76193ed049bd29dda55205/raw/81ffe977b0aad4d41c86085f028efd1edb2c90c6/3-quest-list-on-again.png",
-      "sha256": "ebfbfac9a41e5ab0881621b0f5bc7d07e0eafe8d423888a0a21b9f7722c24e04"
+      "url": "https://gist.githubusercontent.com/cjber/91b98d80a8c16c8e6e80e534aaadf62e/raw/ff9ad4de530f46ee67cbe0274a77f1026c8d9726/1-settings.png",
+      "sha256": "2f43b5a2fb718ab79d44ea73affcfc0bf9b80c0d07aae6f7258d1acfdcefc7f5"
     }
   ]
 }
