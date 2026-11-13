@@ -121,6 +121,11 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"调试捕获已关闭，客户端设置已恢复；调试日志已关闭并取消固定。"
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"无法启动调试捕获，因为 ForeverCore 尚未完成加载。"
+L["No Forever addon has recorded anything for this character yet."] =
+	"还没有任何 Forever 插件为这个角色记录内容。"
+L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
+	"链接已选中。按 Ctrl+C（Mac 上为 Cmd+C），然后在浏览器中打开。不会发送任何内容。"
+L["Your Forever profile"] = "你的 Forever 个人资料"
 L["%s (%d)"] = "%s (%d)"
 L["%s %d/%d"] = "%s %d/%d"
 L["Abandon"] = "放弃"

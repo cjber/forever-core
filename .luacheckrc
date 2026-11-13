@@ -218,6 +218,10 @@ read_globals[#read_globals + 1] = "GetLocale"
 read_globals[#read_globals + 1] = "UnitClass"
 read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
+-- Core/ProfileCode.lua: the character's own name and the server time a profile code was made.
+read_globals[#read_globals + 1] = "UnitName"
+read_globals[#read_globals + 1] = "GetServerTime"
+-- UI/Profile.lua: Escape closes the profile window like any panel.
 read_globals[#read_globals + 1] = "UISpecialFrames"
 read_globals[#read_globals + 1] = "tContains"
 -- Mover.lua: whether the button of a fine drag is still held.

@@ -1,8 +1,8 @@
 local _, ns = ...
 
 -- English phrases are the keys, so a phrase with no translation reads as English. These are the phrases core's own
--- files draw: the tracker column, its grip, the report and issue windows, the debug log, the family page, the
--- minimap notice, the quest list and the settings page.
+-- files draw: the tracker column, its grip, the report and issue windows, the profile window, the debug log, the
+-- family page, the minimap notice, the quest list and the settings page.
 ---@type table<string, string>
 local L = setmetatable({}, {
 	__index = function(_, key)
@@ -77,6 +77,8 @@ L["Last"] = "Last"
 L["Memory KB"] = "Memory KB"
 L["Memory: not available on this client."] = "Memory: not available on this client."
 L["No addon has attached its log yet."] = "No addon has attached its log yet."
+L["No Forever addon has recorded anything for this character yet."] =
+	"No Forever addon has recorded anything for this character yet."
 L["No one is listed yet."] = "No one is listed yet."
 L["Not installed"] = "Not installed"
 L["On"] = "On"
@@ -106,6 +108,8 @@ L["Thanks"] = "Thanks"
 L["Thanks to %s"] = "Thanks to %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
 	"The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."
+L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
+	"The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."
 L["The players who helped each Forever addon."] = "The players who helped each Forever addon."
@@ -124,6 +128,7 @@ L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug 
 	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["Use the game's quest list"] = "Use the game's quest list"
 L["What happened, or what you would like"] = "What happened, or what you would like"
+L["Your Forever profile"] = "Your Forever profile"
 L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."
 L["MENU_BACK"] = "Back"
 L["%s (%d)"] = "%s (%d)"
