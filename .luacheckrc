@@ -130,10 +130,11 @@ files["tools/devsmoke/"] = {
 		"C_TradeSkillUI",
 		"C_AddOns",
 		"DevSmokeEval",
+		"DevSmokeEvalRun",
 	},
 	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
 }
-files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval" } }
+files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval", "DevSmokeEvalRun" } }
 
 -- Tracker colours and the quest item button's client helpers.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"

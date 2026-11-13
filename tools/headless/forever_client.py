@@ -17,7 +17,7 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
-    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, reload, print DevSmokeDB.eval
+    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, run it, print its own result
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
@@ -42,7 +42,8 @@ command, or a Lua file through `!!DevSmoke`), takes a screenshot after each, upl
 writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256,
 then checks the installed folder with `visual_proof --compare`. It never commits or pushes the checkout. There is no
 default flow: ForeverCore has no shared opener for an addon's update notice, so the flow is named on the command line
-and `wow-forever-addon/in-game.md` shows it.
+and `wow-forever-addon/in-game.md` shows it. A Lua flow's own result is read after its screenshot, and a snippet that
+raised fails the proof before any gist or `.visual-proof.json` exists (#580).
 
 One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
@@ -1058,24 +1059,44 @@ def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     return flows
 
 
-def run_flow(state: Mapping, action: str) -> None:
-    """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke."""
+def run_flow(state: Mapping, action: str) -> str | None:
+    """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke.
+
+    A Lua flow answers the run token its snippet wrote, whose result `check_flow_eval` reads once the screenshot is
+    taken: the reload that saves the result to disk would close the window the flow just opened (#580).
+    """
     if not lua_flow(action):
         slash(state, action)
         # The client reads typed input on its own frames and reports nothing back while it runs, so the screenshot
-        # waits this long for the command to run and its window to draw (#573). A Lua flow needs no wait: !!DevSmoke
-        # reports it ran before the shot.
+        # waits this long for the command to run and its window to draw (#573). A Lua flow needs no wait: it runs
+        # during the reload below.
         time.sleep(SLASH_SETTLE_SECONDS)
-        return
+        return None
     tool = devsmoke_eval()
     try:
         written = tool.write_snippet(Path(action), addons=CLIENT / "Interface/AddOns")
     except tool.EvalError as error:
         raise ClientError(str(error)) from None
     print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+    # The snippet runs at login of this reload, so it has run before the flow's screenshot.
     reload(state)
-    report, ok = format_eval(saved_eval())
-    print(report)
+    return written["token"]
+
+
+def eval_result(state: Mapping, token: str) -> tuple[str, bool]:
+    """The report of the eval the run token wrote, read after the reload that saves this session to disk.
+
+    SavedVariables are written at a reload or logout, so the file the snippet's own reload left behind still holds the
+    session before it: a second reload makes this run's own result the one on disk (#580).
+    """
+    reload(state)
+    return format_eval(saved_eval(token))
+
+
+def check_flow_eval(state: Mapping, action: str, token: str) -> None:
+    """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's."""
+    report, ok = eval_result(state, token)
+    print(report, flush=True)
     if not ok:
         raise ClientError(f"flow snippet {action} failed: {report}")
 
@@ -1251,8 +1272,12 @@ def proof(args: argparse.Namespace) -> int:
                 entered.append(True)
                 reload(state)
                 for index, (name, action) in enumerate(flows, start=1):
-                    run_flow(state, action)
+                    token = run_flow(state, action)
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
+                    if token:
+                        # After the shot: the reload that saves the eval opens the world again, which would close
+                        # what the flow showed (#580).
+                        check_flow_eval(state, action, token)
                 return 0
 
             options = argparse.Namespace(wait=False, manual_launcher=args.manual_launcher, timeout=args.timeout)
@@ -1643,12 +1668,18 @@ def devsmoke_eval():
     return load_tool("devsmoke_eval", Path(__file__).resolve().parents[1] / "devsmoke/eval.py")
 
 
-def saved_eval() -> dict:
-    """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke."""
+def saved_eval(token: str | None = None) -> dict:
+    """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke.
+
+    Given a run token, only the record that token wrote answers: SavedVariables reach disk at the next reload or
+    logout, so the file can still hold the eval before this run's, and a reader without the token would report another
+    snippet's result as this one's (#580).
+    """
     files = saved_variables("!!DevSmoke")
     if not files:
         raise ClientError("no SavedVariables for !!DevSmoke: the client writes them at a reload or logout")
     lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    seen = None
     for path in sorted(files, key=lambda candidate: candidate.stat().st_mtime, reverse=True):
         try:
             variables = lua.load_lua(path)
@@ -1656,9 +1687,18 @@ def saved_eval() -> dict:
             raise ClientError(f"could not read {path}: {error}") from None
         smoke = variables.get("DevSmokeDB")
         data = smoke.get("eval") if isinstance(smoke, dict) else None
-        if isinstance(data, dict):
+        if not isinstance(data, dict):
+            continue
+        if token is None or data.get("run") == token:
             return data
-    raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
+        if seen is None:
+            seen = data
+    if seen is None:
+        raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
+    raise ClientError(
+        f"DevSmokeDB.eval holds the run {_text(seen.get('run'))!r}, not this snippet's {token!r}: the snippet's own "
+        "result was not saved (did the inbox load, and is !!DevSmoke linked and loaded?)"
+    )
 
 
 def _text(value) -> str:
@@ -1837,8 +1877,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             except tool.EvalError as error:
                 raise ClientError(str(error)) from None
             print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+            # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
             reload(state)
-            report, ok = format_eval(saved_eval())
+            report, ok = eval_result(state, written["token"])
             print(report)
             return 0 if ok else 1
         elif args.verb == "errors":
