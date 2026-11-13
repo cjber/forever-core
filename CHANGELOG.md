@@ -4,8 +4,8 @@
 
 - **A bug report can ask for the client's debug logs without a developer's addon.** `/forever debug on` saves the
   client's current taint log, advanced combat log, chat log and combat log settings, turns each on, and keeps the
-  originals in ForeverCore's saved variables across a reload. The report window and every Forever settings page say
-  debug capture is on and how to stop it, the report names the client's `Logs` folder, and `/forever debug off` or the
+  originals in ForeverCore's saved variables across a reload. The report window and the settings pages built on
+  ForeverCore's page (its own and Field Guide's) say debug capture is on and how to stop it, the report names the client's `Logs` folder, and `/forever debug off` or the
   next login puts the client's settings back. Nothing is sent anywhere. (#534)
 - **Bug reports now carry a performance table.** The report window reads the client's own add-on profiler once when
   it opens: every loaded addon that depends on ForeverCore gets its average, current, peak and last frame time, its
