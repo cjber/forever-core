@@ -23,10 +23,15 @@ local _, ns = ...
 ---@field Text FontString
 ---@field MinimizeButton Button
 
+-- The client's own objective tracker is the module container its Quests and Campaign sections belong to, so taking a
+-- module out of it and giving it back are the container's own methods (UI/TrackerQuests.lua calls both).
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field Header ForeverNativeTrackerHeader
 ---@field NineSlice Frame?
 ---@field isCollapsed? boolean
+---@field AddModule fun(self: ForeverNativeTrackerFrame, module: any)
+---@field RemoveModule fun(self: ForeverNativeTrackerFrame, module: any)
+---@field HasModule fun(self: ForeverNativeTrackerFrame, module: any): boolean
 
 -- Sharing the native tracker collection also shares its Edit Mode execution path.
 -- Keep our sections and their frame pools entirely outside that collection.
@@ -343,10 +348,26 @@ local function OnAnimFinished(block)
 	end
 end
 
+-- Every section but the one that fills the rest of the column caps at this many UI units. The Quests section asks for
+-- the room the others leave, so a long quest list scrolls while Legacy's zone and SkillUp's reagents stay in view.
+local SECTION_MAX_HEIGHT = 200
+local SCROLL_GUTTER = 18 -- the bar's track plus the item frame's overhang and its spacing
+local SCROLL_BAR_GAP = 10 -- the space between the blocks and the bar
+local SCROLL_HEADER_GAP = 4 -- the bar starts this far under the header's rule
+
+-- A section taller than its cap scrolls under its header instead of being cut off. Only core's own frames move: the
+-- ScrollFrame takes the module's ContentsFrame as its scroll child, blocks keep their anchors to it, and the module's
+-- header stays outside the viewport. Every section uses the same wrapper, so a consumer never writes a scrollbar.
+-- The blocks contain the quest item buttons, which are secure in the client, and those buttons are protected with
+-- every ancestor up to the column. The column therefore lays nothing out in combat: MarkDirty holds the pass until
+-- PLAYER_REGEN_ENABLED, so no SetPoint, SetHeight, SetParent, Show or Hide can touch a button or its ancestors.
 local Module = {}
 function Module:SetContainer(container)
 	self.parentContainer = container
 	self:SetParent(container)
+	if self.trackerScrollable then
+		self:CreateTrackerScroll()
+	end
 end
 function Module:AcquireFrame(template)
 	local frame, isNew = Acquire(self, template)
@@ -377,6 +398,307 @@ function Module:FreeUnusedRightEdgeFrames()
 end
 function Module.GetContextMenuParent(_)
 	return host
+end
+
+-- Every block's offset from the top of the scroll child, in the same order the module laid them out. The arithmetic
+-- mirrors ObjectiveTrackerModuleMixin's anchors: the first block hangs fromHeaderOffsetY under the header, and every
+-- later block hangs fromBlockOffsetY under the one before it.
+---@return { block: any, start: number }[]
+function Module:BlockStarts()
+	local starts = {}
+	local offset = -(tonumber(self.fromHeaderOffsetY) or -10)
+	local block = self.firstBlock
+	while block do
+		starts[#starts + 1] = { block = block, start = offset }
+		offset = offset + (block.height or block:GetHeight() or 0) - (tonumber(self.fromBlockOffsetY) or -10)
+		block = block.nextBlock
+	end
+	return starts
+end
+
+-- The block whose top is at or above the view: the block the player is reading, which the next layout keeps in place.
+---@param starts { block: any, start: number }[]
+---@return number
+function Module:TopBlockIndex(starts)
+	local offset = self.scrollOffset or 0
+	local index = 1
+	for position, entry in ipairs(starts) do
+		if entry.start <= offset + 0.5 then
+			index = position
+		else
+			break
+		end
+	end
+	return index
+end
+
+-- Remember the quest at the top before a layout rebuilds the list, so a quest finishing or a distance changing cannot
+-- jump the view. The index is the fallback for a block whose quest left the list entirely.
+function Module:CaptureScrollAnchor()
+	if not self.trackerScrollable then
+		return
+	end
+	if type(self.IsCollapsed) == "function" and self:IsCollapsed() then
+		return
+	end
+	local starts = self:BlockStarts()
+	if #starts == 0 then
+		return
+	end
+	local index = self:TopBlockIndex(starts)
+	local entry = starts[index]
+	self.scrollAnchorID = entry and entry.block.id
+	self.scrollAnchorIndex = entry and index
+end
+
+-- The offset the remembered quest has after the layout. The first block keeps the module's own gap under the header,
+-- so its offset is zero; a later block starts at its own top edge.
+---@param starts { block: any, start: number }[]
+---@return number
+function Module:ApplyScrollAnchor(starts)
+	local index
+	if self.scrollAnchorID ~= nil then
+		for position, entry in ipairs(starts) do
+			if entry.block.id == self.scrollAnchorID then
+				index = position
+				break
+			end
+		end
+	end
+	index = index or self.scrollAnchorIndex or 1
+	if #starts == 0 then
+		return 0
+	end
+	index = math.max(1, math.min(#starts, index))
+	if index == 1 then
+		return 0
+	end
+	return starts[index].start
+end
+
+---@param offset number
+function Module:SetScrollOffset(offset)
+	if InCombatLockdown() then
+		return
+	end
+	local range = self.scrollRange or 0
+	offset = math.max(0, math.min(range, tonumber(offset) or 0))
+	self.scrollOffset = offset
+	if self.scrollFrame then
+		self.scrollFrame:SetVerticalScroll(offset)
+	end
+	if self.scrollBar then
+		self.updatingScrollBar = true
+		self.scrollBar:SetScrollPercentage(range > 0 and offset / range or 0, true)
+		self.updatingScrollBar = false
+	end
+	self:CaptureScrollAnchor()
+	if self.OnScrollChanged then
+		self:OnScrollChanged()
+	end
+end
+
+---@param delta number
+function Module:OnTrackerWheel(delta)
+	if InCombatLockdown() or not self.trackerOverflow then
+		return
+	end
+	local starts = self:BlockStarts()
+	if #starts == 0 then
+		return
+	end
+	local index = self:TopBlockIndex(starts)
+	local target = index + (delta > 0 and -1 or 1)
+	target = math.max(1, math.min(#starts, target))
+	if target == index then
+		return
+	end
+	self:SetScrollOffset(target == 1 and 0 or starts[target].start)
+end
+
+---@param percentage number
+function Module:OnScrollBarPercentage(percentage)
+	if InCombatLockdown() or self.updatingScrollBar then
+		return
+	end
+	local range = self.scrollRange or 0
+	self:SetScrollOffset((tonumber(percentage) or 0) * range)
+end
+
+-- A frozen view keeps every secure item button beside its quest. The client has no disabled minimal scrollbar art, so
+-- the bar stays visible at half alpha and the wheel does nothing until combat ends.
+---@param frozen boolean
+function Module:SetScrollFrozen(frozen)
+	self.scrollFrozen = frozen
+	if not self.scrollBar then
+		return
+	end
+	self.scrollBar:SetScrollAllowed(not frozen)
+	self.scrollBar:SetAlpha(frozen and 0.5 or 1)
+	if self.scrollFrame then
+		self.scrollFrame:EnableMouseWheel(not frozen)
+	end
+	self:EnableMouseWheel(not frozen)
+end
+
+-- Builds the viewport once, on the first attach, out of core's own frames. The scroll child is the module's own
+-- ContentsFrame, so every block and every pooled line keeps its parent and its anchors.
+function Module:CreateTrackerScroll()
+	if self.scrollFrame or not self.ContentsFrame or not self.Header then
+		return
+	end
+	local scroll = CreateFrame("ScrollFrame", nil, self)
+	scroll:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", 0, 0)
+	scroll:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", 0, 0)
+	scroll:SetHeight(0)
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(_, delta)
+		self:OnTrackerWheel(delta)
+	end)
+	local contents = self.ContentsFrame
+	contents:ClearAllPoints()
+	scroll:SetScrollChild(contents)
+	contents:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
+	-- Creation happens before the column gives the module its width, so keep a real width here: the first Update
+	-- measures its text in this width, and LayoutTrackerScroll marks the module dirty when the gutter changes it.
+	local contentsWidth = math.max(0, self:GetWidth() or 0)
+	contents:SetWidth(contentsWidth)
+	contents:SetHeight(0)
+	self.scrollContentsWidth = contentsWidth
+	self.scrollFrame = scroll
+
+	-- The client's minimal scrollbar is an EventFrame on ScrollBarMixin, not a Slider. Its percentage drives the
+	-- viewport; the wheel above moves one block.
+	local bar = CreateFrame("EventFrame", nil, self, "MinimalScrollBar")
+	bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
+	bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", SCROLL_BAR_GAP, 0)
+	bar:RegisterCallback("OnScroll", function(_, percentage)
+		self:OnScrollBarPercentage(percentage)
+	end, self)
+	bar:SetVisibleExtentPercentage(0)
+	bar:Hide()
+	self.scrollBar = bar
+
+	self:EnableMouseWheel(true)
+	self:SetScript("OnMouseWheel", function(_, delta)
+		self:OnTrackerWheel(delta)
+	end)
+	self:SetScrollFrozen(InCombatLockdown())
+end
+
+-- Sizes the viewport to the cap the column gave this section, shows the bar only when the blocks pass it, and holds
+-- the view on the quest at the top. `headerHeight` and `contentsHeight` are Blizzard's own numbers.
+function Module:LayoutTrackerScroll()
+	if not self.scrollFrame or InCombatLockdown() then
+		return
+	end
+	local header = self.headerHeight or 0
+	local body = math.max(0, (self.contentsHeight or 0) - header)
+	local cap = self.trackerCap or body
+	local viewport = math.min(body, math.max(0, cap - header))
+	local range = math.max(0, body - viewport)
+	self.trackerBody, self.trackerViewport, self.scrollRange = body, viewport, range
+	self.trackerOverflow = range > 0
+
+	local width = math.max(0, (self:GetWidth() or 0) - (range > 0 and SCROLL_GUTTER or 0))
+	local contents = self.ContentsFrame
+	contents:SetPoint("TOPLEFT", self.scrollFrame, "TOPLEFT", 0, 0)
+	if self.scrollContentsWidth ~= width then
+		self.scrollContentsWidth = width
+		contents:SetWidth(width)
+		-- The text was measured in the old width, so a gutter change needs one more layout pass at the new one.
+		self:MarkDirty()
+	end
+	contents:SetHeight(body)
+	self.scrollFrame:SetHeight(viewport)
+	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", range > 0 and -SCROLL_GUTTER or 0, 0)
+
+	-- The bar's thumb is its visible fraction of the whole body; the scroll percentage below positions it.
+	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / body or 0)
+	if range > 0 then
+		self.scrollBar:Show()
+		self.scrollBar:SetAlpha(self.scrollFrozen and 0.5 or 1)
+	else
+		self.scrollBar:Hide()
+	end
+
+	-- A collapsed or empty section keeps the view it had, so reopening it or giving the list back returns to the
+	-- same quest. A section merely shorter than its cap has nothing left to scroll, so it starts at the top through
+	-- the same setter as every other move, which also resets the scroll child and redraws the item buttons.
+	local collapsed = type(self.IsCollapsed) == "function" and self:IsCollapsed()
+	if range > 0 then
+		local offset = math.min(self:ApplyScrollAnchor(self:BlockStarts()), range)
+		self:SetScrollOffset(offset)
+	elseif not collapsed and body > 0 then
+		self.scrollAnchorID = nil
+		self.scrollAnchorIndex = nil
+		self:SetScrollOffset(0)
+	end
+
+	local modifiers = 0
+	for _, value in pairs(self.heightModifiers or {}) do
+		modifiers = modifiers + value
+	end
+	self:SetHeight(header + viewport + (self.bottomSpacing or 0) + modifiers)
+end
+
+-- The module's own UpdateHeight still runs, so Blizzard's height modifiers and bottom spacing stay in one place.
+function Module:UpdateHeight()
+	if type(self.baseUpdateHeight) == "function" then
+		self.baseUpdateHeight(self)
+	end
+	if self.trackerScrollable then
+		self:LayoutTrackerScroll()
+	end
+end
+
+-- A scrollable section lays every block out, even the ones past the cap: they live in the scroll child, not in the
+-- room the column gave the section. The viewport, not CanFitBlock, decides what the player sees.
+function Module:CanFitBlock(block)
+	if self.trackerScrollable then
+		return true
+	end
+	if type(self.baseCanFitBlock) == "function" then
+		return self.baseCanFitBlock(self, block)
+	end
+	return true
+end
+
+function Module:GetContentsHeight()
+	if self.trackerScrollable and self.trackerViewport ~= nil then
+		if type(self.IsDisplayable) == "function" and not self:IsDisplayable() then
+			return 0
+		end
+		return (self.headerHeight or 0) + self.trackerViewport
+	end
+	if type(self.baseGetContentsHeight) == "function" then
+		return self.baseGetContentsHeight(self)
+	end
+	return 0
+end
+
+function Module:IsTruncated()
+	if self.trackerScrollable and self.trackerOverflow ~= nil and self.trackerOverflow then
+		return true
+	end
+	if type(self.baseIsTruncated) == "function" then
+		return self.baseIsTruncated(self)
+	end
+	return false
+end
+
+function Module:Update(availableHeight, dirtyUpdate)
+	self.trackerCap = availableHeight
+	if type(self.baseUpdate) == "function" then
+		return self.baseUpdate(self, availableHeight, dirtyUpdate)
+	end
+end
+
+function Module:BeginLayout()
+	self:CaptureScrollAnchor()
+	if type(self.baseBeginLayout) == "function" then
+		self.baseBeginLayout(self)
+	end
 end
 
 local function OverlapsMinimap()
@@ -471,9 +793,8 @@ local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = fun
 -- it sees, even while its own visibility rules hide the frame.
 local TrackerEllesmere = ns.TrackerEllesmere or { List = function() end, Await = function() end }
 -- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
----@type boolean, boolean, boolean, boolean, "eqot"|"ellesmere"|"questie"|nil, number
-local besideList, besideQuestie, besideEqot, besideEllesmere, besideKind, displacedRoom =
-	false, false, false, false, nil, 0
+---@type boolean, boolean, boolean, boolean, number
+local besideList, besideQuestie, besideEqot, besideEllesmere, displacedRoom = false, false, false, false, 0
 -- Whether the last attached layout put the column above or beside the tracker instead of below the quests.
 local aside = false
 
@@ -523,26 +844,54 @@ local function ReportRefusal(reason)
 	end
 end
 
+-- The cap a section gets from the column. A scrollable section never takes more than 200 units, except the one that
+-- asks for the rest of the column (the quest list), which is measured after the others have laid themselves out.
+---@param module ForeverTrackerModule
+---@param available number
+---@return number
+local function SectionCap(module, available)
+	if not module.trackerScrollable then
+		return available
+	end
+	local maximum = module.trackerMaxHeight
+	if type(maximum) ~= "number" then
+		maximum = SECTION_MAX_HEIGHT
+	end
+	return math.min(available, math.max(0, maximum))
+end
+
 -- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
 -- column never runs past `available`. Returns whether any section drew. One section's layout error is recorded in its
 -- own journal and leaves the sections below it to lay out, instead of breaking the whole column.
+--
+-- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so the
+-- quest list is the one that scrolls. It is laid out after the others so their real heights are known first.
 local function LayoutModules(width, available, reserve)
 	ns.TrackerOrder.Sort(modules)
-	local heights, total = {}, 0
+	local restIndex
 	for index, module in ipairs(modules) do
+		if module.trackerScrollable and module.trackerMaxHeight == "remaining" then
+			restIndex = restIndex or index
+		end
+	end
+	local heights, total = {}, 0
+	local function LayOut(index, cap)
+		local module = modules[index]
 		module:SetWidth(width)
-		local ok = RunSafe(
-			module.safeCall,
-			"tracker section update",
-			module.Update,
-			module,
-			math.max(0, available - total - GAP)
-		)
+		local ok = RunSafe(module.safeCall, "tracker section update", module.Update, module, cap)
 		local used = ok and module:GetContentsHeight() or 0
 		heights[index] = used
 		if used > 0 then
 			total = total + used + GAP
 		end
+	end
+	for index, module in ipairs(modules) do
+		if index ~= restIndex then
+			LayOut(index, SectionCap(module, math.max(0, available - total - GAP)))
+		end
+	end
+	if restIndex then
+		LayOut(restIndex, math.max(0, available - total - GAP))
 	end
 	local hasSections = total > 0
 	local height = hasSections and reserve or 0
@@ -603,9 +952,9 @@ local function LayoutDetached(settings)
 end
 
 -- Attached: the column reads below the native tracker's visible content, measured from its own content region, so the
--- column is the header, the game's quests, then the Forever sections. Only our frames move, and this one placement
--- runs in combat and out, so a fight starting or ending changes nothing on screen. A collapsed All Objectives hides
--- the sections with it.
+-- column is the header, the game's quests, then the Forever sections. Only our frames move, and this runs only from
+-- Layout, which defers in combat so the protected item buttons and their ancestors stay put. A collapsed All
+-- Objectives hides the sections with it.
 local function LayoutAttached()
 	-- Read the global each time, not once at load: Blizzard_EditMode is load-on-demand, so it may appear later. A
 	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
@@ -710,15 +1059,15 @@ local function LayoutAttached()
 end
 
 -- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
--- native tracker keeps its slot. Only our frames move, so this runs in combat too; with `list` nil (the addon hid its
--- list in combat) the column holds its place until combat ends.
+-- native tracker keeps its slot. Only our frames move, and this runs only from Layout, which defers in combat; with
+-- `list` nil (the addon hid its list in combat) the column keeps its last place until the next out-of-combat pass.
 ---@param list ForeverTrackerEqotList|Frame?
 ---@param kind "eqot"|"ellesmere"|"questie"?
 local function LayoutBesideList(list, kind)
 	if Editing() then
 		return
 	end
-	besideList, besideKind = true, kind
+	besideList = true
 	aside = false
 	besideEqot, besideEllesmere, besideQuestie = kind == "eqot", kind == "ellesmere", kind == "questie"
 	if not list then
@@ -754,7 +1103,10 @@ end
 
 local function Layout()
 	queued = false
-	if Editing() then
+	-- A queued pass that found combat holds the whole column exactly as it was. The client marks every item button
+	-- protected, and their ancestors up to the host are protected with them, so no layout may move or show anything.
+	-- PLAYER_REGEN_ENABLED marks the host dirty again for the pass this one could not run.
+	if InCombatLockdown() or Editing() then
 		return
 	end
 	local settings = ApplyAttachment()
@@ -764,7 +1116,7 @@ local function Layout()
 	-- source is UIParent, so this is also its final scale; the native tracker's and a Questie frame's are set below.
 	MatchScale(UIParent)
 	if not attached then
-		besideList, besideQuestie, besideEqot, besideEllesmere, besideKind = false, false, false, false, nil
+		besideList, besideQuestie, besideEqot, besideEllesmere = false, false, false, false
 		LayoutDetached(settings)
 		return
 	end
@@ -785,19 +1137,17 @@ local function Layout()
 		LayoutBesideList(questie, "questie")
 		return
 	end
-	-- Both lists are away, so the column holds the place the list it was avoiding gave it until combat ends.
-	if besideList and InCombatLockdown() then
-		LayoutBesideList(nil, besideKind)
-		return
-	end
-	besideList, besideQuestie, besideEqot, besideEllesmere, besideKind = false, false, false, false, nil
+	-- Both lists are away, so the column lays itself out below the native tracker again.
+	besideList, besideQuestie, besideEqot, besideEllesmere = false, false, false, false
 	-- A hidden or transparent native tracker, as a replacement UI leaves it, is not the frame the column sits beside.
 	MatchScale(NativeScaleSource())
 	LayoutAttached()
 end
 
 function host.MarkDirty(_)
-	if ready and not queued then
+	-- Combat queues nothing: the column holds its last layout until PLAYER_REGEN_ENABLED runs the deferred pass.
+	-- The protected quest item buttons, and every ancestor that moves with them, stay where the player last saw them.
+	if ready and not queued and not InCombatLockdown() then
 		queued = true
 		C_Timer.After(0, Layout)
 	end
@@ -1183,6 +1533,15 @@ function api.Attach(module, show, contract)
 	if module.parentContainer == host then
 		return
 	end
+	-- A module from Blizzard's own template has the header and contents model the scroll wrapper needs. A test double
+	-- or an addon's hand-built frame keeps its own Update and GetContentsHeight.
+	module.trackerScrollable = type(module.headerHeight) == "number" and module.ContentsFrame ~= nil
+	module.baseUpdate = module.Update
+	module.baseUpdateHeight = module.UpdateHeight
+	module.baseGetContentsHeight = module.GetContentsHeight
+	module.baseIsTruncated = module.IsTruncated
+	module.baseCanFitBlock = module.CanFitBlock
+	module.baseBeginLayout = module.BeginLayout
 	Mixin(module, Module)
 	modules[#modules + 1] = module
 	module:SetContainer(host)
@@ -1193,9 +1552,10 @@ function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
 end
--- Combat ending applies an attachment change combat held back. Combat starting changes nothing on screen, so it is no
--- reason to lay the column out again.
+-- Combat ending applies an attachment change combat held back. Combat starting freezes every section's scrollbar, so
+-- each secure item button stays beside its quest.
 host:RegisterEvent("PLAYER_REGEN_ENABLED")
+host:RegisterEvent("PLAYER_REGEN_DISABLED")
 host:RegisterEvent("DISPLAY_SIZE_CHANGED")
 host:RegisterEvent("UI_SCALE_CHANGED")
 -- Native objective changes and managed-frame transitions can restore the tracker anchor.
@@ -1211,12 +1571,26 @@ for _, event in ipairs({
 }) do
 	host:RegisterEvent(event)
 end
-host:SetScript("OnEvent", function()
+host:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+		local frozen = event == "PLAYER_REGEN_DISABLED"
+		for _, module in ipairs(modules) do
+			if module.SetScrollFrozen then
+				module:SetScrollFrozen(frozen)
+			end
+		end
+	end
 	host:MarkDirty()
 end)
 ObjectiveTrackerFrame:HookScript("OnSizeChanged", function()
 	host:MarkDirty()
 end)
+-- The layout takes the native tracker's top while it is hidden and its NineSlice's bottom while it is shown, so showing
+-- or hiding it moves the column even when Edit Mode's fixed height means its size never changes and OnSizeChanged never
+-- fires. Hooking the frame's own scripts leaves its Show and Hide methods, and the module layout they run, untouched.
+-- MarkDirty's deferred pass runs after that layout, so the NineSlice already reads the new bottom when it is anchored.
+ObjectiveTrackerFrame:HookScript("OnShow", host.MarkDirty)
+ObjectiveTrackerFrame:HookScript("OnHide", host.MarkDirty)
 -- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI move the native frame with no event of
 -- their own. An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so
 -- any move of the native frame resizes the probe and its OnSizeChanged reflows the column.

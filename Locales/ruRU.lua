@@ -50,8 +50,8 @@ L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
 	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is collapsed while this is on."
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."
 L["Lock the tracker"] = "Закрепить трекер"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
@@ -139,3 +139,31 @@ L["No Forever addon has recorded anything for this character yet."] =
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
 	"Ссылка выделена. Нажмите Ctrl+C (Cmd+C на Mac) и откройте её в браузере. Ничего не отправляется."
 L["Your Forever profile"] = "Ваш профиль Forever"
+L["%s (%d)"] = "%s (%d)"
+L["%s %d/%d"] = "%s %d/%d"
+L["Abandon"] = "Отказаться"
+L["Abandoning a quest is not available."] = "Нельзя отказаться от задания."
+L["Collapse"] = "Свернуть"
+L["Expand"] = "Развернуть"
+L["Focus"] = "Отслеживать"
+L["Stop focusing"] = "Прекратить отслеживание"
+L["Objectives"] = "Задачи"
+L["Open Quest Details"] = "Открыть сведения о задании"
+L["Hide Quest Details"] = "Скрыть сведения о задании"
+L["Open Quest Map"] = "Открыть карту задания"
+L["Quest"] = "Задание"
+L["Quests"] = "Задания"
+L["Route with Shortest Path"] = "Маршрут через Shortest Path"
+L["Shortest Path is not loaded."] = "Shortest Path не загружен."
+L["Shortest Path could not plan this route."] =
+	"Shortest Path не смог построить этот маршрут."
+L["There is no map pin for this quest."] = "Для этого задания нет метки на карте."
+L["There is no quest link to share."] = "Нет ссылки на задание для отправки."
+L["The world map is not available."] = "Карта мира недоступна."
+L["The quest log is not available."] = "Журнал заданий недоступен."
+L["Untrack"] = "Перестать отслеживать"
+L["Share Quest"] = "Поделиться заданием"
+L["Share in Chat"] = "Отправить в чат"
+L["fold this zone"] = "свернуть эту зону"
+L["unfold this zone"] = "развернуть эту зону"
+L["focus this quest"] = "отслеживать это задание"

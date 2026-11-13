@@ -157,6 +157,37 @@ userScaled.ready()
 userScaled.drain()
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.2) < 1e-9, "the user's scale multiplies the source scale")
 
+-- #177: the layout takes the native tracker's top while it is hidden and its NineSlice's bottom while it is shown, so a
+-- visibility change must reflow the column even though Edit Mode's fixed height means the frame's size never changes.
+local visibility = harness.new({ headerShown = true })
+local visibilityHost, visibilityNative = visibility.host, visibility.native
+visibility.check(
+	visibilityHost.point[2] == visibilityNative.NineSlice and visibilityHost.point[3] == "BOTTOM",
+	"a shown native tracker holds the column under its quests"
+)
+local heightWhileShown = visibilityNative:GetHeight()
+visibilityNative:Hide()
+visibility.drain()
+visibility.check(
+	visibilityHost.point[1] == "TOP"
+		and visibilityHost.point[2] == visibilityNative
+		and visibilityHost.point[3] == "TOP",
+	"hiding the native tracker moves the column to its top"
+)
+visibility.check(visibilityNative:GetHeight() == heightWhileShown, "the hidden tracker keeps its Edit Mode height")
+visibilityNative:Show()
+visibility.drain()
+visibility.check(
+	visibilityHost.point[1] == "TOP"
+		and visibilityHost.point[2] == visibilityNative.NineSlice
+		and visibilityHost.point[3] == "BOTTOM",
+	"showing the native tracker moves the column back under its quests"
+)
+visibility.check(
+	visibilityNative:GetHeight() == heightWhileShown,
+	"the shown tracker still has no size change to report"
+)
+
 -- The room-below pass must not be a probe: Blizzard's EndLayout hides a section that fits nothing and
 -- FreeUnusedBlocks releases every block, so a second layout would replay each header's add animation and rebuild every
 -- block. Issue #438. The section uses Blizzard's own module mixin, which the native tracker source supplies.
@@ -201,4 +232,78 @@ if t.env.ObjectiveTrackerModuleMixin then
 	asideChecks = stacked.checks()
 end
 
-print("tracker_host_spec: " .. (t.checks() + asideChecks) .. " checks passed")
+-- The shared scroll wrapper: every section but the one that asks for the rest caps at 200 units, the remaining one
+-- gets what the others leave, and only an overflowing section shows the minimal bar.
+local scroll = harness.new({ headerShown = true })
+local capped = scroll.scrollModule(3, 10, 40)
+local rest = scroll.scrollModule(4, 2, 40, "remaining")
+scroll.first.contentHeight, scroll.second.contentHeight = 0, 0
+scroll.host:MarkDirty()
+scroll.drain()
+-- The gutter changes the contents width after the first measure, so a second pass settles the text at the new width.
+scroll.drain()
+scroll.check(capped.available == 200, "a section other than Quests caps at 200 units")
+scroll.check(capped.trackerOverflow == true and capped.scrollRange == 325, "the capped section scrolls its overflow")
+scroll.check(capped:GetContentsHeight() == 200, "the capped section reports its visible height")
+scroll.check(capped.scrollBar:IsShown(), "an overflowing section shows the minimal scrollbar")
+scroll.check(
+	capped.scrollBar.kind == "EventFrame" and capped.scrollBar.template == "MinimalScrollBar",
+	"the bar is the client's EventFrame template, not a Slider"
+)
+scroll.check(capped.scrollBar:GetVisibleExtentPercentage() == 175 / 500, "the bar shows the viewport's fraction")
+scroll.check(capped.ContentsFrame:GetWidth() == capped:GetWidth() - 18, "the bar takes its 18-unit gutter")
+scroll.check(capped.firstContentsWidth == 250, "the first pass measured in the width set at creation")
+scroll.check(capped.updates >= 2, "the gutter's width change asks for another measuring pass")
+scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
+scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
+scroll.check(rest.ContentsFrame:GetWidth() == rest:GetWidth(), "a short section keeps the full block width")
+
+capped:OnTrackerWheel(-1)
+scroll.check(capped.scrollOffset == 60, "the wheel moves one block, not a fixed step")
+scroll.check(math.abs(capped.scrollBar:GetScrollPercentage() - 60 / 325) < 1e-9, "the bar follows the view")
+capped.scrollBar:SetScrollPercentage(0.5)
+scroll.check(math.abs(capped.scrollOffset - 162.5) < 1e-9, "dragging the bar moves the view")
+scroll.check(capped.scrollFrame:GetVerticalScroll() == capped.scrollOffset, "the scroll child follows the bar")
+scroll.host:MarkDirty()
+scroll.drain()
+scroll.check(capped.scrollOffset == 160, "a layout keeps the same block at the top of the view")
+
+scroll.setCombat(true)
+scroll.fire("PLAYER_REGEN_DISABLED")
+scroll.check(capped.scrollBar:GetAlpha() == 0.5, "a frozen bar shows at half alpha")
+scroll.check(capped.scrollBar:IsScrollAllowed() == false, "a frozen bar refuses scrolling")
+local frozenOffset, frozenHeight, frozenWidth = capped.scrollOffset, capped:GetHeight(), capped.ContentsFrame:GetWidth()
+local frozenUpdates = capped.updates
+scroll.host:MarkDirty()
+scroll.drain()
+scroll.check(capped.updates == frozenUpdates, "combat defers the whole layout pass")
+scroll.check(
+	capped.scrollOffset == frozenOffset
+		and capped:GetHeight() == frozenHeight
+		and capped.ContentsFrame:GetWidth() == frozenWidth,
+	"combat leaves every protected ancestor exactly where it was"
+)
+capped:OnTrackerWheel(-1)
+scroll.check(capped.scrollOffset == frozenOffset, "the wheel does nothing in combat")
+scroll.check(capped.scrollBar:GetAlpha() == 0.5, "a frozen bar keeps its alpha through the queue")
+scroll.setCombat(false)
+scroll.fire("PLAYER_REGEN_ENABLED")
+scroll.drain()
+scroll.check(capped.scrollBar:GetAlpha() == 1, "the bar returns to full alpha after combat")
+scroll.check(capped.updates == frozenUpdates + 1, "combat ending runs the deferred layout")
+capped:OnTrackerWheel(-1)
+scroll.check(capped.scrollOffset == 210, "the wheel moves again after combat")
+
+-- A list that shrinks below its cap goes back to the top through the one setter, so the scroll child and the item
+-- buttons see the new view instead of keeping the old one.
+local scrollChanges = capped.scrollChanges
+capped.count = 2
+scroll.host:MarkDirty()
+scroll.drain()
+scroll.check(capped.trackerOverflow == false and capped.scrollRange == 0, "a shrunken list no longer overflows")
+scroll.check(capped.scrollOffset == 0, "a shrunken list returns to the top")
+scroll.check(capped.scrollFrame:GetVerticalScroll() == 0, "the scroll child returns to the top")
+scroll.check(capped.scrollBar:IsShown() == false, "the shrunken list hides the bar")
+scroll.check(capped.scrollChanges > scrollChanges, "the shrunken list redraws its item buttons")
+
+print("tracker_host_spec: " .. (t.checks() + asideChecks + scroll.checks()) .. " checks passed")

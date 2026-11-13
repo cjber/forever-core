@@ -86,12 +86,42 @@
 ---@field GetNextBlockAnchoring? fun(self: ForeverTrackerModule): number, number where the next block would anchor
 ---@field availableHeight? number the room this layout pass gave the section
 ---@field contentsHeight? number what the section drew in this pass
+---@field trackerMaxHeight? number|"remaining" the section's own height cap
+---@field trackerScrollable? boolean Blizzard's module model, so the shared scroll wrapper applies
+---@field scrollFrame? ScrollFrame
+---@field scrollBar? any
+---@field scrollOffset? number
+---@field scrollRange? number
+---@field scrollContentsWidth? number the width the scroll child was last measured at
+---@field trackerViewport? number
+---@field trackerBody? number
+---@field trackerOverflow? boolean
+---@field trackerCap? number
+---@field SetScrollFrozen? fun(self: ForeverTrackerModule, frozen: boolean)
+---@field OnScrollChanged? fun(self: ForeverTrackerModule) the section's own refresh after a scroll or layout
+---@field ContentsFrame? Frame Blizzard's module model holds its blocks here
+---@field headerHeight? number Blizzard's module header height
+---@field firstBlock? any the first block in the module's block chain
+---@field Update? fun(self: ForeverTrackerModule, availableHeight: number, dirtyUpdate?: boolean)
+---@field UpdateHeight? fun(self: ForeverTrackerModule)
+---@field GetContentsHeight? fun(self: ForeverTrackerModule): number
+---@field CanFitBlock? fun(self: ForeverTrackerModule, block: any): boolean
+---@field BeginLayout? fun(self: ForeverTrackerModule)
+---@field IsTruncated? fun(self: ForeverTrackerModule): boolean
+---@field IsCollapsed? fun(self: ForeverTrackerModule): boolean
+---@field baseUpdate? any the module's own Update before the shared wrapper
+---@field baseUpdateHeight? any
+---@field baseGetContentsHeight? any
+---@field baseIsTruncated? any
+---@field baseCanFitBlock? any
+---@field baseBeginLayout? any
 
 -- UI/TrackerSection.lua, the section plumbing every addon's tracker shares.
 ---@class ForeverTrackerSectionOptions
 ---@field order? number the section's place among the column's sections
 ---@field lineTemplate? string the template its objective lines acquire
 ---@field header? string the header text set after the mixin
+---@field maxHeight? number|"remaining" the section's own height cap: a number of UI units (200 when omitted), or "remaining" for what the column's other sections leave
 ---@field show? ForeverTrackerShowSetting the section's own show switch, offered as Hide this section
 ---@field legacy? table|fun(): table? the saved table holding the addon's old tracker table
 ---@field legacyKey? string the key in `legacy` holding the old tracker table, cleared after it is offered

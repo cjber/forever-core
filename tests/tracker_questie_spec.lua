@@ -401,28 +401,40 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 			s.drain()
 			check(clears(s.host, s.questie), label .. ": the column follows Questie's list as it grows")
 
-			-- In combat the column still moves (it is ours), the protected native tracker does not.
+			-- A quest list change in combat holds the column: its protected item buttons do not move. The change
+			-- applies on the first pass after combat.
 			local late = scenario(with({ questie = { point = "TOPRIGHT", x = -24, y = -100, height = 300 } }))
 			late.questie:Hide()
 			late.native.shown = true
 			late.questie.hooks.OnHide(late.questie)
 			late.drain()
 			stacked(late, label .. " stacked before combat")
+			local held = { bounds(late.host) }
 			late.setCombat(true)
 			late.questie:Show()
 			late.questie.hooks.OnShow(late.questie)
 			late.drain()
-			check(clears(late.host, late.questie), label .. ": Questie showing in combat moves the column off it")
-			local held = { bounds(late.host) }
+			local shown = { bounds(late.host) }
+			check(
+				near(held[2], shown[2]) and near(held[1], shown[1]),
+				label .. ": Questie showing in combat holds the column"
+			)
 			late.questie:Hide()
 			late.questie.hooks.OnHide(late.questie)
 			late.drain()
-			local after = { bounds(late.host) }
+			local hiddenBounds = { bounds(late.host) }
 			check(
-				near(held[2], after[2]) and near(held[1], after[1]),
+				near(held[2], hiddenBounds[2]) and near(held[1], hiddenBounds[1]),
 				label .. ": Questie hiding in combat holds the column"
 			)
 			late.setCombat(false)
+			late.questie:Show()
+			late.questie.hooks.OnShow(late.questie)
+			late.host:MarkDirty()
+			late.drain()
+			check(clears(late.host, late.questie), label .. ": the column follows Questie after combat")
+			late.questie:Hide()
+			late.questie.hooks.OnHide(late.questie)
 			late.host:MarkDirty()
 			late.drain()
 			stacked(late, label .. " after combat")
