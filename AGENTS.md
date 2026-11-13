@@ -244,8 +244,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, and, when the consumer ships
   core and its latest released tag bundles a core different from the pin, adds a marked `CHANGELOG.md` release entry
   (above a marked entry whose own tag is already released), then the run creates the signed commit through the GraphQL
-  `createCommitOnBranch` mutation and opens an auto-merging PR in each consumer. It needs the `CONSUMER_SYNC_TOKEN`
-  secret; without it the job prints a notice and stays green.
+  `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
+  in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
+  branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
+  `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest

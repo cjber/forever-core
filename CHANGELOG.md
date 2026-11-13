@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### For addon authors
+
+- **A sync PR keeps the commits added to it.** `tools/sync_consumer_prs.py` rebuilt every consumer's
+  `forever-core-sync` branch from `main` on each push to core `main`, so a commit pushed to an open sync pull request (a
+  recorded visual proof, say) was dropped without a word. The sync now runs on the open pull request's own head and
+  adds its commit on top, so those commits stay, and a pull request it cannot update in place is left exactly as it is
+  with a comment saying why. (#531)
+
 ## [1.10.0] - 2026-11-13
 
 - **A bug report can ask for the client's debug logs without a developer's addon.** `/forever debug on` saves the
