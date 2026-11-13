@@ -269,7 +269,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
   addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
   `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. Exit 3 means the client is in
-  use and nothing was posted. `tools/test_forever_client.py` is its spec.
+  use and nothing was posted. A stop that ran no handler leaves that record behind, and the next `up`, `run`, `smoke`
+  or `build-dev` replays it before it touches AddOns. `tools/test_forever_client.py` is its spec.
 - `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
   read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time and stopped
   at the first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
