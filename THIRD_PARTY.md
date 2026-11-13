@@ -11,6 +11,16 @@ listed here, with the build-only sources, then the players who helped. The addon
 | Questie, if installed | The quest list the shared tracker column steps beside | QuestieDB carries no licence; nothing is copied |
 | EQ Objective Tracker, if installed | Its quest list and layout API, which the shared column also steps beside | Read only through its public API and frames; nothing is copied |
 
+## Made for these addons
+
+| Input | Used for | Source | Licence |
+|---|---|---|---|
+| AI-assisted originals | The step markers in `media/Numbers/`: numbers 1 to 25, the empty `Ring.tga` and the pin's diamond on `Diamond.tga` | `tools/marker_source/` and `tools/export_markers.py` | This addon's own; no Blizzard art |
+
+The marker art is original work made for these addons with AI assistance, as Adventure Guide Forever and Shortest
+Path Forever describe the same numbered markers for their own use. None of it is Blizzard art. Only the exported
+textures ship; `tools/marker_source/` holds the sources and `tools/export_markers.py` keys and exports them.
+
 ## Build and test only
 
 | Input | Used for | Pin | Licence |
