@@ -32,8 +32,8 @@ jobs:
           # The changelog check compares each released section with its v* tag, so it needs the tags.
           fetch-depth: 0
           persist-credentials: false
-      # Every tool version below lives in this checkout's toolchain.json, which the action reads (its manifest input
-      # defaults to that file, resolved against the workspace) and installs and verifies each pin from.
+      # Every tool version below lives in this checkout's tools/toolchain.json, which the action reads (its manifest
+      # input defaults to that file, resolved against the workspace) and installs and verifies each pin from.
       - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
         id: toolchain
         with:
@@ -54,14 +54,15 @@ jobs:
           python3 tools/fetch_tracker_ui.py
           TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
       - run: stylua --check .
-      # The Python tools are pyproject.toml's dev group, resolved in uv.lock.
-      - run: uv run --frozen --group dev ruff check tools
-      - run: uv run --frozen --group dev ruff format --check tools
+      # The Python tools are tools/pyproject.toml's dev group, resolved in tools/uv.lock; uv keeps the environment at
+      # tools/.venv, which every linter ignores.
+      - run: uv run --project tools --frozen --group dev ruff check tools
+      - run: uv run --project tools --frozen --group dev ruff format --check tools
       - run: python3 -m unittest discover -s tools -p "test_*.py"
       # A merge that edits a section whose v* tag already shipped fails here: new notes belong under Unreleased.
       - run: python3 tools/changelog.py --check
       # The wowmock renderer's tests draw images, so they run with Pillow from the dev group.
-      - run: uv run --frozen --group dev python -m unittest discover -s tools/wowmock -p "test_*.py"
+      - run: uv run --project tools --frozen --group dev python -m unittest discover -s tools/wowmock -p "test_*.py"
       - run: python3 tools/check_assets.py
 
   typecheck:
@@ -166,7 +167,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      - run: uv run --frozen --group dev actionlint
+      - run: uv run --project tools --frozen --group dev actionlint
       # The consumer workflow templates every addon vendors from here.
-      - run: uv run --frozen --group dev actionlint tools/core-shared-drift.yml tools/visual-proof.yml
-      - run: uv run --frozen --group dev zizmor --offline .github tools/core-shared-drift.yml tools/visual-proof.yml
+      - run: uv run --project tools --frozen --group dev actionlint tools/core-shared-drift.yml tools/visual-proof.yml
+      - run: |
+          uv run --project tools --frozen --group dev \
+            zizmor --offline .github tools/core-shared-drift.yml tools/visual-proof.yml

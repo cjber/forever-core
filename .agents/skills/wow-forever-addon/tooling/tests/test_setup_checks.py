@@ -68,8 +68,8 @@ class DoctorTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         (self.root / "tools").mkdir()
-        (self.root / "toolchain.json").write_text(json.dumps(MANIFEST, indent=2) + "\n")
-        (self.root / "pyproject.toml").write_text(PYPROJECT)
+        (self.root / "tools/toolchain.json").write_text(json.dumps(MANIFEST, indent=2) + "\n")
+        (self.root / "tools/pyproject.toml").write_text(PYPROJECT)
         (self.root / "tools/typecheck.sh").write_text(TYPECHECK)
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -98,8 +98,8 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(found.annotations, (".types/vscode-wow-api", "f" * 40))
 
     def test_a_missing_manifest_or_pyproject_is_reported(self):
-        (self.root / "toolchain.json").unlink()
-        (self.root / "pyproject.toml").unlink()
+        (self.root / "tools/toolchain.json").unlink()
+        (self.root / "tools/pyproject.toml").unlink()
         found = doctor.pins(self.root)
         self.assertEqual(len(found.missing), 2, found.missing)
         self.assertEqual(found.tools, [])

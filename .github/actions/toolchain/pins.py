@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Print the toolchain action's cache keys and runtime versions as GITHUB_OUTPUT lines.
 
-    pins.py <toolchain.json> <tool cache>
+    pins.py <tools/toolchain.json> <tool cache>
 
-The path is the manifest the action resolved from its `manifest` input, the calling repository's toolchain.json, never
-a file beside this package. Each key hashes that tool's manifest entries, so a bump moves the cache as well as the
-download. The runtimes are exported so a workflow passes the manifest's Python, Node and Bun versions to their setup
-actions.
+The path is the manifest the action resolved from its `manifest` input, the calling repository's
+`tools/toolchain.json`, never a file beside this package. Each key hashes that tool's manifest entries, so a bump moves
+the cache as well as the download. The runtimes are exported so a workflow passes the manifest's Python, Node and Bun
+versions to their setup actions.
 """
 
 import hashlib

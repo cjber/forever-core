@@ -46,7 +46,7 @@ the same diagnostic the addons print from their own slash commands.
 ## Development
 
 The repo also owns a reusable offline UI mock renderer in [`tools/wowmock/`](tools/wowmock/README.md) and the Discord
-release digest in [`tools/discord_digest.py`](tools/discord_digest.py). Every tool pin lives in `toolchain.json` and is
+release digest in [`tools/discord_digest.py`](tools/discord_digest.py). Every tool pin lives in `tools/toolchain.json` and is
 installed by `.github/actions/toolchain` from the manifest of whichever repository calls it; a daily `bump-toolchain`
 workflow moves them, and an hourly `dependabot-merge` job arms auto-merge for Dependabot's patch and minor updates in
 this repo and every Forever addon, while a major waits for review.

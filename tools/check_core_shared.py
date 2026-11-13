@@ -71,9 +71,11 @@ VENDORED = {
     "tools/check_copy.py": SUITE_CONSUMERS,
     ".github/workflows/core-shared-drift.yml": SUITE_CONSUMERS,
     # The pin manifest, the Python tool project and its lock: every consumer's vendored scripts and CI read them.
-    "toolchain.json": SUITE_CONSUMERS,
-    "pyproject.toml": SUITE_CONSUMERS,
-    "uv.lock": SUITE_CONSUMERS,
+    # They sit under tools/, the folder .pkgmeta already ignores, so a vendored development file never changes the
+    # package selection or invalidates a recorded visual proof.
+    "tools/toolchain.json": SUITE_CONSUMERS,
+    "tools/pyproject.toml": SUITE_CONSUMERS,
+    "tools/uv.lock": SUITE_CONSUMERS,
     # Dependabot's config, identical in every addon. Its patch and minor updates auto-merge through core's one
     # .github/workflows/dependabot-merge.yml, so no workflow is vendored for it.
     ".github/dependabot.yml": SUITE_CONSUMERS,

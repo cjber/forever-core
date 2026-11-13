@@ -314,11 +314,12 @@ class StagedChangesTest(unittest.TestCase):
             run("git", "init", "--quiet")
             run("git", "config", "user.email", "test@example.com")
             run("git", "config", "user.name", "Test")
-            (root / "toolchain.json").write_text("{}\n")
+            (root / "tools").mkdir()
+            (root / "tools/toolchain.json").write_text("{}\n")
             (root / "gone.txt").write_text("bye\n")
             run("git", "add", "-A")
             run("git", "commit", "--quiet", "-m", "base")
-            (root / "toolchain.json").write_text('{"schema": 2}\n')
+            (root / "tools/toolchain.json").write_text('{"schema": 2}\n')
             (root / "gone.txt").unlink()
             here = Path.cwd()
             try:
@@ -327,7 +328,7 @@ class StagedChangesTest(unittest.TestCase):
             finally:
                 os.chdir(here)
             self.assertEqual(deletions, [{"path": "gone.txt"}])
-            self.assertEqual([entry["path"] for entry in additions], ["toolchain.json"])
+            self.assertEqual([entry["path"] for entry in additions], ["tools/toolchain.json"])
             self.assertEqual(
                 base64.b64decode(additions[0]["contents"]).decode(),
                 '{"schema": 2}\n',
@@ -384,7 +385,8 @@ class PublishTest(unittest.TestCase):
 
     def write_manifest(self, version):
         manifest = {"schema": 1, "runtimes": {}, "tools": {"luals": {"version": version}}}
-        (self.root / "toolchain.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        (self.root / "tools").mkdir(exist_ok=True)
+        (self.root / "tools/toolchain.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     def publish(self):
         previous = {name: os.environ.get(name) for name in ("PATH", "FAKE_GH_LOG", "GITHUB_REPOSITORY")}

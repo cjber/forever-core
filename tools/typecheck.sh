@@ -3,12 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 annotations=.types/vscode-wow-api
-# The annotation checkout and the LuaLS version come from toolchain.json, the one place either is pinned; CI installs
-# LuaLS with .github/actions/toolchain, which reads that same file from the workspace.
+# The annotation checkout and the LuaLS version come from tools/toolchain.json, the one place either is pinned; CI
+# installs LuaLS with .github/actions/toolchain, which reads that same file from the workspace.
 read -r revision luals < <(python3 - <<'PY'
 import json
 
-tools = json.load(open("toolchain.json", encoding="utf-8"))["tools"]
+tools = json.load(open("tools/toolchain.json", encoding="utf-8"))["tools"]
 print(tools["annotations"]["commit"], tools["luals"]["version"])
 PY
 )
@@ -40,7 +40,7 @@ if [[ "$(git -C "$annotations" rev-parse HEAD)" != "$revision" ]] ||
     exit 1
 fi
 if [[ "$(lua-language-server --version)" != "$luals" ]]; then
-    echo "Install lua-language-server $luals to match CI (toolchain.json)." >&2
+    echo "Install lua-language-server $luals to match CI (tools/toolchain.json)." >&2
     exit 1
 fi
 

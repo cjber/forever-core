@@ -6,7 +6,7 @@ order, and `tools/check_consumers.py` compares every consumer's vendored copy ag
 
 - Keep a change only when it speeds up a file the addons load, or the gate itself.
 - Every change must pass the full gate in `AGENTS.md` under "Commands", with lua-language-server and
-  stylua first on `PATH`, at the versions `toolchain.json` pins.
+  stylua first on `PATH`, at the versions `tools/toolchain.json` pins.
 - `tests/tracker_host_spec.lua` needs Blizzard's tracker source, fetched by
   `python3 tools/fetch_tracker_ui.py`; it is not part of the timed suite.
 - Vendor changes out with `python3 tools/sync_consumers.py`, then one PR per consumer.

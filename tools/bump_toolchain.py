@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Bump every pin in toolchain.json from the upstream each entry records.
+"""Bump every pin in tools/toolchain.json from the upstream each entry records.
 
     python3 tools/bump_toolchain.py --dry-run   # print what would move, write nothing
-    python3 tools/bump_toolchain.py             # rewrite toolchain.json
+    python3 tools/bump_toolchain.py             # rewrite tools/toolchain.json
     python3 tools/bump_toolchain.py --publish   # commit every staged change and open or update the bump PR
 
 An entry's `upstream.kind` says how to find a newer version, so a new tool needs a manifest entry and no code here:
@@ -46,13 +46,13 @@ from dependabot_merge import LABEL as MAJOR_LABEL
 from dependabot_merge import LABEL_COLOR as MAJOR_COLOR
 from dependabot_merge import LABEL_DESCRIPTION as MAJOR_DESCRIPTION
 
-MANIFEST = Path(__file__).resolve().parent.parent / "toolchain.json"
+MANIFEST = Path(__file__).resolve().parent / "toolchain.json"
 COOLDOWN_DAYS = 1
 TITLE = "chore(deps): bump the tool pins"
 BRANCH = "toolchain-bump"
 SCRATCH = "toolchain-bump-src"
 LABEL = "dependencies"
-MANIFEST_NAME = "toolchain.json"
+MANIFEST_NAME = "tools/toolchain.json"
 SECTIONS = ("runtimes", "tools")
 VERSION = re.compile(r"\d+(?:\.\d+)*")
 
@@ -411,7 +411,7 @@ def unlabel(number: int, name: str) -> None:
 
 
 def head_manifest() -> dict:
-    """toolchain.json as main has it, so a staged move can be compared with what it replaces."""
+    """tools/toolchain.json as main has it, so a staged move can be compared with what it replaces."""
     try:
         return json.loads(git("show", f"HEAD:{MANIFEST_NAME}", check=False))
     except json.JSONDecodeError:
@@ -419,7 +419,7 @@ def head_manifest() -> dict:
 
 
 def open_pr() -> int:
-    """Commit the staged toolchain.json through the API, then open or update the bump PR.
+    """Commit the staged tools/toolchain.json through the API, then open or update the bump PR.
 
     Auto-merge is armed only when no staged pin crosses a major version; a pull request that carries one gets the
     `major` label and waits for review.
@@ -500,13 +500,13 @@ def main(argv: list[str] | None = None, net: Net | None = None, now: datetime | 
     apply(moved, updates)
     lines, _ = changes(manifest, moved)
     if not lines:
-        print("toolchain.json is current")
+        print(f"{MANIFEST_NAME} is current")
     for line in lines:
         print(line)
     if arguments.dry_run or not updates:
         return 0
     write(arguments.manifest, moved)
-    print(f"toolchain.json: {len(updates)} pin(s) moved")
+    print(f"{MANIFEST_NAME}: {len(updates)} pin(s) moved")
     return 0
 
 

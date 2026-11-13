@@ -24,9 +24,9 @@ CORE = {
     "tools/dependabot-consumer.yml": b"core dependabot\n",
     "tools/deadcode.py": b"core deadcode\n",
     "tools/deadcode-allow.txt": b"core allow\n",
-    "toolchain.json": b"core toolchain\n",
-    "pyproject.toml": b"core pyproject\n",
-    "uv.lock": b"core lock\n",
+    "tools/toolchain.json": b"core toolchain\n",
+    "tools/pyproject.toml": b"core pyproject\n",
+    "tools/uv.lock": b"core lock\n",
     "docs/discord-button.png": b"discord\n",
     "docs/github-sponsors-button.png": b"sponsors\n",
     "docs/kofi-button.png": b"kofi\n",
@@ -183,9 +183,9 @@ class CheckCoreSharedTest(unittest.TestCase):
 
     def test_the_tool_pins_and_dependabot_config_reach_every_published_consumer(self):
         for path, origin in (
-            ("toolchain.json", "toolchain.json"),
-            ("pyproject.toml", "pyproject.toml"),
-            ("uv.lock", "uv.lock"),
+            ("tools/toolchain.json", "tools/toolchain.json"),
+            ("tools/pyproject.toml", "tools/pyproject.toml"),
+            ("tools/uv.lock", "tools/uv.lock"),
             (".github/dependabot.yml", "tools/dependabot-consumer.yml"),
         ):
             with self.subTest(path=path):

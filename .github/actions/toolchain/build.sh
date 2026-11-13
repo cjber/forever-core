@@ -3,9 +3,9 @@
 #
 #   build.sh <prefix> [work-dir]
 #
-# Every source is a GitHub archive at the commit toolchain.json pins, so the build needs no Ubuntu mirror and no
-# luarocks.org. TOOLCHAIN_MANIFEST must name the manifest to read: the calling repository's toolchain.json, which the
-# action resolves from its `manifest` input.
+# Every source is a GitHub archive at the commit tools/toolchain.json pins, so the build needs no Ubuntu mirror and no
+# luarocks.org. TOOLCHAIN_MANIFEST must name the manifest to read: the calling repository's tools/toolchain.json,
+# which the action resolves from its `manifest` input.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -14,7 +14,7 @@ if [ "$#" -lt 1 ]; then
 fi
 
 if [ -z "${TOOLCHAIN_MANIFEST:-}" ]; then
-    echo "build.sh: TOOLCHAIN_MANIFEST must name the repository's toolchain.json" >&2
+    echo "build.sh: TOOLCHAIN_MANIFEST must name the repository's tools/toolchain.json" >&2
     exit 2
 fi
 

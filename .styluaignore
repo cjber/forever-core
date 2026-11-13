@@ -4,3 +4,4 @@ Nav/
 .docs-unused/
 docs/
 tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/
+tools/.venv/

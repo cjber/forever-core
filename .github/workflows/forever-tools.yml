@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The Python version CI pins lives in toolchain.json, which the action below reads from this checkout; the matrix
-  # adds the oldest version the tooling supports.
+  # The Python version CI pins lives in tools/toolchain.json, which the action below reads from this checkout; the
+  # matrix adds the oldest version the tooling supports.
   pins:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -49,9 +49,13 @@ jobs:
       - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
       - run: python3 -m unittest discover -s tests -t .
       - run: python3 forever_tools/sync.py check --allow-unpinned
-      - run: uv run --frozen --group dev ruff check .
-      - run: uv run --frozen --group dev ruff format --check .
-      # tweaks-forever type-checks its tools/ with ty, the vendored copy included. uv's project root is the repository,
-      # so this folder is passed as a search path for the package's relative imports.
+      # uv's project lives in the checkout's tools/, so this folder is the command's working directory, not the
+      # project's; --project points at it from here.
+      - run: uv run --project "$GITHUB_WORKSPACE/tools" --frozen --group dev ruff check .
+      - run: uv run --project "$GITHUB_WORKSPACE/tools" --frozen --group dev ruff format --check .
+      # tweaks-forever type-checks its tools/ with ty, the vendored copy included. The project root is the checkout's
+      # tools/, so this folder is passed as a search path for the package's relative imports.
       - if: matrix.python == '3.10'
-        run: uv run --frozen --group dev ty check --python-version 3.10 --extra-search-path . forever_tools
+        run: |
+          uv run --project "$GITHUB_WORKSPACE/tools" --frozen --group dev \
+            ty check --python-version 3.10 --extra-search-path . forever_tools

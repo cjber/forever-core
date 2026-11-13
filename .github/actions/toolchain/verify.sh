@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Check an installed tool against the version toolchain.json pins, so a stale cache cannot pass silently.
+# Check an installed tool against the version tools/toolchain.json pins, so a stale cache cannot pass silently.
 #
 #   verify.sh <tool> <prefix>
 #
-# TOOLCHAIN_MANIFEST must name the manifest to check against: the calling repository's toolchain.json, which the action
-# resolves from its `manifest` input.
+# TOOLCHAIN_MANIFEST must name the manifest to check against: the calling repository's tools/toolchain.json, which the
+# action resolves from its `manifest` input.
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
@@ -13,7 +13,7 @@ if [ "$#" -lt 2 ]; then
 fi
 
 if [ -z "${TOOLCHAIN_MANIFEST:-}" ]; then
-    echo "verify.sh: TOOLCHAIN_MANIFEST must name the repository's toolchain.json" >&2
+    echo "verify.sh: TOOLCHAIN_MANIFEST must name the repository's tools/toolchain.json" >&2
     exit 2
 fi
 
@@ -54,4 +54,4 @@ gitleaks)
     ;;
 esac
 
-echo "toolchain: $tool matches toolchain.json"
+echo "toolchain: $tool matches tools/toolchain.json"

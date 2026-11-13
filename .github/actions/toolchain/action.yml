@@ -1,12 +1,13 @@
 name: Toolchain
-description: Install the tool pins the calling repository's toolchain.json records, from that manifest alone.
+description: Install the tool pins the calling repository's tools/toolchain.json records, from that manifest alone.
 
 # The manifest is the one place a tool version lives, and the calling repository owns it: this action reads the
-# `manifest` input, `toolchain.json` unless the caller names another file, resolved against `$GITHUB_WORKSPACE`. That is
-# the same file the caller's `tools/typecheck.sh` and `tools/forever_tools/doctor.py` read, so a Dependabot move of this
-# action's SHA and a sync of the manifest cannot disagree. The caller checks out first, or the first step fails saying
-# so. Every download's sha256 is checked, and each tool is cached under a key hashed from that tool's manifest entry, so
-# bumping a pin also moves the cache.
+# `manifest` input, `tools/toolchain.json` unless the caller names another file, resolved against `$GITHUB_WORKSPACE`.
+# It sits under `tools/` because `.pkgmeta` already ignores that folder, so a development file never invalidates the
+# in-game visual proof. That is the same file the caller's `tools/typecheck.sh` and `tools/forever_tools/doctor.py`
+# read, so a Dependabot move of this action's SHA and a sync of the manifest cannot disagree. The caller checks out
+# first, or the first step fails saying so. Every download's sha256 is checked, and each tool is cached under a key
+# hashed from that tool's manifest entry, so bumping a pin also moves the cache.
 #
 #   - uses: ./.github/actions/toolchain
 #     with:
@@ -19,9 +20,9 @@ inputs:
   manifest:
     description: >-
       The manifest to read, resolved against the workspace unless absolute. Defaults to the calling repository's
-      toolchain.json, the one its own tools/ scripts read.
+      tools/toolchain.json, the one its own tools/ scripts read.
     required: false
-    default: toolchain.json
+    default: tools/toolchain.json
 
 outputs:
   python:

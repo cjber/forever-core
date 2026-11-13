@@ -1,12 +1,12 @@
 """Check this machine against every tool pin the gate uses, and say how to fix each one that is off.
 
-The pins are read from the repository itself, never retyped here: `toolchain.json` (StyLua, gitleaks,
-lua-language-server, LuaJIT, luacheck and the Ketho WoW API annotations revision) and `pyproject.toml`'s
+The pins are read from the repository itself, never retyped here: `tools/toolchain.json` (StyLua, gitleaks,
+lua-language-server, LuaJIT, luacheck and the Ketho WoW API annotations revision) and `tools/pyproject.toml`'s
 `[dependency-groups] dev` (ruff, ty, zizmor, actionlint-py), the two files CI and the scripts read. `tools/typecheck.sh`
 stops at its first problem; this reports them all, one line each with its fix, then exits 1 if any tool the gate needs
 is missing or at the wrong version.
-Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py` or pyproject.toml's dev group, and the shared
-renderer in `FOREVER_CORE`) are reported but never fail it.
+Screenshot prerequisites (Pillow at the pin in `tools/screenshots.py` or tools/pyproject.toml's dev group, and the
+shared renderer in `FOREVER_CORE`) are reported but never fail it.
 
     python3 tools/doctor.py
 """
@@ -65,7 +65,7 @@ def first(pattern: str, text: str) -> str | None:
 
 
 def dev_group(path: Path) -> dict[str, str]:
-    """The `[dependency-groups] dev` pins in pyproject.toml, as name -> version.
+    """The `[dependency-groups] dev` pins in tools/pyproject.toml, as name -> version.
 
     Parsed line by line rather than with tomllib: the tooling still supports Python 3.10, which has no TOML module,
     and the group holds only `"name==version"` strings.
@@ -88,32 +88,37 @@ def annotations_directory(root: Path) -> str:
 
 
 def pins(root: Path) -> Pins:
-    """Every pin in toolchain.json and pyproject.toml, and the screenshot Pillow pin, as tools to check."""
-    manifest_path, pyproject_path = root / "toolchain.json", root / "pyproject.toml"
+    """Every pin in tools/toolchain.json and tools/pyproject.toml, and the screenshot Pillow pin, as tools to check."""
+    manifest_path, pyproject_path = root / "tools" / "toolchain.json", root / "tools" / "pyproject.toml"
     found = Pins()
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         tools = manifest["tools"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
-        found.missing.append("toolchain.json: not found or unreadable, so no toolchain pins were read")
+        found.missing.append("tools/toolchain.json: not found or unreadable, so no toolchain pins were read")
         tools = {}
     python_pins = dev_group(pyproject_path)
     if not pyproject_path.is_file():
-        found.missing.append("pyproject.toml: not found, so no Python tool pins were read")
+        found.missing.append("tools/pyproject.toml: not found, so no Python tool pins were read")
     for name, fix in (
-        ("ruff", "uv sync --group dev"),
-        ("ty", "uv sync --group dev"),
-        ("zizmor", "uv sync --group dev"),
+        ("ruff", "uv sync --project tools --group dev"),
+        ("ty", "uv sync --project tools --group dev"),
+        ("zizmor", "uv sync --project tools --group dev"),
     ):
         if name in python_pins:
             found.tools.append(
-                Tool(name, (name, "--version"), python_pins[name], f"{fix} (pyproject.toml pins {name})")
+                Tool(name, (name, "--version"), python_pins[name], f"{fix} (tools/pyproject.toml pins {name})")
             )
     if "actionlint-py" in python_pins:
         # The wheel carries the upstream actionlint release as its first three parts; its fourth part is the wheel's.
         version = ".".join(python_pins["actionlint-py"].split(".")[:3])
         found.tools.append(
-            Tool("actionlint", ("actionlint", "--version"), version, "uv sync --group dev (actionlint-py)")
+            Tool(
+                "actionlint",
+                ("actionlint", "--version"),
+                version,
+                "uv sync --project tools --group dev (actionlint-py)",
+            )
         )
     if "stylua" in tools:
         stylua = tools["stylua"]

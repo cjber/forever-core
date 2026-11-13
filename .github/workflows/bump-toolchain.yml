@@ -1,9 +1,9 @@
 name: Bump toolchain
 
-# Every pin toolchain.json holds moves to its newest upstream release in one pull request. The bumper skips a release
-# younger than a day and verifies every sha256. The PR auto-merges once this repository's own checks are green, unless a
-# pin crosses a major version: that one waits for review under the `major` label. Dependabot owns the actions and the
-# uv group's Python tools, so this workflow leaves uv.lock alone.
+# Every pin tools/toolchain.json holds moves to its newest upstream release in one pull request. The bumper skips a
+# release younger than a day and verifies every sha256. The PR auto-merges once this repository's own checks are green,
+# unless a pin crosses a major version: that one waits for review under the `major` label. Dependabot owns the actions
+# and the uv group's Python tools, so this workflow leaves tools/uv.lock alone.
 on:
   schedule:
     - cron: "17 6 * * *"

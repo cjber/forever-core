@@ -16,7 +16,3 @@ ignore:
   - media/icon-400.png
   - stylua.toml
   - ruff.toml
-  # The tool pins and the Python tools' project: development files, never part of the addon.
-  - toolchain.json
-  - pyproject.toml
-  - uv.lock

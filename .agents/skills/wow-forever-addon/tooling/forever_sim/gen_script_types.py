@@ -14,9 +14,9 @@ copy here.
     python3 .agents/skills/wow-forever-addon/tooling/forever_sim/gen_script_types.py
     python3 .agents/skills/wow-forever-addon/tooling/forever_sim/sync.py manifest
 
-The revision is toolchain.json's annotations commit (run from the repository root), the same pin tools/typecheck.sh
-fetches; the generator refuses a different checkout, so the data file and the type check always describe the same
-client.
+The revision is tools/toolchain.json's annotations commit (run from the repository root), the same pin
+tools/typecheck.sh fetches; the generator refuses a different checkout, so the data file and the type check always
+describe the same client.
 """
 
 import argparse
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 DEFAULT_SOURCE = Path(".types/vscode-wow-api")
-DEFAULT_MANIFEST = Path("toolchain.json")
+MANIFEST = Path("tools/toolchain.json")
 OUTPUT = Path(__file__).resolve().with_name("script_types.lua")
 
 
@@ -126,7 +126,7 @@ def revision(source: Path) -> str:
 
 
 def annotations_revision(manifest: Path) -> str:
-    """The annotations commit toolchain.json pins."""
+    """The annotations commit tools/toolchain.json pins."""
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
         return data["tools"]["annotations"]["commit"]
@@ -175,8 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--toolchain",
         type=Path,
-        default=DEFAULT_MANIFEST,
-        help="the manifest holding the annotations pin (default: toolchain.json in the current directory)",
+        default=MANIFEST,
+        help="the manifest holding the annotations pin (default: tools/toolchain.json in the current directory)",
     )
     parser.add_argument(
         "--check",

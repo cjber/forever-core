@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Install one release tool from toolchain.json into <prefix>, verifying its sha256.
+# Install one release tool from tools/toolchain.json into <prefix>, verifying its sha256.
 #
 #   install.sh <tool> <prefix>
 #
 # Only a release asset is handled: the entry's url template, its version and its sha256. Lua and LuaJIT are built from
 # source by build.sh instead, because their pin is a commit rather than a release.
 #
-# TOOLCHAIN_MANIFEST must name the manifest to read: the calling repository's toolchain.json, which the action resolves
-# from its `manifest` input.
+# TOOLCHAIN_MANIFEST must name the manifest to read: the calling repository's tools/toolchain.json, which the action
+# resolves from its `manifest` input.
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
@@ -16,7 +16,7 @@ if [ "$#" -lt 2 ]; then
 fi
 
 if [ -z "${TOOLCHAIN_MANIFEST:-}" ]; then
-    echo "install.sh: TOOLCHAIN_MANIFEST must name the repository's toolchain.json" >&2
+    echo "install.sh: TOOLCHAIN_MANIFEST must name the repository's tools/toolchain.json" >&2
     exit 2
 fi
 
