@@ -184,8 +184,26 @@ images, then the rest of `docs/gallery.md`.
 ## X-Wago-ID: <wago id>
 ```
 
-Before the version bump, smoke the build in the client when it is running, under the game lock, and only
-when the player is not playing (a deskpilot screenshot first):
+Before the version bump, the exact commit being released needs a green `headless-smoke` commit status on
+cjber/<repo>, and every release, manual or automatic, refuses without one: `tools/release_check.py` checks it
+beside full CI in the release workflow. One command posts it, and the `forever-smoke` timer
+(`tools/smoke_queue.py`) fills it in for every commit a release would ship:
+
+```sh
+python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>
+```
+
+It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way `rebuild-dev.sh` did, links the
+build's addon folders over `Interface/AddOns`, runs `/forever selftest`, reads `errors --addon <folder>` for each
+of them and posts the result as the `headless-smoke` status. Exit 0 is a clean commit, exit 1 a failure the status
+records with its error count, and exit 3 means the player's client or another session holds the client: nothing is
+posted then, so run it again later. Every link it borrowed is put back exactly as it was, store installs included.
+
+Read the record with `gh api repos/cjber/<repo>/commits/<sha>/statuses`. Missing or pending means waiting, a
+failure means fix the error and smoke the next commit. `python3 tools/smoke_queue.py --dry-run` lists the commits
+that would be smoked next, and the `smoke` command above re-runs one commit at once.
+
+By hand, in a session, the same checks are:
 
 1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
    note `date +%s`, then `/reload`.

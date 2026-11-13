@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from forever_tools import changelog, release_check, toc
 
@@ -151,6 +152,97 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFalse(release_check.verified([self.RUN], "other"))
         for key, value in (("conclusion", "failure"), ("head_branch", "dev"), ("event", "pull_request")):
             self.assertFalse(release_check.verified([{**self.RUN, key: value}], "abc"), key)
+
+
+class HeadlessSmokeTest(unittest.TestCase):
+    """The commit status the smoke posts: the newest one decides, and only success releases."""
+
+    RUN = ReleaseCheckTest.RUN
+
+    def status(self, state, description="clean", context=release_check.SMOKE_CONTEXT):
+        return {"context": context, "state": state, "description": description}
+
+    def refuse(self, status):
+        return release_check.smoke_refusal(status, "cjber/forever-core", "abc")
+
+    def test_the_newest_smoke_status_is_the_one_read(self):
+        statuses = [
+            self.status("failure", "2 Lua errors"),
+            self.status("success"),
+            self.status("failure", context="ci"),
+        ]
+        self.assertEqual(release_check.headless_smoke(statuses)["state"], "failure")
+
+    def test_a_commit_with_no_smoke_status_has_none(self):
+        self.assertIsNone(release_check.headless_smoke([self.status("success", context="visual-proof")]))
+
+    def test_a_passed_smoke_releases(self):
+        self.assertIsNone(self.refuse(self.status("success")))
+
+    def test_a_missing_or_pending_smoke_waits_with_the_command_to_run(self):
+        for status in (None, self.status("pending")):
+            with self.subTest(status=status):
+                refused = self.refuse(status)
+                self.assertEqual(
+                    refused,
+                    "waiting for headless-smoke on abc: run forever_client.py smoke --repo forever-core --ref abc",
+                )
+
+    def test_a_failed_smoke_prints_what_it_found(self):
+        self.assertEqual(
+            self.refuse(self.status("failure", "3 Lua errors: 3 LegacyForever")),
+            "headless-smoke on abc is failure: 3 Lua errors: 3 LegacyForever",
+        )
+        self.assertIn("no description", self.refuse(self.status("error", description=None)))
+
+    def test_main_needs_the_ci_run_and_then_the_smoke_status(self):
+        ci = json.dumps([{"workflow_runs": [self.RUN]}])
+        passing = json.dumps([[{"context": "headless-smoke", "state": "success"}]])
+        failing = json.dumps([[{"context": "headless-smoke", "state": "failure", "description": "2 Lua errors"}]])
+        with patch.dict("os.environ", {"GITHUB_REPOSITORY": "cjber/forever-core", "GITHUB_SHA": "abc"}):
+            with (
+                patch.object(release_check.subprocess, "check_output", side_effect=[ci, passing]),
+                contextlib.redirect_stdout(io.StringIO()) as out,
+            ):
+                release_check.main([])
+            self.assertIn("headless-smoke passed at abc", out.getvalue())
+            with (
+                patch.object(release_check.subprocess, "check_output", side_effect=[ci, failing]),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as result,
+            ):
+                release_check.main([])
+            self.assertEqual(result.exception.code, "Release blocked: headless-smoke on abc is failure: 2 Lua errors")
+            with (
+                patch.object(release_check.subprocess, "check_output", side_effect=[ci, json.dumps([[]])]),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as missing,
+            ):
+                release_check.main([])
+            self.assertIn("waiting for headless-smoke on abc", missing.exception.code)
+
+    def test_main_refuses_before_reading_the_smoke_when_ci_did_not_pass(self):
+        ci = json.dumps([{"workflow_runs": []}])
+        with (
+            patch.dict("os.environ", {"GITHUB_REPOSITORY": "cjber/forever-core", "GITHUB_SHA": "abc"}),
+            patch.object(release_check.subprocess, "check_output", side_effect=[ci]) as request,
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as result,
+        ):
+            release_check.main([])
+        self.assertIn("successful full CI run", result.exception.code)
+        request.assert_called_once()
+
+    def test_the_status_request_names_the_commit(self):
+        requests = []
+
+        def fake(path, text=True):
+            requests.append(path)
+            return json.dumps([[{"context": "headless-smoke", "state": "success"}]])
+
+        with patch.object(release_check.subprocess, "check_output", side_effect=fake):
+            self.assertEqual(len(release_check.statuses("cjber/forever-core", "abc")), 1)
+        self.assertEqual(requests[0][-1], "repos/cjber/forever-core/commits/abc/statuses")
 
 
 class TocTest(unittest.TestCase):

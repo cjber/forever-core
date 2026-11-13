@@ -4,6 +4,17 @@
 
 - **Bolton_wow is on the Thanks page** for the report that map arrows would not switch maps. (#486)
 
+### For addon authors
+
+- **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
+  status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
+  pending one waits and names the command that fills it in, and a failed one prints what it found.
+  `python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>` builds that commit, runs
+  `/forever selftest` and `errors --addon` for each of its addon folders in the headless client, and posts the status;
+  exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
+  reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
+  the status in for every commit a release would ship. (#540)
+
 ## [1.9.0] - 2026-11-12
 
 ### For addon authors

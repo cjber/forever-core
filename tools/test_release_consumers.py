@@ -123,8 +123,9 @@ class DecideTest(unittest.TestCase):
         pending=False,
         state="completed/success",
         failed=False,
+        smoke="success",
     ):
-        return release.decide(changelog, head, tag_exists, pending, state, failed)
+        return release.decide(changelog, head, tag_exists, pending, state, failed, smoke)
 
     def test_a_marked_entry_with_a_missing_tag_idle_release_and_green_ci_is_released(self):
         decision = self.decide()
@@ -185,6 +186,41 @@ class DecideTest(unittest.TestCase):
         self.assertFalse(decision.release)
         self.assertIn("main has no head commit", decision.reason)
 
+    def test_a_commit_without_a_green_smoke_waits_and_is_not_failed(self):
+        for smoke in ("missing", "pending", "failure"):
+            with self.subTest(smoke=smoke):
+                decision = self.decide(smoke=smoke)
+                self.assertFalse(decision.release)
+                self.assertFalse(decision.failed)
+                self.assertEqual(decision.reason, f"waiting for headless-smoke on 0123456, which is {smoke}")
+
+    def test_a_green_smoke_releases_the_commit_it_names(self):
+        decision = self.decide(smoke="success")
+        self.assertTrue(decision.release)
+        self.assertEqual(decision.commit, SHA)
+
+
+class SmokeStatusTest(unittest.TestCase):
+    """The status `forever_client.py smoke` posts, read the way the smoke queue reads it."""
+
+    def status(self, context="headless-smoke", state="success"):
+        return {"context": context, "state": state}
+
+    def test_the_newest_smoke_status_is_the_state(self):
+        newest_first = [self.status(state="success"), self.status(state="failure"), self.status("ci", "failure")]
+        with mock.patch.object(release, "api_json", return_value=newest_first):
+            self.assertEqual(release.smoke_status("legacy-forever", SHA), "success")
+
+    def test_no_smoke_status_is_missing(self):
+        with mock.patch.object(release, "api_json", return_value=[self.status("ci", "failure")]):
+            self.assertEqual(release.smoke_status("legacy-forever", SHA), "missing")
+
+    def test_the_read_names_the_commit(self):
+        requests = []
+        with mock.patch.object(release, "api_json", side_effect=lambda path: requests.append(path) or []):
+            release.smoke_status("legacy-forever", SHA)
+        self.assertEqual(requests, [f"repos/cjber/legacy-forever/commits/{SHA}/statuses"])
+
 
 class PlanTest(unittest.TestCase):
     def test_the_changelog_is_read_at_the_head_that_is_released(self):
@@ -194,11 +230,40 @@ class PlanTest(unittest.TestCase):
             mock.patch.object(release, "tag_exists", return_value=False),
             mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
             mock.patch.object(release, "ci_runs", return_value=runs(ci_run("completed", "success"))),
+            mock.patch.object(release, "smoke_status", return_value="success"),
         ):
             decision = release.plan("legacy-forever")
         read.assert_called_once_with("legacy-forever", SHA)
         self.assertTrue(decision.release)
         self.assertEqual(decision.commit, SHA)
+
+    def test_a_green_ci_without_a_smoke_waits_for_the_queue(self):
+        with (
+            mock.patch.object(release, "main_head", return_value=SHA),
+            mock.patch.object(release, "read_changelog", return_value=SYNC_ENTRY),
+            mock.patch.object(release, "tag_exists", return_value=False),
+            mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
+            mock.patch.object(release, "ci_runs", return_value=runs(ci_run("completed", "success"))),
+            mock.patch.object(release, "smoke_status", return_value="missing") as smoke,
+        ):
+            decision = release.plan("legacy-forever")
+        smoke.assert_called_once_with("legacy-forever", SHA)
+        self.assertFalse(decision.release)
+        self.assertFalse(decision.failed)
+        self.assertIn("waiting for headless-smoke on 0123456, which is missing", decision.reason)
+
+    def test_a_ci_run_that_did_not_pass_reads_no_smoke_status(self):
+        with (
+            mock.patch.object(release, "main_head", return_value=SHA),
+            mock.patch.object(release, "read_changelog", return_value=SYNC_ENTRY),
+            mock.patch.object(release, "tag_exists", return_value=False),
+            mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
+            mock.patch.object(release, "ci_runs", return_value=runs(ci_run("in_progress", None))),
+            mock.patch.object(release, "smoke_status") as smoke,
+        ):
+            decision = release.plan("legacy-forever")
+        smoke.assert_not_called()
+        self.assertIn("ci.yml on main's head 0123456 is in_progress", decision.reason)
 
     def test_an_unmarked_entry_reads_no_workflow_state(self):
         text = "## [Unreleased]\n\n## [1.4.3] - 2026-11-11\n\n- A hand-written entry.\n"

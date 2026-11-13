@@ -1,0 +1,10 @@
+[Unit]
+Description=Smoke each Forever addon commit a release would ship, every 30 minutes
+
+[Timer]
+# The queue smokes only a commit with no headless-smoke status, so a tidy machine does nothing on most runs.
+OnCalendar=*-*-* *:0/30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

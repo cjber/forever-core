@@ -37,7 +37,7 @@ that either one proposes waits for review.
 | `locales` | The translation check (WFA-34): every `Locales/<locale>.lua` parses, is loaded by the TOC, uses only the template's keys and keeps English's placeholders and escapes; prints each locale's coverage |
 | `family` | The shared "The Forever addons" block and its check in `README.md` and `docs/curseforge.md` |
 | `credits` | The in-game credits data (WFA-31): reads `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables into `Data/Credits.lua`, keeps the thanks sentence in README.md and docs/curseforge.md, and `--check` fails a stale file or block |
-| `changelog`, `release_check`, `latest_build` | Release gates and the newest Forever build |
+| `changelog`, `release_check`, `latest_build` | Release gates and the newest Forever build: `release_check` needs the commit's full CI push run on main and its green `headless-smoke` commit status, which `forever_client.py smoke` posts |
 | `docs_contract` | The API docs check: every function `Core/API.lua` publishes is named in `docs/api.md` as `Name(`, and the API table's `minor` appears in its history |
 | `csvtable`, `wago` | Strict DB2 CSV parsing and cached, validated downloads |
 | `fsio` | `atomic_write`, and `publish` for multi-output generators (stage all, replace, roll back on failure) |

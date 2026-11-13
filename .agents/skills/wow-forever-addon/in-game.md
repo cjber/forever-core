@@ -48,6 +48,52 @@ python3 $FC down          # logs out, stops gamescope and every Wine process, re
 `run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
 whatever the command returns. Stopping `up` with SIGTERM or Ctrl-C, or the 30 minute cap, ends it the same way.
 
+## Smoking a release commit
+
+Every release, manual or automatic, needs a green `headless-smoke` commit status on the exact commit it ships.
+`tools/release_check.py` refuses without one, so the status is the release's record of a client load; nothing is
+written to a local file:
+
+```sh
+FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
+python3 $FC smoke --repo legacy-forever --ref <sha>   # build, lock, selftest, errors, logout, post the status
+```
+
+`smoke` builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way `rebuild-dev.sh` did (the same
+code, `forever_client.py build-dev <repo> <ref>`, writes `test-artifacts/<repo>-dev` for a hand link), points the
+build's addon folders at it in `Interface/AddOns`, then runs `up`, `/forever selftest`, `errors --addon <folder>` for
+each of the repo's addon folders, and `down`. It posts the result with
+`gh api repos/cjber/<repo>/statuses/<sha> -f state=success|failure -f context=headless-smoke -f description=...`,
+the error count or "clean".
+
+- Exit 0 is a clean commit and exit 1 a recorded failure.
+- Exit 3 means the client cannot start: the player's game is running, or another agent's session holds it. Nothing is
+  posted then, so a caller runs it again later.
+- The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
+  moved back from `<folder>.smoke-backup`. The record of what it borrowed is `~/.local/state/forever-client/smoke-links.json`
+  while the session runs, kept only if a restore could not finish.
+
+`tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
+head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never fights
+the player for the client. `python3 tools/smoke_queue.py --dry-run` lists them without starting anything.
+
+Its timer is `tools/systemd/forever-smoke.timer`, every 30 minutes at `Nice=10`. Install it once, without editing
+anything else:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp ~/drive/proj/wow/forever-core/tools/systemd/forever-smoke.service ~/.config/systemd/user/
+cp ~/drive/proj/wow/forever-core/tools/systemd/forever-smoke.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now forever-smoke.timer
+```
+
+`systemctl --user list-timers forever-smoke.timer` shows the next run, `systemctl --user start forever-smoke.service`
+runs the queue now, and `journalctl --user -u forever-smoke.service` has its lines. The unit runs outside the desktop
+session: it needs `gh` logged in without a prompt (put a token in an `EnvironmentFile` if the login lives in a
+keyring), and the GPU and Wine prefix reachable from the user manager. A commit whose build or session fails is named
+by the client tool and the queue moves on; the client being in use is the only reason it stops early.
+
 ## The Agent chat tab and /devsmoke
 
 The dev addon `!!DevSmoke` prints short lines to a chat tab named **Agent**, made on first use with no channels, so

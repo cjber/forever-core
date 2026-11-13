@@ -38,6 +38,8 @@ python3 tools/bump_toolchain.py --dry-run # every pin toolchain.json holds, agai
 python3 tools/dependabot_merge.py --dry-run # Dependabot's open PRs in core and every consumer, no changes
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
+python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
 python3 tools/check_package.py            # .release/ForeverCore holds every loaded file, no development folder,
@@ -209,13 +211,26 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
   `## [X.Y.Z]` entry carries `<!-- forever-core-sync -->`, its tag does not exist, no `release.yml` run is queued or
-  running, no `release.yml` run at that head has already failed, and `ci.yml` on that head is green, it dispatches the
-  consumer's `release.yml` with the version and commit. A consumer whose release already failed at main's head is
-  reported as failed, so the job goes red instead of retrying every 20 minutes; the maintainer fixes it and dispatches
-  by hand.
+  running, no `release.yml` run at that head has already failed, `ci.yml` on that head is green and the newest
+  `headless-smoke` status on that head is `success`, it dispatches the consumer's `release.yml` with the version and
+  commit. A commit the smoke has not reached yet is reported as waiting and retried by the next run, never as failed; a
+  consumer whose release already failed at main's head is reported as failed, so the job goes red instead of retrying
+  every 20 minutes, and the maintainer fixes it and dispatches by hand.
   Every core release therefore re-releases every consumer, whose zips all carry the same `ForeverCore` folder. It is
   dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
   prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
+- `tools/headless/forever_client.py`: the one way an agent touches the client (`wow-forever-addon/in-game.md`). `up`,
+  `run`, `shot`, `slash`, `errors` and the rest act on a private gamescope display only, one session at a time. Its
+  `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
+  `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
+  addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
+  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. Exit 3 means the client is in
+  use and nothing was posted. `tools/test_forever_client.py` is its spec.
+- `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
+  read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time and stopped
+  at the first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
+  `forever-smoke.timer` run it every 30 minutes at `Nice=10`; `in-game.md` says how to install them.
+  `tools/test_smoke_queue.py` is its spec.
 - `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from
   this checkout. It opens and closes every loaded addon that depends on ForeverCore (read from the client, so a new
   addon is covered with no list to update) and the world map, saving a pass or fail per surface in `DevSmokeDB`,
@@ -227,8 +242,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.
-- `tools/release_check.py` and `tools/changelog.py`: the release gate (the commit's full CI run on main) and the
-  version's CHANGELOG notes, both thin wrappers over the skill pack's `forever_tools`.
+- `tools/release_check.py` and `tools/changelog.py`: the release gate (the commit's full CI run on main and its green
+  `headless-smoke` status, which a missing or pending one makes wait and a failed one names) and the version's
+  CHANGELOG notes, both thin wrappers over the skill pack's `forever_tools`.
 - `types/`: LuaLS declarations. `types/ForeverTracker.lua` is the tracker contract; `types/Forever.lua` holds the
   `ForeverCoreAPI`, `ForeverCoreAddon` context and the modules' classes; `types/Client.lua` is the client API core
   reads. `tools/typecheck.sh` checks every Lua file outside `tests/`, `tools/`, `docs/` and `.agents/` against them;
