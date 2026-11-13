@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-13
+
 - **A bug report can ask for the client's debug logs without a developer's addon.** `/forever debug on` saves the
   client's current taint log, advanced combat log, chat log and combat log settings, turns each on, and keeps the
   originals in ForeverCore's saved variables across a reload. The report window and the settings pages built on
