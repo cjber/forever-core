@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import functools
 import importlib.util
 import json
 import os
@@ -131,6 +132,9 @@ FOREVER_ADDONS = (
 )
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
+# The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
+# focused Play button a Return would press again.
+GAME_WINDOW = "World of Warcraft"
 SLASH_ASSIGN = re.compile(r"SLASH_\w+\s*=(.*)$", re.MULTILINE)
 SLASH_WORD = re.compile(r'"(/[^"\s]+)"')
 
@@ -300,6 +304,18 @@ def wait_for_world(before: set[Path], timeout: float, nudge=None) -> Path:
 
 def x(state: Mapping, *args: str) -> None:
     subprocess.run(["xdotool", *args], env={**os.environ, "DISPLAY": state["display"]}, check=True)
+
+
+def game_focused(state: Mapping) -> bool:
+    """Whether the game's own window, not the launcher or an empty desktop, has keyboard focus."""
+    found = subprocess.run(
+        ["xdotool", "getwindowfocus", "getwindowname"],
+        env={**os.environ, "DISPLAY": state["display"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return found.stdout.strip() == GAME_WINDOW
 
 
 def mark(name: str) -> float:
@@ -1014,6 +1030,20 @@ def wait_for_session(lock, timeout: float) -> None:
         time.sleep(WAIT_POLL)
 
 
+def at_character_select(state: Mapping, manual_launcher: bool) -> None:
+    """Nudge the launch along, every 15 s until the world loads.
+
+    Enter at the character list enters the world with the last character; before then it does nothing. It is sent
+    only while the game's own window has focus: a Return on the focused Battle.net launcher presses Play again and
+    starts a second client, which then ends on its own login form.
+    """
+    if client_pid():
+        if game_focused(state):
+            send(state, "key", "Return")
+    elif not manual_launcher:
+        press_play(state)
+
+
 def up(args: argparse.Namespace, after_ready=None) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock = open(STATE_DIR / "lock", "w")
@@ -1115,15 +1145,9 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         state_file().write_text(json.dumps(state))
         print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
 
-        def at_character_select():
-            # Enter at the character list enters the world with the last character; before then it does nothing.
-            if client_pid():
-                send(state, "key", "Return")
-            elif not args.manual_launcher:
-                press_play(state)
-
+        nudge = functools.partial(at_character_select, state, args.manual_launcher)
         try:
-            ready = wait_for_world(before, min(args.timeout, MAX_SESSION), nudge=at_character_select)
+            ready = wait_for_world(before, min(args.timeout, MAX_SESSION), nudge=nudge)
         except ClientError as error:
             frame = shot(state, STATE_DIR / "failed.png")
             raise ClientError(f"{error}; last frame: {frame}") from None

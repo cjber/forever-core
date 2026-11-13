@@ -146,6 +146,7 @@ class RestPrTest(unittest.TestCase):
             root = Path(directory)
             with (
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "open_sync_prs", return_value=[]),
                 mock.patch.object(sync, "git"),
                 mock.patch.object(sync, "sync_checkout"),
                 mock.patch.object(
@@ -191,11 +192,16 @@ class RestPrTest(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, json.dumps([{"number": 9}]), "")
             return subprocess.CompletedProcess(args, 0, "", "")
 
+        def fake_git(root, *args, check=True):
+            if "rev-parse" in args:
+                return subprocess.CompletedProcess(args, 0, "sameoid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with (
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
-                mock.patch.object(sync, "git"),
+                mock.patch.object(sync, "git", side_effect=fake_git),
                 mock.patch.object(sync, "sync_checkout"),
                 mock.patch.object(sync, "staged_changes", return_value=([], [])),
                 mock.patch.object(sync, "gh", side_effect=fake_gh),
@@ -550,6 +556,157 @@ class SignedCommitTest(unittest.TestCase):
         self.assertIn("sha=mainoid", calls[1][1])
 
 
+class InPlaceSyncTest(unittest.TestCase):
+    """An open sync PR is updated by adding to its head, never by rewriting the branch from `main`."""
+
+    PULL = {
+        "number": 7,
+        "html_url": "https://example.test/pull/7",
+        "node_id": "PR_7",
+        "auto_merge": {"merge_method": "squash"},
+    }
+
+    def run_sync(self, root, api, git_calls, pull=None):
+        """One consumer sync with the network faked; `pull` is what the sync PR listing returns."""
+        with (
+            mock.patch.object(sync, "clone", return_value=root / "repo"),
+            mock.patch.object(sync, "open_sync_prs", return_value=[] if pull is None else [pull]),
+            mock.patch.object(sync, "git", side_effect=git_calls),
+            mock.patch.object(sync, "sync_checkout"),
+            mock.patch.object(
+                sync,
+                "staged_changes",
+                return_value=([{"path": "UI/TrackerHost.lua", "contents": "eA=="}], []),
+            ),
+            mock.patch.object(sync, "api", side_effect=api),
+        ):
+            return sync.sync_consumer("legacy-forever", root, root, "abc123")
+
+    def test_an_open_sync_pr_is_updated_on_top_of_its_own_head(self):
+        calls = []
+        requests = []
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            calls.append((path, args, check))
+            if path == "graphql" and "--input" in args:
+                requests.append(json.loads(Path(args[args.index("--input") + 1]).read_text(encoding="utf-8")))
+                made = {"data": {"createCommitOnBranch": {"commit": {"oid": "commitoid"}}}}
+                return subprocess.CompletedProcess((path, *args), 0, json.dumps(made), "")
+            return subprocess.CompletedProcess((path, *args), 0, "{}", "")
+
+        git_calls = []
+
+        def recording_git(root, *args, check=True):
+            git_calls.append(args)
+            return fake_git(root, *args, check=check)
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_sync(Path(directory), fake_api, recording_git, self.PULL)
+
+        self.assertEqual((result.status, result.url), ("updated in place", "https://example.test/pull/7"))
+        given = requests[0]["variables"]["input"]
+        self.assertEqual(given["branch"]["branchName"], sync.BRANCH)
+        self.assertEqual(given["expectedHeadOid"], "proid")
+        # The sync ran on the PR's head rather than on main, so the commits already pushed to it are its parents.
+        self.assertIn(("checkout", "-B", sync.BRANCH, "proid"), git_calls)
+        # The branch moves only through the signed commit, never through a ref update that could drop a commit.
+        self.assertFalse(
+            [call for call in calls if call[0].endswith(f"refs/heads/{sync.BRANCH}")],
+            "an open PR's branch is never pointed anywhere by a ref update",
+        )
+
+    def test_a_sync_that_cannot_update_the_open_pr_leaves_it_alone_and_says_why(self):
+        calls = []
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            calls.append((path, args, check))
+            if path == "graphql":
+                raise sync.SyncError("graphql: Expected branch to point to proid but it did not")
+            return subprocess.CompletedProcess((path, *args), 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_sync(Path(directory), fake_api, fake_git, self.PULL)
+
+        self.assertEqual(result.status, "left alone")
+        self.assertEqual(result.url, "https://example.test/pull/7")
+        self.assertIn("Expected branch to point to proid", result.detail)
+        comments = [call for call in calls if call[0] == "repos/cjber/legacy-forever/issues/7/comments"]
+        self.assertEqual(len(comments), 1, "the PR is told why it was not updated")
+        self.assertTrue(
+            any(arg.startswith("body=") and "left the branch exactly as it is" in arg for arg in comments[0][1])
+        )
+        self.assertFalse(
+            [call for call in calls if call[0].endswith(f"refs/heads/{sync.BRANCH}")],
+            "a failed in-place update never force-moves the branch",
+        )
+        self.assertFalse([call for call in calls if "DELETE" in call[1]])
+
+    def test_a_sync_pr_holding_other_commits_is_not_closed_when_nothing_changed(self):
+        calls = []
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            calls.append((path, args, check))
+            return subprocess.CompletedProcess((path, *args), 0, "{}", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "open_sync_prs", return_value=[self.PULL]),
+                mock.patch.object(sync, "git", side_effect=fake_git),
+                mock.patch.object(sync, "sync_checkout"),
+                mock.patch.object(sync, "staged_changes", return_value=([], [])),
+                mock.patch.object(sync, "api", side_effect=fake_api),
+            ):
+                result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+
+        self.assertEqual(result.status, "up to date")
+        self.assertIn("already carries the newest shared files", result.detail)
+        self.assertEqual(calls, [], "the PR keeps the commits pushed to it and is neither closed nor touched")
+
+    def test_a_branch_that_cannot_be_read_fails_the_sync_instead_of_rebuilding_from_main(self):
+        calls = []
+
+        def fake_git(root, *args, check=True):
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[0] == "fetch":
+                return subprocess.CompletedProcess(args, 1, "", "fatal: unable to access origin")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            calls.append((path, args, check))
+            return subprocess.CompletedProcess((path, *args), 0, "{}", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_sync(Path(directory), fake_api, fake_git, self.PULL)
+
+        self.assertEqual(result.status, "failed")
+        self.assertIn("could not fetch forever-core-sync", result.detail)
+        self.assertFalse(any("--input" in call[1] for call in calls), "nothing is committed over an unread branch")
+
+
 class ToolingTest(unittest.TestCase):
     def test_only_packages_with_a_manifest_are_synced(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -651,7 +808,7 @@ class PinTest(unittest.TestCase):
     def test_the_pr_body_names_the_bump_the_sync_made(self):
         bodies = []
 
-        def fake_open(repo, body):
+        def fake_open(repo, body, pull=None):
             bodies.append(body)
             return 9, "https://example.test/pull/9", "opened", None
 
@@ -659,6 +816,7 @@ class PinTest(unittest.TestCase):
             root = Path(directory)
             with (
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
+                mock.patch.object(sync, "open_sync_prs", return_value=[]),
                 mock.patch.object(sync, "git"),
                 mock.patch.object(sync, "sync_checkout", return_value="v1.3.2"),
                 mock.patch.object(
