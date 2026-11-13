@@ -138,6 +138,8 @@ WAIT_POLL = 1.0  # how often a `--wait` queue checks the lock and the Wine prefi
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
+# Seconds a proof waits after a slash flow before its screenshot (run_flow).
+SLASH_SETTLE_SECONDS = 3
 FOREVER_ADDONS = (
     # The dev addon behind /devsmoke: its commands are the suite's own test surface.
     "!!DevSmoke",
@@ -1052,6 +1054,10 @@ def run_flow(state: Mapping, action: str) -> None:
     """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke."""
     if action.startswith("/"):
         slash(state, action)
+        # The client reads typed input on its own frames and reports nothing back while it runs, so the screenshot
+        # waits this long for the command to run and its window to draw (#573). A Lua flow needs no wait: !!DevSmoke
+        # reports it ran before the shot.
+        time.sleep(SLASH_SETTLE_SECONDS)
         return
     tool = devsmoke_eval()
     try:
@@ -1231,8 +1237,10 @@ def proof(args: argparse.Namespace) -> int:
     try:
         records = link_build(folders, addons_dir())
         try:
+            entered = []
 
             def record(state):
+                entered.append(True)
                 reload(state)
                 for index, (name, action) in enumerate(flows, start=1):
                     run_flow(state, action)
@@ -1243,7 +1251,9 @@ def proof(args: argparse.Namespace) -> int:
             try:
                 up(options, after_ready=record)
             except ClientError:
-                busy = client_in_use()
+                # Once the session is in the world it holds the lock itself, so a failure there is its own, not
+                # another session's: report the real error (#573).
+                busy = None if entered else client_in_use()
                 if not screenshots and busy:
                     print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
                     return 3
