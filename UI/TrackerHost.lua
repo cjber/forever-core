@@ -171,7 +171,6 @@ end
 local attached
 local dragging = false
 local attachmentCallbacks = {}
-local nativeSizeCallbacks = {}
 -- The native tracker is protected and keeps the slot Blizzard, Edit Mode or a UI addon gave it: this host never moves
 -- it, in combat or out. The private column reads below it, so the header and the game's quests come first and the
 -- Forever sections follow, and the same placement runs in and out of combat, so entering or leaving combat moves
@@ -1226,9 +1225,6 @@ end
 function api.OnAttachmentChanged(callback)
 	attachmentCallbacks[#attachmentCallbacks + 1] = callback
 end
-function api.OnNativeSizeChanged(callback)
-	nativeSizeCallbacks[#nativeSizeCallbacks + 1] = callback
-end
 function api.SavePosition(x, y)
 	if attached or type(x) ~= "number" or type(y) ~= "number" then
 		return
@@ -1586,14 +1582,7 @@ host:SetScript("OnEvent", function(_, event)
 	end
 	host:MarkDirty()
 end)
--- A section that replaces one of the client's own native modules has to hear about this too: ObjectiveTrackerManager
--- adds its modules from its own ContinueAfterAllEvents pass on the same two events the addons wait for, so a section
--- can lay out before the collection holds a module to take. Every module joining or leaving resizes the native
--- tracker, so this is where a section that takes one runs its take again. The column's own reflow follows.
 ObjectiveTrackerFrame:HookScript("OnSizeChanged", function()
-	for _, callback in ipairs(nativeSizeCallbacks) do
-		callback()
-	end
 	host:MarkDirty()
 end)
 -- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI move the native frame with no event of

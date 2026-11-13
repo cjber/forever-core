@@ -753,10 +753,10 @@ end)
 
 -- The client's own ObjectiveTrackerManager adds its modules from its own ContinueAfterAllEvents pass on the same two
 -- events this file waits for, so the list's first pass can run over a tracker that holds nothing. When that Init adds
--- the game's Quests and Campaign modules later, the tracker changes size, and the list must take them from that
--- signal: otherwise the native quest list stays above it and, in the live client, leaves the Forever section no room
--- and hides it, so no later pass of its own ever runs. The sim's tracker keeps the height it was given when its
--- modules change, so the scenario models the resize the client's own managed frame makes.
+-- the game's Quests and Campaign modules later, they arrive through the container's AddModule, and the tracker's height
+-- does not change: Edit Mode gives ObjectiveTrackerFrame a fixed height, so modules joining never resize it. The list's
+-- one secure post-hook on AddModule must take them as they join: otherwise the native quest list stays above it and, in
+-- the live client, leaves the Forever section no room and hides it, so no later pass of its own ever runs.
 scenario("the Forever quest list takes native modules that join after its first pass", function(sim)
 	local Enum = sim.G.Enum
 	local NORMAL = Enum.QuestClassification.Normal
@@ -894,17 +894,16 @@ scenario("the Forever quest list takes native modules that join after its first 
 	assert(#Blocks() == 3, "the list draws its zone and both quests over the empty tracker")
 	assert(sim.G.QuestObjectiveTracker.Header:IsVisible() == false, "the game's own Quests header is not drawn")
 
-	-- Init then adds its modules, the game's Quests and Campaign among them, and the tracker grows by their room.
-	local height = tracker:GetHeight()
+	-- Init then adds its modules, the game's Quests and Campaign among them, through the client's own AddModule path.
+	-- The tracker keeps the fixed height it already had, as the client's frame does.
 	local questModule, campaignModule = sim.G.QuestObjectiveTracker, sim.G.CampaignQuestObjectiveTracker
 	manager.canAddModules = true
 	manager:Init()
-	tracker:SetHeight(height + questModule:GetContentsHeight() + campaignModule:GetContentsHeight())
 	sim:advance(0.2)
 
 	assert(
 		tracker:HasModule(questModule) == false,
-		"the game's quest module that joins after the first pass is taken on the size change"
+		"the game's quest module that joins after the first pass is taken by the AddModule post-hook"
 	)
 	assert(tracker:HasModule(campaignModule) == false, "and the game's campaign module with it")
 	assert(questModule.Header:IsVisible() == false, "the game's own Quests header is not left above the list")

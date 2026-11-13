@@ -6,7 +6,8 @@ local _, ns = ...
 -- game's own ObjectiveTrackerModuleTemplate and QuestObjectiveTrackerMixin so its header, lines, POI button, fonts,
 -- colours, completed fade and layout are the game's. While this list is on, the game's own Quests and Campaign modules
 -- leave the client's tracker through its own RemoveModule, so no empty Quests header is left above this one, and come
--- back through its AddModule when the list is off. Nothing is hooked, moved or reparented.
+-- back through its AddModule when the list is off. One secure post-hook on the tracker's AddModule, and no replaced
+-- method, moved module or reparented frame, is the whole of the client code this file touches.
 --
 -- The list adds the parts a player misses from a third-party tracker: a thin progress fill under every unfinished
 -- count, one fold per quest and per zone saved for the character, a height cap with scrolling, the game's quest item
@@ -116,15 +117,19 @@ local NATIVE_MODULES = { "QuestObjectiveTracker", "CampaignQuestObjectiveTracker
 --
 -- Every call is a public method of the client's own objective tracker, made out of combat only, from the same deferred
 -- pass this file already used to collapse the modules: the container's RemoveModule and AddModule, and the module's
--- Update. No Blizzard function is hooked, no protected frame is reparented or hidden by addon code, and no secure quest
--- item button is shown, hidden or moved here: the module hides itself through its own layout, so nothing the client
--- does later with its own frames is tainted.
+-- Update. The one hook is a secure post-hook on ObjectiveTrackerFrame.AddModule, installed below and never a
+-- replacement of the method; no protected frame is reparented or hidden by addon code, and no secure quest item button
+-- is shown, hidden or moved here: the module hides itself through its own layout, so nothing the client does later
+-- with its own frames is tainted.
 --
 -- Each module is checked against the tracker on every pass rather than remembered by one flag: the client's own
 -- ObjectiveTrackerManager adds its modules at PLAYER_ENTERING_WORLD, and this file's first pass can run before that,
 -- so a module is taken whenever the tracker holds it, and only a module taken here is given back.
 ---@type table<string, boolean>
 local taken = {}
+-- True only around this file's own AddModule give-back, so the AddModule post-hook below knows the join it sees is
+-- the list returning a module to the client, not the client adding one to be taken.
+local givingBack = false
 ---@param drawn boolean whether the game's own quest modules should draw
 local function SetNativeModulesDrawn(drawn)
 	local tracker = ObjectiveTrackerFrame
@@ -133,7 +138,9 @@ local function SetNativeModulesDrawn(drawn)
 		if module then
 			if drawn then
 				if taken[name] then
+					givingBack = true
 					tracker:AddModule(module)
+					givingBack = false
 					module:MarkDirty()
 					taken[name] = nil
 				end
@@ -1422,17 +1429,26 @@ end
 
 -- The client's own ObjectiveTrackerManager adds the game's quest modules from its own ContinueAfterAllEvents pass on
 -- the same two events this file waits for, so this file's first pass can run before the tracker holds a module to
--- take. A module joining the tracker changes its size, which is the signal the host already reflows the column from,
--- so take them from that same signal while the list is active and this file is ready. Each module is checked against
--- the tracker on every pass and the take defers in combat, so a pass that finds nothing costs nothing and a module
--- that joined later is still taken.
-if type(host.OnNativeSizeChanged) == "function" then
-	host.OnNativeSizeChanged(function()
-		if ready and TrackerQuests.Enabled() and not ownedByOther then
+-- take. A module joining the tracker is the signal that matters, and the tracker's height never follows it: Edit Mode
+-- gives ObjectiveTrackerFrame a fixed height, so modules can join without a size change. This one secure post-hook on
+-- the container's own ObjectiveTrackerFrame.AddModule, never a replacement of the method, takes a native module as it
+-- joins while the list is ready and active. ApplyNativeModules defers in combat and checks every module against the
+-- tracker, so a pass that finds nothing costs nothing and a module that joined later is still taken. The give-back in
+-- SetNativeModulesDrawn runs with givingBack set so the list's own AddModule call is not taken again.
+---@param _ any the container, passed through unchanged by the post-hook
+---@param module any the module the container just accepted
+local function NativeModuleJoined(_, module)
+	if givingBack or not ready or not TrackerQuests.Enabled() or ownedByOther then
+		return
+	end
+	for _, name in ipairs(NATIVE_MODULES) do
+		if rawget(_G, name) == module then
 			ApplyNativeModules(true)
+			return
 		end
-	end)
+	end
 end
+hooksecurefunc(ObjectiveTrackerFrame, "AddModule", NativeModuleJoined)
 
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true

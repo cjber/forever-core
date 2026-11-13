@@ -87,8 +87,6 @@ local function continueAfterAllEvents(fn)
 end
 local combat = false
 local addons = {}
--- The host's native-size signal, which UI/TrackerHost.lua runs from its ObjectiveTrackerFrame OnSizeChanged hook.
-local sizeCallbacks = {}
 local ns = {
 	L = setmetatable({}, {
 		__index = function(_, key)
@@ -98,9 +96,6 @@ local ns = {
 	TrackerHost = {
 		IsAttached = function()
 			return true
-		end,
-		OnNativeSizeChanged = function(callback)
-			sizeCallbacks[#sizeCallbacks + 1] = callback
 		end,
 	},
 	TrackerSection = {
@@ -132,6 +127,16 @@ local env = setmetatable({
 	end,
 	InCombatLockdown = function()
 		return combat
+	end,
+	-- A table method post-hook: the original runs first, then the hook, with the same arguments, as hooksecurefunc does
+	-- on an instance method in the client.
+	hooksecurefunc = function(target, name, post)
+		local original = target[name]
+		target[name] = function(...)
+			local result = original(...)
+			post(...)
+			return result
+		end
 	end,
 }, { __index = _G })
 env._G = env
@@ -172,15 +177,6 @@ check(tracker:HasModule(quests) == false, "the deferred pass takes the game's mo
 check(quests.available == 0 and quests.shown == false, "and hides it")
 check(tracker:HasModule(campaign) == false, "and the campaign module with it")
 
--- The client's own ObjectiveTrackerManager adds its modules at PLAYER_ENTERING_WORLD, which can come after the list's
--- first pass. A later pass checks the tracker again and takes a module it finds there, so no empty header survives that
--- ordering.
-tracker:AddModule(quests)
-check(tracker:HasModule(quests) == true, "the client's manager can add a module back after the list's first pass")
-section:OnEvent("PLAYER_ENTERING_WORLD")
-check(tracker:HasModule(quests) == false, "the next pass takes it out again")
-check(quests.shown == false, "and the client's layout hides it")
-
 -- Another tracker owning the quest list gives the game's modules back, the same as turning the list off.
 addons["!KalielsTracker"] = true
 quests.dirty = nil
@@ -188,33 +184,34 @@ section:OnEvent("PLAYER_ENTERING_WORLD")
 check(quests.dirty == true, "another tracker owning the list gives the game's quest module back")
 check(tracker:HasModule(quests) == true, "and it is in the tracker again")
 addons["!KalielsTracker"] = nil
-
--- The client's own ObjectiveTrackerManager adds its modules from its own ContinueAfterAllEvents pass on the same two
--- events this file waits for, so the list's first pass can find an empty tracker and take nothing. A module joining
--- later changes the tracker's size, the signal the host already watches, and the take runs again from it; without
--- that, the game's full quest list stays above the Forever one.
-tracker.modules = {}
 section:OnEvent("PLAYER_ENTERING_WORLD")
+check(tracker:HasModule(quests) == false, "the list takes the game's module back once no other tracker owns it")
+
+-- The client's own ObjectiveTrackerManager adds the game's modules through the container's AddModule, and the tracker
+-- keeps the fixed height Edit Mode gave it, so modules join with no size change at all. The list's one secure
+-- post-hook on AddModule takes a native module as it joins while the list is ready and on.
+tracker.modules = {}
 check(TrackerQuests.Enabled() and #tracker.modules == 0, "the list is on and ready before the tracker holds a module")
 tracker:AddModule(campaign)
 tracker:AddModule(quests)
-for _, callback in ipairs(sizeCallbacks) do
-	callback()
-end
-check(tracker:HasModule(quests) == false, "a quest module that joins after the first pass is taken on the size change")
+check(tracker:HasModule(quests) == false, "a quest module that joins is taken by the AddModule post-hook")
 check(tracker:HasModule(campaign) == false, "and the campaign module with it")
-check(quests.available == 0 and quests.shown == false, "the joined module is laid out in no room and hidden")
-check(campaign.available == 0 and campaign.shown == false, "and so is the campaign module")
+check(quests.available == 0 and quests.shown == false, "the joined quest module is laid out in no room and hidden")
+check(campaign.available == 0 and campaign.shown == false, "and so is the joined campaign module")
 
--- With the list off the same signal leaves the game's modules alone; turning it on takes what the tracker holds.
+-- Turning the list off gives both modules back through AddModule; the list's own give-back is marked, so the hook
+-- does not take them again, and they stay in the tracker.
 TrackerQuests.SetEnabled(false)
+check(tracker:HasModule(quests) == true, "turning the list off gives the game's quest module back")
+check(tracker:HasModule(campaign) == true, "and the campaign module")
+tracker:Layout(100)
+check(quests.shown == true, "the client's next layout draws the game's own Quests section again")
+
+-- With the list off a module the client adds stays put; turning the list on then takes what the tracker holds.
 tracker.modules = {}
 tracker:AddModule(quests)
-for _, callback in ipairs(sizeCallbacks) do
-	callback()
-end
-check(tracker:HasModule(quests) == true, "a size change leaves the game's module alone while the list is off")
+check(tracker:HasModule(quests) == true, "a module the client adds while the list is off stays in the tracker")
 TrackerQuests.SetEnabled(true)
-check(tracker:HasModule(quests) == false, "turning the list on takes it again")
+check(tracker:HasModule(quests) == false, "turning the list on takes the module the tracker holds")
 
 print("tracker_quests_spec: " .. checks .. " checks passed")

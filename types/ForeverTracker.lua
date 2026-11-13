@@ -45,7 +45,6 @@
 ---@field IsAttachedToQuestTracker fun(): boolean
 ---@field SetAttached fun(value: boolean)
 ---@field OnAttachmentChanged fun(callback: fun(attached: boolean))
----@field OnNativeSizeChanged? fun(callback: fun()) runs a callback when the client's own objective tracker changes size, which is how ObjectiveTrackerManager adds its modules
 ---@field SavePosition fun(x: number, y: number)
 ---@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for an addon's debug command
 
