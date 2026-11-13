@@ -9,8 +9,16 @@ local _, ns = ...
 
 ---@class ForeverArt
 ---@field minor integer raised with each member the module adds
-local Art = { minor = 1 }
+local Art = { minor = 2 }
 ns.Art = Art
+
+-- The step markers every Forever addon draws, written by tools/export_markers.py: the gold numbers 1 to 25, the empty
+-- ring a place a route visits twice stacks behind its marker, and that ring with the goal pin's diamond in it for a
+-- step that has no number next.
+local MARKER_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\%d]]
+local RING_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\Ring]]
+local DIAMOND_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\Diamond]]
+local MAX_MARKER = 25
 
 -- The mask and overlay the Cooldown Manager's icon carries, one pair per icon texture. They are weak-keyed so an icon
 -- the client drops takes its pair with it, and they stay off the Blizzard object itself.
@@ -55,4 +63,27 @@ function Art.CooldownIcon(texture, file, size)
 	art.overlay:SetPoint("TOPLEFT", texture, "TOPLEFT", -x, y)
 	art.overlay:SetPoint("BOTTOMRIGHT", texture, "BOTTOMRIGHT", x, -y)
 	return art.overlay
+end
+
+-- The gold numbered step marker for `number`, a file path for the markers 1 to 25 and nil for anything else, so a
+-- route with more steps keeps the art it already has.
+---@param number integer?
+---@return string? file
+function Art.Marker(number)
+	if type(number) ~= "number" or number < 1 or number > MAX_MARKER or number % 1 ~= 0 then
+		return nil
+	end
+	return MARKER_FILE:format(number)
+end
+
+-- The empty ring, for a place a route visits twice: its numbered marker draws over this.
+---@return string file
+function Art.Ring()
+	return RING_FILE
+end
+
+-- The ring with the goal pin's diamond in it, for a step that has no number next.
+---@return string file
+function Art.Diamond()
+	return DIAMOND_FILE
 end

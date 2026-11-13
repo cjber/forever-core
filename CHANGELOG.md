@@ -4,6 +4,13 @@
 
 ### For addon authors
 
+- **Step markers numbered 1 to 25, an empty ring and a ring with a diamond, for every Forever addon.**
+  `ForeverCore.Art.Marker(number)` answers the gold numbered marker for a step, `ForeverCore.Art.Ring()` the empty ring
+  a place a route visits twice stacks behind its marker, and `ForeverCore.Art.Diamond()` that ring with the goal pin's
+  diamond in it for a step that has no number next, all drawn from core's `media/Numbers`. The numbered files and the
+  ring are byte for byte the ones Adventure Guide Forever and Shortest Path Forever ship, so an addon can drop its own
+  copy and read core's instead; `ForeverCore.Art.minor` is 2. `tools/export_markers.py` writes them from
+  `tools/marker_source`, and its `--check` fails when a committed marker differs. (#570)
 - **A visual proof is one command, on a release prep or a Core pin bump.** `tools/headless/forever_client.py proof
   --repo <repo> --ref <sha> --checkout <tree> --flow "update notice=<slash command or Lua file>"` builds and links the
   commit as `smoke` does, reloads once, runs each named flow (a Forever addon's own slash command, or a Lua file

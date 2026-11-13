@@ -32,6 +32,7 @@ python3 tools/check_menu_scroll.py        # a menu built from a list scrolls (WF
 python3 tools/check_core_name.py          # the shared addon is ForeverCore, one word, in every text file
 python3 tools/check_api_docs.py           # docs/api.md names every published API function and its minor
 python3 tools/check_assets.py             # legacy chrome by name and by FileDataID age
+python3 tools/export_markers.py --check   # media/Numbers holds the step markers tools/marker_source draws
 python3 tools/gen_legacy_chrome.py        # regenerate the asset checker's pinned-build data
 python3 tools/gen_widget_methods.py       # regenerate the widget-method data from the pinned API annotations
 python3 tools/bump_toolchain.py --dry-run # every pin tools/toolchain.json holds, against its recorded upstream
@@ -77,8 +78,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `Core/OpenMap.lua` and `Core/OpenSettings.lua`: core's shared openers for the client's restricted world map and
   settings panel functions, each run through `CreateSecureDelegate`, never in combat. They are runtime files, published
   as `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel`, not vendored into any consumer.
-- `UI/Art.lua`: the icon helper the report window draws its portrait with, and `Art.CooldownIcon`, which gives any
-  icon texture the client's Cooldown Manager frame.
+- `UI/Art.lua`: the icon helper the report window draws its portrait with, `Art.CooldownIcon`, which gives any icon
+  texture the client's Cooldown Manager frame, and the suite's step marker paths (`Art.Marker`, `Art.Ring`,
+  `Art.Diamond`) from `media/Numbers`.
 - `UI/Report.lua`: the per-addon report window and issue composer, bound to the addon's icon, version and `X-Website`.
   Its text carries the performance table from `Core/Performance.lua` and, while debug capture is on, the line that
   names the client's `Logs` folder and how to stop the capture.
@@ -154,6 +156,11 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `tools/gen_legacy_chrome.py`: regenerates the shared checker's pinned-build data from the wago.tools listfile for
   1.60.1.70124. `tools/check_assets.py` is the entry point over this repo; the age rule lives in
   `.agents/skills/wow-forever-addon/tooling/forever_tools/assets.py`, and `tools/test_check_assets.py` is its spec.
+- `tools/export_markers.py` and `tools/marker_source/`: the suite's step markers in `media/Numbers`, the gold numbers 1
+  to 25, the empty `Ring` and the `Diamond` ring with the goal pin's diamond in it, keyed from AI-assisted originals
+  made for these addons with no Blizzard art. The numbered files and the ring are byte for byte what Adventure Guide
+  Forever and Shortest Path Forever ship, so an addon reads them from core instead of carrying its own. `--check` fails
+  a committed marker that differs from what the sources draw, and `tools/test_export_markers.py` is its spec.
 - `tools/gen_widget_methods.py`: regenerates `forever_tools/widget_methods.txt`, every method the client's API
   annotations declare on a widget class that takes a parameter, from the Ketho vscode-wow-api checkout
   `tools/typecheck.sh` pins. The vendored `forever_tools/widget_handlers.py` uses it to fail a `SetScript`/`HookScript`

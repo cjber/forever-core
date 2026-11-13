@@ -67,9 +67,13 @@ It is `2` today. Check a member added in minor 2 before you use it, so the same 
 ForeverCore.Art.minor -- integer
 ForeverCore.Art.Icon(texture, file, size)
 ForeverCore.Art.CooldownIcon(texture, file, size) --> Texture
+ForeverCore.Art.Marker(number) --> string?
+ForeverCore.Art.Ring() --> string
+ForeverCore.Art.Diamond() --> string
 ```
 
-`minor` is `1` today.
+`minor` is `2` today. Minor 1 added `Icon` and `CooldownIcon`; minor 2 added the three step markers, `Marker`, `Ring`
+and `Diamond`. Check it before you use them: `if (ForeverCore.Art.minor or 1) >= 2 then ... end`.
 
 - `Icon(texture, file, size)` draws a file icon whole: it resets the texture's crop, sets `file` (a client path or a
   FileDataID) and sizes it `size` by `size`. The texture is your own, not one the client already draws in a template.
@@ -79,6 +83,15 @@ ForeverCore.Art.CooldownIcon(texture, file, size) --> Texture
   returns the overlay texture, so you can hide or recolour it. The client builds that frame only inside its own Cooldown
   Manager and offers no template. The mask and overlay are made once per icon texture and reused, so call this again
   with a new icon or `size` to move the same pair rather than building another one. (minor 1)
+- `Marker(number)` is the gold numbered step marker for a whole `number` from 1 to 25:
+  `Interface\AddOns\ForeverCore\media\Numbers\<number>`. It returns nil for anything else, so a route with more steps
+  keeps the art it already draws for them. The markers are square, 64 pixels across and centred at their native
+  aspect, and are the same files Adventure Guide Forever and Shortest Path Forever ship, so one addon's step looks
+  like the next. Draw one with `Icon(texture, Marker(number), size)`. (minor 2)
+- `Ring()` is the empty ring, `Interface\AddOns\ForeverCore\media\Numbers\Ring`: a place a route visits twice stacks
+  it behind its numbered marker. (minor 2)
+- `Diamond()` is that ring with the goal pin's diamond in it,
+  `Interface\AddOns\ForeverCore\media\Numbers\Diamond`, for the step that has no number next. (minor 2)
 
 ## `ForeverCore.OpenMap`
 
