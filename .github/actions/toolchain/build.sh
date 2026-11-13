@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the pinned LuaJIT and luacheck into <prefix>, with no apt and no luarocks.
+# Build the pinned PUC Lua 5.1.5 compiler and interpreter, LuaJIT and luacheck into <prefix>, with no apt and no luarocks.
 #
 #   build.sh <prefix> [work-dir]
 #
@@ -56,8 +56,8 @@ download() {
 
 mkdir -p "$work" "$prefix/bin" "$prefix/share/lua/5.1" "$prefix/lib/lua/5.1"
 
-# PUC Lua 5.1.5 is the parser used by the game client. Keep it beside LuaJIT:
-# LuaJIT is the execution harness, while this binary is the strict syntax gate.
+# PUC Lua 5.1.5 is the parser used by the game client. Keep the compiler and the interpreter beside LuaJIT:
+# LuaJIT is the execution harness, while these two are the strict syntax gate.
 lua51_archive="$work/lua-${pin[lua51_version]}.tar.gz"
 if [ ! -f "$lua51_archive" ]; then
     curl --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 300 -sSfL \
@@ -66,12 +66,14 @@ if [ ! -f "$lua51_archive" ]; then
 fi
 echo "${pin[lua51_sha256]}  $lua51_archive" | sha256sum -c -
 lua51_src="$work/lua-${pin[lua51_version]}"
-if [ ! -x "$prefix/bin/luac5.1" ]; then
+if [ ! -x "$prefix/bin/luac5.1" ] || [ ! -x "$prefix/bin/lua5.1" ]; then
     tar -xzf "$lua51_archive" -C "$work"
     make -C "$lua51_src/src" clean >/dev/null
+    # POSIX and dlopen without Lua's readline support, so the runner needs no readline headers to build the interpreter.
     make -C "$lua51_src/src" -j"$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 2)" \
-        MYCFLAGS=-DLUA_USE_LINUX MYLIBS=-ldl luac
+        MYCFLAGS="-DLUA_USE_POSIX -DLUA_USE_DLOPEN" MYLIBS="-Wl,-E -ldl" luac lua
     install -m 0755 "$lua51_src/src/luac" "$prefix/bin/luac5.1"
+    install -m 0755 "$lua51_src/src/lua" "$prefix/bin/lua5.1"
 fi
 
 download "${pin[luajit_repo]}" "${pin[luajit_commit]}" luajit
@@ -108,4 +110,5 @@ chmod 0755 "$prefix/bin/luacheck"
 
 echo "Lua toolchain installed in $prefix"
 "$prefix/bin/luajit" -v
+"$prefix/bin/lua5.1" -v
 "$prefix/bin/luacheck" --version

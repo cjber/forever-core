@@ -4,6 +4,12 @@
 
 ### For addon authors
 
+- **An addon whose CI lives outside core's can install its tools from the shared toolchain action.** The action's `lua`
+  set also installs the PUC Lua 5.1.5 interpreter as `lua5.1`, beside the `luac5.1` compiler it already built, and
+  `verify.sh` checks both against the manifest. Every cache key now hashes the action's own `build.sh` and `install.sh`
+  as well as the tool's pins, so an edited script no longer restores a cache it did not build. Kiln Forever now
+  receives `tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock` under `addon/KilnForever/`, as the
+  published addons do, so its CI reads the one pin manifest and the one `uv` group.
 - **A sync PR keeps the commits added to it.** `tools/sync_consumer_prs.py` rebuilt every consumer's
   `forever-core-sync` branch from `main` on each push to core `main`, so a commit pushed to an open sync pull request (a
   recorded visual proof, say) was dropped without a word. The sync now runs on the open pull request's own head and

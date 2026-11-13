@@ -214,12 +214,14 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 - `.github/actions/toolchain`: the one composite action that installs a tool pin, reading the calling repository's
   `tools/toolchain.json` through its `manifest` input, which defaults to that file and resolves against the workspace,
   so the pins a job installs are the ones the same checkout's `tools/typecheck.sh` and
-  `tools/forever_tools/doctor.py` check for. The caller checks out first. Its `tools` input is a space-separated subset
-  of `lua` (LuaJIT, luac5.1, luacheck,
+  `tools/forever_tools/doctor.py` check for. Kiln Forever, whose copies sit under its addon folder, names
+  `addon/KilnForever/tools/toolchain.json` through that input. The caller checks out first. Its `tools` input is a
+  space-separated subset of `lua` (LuaJIT, the PUC Lua 5.1.5 compiler `luac5.1` and interpreter `lua5.1`, luacheck,
   built from the pinned commits by `build.sh`), `luals`, `stylua` and `gitleaks` (`install.sh` downloads the entry's
-  asset and verifies its sha256). Each tool is cached under a key hashed from its manifest entry, so a bump moves the
-  cache with the pin, and `verify.sh` checks the installed version afterwards. It also outputs the manifest's Python,
-  Node and Bun versions for the `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
+  asset and verifies its sha256). Each tool is cached under a key hashed from its manifest entry and from the contents
+  of `build.sh` and `install.sh`, so a bump and a change to either script move the cache with the pin, and `verify.sh`
+  checks the installed version afterwards. It also outputs the manifest's Python, Node and Bun versions for the
+  `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
   release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC lists
@@ -300,10 +302,11 @@ tracker spec, StyLua, ruff, the `tools/` unit tests, `tools/changelog.py --check
 over `.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and every tool it installs
-comes from `tools/toolchain.json` through `.github/actions/toolchain`: `build.sh` builds LuaJIT, luac5.1 and luacheck
-from the pinned commits, `install.sh` downloads LuaLS, StyLua or gitleaks at the pinned version and verifies its
-sha256, each tool is cached with `actions/cache` under a key hashed from its manifest entry, and the runner's apt mirror
-is never touched. The Python tools run from `tools/pyproject.toml`'s `uv` group with `uv run --project tools --frozen`.
+comes from `tools/toolchain.json` through `.github/actions/toolchain`: `build.sh` builds LuaJIT, the PUC Lua 5.1.5
+compiler and interpreter and luacheck from the pinned commits, `install.sh` downloads LuaLS, StyLua or gitleaks at the
+pinned version and verifies its sha256, each tool is cached with `actions/cache` under a key hashed from its manifest
+entry and from those two scripts, and the runner's apt mirror is never touched. The Python tools run from
+`tools/pyproject.toml`'s `uv` group with `uv run --project tools --frozen`.
 `.github/workflows/bump-toolchain.yml` runs `tools/bump_toolchain.py` daily and opens or refreshes one `toolchain-bump`
 PR, and `.github/workflows/dependabot-merge.yml` runs `tools/dependabot_merge.py` hourly: a Dependabot patch or minor
 gets squash auto-merge in core and every consumer, and a major waits for review with the `major` label.
