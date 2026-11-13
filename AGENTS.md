@@ -300,7 +300,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   written to the gitignored `!!DevSmokeInbox` folder inside it, linked into AddOns as a load-on-demand addon of the
   same name, and run under `xpcall` at login and on `/devsmoke eval` (its `print` output and returns go to the Agent
   tab and `DevSmokeDB.eval`). The client reads the inbox once a session, so a snippet written after that needs
-  `/reload`. `tests/devsmoke_spec.lua` is its spec, `tools/test_devsmoke_eval.py` the writer's.
+  `/reload`. Every write stamps its chunk with a fresh `DevSmokeEvalRun` token, which lands in `DevSmokeDB.eval.run`:
+  SavedVariables reach disk only at the next reload, so that token is how `forever_client.py eval` and a Lua proof flow
+  read their own snippet's result rather than the session before it (#580). `tests/devsmoke_spec.lua` is its spec,
+  `tools/test_devsmoke_eval.py` the writer's.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
   schedule only; `tools/test_discord_digest.py` is its spec.

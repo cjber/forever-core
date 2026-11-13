@@ -243,8 +243,13 @@ end
 -- The eval inbox: tools/devsmoke/eval.py writes a snippet as the generated !!DevSmokeInbox addon, whose Eval.lua
 -- defines DevSmokeEval. Running it here, under xpcall with print captured, keeps an agent's mistake out of BugGrabber
 -- and puts every line it prints or returns on the Agent tab and in DevSmokeDB.eval.
+--
+-- Eval.lua also defines DevSmokeEvalRun, a fresh token for every write, read before the chunk runs so a snippet that
+-- reuses the name cannot change it. DevSmokeDB.eval.run carries it, so a reader that only has the SavedVariables file
+-- can tell this snippet's own result from an earlier session's (#580).
 local function runEval()
 	local chunk = DevSmokeEval
+	local token = DevSmokeEvalRun
 	agentFrame()
 	local lines = {}
 	local original = _G.print
@@ -275,7 +280,7 @@ local function runEval()
 		pushLines(err, lines)
 	end
 	DevSmokeDB = DevSmokeDB or {}
-	DevSmokeDB.eval = { ran = time(), ok = ok, out = lines, err = err }
+	DevSmokeDB.eval = { run = token, ran = time(), ok = ok, out = lines, err = err }
 	say(("Dev Smoke: eval %s, %d lines"):format(ok and "ok" or "failed", #lines))
 	for _, line in ipairs(lines) do
 		say(line)

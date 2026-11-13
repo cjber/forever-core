@@ -762,6 +762,7 @@ class ForeverClientTest(unittest.TestCase):
                     "chunk": Path("/checkout/!!DevSmokeInbox/Eval.lua"),
                     "snippet": Path("probe.lua"),
                     "lines": 2,
+                    "token": "run-1",
                 }
             )
         )
@@ -771,7 +772,10 @@ class ForeverClientTest(unittest.TestCase):
     def test_eval_writes_reloads_and_reports_the_saved_output(self):
         client = self.state / "client"
         with mock.patch.object(fc, "CLIENT", client):
-            self.saved_smoke('{\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n\t["out"] = { "a printed line", "42" },\n}')
+            self.saved_smoke(
+                '{\n\t["run"] = "run-1",\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n'
+                '\t["out"] = { "a printed line", "42" },\n}'
+            )
             tool = self.eval_tool()
             state = {"ready": 1.0}
             out = io.StringIO()
@@ -782,16 +786,38 @@ class ForeverClientTest(unittest.TestCase):
                 contextlib.redirect_stdout(out),
             ):
                 self.assertEqual(fc.main(["eval", "probe.lua"]), 0)
-        reload.assert_called_once_with(state)
+        self.assertEqual(
+            reload.call_args_list,
+            [mock.call(state), mock.call(state)],
+            "the reload that runs the snippet, then the one that saves its result to disk",
+        )
         tool.write_snippet.assert_called_once_with(Path("probe.lua"), addons=client / "Interface/AddOns")
         printed = out.getvalue()
         self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
         self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
 
+    def test_eval_never_reports_an_earlier_runs_result(self):
+        # The SavedVariables file holds the session before this one until the next reload, and the first reader
+        # answered with it: a passing snippet was called failed, and a failing one passed (#580).
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke('{\n\t["run"] = "earlier",\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n}')
+            err = io.StringIO()
+            with (
+                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+                mock.patch.object(fc, "reload"),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(err),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        self.assertIn("holds the run 'earlier', not this snippet's 'run-1'", err.getvalue())
+        self.assertNotIn("DevSmokeDB.eval: ok", err.getvalue())
+
     def test_eval_reports_a_failed_snippet_and_exits_one(self):
         with mock.patch.object(fc, "CLIENT", self.state / "client"):
             self.saved_smoke(
-                '{\n\t["ran"] = 7,\n\t["ok"] = false,\n\t["out"] = { "before" },\n\t["err"] = "boom\\nstack",\n}'
+                '{\n\t["run"] = "run-1",\n\t["ran"] = 7,\n\t["ok"] = false,\n\t["out"] = { "before" },\n'
+                '\t["err"] = "boom\\nstack",\n}'
             )
             out = io.StringIO()
             with (
@@ -853,6 +879,19 @@ class ForeverClientTest(unittest.TestCase):
             self.saved_smoke(None)
             with self.assertRaisesRegex(fc.ClientError, "DevSmokeDB.eval is missing"):
                 fc.saved_eval()
+
+    def test_saved_eval_reads_the_record_its_run_token_wrote(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke('{\n\t["run"] = "run-1",\n\t["ran"] = 7,\n\t["ok"] = true,\n}')
+            self.assertEqual(fc.saved_eval("run-1")["ran"], 7)
+
+    def test_saved_eval_refuses_another_runs_record(self):
+        # The file still holds the eval before this run's until a reload saves the new one (#580).
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke('{\n\t["run"] = "earlier",\n\t["ran"] = 1,\n\t["ok"] = true,\n}')
+            with self.assertRaisesRegex(fc.ClientError, "holds the run 'earlier', not this snippet's 'run-1'") as error:
+                fc.saved_eval("run-1")
+        self.assertIn("the snippet's own result was not saved", str(error.exception))
 
 
 class BuildDevTest(unittest.TestCase):
@@ -1477,26 +1516,43 @@ class ProofHelpersTest(unittest.TestCase):
         tool.assert_not_called()
         sleep.assert_called_once_with(fc.SLASH_SETTLE_SECONDS)
 
-    def test_run_flow_writes_reloads_and_checks_a_lua_snippet(self):
+    def test_run_flow_writes_reloads_and_answers_the_run_token(self):
         tool = mock.Mock()
         tool.write_snippet.return_value = {
             "chunk": Path("/x/!!DevSmokeInbox/Eval.lua"),
             "snippet": Path("notice.lua"),
             "lines": 3,
+            "token": "run-1",
         }
         tool.EvalError = Exception
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
             mock.patch.object(fc, "reload") as reload,
-            mock.patch.object(fc, "saved_eval", return_value={"ok": True, "ran": 1}),
-            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: ok, ran 1", True)),
+            mock.patch.object(fc, "saved_eval") as saved,
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            fc.run_flow("state", "notice.lua")
+            self.assertEqual(fc.run_flow("state", "notice.lua"), "run-1")
         reload.assert_called_once_with("state")
+        saved.assert_not_called()  # the result is read after the flow's screenshot
         tool.write_snippet.assert_called_once_with(Path("notice.lua"), addons=self.state / "client/Interface/AddOns")
-        self.assertIn("DevSmokeDB.eval: ok, ran 1", out.getvalue())
+        self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from notice.lua (3 lines)", out.getvalue())
+
+    def test_check_flow_eval_fails_on_the_error_its_own_snippet_raised(self):
+        saved = {"run": "run-1", "ran": 7, "ok": False, "out": {1: "before"}, "err": "boom\nstack"}
+        with (
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "saved_eval", return_value=saved) as read,
+            contextlib.redirect_stdout(io.StringIO()) as out,
+            self.assertRaises(fc.ClientError) as failure,
+        ):
+            fc.check_flow_eval("state", "notice.lua", "run-1")
+        reload.assert_called_once_with("state")
+        read.assert_called_once_with("run-1")
+        self.assertIn("DevSmokeDB.eval: failed, ran 7\nbefore\nerror:\nboom\nstack", out.getvalue())
+        message = str(failure.exception)
+        self.assertIn("flow snippet notice.lua failed", message)
+        self.assertIn("error:\nboom\nstack", message, "the snippet's own error is quoted")
 
     def test_run_flow_runs_a_lua_file_given_by_its_absolute_path(self):
         with (
@@ -1507,20 +1563,22 @@ class ProofHelpersTest(unittest.TestCase):
             fc.run_flow({}, "/home/me/notice.lua")
         slash.assert_not_called()
 
-    def test_run_flow_reports_a_failed_lua_snippet(self):
+    def test_run_flow_reports_a_snippet_the_compiler_refused(self):
+        class Refused(Exception):
+            pass
+
         tool = mock.Mock()
-        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": Path("notice.lua"), "lines": 3}
-        tool.EvalError = Exception
+        tool.write_snippet.side_effect = Refused("notice.lua:2: 'end' expected")
+        tool.EvalError = Refused
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
-            mock.patch.object(fc, "reload"),
-            mock.patch.object(fc, "saved_eval", return_value={"ok": False}),
-            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: failed\nerror:\nboom", False)),
+            mock.patch.object(fc, "reload") as reload,
             contextlib.redirect_stdout(io.StringIO()),
-            self.assertRaisesRegex(fc.ClientError, "flow snippet notice.lua failed"),
+            self.assertRaisesRegex(fc.ClientError, "notice.lua:2: 'end' expected"),
         ):
             fc.run_flow("state", "notice.lua")
+        reload.assert_not_called()
 
     def test_client_build_reads_the_session_log_and_the_toc_interface(self):
         client = self.state / "client"
@@ -1718,6 +1776,26 @@ class ProofTest(unittest.TestCase):
         self.shot_paths.append(path)
         return path
 
+    def saved_eval(self, record: dict) -> Path:
+        """The SavedVariables file the session before this one left behind, holding one DevSmokeDB.eval record."""
+
+        def lua_value(value):
+            if isinstance(value, bool):
+                return "true" if value else "false"
+            if isinstance(value, int):
+                return str(value)
+            if isinstance(value, dict):
+                return "{ " + ", ".join(lua_value(item) for item in value.values()) + " }"
+            text = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+            return f'"{text}"'
+
+        saved = self.client / "WTF/Account/1/SavedVariables"
+        saved.mkdir(parents=True, exist_ok=True)
+        path = saved / "!!DevSmoke.lua"
+        fields = ",\n".join(f'\t\t["{key}"] = {lua_value(value)}' for key, value in record.items())
+        path.write_text(f'DevSmokeDB = {{\n\t["eval"] = {{\n{fields},\n\t}},\n}}\n')
+        return path
+
     def run_proof(self, **overrides):
         up = overrides.pop("up", None)
         with (
@@ -1858,21 +1936,48 @@ class ProofTest(unittest.TestCase):
     def test_a_lua_flow_takes_a_shot_after_the_snippet_ran(self):
         lua = self.state / "notice.lua"
         lua.write_text("print('shown')\n")
-        with (
-            mock.patch.object(fc, "devsmoke_eval") as tool,
-            mock.patch.object(fc, "saved_eval", return_value={"ok": True}),
-            mock.patch.object(fc, "format_eval", return_value=("DevSmokeDB.eval: ok", True)),
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
-            tool.return_value.write_snippet.return_value = {
-                "chunk": Path("/x/Eval.lua"),
-                "snippet": lua,
-                "lines": 1,
-            }
-            tool.return_value.EvalError = Exception
-            code, _printed, _err = self.run_proof(flow=[f"update notice={lua}"])
+        self.saved_eval({"run": "run-1", "ran": 7, "ok": True, "out": {1: "shown"}})
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
+        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
+            code, printed, _err = self.run_proof(flow=[f"update notice={lua}"])
         self.assertEqual(code, 0)
         self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
+        self.assertIn("DevSmokeDB.eval: ok, ran 7\nshown", printed)
+        self.assertEqual(
+            self.reload.call_count, 3, "the proof's own, the flow's, and the one that saves the eval to disk"
+        )
+
+    def test_a_lua_flow_that_raised_fails_the_proof_instead_of_passing_on_an_earlier_eval(self):
+        # The reader used to answer with whatever eval the SavedVariables file held, which is the session before this
+        # one: a snippet that raised passed on an earlier run's success, and the gist went out with it (#580).
+        lua = self.state / "hover.lua"
+        lua.write_text("error('boom')\n")
+        self.saved_eval({"run": "earlier", "ran": 1, "ok": True, "out": {1: "an earlier run's output"}})
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
+        with self.assertRaisesRegex(fc.ClientError, "holds the run 'earlier', not this snippet's 'run-1'"):
+            with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
+                self.run_proof(flow=[f"hover a quest stop={lua}"])
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+
+    def test_a_lua_flow_failed_by_its_own_error_fails_the_proof(self):
+        lua = self.state / "hover.lua"
+        lua.write_text("error('boom')\n")
+        self.saved_eval({"run": "run-1", "ran": 9, "ok": False, "err": "Eval.lua:2: boom\nstack", "out": {1: "before"}})
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
+        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
+            with self.assertRaises(fc.ClientError) as failure:
+                self.run_proof(flow=[f"hover a quest stop={lua}"])
+        self.assertIn(f"flow snippet {lua} failed", str(failure.exception))
+        self.assertIn("Eval.lua:2: boom", str(failure.exception), "the proof fails on the snippet's own error")
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
 
     def test_the_cli_passes_the_proof_options_through(self):
         with mock.patch.object(fc, "proof", return_value=3) as proof:

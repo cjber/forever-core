@@ -169,7 +169,7 @@ With a session already running, the steps by hand are:
 python3 tools/devsmoke/eval.py /tmp/probe.lua   # compile and write the inbox
 python3 $FC slash "/devsmoke eval"              # the first eval this session loads and runs the inbox chunk
 python3 $FC reload                              # saves DevSmokeDB.eval; a snippet written later needs this
-python3 $FC sv '!!DevSmoke'                     # DevSmokeDB.eval: ran, ok, out, err
+python3 $FC sv '!!DevSmoke'                     # DevSmokeDB.eval: run, ran, ok, out, err
 ```
 
 `eval.py` compiles the file with `luajit -bl` (and `luac5.1 -p` when it is installed) and refuses a parse error
@@ -181,10 +181,12 @@ into `DevSmokeDB.eval`, and its errors are caught there instead of reaching BugG
 
 The client reads the inbox once per session: the first `/devsmoke eval` or login loads it, and any snippet written
 after that needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the snippet it
-just wrote.
+just wrote, then reloads once more and reads the result that snippet's own run token names.
 
-`DevSmokeDB.eval` is `{ ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil> }`, where `out` holds the
-same lines the Agent tab showed. Use eval for anything longer than a one-line `/run`.
+`DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil> }`, where `out`
+holds the same lines the Agent tab showed. SavedVariables reach disk only at a reload or logout, so the file still
+holds the session before the one that just ran: `run` is the token `eval.py` stamped that session's chunk with, and it
+is what tells a result apart from an earlier snippet's (#580). Use eval for anything longer than a one-line `/run`.
 
 ## What it relies on
 
