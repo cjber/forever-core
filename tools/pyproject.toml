@@ -18,7 +18,7 @@ package = false
 dev = [
   "actionlint-py==1.7.12.25",
   "pillow==12.3.0",
-  "ruff==0.16.8",
-  "ty==0.0.83",
+  "ruff==0.17.4",
+  "ty==0.0.101",
   "zizmor==1.30.1",
 ]
