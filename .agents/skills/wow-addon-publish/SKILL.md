@@ -203,6 +203,22 @@ Read the record with `gh api repos/cjber/<repo>/commits/<sha>/statuses`. Missing
 failure means fix the error and smoke the next commit. `python3 tools/smoke_queue.py --dry-run` lists the commits
 that would be smoked next, and the `smoke` command above re-runs one commit at once.
 
+A release preparation that edits the update notice or a locale also records the visual proof its runtime change
+needs, so the required `visual-proof` check passes without an admin merge. One command builds and loads the commit,
+runs the flow, uploads the screenshots to a secret gist and writes `.visual-proof.json` into the pull request's
+checkout; commit that file with the change:
+
+```sh
+python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's checkout> \
+  --flow "update notice=<the addon's slash command or Lua file>"
+```
+
+`--flow` is the addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs. ForeverCore has no shared
+opener for an addon's update notice, so there is no default. Exit 3 means the client is in use, so nothing was
+recorded and a later run tries again. The command also restores every `AddOns` link it borrowed and never commits or
+pushes the checkout. `wow-forever-addon/in-game.md` has the full flow, including the sync pull request that moves the
+ForeverCore pin.
+
 By hand, in a session, the same checks are:
 
 1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
