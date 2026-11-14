@@ -25,6 +25,7 @@ read_globals = {
 	"Clamp",
 	"GREEN_FONT_COLOR",
 	"CreateSettingsButtonInitializer",
+	"CreateSettingsListSectionHeaderInitializer",
 	"Lerp",
 	"Menu",
 	"MenuUtil",

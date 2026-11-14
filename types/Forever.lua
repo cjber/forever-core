@@ -96,6 +96,10 @@
 ---@field Register fun(name: string, build: function, L?: table<string, string>, safeCall?: function): table?, Frame?
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
 
+-- UI/SettingsSections.lua, native vertical-list headings registered through Blizzard's Settings API.
+---@class ForeverSettingsSectionsAPI
+---@field Register fun(category: table, name: string, tooltip?: string, newTagID?: number): table?
+
 -- UI/ContextMenu.lua, the suite's one context menu.
 ---@alias ForeverMenuEntryKind "root"|"button"|"title"|"divider"|"checkbox"|"radio"
 
@@ -181,6 +185,7 @@
 ---@field ProfessionTabs? ForeverProfessionTabsAPI
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field SettingsPage? ForeverSettingsPageModule
+---@field SettingsSections? ForeverSettingsSectionsAPI
 ---@field Text? table
 ---@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
 ---@field APIKit? ForeverCoreAPIKit

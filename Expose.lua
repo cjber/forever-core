@@ -24,6 +24,7 @@ core.PeerStats = ns.RetiredPeerStats
 core.Leaderboards = ns.RetiredLeaderboards
 core.MinimapButton = ns.MinimapButton
 core.SettingsPage = ns.SettingsPage
+core.SettingsSections = ns.SettingsSections
 core.Text = ns.Text
 core.QuestOrder = ns.QuestOrder
 core.APIKit = ns.APIKit

@@ -164,6 +164,9 @@ for the client and one column's settings move every section together.
   same state.
 - `ForeverCore.SettingsPage.Register(name, build, L, safeCall)` draws a settings page with the caller's L for every
   label and the caller's `SafeCall` for its builders, getters and setters.
+- `ForeverCore.SettingsSections.Register(category, name, tooltip, newTagID)` adds a localized section heading to a
+  native vertical settings list. It uses Blizzard's `Settings.RegisterInitializer` path, so consumers do not mutate
+  the category layout directly.
 - `ForeverCore.Text.Fold` and `ForeverCore.Text.Rank` are the shared search fold and ranking.
 - `ForeverCore.Family` draws the Forever addons page and its link windows. `Family.Register` and `Family.CreatePanel`
   take the addon's `SafeCall` as their last argument.

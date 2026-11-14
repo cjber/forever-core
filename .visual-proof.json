@@ -1,37 +1,23 @@
 {
-  "input_digest": "e8a5317d345405c914e1e9c3e54e178b5d302379ab2006d17be0990ca0bef075",
-  "runtime_sha256": "e8a5317d345405c914e1e9c3e54e178b5d302379ab2006d17be0990ca0bef075",
-  "candidate": "8ff9c9901b9a87e83cbf430034045397c1190e53face0bd862166c5a6d15ad48",
+  "input_digest": "070f200b95d96b1804a907dfee3f6971d04749e472b34ad0628270a80b1ba06a",
+  "runtime_sha256": "070f200b95d96b1804a907dfee3f6971d04749e472b34ad0628270a80b1ba06a",
+  "candidate": "d56aa13b3c5fc6c74fd1ffab42c915c541256c26332385da163f5bbda1b2256c",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "ac29b68ee8c9c02b2c2985f16642e9920e90e4b2",
+  "source_commit": "ee1238486b06ef1e5a114ffc85e415bf25a83860",
   "flows": [
     {
-      "name": "Quest log with the addon tab column",
+      "name": "settings",
       "steps": [
-        "Install the candidate and /reload",
-        "Open the world map with its quest log",
-        "The column of addon tabs beside the quest log draws as before, in order, with no gap; ForeverCore.QuestLogTabs.SetTabShown is present"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "ForeverCore page",
-      "steps": [
-        "/forever",
-        "The command runs with no error"
+        "/forever"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/2681ee0cd9641519399b45f43d6e2a47/raw/6d9180fc3ac1b5f002e14707b62e1c192d288432/1-quest-log-with-the-addon-tab-column.png",
-      "sha256": "c8451ec7cc82e1401b389ae195a941ed992f6f93fa2cff809c7011b6ba536da1"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/2681ee0cd9641519399b45f43d6e2a47/raw/6d9180fc3ac1b5f002e14707b62e1c192d288432/2-forevercore-page.png",
-      "sha256": "300567da87ef1d42b46b41eca4f17b5519ce3df579574db8786c075a98a13759"
+      "url": "https://gist.githubusercontent.com/cjber/543ab91662d41f2f75ef3a5351eb0feb/raw/451f17615c67e3071377242fd3046aa35aa250f5/1-settings.png",
+      "sha256": "51532b9bd7dfd309425b6c4e784eb51af54efd722f2c29419e5513e42ef02a3f"
     }
   ]
 }

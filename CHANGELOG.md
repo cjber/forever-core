@@ -28,6 +28,7 @@
   generated `Eval.lua` with a fresh run token, `!!DevSmoke` copies it into `DevSmokeDB.eval.run`, and the reader reloads
   once more and answers only the record carrying that token. A failed flow fails the proof with the snippet's own
   error, before any gist or `.visual-proof.json` exists. (#580)
+- Native settings pages can register section headings through `SettingsSections.Register`, using Blizzard's row layout and focus handling (#488).
 
 ## [1.11.0] - 2026-11-13
 

@@ -42,6 +42,7 @@ for _, path in ipairs({
 	"UI/Report.lua",
 	"UI/ForeverFamily.lua",
 	"UI/SettingsPage.lua",
+	"UI/SettingsSections.lua",
 	"UI/TrackerHost.lua",
 	"UI/TrackerSection.lua",
 	"UI/TrackerSection.xml",
@@ -194,7 +195,8 @@ ns.TrackerLock, ns.TrackerOrder = { name = "lock" }, { name = "order" }
 ns.TrackerQuestie, ns.TrackerEqot, ns.TrackerQuests = { name = "questie" }, { name = "eqot" }, { name = "quests" }
 ns.QuestLogTabs, ns.ProfessionTabs = { name = "tabs" }, { name = "professions" }
 ns.RetiredLeaderboards, ns.RetiredPeerStats = { name = "retired boards" }, { name = "retired peers" }
-ns.MinimapButton, ns.SettingsPage = { name = "minimap" }, { name = "settings" }
+ns.MinimapButton, ns.SettingsPage, ns.SettingsSections =
+	{ name = "minimap" }, { name = "settings" }, { name = "sections" }
 ns.Text, ns.QuestOrder = { name = "text" }, function()
 	return {}
 end
@@ -280,6 +282,7 @@ for _, field in ipairs({
 	"Leaderboards",
 	"MinimapButton",
 	"SettingsPage",
+	"SettingsSections",
 	"Text",
 	"QuestOrder",
 	"OpenMap",
