@@ -872,6 +872,25 @@ class PinTest(unittest.TestCase):
             self.assertEqual(sync.sync_checkout(self.root, self.root.parent, "v1.4.0"), "v1.3.2")
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
 
+    def test_sync_checkout_runs_the_shared_sync_that_edits_ci(self):
+        commands = []
+
+        def fake_run(command, cwd=None, check=True, env=None):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with (
+            mock.patch.object(sync, "run", side_effect=fake_run),
+            mock.patch.object(sync, "tooling_packages", return_value=()),
+            mock.patch.object(sync, "regenerate_phrases"),
+            mock.patch.object(sync, "regenerate_family"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            sync.sync_checkout(self.root, self.root.parent)
+        self.assertEqual(
+            commands[0], [sys.executable, str(self.root.parent / "tools" / "sync_consumers.py"), str(self.root.parent)]
+        )
+
     def test_the_pr_body_names_the_bump_the_sync_made(self):
         bodies = []
 
