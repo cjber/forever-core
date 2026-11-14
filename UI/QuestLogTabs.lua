@@ -10,6 +10,7 @@ local _, ns = ...
 ---@field key string
 ---@field spec ForeverQuestLogTabSpec
 ---@field tab ForeverQuestLogTab
+---@field hidden? boolean true while the addon has taken its tab out of the column
 
 -- Each Forever addon registers its panel here; every addon's tab stacks in the one column. The registry is addon
 -- state: nothing of Blizzard's reads it.
@@ -121,6 +122,8 @@ local function QuestLogPanelShown()
 	Sync()
 end
 
+-- The one column: a hidden tab keeps its slot in the order but draws nothing, so the buttons above and below close the
+-- gap. Hidden state lives on the entry, so hiding a tab leaves its panel and its selected state alone.
 local function Anchor()
 	local map = QuestMapFrame
 	---@type Button?
@@ -132,11 +135,14 @@ local function Anchor()
 	for _, entry in ipairs(Sorted()) do
 		local tab = entry.tab
 		tab:ClearAllPoints()
-		if not previous then
-			previous = map.MapLegendTab:IsShown() and map.MapLegendTab or map.QuestsTab
+		tab:SetShown(not entry.hidden)
+		if not entry.hidden then
+			if not previous then
+				previous = map.MapLegendTab:IsShown() and map.MapLegendTab or map.QuestsTab
+			end
+			tab:SetPoint("TOP", previous, "BOTTOM", 0, -3)
+			previous = tab
 		end
-		tab:SetPoint("TOP", previous, "BOTTOM", 0, -3)
-		previous = tab
 	end
 end
 
@@ -209,6 +215,25 @@ function api.Register(key, spec)
 	tabs[key] = { key = key, spec = spec, tab = tab }
 	Anchor()
 	return tab
+end
+
+-- Take an addon's own tab out of the column, or put it back. The panel keeps its state: hiding the selected tab leaves
+-- its panel open until another tab or the quest log is chosen, and Select still opens a hidden tab's panel. An unknown
+-- key, including one this module has not been given yet, changes nothing and answers false.
+---@param key string
+---@param shown boolean
+---@return boolean
+function api.SetTabShown(key, shown)
+	local entry = tabs[key]
+	if not entry then
+		return false
+	end
+	local hidden = shown == false
+	if (entry.hidden == true) ~= hidden then
+		entry.hidden = hidden or nil
+		Anchor()
+	end
+	return true
 end
 
 ---@param key string

@@ -150,7 +150,10 @@ for the client and one column's settings move every section together.
 - `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as
   `MenuUtil.CreateContextMenu`.
 - `ForeverCore.QuestLogTabs.Register(key, spec)` adds a panel tab to the world map's quest log. A `spec.safeCall` keeps
-  the panel's `shown` callback in the addon's journal.
+  the panel's `shown` callback in the addon's journal. `SetTabShown(key, false)` takes the tab out of the column, with
+  the remaining tabs closing the gap in the same order, and `SetTabShown(key, true)` puts it back in its slot.
+  `Select(key)` still opens a hidden tab's panel, and hiding the selected tab leaves its panel open until another tab
+  or the quest log is chosen. An unknown key changes nothing and returns false.
 - `ForeverCore.ProfessionTabs.Register(key, spec)` adds a side tab to the Professions window, under the client's own
   tabs and in registration order. `spec` is `{ icon, tooltip, page, minWidth?, onSelect?, safeCall? }`; `page` is the
   addon's page and `minWidth` raises the shared custom-page width above its 850-unit minimum. Native pages use

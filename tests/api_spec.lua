@@ -57,6 +57,10 @@ check(env.ForeverLeaderboards == nil, "ForeverLeaderboards is gone")
 check(env.ForeverPeerStats == nil, "ForeverPeerStats is gone")
 check(env.ForeverQuestLogTabs == nil, "ForeverQuestLogTabs is gone")
 check(ForeverCore.ProfessionTabs == ns.ProfessionTabs, "ForeverCore publishes the ProfessionTabs module")
+check(
+	type(ForeverCore.QuestLogTabs.SetTabShown) == "function",
+	"QuestLogTabs publishes SetTabShown with Register, Select, ShowQuests and Selected"
+)
 check(type(ForeverCore.Credits) == "table", "ForeverCore publishes the Credits module")
 local coreNames, distinct = {}, 0
 for _, row in ipairs(ns.Credits.players) do

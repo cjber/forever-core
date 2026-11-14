@@ -67,8 +67,10 @@ equal(
 		"lua UI/MapCanvas.lua",
 		"lua Core/RetiredLeaderboards.lua",
 		"lua Core/APIKit.lua",
+		"lua Core/ProfileCode.lua",
 		"lua UI/QuestLogTabs.lua",
 		"lua UI/ProfessionTabs.lua",
+		"lua UI/Profile.lua",
 		"lua Expose.lua",
 	}),
 	"core's TOC expands in order"

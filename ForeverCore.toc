@@ -51,6 +51,8 @@ UI\TrackerQuests.lua
 UI\MapCanvas.lua
 Core\RetiredLeaderboards.lua
 Core\APIKit.lua
+Core\ProfileCode.lua
 UI\QuestLogTabs.lua
 UI\ProfessionTabs.lua
+UI\Profile.lua
 Expose.lua

@@ -126,6 +126,11 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"디버그 캡처가 꺼졌고 클라이언트 설정이 복원되었습니다. 디버그 로그도 꺼졌고 고정이 해제되었습니다."
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"ForeverCore 로드가 끝나지 않아 디버그 캡처를 시작할 수 없습니다."
+L["No Forever addon has recorded anything for this character yet."] =
+	"아직 이 캐릭터에 대해 기록한 Forever 애드온이 없습니다."
+L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
+	"링크가 선택되어 있습니다. Ctrl+C(Mac에서는 Cmd+C)를 누른 뒤 브라우저에서 여세요. 아무것도 전송되지 않습니다."
+L["Your Forever profile"] = "Forever 프로필"
 L["%s (%d)"] = "%s (%d)"
 L["%s %d/%d"] = "%s %d/%d"
 L["Abandon"] = "포기"

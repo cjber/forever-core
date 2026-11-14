@@ -2,9 +2,22 @@
 
 ## [Unreleased]
 
+- **`/forever profile` gives your character a card you can share.** It gathers what your Forever addons have
+  recorded for this character (quests turned in, distance travelled, recipes learned, creatures met and more) into one
+  link, already selected for Ctrl+C. Open it in a browser to see the card. Nothing is sent and nothing is saved: the
+  card is drawn from the link itself, so sharing the link is sharing the card. Addons you do not use are left out.
+  (#443)
+
 - **The Forever quest list reads like the game's tracker and scrolls.** Turn it on with `/fcore quests`: every unfinished count gets a thin progress fill, clicking a zone heading folds it and keeps its count ("Darkshore (2)"), the quest menu folds one quest and can route an objective with Shortest Path, and the Quests header counts what is tracked. Quest item buttons sit on their quests, and a list taller than the column scrolls under its header; combat freezes the view so every button stays beside its quest. The game's own Quests and Campaign sections leave the tracker while the list is on, so its own header is the only one above it. (#177)
 
 ### For addon authors
+
+- **A quest log tab can be hidden without losing its panel.** `ForeverCore.QuestLogTabs.SetTabShown(key, false)` takes
+  an addon's tab out of the column and the buttons above and below close the gap in the same order, and
+  `SetTabShown(key, true)` puts it back in its slot. `Select(key)` still opens the panel of a hidden tab, and hiding the
+  tab whose panel is open leaves that panel open until another tab or the quest log is chosen, so an addon can drop its
+  tab when it has nothing to show without taking the page away. An unknown key does nothing and returns false; a known
+  one returns true. (#583)
 
 - **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
 
