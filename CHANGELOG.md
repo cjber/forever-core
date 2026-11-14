@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-14
+
+<!-- discord-image: docs/screenshots/profile.png -->
+
 - **`/forever profile` gives your character a card you can share.** It gathers what your Forever addons have
   recorded for this character (quests turned in, distance travelled, recipes learned, creatures met and more) into one
   link, already selected for Ctrl+C. Open it in a browser to see the card. Nothing is sent and nothing is saved: the
