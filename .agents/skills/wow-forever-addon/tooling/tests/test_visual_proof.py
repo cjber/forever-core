@@ -748,6 +748,24 @@ class VisualProofTest(unittest.TestCase):
         self.assertEqual(visual_proof.verify(root, ["UI/Main.lua"], path), [])
 
     @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_rewritten_proof_cannot_record_an_absolute_lua_step(self, _image_hash):
+        root = self.root()
+        absolute = "/home/me/.cache/agent-scratch/proof/flows/westfall-map.lua"
+        path = self.written(root, self.proof(root, flows=[{"name": "map", "steps": [absolute], "result": "pass"}]))
+        problems = visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path)
+        self.assertTrue(any("absolute path" in problem for problem in problems), problems)
+        self.assertEqual(
+            visual_proof.verify(root, ["UI/Main.lua"], path),
+            [],
+            "an existing proof stays valid until the change records a new one",
+        )
+        relative = "westfall-map.lua sha256:" + "a" * 64
+        self.written(root, self.proof(root, flows=[{"name": "map", "steps": [relative], "result": "pass"}]))
+        self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
+        self.written(root, self.proof(root, flows=[{"name": "map", "steps": ["/wait 25"], "result": "pass"}]))
+        self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
     def test_arbitrary_candidate_hash_is_rejected(self, _image_hash):
         root = self.root()
         path = self.written(root, self.proof(root, candidate="b" * 64))

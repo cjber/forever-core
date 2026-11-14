@@ -28,7 +28,8 @@ changes to a tracked file. Nothing exists for the client to miss until the first
 
 The client reads the inbox once per session: the first `/devsmoke eval` or login in a session loads it, and any
 snippet written later needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the
-snippet it just wrote, and reloads once more so the result it reads is that snippet's own.
+snippet it just wrote, and reloads once more so the result it reads is that snippet's own. A proof, smoke or eval
+session calls `clear_inbox` when it ends, including when it fails, so no later login runs the snippet it left (#589).
 
     tools/devsmoke/eval.py FILE
     tools/headless/forever_client.py eval FILE    # the same, then /reload and the saved DevSmokeDB.eval
@@ -180,6 +181,58 @@ def write_snippet(source: Path, addons: Path | None = None) -> dict[str, object]
         "lines": len(body.splitlines()),
         "token": token,
     }
+
+
+def clear_inbox(addons: Path | None = None) -> tuple[Path, ...]:
+    """Remove the generated inbox and its AddOns link, so a later login has no snippet left to run (#589).
+
+    A proof, smoke or eval session writes a snippet for its own login and calls this when the session ends, including
+    when it fails. Only the generated inbox inside a !!DevSmoke checkout is emptied: a stale link that points anywhere
+    else is removed without touching its target, and a real folder is left exactly as it is.
+    """
+    addons = addons or default_addons()
+    entry = addons / INBOX
+    try:
+        expected = (addon_folder(addons) / INBOX).resolve()
+    except EvalError:
+        expected = None
+    removed: list[Path] = []
+    if entry.is_symlink():
+        target = entry.resolve()
+        try:
+            entry.unlink()
+        except OSError as error:
+            raise EvalError(f"cannot remove {entry}: {error}") from None
+        removed.append(entry)
+        if expected is None or target != expected:
+            return tuple(removed)
+        inbox = target
+    elif entry.exists():
+        # A real folder is not ours to delete, and it is what the client loads instead of the checkout inbox.
+        return ()
+    else:
+        if expected is None or not expected.is_dir():
+            return ()
+        inbox = expected
+    for path in (inbox / CHUNK, inbox / f"{INBOX}.toc"):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            raise EvalError(f"cannot remove {path}: {error}") from None
+        else:
+            removed.append(path)
+    try:
+        inbox.rmdir()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # Anything else in the folder is not ours: the chunk and TOC are gone, so the client has nothing to run.
+        pass
+    else:
+        removed.append(inbox)
+    return tuple(removed)
 
 
 def main(argv=None) -> int:
