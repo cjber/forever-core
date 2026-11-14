@@ -39,6 +39,10 @@ local Queue
 local EnforceWidth
 local ApplyPages
 local RecomputeWidth
+local Anchor
+
+-- One pending next-frame placement at a time, however many layout triggers ask for it.
+local anchorQueued = false
 
 -- The client loads Blizzard_Professions on demand, so the window is read at call time, never captured at load. The
 -- width reads may run before the client has built it; the install paths run only once an addon registers a tab,
@@ -155,6 +159,7 @@ local function ApplyPending()
 	if watcher then
 		watcher:UnregisterEvent("PLAYER_REGEN_ENABLED")
 	end
+	Anchor()
 	ApplyPages()
 	EnforceWidth()
 end
@@ -195,14 +200,99 @@ local function LastNativeTab()
 	return last
 end
 
+-- Whether a frame is one of the tabs this module builds. Our own tabs sit in the same column, so they are never a slot
+-- to start under.
+---@param region ScriptRegion
+---@return boolean
+local function IsOurTab(region)
+	for _, entry in ipairs(order) do
+		if entry.tab == region then
+			return true
+		end
+	end
+	return false
+end
+
+-- Whether a frame hangs off one of our tabs. Anchoring our first tab under such a frame would make the two anchors a
+-- loop, so it is not a slot to start under.
+---@param frame Frame
+---@return boolean
+local function AnchoredToOurTabs(frame)
+	local count = frame:GetNumPoints()
+	for index = 1, count do
+		local _, relativeTo = frame:GetPoint(index)
+		if relativeTo and IsOurTab(relativeTo) then
+			return true
+		end
+	end
+	return false
+end
+
+-- No addon publishes a registration API for the column just outside the window's right edge, so another addon's side
+-- tab is found by where it sits: level with the client's own tabs across and below the last one the window shows. That
+-- geometric test holds for every addon drawing in the slot and names none of them.
+---@param native ForeverProfessionNativeTab
+---@return Frame?
+local function ColumnOccupant(native)
+	local nativeLeft, nativeRight, nativeBottom = native:GetLeft(), native:GetRight(), native:GetBottom()
+	if type(nativeLeft) ~= "number" or type(nativeRight) ~= "number" or type(nativeBottom) ~= "number" then
+		return nil
+	end
+	---@type Frame?
+	local lowest
+	local lowestBottom
+	local seen = {}
+	---@param frame Frame?
+	local function inspect(frame)
+		if not frame or frame == native or seen[frame] then
+			return
+		end
+		seen[frame] = true
+		if IsOurTab(frame) or not frame:IsShown() then
+			return
+		end
+		local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+		if type(left) ~= "number" or type(right) ~= "number" or type(top) ~= "number" or type(bottom) ~= "number" then
+			return
+		end
+		if right <= nativeLeft or left >= nativeRight or top > nativeBottom then
+			return
+		end
+		if AnchoredToOurTabs(frame) then
+			return
+		end
+		if not lowestBottom or bottom < lowestBottom then
+			lowest, lowestBottom = frame, bottom
+		end
+	end
+	-- All The Things reparents the client's own tabs, so a native tab's parent is read now rather than assumed to be
+	-- the window itself.
+	local parent = native:GetParent()
+	if parent then
+		for _, frame in ipairs({ parent:GetChildren() }) do
+			inspect(frame)
+		end
+	end
+	local window = Window()
+	if window and window ~= parent then
+		for _, frame in ipairs({ window:GetChildren() }) do
+			inspect(frame)
+		end
+	end
+	return lowest
+end
+
 -- Place every registered tab under the client's side tabs and then under one another, in registration order. Core
 -- owns the anchoring, so no addon walks siblings.
-local function Anchor()
-	---@type Frame?
-	local above = LastNativeTab()
-	if not above then
+Anchor = function()
+	local native = LastNativeTab()
+	if not native then
 		return
 	end
+	-- Another addon's side tab can already hold the slot the column would start in, so the column starts under it
+	-- instead. With the slot free, the placement is the client column's own.
+	---@type Frame
+	local above = ColumnOccupant(native) or native
 	for _, entry in ipairs(order) do
 		local tab = entry.tab
 		tab:ClearAllPoints()
@@ -211,9 +301,28 @@ local function Anchor()
 	end
 end
 
+-- Other addons place their own side tab from the same window events this module listens to, and may run after it. The
+-- column is placed again on the next frame, once for every trigger that asked in this one, so a tab placed later still
+-- never sits under ours.
+local function AnchorNextFrame()
+	if anchorQueued then
+		return
+	end
+	anchorQueued = true
+	C_Timer.After(0, function()
+		anchorQueued = false
+		if Locked() then
+			Queue()
+			return
+		end
+		Anchor()
+	end)
+end
+
 -- The window has laid itself out: keep the selected page width and our tab column.
 local function Layout()
 	Anchor()
+	AnchorNextFrame()
 	EnforceWidth()
 end
 
@@ -355,6 +464,7 @@ function api.Register(key, spec)
 	tabs[key] = entry
 	order[#order + 1] = entry
 	Anchor()
+	AnchorNextFrame()
 	RecomputeWidth()
 	EnforceWidth()
 	return tab

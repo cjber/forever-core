@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **The Professions tab of your Forever addons no longer hides under another addon's tab.** If another addon also put
+  a side tab on the Professions window, its tab could sit exactly where SkillUp's or Commissions' tab was, so our tab
+  looked missing or could not be clicked. The Forever tabs now start below whatever is already in that column and move
+  out of the way when another addon's tab appears. Thanks to Da_Tronic, tazrulez and contrabiscuit for the reports.
+
 ## [1.12.0] - 2026-11-14
 
 <!-- discord-image: docs/screenshots/profile.png -->
