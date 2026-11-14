@@ -77,6 +77,12 @@ _G.issecurevariable = function(name)
 	return true
 end
 
+-- The client marks some values secret, and any string operation on one raises. The spec answers false unless a test
+-- makes one value secret (#590).
+_G.issecretvalue = function()
+	return false
+end
+
 _G.C_AddOns = {
 	GetNumAddOns = function()
 		return #addons
@@ -726,6 +732,35 @@ equal(#evalLines[3], 254, "the second chunk reaches the cut")
 equal(#evalLines[4], 92, "the rest is its own line")
 equal(#DevSmokeDB.eval.out, 3, "the saved output is split the same way")
 equal(DevSmokeDB.eval.out[3]:sub(-1), "x", "the split keeps every character")
+
+-- A value the client marks secret raises on any string operation. The eval names it with one fixed line, so the run
+-- still finishes and its result says what was withheld (#590).
+local secretText = "a secret string"
+local defaultSecret = issecretvalue
+_G.issecretvalue = function(value)
+	return value == secretText
+end
+DevSmokeEvalRun = "run-secret"
+DevSmokeEval = function()
+	return secretText
+end
+evalLines = command("eval")
+equal(evalLines[1], "Dev Smoke: eval ok, 1 lines", "a returned secret still finishes the eval")
+equal(evalLines[2], "<secret>", "a returned secret is named, not shown")
+equal(DevSmokeDB.eval.ok, true, "a returned secret is recorded as a pass")
+equal(DevSmokeDB.eval.out[1], "<secret>", "the withheld value is saved as the fixed line")
+equal(DevSmokeDB.eval.err, nil, "a returned secret records no error")
+
+DevSmokeEval = function()
+	print(secretText)
+end
+evalLines = command("eval")
+equal(evalLines[1], "Dev Smoke: eval ok, 1 lines", "a printed secret still finishes the eval")
+equal(evalLines[2], "<secret>", "a printed secret is named, not shown")
+equal(DevSmokeDB.eval.ok, true, "a printed secret is recorded as a pass")
+equal(DevSmokeDB.eval.out[1], "<secret>", "the printed secret is saved as the fixed line")
+equal(#bugErrors, beforeEvalBugs, "a secret value never reaches BugGrabber")
+_G.issecretvalue = defaultSecret
 
 local ranBefore = DevSmokeDB.eval.ran
 DevSmokeEvalRun = "run-2"

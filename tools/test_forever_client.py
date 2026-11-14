@@ -846,6 +846,36 @@ class ForeverClientTest(unittest.TestCase):
         reload.assert_not_called()
         self.assertIn("probe.lua:2: 'end' expected", err.getvalue())
 
+    def test_eval_clears_the_inbox_after_reading_its_own_result(self):
+        with mock.patch.object(fc, "CLIENT", self.state / "client"):
+            self.saved_smoke('{\n\t["run"] = "run-1",\n\t["ran"] = 7,\n\t["ok"] = true,\n\t["out"] = { "shown" },\n}')
+            with (
+                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
+                mock.patch.object(fc, "reload"),
+                mock.patch.object(fc, "clear_eval_inbox") as clear,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(fc.main(["eval", "probe.lua"]), 0)
+        clear.assert_called_once_with(quiet=True)
+
+    def test_eval_clears_the_inbox_even_when_its_snippet_is_refused(self):
+        class Refused(Exception):
+            pass
+
+        tool = self.eval_tool(Refused)
+        tool.write_snippet.side_effect = Refused("probe.lua:2: 'end' expected")
+        with (
+            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox") as clear,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["eval", "probe.lua"]), 2)
+        reload.assert_not_called()
+        clear.assert_called_once_with(quiet=True)
+
     def test_eval_without_a_session_says_how_to_start_one(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
@@ -1302,6 +1332,12 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
+    def test_a_smoke_clears_the_eval_inbox_when_it_starts_and_ends(self):
+        with mock.patch.object(fc, "clear_eval_inbox") as clear:
+            code, _printed, _build = self.run_smoke()
+        self.assertEqual(code, 0)
+        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
+
     def test_manual_launcher_flag_reaches_up(self):
         argv = ["smoke", "--repo", "legacy-forever", "--ref", "main"]
         code, _printed, _build = self.run_smoke(main_argv=argv)
@@ -1504,6 +1540,23 @@ class ProofHelpersTest(unittest.TestCase):
     def test_flow_slug_is_a_file_name(self):
         self.assertEqual(fc.flow_slug("Update notice!"), "update-notice")
         self.assertEqual(fc.flow_slug("***"), "flow")
+
+    def test_flow_step_names_a_lua_snippet_by_file_name_and_digest(self):
+        lua = self.state / "westfall-map.lua"
+        lua.write_text("print('map')\n")
+        digest = fc.hashlib.sha256(lua.read_bytes()).hexdigest()
+        self.assertEqual(fc.flow_step(str(lua)), f"westfall-map.lua sha256:{digest}")
+        self.assertEqual(fc.flow_step("/wait 25"), "/wait 25")
+
+    def test_clear_eval_inbox_asks_the_writer_for_the_client_addons(self):
+        client = self.state / "client"
+        tool = mock.Mock()
+        with (
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+        ):
+            fc.clear_eval_inbox()
+        tool.clear_inbox.assert_called_once_with(addons=client / "Interface/AddOns")
 
     def test_run_flow_sends_a_slash_command_without_an_eval(self):
         with (
@@ -1948,6 +2001,32 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(
             self.reload.call_count, 3, "the proof's own, the flow's, and the one that saves the eval to disk"
         )
+
+    def test_a_lua_flow_step_is_its_file_name_and_digest_not_the_callers_path(self):
+        lua = self.state / "flows/westfall-map.lua"
+        lua.parent.mkdir(parents=True)
+        lua.write_text("print('map')\n")
+        self.saved_eval({"run": "run-1", "ran": 7, "ok": True, "out": {1: "map"}})
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
+        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
+            code, _printed, _err = self.run_proof(flow=[f"map={lua}"])
+        self.assertEqual(code, 0)
+        digest = fc.hashlib.sha256(lua.read_bytes()).hexdigest()
+        target = self.checkout / ".visual-proof.json"
+        proof = json.loads(target.read_text())
+        self.assertEqual(
+            proof["flows"],
+            [{"name": "map", "steps": [f"westfall-map.lua sha256:{digest}"], "result": "pass"}],
+        )
+        self.assertNotIn(str(lua), target.read_text(), "the caller's scratch path is not in the public proof")
+
+    def test_a_proof_clears_the_eval_inbox_when_it_starts_and_ends(self):
+        with mock.patch.object(fc, "clear_eval_inbox") as clear:
+            code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
 
     def test_a_lua_flow_that_raised_fails_the_proof_instead_of_passing_on_an_earlier_eval(self):
         # The reader used to answer with whatever eval the SavedVariables file held, which is the session before this

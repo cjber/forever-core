@@ -2,7 +2,9 @@
 
 The proof is `.visual-proof.json`: the flows checked in the WoW: Forever client with the candidate build installed,
 their screenshots at full-SHA gist URLs (the same images the pull request shows) with each image's sha256, and the
-digests below that bind them to the exact runtime the session loaded.
+digests below that bind them to the exact runtime the session loaded. A flow's `steps` is the slash command it typed,
+or a Lua snippet by file name and sha256: a caller's absolute path names a machine and a scratch folder that is gone
+with the session. A proof this change records or rewrites may not carry an absolute `.lua` step (#591).
 
 The proof separates what the checkout supplies from what a release installs:
 
@@ -56,7 +58,7 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.request import Request, urlopen
 
 from . import pkgmeta, toc
@@ -638,6 +640,16 @@ def image_hash(url: str) -> str:
         return hashlib.sha256(data).hexdigest()
 
 
+def absolute_lua_step(step: str) -> bool:
+    """Whether a recorded step is a Lua flow named by an absolute path, which a public proof may not carry (#591).
+
+    A step is normally a Forever addon's slash command, which also starts with "/", so only a `.lua` step is a file.
+    """
+    if not step.endswith(".lua"):
+        return False
+    return PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute()
+
+
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
     root = root.resolve()
     if not requires_proof(root, paths):
@@ -693,6 +705,24 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         )
     ):
         problems.append("visual proof needs at least one passing flow")
+    if PROOF.as_posix() in paths and isinstance(flows, list):
+        # A proof recorded before #591 can still name a Lua flow by the caller's absolute path. It stays valid until
+        # it is re-recorded, because a runtime change requires a fresh proof anyway while a version bump only
+        # revalidates the same one. A proof this change records or rewrites may not carry that path.
+        absolute = sorted(
+            {
+                step
+                for flow in flows
+                if isinstance(flow, dict) and isinstance(flow.get("steps"), list)
+                for step in flow["steps"]
+                if isinstance(step, str) and absolute_lua_step(step)
+            }
+        )
+        if absolute:
+            problems.append(
+                "visual proof may not record a Lua flow by an absolute path; use its file name and sha256: "
+                + ", ".join(absolute)
+            )
     images = proof.get("images")
     if not isinstance(images, list) or not images:
         problems.append("visual proof needs full-SHA image evidence")

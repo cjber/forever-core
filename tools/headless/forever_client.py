@@ -990,6 +990,7 @@ def smoke(args: argparse.Namespace) -> int:
     outcome: dict = {"counts": {}, "error": None}
     previous = stop_handlers()
     try:
+        clear_eval_inbox()
         records = link_build(folders, addons_dir())
         try:
 
@@ -1014,6 +1015,7 @@ def smoke(args: argparse.Namespace) -> int:
         print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
         return 1
     finally:
+        clear_eval_inbox(quiet=True)
         restore_handlers(previous)
     counts = outcome["counts"]
     if outcome["error"]:
@@ -1040,6 +1042,22 @@ def smoke(args: argparse.Namespace) -> int:
 def lua_flow(action: str) -> bool:
     """Whether a flow's action is a Lua file: an absolute path starts with "/" as a slash command does (#573)."""
     return action.endswith(".lua")
+
+
+def flow_step(action: str) -> str:
+    """What a proof records for one flow: a slash command as typed, or a Lua snippet by name and content digest.
+
+    A caller's path names a machine, a user and a scratch folder in a public proof, and the file it names is gone with
+    that folder, so a Lua step is the snippet's file name and sha256 instead (#591).
+    """
+    if not lua_flow(action):
+        return action
+    path = Path(action)
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise ClientError(f"cannot read the flow's snippet {action}: {error}") from None
+    return f"{path.name} sha256:{digest}"
 
 
 def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
@@ -1264,6 +1282,7 @@ def proof(args: argparse.Namespace) -> int:
     shots_folder = PROOF_SCRATCH / f"proof-{repo}-{commit[:7]}"
     previous = stop_handlers()
     try:
+        clear_eval_inbox()
         records = link_build(folders, addons_dir())
         try:
             entered = []
@@ -1297,6 +1316,7 @@ def proof(args: argparse.Namespace) -> int:
         print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
         return 1
     finally:
+        clear_eval_inbox(quiet=True)
         restore_handlers(previous)
     if not screenshots:
         # `up` turns a signal into a normal return after its own teardown, so an empty run is a stopped session.
@@ -1313,7 +1333,7 @@ def proof(args: argparse.Namespace) -> int:
         "client_build": client_build(folders[0][1]),
         "tested_artifact": "source-tree",
         "source_commit": commit,
-        "flows": [{"name": name, "steps": [action], "result": "pass"} for name, action in flows],
+        "flows": [{"name": name, "steps": [flow_step(action)], "result": "pass"} for name, action in flows],
         "images": images,
     }
     target = checkout / PROOF_FILE
@@ -1668,6 +1688,22 @@ def devsmoke_eval():
     return load_tool("devsmoke_eval", Path(__file__).resolve().parents[1] / "devsmoke/eval.py")
 
 
+def clear_eval_inbox(*, quiet: bool = False) -> None:
+    """Remove !!DevSmoke's generated inbox so a later login has no snippet left to run (#589).
+
+    A session that asks for a snippet clears the inbox when it ends, and a proof or smoke clears one before its own
+    login so an earlier session's snippet cannot open a window over its screenshots.
+    """
+    tool = devsmoke_eval()
+    try:
+        tool.clear_inbox(addons=CLIENT / "Interface/AddOns")
+    except tool.EvalError as error:
+        if quiet:
+            print(f"forever_client: could not clear the eval inbox: {error}", file=sys.stderr)
+            return
+        raise ClientError(str(error)) from None
+
+
 def saved_eval(token: str | None = None) -> dict:
     """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke.
 
@@ -1873,15 +1909,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.verb == "eval":
             tool = devsmoke_eval()
             try:
-                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
-            except tool.EvalError as error:
-                raise ClientError(str(error)) from None
-            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-            # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
-            reload(state)
-            report, ok = eval_result(state, written["token"])
-            print(report)
-            return 0 if ok else 1
+                try:
+                    written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
+                except tool.EvalError as error:
+                    raise ClientError(str(error)) from None
+                print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+                # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
+                reload(state)
+                report, ok = eval_result(state, written["token"])
+                print(report)
+                return 0 if ok else 1
+            finally:
+                clear_eval_inbox(quiet=True)
         elif args.verb == "errors":
             completed = errors(state, args.addon)
             sys.stdout.write(completed.stdout)
