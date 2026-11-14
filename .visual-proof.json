@@ -1,23 +1,34 @@
 {
-  "input_digest": "070f200b95d96b1804a907dfee3f6971d04749e472b34ad0628270a80b1ba06a",
-  "runtime_sha256": "070f200b95d96b1804a907dfee3f6971d04749e472b34ad0628270a80b1ba06a",
-  "candidate": "d56aa13b3c5fc6c74fd1ffab42c915c541256c26332385da163f5bbda1b2256c",
+  "input_digest": "26a76005935a2257cd1d83601d153a9ec31125fd381400c203987875d060dd69",
+  "runtime_sha256": "26a76005935a2257cd1d83601d153a9ec31125fd381400c203987875d060dd69",
+  "candidate": "d180f9555b5c7309c590aebc8aadfa463916adffb5afd390658c5ada031a006f",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "ee1238486b06ef1e5a114ffc85e415bf25a83860",
+  "source_commit": "a4c144bb50cc96c607d6efa4a7f5b6099443a9ba",
   "flows": [
     {
-      "name": "settings",
+      "name": "skillup tab with all the things and ackis loaded",
       "steps": [
-        "/forever"
+        "/devsmoke prof skillup"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "native cooking tab with all the things and ackis loaded",
+      "steps": [
+        "/devsmoke eval"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/543ab91662d41f2f75ef3a5351eb0feb/raw/451f17615c67e3071377242fd3046aa35aa250f5/1-settings.png",
-      "sha256": "51532b9bd7dfd309425b6c4e784eb51af54efd722f2c29419e5513e42ef02a3f"
+      "url": "https://gist.githubusercontent.com/cjber/aa42e841175b418c337291d7effc9c18/raw/511cbad8b454881d30a2a23b34fd10be6270f0b5/1-skillup-tab-with-all-the-things-and-ackis-loaded.png",
+      "sha256": "a19b5c9b6e1f830e7fabe9049143ec2090f59af5c15d47420a2caf02eda5cd77"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/aa42e841175b418c337291d7effc9c18/raw/511cbad8b454881d30a2a23b34fd10be6270f0b5/2-native-cooking-tab-with-all-the-things-and-ackis-loaded.png",
+      "sha256": "84357d97cee9da3ad40870d3944d9b1038e0aaff8a77dcd6e39a2901e8ef7282"
     }
   ]
 }
