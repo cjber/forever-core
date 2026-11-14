@@ -43,8 +43,11 @@ class FetchTest(unittest.TestCase):
             db2.mkdir(parents=True)
             (db2 / "GlobalStrings.csv").write_text("ID,BaseTag,TagText_lang,Flags\n1,CANCEL,Cancel,1\n2,1BAD,x,1\n")
             (db2 / "GlobalColor.csv").write_text("ID,LuaConstantName,Color\n1,NORMAL_FONT_COLOR,-11776\n")
-            (db2 / "UiTextureAtlasMember.csv").write_text(
-                "CommittedName,ID,Width,Height,OverrideWidth,OverrideHeight\nPin-Big,1,32,32,0,48\n"
+            self.write_atlas_tables(
+                db2,
+                "CommittedName,ID,UiTextureAtlasID,Width,Height,UiTextureAtlasElementID,OverrideWidth,OverrideHeight,"
+                "UiCanvasID\nPin-Big,1,1,32,32,9,0,48,0\n",
+                "Name,ID\nPin-Big,9\n",
             )
             fetch.build_data(root, ["enUS"], offline=True)
             out = root / "data" / fetch.BUILD
@@ -53,6 +56,71 @@ class FetchTest(unittest.TestCase):
             self.assertNotIn("1BAD", strings)
             self.assertIn('{"NORMAL_FONT_COLOR",1.0000,0.8235,0.0000,1.0000},', (out / "globalcolors.lua").read_text())
             self.assertIn('["pin-big"]={32,48},', (out / "atlas.lua").read_text())
+
+    @staticmethod
+    def write_atlas_tables(db2: Path, members: str, elements: str) -> None:
+        (db2 / "UiCanvas.csv").write_text("ID,Width,Height\n1,1024,768\n2,2048,1536\n")
+        (db2 / "UiTextureAtlas.csv").write_text(
+            "ID,FileDataID,UiTextureAtlasSetID,AtlasWidth,AtlasHeight,UiCanvasID\n"
+            "3944,1,1,512,512,1\n3945,2,1,1024,1024,2\n"
+        )
+        (db2 / "UiTextureAtlasMember.csv").write_text(members)
+        (db2 / "UiTextureAtlasElement.csv").write_text(elements)
+
+    def test_atlas_element_names_take_the_native_member_not_the_2x_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db2 = root / "db2" / fetch.BUILD
+            db2.mkdir(parents=True)
+            (db2 / "GlobalStrings.csv").write_text("ID,BaseTag,TagText_lang,Flags\n1,CANCEL,Cancel,1\n")
+            (db2 / "GlobalColor.csv").write_text("ID,LuaConstantName,Color\n1,NORMAL_FONT_COLOR,-11776\n")
+            self.write_atlas_tables(
+                db2,
+                "CommittedName,ID,UiTextureAtlasID,Width,Height,UiTextureAtlasElementID,OverrideWidth,OverrideHeight,"
+                "UiCanvasID\n"
+                "UI-HUD-Minimap-Frame-Cycle-c60,2,3944,42,42,9,0,0,0\n"
+                "UI-HUD-Minimap-Frame-Cycle-c60-2x,3,3945,84,84,9,0,0,0\n",
+                "Name,ID\nUI-HUD-Minimap-Frame-Cycle,9\n",
+            )
+            fetch.build_data(root, ["enUS"], offline=True)
+            atlas = (root / "data" / fetch.BUILD / "atlas.lua").read_text()
+            self.assertIn('["ui-hud-minimap-frame-cycle"]={42,42},', atlas)
+            self.assertIn('["ui-hud-minimap-frame-cycle-c60-2x"]={42,42},', atlas)
+
+    def test_a_stale_atlas_cache_is_rebuilt_from_the_element_table(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db2 = root / "db2" / fetch.BUILD
+            db2.mkdir(parents=True)
+            (db2 / "GlobalStrings.csv").write_text("ID,BaseTag,TagText_lang,Flags\n1,CANCEL,Cancel,1\n")
+            (db2 / "GlobalColor.csv").write_text("ID,LuaConstantName,Color\n1,NORMAL_FONT_COLOR,-11776\n")
+            self.write_atlas_tables(
+                db2,
+                "CommittedName,ID,UiTextureAtlasID,Width,Height,UiTextureAtlasElementID,OverrideWidth,OverrideHeight,"
+                "UiCanvasID\nPin-Big,1,1,32,32,9,0,48,0\n",
+                "Name,ID\nPin-Big,9\n",
+            )
+            out = root / "data" / fetch.BUILD
+            out.mkdir(parents=True)
+            (out / "atlas.lua").write_text("return {\n}\n")
+            fetch.build_data(root, ["enUS"], offline=True)
+            atlas = (out / "atlas.lua").read_text()
+            self.assertTrue(atlas.startswith(fetch.ATLAS_MARKER))
+            self.assertIn('["pin-big"]={32,48},', atlas)
+
+    def test_a_stale_atlas_cache_without_inputs_fails_offline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db2 = root / "db2" / fetch.BUILD
+            db2.mkdir(parents=True)
+            (db2 / "GlobalStrings.csv").write_text("ID,BaseTag,TagText_lang,Flags\n1,CANCEL,Cancel,1\n")
+            (db2 / "GlobalColor.csv").write_text("ID,LuaConstantName,Color\n1,NORMAL_FONT_COLOR,-11776\n")
+            out = root / "data" / fetch.BUILD
+            out.mkdir(parents=True)
+            (out / "atlas.lua").write_text("return {\n}\n")
+            with self.assertRaises(SystemExit) as raised:
+                fetch.build_data(root, ["enUS"], offline=True)
+            self.assertIn("without --offline", str(raised.exception))
 
     def test_offline_refuses_to_download(self):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(SystemExit):

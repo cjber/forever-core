@@ -21,6 +21,9 @@ luajit tools/forever_sim/run.lua                     # every tests/sim/*_scenari
 luajit tools/forever_sim/run.lua -v --only=tooltip   # one scenario, with the client's errors
 ```
 
+An installed cache whose `atlas.lua` predates the current schema is rebuilt from the client tables by the same
+`fetch.py` command. With `--offline` it names the missing table instead of reading the stale keys.
+
 ## A scenario
 
 ```lua

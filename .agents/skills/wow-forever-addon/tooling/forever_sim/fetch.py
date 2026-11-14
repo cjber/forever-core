@@ -10,9 +10,10 @@
 
 * Blizzard's UI source: Gethe/wow-ui-source at the pinned revision (the Forever build's), a shallow git fetch
   checked by commit hash.
-* Client tables from wago.tools at the pinned build: GlobalStrings (per locale), GlobalColor and the texture
-  atlas sizes, written as Lua data files the simulator loads. A copy already in the wow-mock-screenshots cache
-  (~/.cache/wowmock/<build>/) is reused.
+* Client tables from wago.tools at the pinned build: GlobalStrings (per locale), GlobalColor, and the texture
+  atlas elements and members with their logical sizes, written as Lua data files the simulator loads. A copy
+  already in the wow-mock-screenshots cache (~/.cache/wowmock/<build>/) is reused. atlas.lua carries a schema
+  marker, so a cache written by an older generator is rebuilt instead of read with stale keys.
 
 Nothing fetched here may be committed: the owner owns the game, and Blizzard's files stay test-time only.
 """
@@ -133,6 +134,85 @@ def write(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
+# The atlas cache format. Bump it when the generator's key or size contract changes, so an old atlas.lua in an
+# existing cache is rebuilt rather than read as if it already held element names.
+ATLAS_SCHEMA = 2
+ATLAS_MARKER = f"-- forever_sim atlas schema {ATLAS_SCHEMA} (element names, logical sizes)"
+ATLAS_INPUTS = ("UiTextureAtlasMember", "UiTextureAtlasElement", "UiTextureAtlas", "UiCanvas")
+
+
+def atlas_current(path: Path) -> bool:
+    try:
+        with path.open(encoding="utf-8") as file:
+            return file.readline().strip() == ATLAS_MARKER
+    except OSError:
+        return False
+
+
+def build_atlas(root: Path, offline: bool) -> str:
+    # DB2 contract: UiTextureAtlasElement.Name -> element ID -> every member with that
+    # UiTextureAtlasElementID. A member's Width/Height are sheet pixels; the API's logical size is
+    # OverrideWidth/Height when set, else Width/Height * 1024 / canvas width. The canvas is the member's
+    # UiCanvasID, or its atlas's UiCanvasID when zero; UiCanvas 1 is 1024 wide and 2 is 2048 wide.
+    #
+    # The member the client draws is chosen as tools/wowmock/NOTES.md documents and wowmock.py implements:
+    # a member in UiTextureAtlasSetID 1 (the Forever c60 set) wins, then a non-c60 member, then the resolution
+    # nearest the render scale (the sim is scale 1), then the highest member ID. Neither the element nor the
+    # member name is guessed from a suffix: only the exact DB2 names are written.
+    missing = [name for name in ATLAS_INPUTS if not (root / "db2" / BUILD / f"{name}.csv").exists()]
+    if missing and offline:
+        raise SystemExit(
+            f"atlas data is missing {', '.join(missing)}; run python3 forever_sim/fetch.py without --offline "
+            "to rebuild atlas.lua from the client tables"
+        )
+    members = db2(root, "UiTextureAtlasMember", offline)
+    elements = db2(root, "UiTextureAtlasElement", offline)
+    atlases = {row["ID"]: row for row in db2(root, "UiTextureAtlas", offline)}
+    canvases = {row["ID"]: row for row in db2(root, "UiCanvas", offline)}
+
+    def logical_size(row: dict[str, str]) -> tuple[float, float]:
+        atlas = atlases.get(row["UiTextureAtlasID"], {})
+        canvas_id = row.get("UiCanvasID") or "0"
+        if canvas_id == "0":
+            canvas_id = atlas.get("UiCanvasID") or "0"
+        canvas = canvases.get(canvas_id)
+        factor = int(canvas["Width"]) / 1024 if canvas else 1
+        width = int(row.get("OverrideWidth") or 0) or int(row["Width"]) / factor
+        height = int(row.get("OverrideHeight") or 0) or int(row["Height"]) / factor
+        return width, height
+
+    def number(value: float) -> str:
+        return f"{value:g}"
+
+    def rank(row: dict[str, str]) -> tuple[bool, bool, float, int]:
+        # The renderer's contract (tools/wowmock/NOTES.md): the Forever set wins, then a member other than a
+        # set-0 c60 one, then the resolution nearest the render scale (1 here), then the highest member ID.
+        atlas = atlases.get(row["UiTextureAtlasID"], {})
+        in_set = atlas.get("UiTextureAtlasSetID") == "1"
+        committed = row["CommittedName"].lower()
+        width = logical_size(row)[0]
+        fit = -abs(int(row["Width"]) / width - 1) if width else float("-inf")
+        return (in_set, "-c60" not in committed, fit, int(row["ID"]))
+
+    lines = [ATLAS_MARKER, "return {"]
+    # A member name is what CommittedName holds; C_Texture.GetAtlasInfo also takes the element name, which is a
+    # separate table. Keep both so a caller passing either resolves exactly.
+    for row in members:
+        width, height = logical_size(row)
+        lines.append(f"[{lua_string(row['CommittedName'].lower())}]={{{number(width)},{number(height)}}},")
+    by_element: dict[str, list[dict[str, str]]] = {}
+    for row in members:
+        by_element.setdefault(row.get("UiTextureAtlasElementID") or "", []).append(row)
+    for element in elements:
+        rows = by_element.get(element["ID"]) or []
+        if not rows:
+            continue
+        width, height = logical_size(max(rows, key=rank))
+        lines.append(f"[{lua_string(element['Name'].lower())}]={{{number(width)},{number(height)}}},")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 def build_data(root: Path, locales: list[str], offline: bool) -> None:
     out = root / "data" / BUILD
     for locale in locales:
@@ -158,14 +238,8 @@ def build_data(root: Path, locales: list[str], offline: bool) -> None:
         lines.append("}")
         write(target, "\n".join(lines) + "\n")
     target = out / "atlas.lua"
-    if not target.exists():
-        lines = ["return {"]
-        for row in db2(root, "UiTextureAtlasMember", offline):
-            width = int(row.get("OverrideWidth") or 0) or int(row["Width"])
-            height = int(row.get("OverrideHeight") or 0) or int(row["Height"])
-            lines.append(f"[{lua_string(row['CommittedName'].lower())}]={{{width},{height}}},")
-        lines.append("}")
-        write(target, "\n".join(lines) + "\n")
+    if not atlas_current(target):
+        write(target, build_atlas(root, offline))
 
 
 API_CALL = re.compile(r"\b(C_[A-Za-z0-9]+)\.([A-Za-z0-9_]+)\s*\(")
