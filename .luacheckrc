@@ -117,6 +117,7 @@ files["tools/devsmoke/"] = {
 		"seterrorhandler",
 		"ToggleWorldMap",
 		"issecurevariable",
+		"issecretvalue",
 		"debugstack",
 		"time",
 		"NUM_CHAT_WINDOWS",
@@ -135,7 +136,7 @@ files["tools/devsmoke/"] = {
 	},
 	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
 }
-files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval", "DevSmokeEvalRun" } }
+files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval", "DevSmokeEvalRun", "issecretvalue" } }
 
 -- Tracker colours and the quest item button's client helpers.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"

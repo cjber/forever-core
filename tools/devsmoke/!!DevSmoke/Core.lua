@@ -219,10 +219,22 @@ local function say(text)
 	end
 end
 
+-- A value the client marks secret raises on any string operation, which used to happen outside the eval's xpcall and
+-- lose the whole run. It is named by a fixed line instead (#590).
+local SECRET_LINE = "<secret>"
+
+local function secret(value)
+	return type(issecretvalue) == "function" and issecretvalue(value)
+end
+
+local function textOf(value)
+	return secret(value) and SECRET_LINE or tostring(value)
+end
+
 -- A printed or returned value as Agent lines: its own newlines split it, and a piece still past the chat box's cut is
 -- broken into chunks, so no line an agent reads is ever cut by the client.
 local function pushLines(value, lines)
-	local text = tostring(value)
+	local text = textOf(value)
 	for piece in (text .. "\n"):gmatch("(.-)\n") do
 		piece = piece:gsub("\r$", "")
 		if #piece > 0 then
@@ -256,7 +268,7 @@ local function runEval()
 	_G.print = function(...)
 		local parts = {}
 		for index = 1, select("#", ...) do
-			parts[#parts + 1] = tostring((select(index, ...)))
+			parts[#parts + 1] = textOf((select(index, ...)))
 		end
 		pushLines(table.concat(parts, "\t"), lines)
 	end

@@ -137,6 +137,40 @@ class DevSmokeEvalTest(unittest.TestCase):
         ev.write_snippet(self.snippet, self.addons)
         self.assertEqual((self.addons / "!!DevSmokeInbox").resolve(), (self.addon / "!!DevSmokeInbox").resolve())
 
+    def test_clearing_removes_the_generated_chunk_toc_and_link(self):
+        ev.write_snippet(self.snippet, self.addons)
+        inbox = self.addon / "!!DevSmokeInbox"
+        link = self.addons / "!!DevSmokeInbox"
+        removed = ev.clear_inbox(self.addons)
+        self.assertEqual(
+            set(removed),
+            {link, inbox / "Eval.lua", inbox / "!!DevSmokeInbox.toc", inbox},
+        )
+        self.assertFalse(link.is_symlink(), "the AddOns link is gone, so a later login loads no inbox")
+        self.assertFalse(inbox.exists(), "the generated inbox is gone with its chunk")
+
+    def test_clearing_an_inbox_that_is_already_gone_is_not_an_error(self):
+        self.assertEqual(ev.clear_inbox(self.addons), ())
+
+    def test_clearing_a_stale_link_leaves_its_target_alone(self):
+        stale = self.root / "stale-inbox"
+        stale.mkdir()
+        marker = stale / "keep.txt"
+        marker.write_text("not ours")
+        (self.addons / "!!DevSmokeInbox").symlink_to(stale)
+        removed = ev.clear_inbox(self.addons)
+        self.assertEqual(removed, (self.addons / "!!DevSmokeInbox",))
+        self.assertFalse((self.addons / "!!DevSmokeInbox").is_symlink())
+        self.assertTrue(marker.exists(), "a link to another folder is removed, never emptied")
+
+    def test_clearing_never_deletes_a_real_inbox_folder(self):
+        entry = self.addons / "!!DevSmokeInbox"
+        entry.mkdir()
+        marker = entry / "keep.txt"
+        marker.write_text("not ours")
+        self.assertEqual(ev.clear_inbox(self.addons), ())
+        self.assertTrue(marker.exists())
+
     def test_cli_prints_the_next_step(self):
         with (
             mock.patch.object(ev, "default_addons", return_value=self.addons),
