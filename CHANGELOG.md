@@ -12,6 +12,13 @@
 
 ### For addon authors
 
+- **A quest log tab can be hidden without losing its panel.** `ForeverCore.QuestLogTabs.SetTabShown(key, false)` takes
+  an addon's tab out of the column and the buttons above and below close the gap in the same order, and
+  `SetTabShown(key, true)` puts it back in its slot. `Select(key)` still opens the panel of a hidden tab, and hiding the
+  tab whose panel is open leaves that panel open until another tab or the quest log is chosen, so an addon can drop its
+  tab when it has nothing to show without taking the page away. An unknown key does nothing and returns false; a known
+  one returns true. (#583)
+
 - **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
 
 - **A Lua proof flow reports its own snippet's result, not the session before it.** `--flow NAME=file.lua` and

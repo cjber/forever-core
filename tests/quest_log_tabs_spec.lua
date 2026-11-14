@@ -268,6 +268,68 @@ api.ShowQuests()
 assert(openMap.ContentFrames[1].shown, "the quests page did not come back")
 assert(not openMap.ContentFrames[2].shown, "the legend page came back in the wrong mode")
 
+-- Hiding a tab draws no button and the rest close the gap in the same order. Select still opens a hidden tab's panel,
+-- and hiding the tab whose panel is open leaves that panel open until another tab or the quest log is chosen.
+local hideWorld = newWorld(false)
+local nsI = {}
+local hideApi = load(nsI)
+local hideMap = hideWorld.map
+hideMap.MapLegendTab:Hide()
+-- Before any tab is registered there is nothing to hide, and asking builds no button.
+assert(hideApi.SetTabShown("i", false) == false, "hiding a tab before Install answered true")
+assert(#hideWorld.created == 0, "SetTabShown built a frame before Install")
+
+local panelI = newFrame("ForeverPanelI")
+local panelJ = newFrame("ForeverPanelJ")
+local panelK = newFrame("ForeverPanelK")
+local tabI = hideApi.Register("i", { name = "AddonITab", tooltip = "I", panel = panelI, order = 10 })
+local tabJ = hideApi.Register("j", { name = "AddonJTab", tooltip = "J", panel = panelJ, order = 20 })
+local tabK = hideApi.Register("k", { name = "AddonKTab", tooltip = "K", panel = panelK, order = 30 })
+assert(tabI.points[2] == hideMap.QuestsTab, "the first hidden-world tab did not hang off the Quests tab")
+assert(tabJ.points[2] == tabI and tabK.points[2] == tabJ, "the hidden-world tabs did not stack by order")
+
+-- A hidden tab keeps its order but draws nothing: the next button moves up to the one before it.
+assert(hideApi.SetTabShown("j", false) == true, "hiding a registered tab answered false")
+assert(not tabJ.shown, "a hidden tab still draws its button")
+assert(tabK.points[2] == tabI, "the tab below a hidden one did not close the gap")
+assert(hideApi.SetTabShown("j", false) == true, "hiding an already hidden tab answered false")
+assert(not tabJ.shown and tabK.points[2] == tabI, "hiding a hidden tab again moved the column")
+
+-- Select opens a hidden tab's panel, and the button stays hidden while its panel is checked.
+hideApi.Select("j")
+assert(hideApi.Selected() == "j", "Select did not select a hidden tab")
+assert(panelJ.shown and not panelI.shown and not panelK.shown, "Select did not open a hidden tab's panel")
+assert(tabJ.checked and not tabJ.shown, "the hidden tab's button changed with its panel")
+
+-- Hiding the tab whose panel is open leaves that panel open until another tab is chosen.
+assert(hideApi.SetTabShown("j", false) == true, "hiding the selected tab answered false")
+assert(panelJ.shown and hideApi.Selected() == "j", "hiding the selected tab took its panel away")
+hideApi.Select("i")
+assert(panelI.shown and not panelJ.shown, "Select did not let another tab take the panel")
+
+-- Showing it again puts the button back in its order slot, with the panels untouched.
+hideApi.Select("j")
+assert(hideApi.SetTabShown("j", true) == true, "showing a hidden tab answered false")
+assert(tabJ.shown, "a shown tab did not draw its button")
+assert(tabJ.points[2] == tabI and tabK.points[2] == tabJ, "a shown tab did not return to its order slot")
+assert(panelJ.shown and hideApi.Selected() == "j", "showing a tab changed its panel")
+
+-- Hiding the selected tab then returning to the quest log closes the panel the usual way.
+assert(hideApi.SetTabShown("j", false) == true, "hiding the selected tab again answered false")
+assert(panelJ.shown, "hiding the selected tab closed its panel")
+hideApi.ShowQuests()
+assert(hideApi.Selected() == nil and not panelJ.shown, "ShowQuests left a hidden tab's panel open")
+assert(hideApi.SetTabShown("j", true) == true, "showing the tab again answered false")
+assert(tabJ.shown and tabK.points[2] == tabJ, "the tab did not come back after the quest log returned")
+
+-- An unknown key changes nothing, builds nothing, and answers false.
+local createdBefore = #hideWorld.created
+assert(hideApi.SetTabShown("nope", false) == false, "an unknown key answered true")
+assert(hideApi.SetTabShown("nope", true) == false, "showing an unknown key answered true")
+assert(#hideWorld.created == createdBefore, "an unknown key built a frame")
+assert(tabI.shown and tabJ.shown and tabK.shown, "an unknown key hid a tab")
+assert(#hideMap.sizeCalls == 0, "SetTabShown resized QuestMapFrame")
+
 -- `shown` reports each visibility change once, and the map's own callbacks tell a panel when it opens or closes,
 -- so no frame under the world map needs an OnShow or OnHide script.
 local eventWorld = newWorld(false)
@@ -442,19 +504,19 @@ local function assertNoShowScripts(frames)
 end
 
 local allFrames = {}
-for _, oneWorld in ipairs({ world, openWorld, eventWorld }) do
+for _, oneWorld in ipairs({ world, openWorld, eventWorld, hideWorld }) do
 	allFrames[#allFrames + 1] = oneWorld.worldMap
 	for _, frame in ipairs(oneWorld.created) do
 		allFrames[#allFrames + 1] = frame
 	end
 end
-for _, frame in ipairs({ panelA, panelB, panelC, panelD, panelE, panelF, panelG, panelH }) do
+for _, frame in ipairs({ panelA, panelB, panelC, panelD, panelE, panelF, panelG, panelH, panelI, panelJ, panelK }) do
 	allFrames[#allFrames + 1] = frame
 end
 assertNoShowScripts(allFrames)
 
 -- Every tab the module builds is a Button, so the gamepad's SmartNavigation scan never reads its mouse scripts.
-for _, oneWorld in ipairs({ world, openWorld, eventWorld }) do
+for _, oneWorld in ipairs({ world, openWorld, eventWorld, hideWorld }) do
 	for _, frame in ipairs(oneWorld.created) do
 		if frame.template == "LargeSideTabButtonTemplate" then
 			assert(frame.frameType == "Button", "a tab was not created as a Button: " .. tostring(frame.name))
