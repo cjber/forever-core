@@ -12,6 +12,7 @@
 
 ---@class ForeverQuestLogTabsAPI
 ---@field Register fun(key: string, spec: ForeverQuestLogTabSpec): ForeverQuestLogTab
+---@field SetTabShown fun(key: string, shown: boolean): boolean
 ---@field Select fun(key: string)
 ---@field ShowQuests fun()
 ---@field Selected fun(): string?

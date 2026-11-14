@@ -1,23 +1,37 @@
 {
-  "input_digest": "ad17e62346313c87aba00632cfbdae24083e9a8a0ebc7d1d7cf45cbc833348f7",
-  "runtime_sha256": "ad17e62346313c87aba00632cfbdae24083e9a8a0ebc7d1d7cf45cbc833348f7",
-  "candidate": "96b71f04bdf86f6a3083c61caa391385dfeae573bbc344c526b78a258c3175e4",
+  "input_digest": "e8a5317d345405c914e1e9c3e54e178b5d302379ab2006d17be0990ca0bef075",
+  "runtime_sha256": "e8a5317d345405c914e1e9c3e54e178b5d302379ab2006d17be0990ca0bef075",
+  "candidate": "8ff9c9901b9a87e83cbf430034045397c1190e53face0bd862166c5a6d15ad48",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "30e9e9d77b6ca6b026cb8c726064a8df2b2c4864",
+  "source_commit": "ac29b68ee8c9c02b2c2985f16642e9920e90e4b2",
   "flows": [
     {
-      "name": "profile",
+      "name": "Quest log with the addon tab column",
       "steps": [
-        "/forever profile"
+        "Install the candidate and /reload",
+        "Open the world map with its quest log",
+        "The column of addon tabs beside the quest log draws as before, in order, with no gap; ForeverCore.QuestLogTabs.SetTabShown is present"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "ForeverCore page",
+      "steps": [
+        "/forever",
+        "The command runs with no error"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/96f240d6687ddd1024903a05d58f87a8/raw/961752b1a3bbb4628efedcbc9dc992bf46cccb40/1-profile.png",
-      "sha256": "551a3601f5df2a8d7b895365dbc00d6378877022837f5a502b6888e126b42e53"
+      "url": "https://gist.githubusercontent.com/cjber/2681ee0cd9641519399b45f43d6e2a47/raw/6d9180fc3ac1b5f002e14707b62e1c192d288432/1-quest-log-with-the-addon-tab-column.png",
+      "sha256": "c8451ec7cc82e1401b389ae195a941ed992f6f93fa2cff809c7011b6ba536da1"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/2681ee0cd9641519399b45f43d6e2a47/raw/6d9180fc3ac1b5f002e14707b62e1c192d288432/2-forevercore-page.png",
+      "sha256": "300567da87ef1d42b46b41eca4f17b5519ce3df579574db8786c075a98a13759"
     }
   ]
 }
