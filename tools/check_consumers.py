@@ -396,31 +396,30 @@ def _step_property(lines, index, stop, key_indent, value):
 
 
 def _step_env(lines, start, stop, key_indent, env_index):
-    """The `env:` block starting at `start`, with the token and insertion point the sync needs."""
+    """Read direct environment keys, preserving GH_TOKEN's precedence over GITHUB_TOKEN."""
     entry_indent = None
-    token = False
-    token_line = None
+    tokens = {}
+    token_lines = {}
     insert_at = start
-    cursor = start
-    while cursor < stop:
+    for cursor in range(start, stop):
         child = lines[cursor]
-        child_stripped = child.lstrip(" \t")
-        if not child_stripped.strip() or child_stripped.startswith("#"):
-            cursor += 1
+        stripped = child.lstrip(" \t")
+        if not stripped.strip() or stripped.startswith("#"):
             continue
         if indent_of(child) <= key_indent:
             break
         if entry_indent is None:
             entry_indent = indent_of(child)
         insert_at = cursor + 1
-        # Nested scalar content is not an environment key.
-        if indent_of(child) == entry_indent and TOKEN_ENTRY.match(child_stripped):
-            if token_line is None:
-                token_line = cursor
-            if token_value(child_stripped):
-                token = True
-        cursor += 1
-    return StepEnv(env_index, entry_indent or key_indent + 2, token, token_line, insert_at)
+        if indent_of(child) != entry_indent or not TOKEN_ENTRY.match(stripped):
+            continue
+        key, _, value = stripped.partition(":")
+        if value.strip().startswith(("|", ">")):
+            raise UnsupportedEnv("token block scalars need a built-in token expression")
+        tokens[key] = token_value(stripped)
+        token_lines[key] = cursor
+    key = "GH_TOKEN" if "GH_TOKEN" in tokens else "GITHUB_TOKEN"
+    return StepEnv(env_index, entry_indent or key_indent + 2, tokens.get(key, False), token_lines.get(key), insert_at)
 
 
 def step_fields(lines, first, stop):
@@ -492,7 +491,11 @@ def check_package_token(repo, branch, local):
     lines = data.decode("utf-8", "replace").splitlines(keepends=True)
     failures = []
     for first, stop, _ in workflow_steps(lines):
-        fields = step_fields(lines, first, stop)
+        try:
+            fields = step_fields(lines, first, stop)
+        except UnsupportedEnv as error:
+            failures.append(f"{repo}: {path}: {error}")
+            continue
         if fields.run is None or not package_command(fields.run):
             continue
         if fields.env is not None and fields.env.token:

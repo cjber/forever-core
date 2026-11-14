@@ -353,6 +353,17 @@ class PackageTokenTest(unittest.TestCase):
         self.assertIn("inline mapping", out)
         self.assertEqual(self.workflow(), text)
 
+    def test_a_multiline_token_is_refused_without_corrupting_the_workflow(self):
+        text = CI_WORKFLOW.replace(
+            "      - run: python3 tools/check_package.py\n",
+            "      - run: python3 tools/check_package.py\n        env:\n          GH_TOKEN: |\n            old\n",
+        )
+        self.write(self.root, sync.CI_WORKFLOW, text)
+        code, out = self.run_sync()
+        self.assertEqual(code, 1, out)
+        self.assertIn("block scalars", out)
+        self.assertEqual(self.workflow(), text)
+
     def test_a_targeted_sync_leaves_the_ci_workflow_alone(self):
         self.write(self.root, sync.CI_WORKFLOW, CI_WORKFLOW)
         code, out = self.run_sync("--only", "tools/deadcode.py")

@@ -288,6 +288,14 @@ class PackageTokenCheckTest(unittest.TestCase):
         )
         self.assertEqual(len(self.check()), 1)
 
+    def test_an_unusable_gh_token_cannot_hide_behind_github_token(self):
+        self.write(
+            "jobs:\n  package:\n    steps:\n"
+            "      - run: python3 tools/check_package.py\n"
+            "        env:\n          GH_TOKEN: invalid\n          GITHUB_TOKEN: ${{ github.token }}\n"
+        )
+        self.assertEqual(len(self.check()), 1)
+
     def test_a_comment_naming_the_package_check_is_not_a_step(self):
         self.write(
             "jobs:\n  package:\n    steps:\n"
