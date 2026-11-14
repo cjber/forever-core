@@ -76,7 +76,8 @@ Built with AI assistance.
   is left alone.
 - **Features.** Three to eight bullets, each led by a bold name ending in a full stop.
 - **Pitch.** Starts with the addon's `## Title` from the TOC, without colour codes.
-- **Length.** Under 1,000 prose words by `check_copy.py --words`, the family block not counted (WFA-11).
+- **Length.** Under 1,000 prose words by `check_copy.py --words`, the generated family and credits blocks not
+  counted (WFA-11).
 
 ## The gallery
 

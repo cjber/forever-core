@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forever_tools import family
+from forever_tools import credits, family
 
 CHECK_COPY = Path(__file__).resolve().parents[2] / "check_copy.py"
 URL = re.compile(
@@ -140,6 +140,10 @@ class ProseWordsTest(unittest.TestCase):
         badges = "[![CI][badge]][ci] See https://example.com/x.\n\n[ci]: https://example.com/ci.yml\n"
         self.assertEqual(self.copy.words(badges), 1)
         self.assertEqual(self.copy.words(page + "\n" + family.BLOCK + "\n"), 3)
+
+    def test_the_generated_credits_block_is_not_prose(self):
+        block = credits.render_block([{"name": f"Player {n}", "what": ""} for n in range(50)])
+        self.assertEqual(self.copy.words("Plans a route.\n\n" + block + "\n"), 3)
 
     def test_the_block_passes_the_voice_check(self):
         with tempfile.TemporaryDirectory() as directory:

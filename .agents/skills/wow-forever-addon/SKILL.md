@@ -135,13 +135,14 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   bullet led by a bold name, at most ~60 words; depth moves to `docs/`. `## Credits` is a short paragraph that
   thanks, by name and with a link, the data sources, the addons whose ideas a feature took (even when no code was
   copied, saying so), translators and the people who reported bugs or asked for features (GitHub handles and named
-  CurseForge users; a generic thanks for the rest). THIRD_PARTY.md (WFA-31) holds the full list. The WFA-32 family block is not
-  counted; `check_copy.py --words` gives the count every repo uses.
+  CurseForge users; a generic thanks for the rest). THIRD_PARTY.md (WFA-31) holds the full list. The WFA-32 family
+  block and the WFA-31 generated credits block are not counted; `check_copy.py --words` gives the count every repo
+  uses.
 - **WFA-11** `docs/curseforge.md` is the store description and follows [store-page.md](store-page.md): the pitch,
   the sponsor sentence with the Discord, Sponsors and Ko-fi button row under it, three to six captioned
   screenshots, Features, Usage, the source and AI lines; under 1,000 words; no Install or Development sections. `forever_tools.store_page` fails CI on a page
-  that leaves a part out. It is pasted into CurseForge by hand after it changes; Wago carries a fixed stub (`wow-addon-publish`). The WFA-32 block is
-  not counted here either.
+  that leaves a part out. It is pasted into CurseForge by hand after it changes; Wago carries a fixed stub (`wow-addon-publish`). The WFA-32 block and
+  the WFA-31 generated credits block are not counted here either.
 - **WFA-23** The addon fits the game's own UI. Show this in the lead image, against the stock UI
   where the change is subtle. Copy leads with what the addon does and how to use it; it does not
   need a slogan about its appearance. See [voice.md](voice.md).

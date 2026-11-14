@@ -12,7 +12,9 @@ skips one only until somebody posts in it again.
 An issue filed from a comment carries the line `CurseForge thread <id> (<addon>)`. `--unanswered` reads those lines
 from every Forever issue and prints a linked thread as waiting on its issue and the issue's state. `--due` lists the
 threads whose issues all closed as completed and whose fix is in a released tag, with that version, unless the owner
-has already replied since that release.
+has already replied since that release. A release is found from the sibling checkout's git tags, not one compare call
+per tag, and a closed issue's answer is cached in cfwatch-released.json beside the seen IDs, keyed by its current close
+time so a reopened or reclosed issue recomputes.
 
 The watched projects are every addon in `forever_tools.family.ADDONS` plus ForeverCore. Each project's ID comes from
 its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout, or through `gh api` when that
@@ -41,6 +43,7 @@ from forever_tools.family import ADDONS  # noqa: E402
 PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.MULTILINE)
 LINK = re.compile(r"^CurseForge thread (\d+) \(([a-z0-9-]+)\)\s*$", re.MULTILINE)
 OWNER = "cjber"
+RELEASED = "cfwatch-released.json"
 
 
 def state_path(name="cfwatch-seen.json"):
@@ -116,6 +119,44 @@ def suite_root():
     if first.startswith("worktree "):
         return Path(first[len("worktree ") :]).parent
     return CORE.parent
+
+
+def checkout(root, repo):
+    """The local git checkout for `repo` under the suite folder, or None when it is not on this machine."""
+    folder = Path(root) / repo
+    return folder if (folder / ".git").exists() else None
+
+
+def git(checkout, *args):
+    """Run git in a sibling checkout; this reads ancestry and tags without spending a REST call."""
+    return subprocess.run(
+        ["git", "-C", str(checkout), *args],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def tags_containing(checkout, sha, repository):
+    """Every local tag whose history contains `sha`, or None when there is no usable checkout.
+
+    Tags are fetched at most once per repository per run. `repository` is the run's cache entry for the repo. A failed
+    fetch fails closed for that repository: stale tags never answer whether a release contains the fix.
+    """
+    if checkout is None or repository.get("fetch_failed"):
+        return None
+    if not repository["fetched"]:
+        fetched = git(checkout, "fetch", "--tags", "--quiet")
+        repository["fetched"] = True
+        if fetched.returncode:
+            repository["fetch_failed"] = True
+            detail = f": {fetched.stderr.strip()}" if fetched.stderr.strip() else ""
+            print(f"{checkout}: git fetch --tags failed{detail}; not using stale tags", file=sys.stderr)
+            return None
+    result = git(checkout, "tag", "--contains", sha, "--sort=creatordate")
+    if result.returncode:
+        return None
+    return set(result.stdout.split())
 
 
 def slug_list():
@@ -300,19 +341,34 @@ class Release(NamedTuple):
     published: str
 
 
-def released_in(repo, number) -> Release | None:
+def released_in(repo, number, root=None, cache=None, releases=None) -> Release | None:
     """The first release that contains the merge of the PR that closed the issue, or None.
 
-    An issue closed as not planned, still open, or fixed on main but not yet released answers None.
+    An issue closed as not planned, still open, or fixed on main but not yet released answers None. The local checkout
+    answers which tag contains the merge; `cache` remembers the answer per issue across runs, and `releases` holds each
+    repository's release list for this run. The issue's current state and close time are read before a cached answer is
+    used, so a reopened or reclosed issue is recomputed. A repository with no local checkout answers None, never a
+    compare call.
     """
+    key = f"{repo}#{number}"
     issue = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}")
     if issue.get("state") != "closed" or issue.get("state_reason") == "not_planned":
+        if cache is not None:
+            cache.pop(key, None)
         return None
     closed_at = issue.get("closed_at") or ""
+    remembered = (cache or {}).get(key)
+    if (
+        isinstance(remembered, dict)
+        and remembered.get("tag")
+        and closed_at
+        and remembered.get("closed_at") == closed_at
+    ):
+        return Release(remembered["tag"], remembered.get("published") or "")
+    if cache is not None:
+        cache.pop(key, None)
     events = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}/timeline", "--paginate")
-    sha = next(
-        (event.get("commit_id") for event in events if event.get("event") == "closed" and event.get("commit_id")), None
-    )
+    sha = close_commit(events, closed_at)
     closing = []
     for event in events:
         source = (event.get("source") or {}).get("issue") or {}
@@ -323,14 +379,39 @@ def released_in(repo, number) -> Release | None:
         sha = gh_json("api", f"repos/{OWNER}/{repo}/pulls/{max(closing)[1]}").get("merge_commit_sha")
     if not sha:
         return None
-    releases = [
-        release for release in gh_json("api", f"repos/{OWNER}/{repo}/releases?per_page=100") if not release.get("draft")
-    ]
-    for release in sorted(releases, key=lambda release: release.get("published_at") or ""):
-        status = gh_json("api", f"repos/{OWNER}/{repo}/compare/{sha}...{release['tag_name']}").get("status")
-        if status in ("ahead", "identical"):
-            return Release(release["tag_name"], release.get("published_at") or "")
-    return None
+
+    if releases is None:
+        releases = {}
+    repository = releases.setdefault(repo, {"rows": None, "fetched": False, "fetch_failed": False, "warned": False})
+    suite = Path(root) if root is not None else suite_root()
+    local = checkout(suite, repo)
+    if local is None:
+        if not repository["warned"]:
+            print(f"{repo}: no local checkout under {suite}; --due cannot name its releases", file=sys.stderr)
+            repository["warned"] = True
+        return None
+    containing = tags_containing(local, sha, repository)
+    if not containing:
+        return None
+    if repository["rows"] is None:
+        repository["rows"] = [
+            release
+            for release in gh_json("api", f"repos/{OWNER}/{repo}/releases?per_page=100")
+            if not release.get("draft")
+        ]
+    found = next(
+        (
+            Release(release["tag_name"], release.get("published_at") or "")
+            for release in sorted(repository["rows"], key=lambda release: release.get("published_at") or "")
+            if release["tag_name"] in containing
+        ),
+        None,
+    )
+    if found is None:
+        return None
+    if cache is not None:
+        cache[key] = {"tag": found.tag, "published": found.published, "closed_at": closed_at}
+    return found
 
 
 def moment(value):
@@ -340,6 +421,24 @@ def moment(value):
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.timezone.utc)
+
+
+def close_commit(events, closed_at):
+    """The commit_id of the close event at `closed_at`, or None when that closure had no commit.
+
+    The latest close event is chosen before its commit is read, so a manual close after a reopen never falls back to
+    an older close's commit; None then lets the cross-referenced pull request answer instead.
+    """
+    closed = [event for event in events if event.get("event") == "closed"]
+    if not closed:
+        return None
+    current = moment(closed_at)
+    if current is not None:
+        for event in reversed(closed):
+            created = moment(event.get("created_at"))
+            if created is not None and created <= current:
+                return event.get("commit_id")
+    return closed[-1].get("commit_id")
 
 
 def posted_after(comment, published):
@@ -375,6 +474,8 @@ def main(argv=None, fetch=None):
     seen = load(path)
     settled_path = state_path("cfwatch-settled.json")
     settled = load(settled_path)
+    released_path = state_path(RELEASED)
+    released_cache = load(released_path) if show_due else {}
     raw, totals, new = {}, {}, []
     for slug, mod_id in projects().items():
         items, total = fetch_mod(fetch, mod_id)
@@ -428,6 +529,8 @@ def main(argv=None, fetch=None):
     elif show_due:
         links = linked_issues()
         by_thread = {str(top["id"]): rows for items in raw.values() for top, rows in threads(items)}
+        root = suite_root() if links else None
+        repositories = {}
         released = {}
         due = []
         answered = 0
@@ -436,7 +539,7 @@ def main(argv=None, fetch=None):
             for issue in issues:
                 key = (issue["repo"], issue["number"])
                 if key not in released:
-                    released[key] = released_in(*key)
+                    released[key] = released_in(*key, root=root, cache=released_cache, releases=repositories)
                 versions.append(released[key])
             if not all(versions):
                 continue
@@ -456,6 +559,7 @@ def main(argv=None, fetch=None):
         due_threads = {thread for thread, _, _ in due}
         waiting = len(links) - len(due_threads) - answered
         print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting")
+        save(released_path, released_cache)
     else:
         for _, slug, comment in sorted(new, key=lambda row: row[0]):
             print(format_comment(slug, comment))

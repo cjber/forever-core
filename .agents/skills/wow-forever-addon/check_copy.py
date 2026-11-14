@@ -9,8 +9,8 @@ caps at 128 characters; a longer one fails.
 
 check_copy.py --words FILE... also prints each file's prose words beside its WFA-10/11 limit (README.md
 under 1,200, curseforge.md under 1,000), so every repo measures the same way. The count is a guide and never
-fails. The shared forever-family block, code, images, link addresses and HTML tags are not counted:
-the block is the same on every page and is not that page's prose.
+fails. The generated forever-family and forever-credits blocks, code, images, link addresses and HTML
+tags are not counted: those blocks are written by tools, not the prose a person wrote for the page.
 """
 
 import re

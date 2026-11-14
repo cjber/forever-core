@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -44,12 +45,13 @@ def fake_fetch(rows):
     return fetch
 
 
-def run(argv, fetch, state=None, links=None):
+def run(argv, fetch, state=None, links=None, root=None):
     output = io.StringIO()
     with tempfile.TemporaryDirectory() as tmp:
         with (
             unittest.mock.patch.object(cfwatch, "projects", lambda root=None, remote=None: {"test-mod": 1}),
             unittest.mock.patch.object(cfwatch, "linked_issues", lambda search=None: links or {}),
+            unittest.mock.patch.object(cfwatch, "suite_root", lambda: Path(root or tmp)),
             unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": state or tmp}),
             contextlib.redirect_stdout(output),
         ):
@@ -228,7 +230,7 @@ class LinkedTest(unittest.TestCase):
             "12": [self.link(number=8, state="closed")],
         }
 
-        def released(repo, number):
+        def released(repo, number, **kwargs):
             return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z") if number == 7 else None
 
         with unittest.mock.patch.object(cfwatch, "released_in", released):
@@ -240,7 +242,7 @@ class LinkedTest(unittest.TestCase):
     def test_a_thread_is_due_only_once_every_linked_issue_has_released(self):
         links = {"11": [self.link(number=7), self.link(number=8)]}
 
-        def released(repo, number):
+        def released(repo, number, **kwargs):
             return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z") if number == 7 else None
 
         with unittest.mock.patch.object(cfwatch, "released_in", released):
@@ -252,7 +254,7 @@ class LinkedTest(unittest.TestCase):
         links = {"11": [self.link(number=7)]}
         rows = [comment(11, "needs a fix"), owner_reply(10, 11, posted=1_800_000_000_000)]
 
-        def released(repo, number):
+        def released(repo, number, **kwargs):
             return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
 
         with unittest.mock.patch.object(cfwatch, "released_in", released):
@@ -264,7 +266,7 @@ class LinkedTest(unittest.TestCase):
         links = {"11": [self.link(number=7)]}
         rows = [comment(11, "needs a fix"), owner_reply(10, 11)]
 
-        def released(repo, number):
+        def released(repo, number, **kwargs):
             return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
 
         with unittest.mock.patch.object(cfwatch, "released_in", released):
@@ -273,16 +275,77 @@ class LinkedTest(unittest.TestCase):
         self.assertIn("1 due, 0 answered, 0 still waiting", output)
 
 
-class ReleasedInTest(unittest.TestCase):
-    """The tag that first contains the fix, from the issue's own state and timeline."""
+class DueCallsTest(unittest.TestCase):
+    """A due run answers from local tags and makes a bounded, cached number of REST calls."""
 
-    def release(self, issue, events=None, tags=("v1.5.0", "v1.5.1"), contained=("v1.5.1",), sha="abc"):
+    def test_due_makes_no_compare_calls_and_caches_every_answer(self):
+        tags = tuple(f"v1.0.{number}" for number in range(30))
+        links = {
+            str(number): [{"repo": "skillup-forever", "slug": "skillup-forever", "number": number, "state": "closed"}]
+            for number in range(1, 6)
+        }
+        api_calls = []
+
         def api(*args):
             url = args[1]
-            if url.endswith("/issues/9"):
-                return issue
+            api_calls.append(url)
+            if "/timeline" in url:
+                return [{"event": "closed", "commit_id": "abc"}]
+            if "/issues/" in url:
+                return {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+            if "/releases" in url:
+                return [
+                    {"tag_name": tag, "published_at": f"2026-11-{index + 1:02d}", "draft": False}
+                    for index, tag in enumerate(tags)
+                ]
+            raise AssertionError(url)
+
+        def git(checkout, *args):
+            stdout = "v1.0.29\n" if args[0] == "tag" else ""
+            return subprocess.CompletedProcess(args, 0, stdout, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                unittest.mock.patch.object(cfwatch, "gh_json", api),
+                unittest.mock.patch.object(cfwatch, "checkout", lambda root, repo: Path("/checkout")),
+                unittest.mock.patch.object(cfwatch, "git", git),
+            ):
+                first = run(["--due"], fake_fetch([]), state=tmp, links=links, root=tmp)
+                self.assertIn("5 due", first)
+                self.assertFalse([url for url in api_calls if "/compare/" in url])
+                self.assertEqual(sum("/releases" in url for url in api_calls), 1)
+                self.assertEqual(len(api_calls), 11)
+
+                api_calls.clear()
+                second = run(["--due"], fake_fetch([]), state=tmp, links=links, root=tmp)
+                self.assertIn("5 due", second)
+                self.assertEqual(len(api_calls), 5)
+                self.assertFalse([url for url in api_calls if "/compare/" in url or "/timeline" in url])
+
+
+class ReleasedInTest(unittest.TestCase):
+    """The tag that first contains the fix, from local git tags and one cached release list."""
+
+    def release(
+        self,
+        issue,
+        events=None,
+        tags=("v1.5.0", "v1.5.1"),
+        contained=("v1.5.1",),
+        contained_by_sha=None,
+        sha="abc",
+        fetch_ok=True,
+        api_calls=None,
+        git_calls=None,
+    ):
+        def api(*args):
+            url = args[1]
+            if api_calls is not None:
+                api_calls.append(url)
             if "/timeline" in url:
                 return events or []
+            if "/issues/" in url:
+                return issue
             if "/pulls/" in url:
                 return {"merge_commit_sha": sha}
             if "/releases" in url:
@@ -291,37 +354,179 @@ class ReleasedInTest(unittest.TestCase):
                     for index, tag in enumerate(tags)
                 ]
             if "/compare/" in url:
-                return {"status": "ahead" if url.rsplit("...", 1)[1] in contained else "behind"}
+                raise AssertionError("compare API used even though the local checkout has the tags")
             raise AssertionError(url)
 
-        return unittest.mock.patch.object(cfwatch, "gh_json", api)
+        def git(checkout, *args):
+            if git_calls is not None:
+                git_calls.append(args)
+            if args[0] == "fetch" and not fetch_ok:
+                return subprocess.CompletedProcess(args, 128, "", "could not read from remote repository")
+            if args[0] == "tag":
+                tags = contained if contained_by_sha is None else contained_by_sha.get(args[2], ())
+                stdout = "\n".join(tags) + ("\n" if tags else "")
+                return subprocess.CompletedProcess(args, 0, stdout, "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        return unittest.mock.patch.multiple(
+            cfwatch,
+            gh_json=api,
+            checkout=lambda root, repo: Path("/checkout"),
+            git=git,
+        )
+
+    def released(self, *args, **kwargs):
+        return cfwatch.released_in(*args, root=Path("/suite"), **kwargs)
 
     def merged(self, at="2026-11-11T02:16:29Z"):
         return [{"event": "cross-referenced", "source": {"issue": {"number": 583, "pull_request": {"merged_at": at}}}}]
 
     def test_an_open_issue_is_not_due(self):
         with self.release({"state": "open"}):
-            self.assertIsNone(cfwatch.released_in("skillup-forever", 9))
+            self.assertIsNone(self.released("skillup-forever", 9))
 
     def test_a_closed_not_planned_issue_is_never_due(self):
         with self.release({"state": "closed", "state_reason": "not_planned", "closed_at": "2026-11-11T02:16:31Z"}):
-            self.assertIsNone(cfwatch.released_in("skillup-forever", 9))
+            self.assertIsNone(self.released("skillup-forever", 9))
 
     def test_a_closed_issue_names_the_release_that_first_contains_its_pr(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
-        with self.release(issue, self.merged()):
-            self.assertEqual(cfwatch.released_in("skillup-forever", 9), cfwatch.Release("v1.5.1", "2026-11-02"))
+        api_calls, git_calls = [], []
+        with self.release(issue, self.merged(), api_calls=api_calls, git_calls=git_calls):
+            self.assertEqual(self.released("skillup-forever", 9), cfwatch.Release("v1.5.1", "2026-11-02"))
+        self.assertFalse([url for url in api_calls if "/compare/" in url])
+        self.assertEqual(
+            git_calls, [("fetch", "--tags", "--quiet"), ("tag", "--contains", "abc", "--sort=creatordate")]
+        )
 
     def test_a_fix_on_main_but_not_in_a_release_is_not_due(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
         with self.release(issue, self.merged(), contained=()):
-            self.assertIsNone(cfwatch.released_in("skillup-forever", 9))
+            self.assertIsNone(self.released("skillup-forever", 9))
 
     def test_a_pr_merged_after_the_issue_closed_does_not_close_it(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
         late = self.merged("2026-11-11T02:32:02Z")
         with self.release(issue, late, sha="late"):
-            self.assertIsNone(cfwatch.released_in("skillup-forever", 9))
+            self.assertIsNone(self.released("skillup-forever", 9))
+
+    def test_without_a_local_checkout_it_never_falls_back_to_compare_calls(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+        api_calls = []
+
+        def api(*args):
+            url = args[1]
+            api_calls.append(url)
+            if "/timeline" in url:
+                return [{"event": "closed", "commit_id": "abc"}]
+            if "/issues/9" in url:
+                return issue
+            raise AssertionError(url)
+
+        with (
+            unittest.mock.patch.object(cfwatch, "gh_json", api),
+            unittest.mock.patch.object(cfwatch, "checkout", lambda root, repo: None),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertIsNone(self.released("skillup-forever", 9))
+        self.assertFalse([url for url in api_calls if "/compare/" in url])
+
+    def test_a_closed_issue_keeps_its_answer_for_later_runs(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+        cache, api_calls, git_calls = {}, [], []
+        with self.release(issue, [{"event": "closed", "commit_id": "abc"}], api_calls=api_calls, git_calls=git_calls):
+            first = self.released("skillup-forever", 9, cache=cache)
+            second = self.released("skillup-forever", 9, cache=cache)
+        self.assertEqual(first, second)
+        self.assertEqual(
+            cache["skillup-forever#9"],
+            {"tag": "v1.5.1", "published": "2026-11-02", "closed_at": "2026-11-11T02:16:31Z"},
+        )
+        self.assertEqual(len(api_calls), 4)
+        self.assertEqual(
+            git_calls, [("fetch", "--tags", "--quiet"), ("tag", "--contains", "abc", "--sort=creatordate")]
+        )
+
+    def test_a_reopened_issue_drops_its_cached_release(self):
+        closed = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+        cache = {}
+        with self.release(closed, [{"event": "closed", "commit_id": "abc"}]):
+            self.assertEqual(self.released("skillup-forever", 9, cache=cache), cfwatch.Release("v1.5.1", "2026-11-02"))
+        self.assertIn("skillup-forever#9", cache)
+
+        with self.release({"state": "open"}):
+            self.assertIsNone(self.released("skillup-forever", 9, cache=cache))
+        self.assertNotIn("skillup-forever#9", cache)
+
+    def test_a_reclosed_issue_with_a_new_fix_recomputes_its_release(self):
+        first = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+        cache, api_calls = {}, []
+        with self.release(first, [{"event": "closed", "commit_id": "abc"}]):
+            self.released("skillup-forever", 9, cache=cache)
+
+        reclosed = {"state": "closed", "state_reason": "completed", "closed_at": "2026-12-01T00:00:00Z"}
+        both_closes = [
+            {"event": "closed", "commit_id": "abc", "created_at": "2026-11-11T02:16:31Z"},
+            {"event": "reopened", "created_at": "2026-11-20T00:00:00Z"},
+            {"event": "closed", "commit_id": "def", "created_at": "2026-12-01T00:00:00Z"},
+        ]
+        with self.release(
+            reclosed,
+            both_closes,
+            tags=("v1.5.1", "v1.6.0"),
+            contained=(),
+            contained_by_sha={"abc": ("v1.5.1",), "def": ("v1.6.0",)},
+            api_calls=api_calls,
+        ):
+            found = self.released("skillup-forever", 9, cache=cache)
+
+        self.assertEqual(found, cfwatch.Release("v1.6.0", "2026-11-02"))
+        self.assertIn("/timeline", "".join(api_calls))
+        self.assertEqual(cache["skillup-forever#9"]["closed_at"], "2026-12-01T00:00:00Z")
+
+    def test_a_new_manual_close_does_not_fall_back_to_the_old_commit(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-12-01T00:00:00Z"}
+        events = [
+            {"event": "closed", "commit_id": "abc", "created_at": "2026-11-11T02:16:31Z"},
+            {"event": "reopened", "created_at": "2026-11-20T00:00:00Z"},
+            {
+                "event": "cross-referenced",
+                "source": {"issue": {"number": 583, "pull_request": {"merged_at": "2026-11-25T00:00:00Z"}}},
+            },
+            {"event": "closed", "created_at": "2026-12-01T00:00:00Z"},
+        ]
+        with self.release(
+            issue,
+            events,
+            tags=("v1.5.1", "v1.6.0"),
+            contained=(),
+            contained_by_sha={"abc": ("v1.5.1",), "def": ("v1.6.0",)},
+            sha="def",
+        ):
+            found = self.released("skillup-forever", 9)
+
+        self.assertEqual(found, cfwatch.Release("v1.6.0", "2026-11-02"))
+
+    def test_a_failed_tag_fetch_fails_closed_without_using_stale_tags(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
+        repositories, api_calls, git_calls = {}, [], []
+        errors = io.StringIO()
+        with (
+            self.release(
+                issue,
+                [{"event": "closed", "commit_id": "abc"}],
+                fetch_ok=False,
+                api_calls=api_calls,
+                git_calls=git_calls,
+            ),
+            contextlib.redirect_stderr(errors),
+        ):
+            self.assertIsNone(self.released("skillup-forever", 9, releases=repositories))
+            self.assertIsNone(self.released("skillup-forever", 10, releases=repositories))
+
+        self.assertEqual(git_calls, [("fetch", "--tags", "--quiet")])
+        self.assertIn("git fetch --tags failed", errors.getvalue())
+        self.assertFalse([url for url in api_calls if "/releases" in url or "/compare/" in url])
 
 
 class SettleTest(unittest.TestCase):

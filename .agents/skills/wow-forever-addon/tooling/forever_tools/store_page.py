@@ -12,6 +12,9 @@ import re
 import sys
 from pathlib import Path
 
+from .credits import BLOCK_END as CREDITS_END
+from .credits import BLOCK_START as CREDITS_START
+
 __all__ = ["FILE", "MAX_IMAGES", "MAX_WORDS", "MIN_IMAGES", "check", "main", "words"]
 
 FILE = "docs/curseforge.md"
@@ -27,10 +30,13 @@ SPONSOR = (
 AI_LINE = "Built with AI assistance."
 FAMILY = re.compile(r"<!-- forever-family:start -->.*?<!-- forever-family:end -->", re.DOTALL)
 FAMILY_TOKEN = "<!-- forever-family -->"
+CREDITS = re.compile(rf"{re.escape(CREDITS_START)}.*?{re.escape(CREDITS_END)}", re.DOTALL)
 
-# Prose words as WFA-10/11 count them: link text counts; the family block, code, images and markup do not.
+# Prose words as WFA-10/11 count them: link text counts; the generated family and credits blocks, code, images and
+# markup do not.
 NOT_PROSE = [
     FAMILY,
+    CREDITS,
     re.compile(r"^ {0,3}```.*?^ {0,3}```", re.DOTALL | re.MULTILINE),
     re.compile(r"<!--.*?-->", re.DOTALL),
     re.compile(r"`[^`\n]*`"),  # code spans quote the game
@@ -45,7 +51,7 @@ COLOUR = re.compile(r"\|c[0-9a-fA-F]{8}|\|r")
 
 
 def words(text: str) -> int:
-    """The page's prose word count, as check_copy.py --words prints it."""
+    """The page's prose word count, as check_copy.py --words prints it; generated blocks are not prose."""
     for pattern in NOT_PROSE:
         text = pattern.sub(" ", text)
     return len(WORD.findall(URL.sub(" ", LINK.sub(r"\1", text))))

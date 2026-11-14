@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from forever_tools import family, store_page
+from forever_tools import credits, family, store_page
 
 REPO = "demo-forever"
 RAW = f"https://raw.githubusercontent.com/cjber/{REPO}/main"
@@ -97,6 +97,12 @@ class StorePageTest(unittest.TestCase):
     def test_word_cap(self):
         text = page().replace("How prices work.", "") + ("word " * store_page.MAX_WORDS)
         self.assertTrue(any("prose words" in p for p in self.check(text)))
+
+    def test_word_cap_ignores_the_generated_credits_block(self):
+        block = credits.render_block([{"name": f"Player Number {n}", "what": ""} for n in range(400)])
+        self.assertGreater(len(block.split()), store_page.MAX_WORDS)
+        text = page().replace(store_page.source_line(REPO), f"{block}\n\n{store_page.source_line(REPO)}")
+        self.assertEqual(self.check(text), [])
 
 
 if __name__ == "__main__":
