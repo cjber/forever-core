@@ -13,12 +13,11 @@ drifts the same way:
   addon's specs and CI test against the core a player runs. The tag comes from `forever_tools.core_pin.latest_release`,
   the same read every consumer's package and release gates use; with `--local` it is this checkout's newest `v*` tag
   from `git describe`. A latest release that cannot be read fails this gate rather than skipping the check.
-- `.pkgmeta`, when the consumer's root TOC lists ForeverCore in `## Dependencies`, must ship ForeverCore inside the
-  addon's own zip, because a store update does not reliably deliver a required dependency: CurseForge can skip it on
-  an update, and the packager sends Wago no dependency list at all. So `externals:` must download
-  `ForeverCore-<pin>-forever.zip` from the release the consumer's `tools/forever-core.txt` names, `move-folders:` must
-  place it at `ForeverCore` beside the addon's own folder, and `required-dependencies:` must not list `forevercore`, so
-  one owner holds the folder.
+- `.pkgmeta`, when the consumer's root TOC lists ForeverCore in `## Dependencies`, must retain its pinned fallback
+  during standalone dependency adoption: `externals:` downloads `ForeverCore-<pin>-forever.zip` from the release the
+  consumer's `tools/forever-core.txt` names and `move-folders:` places it beside the addon's own folder. The sync adds
+  `forevercore` under `required-dependencies`; bundle-only consumers remain valid during adoption. Removal needs the
+  per-manager lifecycle evidence in docs/dependency-transition.md, since metadata alone does not prove ownership.
 - The same root TOC must carry `## X-Forever-Core: <pin>`, the tag the bundled folder is, so a player's other Forever
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
