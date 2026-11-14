@@ -135,12 +135,11 @@ class CheckConsumersTest(unittest.TestCase):
         self.assertIn("`move-folders:` must place ForeverCore at the zip's top level", out)
         self.assertIn("LegacyForever/ForeverCore: ForeverCore", out)
 
-    def test_a_required_dependencies_forevercore_entry_fails(self):
+    def test_a_required_dependency_alongside_the_transition_bundle_passes(self):
         self.write_core_pkgmeta(declares_required=True)
         self.write_core_toc()
         code, out = self.run_main()
-        self.assertEqual(code, 1, out)
-        self.assertIn("one owner for the folder", out)
+        self.assertEqual(code, 0, out)
 
     def test_a_consumer_that_requires_core_without_a_pin_fails(self):
         self.pin.unlink()

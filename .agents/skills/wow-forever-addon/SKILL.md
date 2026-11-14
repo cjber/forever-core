@@ -25,8 +25,13 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   load-on-demand data addon). Anything off by default is off because it acts for the player.
   ForeverCore is the one required companion, and the addon's own zip ships it: declare `## Dependencies: ForeverCore`
   in the TOC, and in `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
-  with `move-folders:` `<package-as>/ForeverCore: ForeverCore`, with no `required-dependencies` entry. A store update
-  can skip a required dependency, and the packager sends Wago no dependency list, so the zip carries the core. It is
+  with `move-folders:` `<package-as>/ForeverCore: ForeverCore`. Add the CurseForge slug `forevercore` under
+  `required-dependencies` while retaining that pinned bundle during standalone dependency adoption. Existing installs
+  must acquire manager-owned core through ordinary updates, including a direct jump that skips bridge releases, before
+  any channel drops its fallback. Verify mixed-addon updates and uninstalling either consumer, especially the last
+  writer of the shared folder. Wago upload metadata has no dependency field, so prove its manager path separately;
+  channels without automatic dependency resolution keep a bundled artifact. Follow core's `docs/dependency-transition.md`
+  for the canary evidence and rollback gates. The store relation alone does not fix shared-folder ownership. It is
   the suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
   `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. Every core
   release re-releases every addon automatically: the core sync PR moves the pin, rewrites the external and the TOC

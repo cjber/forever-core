@@ -32,6 +32,9 @@ needs, because this script never drives the client. When the tree the PR now car
 digest, the run prints the `python3 tools/headless/forever_client.py proof ...` command for that PR's head, and the
 release session runs it and commits the `.visual-proof.json` it writes.
 
+The sync also adds the standalone `forevercore` required store dependency to bundled consumers, retaining their
+pinned external and move rule. See docs/dependency-transition.md for the gates before any bundle removal.
+
 The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
 (adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
@@ -76,7 +79,9 @@ from check_consumers import (
     CORE_EXTERNAL,
     EXTERNAL_TAG,
     TOC_CORE_FIELD,
+    block_entries,
     core_external,
+    pkgmeta_blocks,
     pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
@@ -324,6 +329,27 @@ def rewrite_core_external(root: Path, pin: str) -> bool:
     return True
 
 
+def ensure_core_dependency(root: Path) -> bool:
+    """Declare the standalone store dependency while retaining the existing pinned ZIP fallback."""
+    if not ships_core(root):
+        return False
+    path = pkgmeta_path(root)
+    text = path.read_text(encoding="utf-8")
+    blocks = pkgmeta_blocks(text)
+    if "forevercore" in block_entries(blocks.get("required-dependencies", [])):
+        return False
+    if "required-dependencies" in blocks:
+        # The suite uses block lists. Refuse an inline value rather than silently dropping another dependency.
+        header = re.search(r"^required-dependencies:[ \t]*(?:#[^\n]*)?$", text, re.MULTILINE)
+        if header is None:
+            raise SyncError(f"{path}: required-dependencies must be a block list before adding ForeverCore")
+        updated = text[: header.end()] + "\n  - forevercore" + text[header.end() :]
+    else:
+        updated = text.rstrip() + "\n\nrequired-dependencies:\n  - forevercore\n"
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
 def root_toc_path(root: Path) -> Path | None:
     """The consumer's root TOC, named after `package-as` as the packager names it, or None when that is unknown."""
     path = pkgmeta_path(root)
@@ -478,6 +504,7 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     released has no tag to compare, so a bundle tag this run changed is what needs carrying.
     """
     bundles = ships_core(root)
+    dependency_changed = ensure_core_dependency(root)
     before = bundle_tag(root) or previous_pin
     rewrite_core_external(root, pin)
     rewrite_toc_core_field(root, pin)
@@ -485,10 +512,10 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
         return
     released = latest_release_tag(root)
     if released is None:
-        if (bundle_tag(root) or pin) != before:
+        if dependency_changed or (bundle_tag(root) or pin) != before:
             add_changelog_entry(root, today)
         return
-    if released_core_tag(root, released) != pin:
+    if dependency_changed or released_core_tag(root, released) != pin:
         add_changelog_entry(root, today)
 
 

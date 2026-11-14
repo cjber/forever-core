@@ -4,28 +4,30 @@ ForeverCore is a standalone addon every Forever addon requires. It loads once, b
 shared runtime: the tracker column, the report and issue windows, the error journal and debug log, the minimap
 button, the quest log side tabs, the settings-page chrome and the family page.
 
-Nothing is vendored any more. An addon no longer carries a copy of a shared file, so there is exactly one copy of each
-in the game and a fix reaches players with ForeverCore's next release.
-
 ## The dependency
 
-In the addon's TOC:
+The TOC declares the runtime load dependency:
 
 ```toc
 ## Dependencies: ForeverCore
 ```
 
-In `.pkgmeta`, so the stores install ForeverCore with the addon:
+The store relation uses the CurseForge project slug, `forevercore` (project 1796337):
 
 ```yaml
 required-dependencies:
-  - ForeverCore
+  - forevercore
 ```
 
-CurseForge and Wago resolve the project from the addon's own store page, so a player installing any Forever addon gets
-ForeverCore without choosing it. CurseForge is the published description and gallery; Wago is an upload mirror with a
-fixed stub pointing at CurseForge. The addon must not list ForeverCore in `OptionalDeps`, and it must not ship its own
-copy of a core file.
+During the dependency transition, keep the existing pinned ForeverCore ZIP external and top-level `move-folders`
+entry. The sync producer adds this relation without removing the bundle. `tools/forever-core.txt`, the external URL
+and `## X-Forever-Core:` must continue to name the same release. The runtime loads once from the shared
+`AddOns/ForeverCore` folder; consumers never copy individual runtime files into their own folder.
+
+A store relation does not prove that an existing installation acquires an independently managed dependency.
+Wago's documented upload metadata has no dependency field. Keep the fallback on every channel until that channel
+passes the [dependency transition](dependency-transition.md) upgrade and uninstall checks. Do not list ForeverCore
+in `OptionalDeps`.
 
 ## Asking for per-addon services
 

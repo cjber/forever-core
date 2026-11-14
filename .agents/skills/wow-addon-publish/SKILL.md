@@ -35,9 +35,9 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
 ## Requiring ForeverCore
 
 Every Forever addon depends on ForeverCore, the suite's shared library, and ships it inside its own release zip.
-A store dependency does not reach a player who is updating: CurseForge can update the addon without installing its
-required dependency, and a Wago upload carries no dependencies at all, because the packager sends Wago only label,
-patches, stability and changelog. In the TOC:
+Add the standalone required store dependency while retaining the pinned bundle during migration. Verify ordinary
+updates acquire manager-owned core; a declared relation does not establish that behavior. Wago's documented upload
+metadata has no dependency field, so verify its manager path separately. In the TOC:
 
 ```toc
 ## Dependencies: ForeverCore
@@ -45,15 +45,29 @@ patches, stability and changelog. In the TOC:
 ```
 
 In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
-addon's own folder, and no `required-dependencies` entry (one owner for the folder):
+addon's own folder, plus the standalone required relation:
 
 ```yaml
+required-dependencies:
+  - forevercore
+
 externals:
   ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.1/ForeverCore-v1.4.1-forever.zip
 
 move-folders:
   LegacyForever/ForeverCore: ForeverCore
 ```
+
+Before removing any bundle, follow core's `docs/dependency-transition.md`: canary each manager/provider with fresh
+install, update from a pre-transition release, a direct jump that skips all bridge releases, mixed-addon update and
+downgrade orders, and uninstalling either consumer including the last folder writer. Require exact installed-file
+and real-client proof with saved variables preserved. Keep a bundled artifact on channels that cannot automatically
+resolve the dependency, including manual ZIP installs. A waiting period or download count is not migration proof.
+Rollback uses a new higher patch release restoring the bundle, never overwritten tags or a forced reinstall.
+
+Inspect the published CurseForge file relation: project 1796337 must be `requiredDependency`, not `embeddedLibrary`.
+The GitHub ZIP external has no `curse-slug`; adding one lets BigWigs override the required relation as embedded.
+Do not claim Wago installs dependencies merely because `.pkgmeta` declares them.
 
 Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
 `<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails

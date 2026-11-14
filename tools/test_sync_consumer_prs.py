@@ -931,6 +931,7 @@ class BundleTest(unittest.TestCase):
         "v1.3.2/ForeverCore-v1.3.2-forever.zip\n\n"
         "move-folders:\n"
         "  LegacyForever/ForeverCore: ForeverCore\n"
+        "\nrequired-dependencies:\n  - forevercore\n"
     )
     TOC = "## Interface: 16001\n## Dependencies: ForeverCore\n## Title: Legacy Forever\n"
     TOC_WITH_FIELD = (
@@ -968,6 +969,29 @@ class BundleTest(unittest.TestCase):
         """`bump_pin`, with its notices kept out of the test output."""
         with contextlib.redirect_stdout(io.StringIO()):
             return sync.bump_pin(self.root, latest, self.DAY)
+
+    def test_dependency_transition_keeps_the_bundle_and_existing_relations(self):
+        self.pkgmeta.write_text(self.PKGMETA.replace("  - forevercore", "  - another-addon"), encoding="utf-8")
+        self.bump("v1.3.2")
+        text = self.pkgmeta.read_text(encoding="utf-8")
+        self.assertIn("required-dependencies:\n  - forevercore\n  - another-addon\n", text)
+        self.assertIn("LegacyForever/ForeverCore: ForeverCore", text)
+        self.assertIn("v1.3.2/ForeverCore-v1.3.2-forever.zip", text)
+        self.bump("v1.3.2")
+        self.assertEqual(self.pkgmeta.read_text(encoding="utf-8"), text)
+
+    def test_missing_dependency_is_added_even_when_the_pin_does_not_move(self):
+        self.pkgmeta.write_text(self.PKGMETA.replace("\nrequired-dependencies:\n  - forevercore\n", ""))
+        self.bump("v1.3.2")
+        self.assertEqual(self.pkgmeta.read_text(), self.PKGMETA)
+        self.assertIn(sync.SYNC_BULLET, self.changelog.read_text())
+
+    def test_inline_dependency_list_is_refused_without_changing_it(self):
+        text = self.PKGMETA.replace("required-dependencies:\n  - forevercore", "required-dependencies: [another-addon]")
+        self.pkgmeta.write_text(text)
+        with self.assertRaises(sync.SyncError):
+            sync.ensure_core_dependency(self.root)
+        self.assertEqual(self.pkgmeta.read_text(), text)
 
     def test_a_moved_pin_points_the_external_at_the_new_release(self):
         self.assertEqual(self.bump(), "v1.3.2")

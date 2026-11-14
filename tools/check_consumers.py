@@ -325,11 +325,8 @@ def check_packaging(repo, pin, branch, local):
             f"{repo}: {path}: `move-folders:` must place ForeverCore at the zip's top level with"
             f" `{package}/{CORE_FOLDER}: {CORE_FOLDER}`"
         )
-    if FOREVER_CORE in block_entries(blocks.get("required-dependencies", [])):
-        failures.append(
-            f"{repo}: {path}: `required-dependencies:` lists `- forevercore`, but the zip ships ForeverCore;"
-            " one owner for the folder"
-        )
+    # During standalone dependency adoption the pinned bundle remains the fallback for old installations.
+    # Removal is gated by manager lifecycle proof, documented in docs/dependency-transition.md.
     return failures
 
 
