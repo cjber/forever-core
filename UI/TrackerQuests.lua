@@ -1,3 +1,4 @@
+-- luacheck: globals C_QuestInfoSystem
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
@@ -1044,17 +1045,34 @@ local function ClearCombatChange(module)
 	DimItems(module)
 end
 
+-- Read scalar quest data directly. QuestCache:Get lazily writes Blizzard's shared cache and event listener.
+local function QuestData(questID)
+	local index = C_QuestLog.GetLogIndexForQuestID(questID)
+	local info = index and C_QuestLog.GetInfo(index)
+	return {
+		questID = questID,
+		title = info and info.title,
+		isTask = info and info.isTask,
+		isBounty = info and info.isBounty,
+		isAutoComplete = info and info.isAutoComplete,
+	},
+		index
+end
+
 ---@param quest any
 ---@return boolean
-function Overrides:ShouldDisplayQuest(quest)
+function Overrides.ShouldDisplayQuest(_, quest)
 	if not quest then
 		return false
 	end
-	if QuestObjectiveTrackerMixin.ShouldDisplayQuest(self, quest) then
-		return true
+	if C_QuestLog.IsQuestDisabledForSession(quest.questID) then
+		return false
 	end
-	return CampaignQuestObjectiveTrackerMixin ~= nil
-		and CampaignQuestObjectiveTrackerMixin.ShouldDisplayQuest(self, quest) == true
+	-- Match the native normal and campaign filters, including campaign quests marked as tasks.
+	if C_QuestInfoSystem.GetQuestClassification(quest.questID) == Enum.QuestClassification.Campaign then
+		return CampaignQuestObjectiveTrackerMixin ~= nil
+	end
+	return not quest.isTask and not quest.isBounty
 end
 
 -- The quest log header each watched quest sits under, and whether it is on the current map, in one walk of the log.
@@ -1096,14 +1114,14 @@ function Overrides:Records()
 	for index = 1, C_QuestLog.GetNumQuestWatches() do
 		local questID = C_QuestLog.GetQuestIDForQuestWatchIndex(index)
 		if questID then
-			local quest = QuestCache:Get(questID)
+			local quest = QuestData(questID)
 			if self:ShouldDisplayQuest(quest) then
 				local distanceSq = C_QuestLog.GetDistanceSqToQuest(questID)
 				records[#records + 1] = {
 					questID = questID,
 					title = C_QuestLog.GetTitleForQuestID(questID) or (quest and quest.title) or "",
 					zone = zones[questID] or "",
-					ready = C_QuestLog.ReadyForTurnIn(questID) == true or (quest ~= nil and quest:IsComplete()),
+					ready = C_QuestLog.ReadyForTurnIn(questID) == true or C_QuestLog.IsComplete(questID),
 					onMap = onMap[questID] == true,
 					distanceSq = type(distanceSq) == "number" and distanceSq or nil,
 				}
@@ -1221,16 +1239,12 @@ end
 ---@return boolean
 function Overrides:UpdateQuest(record)
 	local questID = record.questID
-	local quest = QuestCache:Get(questID)
-	if not quest then
-		return false
-	end
-	local isComplete = quest:IsComplete()
+	local quest, questLogIndex = QuestData(questID)
+	local isComplete = C_QuestLog.IsComplete(questID)
 	local isSuperTracked = questID == C_SuperTrack.GetSuperTrackedQuestID()
 	local useFullHeight = true
 	local shouldShowWaypoint = isSuperTracked or questID == QuestMapFrame_GetFocusedQuestID()
 	local isSequenced = IsQuestSequenced(questID)
-	local questLogIndex = quest:GetQuestLogIndex() or C_QuestLog.GetLogIndexForQuestID(questID)
 	local block, isExistingBlock = self:GetBlock(questID)
 	local tagText = self:GetQuestTagText(questID)
 

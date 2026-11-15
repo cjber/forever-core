@@ -214,4 +214,97 @@ check(tracker:HasModule(quests) == true, "a module the client adds while the lis
 TrackerQuests.SetEnabled(true)
 check(tracker:HasModule(quests) == false, "turning the list on takes the module the tracker holds")
 
+-- Private records and rendering must not populate Blizzard's shared lazy QuestCache.
+env.QuestCache = {
+	Get = function()
+		error("private quest rendering entered native QuestCache")
+	end,
+}
+env.Enum = { QuestClassification = { Campaign = 2 } }
+local infos = {
+	{ questID = 101, title = "Normal", isOnMap = true },
+	{ questID = 102, title = "Campaign", isTask = true },
+	{ questID = 103, title = "Task", isTask = true },
+	{ questID = 104, title = "Bounty", isBounty = true },
+	{ questID = 105, title = "Disabled" },
+}
+env.C_QuestLog = {
+	GetNumQuestLogEntries = function()
+		return #infos
+	end,
+	GetInfo = function(index)
+		return infos[index]
+	end,
+	GetNumQuestWatches = function()
+		return #infos
+	end,
+	GetQuestIDForQuestWatchIndex = function(index)
+		return infos[index].questID
+	end,
+	GetLogIndexForQuestID = function(id)
+		return id - 100
+	end,
+	GetTitleForQuestID = function(id)
+		return infos[id - 100].title
+	end,
+	GetDistanceSqToQuest = function()
+		return 400
+	end,
+	ReadyForTurnIn = function()
+		return false
+	end,
+	IsComplete = function(id)
+		return id == 101
+	end,
+	IsQuestDisabledForSession = function(id)
+		return id == 105
+	end,
+}
+env.C_QuestInfoSystem = {
+	GetQuestClassification = function(id)
+		return id == 102 and 2 or 1
+	end,
+}
+local records = section:Records()
+check(#records == 2, "normal and campaign quests survive task, bounty and disabled filtering")
+check(records[1].questID == 101 and records[1].ready, "completion comes from the direct quest API")
+check(records[2].questID == 102, "campaign eligibility wins over the normal task filter")
+env.UnitFullName = function()
+	return "Spec"
+end
+env.GetRealmName = function()
+	return "Realm"
+end
+env.ForeverCoreDB.questListFold = { ["Realm/Spec"] = { quests = { [101] = true }, zones = {} } }
+env.C_SuperTrack = {
+	GetSuperTrackedQuestID = function()
+		return 0
+	end,
+}
+env.QuestMapFrame_GetFocusedQuestID = function()
+	return 0
+end
+env.IsQuestSequenced = function()
+	return false
+end
+env.SetQuestTitleLevelAndDifficultyColor = function(_, title)
+	return title
+end
+local block = {}
+function block:SetHeader(title)
+	self.title = title
+end
+function block:SetPOIInfo(id, complete)
+	self.id, self.complete = id, complete
+end
+function section.GetBlock()
+	return block, false
+end
+function section.GetQuestTagText() end
+function section.LayoutBlock()
+	return true
+end
+check(section:UpdateQuest(records[1]), "a private folded quest renders without native cache access")
+check(block.id == 101 and block.complete, "the rendered POI receives direct completion data")
+
 print("tracker_quests_spec: " .. checks .. " checks passed")
