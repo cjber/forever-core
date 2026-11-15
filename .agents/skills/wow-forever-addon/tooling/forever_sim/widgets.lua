@@ -426,6 +426,9 @@ function M.build(sim)
 		end
 		w, h = (w or 0) * es, (h or 0) * es
 		local left, width, bottom, height
+		if (Secret.unwrap(s.width) or 0) > 0 and not (L and R) and (L or R) then
+			CX = nil
+		end
 		if L and R then
 			left, width = L, R - L
 		elseif L and CX then
@@ -438,6 +441,11 @@ function M.build(sim)
 			left, width = R - w, w
 		elseif CX then
 			left, width = CX - w / 2, w
+		end
+		-- Side anchors position a sized region without stretching it on the other axis.
+		-- Intrinsic text is sized too; opposite edges still explicitly stretch either kind.
+		if ((Secret.unwrap(s.height) or 0) > 0 or s.kind == "FontString") and not (T and B) and (T or B) then
+			CY = nil
 		end
 		if B and T then
 			bottom, height = B, T - B
@@ -453,6 +461,14 @@ function M.build(sim)
 			bottom, height = CY - h / 2, h
 		end
 		if left and bottom then
+			-- Only the designated scroll child moves. Its anchored descendants inherit this
+			-- translation through their target rectangles; viewport siblings stay fixed.
+			local parent = s.parent and S[s.parent]
+			if parent and parent.scrollChild == obj then
+				local scrollScale = effectiveScale(s.parent)
+				left = left - (Secret.unwrap(parent.hscroll) or 0) * scrollScale
+				bottom = bottom + (Secret.unwrap(parent.vscroll) or 0) * scrollScale
+			end
 			return { left, bottom, width, height }
 		end
 		return nil
@@ -975,23 +991,6 @@ function M.build(sim)
 	end
 	local function getHeight(self)
 		local s = st(self)
-		-- A FontString with no explicit height takes its text height, even when a RIGHT or CENTER anchor places it
-		-- vertically. Only TOP and BOTTOM together stretch it, as the client does.
-		if s.kind == "FontString" and (Secret.unwrap(s.height) or 0) <= 0 then
-			local hasTop, hasBottom = false, false
-			for _, p in ipairs(s.points) do
-				local vertical = POINTS[p.point] and POINTS[p.point][2]
-				if vertical == "TOP" then
-					hasTop = true
-				elseif vertical == "BOTTOM" then
-					hasBottom = true
-				end
-			end
-			if not (hasTop and hasBottom) then
-				local _, h = textSize(s)
-				return h
-			end
-		end
 		local r = #s.points > 1 and rect(self)
 		if r then
 			return r[4] / effectiveScale(self)
@@ -1848,6 +1847,7 @@ function M.build(sim)
 			return
 		end
 		s.vscroll = offset
+		dirty()
 		fire(self, "OnVerticalScroll", offset)
 	end
 	impl.ScrollFrame.GetVerticalScroll = function(self)
@@ -1859,6 +1859,7 @@ function M.build(sim)
 			return
 		end
 		s.hscroll = offset
+		dirty()
 		fire(self, "OnHorizontalScroll", offset)
 	end
 	impl.ScrollFrame.GetHorizontalScroll = function(self)

@@ -75,6 +75,135 @@ test("widgets: scroll callbacks only report changed offsets", function()
 	end
 end)
 
+test("widgets: scrolling moves child geometry, nested content and controls", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	root:SetSize(500, 500)
+	root:SetPoint("BOTTOMLEFT", nil, "BOTTOMLEFT", 0, 0)
+	local scroll = widgets.new("ScrollFrame", nil, root)
+	scroll:SetSize(100, 100)
+	scroll:SetPoint("TOPLEFT", root, "TOPLEFT", 10, -10)
+	local child = widgets.new("Frame", nil, scroll)
+	child:SetSize(300, 400)
+	child:SetPoint("TOPLEFT", scroll, "TOPLEFT")
+	scroll:SetScrollChild(child)
+	local control = widgets.new("Button", nil, child)
+	control:SetSize(20, 20)
+	control:SetPoint("TOPLEFT", child, "TOPLEFT", 5, -5)
+	local sibling = widgets.new("Frame", nil, scroll)
+	sibling:SetSize(10, 10)
+	sibling:SetPoint("TOPLEFT", scroll, "TOPLEFT")
+	local left, top = child:GetLeft(), child:GetTop()
+	local controlLeft, controlTop = control:GetLeft(), control:GetTop()
+	local siblingTop = sibling:GetTop()
+	scroll:SetScript("OnVerticalScroll", function()
+		eq(child:GetTop(), top + 50, "callback observes updated geometry")
+	end)
+	scroll:SetVerticalScroll(50)
+	scroll:SetHorizontalScroll(25)
+	eq(child:GetTop(), top + 50, "child vertical translation")
+	eq(child:GetLeft(), left - 25, "child horizontal translation")
+	eq(control:GetTop(), controlTop + 50, "control inherits vertical translation")
+	eq(control:GetLeft(), controlLeft - 25, "control inherits horizontal translation")
+	eq(sibling:GetTop(), siblingTop, "non-scroll child stays fixed")
+	assert(control:GetTop() > scroll:GetTop(), "off-viewport control keeps its actual screen position")
+	local nested = widgets.new("ScrollFrame", nil, child)
+	nested:SetSize(50, 50)
+	nested:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -100)
+	local inner = widgets.new("Frame", nil, nested)
+	inner:SetSize(100, 100)
+	inner:SetPoint("TOPLEFT", nested, "TOPLEFT")
+	nested:SetScrollChild(inner)
+	local innerTop = inner:GetTop()
+	nested:SetVerticalScroll(10)
+	eq(inner:GetTop(), innerTop + 10, "nested scroll applies once")
+	scroll:SetScript("OnVerticalScroll", nil)
+	scroll:SetVerticalScroll(70)
+	eq(inner:GetTop(), innerTop + 30, "outer and nested offsets compose")
+	scroll:SetVerticalScroll(0)
+	scroll:SetHorizontalScroll(0)
+	nested:SetVerticalScroll(0)
+	eq(child:GetTop(), top, "reset restores child vertical position")
+	eq(child:GetLeft(), left, "reset restores child horizontal position")
+	eq(control:GetTop(), controlTop, "reset restores descendant position")
+	scroll:SetScale(2)
+	child:SetScale(0.5)
+	local scaledTop, scaledLeft = child:GetTop(), child:GetLeft()
+	scroll:SetVerticalScroll(30)
+	scroll:SetHorizontalScroll(20)
+	eq(child:GetTop(), scaledTop + 60, "scroll offset uses viewport scale, not child scale")
+	eq(child:GetLeft(), scaledLeft - 40, "scaled horizontal offset")
+end)
+
+test("widgets: side anchors do not stretch a sized tracker block vertically", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local first = widgets.new("Frame", nil, root)
+	first:SetHeight(40)
+	first:SetPoint("TOP", root, "TOP", 0, -10)
+	first:SetPoint("LEFT", root, "LEFT")
+	first:SetPoint("RIGHT", root, "RIGHT")
+	local second = widgets.new("Frame", nil, root)
+	second:SetHeight(60)
+	second:SetPoint("TOP", first, "BOTTOM", 0, -10)
+	second:SetPoint("LEFT", root, "LEFT")
+	second:SetPoint("RIGHT", root, "RIGHT")
+	eq(first:GetHeight(), 40, "first explicit height")
+	eq(first:GetTop(), 790, "top anchor")
+	eq(second:GetTop(), 740, "second block follows first bottom")
+	eq(second:GetHeight(), 60, "second explicit height")
+	eq(first:GetWidth(), 1000, "opposite horizontal edges stretch width")
+end)
+
+test("widgets: intrinsic text height agrees with its screen rectangle and header button", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local block = widgets.new("Frame", nil, root)
+	block:SetSize(200, 80)
+	block:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+	local text = widgets.new("FontString", nil, block)
+	text:SetText("One row")
+	text:SetPoint("TOPLEFT", block, "TOPLEFT")
+	text:SetPoint("RIGHT", block, "RIGHT")
+	local button = widgets.new("Button", nil, block)
+	button:SetPoint("TOPLEFT", text, "TOPLEFT")
+	button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT")
+	eq(text:GetTop() - text:GetBottom(), text:GetHeight(), "text rectangle uses intrinsic height")
+	eq(button:GetHeight(), text:GetHeight(), "header button follows text height")
+	text:SetPoint("BOTTOMLEFT", block, "BOTTOMLEFT")
+	eq(text:GetTop() - text:GetBottom(), 80, "explicit top and bottom stretch text")
+end)
+
 test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
