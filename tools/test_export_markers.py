@@ -55,6 +55,29 @@ class MarkersTest(unittest.TestCase):
         changed = [point for point in rim if diamond.getpixel(point) != ring.getpixel(point)]
         self.assertEqual(changed, [], "the diamond is pasted inside the ring's opening only")
 
+    def test_the_odd_sized_diamond_is_centred_on_the_even_sized_marker(self):
+        ring = export_markers.art(export_markers.SOURCE / export_markers.RING_SOURCE)
+        pin = export_markers.art(export_markers.SOURCE / export_markers.PIN_SOURCE, export_markers.PIN_SIZE)
+        cut = export_markers.diamond_cut(pin)
+        size = round(ring.width * export_markers.DIAMOND_SHARE)
+        scaled = cut.resize(
+            (round(cut.width * size / max(cut.size)), round(cut.height * size / max(cut.size))),
+            Image.Resampling.LANCZOS,
+        )
+        self.assertEqual((scaled.width, scaled.height), (27, 27))
+        self.assertEqual((ring.width - scaled.width) / 2, 18.5)
+        self.assertEqual((ring.height - scaled.height) / 2, 18.5)
+
+        # The supersampled overlay has equal alpha mass on both sides of the
+        # exact canvas centre, rather than rounding to either neighbouring
+        # pixel. This catches a regression to integer-only placement.
+        overlay = export_markers.diamond_overlay(ring, scaled)
+        weights = [(x, y, overlay.getpixel((x, y))[3]) for y in range(64) for x in range(64)]
+        total = sum(a for _, _, a in weights)
+        self.assertGreater(total, 0)
+        self.assertAlmostEqual(sum((x + 0.5) * a for x, _, a in weights) / total, 32.0, delta=0.05)
+        self.assertAlmostEqual(sum((y + 0.5) * a for _, y, a in weights) / total, 32.0, delta=0.05)
+
     def test_check_passes_on_the_repository(self):
         self.assertEqual(export_markers.main(["--check"]), 0)
 

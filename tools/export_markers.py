@@ -38,6 +38,7 @@ DIAMOND_RADIUS = 17
 DIAMOND_SHARE = 0.42
 # The polygon is drawn this many times too large and scaled down, so its edge is smooth and not stepped.
 SUPERSAMPLE = 4
+COMPOSITE_SUPERSAMPLE = 4
 
 
 def key_magenta(image: Image.Image) -> Image.Image:
@@ -98,9 +99,34 @@ def with_diamond(ring: Image.Image, pin: Image.Image) -> Image.Image:
     size = round(ring.width * DIAMOND_SHARE)
     scale = size / max(cut.size)  # one factor for both axes: the diamond keeps its shape
     cut = cut.resize((round(cut.width * scale), round(cut.height * scale)), Image.Resampling.LANCZOS)
-    layer = Image.new("RGBA", ring.size, (0, 0, 0, 0))
-    layer.paste(cut, ((ring.width - cut.width) // 2, (ring.height - cut.height) // 2))
-    return Image.alpha_composite(ring, layer)
+    return Image.alpha_composite(ring, diamond_overlay(ring, cut))
+
+
+def diamond_overlay(ring: Image.Image, cut: Image.Image) -> Image.Image:
+    """Render the odd-sized diamond at the exact half-pixel canvas centre."""
+    # The 27 px sprite has to sit at 18.5 px in the 64 px marker. Render the
+    # transparent overlay at a higher resolution so both halves of that
+    # half-pixel placement survive the final downsample symmetrically.
+    scale = COMPOSITE_SUPERSAMPLE
+    high = cut.resize((cut.width * scale, cut.height * scale), Image.Resampling.LANCZOS)
+    high_layer = Image.new("RGBA", (ring.width * scale, ring.height * scale), (0, 0, 0, 0))
+
+    def centroid(axis):
+        alpha = high.getchannel("A")
+        total = sum(alpha.getpixel((x, y)) for y in range(high.height) for x in range(high.width))
+        weighted = sum(
+            ((x if axis == 0 else y) + 0.5) * alpha.getpixel((x, y))
+            for y in range(high.height)
+            for x in range(high.width)
+        )
+        return weighted / total
+
+    x = round(ring.width * scale / 2 - centroid(0))
+    y = round(ring.height * scale / 2 - centroid(1))
+    high_layer.paste(high, (x, y))
+    # BOX averages each 4x4 block, preserving the exact half-pixel centroid.
+    layer = high_layer.resize(ring.size, Image.Resampling.BOX)
+    return layer
 
 
 def encode(image: Image.Image) -> bytes:

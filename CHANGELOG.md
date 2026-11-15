@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **The journey marker's diamond sits in the centre of its ring.** Its placement now preserves the half-pixel
+  position needed to centre the artwork without shifting it left or right. (#611)
+
 ## [1.12.1] - 2026-11-14
 
 - **The Professions tab of your Forever addons no longer hides under another addon's tab.** If another addon also put
