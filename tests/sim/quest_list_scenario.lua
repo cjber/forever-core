@@ -228,13 +228,60 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	sim.G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", 0, -100)
 	sim.G.ObjectiveTrackerFrame:SetHeight(400)
 
+	-- Chat UI is outside this fixture; a normal click does not insert a chat link.
+	sim.G.ChatFrameUtil = {
+		TryInsertQuestLinkForQuestID = function()
+			return false
+		end,
+	}
+	sim.cvars.questPOI = "1"
+	local nativeGetPOIButton = sim.G.ObjectiveTrackerQuestPOIBlockMixin.GetPOIButton
+	local privateSharedPoolCalls = 0
+	sim.G.ObjectiveTrackerQuestPOIBlockMixin.GetPOIButton = function(block, style)
+		if block.parentModule == sim.G.ForeverCoreQuestTracker then
+			privateSharedPoolCalls = privateSharedPoolCalls + 1
+		end
+		return nativeGetPOIButton(block, style)
+	end
+	-- Private blocks may use the native art, but must not populate the native manager's lazy POI cache.
+	local nativeCanShowPOIs = sim.G.ObjectiveTrackerManager.CanShowPOIs
+	local privateManagerCalls = 0
+	sim.G.ObjectiveTrackerManager.CanShowPOIs = function(manager, module)
+		if module == sim.G.ForeverCoreQuestTracker then
+			privateManagerCalls = privateManagerCalls + 1
+		end
+		return nativeCanShowPOIs(manager, module)
+	end
 	sim:login({ savedVariables = { ForeverCoreDB = { questList = true } } })
 	sim:advance(0.5)
+	sim:expectNoErrors(ADDON)
+	assert(privateSharedPoolCalls == 0, "private POI acquisition entered the native shared pool")
+	assert(privateManagerCalls == 0, "private POI layout entered the native manager cache")
 
 	local section = sim.G.ForeverCoreQuestTracker
 	assert(section ~= nil, "the Forever quest section exists")
 	assert(section.trackerOverflow == false and section.scrollRange == 0, "a short list does not scroll")
 	assert(section.scrollBar:IsShown() == false, "a short list shows no scrollbar")
+
+	local privateButtons = {}
+	for _, block in pairs(section.usedBlocks["ObjectiveTrackerQuestPOIBlockTemplate"] or {}) do
+		if block.poiButton then
+			assert(section.questPOIPool:IsActive(block.poiButton), "each private quest POI belongs to the section pool")
+			privateButtons[block.poiButton] = true
+		end
+	end
+	local nativeBlock = sim.G.CreateFrame("Frame", nil, sim.G.UIParent, "ObjectiveTrackerQuestPOIBlockTemplate")
+	nativeBlock:SetPOIInfo(999, false, false, false)
+	local nativeButton = nativeBlock:GetPOIButton(sim.G.POIButtonUtil.Style.QuestInProgress)
+	assert(not privateButtons[nativeButton], "native acquisition cannot reuse an active private POI")
+	nativeBlock:CheckAndReleasePOIButton()
+	nativeBlock:SetPOIInfo(999, true, false, false)
+	local nativeReused = nativeBlock:GetPOIButton(sim.G.POIButtonUtil.Style.QuestComplete)
+	assert(
+		not section.questPOIPool:IsActive(nativeReused),
+		"native release and reacquire stay outside the private pool"
+	)
+	nativeBlock:CheckAndReleasePOIButton()
 
 	local function Blocks()
 		local out = {}
@@ -306,6 +353,28 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 		end
 	end
 	assert(questBlock ~= nil and questBlock.HeaderButton ~= nil, "the current zone quest has its header button")
+	local poiButton = questBlock.poiButton
+	assert(poiButton and poiButton:GetQuestID() == 102, "the private POI carries its quest")
+	assert(poiButton:GetStyle() == sim.G.POIButtonUtil.Style.QuestInProgress, "the private POI keeps native style")
+	assert(poiButton:GetParent() == questBlock and poiButton:IsShown(), "the private POI is visible on its block")
+	sim:click(poiButton, "LeftButton")
+	sim:expectNoErrors()
+	assert(superTracked == 102, "the private POI keeps the native super-track click")
+	superTracked = nil
+	questBlock:SetPOIInfo(102, true, true, false)
+	questBlock:OnLayout()
+	assert(poiButton:GetStyle() == sim.G.POIButtonUtil.Style.QuestComplete, "completion keeps native POI style")
+	assert(poiButton:IsSelected(), "a super-tracked quest keeps the selected POI style")
+	sim.cvars.questPOI = "0"
+	sim:event("CVAR_UPDATE", "questPOI")
+	sim:advance(0.2)
+	assert(questBlock.poiButton == nil and not poiButton:IsShown(), "disabling POIs releases the private button")
+	sim.cvars.questPOI = "1"
+	sim:event("CVAR_UPDATE", "questPOI")
+	sim:advance(0.2)
+	assert(section.questPOIPool:IsActive(questBlock.poiButton), "the section reacquires a private POI button")
+	assert(privateSharedPoolCalls == 0 and privateManagerCalls == 0, "POI reuse stays in private state")
+
 	sim:click(questBlock.HeaderButton, "LeftButton")
 	assert(superTracked == 102, "left-click super-tracks the quest")
 
@@ -452,11 +521,13 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	sim:advance(0.2)
 	assert(NativeDrawn() == true, "the section's own OnEvent gives the game's quest module back")
 	assert(#Blocks() == 0, "and empties the Forever list when another tracker owns it")
+	assert(section.questPOIPool:GetNumActive() == 0, "freeing the private blocks releases every private POI")
 	sim.loader.loaded["!KalielsTracker"] = nil
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
 	assert(NativeDrawn() == false, "giving the list back takes the game's quest module out again")
 	assert(Text(Blocks()) == settled, "and rebuilds the Forever list")
+	assert(section.questPOIPool:GetNumActive() > 0, "rebuilt blocks reacquire private POIs")
 
 	sim:enterCombat()
 	sim:advance(0.2)

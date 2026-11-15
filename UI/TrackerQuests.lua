@@ -1,4 +1,4 @@
--- luacheck: globals C_QuestInfoSystem
+-- luacheck: globals C_QuestInfoSystem CreateFramePool ObjectiveTrackerAnimBlockMixin
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
@@ -616,6 +616,56 @@ end
 
 ---@class ForeverQuestTrackerOverrides : ForeverQuestTrackerModule
 local Overrides = {}
+
+-- The native quest block shares its POI pool and a lazy manager cache with other Blizzard modules. Keep the same
+-- template and presentation on our blocks, but give this section its own pool and read the POI preference directly.
+local PrivatePOI = {}
+---@param self any
+function PrivatePOI:GetPOIButton(style)
+	local module = self.parentModule
+	if not module.questPOIPool then
+		module.questPOIPool = CreateFramePool("BUTTON", nil, "ObjectiveTrackerPOIButtonTemplate")
+	end
+	local button = self.poiButton
+	if not button then
+		button = module.questPOIPool:Acquire()
+		button:SetParent(self)
+		button:SetQuestID(self.poiQuestID)
+		self.poiButton = button
+		self:SetExtraAddAnimation(button.AddAnim)
+	end
+	button:SetStyle(style)
+	button:SetSelected(self.poiIsSuperTracked)
+	button:UpdateButtonStyle()
+	button:Show()
+	return button
+end
+---@param self any
+function PrivatePOI:CheckAndReleasePOIButton()
+	if self.poiButton then
+		self.parentModule.questPOIPool:Release(self.poiButton)
+		self.poiButton = nil
+		self:SetExtraAddAnimation(nil)
+		self:SetPOIInfo()
+	end
+end
+---@param self any
+function PrivatePOI:OnLayout()
+	if self.poiQuestID and GetCVarBool("questPOI") then
+		self:AddPOIButton()
+	else
+		self:CheckAndReleasePOIButton()
+	end
+	ObjectiveTrackerAnimBlockMixin.OnLayout(self)
+end
+
+-- GetBlock resets and anchors the section's own frame; OnLayout runs later, from LayoutBlock.
+local getPrivateBlock = section.GetBlock
+function Overrides:GetBlock(id, template)
+	local block, existing = getPrivateBlock(self, id, template)
+	Mixin(block, PrivatePOI)
+	return block, existing
+end
 
 -- One thin fill under each unfinished count objective: the client's status bar fill over the template's backing
 -- colour, four UI units high, with no border and no label. The bar is anchored to the line's own text column, so it
@@ -1417,6 +1467,7 @@ for _, event in ipairs({
 	"QUEST_WATCH_UPDATE",
 	"QUEST_TURNED_IN",
 	"QUEST_POI_UPDATE",
+	"CVAR_UPDATE",
 	"SUPER_TRACKING_CHANGED",
 	"SUPER_TRACKING_PATH_UPDATED",
 	"ZONE_CHANGED_NEW_AREA",
@@ -1426,7 +1477,10 @@ for _, event in ipairs({
 end
 
 ---@param event string
-function Overrides:OnEvent(event)
+function Overrides:OnEvent(event, cvar)
+	if event == "CVAR_UPDATE" and cvar ~= "questPOI" then
+		return
+	end
 	if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
 		ClearCombatChange(self)
 		if apply then
