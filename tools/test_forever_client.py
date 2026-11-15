@@ -104,8 +104,7 @@ class ForeverClientTest(unittest.TestCase):
 
         def png(image):
             raw = b"".join(
-                b"\0" + b"".join(bytes(image.getpixel((x, y))) for x in range(image.width))
-                for y in range(image.height)
+                b"\0" + b"".join(bytes(image.getpixel((x, y))) for x in range(image.width)) for y in range(image.height)
             )
 
             def chunk(kind, payload):
