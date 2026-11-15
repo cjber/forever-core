@@ -1,34 +1,23 @@
 {
-  "input_digest": "26a76005935a2257cd1d83601d153a9ec31125fd381400c203987875d060dd69",
-  "runtime_sha256": "26a76005935a2257cd1d83601d153a9ec31125fd381400c203987875d060dd69",
-  "candidate": "d180f9555b5c7309c590aebc8aadfa463916adffb5afd390658c5ada031a006f",
+  "input_digest": "1eb7fd503b519b3fc934200af63785d1bab3d90acbe3f5821f0a87df098bdd62",
+  "runtime_sha256": "1eb7fd503b519b3fc934200af63785d1bab3d90acbe3f5821f0a87df098bdd62",
+  "candidate": "acb8b266a10b2b9d54950c9d452f52859f7f0ae19ec7efdc815f52303a1448ab",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "a4c144bb50cc96c607d6efa4a7f5b6099443a9ba",
+  "source_commit": "3b731a15026e0df774539f831805e5e344a0cc4f",
   "flows": [
     {
-      "name": "skillup tab with all the things and ackis loaded",
+      "name": "goal marker",
       "steps": [
-        "/devsmoke prof skillup"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "native cooking tab with all the things and ackis loaded",
-      "steps": [
-        "/devsmoke eval"
+        "marker.lua sha256:85151c08f9362967693ad7ed1c17c693f271c1acaad4e11797650328b811d63e"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/aa42e841175b418c337291d7effc9c18/raw/511cbad8b454881d30a2a23b34fd10be6270f0b5/1-skillup-tab-with-all-the-things-and-ackis-loaded.png",
-      "sha256": "a19b5c9b6e1f830e7fabe9049143ec2090f59af5c15d47420a2caf02eda5cd77"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/aa42e841175b418c337291d7effc9c18/raw/511cbad8b454881d30a2a23b34fd10be6270f0b5/2-native-cooking-tab-with-all-the-things-and-ackis-loaded.png",
-      "sha256": "84357d97cee9da3ad40870d3944d9b1038e0aaff8a77dcd6e39a2901e8ef7282"
+      "url": "https://gist.githubusercontent.com/cjber/cbc05991ab1129f8df5ffc8322d3a5ac/raw/97f9efe0961608823e5b357969360c8f4dad1689/1-goal-marker.png",
+      "sha256": "6b2d84aaaee46386bb6d8b0f7c2943dafa1b573bff75e6c7f3d842d4491df380"
     }
   ]
 }
