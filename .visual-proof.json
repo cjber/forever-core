@@ -1,23 +1,34 @@
 {
-  "input_digest": "9856d9fca39667383fdb38000bc77bab9a08c68e0f52cfdaa3d7846d4b21dd16",
-  "runtime_sha256": "9856d9fca39667383fdb38000bc77bab9a08c68e0f52cfdaa3d7846d4b21dd16",
-  "candidate": "32a9dba7213d52e76efd84f0c18d123f6110aaccbb84dcabced06959a68178a2",
+  "input_digest": "ca0c334049a5c3bfa79e605d08e910ded9ad221064e05bcad3a83c9607602d0c",
+  "runtime_sha256": "ca0c334049a5c3bfa79e605d08e910ded9ad221064e05bcad3a83c9607602d0c",
+  "candidate": "a1c5b6c3938d49cf930e4606a9f274ddbdaf9e864dd3710eaf1e480ed669ab0f",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "4ec8809ff13729c84122ab778c357e4f335fdcbb",
+  "source_commit": "c5afa65e743fd9db72f2ea4b0b889208ae39bf63",
   "flows": [
     {
-      "name": "settings",
+      "name": "quest list on, game tracker hidden",
       "steps": [
-        "settings-ready.lua sha256:86dd0d8704d0317ca099aa5fed2f834e11fd1da9c788aaa1965aa6e36b8f451c"
+        "flow_on2.lua sha256:a2b646a2f0ed6ac78d61a4296697290219dd854481a795beed0bfd98f2bfe70b"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list off, game tracker back",
+      "steps": [
+        "flow_off.lua sha256:f60638dcf81ca288bf9c6e76631c7bbfae77ff3a5afb23df81474e245407dca5"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/2c17f330ba11d8aa9cd504d31ba52e76/raw/7407ab941538148f089cf17f7472de235bbb0ff5/1-settings.png",
-      "sha256": "9fcc4d02d215a73aa145ce12da55b44be0155c87755d94340f43dbbc0d6c7f08"
+      "url": "https://gist.githubusercontent.com/cjber/9d4f869eb1f664199c794af8baa4242a/raw/903fb89c1702eece0b48facbaa66c38fab9aea94/1-quest-list-on-game-tracker-hidden.png",
+      "sha256": "27424b12dd3bf60d7456d310289cea05b0cb44e1faafbd70e22051f5b8d321b9"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/9d4f869eb1f664199c794af8baa4242a/raw/903fb89c1702eece0b48facbaa66c38fab9aea94/2-quest-list-off-game-tracker-back.png",
+      "sha256": "a841f9412e10b90b19687bc30d3c81c94a4f44ebfd2668be48fe9b1bfc5bfa00"
     }
   ]
 }
