@@ -1,23 +1,23 @@
 {
-  "input_digest": "31c2481749d491f928e59f2df3e56d0719d155832539963bfb48c72c86f7290b",
-  "runtime_sha256": "31c2481749d491f928e59f2df3e56d0719d155832539963bfb48c72c86f7290b",
-  "candidate": "b27416139c8bc35d0a71bbc8665b81382ee93c1a64ca29ddf9bd9090ebbbbc5e",
+  "input_digest": "393c85a3409af06bb53bbe3c0f349a11cfa218e850047f81377144b4ce53c76c",
+  "runtime_sha256": "393c85a3409af06bb53bbe3c0f349a11cfa218e850047f81377144b4ce53c76c",
+  "candidate": "21429b89d24086cce729955e3002c16b705fd05f31c9a64e991c7a88cd6938ab",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "6021887e5aa0db6e79e391d2180cef04bb9b161b",
+  "source_commit": "5965d99fbefdc70d6e6d22fb5fd2cdee635e3152",
   "flows": [
     {
-      "name": "startup report",
+      "name": "quest list with game tracker hidden",
       "steps": [
-        "/fcore"
+        "core686-tracker.lua sha256:48d08f996082d86c2bd0a597898f9ddea3a19a34e81e2f178b2d5a695f1c719a"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/9bea172a3b6518acc33dc0a60d601395/raw/fd082253df5827a2f2334f6acbf0a673b4cf253c/1-startup-report.png",
-      "sha256": "bf03582cdc0a2553a732988c65ebd0421b32571aa2699db485ab212f54daff75"
+      "url": "https://gist.githubusercontent.com/cjber/6fd570c4b88d99f47c7a1223c0d46e9e/raw/ffd353717825eaa899cfc22af15eff864cf1670e/1-quest-list-with-game-tracker-hidden.png",
+      "sha256": "23572a47bbe3d05cb255369d25921c55fd2bf25cd99590dc1a50beaba66c2e9f"
     }
   ]
 }
