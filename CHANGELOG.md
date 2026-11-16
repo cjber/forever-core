@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-11-16
+
 - **The Forever quest list is now on by default and replaces the game's tracker.** Turn it off in settings, with `/fcore quests`, or from the section menu. A saved choice to turn it off is kept. (#693, refs cjber/adventure-guide-forever#468)
 
 ## [1.14.1] - 2026-11-16
