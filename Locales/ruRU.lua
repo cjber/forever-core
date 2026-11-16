@@ -167,3 +167,32 @@ L["Share in Chat"] = "Отправить в чат"
 L["fold this zone"] = "свернуть эту зону"
 L["unfold this zone"] = "развернуть эту зону"
 L["focus this quest"] = "отслеживать это задание"
+
+L["ForeverCore startup report"] = "Отчёт о запуске ForeverCore" -- mt
+L["Core: %s; API %s"] = "Core: %s; API %s" -- mt
+L["Runtime: %s copy %s"] = "Среда: %s, копия %s" -- mt
+L["Runtime error: %s"] = "Ошибка среды: %s" -- mt
+L["Standalone runtime"] = "Самостоятельная среда" -- mt
+L["Core copies:"] = "Копии Core:" -- mt
+L["Rejected"] = "Отклонена" -- mt
+L["Sealed"] = "Завершена" -- mt
+L["Unsealed"] = "Не завершена" -- mt
+L["%s: build %s, %s"] = "%s: сборка %s, %s" -- mt
+L['No installed Forever addon named "%s".'] =
+	'Установленный аддон Forever с именем "%s" не найден.' -- mt
+L["No installed Forever addons found."] = "Установленные аддоны Forever не найдены." -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"Если команды /fcore нет, откройте AddOns, включите ForeverCore или аддон Forever и прочитайте первую ошибку Lua после /reload." -- mt
+L["Installed Forever addons:"] = "Установленные аддоны Forever:" -- mt
+L["Registered"] = "Зарегистрирован" -- mt
+L["Loaded but not registered"] = "Загружен, но не зарегистрирован" -- mt
+L["Not loaded"] = "Не загружен" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "Загружен: %s; включён: %s; версия Core: %s" -- mt
+L["Requires: %s; optional: %s"] = "Требуется: %s; необязательно: %s" -- mt
+L["Loadable: %s; reason: %s"] = "Можно загрузить: %s; причина: %s" -- mt
+L["First error: %s"] = "Первая ошибка: %s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"Ошибки не записаны. Включите ошибки Lua командой /console scriptErrors 1, выполните /reload и прочитайте первую ошибку с упоминанием %s." -- mt
+L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- mt
+L["Login error: %s"] = "Ошибка входа: %s" -- mt
+L["Copy %s: %s"] = "Копия %s: %s" -- mt

@@ -1,0 +1,8 @@
+<Ui>
+ <Button name="SimIntrinsicButton" intrinsic="true">
+  <Scripts><OnLoad>self.intrinsicLoads=(self.intrinsicLoads or 0)+1</OnLoad><OnClick>self.intrinsicClicks=(self.intrinsicClicks or 0)+1</OnClick></Scripts>
+ </Button>
+ <SimIntrinsicButton name="SimIntrinsicBaseTemplate" virtual="true"/>
+ <SimIntrinsicButton name="SimIntrinsicLeafTemplate" inherits="SimIntrinsicBaseTemplate" virtual="true"/>
+ <Frame name="SimIntrinsicParent"><Frames><SimIntrinsicButton parentKey="Direct" inherits="SimIntrinsicLeafTemplate"/></Frames></Frame>
+</Ui>

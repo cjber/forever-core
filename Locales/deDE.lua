@@ -156,3 +156,31 @@ L["Share in Chat"] = "Im Chat teilen"
 L["fold this zone"] = "diese Zone einzuklappen"
 L["unfold this zone"] = "diese Zone auszuklappen"
 L["focus this quest"] = "diese Quest zu fokussieren"
+
+L["ForeverCore startup report"] = "ForeverCore-Startbericht" -- mt
+L["Core: %s; API %s"] = "Core: %s; API %s" -- mt
+L["Runtime: %s copy %s"] = "Laufzeit: %s, Kopie %s" -- mt
+L["Runtime error: %s"] = "Laufzeitfehler: %s" -- mt
+L["Standalone runtime"] = "Eigenständige Laufzeit" -- mt
+L["Core copies:"] = "Core-Kopien:" -- mt
+L["Rejected"] = "Abgelehnt" -- mt
+L["Sealed"] = "Vollständig" -- mt
+L["Unsealed"] = "Unvollständig" -- mt
+L["%s: build %s, %s"] = "%s: Build %s, %s" -- mt
+L['No installed Forever addon named "%s".'] = 'Kein installiertes Forever-Addon namens "%s".' -- mt
+L["No installed Forever addons found."] = "Keine installierten Forever-Addons gefunden." -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"Wenn /fcore kein Befehl ist, öffnet AddOns, aktiviert ForeverCore oder ein Forever-Addon und lest den ersten Lua-Fehler nach /reload." -- mt
+L["Installed Forever addons:"] = "Installierte Forever-Addons:" -- mt
+L["Registered"] = "Registriert" -- mt
+L["Loaded but not registered"] = "Geladen, aber nicht registriert" -- mt
+L["Not loaded"] = "Nicht geladen" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "Geladen: %s; aktiviert: %s; Core-Version: %s" -- mt
+L["Requires: %s; optional: %s"] = "Benötigt: %s; optional: %s" -- mt
+L["Loadable: %s; reason: %s"] = "Ladbar: %s; Grund: %s" -- mt
+L["First error: %s"] = "Erster Fehler: %s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"Kein Fehler erfasst. Aktiviert Lua-Fehler mit /console scriptErrors 1, führt /reload aus und lest den ersten Fehler, der %s nennt." -- mt
+L["Callback error: %s"] = "Callback-Fehler: %s" -- mt
+L["Login error: %s"] = "Anmeldefehler: %s" -- mt
+L["Copy %s: %s"] = "Kopie %s: %s" -- mt

@@ -36,6 +36,7 @@ DATA_FILES = (
     "credits_opt_out.txt",
     "widget_methods.txt",
     "client_names.txt",
+    "font_glyphs.json",
 )
 
 

@@ -69,6 +69,37 @@ equal(groups[1].title, "Durotar", "titled by the zone")
 equal(IDs(groups[1]), "51,52,50", "every Durotar quest in it, nearest first")
 equal(groups[2].title, "Mulgore", "then the other zone")
 equal(IDs(groups[2]), "53", "with its quest")
+
+-- Quests on this map can belong to different log headings, such as a zone and a class. Keep each heading's
+-- identity for its block and saved fold instead of naming all on-map quests after whichever happens to be nearest.
+local mixed = {
+	record(60, "Zone quest", "Ashenvale", 100, { onMap = true }),
+	record(61, "Class quest", "Druid", 200, { onMap = true }),
+	record(62, "Class quest elsewhere", "Druid", 50),
+	record(63, "Other zone", "Darkshore", 1),
+}
+groups = ns.QuestOrder(mixed)
+equal(#groups, 3, "different on-map log headings keep separate groups")
+equal(groups[1].title, "Druid", "a current group includes its off-map quests before ordering")
+equal(IDs(groups[1]), "62,61", "class quests stay under their own heading")
+equal(groups[2].title, "Ashenvale", "the other on-map heading stays ahead of other zones")
+equal(IDs(groups[2]), "60", "the zone heading contains only its own quests")
+equal(groups[3].title, "Darkshore", "a closer other-zone quest still follows current groups")
+mixed[1].distanceSq, mixed[2].distanceSq = 300, 25
+groups = ns.QuestOrder(mixed)
+equal(groups[1].title, "Druid", "changing distances keeps the class heading")
+equal(IDs(groups[1]), "61,62", "changing distances only reorders quests within the class heading")
+equal(groups[2].title, "Ashenvale", "changing distances keeps the zone heading")
+equal(IDs(groups[2]), "60", "a quest never migrates into another heading")
+local mixedReversed = {}
+for index = #mixed, 1, -1 do
+	mixedReversed[#mixedReversed + 1] = mixed[index]
+end
+local reordered = ns.QuestOrder(mixedReversed)
+for index, group in ipairs(groups) do
+	equal(reordered[index].title, group.title, "on-map headings are independent of input order")
+	equal(IDs(reordered[index]), IDs(group), "heading membership is independent of input order")
+end
 -- Every title is unique, whatever the records: that is what keeps one block per group.
 local all = ns.QuestOrder({
 	record(70, "Ready", "Durotar", 100, { ready = true }),

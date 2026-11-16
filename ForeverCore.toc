@@ -11,6 +11,7 @@
 ## X-Wago-ID: RNL4RQNo
 ## SavedVariables: ForeverCoreDB
 
+Core\Loader.lua
 Core.lua
 Locales\enUS.lua
 Locales\deDE.lua
@@ -43,6 +44,7 @@ UI\TrackerEllesmere.lua
 UI\TrackerLock.lua
 UI\TrackerOrder.lua
 UI\ContextMenu.lua
+UI\TrackerKaliels.lua
 UI\TrackerHost.lua
 UI\TrackerSection.xml
 UI\TrackerSection.lua

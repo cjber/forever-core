@@ -6,7 +6,7 @@ local _, ns = ...
 
 local L = ns.L
 local WIDTH, HEIGHT = 520, 200
-local ICON = "Interface\\AddOns\\ForeverCore\\media\\Icon"
+local ICON = (ns.root or "Interface\\AddOns\\ForeverCore") .. "\\media\\Icon"
 
 local Profile = {}
 

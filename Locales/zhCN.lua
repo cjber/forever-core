@@ -153,3 +153,31 @@ L["Share in Chat"] = "在聊天中分享"
 L["fold this zone"] = "折叠此区域"
 L["unfold this zone"] = "展开此区域"
 L["focus this quest"] = "聚焦此任务"
+
+L["ForeverCore startup report"] = "ForeverCore 启动报告" -- mt
+L["Core: %s; API %s"] = "Core：%s；API %s" -- mt
+L["Runtime: %s copy %s"] = "运行时：%s，副本 %s" -- mt
+L["Runtime error: %s"] = "运行时错误：%s" -- mt
+L["Standalone runtime"] = "独立运行时" -- mt
+L["Core copies:"] = "Core 副本：" -- mt
+L["Rejected"] = "已拒绝" -- mt
+L["Sealed"] = "已完整加载" -- mt
+L["Unsealed"] = "加载不完整" -- mt
+L["%s: build %s, %s"] = "%s：构建 %s，%s" -- mt
+L['No installed Forever addon named "%s".'] = "没有名为“%s”的已安装 Forever 插件。" -- mt
+L["No installed Forever addons found."] = "未找到已安装的 Forever 插件。" -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"如果 /fcore 不是命令，请打开 AddOns，启用 ForeverCore 或任一 Forever 插件，然后在 /reload 后查看首个 Lua 错误。" -- mt
+L["Installed Forever addons:"] = "已安装的 Forever 插件：" -- mt
+L["Registered"] = "已注册" -- mt
+L["Loaded but not registered"] = "已加载但未注册" -- mt
+L["Not loaded"] = "未加载" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "已加载：%s；已启用：%s；Core 版本：%s" -- mt
+L["Requires: %s; optional: %s"] = "必需：%s；可选：%s" -- mt
+L["Loadable: %s; reason: %s"] = "可加载：%s；原因：%s" -- mt
+L["First error: %s"] = "首个错误：%s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"未记录错误。请用 /console scriptErrors 1 启用 Lua 错误，再执行 /reload，查看首个提到 %s 的错误。" -- mt
+L["Callback error: %s"] = "回调错误：%s" -- mt
+L["Login error: %s"] = "登录错误：%s" -- mt
+L["Copy %s: %s"] = "副本 %s：%s" -- mt

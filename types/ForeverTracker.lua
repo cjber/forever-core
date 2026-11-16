@@ -35,6 +35,7 @@
 ---@field Attach fun(module: ForeverTrackerModule, show?: ForeverTrackerShowSetting, contract?: ForeverTrackerMenuContract) the section's optional show switch and declarative menu
 ---@field HandleBlockHeaderClick fun(module: ForeverTrackerModule, block: any, button: string): boolean forwards a block title click into the declarative contract
 ---@field IsAttached fun(module: Frame?): boolean
+---@field SetSectionMaxHeight fun(module: ForeverTrackerModule, value?: number): boolean sets an attached section cap; nil restores 200, geometry waits until out of combat
 ---@field GetSettings fun(): ForeverTrackerSettings
 ---@field GetScale fun(): number
 ---@field SetScale fun(value: number)
@@ -105,6 +106,7 @@
 ---@field Update? fun(self: ForeverTrackerModule, availableHeight: number, dirtyUpdate?: boolean)
 ---@field UpdateHeight? fun(self: ForeverTrackerModule)
 ---@field GetContentsHeight? fun(self: ForeverTrackerModule): number
+---@field GetMinimumHeight? fun(self: ForeverTrackerModule): number
 ---@field CanFitBlock? fun(self: ForeverTrackerModule, block: any): boolean
 ---@field BeginLayout? fun(self: ForeverTrackerModule)
 ---@field IsTruncated? fun(self: ForeverTrackerModule): boolean
@@ -171,6 +173,7 @@
 ---@field TrackerOrder? ForeverTrackerOrderAPI
 ---@field TrackerQuestie? ForeverTrackerQuestie
 ---@field TrackerEllesmere? ForeverTrackerEllesmere
+---@field TrackerKaliels? ForeverTrackerKaliels
 ---@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerHostSettings? fun(): ForeverTrackerSettings
 ---@field AttachCoreDb? fun()

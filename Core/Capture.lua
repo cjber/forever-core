@@ -16,7 +16,12 @@ local CVARS = {
 
 ---@return ForeverCoreSavedVariables?
 local function Saved()
-	local db = rawget(_G, "ForeverCoreDB")
+	local db
+	if type(ns.Store) == "function" then
+		db = ns.Store()
+	else
+		db = rawget(_G, "ForeverCoreDB")
+	end
 	return type(db) == "table" and db or nil
 end
 

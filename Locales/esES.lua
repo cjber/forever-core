@@ -158,3 +158,31 @@ L["Share in Chat"] = "Compartir en el chat"
 L["fold this zone"] = "contraer esta zona"
 L["unfold this zone"] = "expandir esta zona"
 L["focus this quest"] = "centrar esta misión"
+
+L["ForeverCore startup report"] = "Informe de inicio de ForeverCore" -- mt
+L["Core: %s; API %s"] = "Core: %s; API %s" -- mt
+L["Runtime: %s copy %s"] = "Ejecución: %s, copia %s" -- mt
+L["Runtime error: %s"] = "Error de ejecución: %s" -- mt
+L["Standalone runtime"] = "Ejecución independiente" -- mt
+L["Core copies:"] = "Copias de Core:" -- mt
+L["Rejected"] = "Rechazada" -- mt
+L["Sealed"] = "Completa" -- mt
+L["Unsealed"] = "Incompleta" -- mt
+L["%s: build %s, %s"] = "%s: compilación %s, %s" -- mt
+L['No installed Forever addon named "%s".'] = 'No hay ningún addon Forever instalado llamado "%s".' -- mt
+L["No installed Forever addons found."] = "No se encontraron addons Forever instalados." -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"Si /fcore no es un comando, abre AddOns, activa ForeverCore o un addon Forever y lee el primer error de Lua tras /reload." -- mt
+L["Installed Forever addons:"] = "Addons Forever instalados:" -- mt
+L["Registered"] = "Registrado" -- mt
+L["Loaded but not registered"] = "Cargado pero no registrado" -- mt
+L["Not loaded"] = "No cargado" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "Cargado: %s; activado: %s; versión de Core: %s" -- mt
+L["Requires: %s; optional: %s"] = "Requiere: %s; opcional: %s" -- mt
+L["Loadable: %s; reason: %s"] = "Se puede cargar: %s; motivo: %s" -- mt
+L["First error: %s"] = "Primer error: %s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"No se capturó ningún error. Activa los errores de Lua con /console scriptErrors 1, usa /reload y lee el primer error que mencione %s." -- mt
+L["Callback error: %s"] = "Error de callback: %s" -- mt
+L["Login error: %s"] = "Error de inicio de sesión: %s" -- mt
+L["Copy %s: %s"] = "Copia %s: %s" -- mt

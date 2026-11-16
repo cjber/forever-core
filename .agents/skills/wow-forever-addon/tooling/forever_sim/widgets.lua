@@ -426,6 +426,9 @@ function M.build(sim)
 		end
 		w, h = (w or 0) * es, (h or 0) * es
 		local left, width, bottom, height
+		if (Secret.unwrap(s.width) or 0) > 0 and not (L and R) and (L or R) then
+			CX = nil
+		end
 		if L and R then
 			left, width = L, R - L
 		elseif L and CX then
@@ -438,6 +441,11 @@ function M.build(sim)
 			left, width = R - w, w
 		elseif CX then
 			left, width = CX - w / 2, w
+		end
+		-- Side anchors position a sized region without stretching it on the other axis.
+		-- Intrinsic text is sized too; opposite edges still explicitly stretch either kind.
+		if ((Secret.unwrap(s.height) or 0) > 0 or s.kind == "FontString") and not (T and B) and (T or B) then
+			CY = nil
 		end
 		if B and T then
 			bottom, height = B, T - B
@@ -453,6 +461,14 @@ function M.build(sim)
 			bottom, height = CY - h / 2, h
 		end
 		if left and bottom then
+			-- Only the designated scroll child moves. Its anchored descendants inherit this
+			-- translation through their target rectangles; viewport siblings stay fixed.
+			local parent = s.parent and S[s.parent]
+			if parent and parent.scrollChild == obj then
+				local scrollScale = effectiveScale(s.parent)
+				left = left - (Secret.unwrap(parent.hscroll) or 0) * scrollScale
+				bottom = bottom + (Secret.unwrap(parent.vscroll) or 0) * scrollScale
+			end
 			return { left, bottom, width, height }
 		end
 		return nil
@@ -493,20 +509,29 @@ function M.build(sim)
 	W.rect = rect
 
 	-- True when the region's placement depends on a region with a secret aspect (the client's secret anchoring).
-	local function anchoringSecret(obj, depth)
-		local s = S[obj]
-		if not s or (depth or 0) > 50 then
-			return false
-		end
-		if s.secretSize then
-			return true
-		end
-		for _, p in ipairs(s.points) do
-			local target = p.relativeTo or s.parent
-			if target and target ~= root then
-				local ts = S[target]
-				if ts and (next(ts.aspects) ~= nil or anchoringSecret(target, (depth or 0) + 1)) then
-					return true
+	local function anchoringSecret(obj)
+		local pending, seen = { obj }, {}
+		while #pending > 0 do
+			local current = table.remove(pending)
+			if not seen[current] then
+				seen[current] = true
+				local s = S[current]
+				if s then
+					if s.secretSize then
+						return true
+					end
+					for _, p in ipairs(s.points) do
+						local target = p.relativeTo or s.parent
+						if target and target ~= root then
+							local ts = S[target]
+							if ts then
+								if next(ts.aspects) ~= nil then
+									return true
+								end
+								pending[#pending + 1] = target
+							end
+						end
+					end
 				end
 			end
 		end
@@ -515,18 +540,24 @@ function M.build(sim)
 	W.anchoringSecret = anchoringSecret
 
 	-- Would anchoring obj to target create a loop?
-	local function dependsOn(target, obj, depth)
-		if target == obj then
-			return true
-		end
-		local s = S[target]
-		if not s or (depth or 0) > 100 then
-			return false
-		end
-		for _, p in ipairs(s.points) do
-			local t = p.relativeTo or s.parent
-			if t and dependsOn(t, obj, (depth or 0) + 1) then
+	local function dependsOn(target, obj)
+		local pending, seen = { target }, {}
+		while #pending > 0 do
+			local current = table.remove(pending)
+			if current == obj then
 				return true
+			end
+			if not seen[current] then
+				seen[current] = true
+				local s = S[current]
+				if s then
+					for _, p in ipairs(s.points) do
+						local dependency = p.relativeTo or s.parent
+						if dependency then
+							pending[#pending + 1] = dependency
+						end
+					end
+				end
 			end
 		end
 		return false
@@ -975,23 +1006,6 @@ function M.build(sim)
 	end
 	local function getHeight(self)
 		local s = st(self)
-		-- A FontString with no explicit height takes its text height, even when a RIGHT or CENTER anchor places it
-		-- vertically. Only TOP and BOTTOM together stretch it, as the client does.
-		if s.kind == "FontString" and (Secret.unwrap(s.height) or 0) <= 0 then
-			local hasTop, hasBottom = false, false
-			for _, p in ipairs(s.points) do
-				local vertical = POINTS[p.point] and POINTS[p.point][2]
-				if vertical == "TOP" then
-					hasTop = true
-				elseif vertical == "BOTTOM" then
-					hasBottom = true
-				end
-			end
-			if not (hasTop and hasBottom) then
-				local _, h = textSize(s)
-				return h
-			end
-		end
 		local r = #s.points > 1 and rect(self)
 		if r then
 			return r[4] / effectiveScale(self)
@@ -1140,7 +1154,16 @@ function M.build(sim)
 		end
 		dirty()
 	end
+	local lastSize = setmetatable({}, { __mode = "k" })
+	local function notifySize(self, oldWidth, oldHeight)
+		local width, height = getWidth(self), getHeight(self)
+		lastSize[self] = { width, height }
+		if width ~= oldWidth or height ~= oldHeight then
+			fire(self, "OnSizeChanged", width, height)
+		end
+	end
 	local function setDim(self, key, value)
+		local oldWidth, oldHeight = getWidth(self), getHeight(self)
 		local s = st(self)
 		if Secret.is(value) then
 			s.secretSize = true
@@ -1148,7 +1171,7 @@ function M.build(sim)
 		s[key] = value
 		dirty()
 		if s.isFrame then
-			fire(self, "OnSizeChanged", getWidth(self), getHeight(self))
+			notifySize(self, oldWidth, oldHeight)
 		end
 	end
 	impl.ScriptRegion.SetWidth = function(self, w)
@@ -1158,6 +1181,7 @@ function M.build(sim)
 		setDim(self, "height", h)
 	end
 	impl.ScriptRegion.SetSize = function(self, w, h)
+		local oldWidth, oldHeight = getWidth(self), getHeight(self)
 		local s = st(self)
 		if Secret.is(w) or Secret.is(h) then
 			s.secretSize = true
@@ -1165,7 +1189,7 @@ function M.build(sim)
 		s.width, s.height = w, h
 		dirty()
 		if s.isFrame then
-			fire(self, "OnSizeChanged", getWidth(self), getHeight(self))
+			notifySize(self, oldWidth, oldHeight)
 		end
 	end
 
@@ -1848,6 +1872,7 @@ function M.build(sim)
 			return
 		end
 		s.vscroll = offset
+		dirty()
 		fire(self, "OnVerticalScroll", offset)
 	end
 	impl.ScrollFrame.GetVerticalScroll = function(self)
@@ -1859,6 +1884,7 @@ function M.build(sim)
 			return
 		end
 		s.hscroll = offset
+		dirty()
 		fire(self, "OnHorizontalScroll", offset)
 	end
 	impl.ScrollFrame.GetHorizontalScroll = function(self)
@@ -2503,7 +2529,6 @@ function M.build(sim)
 	end
 	W.flatten = flatten
 
-	local lastSize = setmetatable({}, { __mode = "k" })
 	function W.sizePass()
 		for _, obj in ipairs(W.all) do
 			local s = S[obj]

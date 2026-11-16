@@ -10,18 +10,18 @@ display only.
 The client exists to test the Forever addons' interface. These rules hold for every session, and the tool enforces
 them where it can:
 
-1. **Interface only.** Open and close frames, click addon UI, send slash commands, `/reload`, take screenshots,
-   read SavedVariables and Lua errors. Never move the character, target, fight, loot, quest, trade, chat to other
-   players or use the auction house. `slash` sends only the Forever addons' own commands (read from their `SLASH_`
-   globals) and `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there is no
-   free typing; `click` refuses until a `shot` was taken after the last input, so each click aims at UI you have
-   just read in the frame.
+1. **Interface only.** Open and close frames, click or scroll addon UI, send slash commands, `/reload`, take
+   screenshots, read SavedVariables and Lua errors. Never move the character, target, fight, loot, quest, trade, chat
+   to other players or use the auction house. `slash` sends only the Forever addons' own commands (read from their
+   `SLASH_` globals) and `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there
+   is no free typing; `click` and `scroll` refuse until a `shot` was taken after the last input, so each input aims
+   at UI you have just read in the frame.
 2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
-   Every verb that touches the client (`shot`, `click`, `key`, `slash`, `reload`, `eval`, `errors`) runs inside a
-   job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception is the
-   `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job lock. The
-   session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit` so the
-   character logs out, then stops the client.
+   Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs
+   inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
+   is the `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job
+   lock. The session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit`
+   so the character logs out, then stops the client.
 3. **Human pace.** Inputs are at least 1.5 s apart across invocations and slash commands type at 120 ms a key.
    Never loop inputs: take a shot, read it, decide the next action.
 
@@ -49,6 +49,7 @@ FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
 python3 $FC job -- ./my-test.sh   # start or reuse the session, wait for the job lock, run the script
 python3 $FC shot                  # prints the PNG path; read it to see the frame
 python3 $FC click 960 540         # points in the 1920x1080 frame, on UI from the last shot
+python3 $FC scroll 960 540 3      # wheel-up ticks (zoom in) or -N down, at UI from the last shot
 python3 $FC key Escape            # Return, Escape or BackSpace
 python3 $FC slash "/fgf"          # a Forever addon's own command
 python3 $FC reload                # /reload, returns once the world is back
@@ -61,7 +62,12 @@ python3 $FC down                  # stop the session once the job in flight, if 
 `job -- <command>` runs the command with `FOREVER_CLIENT_DISPLAY` and `FOREVER_CLIENT_JOB` set, so the verbs the
 script calls join its job instead of queueing behind it. The session it starts stays up for the next job; `serve`
 runs the same lifecycle in the foreground and `up` is its old name. Each verb run outside a job takes the job lock
-for that one call.
+for that one call. `run -- <command>` is `job` under the name it had before, so it runs one job in the shared session
+rather than a session of its own.
+
+`scroll` at a point on the world map zooms it, which is how a pin that appears only at full zoom is checked. It turns
+the wheel at a point on the last shot, exactly as `click` aims there, and like `click` it is one of the verbs that
+takes the job lock for its own invocation.
 
 Driving the client across several tool calls, use a lease:
 
@@ -164,6 +170,24 @@ nothing was recorded and a later run tries again; another agent's job is waited 
 before its flows ran, and exit 2 is a failure the tool names. `--manual-launcher` starts the session that way while
 launcher OCR is not finding Play.
 
+A flow is captured once it says its window is ready, so a window that fills in from late data is not photographed
+empty (#593). A Lua snippet may `return` a function; `!!DevSmoke` polls it every 0.25 s, takes the client's own
+screenshot the moment it first returns true, and `proof` waits for that file before its capture:
+
+```lua
+-- notice.lua: open the panel, then say when its data has arrived.
+local panel = MyAddon:OpenPanel()
+return function()
+	return panel and #panel.cards > 0
+end
+```
+
+A flow with no ready function is still captured, just after the world load. A ready check that raises or never turns
+true writes the client's own reason to `DevSmokeDB.eval` and saves it; `proof` reports that reason instead of only its
+65 s fallback timeout. Nothing is uploaded and `.visual-proof.json` is not written. A slash flow now runs through
+`ChatEdit_SendText` in the same `!!DevSmoke` route, so its capture follows a confirmed run and its own eval result is
+checked; there is no fixed settle. Name a Lua flow for anything that must wait on data.
+
 `tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
 proof it prints this command for the pull request's head, and the release session runs it and commits the result.
 
@@ -211,14 +235,19 @@ before anything reaches the client. It writes the chunk into the gitignored `!!D
 `!!DevSmoke` checkout, linked into AddOns as the load-on-demand addon of the same name; the snippet's line 1 is the
 generated file's line 2, so an error naming `Eval.lua:6` is snippet line 5. The chunk runs at login and on
 `/devsmoke eval`: what it prints and every value it returns go to the Agent tab in lines under 255 characters and
-into `DevSmokeDB.eval`, and its errors are caught there instead of reaching BugGrabber.
+into `DevSmokeDB.eval`, and its errors are caught there instead of reaching BugGrabber. A function it returns is not
+printed: it is the flow's ready check, polled by `!!DevSmoke`, whose screenshot when it first returns true is what
+`proof` waits for (#593).
 
 The client reads the inbox once per session: the first `/devsmoke eval` or login loads it, and any snippet written
 after that needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the snippet it
-just wrote, then reloads once more and reads the result that snippet's own run token names.
+just wrote, then clears the inbox before reloading once more and reading the result that snippet's own run token
+names. The second reload therefore saves that one run instead of running the snippet again (#588).
 
-`DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil> }`, where `out`
-holds the same lines the Agent tab showed. SavedVariables reach disk only at a reload or logout, so the file still
+`DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil>,
+ready = <"captured"|"failed"|"timeout"|nil>, readyErr = <string|nil> }`, where `out` holds the same lines the Agent
+tab showed and `readyErr` is the reason a proof flow was not captured. SavedVariables reach disk only at a reload or
+logout, so the file still
 holds the session before the one that just ran: `run` is the token `eval.py` stamped that session's chunk with, and it
 is what tells a result apart from an earlier snippet's (#580). Use eval for anything longer than a one-line `/run`.
 
@@ -235,8 +264,11 @@ is what tells a result apart from an earlier snippet's (#580). Use eval for anyt
 - Battle.net needs the network, so run the tool outside the agent sandbox; `serve` (and the `job` that starts it)
   checks Battle.net is reachable before it starts anything.
 - The launcher logs in on its own and opens the WoW: Forever page, but ignores the launch it was started with, so
-  until the game starts the session clicks Play every 15 s (`PLAY_BUTTON`, measured in the launcher window gamescope
-  gives it; a launcher redesign moves it). Enter at the character list enters with the last character. A timeout prints the last frame's path: a login form or an update prompt there needs the player.
+  until the game starts `serve` clicks Play every 15 s. Play is located from the flat fill the launcher draws its button
+  in, with the label read inside that button, so the click follows the launcher's own layout (#547). A launcher build
+  that draws another fill needs a fresh `tools/headless/launcher-play.png` for its spec and the `PLAY_FILL` in
+  `tools/headless/forever_client.py` moved with it. Enter at the character list enters with the last character. A
+  timeout prints the last frame's path: a login form or an update prompt there needs the player.
 
 ## Scope
 

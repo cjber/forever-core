@@ -44,14 +44,15 @@ end
 ---@param records ForeverQuestRecord[]
 ---@return ForeverQuestGroup[]
 function ns.QuestOrder(records)
-	local ready, current, zones = {}, {}, {}
+	local ready, zones, current = {}, {}, {}
 	for _, record in ipairs(records) do
 		if record.ready then
 			ready[#ready + 1] = record
-		elseif record.onMap then
-			current[#current + 1] = record
 		else
 			local title = record.zone or ""
+			if record.onMap then
+				current[title] = true
+			end
 			local group = zones[title]
 			if not group then
 				group = { title = title, quests = {} }
@@ -66,17 +67,15 @@ function ns.QuestOrder(records)
 		Sort(ready)
 		groups[#groups + 1] = { title = ns.L["Ready to turn in"], quests = ready }
 	end
-	if #current > 0 then
-		Sort(current)
-		groups[#groups + 1] = { title = current[1].zone or "", quests = current }
-	end
-
 	local others = {}
 	for _, group in pairs(zones) do
 		Sort(group.quests)
 		others[#others + 1] = group
 	end
 	table.sort(others, function(a, b)
+		if (current[a.title] == true) ~= (current[b.title] == true) then
+			return current[a.title] == true
+		end
 		if Before(a.quests[1], b.quests[1]) then
 			return true
 		end
@@ -88,10 +87,8 @@ function ns.QuestOrder(records)
 	for _, group in ipairs(others) do
 		groups[#groups + 1] = group
 	end
-	-- The section keeps one tracker block per group title, so a title may name exactly one group: the on-map group is
-	-- titled by its first quest's log header while off-map quests keep their own header, so the same zone arrives twice
-	-- (this zone, then its other quests) and the block would be laid out twice in one pass, anchored under a block that
-	-- already depends on it (#521). Same title, same zone: one group, folded into the first, nearest first.
+	-- The section keeps one tracker block per title (#521). Zone groups already include their on-map and off-map
+	-- quests together; also merge a log heading that happens to match the translated ready-to-turn-in heading.
 	local ordered, byTitle = {}, {}
 	for _, group in ipairs(groups) do
 		local first = byTitle[group.title]

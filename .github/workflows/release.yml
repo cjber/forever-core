@@ -132,8 +132,36 @@ jobs:
           # The packager reads the version from the tag on the checked-out commit. The full-history checkout
           # already holds a tag that existed before this run, so only a new one is created here.
           git rev-parse -q --verify "refs/tags/$RELEASE_TAG" > /dev/null || git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
-      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+      - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
+        with:
+          tools: lua
+      - name: Build the release zip without uploading
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -d
+      - name: Exercise the built release zip
+        id: validated
         env:
+          FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/release-sim
+        run: |
+          python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+          python3 tools/check_release_archive.py
+      - name: Verify the validated archive has not changed
+        env:
+          ARCHIVE: ${{ steps.validated.outputs.archive }}
+          ARCHIVE_SHA256: ${{ steps.validated.outputs.sha256 }}
+        run: printf '%s  %s\n' "$ARCHIVE_SHA256" "$ARCHIVE" | sha256sum --check --status
+      # This pinned packager keeps inherited archive metadata when -z skips archive creation. -c also skips
+      # copying: its upload functions consume this exact validated zip, never a second generated artifact.
+      - name: Upload the validated package
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -c -z
+        env:
+          archive: ${{ steps.validated.outputs.archive }}
+          archive_name: ${{ steps.validated.outputs.archive_name }}
+          archive_label: ${{ steps.validated.outputs.archive_label }}
+          archive_version: ${{ steps.target.outputs.tag }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

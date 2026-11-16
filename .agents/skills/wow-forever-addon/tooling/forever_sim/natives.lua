@@ -176,17 +176,6 @@ function M.build(sim)
 	end
 	G.SetGamePadFreeLook = function() end
 	G.GetChannelList = function() end
-	-- DisplayInterfaceActionBlockedMessage mirrors Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua: it adds
-	-- INTERFACE_ACTION_BLOCKED as a system chat line, once, then replaces itself with a no-op. The sim keeps chat
-	-- output on DEFAULT_CHAT_FRAME, as that file's ChatFrameUtil.AddSystemMessage does. Blizzard_ChatFrameBase
-	-- cannot boot here (it needs the whole chat frame), so the one function the panel manager calls lives here.
-	G.DisplayInterfaceActionBlockedMessage = function()
-		local chat = G.DEFAULT_CHAT_FRAME
-		if chat then
-			chat:AddMessage(G.INTERFACE_ACTION_BLOCKED)
-		end
-		G.DisplayInterfaceActionBlockedMessage = function() end
-	end
 	-- Kiosk (event demo) mode: off. A native table the UI checks everywhere.
 	G.Kiosk = G.Kiosk
 		or setmetatable({}, {
@@ -751,21 +740,62 @@ function M.build(sim)
 	questNative("GetNumQuestLeaderBoards", 0)
 	questNative("GetQuestLogLeaderBoard", nil)
 	questNative("GetQuestLogCompletionText", nil)
+	questNative("GetQuestLink", nil)
+	questNative("IsCurrentQuestFailed", false)
 	questNative("IsQuestSequenced", false)
 	-- The quest's special item, if any. Blizzard's tracker asks before it makes the item button; no item means none.
 	questNative("GetQuestLogSpecialItemInfo", nil)
 	-- The item button's cooldown and range checks; the client answers no cooldown and out of range.
 	questNative("GetQuestLogSpecialItemCooldown", nil)
 	questNative("IsQuestLogSpecialItemInRange", 0)
-	-- The bonus objectives table: the sim's player has none.
-	G.GetTasksTable = function()
+	-- Legacy task/objective C natives, also present in the committed client probe.
+	G.GetTasksTable = function(...)
+		local tasks = sim.impl.GetTasksTable
+		if tasks then
+			return tasks(...)
+		end
 		return {}
 	end
+	questNative("GetTaskInfo", nil)
+	questNative("GetQuestObjectiveInfo", nil)
+	questNative("GetQuestProgressBarPercent", 0)
+	-- Achievement UI reads these legacy C natives while its Lua file initializes.
+	for _, name in ipairs({ "GetGuildCategoryList", "GetStatisticsCategoryList" }) do
+		G[name] = function(...)
+			local categories = sim.impl[name]
+			if categories then
+				return categories(...)
+			end
+			return {}
+		end
+	end
+	-- Legacy Challenges search state and results belong to explicit fixture callbacks; the default has no results.
+	G.SetAchievementSearchString = function(text)
+		local search = sim.impl.SetAchievementSearchString
+		if search then
+			search(text)
+		end
+	end
+	questNative("GetPreviousAchievement", nil)
+	questNative("GetNextAchievement", nil)
+	questNative("GetAchievementGuildRep", nil)
+	G.SetFocusedAchievement = function(id)
+		local focus = sim.impl.SetFocusedAchievement
+		if focus then
+			focus(id)
+		end
+	end
+	questNative("GetNumFilteredAchievements", 0)
+	questNative("GetFilteredAchievementID", nil)
 	-- Auto quest pop-ups: none.
 	questNative("GetNumAutoQuestPopUps", 0)
 	-- No scenario: no stages. The tracker compares the count GetInfo returns.
 	G.C_Scenario = G.C_Scenario or {}
-	G.C_Scenario.GetInfo = function()
+	G.C_Scenario.GetInfo = function(...)
+		local info = sim.impl["C_Scenario.GetInfo"]
+		if info then
+			return info(...)
+		end
 		return nil, nil, 0
 	end
 	G.SpellCanTargetQuest = function()
@@ -848,6 +878,16 @@ function M.build(sim)
 			return math.ceil(x - 0.5)
 		end
 		return math.floor(x + 0.5)
+	end
+	-- ColorUtilDocumentation: text markup uses opaque ARGB, independent of ColorMixin alpha.
+	I["C_ColorUtil.GenerateTextColorCode"] = function(color)
+		return string.format("ff%02x%02x%02x", round(color.r * 255), round(color.g * 255), round(color.b * 255))
+	end
+	I["C_ColorUtil.WrapTextInColorCode"] = function(text, code)
+		return "|c" .. code .. text .. "|r"
+	end
+	I["C_ColorUtil.WrapTextInColor"] = function(text, color)
+		return I["C_ColorUtil.WrapTextInColorCode"](text, I["C_ColorUtil.GenerateTextColorCode"](color))
 	end
 	local function clamp(v, lo, hi)
 		return math.min(math.max(v, lo), hi)

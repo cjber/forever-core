@@ -16,6 +16,7 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py status
     forever_client.py shot [PATH]         # PNG of what the client shows now
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
+    forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
     forever_client.py key Escape          # Return, Escape or BackSpace
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
@@ -43,13 +44,17 @@ stop that never reaches Python's handlers leaves that record behind, and the nex
 `smoke`, `proof` or `build-dev` replays it before it touches AddOns.
 
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
-`smoke` does, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` (a Forever addon's own slash command, or a Lua
-file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new secret gist, and writes
-`<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
-checks the installed folder with `visual_proof --compare`. It never commits or pushes the checkout. There is no
-default flow: ForeverCore has no shared opener for an addon's update notice, so the flow is named on the command line
-and `wow-forever-addon/in-game.md` shows it. A Lua flow's own result is read after its screenshot, and a snippet that
-raised fails the proof before any gist or `.visual-proof.json` exists (#580).
+`smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
+`!!DevSmoke` (a Forever addon's own slash command, or a Lua file), takes a screenshot after each, uploads the PNGs to a
+new secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
+each image's sha256, then checks the installed folder with `visual_proof --compare`. It never commits or pushes the
+checkout. A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
+run rather than a fixed pause (#573). A flow that returns a ready check is captured once `!!DevSmoke` has polled it
+true, so a window filled in from late data is not photographed empty (#593); a check that raises or never turns true
+records its reason and fails the proof with it. There is no default flow: ForeverCore has no shared opener for an
+addon's update notice, so the flow is named on the command line and `wow-forever-addon/in-game.md` shows both. A flow's
+own result is read after its screenshot, and a snippet that raised fails the proof before any gist or
+`.visual-proof.json` exists (#580).
 
 The session is shared: `serve` starts the client once, and every `job` runs against that same client, so a test pays
 the login once rather than once per test. A job holds `STATE_DIR/job.lock` only while it touches the client, and
@@ -60,9 +65,9 @@ ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none ha
 is `job` under its old name. `lease` holds the job lock for an agent that drives the client across several tool
 calls, and `release TOKEN` ends it.
 
-Every verb that touches the client (`shot`, `click`, `key`, `slash`, `reload`, `eval`, `errors`) runs as a job: it
-proceeds when `FOREVER_CLIENT_JOB` names the token in `job.json`, and otherwise takes the job lock itself for that one
-invocation. `status` and `sv` need no lock.
+Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs as a
+job: it proceeds when `FOREVER_CLIENT_JOB` names the token in `job.json`, and otherwise takes the job lock itself for
+that one invocation. `status` and `sv` need no lock.
 
 One Battle.net account means one client: a resident session holds an exclusive lock for its lifetime and refuses to
 start while any process uses the Wine prefix, which is how a player's own running client is left alone. Another
@@ -72,8 +77,8 @@ agent's session is reused and its job is waited for up to `--timeout`; only the 
 The client is for testing the Forever addons' interface, never for playing, and the verbs hold to that:
 
 - Interface only. There is no free typing: `slash` sends only the Forever addons' own commands (read from their
-  `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` needs a
-  screenshot taken since the last input, so every click aims at UI the agent has just seen. `slash` puts the
+  `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` and `scroll` need
+  a screenshot taken since the last input, so every input aims at UI the agent has just seen. `slash` puts the
   keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
 - `--manual-launcher` (`serve`, `up`, `job`, `run`, `lease`, `smoke`, `proof`) disables OCR clicks and permits shots
   and left clicks before READY, only while the game process is absent. Inspect each private screenshot before
@@ -103,8 +108,11 @@ import sys
 import tarfile
 import time
 import uuid
+import zlib
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+
+from PIL import Image
 
 # The workspace checkout of each addon repository, and the test builds beside it: the same places the workspace's
 # rebuild-dev.sh used, now built here so a build has one implementation.
@@ -149,6 +157,10 @@ LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
+# A driver upgrade whose loaded kernel module is still the old one makes Vulkan fail before gamescope can start. The
+# module names itself here, and nvidia-smi or the installed userspace library names the other half (#567).
+NVIDIA_MODULE_VERSION = Path("/sys/module/nvidia/version")
+NVIDIA_MISMATCH = "driver/library version mismatch"
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-client"
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "forever-client/env.json"
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
@@ -165,8 +177,10 @@ LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exit
 STOP_WAIT = 30 * 60
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
-# Seconds a proof waits after a slash flow before its screenshot (run_flow).
-SLASH_SETTLE_SECONDS = 3
+WHEEL_DELAY_MS = "120"
+# Seconds a proof waits for a flow's screenshot, or for !!DevSmoke's failure record. Its own ready check stops at
+# 60 s; the extra 5 s only lets that failure reach SavedVariables before the proof falls back to its final reload.
+FLOW_READY_SECONDS = 65
 # The job lock's file, the holder it names, the mark of the last job's end, the stop `down` asks for, and the
 # session's own log.
 JOB_LOCK = "job.lock"
@@ -326,6 +340,53 @@ def client_pid() -> int | None:
     return next((p for p in pids() if "Wow.exe" in cmdline(p) and in_prefix(read_environ(p))), None)
 
 
+def character_config(launch: Mapping) -> dict[str, str | bool]:
+    """Validate the owner-approved parked character before starting any client process."""
+    character = launch.get("character")
+    if not isinstance(character, dict):
+        raise ClientError(
+            f"{CONFIG} has no approved character: add character.name, character.guid and character.require_resting=true"
+        )
+    name, guid = character.get("name"), character.get("guid")
+    if not isinstance(name, str) or not name.strip() or not isinstance(guid, str) or not guid.strip():
+        raise ClientError(f"{CONFIG} has an invalid character identity: name and guid are required")
+    if character.get("require_resting") is not True:
+        raise ClientError(f"{CONFIG} must set character.require_resting=true for automatic proofs")
+    return {"name": name, "guid": guid, "require_resting": True}
+
+
+def lua_string(value: str) -> str:
+    """Encode a character field as a Lua 5.1 quoted string without control escapes or lossy Unicode."""
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ClientError(f"{CONFIG} character identity contains a control character")
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+def prepare_headless_addon(character: Mapping[str, str | bool]) -> Path:
+    """Create an isolated headless addon copy with immutable session configuration."""
+    target = STATE_DIR / "headless-addon"
+    if target.exists() or target.is_symlink():
+        raise ClientError(f"{target} is left over from an earlier session: recover it before starting")
+    try:
+        shutil.copytree(ADDON, target)
+        (target / "Config.lua").write_text(
+            "FOREVER_HEADLESS_CHARACTER = {name="
+            + lua_string(str(character["name"]))
+            + ", guid="
+            + lua_string(str(character["guid"]))
+            + ", require_resting=true}\n",
+            encoding="utf-8",
+        )
+        toc = target / "!!ForeverHeadless.toc"
+        text = toc.read_text(encoding="utf-8")
+        toc.write_text(text.replace("ForeverHeadless.lua\n", "Config.lua\nForeverHeadless.lua\n"), encoding="utf-8")
+    except BaseException:
+        if target.is_dir():
+            shutil.rmtree(target)
+        raise
+    return target
+
+
 # --- session state ---------------------------------------------------------------------------------------------
 
 
@@ -375,13 +436,25 @@ def screenshots() -> set[Path]:
     return set(folder.glob("*")) if folder.is_dir() else set()
 
 
-def wait_for_world(before: set[Path], timeout: float, nudge=None) -> Path:
+def wait_for_world(before: set[Path], timeout: float, nudge=None, *, require_marker: bool = False) -> Path:
     """Block until the dev addon's screenshot appears: the world has loaded. `nudge` runs every 15 s meanwhile."""
     deadline, next_nudge = time.monotonic() + timeout, time.monotonic() + 20
     while time.monotonic() < deadline:
         new = screenshots() - before
         if new:
-            return max(new, key=lambda p: p.stat().st_mtime)
+            candidates = []
+            for path in new:
+                if not require_marker:
+                    candidates.append(path)
+                    continue
+                try:
+                    if path.is_file() and has_headless_marker(path):
+                        candidates.append(path)
+                except ClientError:
+                    # Screenshot() can expose the file before its final PNG chunk; retry on the next poll.
+                    continue
+            if candidates:
+                return max(candidates, key=lambda p: p.stat().st_mtime)
         if nudge and time.monotonic() >= next_nudge:
             nudge()
             next_nudge = time.monotonic() + 15
@@ -462,6 +535,69 @@ def runtime_dir(environ: Mapping[str, str], uid: int, root: Path = Path("/run/us
     return path
 
 
+def nvidia_userspace_version(run=None) -> str | None:
+    """The installed NVIDIA userspace driver version, when nvidia-smi cannot report it itself.
+
+    An upgraded userspace whose loaded module is still the old one makes nvidia-smi fail with its own mismatch line.
+    The installed package (Arch's nvidia-utils, Debian's nvidia-driver) or the versioned NVML library then names the
+    userspace half, so the error can give both versions rather than only "Vulkan failed" (#567).
+    """
+    run = run or subprocess.run
+    for command in (
+        ["pacman", "-Q", "nvidia-utils"],
+        ["dpkg-query", "-W", "-f=${Version}\n", "nvidia-driver"],
+    ):
+        try:
+            result = run(command, capture_output=True, text=True, check=False)
+        except OSError:
+            continue
+        if result.returncode == 0:
+            words = (result.stdout or "").strip().split()
+            if words:
+                return words[-1].split("-", 1)[0]  # Arch's 620.70.06-1 is driver 620.70.06
+    for library in sorted(Path("/usr/lib").glob("libnvidia-ml.so.*")):
+        match = re.search(r"\.so\.(\d+(?:\.\d+)+)$", library.name)
+        if match:
+            return match.group(1)
+    return None
+
+
+def nvidia_mismatch(module_path: Path = NVIDIA_MODULE_VERSION, run=None) -> str | None:
+    """The loaded NVIDIA module and its userspace disagreeing, as the sentence `up` prints, or None.
+
+    A driver package upgrade installs new userspace while the old kernel module stays loaded until a reboot. Vulkan
+    then finds no device and gamescope asserts, which used to surface only as "gamescope started no client" (#567).
+    """
+    try:
+        module = module_path.read_text().strip()
+    except OSError:
+        return None
+    if not module:
+        return None
+    run = run or subprocess.run
+    try:
+        smi = run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if smi.returncode == 0:
+        lines = (smi.stdout or "").strip().splitlines()
+        userspace = lines[0].strip() if lines else ""
+        if userspace and userspace != module:
+            return f"the NVIDIA kernel module ({module}) does not match its userspace ({userspace}): reboot first"
+        return None
+    output = f"{smi.stdout or ''}\n{smi.stderr or ''}".casefold()
+    if NVIDIA_MISMATCH not in output:
+        return None
+    userspace = nvidia_userspace_version(run)
+    detail = f" ({userspace})" if userspace else ""
+    return f"the NVIDIA kernel module ({module}) does not match its userspace{detail}: reboot first"
+
+
 def shot(state: Mapping, path: Path) -> Path:
     if "runtime_dir" not in state:
         raise ClientError("session has no runtime directory recorded; restart the headless session")
@@ -495,6 +631,33 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
             raise ClientError("the game has started: wait for READY before clicking")
 
     send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard)
+
+
+def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
+    """Turn the mouse wheel at a point in the current frame: positive is up (zoom in), negative down.
+
+    The world map's zoom lives on its ScrollContainer, which a click does not reach and `slash` refuses to open up as
+    arbitrary Lua. This is the same screenshot-bound input as `click`, so it aims only at UI just read in a shot (#548).
+    """
+    if ticks == 0:
+        raise ClientError("scroll takes a non-zero number of wheel ticks: positive up, negative down")
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a scroll must aim at addon UI in the current frame")
+    if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+        raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    button = "4" if ticks > 0 else "5"  # X11 wheel up and wheel down
+    send(
+        state,
+        "mousemove",
+        str(px),
+        str(py),
+        "click",
+        "--repeat",
+        str(abs(ticks)),
+        "--delay",
+        WHEEL_DELAY_MS,
+        button,
+    )
 
 
 def press(state: Mapping, keys: Sequence[str]) -> None:
@@ -551,13 +714,298 @@ def slash(state: Mapping, command: str) -> None:
     send(state, "key", "Return")
 
 
+# --- the launcher's Play button ----------------------------------------------------------------------------------
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_CHANNELS = {2: 3, 6: 4}  # truecolour, and truecolour with alpha
+HEADLESS_MARKER = (
+    "10011001",
+    "01100110",
+    "11001001",
+    "00110110",
+    "10101100",
+    "01010011",
+    "11100010",
+    "00011101",
+)
+# The addon emits this as a 32x32 black/white grid. JPEG is the client's native
+# screenshot format, so each 4x4 cell is decoded by its average luminance and
+# the protocol's binary midpoint (128), rather than by a fitted colour ratio.
+MARKER_CELL = 4
+# The flat fill the launcher draws its primary Play button in on the game page. The word sits inside it as white
+# text, and a whole-page tesseract pass skips the filled button along with its label, so the drawn fill is what
+# locates the control: no fixed point and no page layout (#547). A launcher build that draws another fill is a change
+# here, and the saved frame beside the spec is what shows the difference.
+PLAY_FILL = bytes((0, 116, 224))
+PLAY_LABEL = "play"
+
+
+def png_pixels(path: Path) -> tuple[int, int, int, list[bytes]]:
+    """The screenshot's width, height, channels and rows, decoded without an image library.
+
+    gamescope writes an 8-bit, non-interlaced RGB or RGBA PNG. Anything else is a ClientError naming the file: a frame
+    this tool cannot read must never be reported as a launcher without Play.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise ClientError(f"cannot read the launcher screenshot {path}: {error}") from None
+    if data[:8] != PNG_SIGNATURE:
+        raise ClientError(f"{path} is not a PNG screenshot")
+    at = 8
+    compressed = []
+    width = height = channels = None
+    while at < len(data):
+        try:
+            length, kind = struct.unpack(">I4s", data[at : at + 8])
+        except struct.error:
+            raise ClientError(f"{path} is a truncated PNG") from None
+        body = data[at + 8 : at + 8 + length]
+        at += length + 12
+        if kind == b"IHDR":
+            try:
+                width, height, depth, colour, _compression, _filter, interlace = struct.unpack(">IIBBBBB", body)
+            except struct.error:
+                raise ClientError(f"{path} has a truncated PNG header") from None
+            channels = PNG_CHANNELS.get(colour)
+            if depth != 8 or channels is None or interlace != 0:
+                raise ClientError(
+                    f"{path} is not the 8-bit RGB or RGBA, non-interlaced PNG gamescope writes "
+                    f"(bit depth {depth}, colour type {colour}, interlace {interlace})"
+                )
+        elif kind == b"IDAT":
+            compressed.append(body)
+        elif kind == b"IEND":
+            break
+    if not width or not height or channels is None:
+        raise ClientError(f"{path} has no PNG header")
+    try:
+        raw = zlib.decompress(b"".join(compressed))
+    except zlib.error as error:
+        raise ClientError(f"{path} is not a readable PNG: {error}") from None
+    stride = width * channels
+    rows: list[bytes] = []
+    previous = bytes(stride)
+    at = 0
+    try:
+        for _row in range(height):
+            kind = raw[at]
+            at += 1
+            line = bytearray(raw[at : at + stride])
+            at += stride
+            png_unfilter(line, previous, channels, kind)
+            rows.append(bytes(line))
+            previous = rows[-1]
+    except (IndexError, ValueError) as error:
+        raise ClientError(f"{path} is a truncated PNG: {error}") from None
+    return width, height, channels, rows
+
+
+def has_headless_marker(path: Path) -> bool:
+    """Identify the readiness screenshot by the marker drawn at screen center.
+
+    ``Screenshot()`` writes JPEGs on the game client, while gamescope writes PNGs
+    for host captures. Decode both formats here so the handshake follows the
+    native client transport instead of assuming the host capture format.
+    """
+    try:
+        if path.read_bytes()[:8] == PNG_SIGNATURE and not _complete_png(path):
+            raise ClientError(f"{path} is not a complete screenshot")
+        with Image.open(path) as image:
+            image.load()
+            rgb = image.convert("RGB")
+            width, height = rgb.size
+    except ClientError:
+        raise
+    except (OSError, ValueError) as error:
+        raise ClientError(f"{path} is not a complete screenshot: {error}") from None
+    marker_size = len(HEADLESS_MARKER) * MARKER_CELL
+    if width < marker_size or height < marker_size:
+        return False
+    left, top = width // 2 - marker_size // 2, height // 2 - marker_size // 2
+    for row, bits in enumerate(HEADLESS_MARKER):
+        for column, bit in enumerate(bits):
+            cell = rgb.crop(
+                (
+                    left + column * MARKER_CELL,
+                    top + row * MARKER_CELL,
+                    left + (column + 1) * MARKER_CELL,
+                    top + (row + 1) * MARKER_CELL,
+                )
+            )
+            luminance = sum((299 * r + 587 * g + 114 * b) // 1000 for r, g, b in cell.getdata()) / (MARKER_CELL**2)
+            if (luminance >= 128) != (bit == "1"):
+                return False
+    return True
+
+
+def png_unfilter(line: bytearray, previous: bytes, channels: int, kind: int) -> None:
+    """Undo one row's PNG filter in place, on the row before it."""
+    stride = len(line)
+    if kind == 0:
+        return
+    if kind == 1:  # Sub
+        for index in range(channels, stride):
+            line[index] = (line[index] + line[index - channels]) & 0xFF
+        return
+    if kind == 2:  # Up
+        for index in range(stride):
+            line[index] = (line[index] + previous[index]) & 0xFF
+        return
+    if kind == 3:  # Average
+        for index in range(stride):
+            left = line[index - channels] if index >= channels else 0
+            line[index] = (line[index] + ((left + previous[index]) >> 1)) & 0xFF
+        return
+    if kind == 4:  # Paeth
+        for index in range(stride):
+            left = line[index - channels] if index >= channels else 0
+            up = previous[index]
+            up_left = previous[index - channels] if index >= channels else 0
+            guess = left + up - up_left
+            distances = (abs(guess - left), abs(guess - up), abs(guess - up_left))
+            line[index] = (line[index] + (left, up, up_left)[distances.index(min(distances))]) & 0xFF
+        return
+    raise ValueError(f"PNG filter {kind}")
+
+
+def fill_regions(
+    width: int, height: int, channels: int, rows: Sequence[bytes], fill: bytes = PLAY_FILL
+) -> list[tuple[int, int, int, int, int]]:
+    """Every connected region drawn in `fill`, as its area and box, the largest first.
+
+    The fill is matched in the row's own bytes, so an RGB frame and an RGBA one are read the same way.
+    """
+    mask = bytearray(width * height)
+    for y, row in enumerate(rows):
+        at = row.find(fill)
+        while at != -1:
+            if at % channels == 0:
+                mask[y * width + at // channels] = 1
+            at = row.find(fill, at + 1)
+    regions = []
+    for start in range(width * height):
+        if not mask[start]:
+            continue
+        stack = [start]
+        mask[start] = 0
+        area = 0
+        left = right = start % width
+        top = bottom = start // width
+        while stack:
+            index = stack.pop()
+            area += 1
+            x, y = index % width, index // width
+            left, right = min(left, x), max(right, x)
+            top, bottom = min(top, y), max(bottom, y)
+            for neighbour, inside in (
+                (index - 1, x > 0),
+                (index + 1, x + 1 < width),
+                (index - width, y > 0),
+                (index + width, y + 1 < height),
+            ):
+                if inside and mask[neighbour]:
+                    mask[neighbour] = 0
+                    stack.append(neighbour)
+        regions.append((area, left, top, right - left + 1, bottom - top + 1))
+    regions.sort(reverse=True)
+    return regions
+
+
+def write_ppm(path: Path, rows: Sequence[bytes], channels: int, box: tuple[int, int, int, int]) -> None:
+    """One cropped region as a PPM, which tesseract reads and which needs no image encoder."""
+    left, top, width, height = box
+    data = bytearray(f"P6\n{width} {height}\n255\n".encode())
+    for y in range(top, top + height):
+        row = rows[y]
+        for x in range(left, left + width):
+            at = x * channels
+            data += row[at : at + 3]
+    path.write_bytes(data)
+
+
+def write_pgm_channel(path: Path, width: int, height: int, channels: int, rows: Sequence[bytes], channel: int) -> None:
+    """Write one PNG channel as grayscale for OCR of colored game labels."""
+    data = bytearray(f"P5\n{width} {height}\n255\n".encode())
+    for row in rows:
+        data.extend(255 - value for value in row[channel::channels])
+    path.write_bytes(data)
+
+
+def ocr_words(image: Path, psm: int = 11) -> list[tuple[str, float, int, int, int, int]]:
+    """The words tesseract reads in one image: text, confidence, and the word's box in that image."""
+    ocr = subprocess.run(
+        ["tesseract", str(image), "stdout", "--psm", str(psm), "tsv"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ocr.returncode != 0:
+        raise ClientError(f"could not read {image} with tesseract: {ocr.stderr.strip()}")
+    words = []
+    for line in ocr.stdout.splitlines()[1:]:
+        fields = line.split("\t")
+        if len(fields) != 12:
+            continue
+        try:
+            left, top, width, height = (int(fields[index]) for index in (6, 7, 8, 9))
+            confidence = float(fields[10])
+        except (TypeError, ValueError):
+            continue
+        words.append((fields[11].strip(), confidence, left, top, width, height))
+    return words
+
+
+def ocr_words_with_lines(image: Path, psm: int) -> list[tuple[str, float, int, int, int, int, tuple[int, int, int]]]:
+    """Read OCR words with their TSV line number for exact multi-word labels."""
+    ocr = subprocess.run(
+        ["tesseract", str(image), "stdout", "--psm", str(psm), "tsv"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if ocr.returncode != 0:
+        raise ClientError(f"could not read {image} with tesseract: {ocr.stderr.strip()}")
+    words = []
+    for line in ocr.stdout.splitlines()[1:]:
+        fields = line.split("\t")
+        if len(fields) != 12:
+            continue
+        try:
+            block, paragraph, line_number = (int(fields[index]) for index in (2, 3, 4))
+            left, top, width, height = (int(fields[index]) for index in (6, 7, 8, 9))
+            confidence = float(fields[10])
+        except (TypeError, ValueError):
+            continue
+        words.append((fields[11].strip(), confidence, left, top, width, height, (block, paragraph, line_number)))
+    return words
+
+
+def play_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
+    """Every visible Play label the launcher draws, as its box in the whole screenshot.
+
+    The label is found inside the button the launcher draws, not by the page layout tesseract guesses for the whole
+    frame: a whole-page pass skips the filled button and its word even when the word is plainly drawn (#547).
+    """
+    width, height, channels, rows = png_pixels(image)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    crop = STATE_DIR / "play-label.ppm"
+    targets = []
+    for _area, left, top, box_width, box_height in fill_regions(width, height, channels, rows):
+        write_ppm(crop, rows, channels, (left, top, box_width, box_height))
+        for text, confidence, x, y, word_width, word_height in ocr_words(crop):
+            if text.casefold() == PLAY_LABEL and confidence >= 0 and word_width > 0 and word_height > 0:
+                targets.append((left + x, top + y, word_width, word_height, confidence))
+    return targets
+
+
 def press_play(state: dict) -> None:
     """Find and click the visible Play label in the launcher's current screenshot.
 
-    Battle.net changes its page layout with the gamescope size and can show a login
-    dialog before the game page. A fixed point therefore either misses Play or clicks
-    another control. OCR is bounded to the private gamescope screenshot, so the
-    click remains screenshot-bound like the public ``click`` verb.
+    Battle.net changes its page layout with the gamescope size and can show a login dialog before the game page. A
+    fixed point therefore either misses Play or clicks another control. The button is located from the fill the
+    launcher draws it in, and the label is read inside that region, so the click is screenshot-bound like the public
+    ``click`` verb and does not depend on the page layout an OCR pass guesses for the whole frame.
     """
     found = subprocess.run(
         ["xdotool", "search", "--name", "^Battle.net$"],
@@ -571,26 +1019,7 @@ def press_play(state: dict) -> None:
     if shutil.which("tesseract") is None:
         raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
     image = shot(state, STATE_DIR / "launcher.png")
-    ocr = subprocess.run(
-        ["tesseract", str(image), "stdout", "--psm", "11", "tsv"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if ocr.returncode != 0:
-        raise ClientError(f"could not read the Battle.net Play target: {ocr.stderr.strip()}")
-    targets = []
-    for line in ocr.stdout.splitlines()[1:]:
-        fields = line.split("\t")
-        if len(fields) != 12 or fields[11].strip().casefold() != "play":
-            continue
-        try:
-            left, top, width, height = (int(fields[i]) for i in (6, 7, 8, 9))
-            confidence = float(fields[10])
-        except (ValueError, TypeError):
-            continue
-        if confidence >= 0 and width > 0 and height > 0:
-            targets.append((left, top, width, height, confidence))
+    targets = play_targets(image)
     if not targets:
         # The launcher can still be painting its signed-in page. The startup loop
         # retries within its existing deadline; never click an unobserved target.
@@ -612,10 +1041,47 @@ def press_play(state: dict) -> None:
     (STATE_DIR / "last-input").touch()
 
 
+def enter_world_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
+    """Find exact Enter World labels in a character-select screenshot."""
+    width, height, channels, rows = png_pixels(image)
+    channel = STATE_DIR / "character-select-green.pgm"
+    write_pgm_channel(channel, width, height, channels, rows, 1)
+    words = [word for word in ocr_words_with_lines(channel, psm=6) if word[1] >= 0]
+    combined = [word for word in words if word[0].casefold().replace(" ", "") == "enterworld"]
+    targets = [(word[2], word[3], word[4], word[5], word[1]) for word in combined]
+    for enter in words:
+        if enter[0].casefold() != "enter":
+            continue
+        for world in words:
+            if world[0].casefold() != "world" or world[6] != enter[6]:
+                continue
+            left, top = min(enter[2], world[2]), min(enter[3], world[3])
+            right = max(enter[2] + enter[4], world[2] + world[4])
+            bottom = max(enter[3] + enter[5], world[3] + world[5])
+            targets.append((left, top, right - left, bottom - top, min(enter[1], world[1])))
+    return list(dict.fromkeys(targets))
+
+
+def enter_world(state: Mapping) -> None:
+    """Click Enter World only when the current game frame visibly contains that label."""
+    if not game_focused(state):
+        return
+    image = shot(state, STATE_DIR / "character-select.png")
+    targets = enter_world_targets(image)
+    if len(targets) != 1:
+        return
+    left, top, width, height, _ = targets[0]
+    x(state, "mousemove", str(left + width // 2), str(top + height // 2))
+    time.sleep(0.5)
+    x(state, "click", "1")
+    (STATE_DIR / "last-input").touch()
+
+
 def reload(state: Mapping, timeout: float = 120) -> Path:
-    before = screenshots()
+    # The new cycle's screenshots are the ones after the command was sent: a screenshot an earlier reload's flow
+    # still takes would otherwise be read as this one's world load.
     slash(state, "/reload")
-    return wait_for_world(before, timeout)
+    return wait_for_world(screenshots(), timeout)
 
 
 # --- dev builds ------------------------------------------------------------------------------------------------
@@ -918,6 +1384,13 @@ def recover_links() -> int:
         return 0
     links = record["links"]
     restore_links(links)
+    try:
+        stale_state = json.loads(state_file().read_text())
+    except (OSError, ValueError):
+        stale_state = {}
+    generated = Path(stale_state.get("headless_addon", "")) if stale_state.get("headless_addon") else None
+    if generated and generated.is_dir() and generated.parent == STATE_DIR:
+        shutil.rmtree(generated)
     put_back = [describe_restore(link) for link in links if link.get("restored")]
     if put_back:
         detail = ", ".join(put_back)
@@ -1283,6 +1756,53 @@ def flow_step(action: str) -> str:
     return f"{path.name} sha256:{digest}"
 
 
+def flow_ready_failure(token: str | None) -> str | None:
+    """The readiness failure !!DevSmoke recorded for this run token, when it is already on disk.
+
+    A ready check that raises or never turns true writes `ready` and `readyErr` into DevSmokeDB.eval and asks the
+    client to save it, so the proof can report the client's own reason rather than only its timeout (#593).
+    """
+    if not token:
+        return None
+    try:
+        data = saved_eval(token)
+    except ClientError:
+        return None
+    if data.get("ready") in ("failed", "timeout"):
+        return _text(data.get("readyErr")) or f"the flow's ready check {data['ready']}"
+    return None
+
+
+def wait_for_flow_ready(
+    before: set[Path], action: str, token: str | None = None, timeout: float = FLOW_READY_SECONDS
+) -> Path:
+    """Block until a flow says its window is ready, by the screenshot it takes then or the failure it records.
+
+    Every reload writes one screenshot as the world loads, and !!DevSmoke writes the flow's own once the flow returns
+    true from its ready check. Both appear after `before`, and the flow's is the later one, so the second new file is
+    the flag the capture waits on: a window filled in from late data is captured after it has filled rather than after
+    a fixed pause (#593). A check that raises or never turns true records why, and the proof fails on that reason.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        fresh = []
+        for path in screenshots() - before:
+            try:
+                fresh.append((path.stat().st_mtime, path))
+            except OSError:
+                continue  # the client wrote or rotated it between the glob and the read
+        if len(fresh) >= 2:
+            return max(fresh)[1]
+        failure = flow_ready_failure(token)
+        if failure:
+            raise ClientError(f"the flow {action} could not be captured: {failure}")
+        time.sleep(1)
+    raise ClientError(
+        f"the flow {action} did not say it was ready to capture within {timeout:.0f} s: a flow signals with the "
+        "screenshot !!DevSmoke takes once its ready check returns true (see wow-forever-addon/in-game.md)"
+    )
+
+
 def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     """`--flow NAME=SLASH_OR_LUA_FILE` entries: a name for the proof and the in-game action that shows it."""
     flows = []
@@ -1300,27 +1820,53 @@ def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     return flows
 
 
-def run_flow(state: Mapping, action: str) -> str | None:
-    """Run one proof flow: a Forever addon's own slash command, or a Lua file through !!DevSmoke.
+def flow_capture_failure(state: Mapping, action: str, token: str, timeout: ClientError) -> ClientError:
+    """The precise failure for a flow that produced no screenshot, or its timeout when none was recorded.
 
-    A Lua flow answers the run token its snippet wrote, whose result `check_flow_eval` reads once the screenshot is
-    taken: the reload that saves the result to disk would close the window the flow just opened (#580).
+    !!DevSmoke saves a failing ready check into DevSmokeDB.eval as it happens. If that record is not on disk yet, the
+    proof reloads once to save it; the inbox is already cleared, so the reload does not run the flow again (#593).
     """
-    if not lua_flow(action):
-        slash(state, action)
-        # The client reads typed input on its own frames and reports nothing back while it runs, so the screenshot
-        # waits this long for the command to run and its window to draw (#573). A Lua flow needs no wait: it runs
-        # during the reload below.
-        time.sleep(SLASH_SETTLE_SECONDS)
-        return None
+    failure = flow_ready_failure(token)
+    if failure:
+        return ClientError(f"the flow {action} could not be captured: {failure}")
+    try:
+        reload(state)
+    except ClientError:
+        return timeout
+    failure = flow_ready_failure(token)
+    if failure:
+        return ClientError(f"the flow {action} could not be captured: {failure}")
+    return timeout
+
+
+def run_flow(state: Mapping, action: str) -> str:
+    """Run one proof flow through !!DevSmoke: a Forever addon's own slash command, or a Lua file.
+
+    Both routes write a snippet whose own run token `check_flow_eval` reads once the screenshot is taken: the reload
+    that saves the result to disk would close the window the flow just opened (#580). A slash command runs through
+    `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed run rather than a fixed pause
+    (#573). The flow's ready check is polled by !!DevSmoke, whose screenshot then says the window has drawn, so the
+    capture waits for that file instead of a pause (#593).
+    """
     tool = devsmoke_eval()
     try:
-        written = tool.write_snippet(Path(action), addons=CLIENT / "Interface/AddOns")
+        if lua_flow(action):
+            written = tool.write_snippet(Path(action), addons=CLIENT / "Interface/AddOns", capture=True)
+        else:
+            allowed_command(action)
+            written = tool.write_slash(action, addons=CLIENT / "Interface/AddOns", capture=True)
     except tool.EvalError as error:
         raise ClientError(str(error)) from None
     print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-    # The snippet runs at login of this reload, so it has run before the flow's screenshot.
+    # The snippet runs at login of this reload. Clearing the inbox afterwards keeps the later reloads a proof makes
+    # from running it again, which would schedule a second ready screenshot the next flow could mistake for its own.
+    before = screenshots()
     reload(state)
+    clear_eval_inbox()
+    try:
+        wait_for_flow_ready(before, action, written["token"])
+    except ClientError as error:
+        raise flow_capture_failure(state, action, written["token"], error) from None
     return written["token"]
 
 
@@ -1572,6 +2118,20 @@ def proof(args: argparse.Namespace) -> int:
 # --- session lifecycle -----------------------------------------------------------------------------------------
 
 
+def gamescope_failure_hint() -> str:
+    """What the session log says when gamescope started no client, including a driver mismatch (#567)."""
+    try:
+        log = (STATE_DIR / "session.log").read_text(errors="replace")
+    except OSError:
+        return ""
+    if "vkCreateInstance failed" not in log and "CVulkanDevice::BInit" not in log:
+        return ""
+    mismatch = nvidia_mismatch()
+    if mismatch:
+        return f"; {mismatch}"
+    return "; gamescope could not create a Vulkan instance: see the session log"
+
+
 def child_env(token: str, timeout: float = 30) -> dict[str, str]:
     """Gamescope hands its children DISPLAY and GAMESCOPE_WAYLAND_DISPLAY: read them from the first child.
 
@@ -1584,7 +2144,7 @@ def child_env(token: str, timeout: float = 30) -> dict[str, str]:
             if env.get("FOREVER_CLIENT_SESSION") == token and env.get("GAMESCOPE_WAYLAND_DISPLAY"):
                 return env
         time.sleep(0.5)
-    raise ClientError("gamescope started no client: see the session log")
+    raise ClientError(f"gamescope started no client: see the session log{gamescope_failure_hint()}")
 
 
 def log_out(state: Mapping) -> None:
@@ -1600,13 +2160,82 @@ def log_out(state: Mapping) -> None:
         time.sleep(1)
 
 
+def signal_pid(pid: int, started: int | None, signum: int) -> bool:
+    """Signal a process only if it is still the one that started at `started`, through a pidfd."""
+    if not isinstance(started, int):
+        return False
+    try:
+        pidfd = os.pidfd_open(pid)
+    except (AttributeError, OSError):
+        return False
+    try:
+        if process_start(pid) != started:
+            return False
+        signal.pidfd_send_signal(pidfd, signum)
+        return True
+    except ProcessLookupError:
+        return False
+    finally:
+        os.close(pidfd)
+
+
+def wait_for_pid(pid: int, started: int | None, timeout: float) -> bool:
+    """Wait until the recorded process is gone, without treating a reused pid as it."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not owner_alive({"pid": pid, "started": started}):
+            return True
+        time.sleep(0.1)
+    return not owner_alive({"pid": pid, "started": started})
+
+
+def gamescope_running(gamescope: subprocess.Popen | int | None, state: Mapping | None) -> bool:
+    """Whether the session's gamescope still runs, from a live handle or the pid a dead owner left in state."""
+    if gamescope is None:
+        return False
+    if hasattr(gamescope, "poll"):
+        return gamescope.poll() is None
+    started = state.get("gamescope_start") if state else None
+    return owner_alive({"pid": int(gamescope), "started": started})
+
+
+def stop_gamescope(gamescope: subprocess.Popen | int | None, state: Mapping | None) -> None:
+    """Stop the session's gamescope, by its live handle or by the pid a dead owner recorded."""
+    if not gamescope_running(gamescope, state):
+        return
+    if hasattr(gamescope, "poll"):
+        try:
+            gamescope.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            gamescope.wait(20)
+        except subprocess.TimeoutExpired:
+            try:
+                gamescope.kill()
+            except ProcessLookupError:
+                return
+            gamescope.wait(20)
+        return
+    pid = int(gamescope)
+    started = state.get("gamescope_start") if state else None
+    if signal_pid(pid, started, signal.SIGTERM) and not wait_for_pid(pid, started, 20):
+        signal_pid(pid, started, signal.SIGKILL)
+        wait_for_pid(pid, started, 20)
+    if gamescope_running(gamescope, state):
+        raise ClientError(f"cannot safely stop gamescope {pid}: session state retained")
+
+
 def teardown(
-    gamescope: subprocess.Popen | None, wine: Mapping[str, str], link: Path | None, state: Mapping | None
+    gamescope: subprocess.Popen | int | None,
+    wine: Mapping[str, str],
+    link: Path | None,
+    state: Mapping | None,
 ) -> None:
     token = state.get("token") if state else None
     require_owned_prefix(token)
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
-    if state and state.get("ready") and gamescope and gamescope.poll() is None and client_pid():
+    if state and state.get("ready") and gamescope_running(gamescope, state) and client_pid():
         log_out(state)
     server = wineserver(wine)
     # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
@@ -1635,15 +2264,13 @@ def teardown(
         time.sleep(0.25)
     # Do not trigger gamescope's child reaper while a shared Wine server could still serve another client.
     # Display processes do not inherit WINEPREFIX, so they remain alive until all Wine processes exit naturally.
-    if gamescope and gamescope.poll() is None:
-        gamescope.terminate()
-        try:
-            gamescope.wait(20)
-        except subprocess.TimeoutExpired:
-            gamescope.kill()
-            gamescope.wait(20)
+    stop_gamescope(gamescope, state)
     if link and link.is_symlink():
         link.unlink()
+    if state and state.get("headless_addon"):
+        generated = Path(state["headless_addon"])
+        if generated.is_dir() and generated.parent == STATE_DIR:
+            shutil.rmtree(generated)
     state_file().unlink(missing_ok=True)
 
 
@@ -1701,8 +2328,7 @@ def at_character_select(state: Mapping, manual_launcher: bool) -> None:
     starts a second client, which then ends on its own login form.
     """
     if client_pid():
-        if game_focused(state):
-            send(state, "key", "Return")
+        enter_world(state)
     elif not manual_launcher:
         press_play(state)
 
@@ -1745,6 +2371,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
     session runs, and `up` is the same verb in the foreground.
     """
     recover_links()
+    mismatch = nvidia_mismatch()
+    if mismatch:
+        raise ClientError(mismatch)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     (STATE_DIR / STOP).unlink(missing_ok=True)
     lock = open(STATE_DIR / "lock", "w")
@@ -1782,6 +2411,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 f"{CONFIG} records an older Wine launch: start Battle.net from Faugus, "
                 "then run `forever_client.py capture-env`"
             )
+        character = character_config(launch)
         wine = launch["env"]
     except BaseException:
         # The session lock is held through these checks, so a refusal must not leave its descriptor open.
@@ -1789,7 +2419,8 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         raise
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
-    gamescope: subprocess.Popen | None = None
+    session_addon: Path | None = None
+    gamescope: subprocess.Popen | int | None = None
     state: dict | None = None
     job = None
     job_token = None
@@ -1802,8 +2433,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
     signal.signal(signal.SIGHUP, on_signal)
     log = open(STATE_DIR / "session.log", "w")
     try:
+        session_addon = prepare_headless_addon(character)
         if not link.exists():
-            link.symlink_to(ADDON)
+            link.symlink_to(session_addon)
         env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "WINEPREFIX")}
         env.update(wine)
         env["WINEPREFIX"] = str(PREFIX)
@@ -1815,6 +2447,22 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         before = screenshots()
         started = time.time()
         launched = time.monotonic()
+        # The session's ownership exists before its first child does, so an interrupt at the spawn has a token for
+        # teardown rather than leaving unowned Wine processes and gamescope behind (#578).
+        state = {
+            "pid": os.getpid(),
+            "start_ticks": process_start(os.getpid()),
+            "gamescope": None,
+            "gamescope_start": None,
+            "token": token,
+            "started": started,
+            "runtime_dir": str(runtime),
+            "manual_launcher": args.manual_launcher,
+            "wine": {"PROTONPATH": wine["PROTONPATH"]} if wine.get("PROTONPATH") else {},
+            "link": str(link),
+            "headless_addon": str(session_addon),
+        }
+        state_file().write_text(json.dumps(state))
         gamescope = subprocess.Popen(
             [
                 "gamescope",
@@ -1838,15 +2486,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        state = {
-            "pid": os.getpid(),
-            "start_ticks": process_start(os.getpid()),
-            "gamescope": gamescope.pid,
-            "token": token,
-            "started": started,
-            "runtime_dir": str(runtime),
-            "manual_launcher": args.manual_launcher,
-        }
+        state["gamescope"] = gamescope.pid
+        state["gamescope_start"] = process_start(gamescope.pid)
+        state_file().write_text(json.dumps(state))
         genv = child_env(token)
         state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
         state_file().write_text(json.dumps(state))
@@ -1854,7 +2496,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 
         nudge = functools.partial(at_character_select, state, args.manual_launcher)
         try:
-            ready_shot = wait_for_world(before, args.timeout, nudge=nudge)
+            ready_shot = wait_for_world(before, args.timeout, nudge=nudge, require_marker=True)
         except ClientError as error:
             frame = shot(state, STATE_DIR / "failed.png")
             raise ClientError(f"{error}; last frame: {frame}") from None
@@ -1862,6 +2504,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         state_file().write_text(json.dumps(state))
         ready = time.monotonic()
         print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
+        # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
+        # No eval or reload is needed here: wait_for_world only returns after that handshake succeeds.
+        print("CHARACTER_PREFLIGHT passed", flush=True)
         if after_ready:
             return after_ready(state)
         while gamescope.poll() is None:
@@ -1898,6 +2543,11 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             if job is not None:
                 release_job(job, job_token, ended=False)
             (STATE_DIR / STOP).unlink(missing_ok=True)
+            if session_addon and session_addon.is_dir() and session_addon.parent == STATE_DIR:
+                shutil.rmtree(session_addon)
+            # Release the session lock before an exception reaches proof()/smoke(). Their error classifier probes
+            # the lock to distinguish a foreign session, and a traceback retaining this frame must not see our own
+            # failed startup as another owner (#573).
             log.close()
             lock.close()
         print("stopped: logged out, gamescope, Wine and the dev addon link are gone", flush=True)
@@ -1908,26 +2558,58 @@ up = serve
 
 
 def down() -> int:
-    """Stop the resident session once the job in flight, if any, has finished."""
+    """Stop the resident session once the job in flight, if any, has finished, or clean up after a dead owner.
+
+    A live session is asked to stop: one in the world through the stop marker its resident loop reads between jobs, so
+    the job in flight finishes first, and one still starting through its own SIGTERM teardown, bound to the start
+    identity it recorded so a reused pid is never signalled. Once that process is gone it can no longer run its own
+    teardown, so `down` does the same work itself: the token-owned Wine processes, gamescope from `state["gamescope"]`,
+    the dev addon link and the state file (#578). A pid that no longer exists must not crash `down`.
+    """
     state = load_state()
-    if not session_alive(state):
-        state_file().unlink(missing_ok=True)
-        return 0
-    if not state.get("ready") or "start_ticks" not in state:
-        # A session still starting has no resident loop to read the stop marker, and one an older version started
-        # has no stop loop at all: their own SIGTERM teardown is the way out. A starting session never reached the
-        # world, so nothing is logged out.
-        os.kill(state["pid"], signal.SIGTERM)
-    else:
-        (STATE_DIR / STOP).touch()
-    # A job in flight finishes first, then teardown logs out (up to LOGOUT_WAIT), gives gamescope 20 s and ends Wine.
-    deadline = time.monotonic() + STOP_WAIT
-    while time.monotonic() < deadline:
+    started = state.get("owner_start", state.get("start_ticks"))
+    owner = {"pid": state.get("pid"), "started": started}
+    limit = None
+    if owner_alive(owner):
+        if state.get("ready") and started is not None:
+            # A session in the world reads the stop marker between jobs: the job in flight finishes first, then
+            # teardown logs out (up to LOGOUT_WAIT), gives gamescope 20 s and ends Wine.
+            (STATE_DIR / STOP).touch()
+            limit = STOP_WAIT
+        elif signal_pid(state["pid"], started, signal.SIGTERM):
+            # A session still starting has no resident loop to read the marker: its own SIGTERM handler is the way
+            # out. It never reached the world, so nothing is logged out.
+            limit = LOGOUT_WAIT + 60
+        elif owner_alive(owner):
+            raise ClientError(f"cannot safely signal session {state['pid']}: session state retained")
+    if limit is not None:
+        deadline = time.monotonic() + limit
+        while time.monotonic() < deadline:
+            if not state_file().exists():
+                (STATE_DIR / STOP).unlink(missing_ok=True)
+                return 0
+            if not owner_alive(owner):
+                break
+            time.sleep(0.5)
+        if owner_alive(owner):
+            raise ClientError(f"session {state['pid']} did not stop within {limit} s")
+    # A new session may acquire the released lock before this fallback does. Serialize cleanup with it and re-read the
+    # record under that lock, so this down cannot remove the next session's link or state.
+    with open(STATE_DIR / "lock", "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ClientError("another session holds the client: stale cleanup deferred") from None
         if not state_file().exists():
             (STATE_DIR / STOP).unlink(missing_ok=True)
             return 0
-        time.sleep(0.5)
-    raise ClientError(f"session {state['pid']} did not stop within {STOP_WAIT} s")
+        if load_state() != state:
+            raise ClientError("the headless session changed: stale cleanup deferred")
+        recover_links()
+        link = Path(state["link"]) if state.get("link") else CLIENT / "Interface/AddOns" / ADDON.name
+        teardown(state.get("gamescope"), state.get("wine") or {}, link, state)
+        state_file().unlink(missing_ok=True)
+    return 0
 
 
 def start_serve(manual_launcher: bool) -> subprocess.Popen:
@@ -2252,7 +2934,7 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {"shot", "click", "scroll", "key", "slash", "reload", "eval", "errors"}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -2278,6 +2960,8 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
     elif args.verb == "click":
         click(state, args.x, args.y, args.button)
+    elif args.verb == "scroll":
+        scroll(state, args.x, args.y, args.ticks)
     elif args.verb == "key":
         press(state, args.keys)
     elif args.verb == "slash":
@@ -2286,19 +2970,26 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         print(f"reloaded ({reload(state).name})")
     elif args.verb == "eval":
         tool = devsmoke_eval()
+        cleared = False
         try:
             try:
-                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
+                # An eval is not a proof flow: it must not schedule a ready screenshot that would race the reload
+                # saving its result (#588).
+                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns", capture=False)
             except tool.EvalError as error:
                 raise ClientError(str(error)) from None
             print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-            # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
+            # This reload runs the snippet once. Clearing the inbox before the next reload keeps that reload from
+            # running it a second time; that reload saves the first run's result for the reader (#580, #588).
             reload(state)
+            clear_eval_inbox()
+            cleared = True
             report, ok = eval_result(state, written["token"])
             print(report)
             return 0 if ok else 1
         finally:
-            clear_eval_inbox(quiet=True)
+            if not cleared:
+                clear_eval_inbox(quiet=True)
     elif args.verb == "errors":
         # A shared session's log holds every job's lines: read from where this job's own work started.
         completed = errors({**state, "started": job_started()}, args.addon)
@@ -2368,7 +3059,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "key", "slash", "eval", "errors"):
+    for name in ("reload", "shot", "click", "scroll", "key", "slash", "eval", "errors"):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
         if name == "shot":
@@ -2377,6 +3068,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
             p.add_argument("--button", default="1", choices=("1", "3"))
+        elif name == "scroll":
+            p.add_argument("x", type=int)
+            p.add_argument("y", type=int)
+            p.add_argument("ticks", type=int, help="wheel-up ticks (zoom in) when positive, wheel-down when negative")
         elif name == "key":
             p.add_argument("keys", nargs="+")
         elif name == "slash":

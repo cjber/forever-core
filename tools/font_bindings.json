@@ -1,0 +1,81 @@
+{
+  "policy": "Only reviewed text producers with exact widget FontObjects are checked. Source changes invalidate the whole mapping, including aliases, callbacks and font overrides. Review source and callers before updating sha256. Unlisted dynamic text, template-owned fonts and consumer helper arguments have no coverage claim.",
+  "producers": [
+    {
+      "source": "UI/TrackerLock.lua",
+      "sha256": "9ecab77fdf4da4e5b62c9f0c657a421156b0d08c298f474d7cd3ab7467d80b35",
+      "review": "Grip reads title from ns.L, creates label with GameFontNormal, and DrawLabel reuses title or the empty literal. Tooltip text is excluded because its font belongs to the tooltip template.",
+      "bindings": [
+        {
+          "font": "GameFontNormal",
+          "widget": "TrackerLock.Grip label and DrawLabel",
+          "phrase": "Forever tracker"
+        },
+        {
+          "font": "GameFontNormal",
+          "widget": "TrackerLock.Grip DrawLabel",
+          "literal": ""
+        }
+      ]
+    },
+    {
+      "source": "UI/Credits.lua",
+      "sha256": "72f3ffbe71ba0a6ba49b2e5d01474560229a8d79cf0adbf4312fbb05bb65a0a8",
+      "review": "Strings reads ns.L. Build assigns subtitle directly. Refresh creates emptyText directly and creates item.count with GameFontHighlightSmall; count receives x%d:format(row.count) or empty text. External player names and generated detail text are excluded.",
+      "bindings": [
+        {
+          "font": "GameFontHighlightSmall",
+          "widget": "Build subtitle",
+          "phrase": "The players who helped each Forever addon."
+        },
+        {
+          "font": "GameFontHighlight",
+          "widget": "Refresh emptyText",
+          "phrase": "No one is listed yet."
+        },
+        {
+          "font": "GameFontHighlightSmall",
+          "widget": "Refresh item.count static prefix of formatted count",
+          "literal": "x"
+        }
+      ]
+    },
+    {
+      "source": "UI/ForeverFamily.lua",
+      "sha256": "3be647a7ed972c2f15b34f7ff24ea6845300776b86ee2fc81fc881af944fa329",
+      "review": "Register Build closes over Strings(), which reads ns.L. title, label, about, thanksName and thanksLine have explicit CreateFontString fonts and direct phrase assignments. THANKS_LINE is the literal phrase below. Support().name is Ko-fi, inserted in links, then rendered by the row name FontString. Button and template-owned fonts, dynamic links and generated credits are excluded.",
+      "bindings": [
+        {
+          "font": "GameFontNormalLarge",
+          "widget": "Register Build title",
+          "phrase": "Forever addons"
+        },
+        {
+          "font": "GameFontHighlight",
+          "widget": "Register Build label",
+          "phrase": "Suggest my other Forever addons"
+        },
+        {
+          "font": "GameFontDisableSmall",
+          "widget": "Register Build about",
+          "phrase": "Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."
+        },
+        {
+          "font": "GameFontNormal",
+          "widget": "Register Build thanksName",
+          "phrase": "Thanks"
+        },
+        {
+          "font": "GameFontHighlightSmall",
+          "widget": "Register Build thanksLine via THANKS_LINE",
+          "phrase": "The players who helped each Forever addon."
+        },
+        {
+          "font": "GameFontNormal",
+          "widget": "Support name via Register Build links row name",
+          "literal": "Ko-fi"
+        }
+      ]
+    }
+  ]
+}

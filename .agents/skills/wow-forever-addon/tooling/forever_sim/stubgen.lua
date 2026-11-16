@@ -114,6 +114,8 @@ function M.build(sim)
 	-- enumerate. Enum.GameRule is one, and Blizzard's UI reads it constantly. The values are Ketho/vscode-wow-api's
 	-- Annotations/Core/Data/Enum.lua (release 0.22.3, its 12.0.1 annotation set), the only published table naming
 	-- these members; this lists the ones the Blizzard UI the client loads reads.
+	-- ItemSoundType is also omitted by native docs; values come from the repository annotation pin.
+	G.Enum.ItemSoundType = { Pickup = 0, Drop = 1, Use = 2, Close = 3 }
 	G.Enum.GameRule = {
 		AchievementsPanelDisabled = 40,
 		ActionButtonTypeOverlayStrategy = 165,
@@ -222,6 +224,10 @@ function M.build(sim)
 			return 0
 		elseif STRING_TYPES[t] then
 			return ""
+		elseif t == "colorRGB" then
+			return { r = 0, g = 0, b = 0 }
+		elseif t == "colorRGBA" then
+			return { r = 0, g = 0, b = 0, a = 0 }
 		elseif t == "table" then
 			return {}
 		elseif docs.enums[t] then

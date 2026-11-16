@@ -196,10 +196,96 @@
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 ---@field Art? ForeverArt
 
+---@class ForeverCoreLoaderNamespace
+---@field folder string
+---@field root string
+---@field copy ForeverCoreLoaderCopy
+---@field mode "standalone"|"elected"
+---@field Start fun()
+---@field Login fun()
+---@field ForeverCore ForeverCoreAPI?
+
+---@class ForeverCoreLoaderCopy
+---@field folder string
+---@field build number
+---@field digest? string
+---@field root string
+---@field sealed boolean
+---@field rejected? string
+---@field Define fun(self: ForeverCoreLoaderCopy, chunk: fun(identity: string, namespace: ForeverCoreLoaderNamespace)): ForeverCoreLoaderCopy|false, string?
+---@field Seal fun(self: ForeverCoreLoaderCopy): boolean, string?
+
+---@class ForeverCoreLoaderSelection
+---@field mode "elected"|"standalone"|"legacy"
+---@field build? number
+---@field folder? string
+---@field root? string
+---@field core ForeverCoreAPI?
+
+---@class ForeverCoreLoaderOffer
+---@field folder string
+---@field globalName string
+
+---@class ForeverCoreLoaderCandidate
+---@field folder string
+---@field build number
+---@field digest? string
+---@field root string
+---@field sealed boolean
+---@field standalone boolean
+---@field rejected? string
+
+---@class ForeverCoreLoader
+---@field schema integer
+---@field Begin fun(folder: string, build: number, digest?: string): ForeverCoreLoaderCopy
+---@field Activate fun(): ForeverCoreAPI?
+---@field OnReady fun(callback: fun(core: ForeverCoreAPI?, selected: ForeverCoreLoaderSelection?)): boolean?
+---@field OfferStore fun(folder: string, globalName: string): boolean, string?
+---@field Offers fun(): ForeverCoreLoaderOffer[]
+---@field Candidates fun(): ForeverCoreLoaderCandidate[]
+---@field Selected fun(): ForeverCoreLoaderSelection?
+---@field Namespace fun(): ForeverCoreLoaderNamespace?
+---@field Facade fun(): ForeverCoreAPI?
+---@field Error fun(): string?
+---@field CallbackError fun(): string?
+---@field LoginError fun(): string?
+---@field Rejections fun(): { folder: string, reason: string }[]
+
+---@class ForeverCoreStoreConflictValue
+---@field present boolean
+---@field value? any
+---@field folder string
+---@field build number
+
+---@class ForeverCoreStoreConflict
+---@field path string
+---@field chosen integer
+---@field values ForeverCoreStoreConflictValue[]
+
+---@class ForeverCoreStoreMeta
+---@field schema integer
+---@field node string
+---@field parents string[]
+---@field ancestors string[]
+---@field snapshot table
+---@field conflicts? ForeverCoreStoreConflict[]
+
+---@type ForeverCoreLoader
+ForeverCoreLoader = nil
+
 ---@type ForeverCoreAPI
 ForeverCore = nil
 
 ---@class ForeverTrackerNamespace
+---@field folder? string
+---@field root? string
+---@field copy? ForeverCoreLoaderCopy
+---@field mode? "standalone"|"elected"
+---@field store? table
+---@field Store fun(): table?
+---@field Start fun()
+---@field Login fun()
+---@field ForeverCore? ForeverCoreAPI
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
@@ -211,3 +297,7 @@ ForeverCore = nil
 ---@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field ContextMenu? fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 ---@field SafeCall fun(label: string, fn: function, ...: any): boolean, ...any
+
+---@class ForeverCoreReconcileOptions
+---@field NextNode? fun(): string
+---@field preferredFolder? string

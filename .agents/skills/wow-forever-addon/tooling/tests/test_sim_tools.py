@@ -49,6 +49,7 @@ class FetchTest(unittest.TestCase):
                 "UiCanvasID\nPin-Big,1,1,32,32,9,0,48,0\n",
                 "Name,ID\nPin-Big,9\n",
             )
+            self.write_flyout_tables(db2)
             fetch.build_data(root, ["enUS"], offline=True)
             out = root / "data" / fetch.BUILD
             strings = (out / "globalstrings-enUS.lua").read_text()
@@ -56,6 +57,19 @@ class FetchTest(unittest.TestCase):
             self.assertNotIn("1BAD", strings)
             self.assertIn('{"NORMAL_FONT_COLOR",1.0000,0.8235,0.0000,1.0000},', (out / "globalcolors.lua").read_text())
             self.assertIn('["pin-big"]={32,48},', (out / "atlas.lua").read_text())
+            self.assertEqual(
+                (out / "flyouts.lua").read_text(),
+                'return {\n[7]={name="Stances",description="Choose a stance",slots={2457,71}},\n'
+                '[8]={name="Empty",description="No spells",slots={}},\n}\n',
+            )
+
+    @staticmethod
+    def write_flyout_tables(db2: Path) -> None:
+        (db2 / "SpellFlyout.csv").write_text(
+            "ID,Name_lang,Description_lang\n7,Stances,Choose a stance\n8,Empty,No spells\n"
+        )
+        # The DB2 row order is not the slot order.
+        (db2 / "SpellFlyoutItem.csv").write_text("ID,SpellID,Slot,SpellFlyoutID\n1,71,1,7\n2,2457,0,7\n")
 
     @staticmethod
     def write_atlas_tables(db2: Path, members: str, elements: str) -> None:
@@ -82,6 +96,7 @@ class FetchTest(unittest.TestCase):
                 "UI-HUD-Minimap-Frame-Cycle-c60-2x,3,3945,84,84,9,0,0,0\n",
                 "Name,ID\nUI-HUD-Minimap-Frame-Cycle,9\n",
             )
+            self.write_flyout_tables(db2)
             fetch.build_data(root, ["enUS"], offline=True)
             atlas = (root / "data" / fetch.BUILD / "atlas.lua").read_text()
             self.assertIn('["ui-hud-minimap-frame-cycle"]={42,42},', atlas)
@@ -103,6 +118,7 @@ class FetchTest(unittest.TestCase):
             out = root / "data" / fetch.BUILD
             out.mkdir(parents=True)
             (out / "atlas.lua").write_text("return {\n}\n")
+            self.write_flyout_tables(db2)
             fetch.build_data(root, ["enUS"], offline=True)
             atlas = (out / "atlas.lua").read_text()
             self.assertTrue(atlas.startswith(fetch.ATLAS_MARKER))

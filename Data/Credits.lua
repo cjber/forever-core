@@ -4,6 +4,9 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "kowakowa93", what = "Forever sections follow Kaliel's Tracker" },
+		{ name = "xh43k", what = "Reported clipped tracker rows and quest item art" },
+		{ name = "cotijelucie", what = "Shared settings retained across embedded core copies" },
 		{ name = "iPulse", what = "Forever sections under the objective tracker" },
 		{ name = "_spada", what = "Hide a tracker section from its menu" },
 		{ name = "Darkwavez76", what = "A darker tracker background" },

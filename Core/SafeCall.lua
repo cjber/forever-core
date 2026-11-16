@@ -277,7 +277,8 @@ local function NewContext(name)
 	name = tostring(name)
 	return setmetatable({
 		name = name,
-		own = "AddOns/" .. name .. "/",
+		own = name == coreName and ns.root and ((ns.root:gsub("\\", "/"):match("AddOns/.+")) .. "/")
+			or ("AddOns/" .. name .. "/"),
 		caught = {},
 		session = {},
 		journal = {},
@@ -287,7 +288,7 @@ end
 ---@param text? string
 ---@return boolean
 function Context:Own(text)
-	return type(text) == "string" and text:find(self.own, 1, true) ~= nil
+	return type(text) == "string" and text:gsub("\\", "/"):find(self.own, 1, true) ~= nil
 end
 
 -- The first stack frame in this addon's folder separates two errors with the same message.

@@ -34,6 +34,7 @@ def find(text: str, version: str) -> str | None:
 
 
 def section(text: str, version: str) -> str:
+    _check_unique_headings(text)
     body = find(text, version)
     if body is None:
         known = ", ".join(m["version"] for m in HEADING.finditer(text)) or "none"
@@ -63,6 +64,18 @@ def released(root: Path) -> list[str]:
 def _version_key(version: str) -> tuple[int, int, int]:
     match = VERSION.match(version)
     return (int(match["major"]), int(match["minor"]), int(match["patch"])) if match else (0, 0, 0)
+
+
+def _check_unique_headings(text: str) -> None:
+    if len(UNRELEASED.findall(text)) > 1:
+        raise SystemExit("CHANGELOG.md has duplicate sections for Unreleased")
+    counts: dict[str, int] = {}
+    for match in HEADING.finditer(text):
+        version = match["version"]
+        counts[version] = counts.get(version, 0) + 1
+    duplicates = sorted(version for version, count in counts.items() if count > 1)
+    if duplicates:
+        raise SystemExit(f"CHANGELOG.md has duplicate sections for {', '.join(duplicates)}")
 
 
 def is_feature(version: str, versions: list[str]) -> bool:
@@ -105,6 +118,7 @@ def check(text: str, versions: list[str], tagged: Callable[[str], str | None] | 
     the newest one must also read as it did at its tag: a branch that merges main after a release lands its
     Unreleased bullets under that newest heading. Older sections are left alone, since a few were reworded on
     purpose, and a tag whose file has no section for it is skipped."""
+    _check_unique_headings(text)
     if not UNRELEASED.search(text):
         raise SystemExit("CHANGELOG.md has no ## [Unreleased] heading")
     for version in versions:

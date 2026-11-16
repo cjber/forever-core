@@ -1,4 +1,5 @@
 ---@class ForeverReportNamespace
+---@field root? string
 ---@field L table<string, string>
 ---@field Art table
 ---@field CutText fun(text: string, limit: integer): string
@@ -74,7 +75,7 @@ end
 local function NewReport(name, spec)
 	spec = spec or {}
 	local Report = {}
-	local ICON = "Interface\\AddOns\\" .. name .. "\\media\\Icon"
+	local ICON = ((name == "ForeverCore" and ns.root) or ("Interface\\AddOns\\" .. name)) .. "\\media\\Icon"
 	local safe = spec.safe or ns.SafeCallFor(name)
 	local log = spec.log or ns.LogFor(name)
 

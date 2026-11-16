@@ -43,11 +43,21 @@ end
 -- Saved variables are not there while the files load, so the copy waits for ForeverCore's ADDON_LOADED.
 local pendingLegacy
 
--- Copy the first legacy table offered into ForeverCoreDB.trackerHost, once. Each field is taken only when it has the
--- shape the host reads; the rest keep the fresh defaults. Later offers are ignored. True when it copied.
+-- The runtime store when Core.lua publishes one; an older consumer's spec can still supply ForeverCoreDB directly.
+---@return table?
+local function Database()
+	if type(ns.Store) == "function" then
+		return ns.Store()
+	end
+	return ForeverCoreDB
+end
+
+-- Copy the first legacy table offered into the runtime store's trackerHost, once. Each field is taken only when it
+-- has the shape the host reads; the rest keep the fresh defaults. Later offers are ignored. True when it copied.
 ---@return boolean
 local function CopyLegacy()
-	if type(ForeverCoreDB) ~= "table" or pendingLegacy == nil then
+	local db = Database()
+	if type(db) ~= "table" or pendingLegacy == nil then
 		return false
 	end
 	local legacy = pendingLegacy
@@ -102,6 +112,7 @@ if type(existing) == "table" then
 		"SetAttached",
 		"SetLocked",
 		"SetScale",
+		"SetSectionMaxHeight",
 	}) do
 		local method = existing[name]
 		if type(method) == "function" then
@@ -116,7 +127,7 @@ if type(existing) == "table" then
 	if type(api.SetBackdropOpacity) ~= "function" then
 		function api.SetBackdropOpacity(_) end
 	end
-	-- The consumer drops its own tracker table once it attaches, so keep the first one offered for ForeverCoreDB,
+	-- The consumer drops its own tracker table once it attaches, so keep the first one offered for the runtime store,
 	-- the same as core's own host does: the settings are not lost while the older column is the one drawing.
 	local attach = api.Attach
 	function api.Attach(module, show)
@@ -275,6 +286,7 @@ local function IsLocked()
 	return Settings().locked
 end
 local modules, queued = {}, false
+local pendingAttachments = {}
 local pools = CreateFramePoolCollection()
 
 local function NotifyAttachment(value)
@@ -586,6 +598,68 @@ function Module:CreateTrackerScroll()
 	self:SetScrollFrozen(InCombatLockdown())
 end
 
+-- A native quest POI sits left of its block, and an item hotkey may extend right. A ScrollFrame clips both
+-- axes, even when it is only used to scroll vertically. Read our visible descendants' actual horizontal edges,
+-- expand just the viewport, and counter-offset its child so text keeps its original width and screen position.
+local function HorizontalOverflow(contents, width)
+	if not contents.GetChildren then
+		return 0, 0
+	end
+	local origin = contents:GetLeft()
+	if not origin then
+		return 0, 0
+	end
+	local scale = contents:GetEffectiveScale()
+	local left, right = origin, origin + width
+	local function Include(region)
+		if not region:IsShown() then
+			return
+		end
+		local first, last = region:GetLeft(), region:GetRight()
+		if first and last then
+			local ratio = region:GetEffectiveScale() / scale
+			left, right = math.min(left, first * ratio), math.max(right, last * ratio)
+		end
+		if region.GetRegions then
+			for _, child in ipairs({ region:GetRegions() }) do
+				Include(child)
+			end
+		end
+		if region.GetChildren then
+			for _, child in ipairs({ region:GetChildren() }) do
+				Include(child)
+			end
+		end
+	end
+	for _, child in ipairs({ contents:GetChildren() }) do
+		Include(child)
+	end
+	return origin - left, right - origin - width
+end
+
+-- Mouse-wheel input is delivered to the deepest mouse-enabled descendant, not bubbled to its scroll frame. Keep the
+-- existing descendant handlers, but hook every pooled content frame so scrolling works over text, icons and buttons.
+local trackerWheelModules = setmetatable({}, { __mode = "k" })
+local function BindTrackerWheel(frame, handler, seen)
+	if not frame then
+		return
+	end
+	local fresh = not seen[frame]
+	seen[frame] = true
+	if frame ~= handler.owner then
+		trackerWheelModules[frame] = handler.module
+	end
+	if fresh and frame ~= handler.owner and frame.EnableMouseWheel and frame.HookScript then
+		frame:EnableMouseWheel(true)
+		frame:HookScript("OnMouseWheel", handler.callback)
+	end
+	if frame.GetChildren then
+		for _, child in ipairs({ frame:GetChildren() }) do
+			BindTrackerWheel(child, handler, seen)
+		end
+	end
+end
+
 -- Sizes the viewport to the cap the column gave this section, shows the bar only when the blocks pass it, and holds
 -- the view on the quest at the top. `headerHeight` and `contentsHeight` are Blizzard's own numbers.
 function Module:LayoutTrackerScroll()
@@ -602,7 +676,22 @@ function Module:LayoutTrackerScroll()
 
 	local width = math.max(0, (self:GetWidth() or 0) - (range > 0 and SCROLL_GUTTER or 0))
 	local contents = self.ContentsFrame
-	contents:SetPoint("TOPLEFT", self.scrollFrame, "TOPLEFT", 0, 0)
+	local seen = self.trackerWheelFrames or {}
+	self.trackerWheelFrames = seen
+	local handler = self.trackerWheelHandler
+	if not handler then
+		handler = {
+			owner = contents,
+			module = self,
+			callback = function(frame, delta)
+				if trackerWheelModules[frame] == self then
+					self:OnTrackerWheel(delta)
+				end
+			end,
+		}
+		self.trackerWheelHandler = handler
+	end
+	BindTrackerWheel(contents, handler, seen)
 	if self.scrollContentsWidth ~= width then
 		self.scrollContentsWidth = width
 		contents:SetWidth(width)
@@ -611,7 +700,19 @@ function Module:LayoutTrackerScroll()
 	end
 	contents:SetHeight(body)
 	self.scrollFrame:SetHeight(viewport)
-	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", range > 0 and -SCROLL_GUTTER or 0, 0)
+	local clipLeft, clipRight = HorizontalOverflow(contents, width)
+	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
+	self.scrollFrame:SetPoint(
+		"TOPRIGHT",
+		self.Header,
+		"BOTTOMRIGHT",
+		(range > 0 and -SCROLL_GUTTER or 0) + clipRight,
+		0
+	)
+	contents:SetPoint("TOPLEFT", self.scrollFrame, "TOPLEFT", clipLeft, 0)
+	-- The bar belongs in the section's gutter, independent of the viewport's clipping expansion.
+	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
+	self.scrollBar:SetPoint("BOTTOMLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -viewport)
 
 	-- The bar's thumb is its visible fraction of the whole body; the scroll percentage below positions it.
 	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / body or 0)
@@ -650,6 +751,22 @@ function Module:UpdateHeight()
 	if self.trackerScrollable then
 		self:LayoutTrackerScroll()
 	end
+end
+
+-- The first block is the smallest useful expanded viewport: a shorter one shows its header and a clipped objective
+-- row, which makes the section unusable even though its scrollbar is visible. This derives the floor from Blizzard's
+-- measured header and pooled block metrics, rather than a display-size threshold.
+function Module:GetMinimumHeight()
+	if not self.trackerScrollable or type(self.IsCollapsed) == "function" and self:IsCollapsed() then
+		return 0
+	end
+	local block = self.firstBlock
+	if not block then
+		return 0
+	end
+	local header = self.headerHeight or 0
+	local offset = tonumber(self.fromHeaderOffsetY) or -10
+	return header + math.max(0, (block.height or block:GetHeight() or 0) - offset)
 end
 
 -- A scrollable section lays every block out, even the ones past the cap: they live in the scroll child, not in the
@@ -792,6 +909,9 @@ local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = fun
 -- EllesmereUI's custom quest tracker, consulted after EQOT and before Questie: its list is the one a player who chose
 -- it sees, even while its own visibility rules hide the frame.
 local TrackerEllesmere = ns.TrackerEllesmere or { List = function() end, Await = function() end }
+---@type ForeverTrackerKaliels
+local TrackerKaliels = ns.TrackerKaliels or { List = function() end, SetEnabled = function() end }
+local besideKaliels = false
 -- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
 ---@type boolean, boolean, boolean, boolean, number
 local besideList, besideQuestie, besideEqot, besideEllesmere, displacedRoom = false, false, false, false, 0
@@ -857,7 +977,8 @@ local function SectionCap(module, available)
 	if type(maximum) ~= "number" then
 		maximum = SECTION_MAX_HEIGHT
 	end
-	return math.min(available, math.max(0, maximum))
+	local minimum = type(module.GetMinimumHeight) == "function" and module:GetMinimumHeight() or 0
+	return math.min(available, math.max(minimum, maximum))
 end
 
 -- Lays every section out from the host's top, each in the room the ones above it left, less the gap under it, so the
@@ -867,6 +988,11 @@ end
 -- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so the
 -- quest list is the one that scrolls. It is laid out after the others so their real heights are known first.
 local function LayoutModules(width, available, reserve)
+	for _, module in ipairs(modules) do
+		if TrackerKaliels.Style then
+			TrackerKaliels.Style(module, besideKaliels)
+		end
+	end
 	ns.TrackerOrder.Sort(modules)
 	local restIndex
 	for index, module in ipairs(modules) do
@@ -875,11 +1001,46 @@ local function LayoutModules(width, available, reserve)
 		end
 	end
 	local heights, total = {}, 0
+	local minimums = {}
+	for index, module in ipairs(modules) do
+		if type(module.GetMinimumHeight) == "function" then
+			minimums[index] = module:GetMinimumHeight()
+		else
+			minimums[index] = 0
+		end
+	end
 	local function LayOut(index, cap)
 		local module = modules[index]
+		local laterMinimum = 0
+		for later = index + 1, #modules do
+			laterMinimum = laterMinimum + (minimums[later] or 0)
+		end
+		local room = math.max(0, available - total - GAP)
+		if laterMinimum > 0 then
+			local gap = math.min(GAP, room)
+			cap = math.min(cap, math.max(minimums[index] or 0, room - math.min(room, laterMinimum + gap)))
+		end
 		module:SetWidth(width)
+		-- The native header template starts at 260 units; it does not stretch with its module. The viewport
+		-- follows that header, so give both the same width before measuring any scroll contents.
+		if module.Header then
+			module.Header:SetWidth(width)
+		end
 		local ok = RunSafe(module.safeCall, "tracker section update", module.Update, module, cap)
+		local minimum = 0
+		if ok and type(module.GetMinimumHeight) == "function" then
+			minimum = module:GetMinimumHeight()
+		end
+		if cap > 0 and minimum > cap then
+			-- The cap is the room left after sections above this one. Never borrow from their accounting or make the
+			-- column taller than the room it was given. A later layout reserves this measured floor before earlier caps.
+			module.trackerCap = cap
+			module:UpdateHeight()
+		end
 		local used = ok and module:GetContentsHeight() or 0
+		if cap <= 0 and module.trackerScrollable then
+			used = 0
+		end
 		heights[index] = used
 		if used > 0 then
 			total = total + used + GAP
@@ -1062,7 +1223,7 @@ end
 -- native tracker keeps its slot. Only our frames move, and this runs only from Layout, which defers in combat; with
 -- `list` nil (the addon hid its list in combat) the column keeps its last place until the next out-of-combat pass.
 ---@param list ForeverTrackerEqotList|Frame?
----@param kind "eqot"|"ellesmere"|"questie"?
+---@param kind "eqot"|"ellesmere"|"questie"|"kaliels"?
 local function LayoutBesideList(list, kind)
 	if Editing() then
 		return
@@ -1079,11 +1240,16 @@ local function LayoutBesideList(list, kind)
 		module = TrackerEqot
 	elseif kind == "ellesmere" then
 		module = TrackerEllesmere
+	elseif kind == "kaliels" then
+		module = TrackerKaliels
 	end
 	host:Show()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
-	local width = math.min(ObjectiveTrackerFrame:GetWidth(), screenWidth)
+	local width = math.min(
+		kind == "kaliels" and TrackerKaliels.Width(list, host) or ObjectiveTrackerFrame:GetWidth(),
+		screenWidth
+	)
 	host:SetWidth(width)
 	displacedRoom = module.Room(list, host)
 	if not LayoutModules(width, displacedRoom, 0) then
@@ -1110,6 +1276,8 @@ local function Layout()
 		return
 	end
 	local settings = ApplyAttachment()
+	besideKaliels = false
+	TrackerKaliels.SetEnabled(attached)
 	ApplyBackdrop(settings)
 	Grip.Show(not attached)
 	-- Settle the host's scale before a list is normalised into it. EQOT's list is always in host units, and its
@@ -1118,6 +1286,18 @@ local function Layout()
 	if not attached then
 		besideList, besideQuestie, besideEqot, besideEllesmere = false, false, false, false
 		LayoutDetached(settings)
+		return
+	end
+	local kaliels, kalielsActive = TrackerKaliels.List(host, host.MarkDirty)
+	if kalielsActive then
+		besideKaliels, besideList = true, true
+		besideQuestie, besideEqot, besideEllesmere = false, false, false
+		if kaliels then
+			MatchScale(kaliels)
+			LayoutBesideList(kaliels, "kaliels")
+		else
+			host:Hide()
+		end
 		return
 	end
 	local eqot = TrackerEqot.List(host, host.MarkDirty)
@@ -1492,13 +1672,18 @@ local function Migrate()
 	end
 end
 
--- Core.lua's one ADDON_LOADED handler calls this after ForeverCoreDB exists, so a first install completes the copy.
+-- Core.lua's Start (converted copies) or its one ADDON_LOADED handler (transitional unwrapped standalone) calls this
+-- after the runtime store exists, so a first install completes the copy.
 ns.MigrateTrackerSettings = Migrate
 
 ---@param module ForeverTrackerModule
 ---@param show? ForeverTrackerShowSetting the section's own show switch, when it has one
 function api.Attach(module, show, contract)
 	---@cast module ForeverTrackerModule
+	if InCombatLockdown() then
+		pendingAttachments[module] = { show = show, contract = contract }
+		return
+	end
 	if type(contract) == "table" and contract.menu and type(module.AddHeaderMenuEntries) == "function" then
 		RunSafe(module.safeCall, "tracker menu contract", function()
 			error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
@@ -1548,6 +1733,21 @@ function api.Attach(module, show, contract)
 	AddHeaderMenu(module)
 	host:MarkDirty()
 end
+-- Only the registered section's cap changes here. Geometry stays in the host's queued layout, including combat.
+---@param module ForeverTrackerModule
+---@param value? number nil restores the default 200-unit cap
+---@return boolean accepted
+function api.SetSectionMaxHeight(module, value)
+	if not api.IsAttached(module) then
+		return false
+	end
+	if value ~= nil and (Coordinate(value) == nil or value < 0) then
+		return false
+	end
+	module.trackerMaxHeight = value
+	host:MarkDirty()
+	return true
+end
 function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
@@ -1572,6 +1772,12 @@ for _, event in ipairs({
 	host:RegisterEvent(event)
 end
 host:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_REGEN_ENABLED" then
+		for module, attachment in pairs(pendingAttachments) do
+			pendingAttachments[module] = nil
+			api.Attach(module, attachment.show, attachment.contract)
+		end
+	end
 	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
 		local frozen = event == "PLAYER_REGEN_DISABLED"
 		for _, module in ipairs(modules) do

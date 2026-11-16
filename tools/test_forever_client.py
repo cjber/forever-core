@@ -9,14 +9,20 @@ import importlib.util
 import io
 import json
 import os
+import re
+import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
+
+from PIL import Image
 
 SPEC = importlib.util.spec_from_file_location("forever_client", Path(__file__).parent / "headless/forever_client.py")
 fc = importlib.util.module_from_spec(SPEC)
@@ -65,6 +71,97 @@ class ForeverClientTest(unittest.TestCase):
         self.runtime = self.state / "runtime"
         self.runtime.mkdir(mode=0o700)
         self.enterContext(mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime)}))
+        # The host GPU is not part of a unit test; the driver-mismatch check has its own tests below.
+        self.real_nvidia_mismatch = fc.nvidia_mismatch
+        self.enterContext(mock.patch.object(fc, "nvidia_mismatch", return_value=None))
+
+    def test_character_config_requires_explicit_identity_and_resting(self):
+        valid = {"character": {"name": "Barry", "guid": "Player-1", "require_resting": True}}
+        self.assertEqual(fc.character_config(valid)["guid"], "Player-1")
+        for value in ({}, {"character": {}}, {"character": {"name": "Barry", "guid": "Player-1"}}):
+            with self.assertRaises(fc.ClientError):
+                fc.character_config(value)
+
+    def test_lua_string_preserves_unicode_quotes_and_backslashes(self):
+        self.assertEqual(fc.lua_string('Hé said "hi" \\'), '"Hé said \\"hi\\" \\\\"')
+        with self.assertRaises(fc.ClientError):
+            fc.lua_string("Barry\x00")
+
+    def test_generated_addon_cleanup_is_atomic(self):
+        source = self.state / "source-addon"
+        source.mkdir()
+        (source / "!!ForeverHeadless.toc").write_text("ForeverHeadless.lua\n")
+        (source / "ForeverHeadless.lua").write_text("-- fixture\n")
+        with mock.patch.object(fc, "ADDON", source):
+            with self.assertRaises(fc.ClientError):
+                fc.prepare_headless_addon({"name": "Bad\x00", "guid": "Player-1", "require_resting": True})
+        self.assertFalse((self.state / "headless-addon").exists())
+
+    def test_readiness_marker_accepts_native_jpeg_and_rejects_incomplete_png(self):
+        def marker_image():
+            image = Image.new("RGB", (32, 32), (0, 0, 0))
+            for row, bits in enumerate(fc.HEADLESS_MARKER):
+                for column, bit in enumerate(bits):
+                    if bit == "1":
+                        for x in range(column * fc.MARKER_CELL, (column + 1) * fc.MARKER_CELL):
+                            for y in range(row * fc.MARKER_CELL, (row + 1) * fc.MARKER_CELL):
+                                image.putpixel((x, y), (255, 255, 255))
+            return image
+
+        def png(image):
+            raw = b"".join(
+                b"\0" + b"".join(bytes(image.getpixel((x, y))) for x in range(image.width)) for y in range(image.height)
+            )
+
+            def chunk(kind, payload):
+                checksum = struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+                return struct.pack(">I", len(payload)) + kind + payload + checksum
+
+            header = chunk(b"IHDR", struct.pack(">IIBBBBB", image.width, image.height, 8, 2, 0, 0, 0))
+            body = chunk(b"IDAT", zlib.compress(raw))
+            return b"\x89PNG\r\n\x1a\n" + header + body + chunk(b"IEND", b"")
+
+        marker_path = self.state / "marker.png"
+        marker_path.write_bytes(png(marker_image()))
+        self.assertTrue(fc.has_headless_marker(marker_path))
+        plain = self.state / "plain.png"
+        plain.write_bytes(png(Image.new("RGB", (32, 32), (0, 0, 0))))
+        self.assertFalse(fc.has_headless_marker(plain))
+        image = Image.new("RGB", (64, 64), (0, 0, 0))
+        marker = marker_image()
+        image.paste(marker, (16, 16))
+        for quality in (10, 50, 95):
+            for subsampling in (0, 2):
+                jpeg = self.state / f"marker-{quality}-{subsampling}.jpg"
+                image.save(jpeg, format="JPEG", quality=quality, subsampling=subsampling)
+                self.assertTrue(fc.has_headless_marker(jpeg), f"quality={quality}, subsampling={subsampling}")
+        near = self.state / "near.jpg"
+        for x in range(16, 20):
+            for y in range(16, 20):
+                image.putpixel((x, y), (0, 0, 0))
+        image.save(near, format="JPEG", quality=95)
+        self.assertFalse(fc.has_headless_marker(near))
+        jpeg_plain = self.state / "plain.jpg"
+        Image.new("RGB", (64, 64), (0, 0, 0)).save(jpeg_plain, format="JPEG", quality=95)
+        self.assertFalse(fc.has_headless_marker(jpeg_plain))
+        truncated = self.state / "truncated.jpg"
+        truncated.write_bytes((self.state / "marker-95-2.jpg").read_bytes()[:-32])
+        with self.assertRaises(fc.ClientError):
+            fc.has_headless_marker(truncated)
+        partial = self.state / "partial.png"
+        partial.write_bytes(marker_path.read_bytes()[:-4])
+        with self.assertRaises(fc.ClientError):
+            fc.has_headless_marker(partial)
+
+    def test_readiness_marker_protocol_matches_lua_producer(self):
+        source = Path(__file__).parent / "headless/!!ForeverHeadless/ForeverHeadless.lua"
+        lua = source.read_text()
+        match = re.search(r"local MARKER = \{(?P<table>.*?)\n\}", lua, re.DOTALL)
+        self.assertIsNotNone(match)
+        self.assertEqual(tuple(re.findall(r'"([01]{8})"', match.group("table"))), fc.HEADLESS_MARKER)
+        size = len(fc.HEADLESS_MARKER) * fc.MARKER_CELL
+        self.assertIn(f"marker:SetSize({size}, {size})", lua)
+        self.assertIn(f"texture:SetSize({fc.MARKER_CELL}, {fc.MARKER_CELL})", lua)
 
     def test_runtime_directory_fallback_is_existing_owned_private_directory(self):
         root = self.state / "users"
@@ -93,6 +190,50 @@ class ForeverClientTest(unittest.TestCase):
         with self.assertRaises(fc.ClientError):
             fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime)}, os.getuid())
         self.assertEqual(self.runtime.stat().st_mode & 0o777, 0o755)
+
+    def test_nvidia_mismatch_names_the_loaded_module_and_the_userspace(self):
+        module = self.state / "nvidia-version"
+        module.write_text("615.78.08\n")
+        run = mock.Mock(return_value=mock.Mock(returncode=0, stdout="620.70.06\n", stderr=""))
+        self.assertEqual(
+            self.real_nvidia_mismatch(module_path=module, run=run),
+            "the NVIDIA kernel module (615.78.08) does not match its userspace (620.70.06): reboot first",
+        )
+        run.return_value = mock.Mock(returncode=0, stdout="615.78.08\n", stderr="")
+        self.assertIsNone(self.real_nvidia_mismatch(module_path=module, run=run), "matching versions are not a failure")
+
+    def test_nvidia_mismatch_reads_nvidias_own_mismatch_line(self):
+        module = self.state / "nvidia-version"
+        module.write_text("615.78.08\n")
+        failed = mock.Mock(returncode=9, stdout="", stderr="Failed to initialize NVML: Driver/library version mismatch")
+        run = mock.Mock(return_value=failed)
+        with mock.patch.object(fc, "nvidia_userspace_version", return_value="620.70.06"):
+            self.assertEqual(
+                self.real_nvidia_mismatch(module_path=module, run=run),
+                "the NVIDIA kernel module (615.78.08) does not match its userspace (620.70.06): reboot first",
+            )
+
+    def test_a_gamescope_vulkan_failure_carries_the_driver_mismatch(self):
+        (self.state / "session.log").write_text("[gamescope] [Error] vulkan: vkCreateInstance failed (VkResult: -9)\n")
+        with mock.patch.object(
+            fc,
+            "nvidia_mismatch",
+            return_value="the NVIDIA kernel module (615.78.08) does not match its userspace (620.70.06): reboot first",
+        ):
+            hint = fc.gamescope_failure_hint()
+        self.assertIn("615.78.08", hint)
+        self.assertIn("620.70.06", hint)
+        self.assertIn("reboot first", hint)
+
+    def test_up_refuses_a_mismatched_nvidia_driver_before_starting_anything(self):
+        message = "the NVIDIA kernel module (615.78.08) does not match its userspace (620.70.06): reboot first"
+        with (
+            mock.patch.object(fc, "nvidia_mismatch", return_value=message),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+            self.assertRaisesRegex(fc.ClientError, "reboot first"),
+        ):
+            fc.up(args())
+        spawn.assert_not_called()
 
     def test_shot_requires_recorded_runtime_directory(self):
         with self.assertRaisesRegex(fc.ClientError, "restart"):
@@ -124,11 +265,38 @@ class ForeverClientTest(unittest.TestCase):
         connect.assert_not_called()
         spawn.assert_not_called()
 
+    def test_up_releases_its_lock_before_reporting_a_startup_failure(self):
+        config = self.state / "env.json"
+        config.write_text(
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
+        )
+        client = self.state / "client"
+        (client / "Interface/AddOns").mkdir(parents=True)
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.signal, "signal"),
+            mock.patch.object(fc.signal, "alarm"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
+            mock.patch.object(fc, "wait_for_world", side_effect=fc.ClientError("startup timed out")),
+            mock.patch.object(fc, "shot", return_value=Path("failed.png")),
+            mock.patch.object(fc, "teardown"),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+        ):
+            spawn.return_value.pid = 123
+            with self.assertRaisesRegex(fc.ClientError, "startup timed out"):
+                fc.up(args())
+        with mock.patch.object(fc, "prefix_users", return_value=[]):
+            self.assertIsNone(fc.client_in_use())
+
     def test_up_records_runtime_and_keeps_gamescope_off_host_display(self):
         config = self.state / "env.json"
         config.write_text(
             '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner","GAMEID":"umu-x","DISPLAY":":host",'
-            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"}}'
+            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -144,6 +312,7 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc, "wait_for_world") as wait,
             mock.patch.object(fc, "client_pid", return_value=None) as client_pid,
             mock.patch.object(fc, "game_focused", return_value=True),
+            mock.patch.object(fc, "enter_world") as enter_world,
             mock.patch.object(fc, "press_play") as press_play,
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc, "teardown"),
@@ -152,18 +321,20 @@ class ForeverClientTest(unittest.TestCase):
         ):
             spawn.return_value.pid = 123
 
-            def waiting(*unused, nudge):
+            def waiting(*unused, nudge, require_marker):
+                self.assertTrue(require_marker)
                 nudge()
                 press_play.assert_not_called()
                 client_pid.return_value = 456
                 nudge()
+                enter_world.assert_called_once()
                 return Path("ready.png")
 
             wait.side_effect = waiting
             options = args()
             options.manual_launcher = True
             self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
-            self.assertEqual(x.call_args.args[1:], ("key", "Return"))
+            x.assert_not_called()
         handled = {call.args[0] for call in install.call_args_list}
         self.assertEqual(handled, {fc.signal.SIGTERM, fc.signal.SIGHUP, fc.signal.SIGINT})
         alarm.assert_not_called()
@@ -178,6 +349,42 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn(str(self.runtime), (self.state / "session.json").read_text())
         self.assertIn('"manual_launcher": true', (self.state / "session.json").read_text())
         self.assertIn('"start_ticks"', (self.state / "session.json").read_text())
+
+    def test_an_interrupt_right_after_spawn_still_gives_teardown_the_session_token(self):
+        config = self.state / "env.json"
+        config.write_text(
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
+        )
+        client = self.state / "client"
+        (client / "Interface/AddOns").mkdir(parents=True)
+
+        class InterruptedGamescope:
+            @property
+            def pid(self):
+                raise KeyboardInterrupt
+
+        def spawn(*_args, **kwargs):
+            recorded = json.loads(fc.state_file().read_text())
+            self.assertEqual(recorded["token"], kwargs["env"]["FOREVER_CLIENT_SESSION"])
+            return InterruptedGamescope()
+
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.signal, "signal"),
+            mock.patch.object(fc.signal, "alarm"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc.subprocess, "Popen", side_effect=spawn),
+            mock.patch.object(fc, "teardown") as teardown,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.up(args()), 0)
+        state = teardown.call_args.args[3]
+        self.assertIsInstance(state, dict, "the session owns its token before its first child exists")
+        self.assertTrue(state.get("token"))
+        self.assertEqual(state.get("wine"), {"PROTONPATH": "/runner"})
 
     def test_wine_env_keeps_the_launch_and_drops_the_desktop(self):
         env = fc.wine_env(
@@ -411,6 +618,21 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
 
+    def test_reload_waits_only_for_a_screenshot_taken_after_the_command_was_sent(self):
+        earlier = self.state / "earlier.jpg"
+        present = set()
+
+        def typed(_state, _command):
+            present.add(earlier)  # a screenshot an earlier flow left lands while the command is typed
+
+        with (
+            mock.patch.object(fc, "screenshots", side_effect=lambda: set(present)),
+            mock.patch.object(fc, "slash", side_effect=typed),
+            mock.patch.object(fc, "wait_for_world", return_value=earlier) as wait,
+        ):
+            fc.reload({})
+        self.assertIn(earlier, wait.call_args.args[0], "it cannot pass as this reload's world load")
+
     def test_key_sends_only_ui_keys(self):
         with mock.patch.object(fc, "x") as x, self.assertRaisesRegex(fc.ClientError, "refused w"):
             fc.press({}, ["Escape", "w"])
@@ -419,17 +641,16 @@ class ForeverClientTest(unittest.TestCase):
     def test_press_play_clicks_the_screenshot_bound_play_label(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
-        tsv = "level\tpage\tblock\tpar\tline\tword\tleft\ttop\twidth\theight\tconf\ttext\n"
-        tsv += "5\t1\t1\t1\t1\t1\t1390\t580\t72\t24\t96.5\tPlay\n"
-        ocr = mock.Mock(returncode=0, stdout=tsv, stderr="")
         with (
-            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.subprocess, "run", side_effect=[found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "play_targets", return_value=[(1390, 580, 72, 24, 96.5)]) as targets,
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc.time, "sleep"),
         ):
             fc.press_play(state)
+        targets.assert_called_once_with(self.state / "launcher.png")
         self.assertEqual(
             x.call_args_list,
             [
@@ -443,11 +664,11 @@ class ForeverClientTest(unittest.TestCase):
     def test_press_play_waits_for_a_loading_launcher_without_clicking(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
-        ocr = mock.Mock(returncode=0, stdout="header\n", stderr="")
         with (
-            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr, found, ocr]),
+            mock.patch.object(fc.subprocess, "run", side_effect=[found, found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "play_targets", return_value=[]),
             mock.patch.object(fc, "x") as x,
             contextlib.redirect_stderr(io.StringIO()) as warning,
         ):
@@ -539,17 +760,39 @@ class ForeverClientTest(unittest.TestCase):
     def test_press_play_refuses_ambiguous_ocr_targets(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
-        row = "5\t1\t1\t1\t1\t1\t100\t100\t40\t20\t90\tPlay\n"
-        ocr = mock.Mock(returncode=0, stdout="header\n" + row + row, stderr="")
+        targets = [(100, 100, 40, 20, 90.0), (300, 300, 40, 20, 90.0)]
         with (
-            mock.patch.object(fc.subprocess, "run", side_effect=[found, ocr]),
+            mock.patch.object(fc.subprocess, "run", side_effect=[found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "play_targets", return_value=targets),
             mock.patch.object(fc, "x") as x,
             self.assertRaisesRegex(fc.ClientError, "expected one visible Play target"),
         ):
             fc.press_play(state)
         x.assert_not_called()
+
+    def test_the_saved_launcher_frame_draws_the_play_button_as_its_own_region(self):
+        fixture = Path(__file__).parent / "headless/launcher-play.png"
+        width, height, channels, rows = fc.png_pixels(fixture)
+        self.assertEqual((width, height, channels), (380, 190, 3), "the saved frame is the cropped launcher page")
+        regions = fc.fill_regions(width, height, channels, rows)
+        self.assertEqual(
+            regions[0][1:],
+            (71, 100, 232, 56),
+            "the largest fill the launcher draws is the Play button, not the gear drawn beside it",
+        )
+        self.assertGreaterEqual(regions[1][1], 71 + 232, "the gear is the next region, to the right of Play")
+
+    @unittest.skipUnless(shutil.which("tesseract"), "needs tesseract to read the saved launcher frame")
+    def test_the_play_label_is_read_inside_the_button_the_launcher_draws(self):
+        fixture = Path(__file__).parent / "headless/launcher-play.png"
+        targets = fc.play_targets(fixture)
+        self.assertEqual(len(targets), 1, "the saved frame holds one Play button")
+        left, top, width, height, confidence = targets[0]
+        self.assertGreaterEqual(confidence, 0)
+        self.assertTrue(71 <= left and left + width <= 71 + 232, f"the label {left}..{left + width} is in the button")
+        self.assertTrue(100 <= top and top + height <= 100 + 56, f"the label {top}..{top + height} is in the button")
 
     def test_character_select_nudge_waits_while_the_launcher_has_focus(self):
         state = {"display": ":1"}
@@ -565,11 +808,84 @@ class ForeverClientTest(unittest.TestCase):
         state = {"display": ":1"}
         with (
             mock.patch.object(fc, "client_pid", return_value=456),
-            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="World of Warcraft\n")),
+            mock.patch.object(fc, "enter_world") as enter_world,
             mock.patch.object(fc, "x") as x,
         ):
             fc.at_character_select(state, False)
-        self.assertEqual(x.call_args_list, [mock.call(state, "key", "Return")])
+        enter_world.assert_called_once_with(state)
+        x.assert_not_called()
+
+    def test_character_select_nudge_does_not_send_return_on_login_frame(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "client_pid", return_value=456),
+            mock.patch.object(fc, "game_focused", return_value=True),
+            mock.patch.object(fc, "shot"),
+            mock.patch.object(fc, "enter_world_targets", return_value=[]),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.enter_world(state)
+        x.assert_not_called()
+
+    def test_enter_world_targets_requires_adjacent_enter_and_world_words(self):
+        with (
+            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 896, 716, 127, 30, 1001)]),
+        ):
+            self.assertEqual(fc.enter_world_targets(Path("frame.png")), [(896, 716, 127, 30, 51.4)])
+
+    def test_enter_world_targets_fails_closed_on_ambiguous_exact_labels(self):
+        with (
+            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(
+                fc,
+                "ocr_words_with_lines",
+                return_value=[
+                    ("EnterWorld", 51.4, 896, 716, 127, 30, 1001),
+                    ("EnterWorld", 51.4, 896, 600, 127, 30, 1002),
+                ],
+            ),
+        ):
+            self.assertEqual(len(fc.enter_world_targets(Path("frame.png"))), 2)
+
+    def test_enter_world_targets_fails_closed_on_exact_and_split_labels(self):
+        with (
+            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(
+                fc,
+                "ocr_words_with_lines",
+                return_value=[
+                    ("EnterWorld", 51.4, 896, 716, 127, 30, (1, 1, 1)),
+                    ("Enter", 51.4, 896, 600, 55, 30, (2, 1, 1)),
+                    ("World", 51.4, 960, 600, 60, 30, (2, 1, 1)),
+                ],
+            ),
+        ):
+            self.assertEqual(len(fc.enter_world_targets(Path("frame.png"))), 2)
+
+    def test_ocr_line_identity_preserves_all_tsv_components(self):
+        tsv = """level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext
+1\t1\t1\t1\t1\t1\t10\t20\t30\t40\t95\tEnter
+1\t1\t1\t1\t101\t1\t10\t20\t30\t40\t95\tWorld
+"""
+        with mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=tsv, stderr="")):
+            words = fc.ocr_words_with_lines(Path("frame.png"), psm=6)
+        self.assertEqual(words[0][-1], (1, 1, 1))
+        self.assertEqual(words[1][-1], (1, 1, 101))
+
+    def test_enter_world_targets_ignores_login_labels(self):
+        with (
+            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 4, [b"\0\0\0\0"])),
+            mock.patch.object(
+                fc,
+                "ocr_words_with_lines",
+                return_value=[
+                    ("Email", 96.0, 700, 400, 120, 24, 1001),
+                    ("Password", 96.0, 700, 450, 150, 24, 1002),
+                ],
+            ),
+        ):
+            self.assertEqual(fc.enter_world_targets(Path("login.png")), [])
 
     def test_character_select_nudge_presses_play_with_the_automatic_launcher(self):
         state = {"display": ":1"}
@@ -624,6 +940,58 @@ class ForeverClientTest(unittest.TestCase):
             with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
                 fc.click({}, 20, 20, "1")
         self.assertEqual(x.call_count, 1)
+
+    def test_scroll_turns_the_wheel_at_a_freshly_seen_point(self):
+        with (
+            mock.patch.object(
+                fc, "mark", side_effect=lambda name: fc.time.time() + (0.1 if name == "last-shot" else 0)
+            ),
+            mock.patch.object(fc, "send") as send,
+        ):
+            fc.scroll({}, 960, 540, 3)
+            fc.scroll({}, 960, 540, -2)
+        self.assertEqual(
+            send.call_args_list,
+            [
+                mock.call({}, "mousemove", "960", "540", "click", "--repeat", "3", "--delay", fc.WHEEL_DELAY_MS, "4"),
+                mock.call({}, "mousemove", "960", "540", "click", "--repeat", "2", "--delay", fc.WHEEL_DELAY_MS, "5"),
+            ],
+        )
+
+    def test_scroll_needs_a_shot_and_a_non_zero_point(self):
+        with (
+            mock.patch.object(fc, "mark", return_value=0),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "take a `shot`"),
+        ):
+            fc.scroll({}, 960, 540, 1)
+        (self.state / "last-shot").touch()
+        (self.state / "last-input").touch()
+        with (
+            mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "non-zero"),
+        ):
+            fc.scroll({}, 960, 540, 0)
+        with (
+            mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "outside"),
+        ):
+            fc.scroll({}, 2000, 540, 1)
+        send.assert_not_called()
+
+    def test_scroll_cli_reaches_the_wheel_verb(self):
+        state = live_state(ready=1.0)
+        with (
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "scroll") as scroll,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
+        scroll.assert_called_once_with(state, 960, 540, -4)
 
     def test_manual_launcher_click_refuses_when_game_process_has_started(self):
         (self.state / "last-input").touch()
@@ -683,6 +1051,103 @@ class ForeverClientTest(unittest.TestCase):
             log_out.assert_not_called()
             fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
             log_out.assert_called_once()
+
+    def test_a_dead_owners_gamescope_is_stopped_by_its_recorded_pid(self):
+        with (
+            mock.patch.object(fc, "gamescope_running", side_effect=[True, False]),
+            mock.patch.object(fc, "signal_pid", return_value=True) as signal_pid,
+            mock.patch.object(fc, "wait_for_pid", return_value=True) as wait,
+        ):
+            fc.stop_gamescope(1234, {"gamescope_start": 99})
+        signal_pid.assert_called_once_with(1234, 99, fc.signal.SIGTERM)
+        wait.assert_called_once_with(1234, 99, 20)
+
+    def test_down_tears_down_what_a_dead_owner_left_behind(self):
+        dead = dead_pid()
+        link = self.state / "!!ForeverHeadless"
+        link.symlink_to(self.state / "build")
+        state = {
+            "pid": dead,
+            "owner_start": 1,
+            "gamescope": 4321,
+            "gamescope_start": 7,
+            "token": "owned",
+            "wine": {"PROTONPATH": "/runner"},
+            "link": str(link),
+        }
+        fc.state_file().write_text(json.dumps(state))
+        with (
+            mock.patch.object(fc, "recover_links") as recover,
+            mock.patch.object(fc, "teardown") as teardown,
+        ):
+            self.assertEqual(fc.down(), 0)
+        recover.assert_called_once_with()
+        teardown.assert_called_once_with(4321, {"PROTONPATH": "/runner"}, link, state)
+
+    def test_down_never_signals_a_reused_owner_pid(self):
+        # The state file records the owner's start time, so a pid now owned by another process is already gone.
+        state = {"pid": os.getpid(), "owner_start": -1, "token": "owned", "gamescope": None}
+        fc.state_file().write_text(json.dumps(state))
+        with (
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc, "teardown") as teardown,
+        ):
+            self.assertEqual(fc.down(), 0)
+        teardown.assert_called_once()
+
+    def test_down_pins_the_owner_identity_when_signalling(self):
+        state = {"pid": 1234, "owner_start": 99, "token": "owned", "gamescope": None}
+        fc.state_file().write_text(json.dumps(state))
+        with (
+            mock.patch.object(fc, "owner_alive", side_effect=[True, False]),
+            mock.patch.object(fc, "signal_pid", return_value=False) as send_signal,
+            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc, "teardown"),
+            mock.patch.object(fc.time, "monotonic", side_effect=[0, 999]),
+        ):
+            self.assertEqual(fc.down(), 0)
+        send_signal.assert_called_once_with(1234, 99, fc.signal.SIGTERM)
+        kill.assert_not_called()
+
+    def test_signal_pid_refuses_missing_start_identity(self):
+        with mock.patch.object(fc.os, "pidfd_open") as open_pid:
+            self.assertFalse(fc.signal_pid(1234, None, fc.signal.SIGTERM))
+        open_pid.assert_not_called()
+
+    def test_down_retains_state_when_live_owner_cannot_be_signalled(self):
+        state = {"pid": 1234, "owner_start": 99, "token": "owned", "gamescope": None}
+        fc.state_file().write_text(json.dumps(state))
+        with (
+            mock.patch.object(fc, "owner_alive", return_value=True),
+            mock.patch.object(fc, "signal_pid", return_value=False),
+            mock.patch.object(fc, "teardown") as teardown,
+            self.assertRaisesRegex(fc.ClientError, "cannot safely signal"),
+        ):
+            fc.down()
+        teardown.assert_not_called()
+        self.assertTrue(fc.state_file().exists())
+
+    def test_down_never_cleans_a_dead_record_while_another_session_holds_lock(self):
+        fc.state_file().write_text(json.dumps({"pid": dead_pid(), "token": "old"}))
+        with open(self.state / "lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with (
+                mock.patch.object(fc, "recover_links"),
+                mock.patch.object(fc, "teardown") as teardown,
+                self.assertRaisesRegex(fc.ClientError, "holds the client"),
+            ):
+                fc.down()
+        teardown.assert_not_called()
+        self.assertTrue(fc.state_file().exists())
+
+    def test_stop_gamescope_retains_unverifiable_live_process(self):
+        with (
+            mock.patch.object(fc, "gamescope_running", return_value=True),
+            mock.patch.object(fc, "signal_pid", return_value=False),
+            self.assertRaisesRegex(fc.ClientError, "cannot safely stop gamescope"),
+        ):
+            fc.stop_gamescope(1234, {})
 
     def test_teardown_reaps_owned_children_that_respawn(self):
         game = mock.Mock(pid=1, **{"poll.return_value": None})
@@ -850,7 +1315,7 @@ class ForeverClientTest(unittest.TestCase):
             [mock.call(state), mock.call(state)],
             "the reload that runs the snippet, then the one that saves its result to disk",
         )
-        tool.write_snippet.assert_called_once_with(Path("probe.lua"), addons=client / "Interface/AddOns")
+        tool.write_snippet.assert_called_once_with(Path("probe.lua"), addons=client / "Interface/AddOns", capture=False)
         printed = out.getvalue()
         self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
         self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
@@ -905,18 +1370,22 @@ class ForeverClientTest(unittest.TestCase):
         reload.assert_not_called()
         self.assertIn("probe.lua:2: 'end' expected", err.getvalue())
 
-    def test_eval_clears_the_inbox_after_reading_its_own_result(self):
+    def test_eval_clears_the_inbox_before_the_reload_that_saves_its_result(self):
+        # The first reload runs the snippet; leaving the inbox for the second would run it again and report the second
+        # run's output, and its delayed flow screenshot could be mistaken for the saving reload's world load (#588).
         with mock.patch.object(fc, "CLIENT", self.state / "client"):
             self.saved_smoke('{\n\t["run"] = "run-1",\n\t["ran"] = 7,\n\t["ok"] = true,\n\t["out"] = { "shown" },\n}')
+            cleared = []
             with (
                 mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
                 mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
-                mock.patch.object(fc, "reload"),
+                mock.patch.object(fc, "reload", side_effect=lambda _state: cleared.append(clear.called)),
                 mock.patch.object(fc, "clear_eval_inbox") as clear,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(fc.main(["eval", "probe.lua"]), 0)
-        clear.assert_called_once_with(quiet=True)
+        self.assertEqual(cleared, [False, True], "the inbox is gone before the saving reload")
+        clear.assert_called_once_with()
 
     def test_eval_clears_the_inbox_even_when_its_snippet_is_refused(self):
         class Refused(Exception):
@@ -1633,16 +2102,58 @@ class ProofHelpersTest(unittest.TestCase):
             fc.clear_eval_inbox()
         tool.clear_inbox.assert_called_once_with(addons=client / "Interface/AddOns")
 
-    def test_run_flow_sends_a_slash_command_without_an_eval(self):
+    def test_run_flow_runs_a_slash_command_through_devsmoke(self):
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {
+            "chunk": Path("/x/!!DevSmokeInbox/Eval.lua"),
+            "snippet": Path("/lf"),
+            "lines": 5,
+            "token": "run-slash",
+        }
         with (
-            mock.patch.object(fc, "slash") as slash,
-            mock.patch.object(fc, "devsmoke_eval") as tool,
-            mock.patch.object(fc.time, "sleep") as sleep,
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "allowed_command") as allowed,
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox") as clear,
+            mock.patch.object(fc, "wait_for_flow_ready") as ready,
+            contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            fc.run_flow({}, "/lf")
-        slash.assert_called_once_with({}, "/lf")
-        tool.assert_not_called()
-        sleep.assert_called_once_with(fc.SLASH_SETTLE_SECONDS)
+            self.assertEqual(fc.run_flow("state", "/lf"), "run-slash")
+        allowed.assert_called_once_with("/lf")
+        tool.write_slash.assert_called_once_with("/lf", addons=self.state / "client/Interface/AddOns", capture=True)
+        reload.assert_called_once_with("state")
+        clear.assert_called_once_with()
+        ready.assert_called_once_with(set(), "/lf", "run-slash")
+        self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from /lf (5 lines)", out.getvalue())
+
+    def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {
+            "chunk": Path("/x/Eval.lua"),
+            "snippet": Path("/lf"),
+            "lines": 5,
+            "token": "run-slash",
+        }
+        timeout = fc.ClientError("the flow did not say it was ready")
+        precise = fc.ClientError("the flow /lf could not be captured: the flow's ready check failed: boom")
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_ready", side_effect=timeout),
+            mock.patch.object(fc, "flow_capture_failure", return_value=precise) as failure,
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(fc.ClientError, "ready check failed: boom"),
+        ):
+            fc.run_flow("state", "/lf")
+        failure.assert_called_once_with("state", "/lf", "run-slash", timeout)
 
     def test_run_flow_writes_reloads_and_answers_the_run_token(self):
         tool = mock.Mock()
@@ -1653,18 +2164,81 @@ class ProofHelpersTest(unittest.TestCase):
             "token": "run-1",
         }
         tool.EvalError = Exception
+        earlier = {self.state / "earlier.jpg"}
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "screenshots", return_value=earlier),
             mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox") as clear,
+            mock.patch.object(fc, "wait_for_flow_ready") as ready,
             mock.patch.object(fc, "saved_eval") as saved,
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
             self.assertEqual(fc.run_flow("state", "notice.lua"), "run-1")
         reload.assert_called_once_with("state")
+        clear.assert_called_once_with()
+        ready.assert_called_once_with(earlier, "notice.lua", "run-1")
         saved.assert_not_called()  # the result is read after the flow's screenshot
-        tool.write_snippet.assert_called_once_with(Path("notice.lua"), addons=self.state / "client/Interface/AddOns")
+        tool.write_snippet.assert_called_once_with(
+            Path("notice.lua"), addons=self.state / "client/Interface/AddOns", capture=True
+        )
         self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from notice.lua (3 lines)", out.getvalue())
+
+    def test_a_lua_flow_waits_for_the_world_and_its_own_screenshot(self):
+        earlier = self.state / "0-earlier.jpg"
+        world = self.state / "1-world.jpg"
+        flow = self.state / "2-flow.jpg"
+        for index, path in enumerate((earlier, world, flow)):
+            path.write_bytes(b"image")
+            os.utime(path, (100 + index, 100 + index))
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc, "screenshots", return_value={earlier, world, flow}),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+        ):
+            self.assertEqual(fc.wait_for_flow_ready({earlier}, "notice.lua"), flow)
+
+    def test_a_lua_flow_that_never_signals_fails_on_the_timeout(self):
+        world = self.state / "1-world.jpg"
+        world.write_bytes(b"world")
+        os.utime(world, (100, 100))
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc, "screenshots", return_value={world}),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, r"notice\.lua did not say it was ready to capture"),
+        ):
+            fc.wait_for_flow_ready(set(), "notice.lua", timeout=5)
+        self.assertEqual(clock.now, 5)
+
+    def test_wait_for_flow_ready_reports_the_recorded_failure_before_its_timeout(self):
+        world = self.state / "1-world.jpg"
+        world.write_bytes(b"world")
+        os.utime(world, (100, 100))
+        clock = FakeClock()
+        failed = {"run": "run-1", "ready": "failed", "readyErr": "the flow's ready check failed: boom"}
+        with (
+            mock.patch.object(fc, "screenshots", return_value={world}),
+            mock.patch.object(fc, "saved_eval", side_effect=[fc.ClientError("earlier run"), failed]),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "ready check failed: boom"),
+        ):
+            fc.wait_for_flow_ready(set(), "notice.lua", token="run-1", timeout=30)
+        self.assertEqual(clock.now, 1, "the recorded reason ends the wait at once")
+
+    def test_a_ready_failure_falls_back_to_a_saving_reload_only_when_unrecorded(self):
+        timeout = fc.ClientError("the flow did not say it was ready")
+        with (
+            mock.patch.object(fc, "flow_ready_failure", side_effect=[None, "the flow was not ready: boom"]),
+            mock.patch.object(fc, "reload") as reload,
+        ):
+            failure = fc.flow_capture_failure({}, "notice.lua", "run-1", timeout)
+        reload.assert_called_once_with({})
+        self.assertIn("the flow was not ready: boom", str(failure))
 
     def test_check_flow_eval_fails_on_the_error_its_own_snippet_raised(self):
         saved = {"run": "run-1", "ran": 7, "ok": False, "out": {1: "before"}, "err": "boom\nstack"}
@@ -1845,6 +2419,7 @@ class ProofTest(unittest.TestCase):
         self.addons = self.client / "Interface/AddOns"
         self.addons.mkdir(parents=True)
         self.enterContext(mock.patch.object(fc, "CLIENT", self.client))
+        self.enterContext(mock.patch.object(fc, "allowed_command"))
         self.workspace = self.state / "workspace"
         (self.workspace / "legacy-forever").mkdir(parents=True)
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
@@ -1872,6 +2447,15 @@ class ProofTest(unittest.TestCase):
         self.build_dev = mock.Mock(return_value=self.build)
         self.ensure = mock.Mock(side_effect=self.start_session)
         self.released = mock.Mock()
+        self.eval_tool = mock.Mock()
+        self.eval_tool.EvalError = Exception
+        self.eval_tool.write_slash.return_value = {
+            "chunk": Path("/x/Eval.lua"),
+            "snippet": Path("/lf"),
+            "lines": 5,
+            "token": "run-1",
+        }
+        self.saved_eval({"run": "run-1", "ran": 7, "ok": True, "out": {1: "shown"}})
 
     def start_session(self, _timeout, _manual_launcher=False):
         return {"started": 1.0, "ready": 2.0, "display": ":1", "runtime_dir": "/run/user/1"}
@@ -1925,6 +2509,7 @@ class ProofTest(unittest.TestCase):
 
     def run_proof(self, **overrides):
         ensure = overrides.pop("ensure", None)
+        overrides.pop("up", None)
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(fc, "git", side_effect=self.fake_git))
             stack.enter_context(mock.patch.object(fc, "foreign_client", side_effect=self.busy))
@@ -1938,6 +2523,8 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "reload", self.reload))
             stack.enter_context(mock.patch.object(fc, "job_started", return_value=3.0))
             stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
+            stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
+            stack.enter_context(mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool))
             stack.enter_context(mock.patch.object(fc, "shot", side_effect=self.fake_shot))
             stack.enter_context(mock.patch.object(fc, "proof_digests", self.proof_digests))
             stack.enter_context(mock.patch.object(fc, "create_gist", self.create_gist))
@@ -1982,9 +2569,11 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(proof["source_commit"], self.commit)
         self.assertEqual(proof["flows"], [{"name": "update notice", "steps": ["/lf"], "result": "pass"}])
         self.assertEqual(proof["images"], self.upload.return_value)
-        self.assertEqual(self.slashes, ["/lf"])
+        self.eval_tool.write_slash.assert_called_once_with("/lf", addons=self.addons, capture=True)
         self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
-        self.reload.assert_called_once()
+        self.assertEqual(
+            self.reload.call_count, 3, "the proof's own, the slash flow's, and the one that saves the eval to disk"
+        )
         self.client_build.assert_called_once_with(self.build)
         self.compare.assert_called_once_with(self.checkout, self.build)
         self.assertIn("wrote", printed)
@@ -2049,6 +2638,20 @@ class ProofTest(unittest.TestCase):
 
     def test_a_failed_flow_puts_the_links_back_and_records_nothing(self):
         self.slash_error = "refused /lf"
+        self.eval_tool.EvalError = fc.ClientError
+        self.eval_tool.write_slash.side_effect = fc.ClientError("refused /lf")
+        with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
+            self.run_proof()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+        self.released.assert_called_once()
+
+    def test_a_flow_that_fails_in_the_world_reports_its_own_error_not_a_busy_client(self):
+        # In the world the job holds the client, so the busy check must not name our own session as another's.
+        self.busy = [None, "another session holds the client", "another session holds the client"]
+        self.eval_tool.EvalError = fc.ClientError
+        self.eval_tool.write_slash.side_effect = fc.ClientError("refused /lf")
         with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
             self.run_proof()
         self.assertFalse((self.addons / "LegacyForever").exists())
@@ -2063,8 +2666,8 @@ class ProofTest(unittest.TestCase):
         tool = mock.Mock()
         tool.EvalError = Exception
         tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
-        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
-            code, printed, _err = self.run_proof(flow=[f"update notice={lua}"])
+        self.eval_tool = tool
+        code, printed, _err = self.run_proof(flow=[f"update notice={lua}"])
         self.assertEqual(code, 0)
         self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
         self.assertIn("DevSmokeDB.eval: ok, ran 7\nshown", printed)
@@ -2080,8 +2683,8 @@ class ProofTest(unittest.TestCase):
         tool = mock.Mock()
         tool.EvalError = Exception
         tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
-        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
-            code, _printed, _err = self.run_proof(flow=[f"map={lua}"])
+        self.eval_tool = tool
+        code, _printed, _err = self.run_proof(flow=[f"map={lua}"])
         self.assertEqual(code, 0)
         digest = fc.hashlib.sha256(lua.read_bytes()).hexdigest()
         target = self.checkout / ".visual-proof.json"
@@ -2096,7 +2699,9 @@ class ProofTest(unittest.TestCase):
         with mock.patch.object(fc, "clear_eval_inbox") as clear:
             code, _printed, _err = self.run_proof()
         self.assertEqual(code, 0)
-        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
+        self.assertEqual(clear.call_args_list[0], mock.call(), "the proof starts from an empty inbox")
+        self.assertEqual(clear.call_args_list[-1], mock.call(quiet=True), "and clears it again when it ends")
+        self.assertEqual(clear.call_args_list.count(mock.call()), 2, "the flow's own reload also clears its inbox")
 
     def test_a_lua_flow_that_raised_fails_the_proof_instead_of_passing_on_an_earlier_eval(self):
         # The reader used to answer with whatever eval the SavedVariables file held, which is the session before this
@@ -2107,9 +2712,9 @@ class ProofTest(unittest.TestCase):
         tool = mock.Mock()
         tool.EvalError = Exception
         tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
+        self.eval_tool = tool
         with self.assertRaisesRegex(fc.ClientError, "holds the run 'earlier', not this snippet's 'run-1'"):
-            with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
-                self.run_proof(flow=[f"hover a quest stop={lua}"])
+            self.run_proof(flow=[f"hover a quest stop={lua}"])
         self.create_gist.assert_not_called()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
 
@@ -2120,9 +2725,9 @@ class ProofTest(unittest.TestCase):
         tool = mock.Mock()
         tool.EvalError = Exception
         tool.write_snippet.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": lua, "lines": 1, "token": "run-1"}
-        with mock.patch.object(fc, "devsmoke_eval", return_value=tool):
-            with self.assertRaises(fc.ClientError) as failure:
-                self.run_proof(flow=[f"hover a quest stop={lua}"])
+        self.eval_tool = tool
+        with self.assertRaises(fc.ClientError) as failure:
+            self.run_proof(flow=[f"hover a quest stop={lua}"])
         self.assertIn(f"flow snippet {lua} failed", str(failure.exception))
         self.assertIn("Eval.lua:2: boom", str(failure.exception), "the proof fails on the snippet's own error")
         self.create_gist.assert_not_called()
@@ -2192,7 +2797,11 @@ class BrokerTest(unittest.TestCase):
 
     def test_the_lifetime_cap_waits_for_a_running_job_before_teardown(self):
         config = self.state / "env.json"
-        config.write_text('{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"}}')
+        config.write_text(
+            '{"umu_run":"/faugus/umu-run",'
+            '"env":{"PROTONPATH":"/runner"},'
+            '"character":{"name":"Parked","guid":"1","require_resting":true}}'
+        )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
         clock = FakeClock()
@@ -2212,6 +2821,7 @@ class BrokerTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "CONFIG", config),
             mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "nvidia_mismatch", return_value=None),
             mock.patch.object(fc, "prefix_users", return_value=[]),
             mock.patch.object(fc.socket, "create_connection"),
             mock.patch.object(fc.signal, "signal"),
@@ -2352,6 +2962,36 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual(fc.with_job("shot", 600, action), 0)
         acquire.assert_called_once_with(600, "shot")
 
+    def test_a_scroll_without_a_token_takes_the_job_lock(self):
+        """A wheel verb run on its own is a job: job.lock is held, and job.json names it, for that invocation."""
+        state = live_state(ready=1.0)
+        seen = {}
+
+        def scroll(_state, _x, _y, ticks):
+            handle = open(fc.job_lock_path(), "w")
+            try:
+                with self.assertRaises(
+                    BlockingIOError, msg="the scroll holds the job lock while it touches the client"
+                ):
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                handle.close()
+            seen.update(json.loads(fc.job_record_path().read_text()))
+            seen["ticks"] = ticks
+
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": ""}),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "scroll", side_effect=scroll) as scroll_verb,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
+        scroll_verb.assert_called_once_with(state, 960, 540, -4)
+        self.assertEqual((seen["pid"], seen["label"]), (os.getpid(), "scroll"))
+        self.assertEqual(seen["ticks"], -4)
+        self.assertFalse(fc.job_record_path().exists(), "the lock is the invocation's, not the session's")
+        self.assertTrue((self.state / "last-job").exists(), "the job's end is recorded for the idle limit")
+
     def test_a_lease_prints_its_token_and_names_the_holder(self):
         holder = mock.Mock(pid=os.getpid())
         out = io.StringIO()
@@ -2424,7 +3064,8 @@ class BrokerTest(unittest.TestCase):
         self.assertFalse((self.state / "stop").exists())
 
     def test_down_stops_a_session_that_is_still_starting(self):
-        fc.state_file().write_text(json.dumps(live_state()))
+        state = live_state()
+        fc.state_file().write_text(json.dumps(state))
         clock = FakeClock()
 
         def tick(seconds):
@@ -2432,12 +3073,14 @@ class BrokerTest(unittest.TestCase):
             fc.state_file().unlink(missing_ok=True)
 
         with (
-            mock.patch.object(fc.os, "kill") as kill,
+            # The signal goes through the pidfd binding down uses, so a pid another process now owns is never hit.
+            mock.patch.object(fc, "signal_pid", return_value=True) as stop,
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", side_effect=tick),
         ):
             self.assertEqual(fc.down(), 0)
-        kill.assert_any_call(os.getpid(), signal.SIGTERM)
+        stop.assert_called_once_with(state["pid"], state["start_ticks"], signal.SIGTERM)
+        self.assertFalse((self.state / "stop").exists(), "a starting session has no resident loop to read the marker")
 
 
 if __name__ == "__main__":

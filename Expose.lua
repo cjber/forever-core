@@ -116,17 +116,212 @@ function core.Register(addonName, spec)
 	return context
 end
 
--- Core's own errors and lines are recorded under ForeverCore. Core.lua's one ADDON_LOADED handler calls this once the
--- saved table exists, so a first install attaches exactly like a later one.
+-- Core's own errors and lines are recorded under ForeverCore. Core.lua's Start (converted copies) or its one
+-- ADDON_LOADED handler (transitional unwrapped standalone) calls this once the store exists, so a first install
+-- attaches exactly like a later one.
 local self = core.Register("ForeverCore")
 ns.AttachCoreDb = function()
-	if type(ForeverCoreDB) ~= "table" then
+	local store = ns.Store()
+	if type(store) ~= "table" then
 		return
 	end
-	self.Attach(ForeverCoreDB)
+	self.Attach(store)
 end
 
-ForeverCore = core
+-- A converted copy hands its facade to the loader on the namespace only; Boot publishes the global once. The
+-- unwrapped standalone path keeps its old global publication until packaging conversion.
+if ns.copy ~= nil then
+	ns.ForeverCore = core
+	core.loaderSchema = 1
+	core.build = ns.copy.build
+else
+	ForeverCore = core
+end
+
+local function AddOnMetadata(name, key)
+	local addons = rawget(_G, "C_AddOns")
+	if type(addons) ~= "table" or type(addons.GetAddOnMetadata) ~= "function" then
+		return nil
+	end
+	local ok, value = pcall(addons.GetAddOnMetadata, name, key)
+	return ok and value or nil
+end
+
+local function AddOnLoaded(name)
+	local addons = rawget(_G, "C_AddOns")
+	if type(addons) ~= "table" or type(addons.IsAddOnLoaded) ~= "function" then
+		return nil
+	end
+	local ok, loaded = pcall(addons.IsAddOnLoaded, name)
+	return ok and loaded == true or false
+end
+
+local function AddOnEnableState(name)
+	local addons = rawget(_G, "C_AddOns")
+	if type(addons) ~= "table" or type(addons.GetAddOnEnableState) ~= "function" then
+		return nil
+	end
+	local ok, state = pcall(addons.GetAddOnEnableState, name)
+	return ok and state or nil
+end
+
+-- Every installed Forever addon, recognised by the pin every consumer records in its TOC. The pin is also the version
+-- a sibling bundled, so it belongs in the report beside the addon's own version.
+local function InstalledConsumers()
+	local addons = rawget(_G, "C_AddOns")
+	if type(addons) ~= "table" or type(addons.GetNumAddOns) ~= "function" then
+		return {}
+	end
+	local total = 0
+	pcall(function()
+		total = addons.GetNumAddOns()
+	end)
+	local found = {}
+	for index = 1, tonumber(total) or 0 do
+		local name
+		pcall(function()
+			name = addons.GetAddOnInfo(index)
+		end)
+		if type(name) ~= "string" or name == "" then
+			break
+		end
+		local pin = AddOnMetadata(name, "X-Forever-Core")
+		if pin ~= nil or name == "ForeverCore" then
+			found[#found + 1] = name
+		end
+	end
+	table.sort(found)
+	return found
+end
+
+local function FirstCaught(name)
+	local context = contexts[name]
+	if context == nil then
+		return nil
+	end
+	local caught = context.CaughtErrors()
+	return caught[1]
+end
+
+local function CoreCopies()
+	local loader = rawget(_G, "ForeverCoreLoader")
+	if type(loader) ~= "table" or type(loader.Candidates) ~= "function" then
+		return {}
+	end
+	return loader.Candidates()
+end
+
+-- The installed-but-unregistered answer (core#509). It lists what the client knows about every Forever addon, and for
+-- a consumer that never reached Register it names the first captured error when one exists or the exact next
+-- diagnostic (the client error frame) when ForeverCore never saw one.
+---@param focus? string
+---@return string[]
+local function StartupReport(focus)
+	local L = ns.L
+	local lines = { L["ForeverCore startup report"] }
+	local loader = rawget(_G, "ForeverCoreLoader")
+	local selected = type(loader) == "table" and type(loader.Selected) == "function" and loader.Selected() or nil
+	local version = AddOnMetadata("ForeverCore", "Version") or "?"
+	if selected and type(selected.build) == "number" then
+		local build = selected.build
+		version = ("%d.%d.%d"):format(math.floor(build / 1000000), math.floor(build / 1000) % 1000, build % 1000)
+	end
+	lines[#lines + 1] = L["Core: %s; API %s"]:format(tostring(version), tostring(core.API))
+	if selected ~= nil then
+		lines[#lines + 1] = L["Runtime: %s copy %s"]:format(tostring(selected.mode), tostring(selected.folder))
+	elseif type(loader) == "table" and type(loader.Error) == "function" and loader.Error() then
+		lines[#lines + 1] = L["Runtime error: %s"]:format(loader.Error())
+	else
+		lines[#lines + 1] = L["Standalone runtime"]
+	end
+	local copies = CoreCopies()
+	if #copies > 0 then
+		lines[#lines + 1] = L["Core copies:"]
+		for _, copy in ipairs(copies) do
+			local status = copy.rejected and L["Rejected"] or (copy.sealed and L["Sealed"] or L["Unsealed"])
+			lines[#lines + 1] = L["%s: build %s, %s"]:format(tostring(copy.folder), tostring(copy.build), status)
+		end
+	end
+
+	local installed = InstalledConsumers()
+	local wanted = tostring(focus or ""):match("^%s*(.-)%s*$")
+	if wanted ~= "" then
+		local kept = {}
+		for _, name in ipairs(installed) do
+			if name:lower() == wanted:lower() then
+				kept[#kept + 1] = name
+			end
+		end
+		installed = kept
+	end
+	if #installed == 0 then
+		lines[#lines + 1] = wanted ~= "" and L['No installed Forever addon named "%s".']:format(wanted)
+			or L["No installed Forever addons found."]
+		lines[#lines + 1] =
+			L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."]
+		return lines
+	end
+
+	lines[#lines + 1] = L["Installed Forever addons:"]
+	local addons = rawget(_G, "C_AddOns")
+	for _, name in ipairs(installed) do
+		local registered = contexts[name] ~= nil
+		local loaded = AddOnLoaded(name)
+		local state = AddOnEnableState(name)
+		local addonVersion = AddOnMetadata(name, "Version") or "?"
+		local pin = AddOnMetadata(name, "X-Forever-Core") or "?"
+		local dependencies = AddOnMetadata(name, "Dependencies") or "?"
+		local optional = AddOnMetadata(name, "OptionalDeps") or "?"
+		if type(addons) == "table" and type(addons.GetAddOnDependencies) == "function" then
+			local values = { pcall(addons.GetAddOnDependencies, name) }
+			if values[1] then
+				table.remove(values, 1)
+				dependencies = #values > 0 and table.concat(values, ", ") or "-"
+			end
+		end
+		local label = registered and L["Registered"] or (loaded and L["Loaded but not registered"] or L["Not loaded"])
+		lines[#lines + 1] = ("%s %s: %s"):format(name, addonVersion, label)
+		lines[#lines + 1] = L["Load: %s; enabled: %s; core pin: %s"]:format(
+			tostring(loaded),
+			state ~= nil and tostring(state) or "?",
+			pin
+		)
+		lines[#lines + 1] = L["Requires: %s; optional: %s"]:format(dependencies, optional)
+		if type(addons) == "table" and type(addons.GetAddOnInfo) == "function" then
+			local ok, _, _, _, loadable, reason = pcall(addons.GetAddOnInfo, name)
+			if ok then
+				lines[#lines + 1] = L["Loadable: %s; reason: %s"]:format(tostring(loadable), tostring(reason or "-"))
+			end
+		end
+		local first = FirstCaught(name)
+		if first ~= nil then
+			lines[#lines + 1] = L["First error: %s"]:format(tostring(first.message or first.kind or "?"))
+		elseif not registered then
+			lines[#lines + 1] =
+				L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."]:format(
+					name
+				)
+		end
+	end
+
+	if type(loader) == "table" then
+		local callback = type(loader.CallbackError) == "function" and loader.CallbackError() or nil
+		local login = type(loader.LoginError) == "function" and loader.LoginError() or nil
+		if callback then
+			lines[#lines + 1] = L["Callback error: %s"]:format(callback)
+		end
+		if login then
+			lines[#lines + 1] = L["Login error: %s"]:format(login)
+		end
+		local rejections = type(loader.Rejections) == "function" and loader.Rejections() or {}
+		for _, rejection in ipairs(rejections) do
+			lines[#lines + 1] = L["Copy %s: %s"]:format(tostring(rejection.folder), tostring(rejection.reason))
+		end
+	end
+	return lines
+end
+
+ns.StartupReport = StartupReport
 
 if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE1 = "/fcore"
@@ -141,10 +336,17 @@ if SlashCmdList ~= nil then
 	SLASH_FOREVERCORE2 = not foreverTaken and "/forever" or nil
 	SlashCmdList.FOREVERCORE = function(message)
 		local text = tostring(message or "")
-		local command = text:match("^%s*(%S*)")
+		local command, argument = text:match("^%s*(%S*)%s*(.*)$")
+		command = command or ""
 		if command:lower() == "quests" then
 			if ns.TrackerQuests ~= nil then
 				ns.TrackerQuests.Toggle()
+			end
+			return
+		end
+		if command:lower() == "report" then
+			for _, line in ipairs(StartupReport(argument)) do
+				print(line)
 			end
 			return
 		end

@@ -110,6 +110,34 @@ class BannedTextureTest(unittest.TestCase):
             ):
                 self.assertIsInstance(ui.texture(path), Image.Image)
 
+    def test_native_disabled_checked_texture_renders_by_path_and_id(self):
+        # UICheckButtonArtTemplate's DisabledCheckedTexture, inherited by UICheckButtonTemplate.
+        path = "interface/buttons/ui-checkbox-check-disabled.blp"
+        fdid = 130750
+        self.assertTrue(legacy_chrome.is_known(path))
+        self.assertTrue(legacy_chrome.is_legacy(path))
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "paths.json").write_text(json.dumps({path: fdid}))
+            for ref in (path, fdid):
+                with self.subTest(ref=ref):
+                    ui = ui_in(directory)
+                    image = Image.new("RGBA", (32, 32))
+                    with patch.object(ui, "_image", return_value=image) as load:
+                        self.assertIs(ui.texture(ref), image)
+                    load.assert_called_once_with(fdid)
+
+    def test_native_checkbox_exception_does_not_allow_other_checkbox_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ui = ui_in(directory)
+            for path, reason in (
+                ("interface/buttons/ui-checkbox-down.blp", "pre-Legion UI chrome"),
+                ("interface/buttons/ui-checkbox-check-disabled-unknown.blp", "unverifiable client path"),
+            ):
+                with self.subTest(path=path), self.assertRaises(BannedAsset) as caught:
+                    ui.texture(path)
+                self.assertIn(reason, caught.exception.reason)
+
 
 class BannedAtlasTest(unittest.TestCase):
     def test_a_banned_atlas_raises(self):

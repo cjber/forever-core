@@ -43,6 +43,7 @@ ALLOWLIST = {
     "interface/buttons/squarebuttontextures": "wowmock crops the world-map NavBar's own dropdown arrow from it",
     "interface/buttons/ui-checkbox-up": "wowmock's Edit Mode native checkbox face; no atlas is the 32x32 file",
     "interface/buttons/ui-checkbox-check": "wowmock's Edit Mode native checkbox tick; no atlas is the 32x32 file",
+    "interface/buttons/ui-checkbox-check-disabled": "UICheckButtonArtTemplate's disabled tick; no equivalent atlas",
     "interface/chatframe/chatframeexpandarrow": "wowmock's native menu submenu arrow",
     "interface/common/shadowoverlay-left": "wowmock's native world-map NavBar shadow",
     "interface/common/ui-tooltipdivider-transparent": "wowmock's native menu divider",

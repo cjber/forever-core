@@ -38,6 +38,7 @@ function M.build(sim)
 		professions = {}, -- { skillLineID, name, skill, max, modifier, icon, recipes = {...}, categories = {...} }
 		openProfession = nil,
 		items = {},
+		knownSpells = {}, -- learned spell IDs; cached spell data in spells does not imply knowledge
 		maps = {},
 		addons = {},
 		achievements = { categories = {} },
@@ -198,6 +199,26 @@ function M.build(sim)
 	impl.GetRealmName = impl.GetNormalizedRealmName
 	impl.GetMoney = function()
 		return W.player.money
+	end
+	-- Legacy globals used by the pinned Camelot FriendsFrame and MailFrame. Scenarios start with
+	-- no Battle.net session and an empty mail draft; return the API's individual tuple fields.
+	W.battleNet = { enabled = false, connected = false, afk = false, dnd = false, realIDEnabled = false }
+	W.mail = { sendPrice = 30 }
+	impl.BNFeaturesEnabled = function()
+		return W.battleNet.enabled
+	end
+	impl.BNConnected = function()
+		return W.battleNet.connected
+	end
+	impl.BNFeaturesEnabledAndConnected = function()
+		return W.battleNet.enabled and W.battleNet.connected
+	end
+	impl.BNGetInfo = function()
+		local b = W.battleNet
+		return b.presenceID, b.battleTag, b.toonID, b.broadcast or "", b.afk, b.dnd, b.realIDEnabled
+	end
+	impl.GetSendMailPrice = function()
+		return W.mail.sendPrice
 	end
 	impl.IsPlayerInWorld = function()
 		return sim.loggedIn == true
@@ -380,6 +401,7 @@ function M.build(sim)
 			s.reagentSlotSchematics[i] = {
 				reagents = { { itemID = reagent[1] } },
 				reagentType = 1,
+				variableQuantities = {},
 				quantityRequired = reagent[2],
 				slotIndex = i,
 				dataSlotType = 1,
@@ -413,8 +435,35 @@ function M.build(sim)
 	end
 
 	-- Items.
-	impl["C_Item.GetItemInfo"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	local function resolveItemInfo(info)
+		if type(info) == "number" then
+			return info, W.items[info]
+		end
+		if type(info) == "string" then
+			for id, item in pairs(W.items) do
+				if info == item.link or info == item.name or info == "item:" .. id then
+					return id, item
+				end
+			end
+		end
+	end
+	impl["C_Item.GetItemInfoInstant"] = function(info)
+		local id, item = resolveItemInfo(info)
+		if item then
+			return id,
+				item.itemType or "",
+				item.itemSubType or "",
+				item.itemEquipLoc or "",
+				item.icon or 134400,
+				item.classID or 0,
+				item.subClassID or 0
+		end
+	end
+	impl["C_Item.GetItemIDForItemInfo"] = function(info)
+		return resolveItemInfo(info) or 0
+	end
+	impl["C_Item.GetItemInfo"] = function(info)
+		local _, item = resolveItemInfo(info)
 		if item then
 			return item.name,
 				item.link,
@@ -430,21 +479,26 @@ function M.build(sim)
 		end
 	end
 	G.GetItemInfo = G.C_Item.GetItemInfo
-	impl["C_Item.GetItemNameByID"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemNameByID"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and item.name
 	end
-	impl["C_Item.GetItemIconByID"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemQualityByID"] = function(info)
+		local _, item = resolveItemInfo(info)
+		return item and (item.quality or 1)
+	end
+	impl["C_Item.GetItemIconByID"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and (item.icon or 134400)
 	end
-	impl["C_Item.GetItemCount"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemCount"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and item.count or 0
 	end
 	G.GetItemCount = G.C_Item.GetItemCount
-	impl["C_Item.DoesItemExistByID"] = function(id)
-		return W.items[tonumber(id) or 0] ~= nil
+	impl["C_Item.DoesItemExistByID"] = function(info)
+		local _, item = resolveItemInfo(info)
+		return item ~= nil
 	end
 	impl["C_Item.IsItemDataCachedByID"] = function()
 		return true
@@ -478,6 +532,26 @@ function M.build(sim)
 		end
 		local r = recipe(id)
 		return r and { name = r.name, icon = r.icon or 134400 }
+	end
+	-- Flyout definitions exist before their spells are learned. Blizzard's class action button enumerates
+	-- these slots at PLAYER_LOGIN even when none are known; an unknown flyout ID still returns nothing.
+	G.GetFlyoutInfo = function(id)
+		local flyout = sim.flyouts[Secret.unwrap(id)]
+		if flyout then
+			local known = false
+			for _, spellID in ipairs(flyout.slots) do
+				known = known or W.knownSpells[spellID] == true
+			end
+			return flyout.name, flyout.description, #flyout.slots, known
+		end
+	end
+	G.GetFlyoutSlotInfo = function(id, index)
+		local flyout = sim.flyouts[Secret.unwrap(id)]
+		local spellID = flyout and flyout.slots[Secret.unwrap(index)]
+		if spellID then
+			local info = spell(spellID)
+			return spellID, spellID, W.knownSpells[spellID] == true, info and info.name
+		end
 	end
 	impl["C_Spell.DoesSpellExist"] = function(id)
 		return spell(id) ~= nil

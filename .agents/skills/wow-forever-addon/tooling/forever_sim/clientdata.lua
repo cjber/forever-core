@@ -12,6 +12,7 @@ end
 
 function M.build(sim)
 	local G = sim.G
+	sim.flyouts = assert(load(sim.dataDir .. "/flyouts.lua"), "missing flyouts.lua: run forever_sim/fetch.py")
 	local strings = load(sim.dataDir .. "/globalstrings-" .. sim.locale .. ".lua")
 	if not strings then
 		error(

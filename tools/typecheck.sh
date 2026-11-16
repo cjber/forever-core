@@ -2,6 +2,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# Only producer-bound phrases and literals with reviewed widget fonts are checked.
+python3 tools/check_font_glyphs.py
+
 annotations=.types/vscode-wow-api
 # The annotation checkout and the LuaLS version come from tools/toolchain.json, the one place either is pinned; CI
 # installs LuaLS with .github/actions/toolchain, which reads that same file from the workspace.

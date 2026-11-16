@@ -29,6 +29,8 @@ textures ship; `tools/marker_source/` holds the sources and `tools/export_marker
 | [Ketho's WoW API annotations](https://github.com/Ketho/vscode-wow-api) | lua-language-server types in `tools/typecheck.sh` | `tools.annotations.commit` in `tools/toolchain.json` | MIT |
 | [FrameXML annotations](https://github.com/NumyAddon/FramexmlAnnotations) | FrameXML types, the Ketho checkout's `Annotations/FrameXML` submodule | The gitlink in that Ketho revision | MIT |
 | [wago.tools](https://wago.tools) | The listfile and backdrop art facts behind `tools/legacy_chrome.txt` | `BUILD` in `tools/gen_legacy_chrome.py` | Blizzard Entertainment's game data |
+| [Blizzard client fonts and font definitions](https://wago.tools) | Offline Unicode glyph coverage and exact FontObject member mappings in `font_glyphs.json`; no font binaries ship or are committed | `FONT_BUILD`, `UI_REVISION` and `XML_FILES` in `tools/gen_font_glyphs.py`; generated JSON records each XML and TTF sha256 and download URL | Blizzard Entertainment's game data; build only |
+| [fontTools](https://github.com/fonttools/fonttools) | Reads Unicode cmap tables when regenerating font coverage; not needed by the offline gate | Generator dependency in `tools/gen_font_glyphs.py`; generator environment must supply fontTools | MIT; build only |
 
 CI tools (StyLua, ruff, luacheck, lua-language-server, actionlint, zizmor, gitleaks, the BigWigs packager) are pinned in
 `tools/toolchain.json`, `tools/pyproject.toml` and `tools/uv.lock`, the `uses:` SHAs in `.github/workflows/`, and
@@ -43,6 +45,9 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| [kowakowa93](https://github.com/kowakowa93) | Forever sections follow Kaliel's Tracker | Contributor integration branch; #602 |
+| xh43k | Reported clipped tracker rows and quest item art | CurseForge; thread 8715086; #603 |
+| cotijelucie | Shared settings retained across embedded core copies | Reported uninstalling a bundled core on Discord; #448 |
 | [iPulse](https://github.com/iPulse) | Forever sections under the objective tracker | Asked on CurseForge (#335) |
 | _spada | Hide a tracker section from its menu | Asked on Discord (#292) |
 | Darkwavez76 | A darker tracker background | Asked on CurseForge (#241) |

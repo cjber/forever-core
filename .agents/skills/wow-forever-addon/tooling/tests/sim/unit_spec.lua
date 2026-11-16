@@ -75,6 +75,135 @@ test("widgets: scroll callbacks only report changed offsets", function()
 	end
 end)
 
+test("widgets: scrolling moves child geometry, nested content and controls", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	root:SetSize(500, 500)
+	root:SetPoint("BOTTOMLEFT", nil, "BOTTOMLEFT", 0, 0)
+	local scroll = widgets.new("ScrollFrame", nil, root)
+	scroll:SetSize(100, 100)
+	scroll:SetPoint("TOPLEFT", root, "TOPLEFT", 10, -10)
+	local child = widgets.new("Frame", nil, scroll)
+	child:SetSize(300, 400)
+	child:SetPoint("TOPLEFT", scroll, "TOPLEFT")
+	scroll:SetScrollChild(child)
+	local control = widgets.new("Button", nil, child)
+	control:SetSize(20, 20)
+	control:SetPoint("TOPLEFT", child, "TOPLEFT", 5, -5)
+	local sibling = widgets.new("Frame", nil, scroll)
+	sibling:SetSize(10, 10)
+	sibling:SetPoint("TOPLEFT", scroll, "TOPLEFT")
+	local left, top = child:GetLeft(), child:GetTop()
+	local controlLeft, controlTop = control:GetLeft(), control:GetTop()
+	local siblingTop = sibling:GetTop()
+	scroll:SetScript("OnVerticalScroll", function()
+		eq(child:GetTop(), top + 50, "callback observes updated geometry")
+	end)
+	scroll:SetVerticalScroll(50)
+	scroll:SetHorizontalScroll(25)
+	eq(child:GetTop(), top + 50, "child vertical translation")
+	eq(child:GetLeft(), left - 25, "child horizontal translation")
+	eq(control:GetTop(), controlTop + 50, "control inherits vertical translation")
+	eq(control:GetLeft(), controlLeft - 25, "control inherits horizontal translation")
+	eq(sibling:GetTop(), siblingTop, "non-scroll child stays fixed")
+	assert(control:GetTop() > scroll:GetTop(), "off-viewport control keeps its actual screen position")
+	local nested = widgets.new("ScrollFrame", nil, child)
+	nested:SetSize(50, 50)
+	nested:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -100)
+	local inner = widgets.new("Frame", nil, nested)
+	inner:SetSize(100, 100)
+	inner:SetPoint("TOPLEFT", nested, "TOPLEFT")
+	nested:SetScrollChild(inner)
+	local innerTop = inner:GetTop()
+	nested:SetVerticalScroll(10)
+	eq(inner:GetTop(), innerTop + 10, "nested scroll applies once")
+	scroll:SetScript("OnVerticalScroll", nil)
+	scroll:SetVerticalScroll(70)
+	eq(inner:GetTop(), innerTop + 30, "outer and nested offsets compose")
+	scroll:SetVerticalScroll(0)
+	scroll:SetHorizontalScroll(0)
+	nested:SetVerticalScroll(0)
+	eq(child:GetTop(), top, "reset restores child vertical position")
+	eq(child:GetLeft(), left, "reset restores child horizontal position")
+	eq(control:GetTop(), controlTop, "reset restores descendant position")
+	scroll:SetScale(2)
+	child:SetScale(0.5)
+	local scaledTop, scaledLeft = child:GetTop(), child:GetLeft()
+	scroll:SetVerticalScroll(30)
+	scroll:SetHorizontalScroll(20)
+	eq(child:GetTop(), scaledTop + 60, "scroll offset uses viewport scale, not child scale")
+	eq(child:GetLeft(), scaledLeft - 40, "scaled horizontal offset")
+end)
+
+test("widgets: side anchors do not stretch a sized tracker block vertically", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local first = widgets.new("Frame", nil, root)
+	first:SetHeight(40)
+	first:SetPoint("TOP", root, "TOP", 0, -10)
+	first:SetPoint("LEFT", root, "LEFT")
+	first:SetPoint("RIGHT", root, "RIGHT")
+	local second = widgets.new("Frame", nil, root)
+	second:SetHeight(60)
+	second:SetPoint("TOP", first, "BOTTOM", 0, -10)
+	second:SetPoint("LEFT", root, "LEFT")
+	second:SetPoint("RIGHT", root, "RIGHT")
+	eq(first:GetHeight(), 40, "first explicit height")
+	eq(first:GetTop(), 790, "top anchor")
+	eq(second:GetTop(), 740, "second block follows first bottom")
+	eq(second:GetHeight(), 60, "second explicit height")
+	eq(first:GetWidth(), 1000, "opposite horizontal edges stretch width")
+end)
+
+test("widgets: intrinsic text height agrees with its screen rectangle and header button", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local block = widgets.new("Frame", nil, root)
+	block:SetSize(200, 80)
+	block:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+	local text = widgets.new("FontString", nil, block)
+	text:SetText("One row")
+	text:SetPoint("TOPLEFT", block, "TOPLEFT")
+	text:SetPoint("RIGHT", block, "RIGHT")
+	local button = widgets.new("Button", nil, block)
+	button:SetPoint("TOPLEFT", text, "TOPLEFT")
+	button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT")
+	eq(text:GetTop() - text:GetBottom(), text:GetHeight(), "text rectangle uses intrinsic height")
+	eq(button:GetHeight(), text:GetHeight(), "header button follows text height")
+	text:SetPoint("BOTTOMLEFT", block, "BOTTOMLEFT")
+	eq(text:GetTop() - text:GetBottom(), 80, "explicit top and bottom stretch text")
+end)
+
 test("widgets: SetToDefaults clears anchors, as Compositor's PoolReset relies on", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
@@ -179,6 +308,57 @@ test("widgets: a script's setter taint stops when the handler returns", function
 	frame:SetSize(10, 10)
 	eq(seen, "Addon", "the handler runs tainted")
 	eq(Taint.current, nil, "the caller that triggered it stays secure")
+end)
+
+test("widgets: size notifications reflect changed dimensions exactly once", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	frame:SetSize(20, 30)
+	widgets.sizePass()
+	local count = 0
+	frame:SetScript("OnSizeChanged", function(self, width, height)
+		count = count + 1
+		assert(count < 8, "unchanged size setter must not recurse")
+		eq(width, self:GetWidth(), "callback width")
+		eq(height, self:GetHeight(), "callback height")
+		self:SetHeight(height)
+	end)
+	frame:SetHeight(30)
+	frame:SetWidth(20)
+	frame:SetSize(20, 30)
+	eq(count, 0, "unchanged dimensions have no notification")
+	frame:SetHeight(40)
+	eq(count, 1, "changed height notifies once")
+	widgets.sizePass()
+	eq(count, 1, "size pass does not duplicate synchronous notification")
+	frame:SetSize(50, 60)
+	eq(count, 2, "changed pair notifies once")
+	widgets.sizePass()
+	eq(count, 2, "changed pair is not repeated")
+	frame:SetWidth(70)
+	eq(count, 3, "changed width notifies once")
+	widgets.sizePass()
+	eq(count, 3, "changed width is not repeated")
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local parent = widgets.new("Frame", nil, root)
+	parent:SetPoint("TOPLEFT", root, "TOPLEFT")
+	parent:SetSize(100, 100)
+	frame:SetAllPoints(parent)
+	widgets.sizePass()
+	eq(count, 4, "anchor-driven dimension change notifies")
+	parent:SetSize(120, 130)
+	widgets.sizePass()
+	eq(count, 5, "parent resizing notifies anchored child")
 end)
 
 test("widgets: a Frame refuses OnClick, as the client does", function()
@@ -627,6 +807,217 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(select(3, G.GetQuestLogLeaderBoard(2, 1)), true, "the scenario's finished flag")
 	eq(G.GetQuestLogCompletionText(1), "Return to the quest giver", "the scenario's completion text")
 	eq(G.IsQuestSequenced(1), true, "the scenario's sequenced flag")
+	local nativeLink = G.GetQuestLink
+	eq(nativeLink(608001), nil, "no quest link by default")
+	sim.impl.GetQuestLink = function(id)
+		return id == 608001 and "|Hquest:608001|h[Quest]|h" or nil
+	end
+	eq(G.GetQuestLink(608001), "|Hquest:608001|h[Quest]|h", "quest link comes from public fixture data")
+	eq(G.GetQuestLink, nativeLink, "quest link engine identity stays stable")
+	eq(G.IsCurrentQuestFailed(), false, "no failed current quest by default")
+	sim.impl.IsCurrentQuestFailed = function()
+		return true
+	end
+	eq(G.IsCurrentQuestFailed(), true, "current quest failure comes from public fixture data")
+end)
+
+test("natives: color markup retains text and forces opaque RGB codes", function()
+	local sim, G = freshClient()
+	sim.G = G
+	require("natives").build(sim)
+	local code = sim.impl["C_ColorUtil.GenerateTextColorCode"]
+	local wrap = sim.impl["C_ColorUtil.WrapTextInColorCode"]
+	eq(code({ r = 1, g = 0.5, b = 0, a = 0.25 }), "ffff8000", "opaque rounded RGB")
+	eq(
+		sim.impl["C_ColorUtil.WrapTextInColor"]("Inspection output", { r = 1, g = 1, b = 1, a = 0 }),
+		"|cffffffffInspection output|r",
+		"colored text retained"
+	)
+	eq(
+		wrap("Case %s |Ticon:8|t", "80402010"),
+		"|c80402010Case %s |Ticon:8|t|r",
+		"literal text and explicit alpha preserved"
+	)
+	eq(wrap("", "ffffffff"), "|cffffffff|r", "empty colored text")
+end)
+
+test("world: fixed recipe reagent slots include the required variable quantity list", function()
+	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {}, api = {
+		zero = function()
+			return {}
+		end,
+	} }
+	require("world").build(sim)
+	sim.world.professions =
+		{ { skillLineID = 164, recipes = { { id = 901, name = "Fixed reagent recipe", reagents = { { 9001, 5 } } } } } }
+	local slot = sim.impl["C_TradeSkillUI.GetRecipeSchematic"](901).reagentSlotSchematics[1]
+	eq(type(slot.variableQuantities), "table", "required nonnil list")
+	eq(#slot.variableQuantities, 0, "fixed reagent has no variable quantities")
+	eq(slot.quantityRequired, 5, "fixed required quantity")
+	eq(slot.reagents[1].itemID, 9001, "reagent identity")
+end)
+
+test("world: item identity resolves fixture ItemInfo without default zero", function()
+	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {} }
+	require("world").build(sim)
+	local link = "|cff0070dd|Hitem:9001:::::::::|h[Delayed ore]|h|r"
+	sim.world.items[9001] = {
+		name = "Delayed ore",
+		link = link,
+		quality = 3,
+		count = 8,
+		itemType = "Trade Goods",
+		itemSubType = "Metal & Stone",
+		itemEquipLoc = "",
+		icon = 12345,
+		classID = 7,
+		subClassID = 7,
+	}
+	local instant = sim.impl["C_Item.GetItemInfoInstant"]
+	local identity = sim.impl["C_Item.GetItemIDForItemInfo"]
+	for _, info in ipairs({ 9001, "item:9001", "Delayed ore", link }) do
+		eq(instant(info), 9001, "known ItemInfo identity")
+		eq(identity(info), 9001, "identity API")
+		eq(sim.impl["C_Item.GetItemNameByID"](info), "Delayed ore", "ItemInfo name")
+		eq(sim.impl["C_Item.GetItemQualityByID"](info), 3, "ItemInfo quality")
+		eq(sim.impl["C_Item.GetItemIconByID"](info), 12345, "ItemInfo icon")
+		eq(sim.impl["C_Item.GetItemCount"](info), 8, "ItemInfo count")
+		eq(sim.impl["C_Item.DoesItemExistByID"](info), true, "ItemInfo existence")
+		eq(sim.impl["C_Item.GetItemInfo"](info), "Delayed ore", "ItemInfo cached metadata")
+	end
+	local id, kind, subtype, equip, icon, class, subclass = instant(9001)
+	eq(id, 9001)
+	eq(kind, "Trade Goods")
+	eq(subtype, "Metal & Stone")
+	eq(equip, "")
+	eq(icon, 12345)
+	eq(class, 7)
+	eq(subclass, 7)
+	for _, info in ipairs({ 9999, "unknown", "prefix item:9001", "spell:9001", {} }) do
+		eq(instant(info), nil, "unknown or unsupported ItemInfo has no metadata")
+		eq(sim.impl["C_Item.GetItemNameByID"](info), nil, "unknown name")
+		eq(sim.impl["C_Item.GetItemQualityByID"](info), nil, "unknown quality")
+		eq(sim.impl["C_Item.GetItemIconByID"](info), nil, "unknown icon")
+		eq(sim.impl["C_Item.GetItemCount"](info), 0, "unknown count")
+		eq(sim.impl["C_Item.DoesItemExistByID"](info), false, "unknown item does not exist")
+	end
+	eq(identity("unknown"), 0, "unresolved string has no item identity")
+	eq(identity({}), 0, "unsupported type has no item identity")
+	eq(identity(9999), 9999, "numeric identity does not require cached metadata")
+end)
+
+test("natives: task and scenario data changes preserve native function identities", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	local tasks, info = G.GetTasksTable, G.C_Scenario.GetInfo
+	eq(#tasks(), 0, "no tasks by default")
+	eq(select(3, info()), 0, "no scenario stages by default")
+	sim.impl.GetTasksTable = function()
+		return { 608001 }
+	end
+	sim.impl.GetTaskInfo = function(id)
+		return true, false, 2, "Task " .. id, false
+	end
+	sim.impl.GetQuestObjectiveInfo = function(id, index)
+		return id .. ":" .. index, "monster", false
+	end
+	sim.impl.GetQuestProgressBarPercent = function(id)
+		return id == 608001 and 50 or 0
+	end
+	sim.impl["C_Scenario.GetInfo"] = function()
+		return "Scenario", 1, 2, nil, false
+	end
+	eq(G.GetTasksTable, tasks, "task native identity")
+	eq(G.C_Scenario.GetInfo, info, "scenario native identity")
+	eq(tasks()[1], 608001, "task IDs from public fixture input")
+	eq(select(3, G.GetTaskInfo(608001)), 2, "task objective count")
+	eq(select(4, G.GetTaskInfo(608001)), "Task 608001", "task title")
+	eq(G.GetQuestObjectiveInfo(608001, 2), "608001:2", "objective arguments")
+	eq(G.GetQuestProgressBarPercent(608001), 50, "progress percentage")
+	eq(info(), "Scenario", "scenario title")
+	eq(select(5, info()), false, "scenario trailing value after nil")
+end)
+
+test("natives: achievement category arrays remain stable fixture entry points", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	for _, name in ipairs({ "GetGuildCategoryList", "GetStatisticsCategoryList" }) do
+		local native = G[name]
+		eq(type(native), "function", name .. " is an engine native")
+		eq(#native(), 0, name .. " default is empty")
+		local first = native()
+		first[1] = 999
+		eq(#native(), 0, name .. " returns an independent default array")
+		sim.impl[name] = function()
+			return { 608 }
+		end
+		eq(native()[1], 608, name .. " fixture categories")
+		eq(G[name], native, name .. " native identity")
+	end
+end)
+
+test("natives: legacy achievement search and chain preserve fixture contracts", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	eq(type(G.SetAchievementSearchString), "function", "search native")
+	eq(type(G.GetPreviousAchievement), "function", "chain native")
+	eq(G.GetPreviousAchievement(401), nil, "no previous achievement by default")
+	eq(G.GetNumFilteredAchievements(), 0, "no search results by default")
+	eq(G.GetFilteredAchievementID(1), nil, "no result identity by default")
+	sim.impl.GetNumFilteredAchievements = function()
+		return 1
+	end
+	sim.impl.GetFilteredAchievementID = function(index)
+		return index == 1 and 401 or nil
+	end
+	eq(G.GetNumFilteredAchievements(), 1, "explicit search count")
+	eq(G.GetFilteredAchievementID(1), 401, "explicit search result identity")
+	local search
+	sim.impl.SetAchievementSearchString = function(text)
+		search = text
+	end
+	eq(select("#", G.SetAchievementSearchString("Exact search")), 0, "search has no invented return")
+	eq(search, "Exact search", "search passed to fixture")
+	sim.impl.GetPreviousAchievement = function(id)
+		return id == 402 and 401 or nil
+	end
+	eq(G.GetPreviousAchievement(402), 401, "explicit previous achievement")
+	eq(G.GetPreviousAchievement(401), nil, "chain terminates")
+	eq(G.GetNextAchievement(402), nil, "no next achievement by default")
+	sim.impl.GetNextAchievement = function(id)
+		return id == 401 and 402 or nil, false
+	end
+	local nextID, completed = G.GetNextAchievement(401)
+	eq(nextID, 402, "next achievement identity")
+	eq(completed, false, "next achievement completion")
+end)
+
+test("stubgen: native color results include numeric channels before mixing methods", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	sim.docs = { enums = {}, constants = {}, systems = {}, events = {}, widgets = {}, structures = {} }
+	sim.dataDir = here .. "../../forever_sim/no-data"
+	G.ColorMixin = {
+		GetRGBA = function(self)
+			return self.r, self.g, self.b, self.a
+		end,
+	}
+	require("stubgen").build(sim)
+	local rgb = sim.api.zero({ Type = "colorRGB", Mixin = "ColorMixin" })
+	local r, g, b, a = rgb:GetRGBA()
+	eq(r, 0)
+	eq(g, 0)
+	eq(b, 0)
+	eq(a, nil, "RGB has no invented alpha")
+	local rgba = sim.api.zero({ Type = "colorRGBA", Mixin = "ColorMixin" })
+	r, g, b, a = rgba:GetRGBA()
+	eq(r, 0)
+	eq(g, 0)
+	eq(b, 0)
+	eq(a, 0, "RGBA zero alpha")
+	eq(sim.api.zero({ Type = "colorRGBA", Mixin = "ColorMixin", Nilable = true }), nil, "nilable color remains absent")
+	rgb.r = 1
+	eq(sim.api.zero({ Type = "colorRGB" }).r, 0, "results do not share channel tables")
 end)
 
 test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()
@@ -669,6 +1060,59 @@ test("docs: a restriction keeps every class its tag names, and any one refuses t
 	eq(Docs.applies(classes["X.Both"], true, true), true, "nocombat refuses in combat")
 	eq(Docs.applies(classes["X.Always"], false, true), true, "always refuses regardless")
 	eq(Docs.applies({ "untagged" }, false, true), false, "untagged keeps the combat-only rule")
+end)
+
+test("widgets: dependency cycles are rejected beyond recursive depth limits", function()
+	Taint.current = nil
+	local W = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	W.finalize()
+	local root = W.new("Frame")
+	W.setRoot(root)
+	root:SetSize(800, 600)
+	local base = W.new("Frame", nil, root)
+	base:SetSize(10, 10)
+	base:SetPoint("TOPLEFT", root, "TOPLEFT")
+	local last = base
+	for _ = 1, 120 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetSize(10, 10)
+		frame:SetPoint("TOPLEFT", last, "BOTTOMLEFT")
+		last = frame
+	end
+	local ok, err = pcall(base.SetPoint, base, "TOPLEFT", last, "BOTTOMLEFT")
+	assert(not ok and tostring(err):find("dependent on it", 1, true), "deep dependency cycle must be rejected")
+end)
+
+test("widgets: secret anchoring follows deep chains and shared dependencies", function()
+	Taint.current = nil
+	local W = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	W.finalize()
+	local root = W.new("Frame")
+	W.setRoot(root)
+	root:SetSize(800, 600)
+	local secret = W.new("Frame", nil, root)
+	secret:SetWidth(Veil.wrap(10))
+	secret:SetHeight(10)
+	secret:SetPoint("TOPLEFT", root, "TOPLEFT")
+	local last = secret
+	for _ = 1, 60 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetSize(10, 10)
+		frame:SetPoint("TOPLEFT", last, "BOTTOMLEFT")
+		last = frame
+	end
+	assert(last:IsAnchoringSecret(), "deep secret dependency remains secret")
+	local public = W.new("Frame", nil, root)
+	public:SetSize(10, 10)
+	public:SetPoint("TOPLEFT", root, "TOPLEFT")
+	last = public
+	for _ = 1, 28 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetPoint("TOPLEFT", last, "TOPLEFT")
+		frame:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT")
+		last = frame
+	end
+	assert(not last:IsAnchoringSecret(), "shared-edge DAG remains public")
 end)
 
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))

@@ -27,6 +27,20 @@ class ChangelogTest(unittest.TestCase):
             changelog.check("## [1.0.0] - 2026-01-01\n- x\n", ["1.0.0"])
         changelog.check(LOG, ["1.0.0"])
 
+    def test_duplicate_headings_are_rejected_before_release_selection(self):
+        duplicate_release = LOG + "\n## [1.0.0] - 2026-02-01\n- repeated\n"
+        with self.assertRaisesRegex(SystemExit, "duplicate sections for 1.0.0"):
+            changelog.check(duplicate_release, ["1.0.0"])
+        with self.assertRaisesRegex(SystemExit, "duplicate sections for 1.0.0"):
+            changelog.section(duplicate_release, "1.0.0")
+        duplicate_unreleased = LOG.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [Unreleased]\n")
+        with self.assertRaisesRegex(SystemExit, "duplicate sections for Unreleased"):
+            changelog.check(duplicate_unreleased, ["1.0.0"])
+        duplicate_older = LOG + "\n## [0.9.0] - 2025-01-01\n- repeated\n## [0.9.0] - 2025-02-01\n- repeated\n"
+        with self.assertRaisesRegex(SystemExit, "duplicate sections for 0.9.0"):
+            changelog.check(duplicate_older, ["1.0.0"])
+        changelog.check(LOG + "\n## [0.9.0] - 2025-01-01\n- older\n", ["1.0.0"])
+
     def test_subsections_pass_through_to_the_release_notes(self):
         log = (
             "## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n- **A fix.** Players see it.\n\n"

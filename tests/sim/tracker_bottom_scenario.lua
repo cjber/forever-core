@@ -201,3 +201,41 @@ scenario("the tracker column moves aside once when the quests reach the bottom",
 	assert(slice:GetBottom() > roomBelow, "the native quests shrank away from the bottom")
 	ExpectKept("the move back below")
 end)
+
+scenario("registered viewport caps reuse native scrolling and defer combat geometry", function(sim)
+	local G = sim.G
+	G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", 0, -100)
+	sim:login({ savedVariables = { ForeverCoreDB = {} } })
+	sim:advance(0.5)
+	local section = G.CreateFrame("Frame", nil, G.UIParent, "ObjectiveTrackerModuleTemplate")
+	function section:LayoutContents()
+		for index = 1, 8 do
+			local block = self:GetBlock(index)
+			block.height = 80
+			self:LayoutBlock(block)
+		end
+	end
+	local host = G.ForeverCore.TrackerHost
+	host.Attach(section)
+	sim:advance(0.3)
+	local child, width = section.scrollFrame, section:GetWidth()
+	assert(host.SetSectionMaxHeight(section, 280))
+	sim:advance(0.3)
+	assert(section.trackerCap == 280, "native layout uses the requested cap")
+	assert(section.scrollFrame == child and section:GetWidth() == width, "native child and shared width remain")
+	assert(section.scrollRange > 0, "the native block list overflows its viewport")
+	assert(host.SetSectionMaxHeight(section, 1))
+	sim:advance(0.3)
+	assert(section.trackerCap >= section:GetMinimumHeight(), "native measured block remains visible")
+	sim:enterCombat()
+	local held = section:GetHeight()
+	assert(host.SetSectionMaxHeight(section, 300))
+	sim:advance(0.3)
+	assert(section:GetHeight() == held, "combat holds native geometry")
+	sim:leaveCombat()
+	sim:advance(0.3)
+	assert(section.trackerCap == 300, "combat ending applies the requested cap")
+	assert(host.SetSectionMaxHeight(section, nil))
+	sim:advance(0.3)
+	assert(section.trackerCap == 200, "nil restores the default native cap")
+end)

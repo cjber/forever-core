@@ -57,6 +57,16 @@ native:SetHeight(700)
 native.scripts.OnSizeChanged(native)
 drain()
 check(native:GetHeight() == 700, "native container keeps its externally sized height")
+
+-- A section created just before combat may reach Attach from its deferred timer after combat starts. SetParent is
+-- protected for the quest descendants, so the host keeps the request and applies it on the first safe event.
+local combatLate = t.env.CreateFrame("Frame")
+t.setCombat(true)
+t.ns.TrackerHost.Attach(combatLate)
+check(combatLate.parent == nil, "combat defers a late section attachment")
+t.setCombat(false)
+t.fire("PLAYER_REGEN_ENABLED")
+check(combatLate.parent == host, "combat release applies the deferred attachment")
 MoveNative("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
 t.eventRegistry:TriggerEvent("EditMode.SavedLayouts")
 drain()
@@ -245,6 +255,7 @@ scroll.drain()
 scroll.check(capped.available == 200, "a section other than Quests caps at 200 units")
 scroll.check(capped.trackerOverflow == true and capped.scrollRange == 325, "the capped section scrolls its overflow")
 scroll.check(capped:GetContentsHeight() == 200, "the capped section reports its visible height")
+scroll.check(capped:GetMinimumHeight() == 75, "the minimum height uses the measured header, offset and first block")
 scroll.check(capped.scrollBar:IsShown(), "an overflowing section shows the minimal scrollbar")
 scroll.check(
 	capped.scrollBar.kind == "EventFrame" and capped.scrollBar.template == "MinimalScrollBar",
@@ -257,6 +268,35 @@ scroll.check(capped.updates >= 2, "the gutter's width change asks for another me
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
 scroll.check(rest.ContentsFrame:GetWidth() == rest:GetWidth(), "a short section keeps the full block width")
+
+local scrollFrame = capped.scrollFrame
+local sectionWidth = capped:GetWidth()
+scroll.check(scroll.ns.TrackerHost.SetSectionMaxHeight(capped, 280), "an attached section accepts a height cap")
+scroll.drain()
+scroll.check(capped.available == 280, "the setter changes the normal layout cap")
+scroll.check(
+	capped.scrollFrame == scrollFrame and capped:GetWidth() == sectionWidth,
+	"the cap reuses scrolling and shared width"
+)
+scroll.check(scroll.ns.TrackerHost.SetSectionMaxHeight(capped, 1), "a small cap is accepted")
+scroll.drain()
+scroll.check(capped.available >= capped:GetMinimumHeight(), "a requested cap preserves the measured first block")
+scroll.check(not scroll.ns.TrackerHost.SetSectionMaxHeight({}, 280), "an unregistered section is rejected")
+for _, invalid in ipairs({ -1, math.huge, 0 / 0, "280" }) do
+	scroll.check(not scroll.ns.TrackerHost.SetSectionMaxHeight(capped, invalid), "an invalid cap is rejected")
+end
+scroll.setCombat(true)
+local heldHeight = capped:GetHeight()
+scroll.check(scroll.ns.TrackerHost.SetSectionMaxHeight(capped, 300), "combat accepts a pending cap")
+scroll.drain()
+scroll.check(capped:GetHeight() == heldHeight, "combat holds section geometry")
+scroll.setCombat(false)
+scroll.fire("PLAYER_REGEN_ENABLED")
+scroll.drain()
+scroll.check(capped.available == 300, "combat ending applies the pending cap")
+scroll.check(scroll.ns.TrackerHost.SetSectionMaxHeight(capped, nil), "nil restores the default")
+scroll.drain()
+scroll.check(capped.available == 200, "the default cap is restored")
 
 capped:OnTrackerWheel(-1)
 scroll.check(capped.scrollOffset == 60, "the wheel moves one block, not a fixed step")
@@ -294,6 +334,33 @@ scroll.check(capped.updates == frozenUpdates + 1, "combat ending runs the deferr
 capped:OnTrackerWheel(-1)
 scroll.check(capped.scrollOffset == 210, "the wheel moves again after combat")
 
+-- Content frames receive wheel input directly, so the host hooks them without replacing their own handlers.
+local wheelChild = scroll.env.CreateFrame("Button")
+local childWheelCalls = 0
+wheelChild:SetScript("OnMouseWheel", function()
+	childWheelCalls = childWheelCalls + 1
+end)
+capped.ContentsFrame.GetChildren = function()
+	return wheelChild
+end
+capped.count = 10
+capped.scrollOffset = 0
+scroll.host:MarkDirty()
+scroll.drain()
+wheelChild.scripts.OnMouseWheel(wheelChild, -1)
+scroll.check(wheelChild.trackerWheelModule == nil, "wheel routing adds no ownership field to descendant frames")
+scroll.check(childWheelCalls == 1, "content wheel handlers remain installed")
+scroll.check(capped.scrollOffset == 60, "wheel input over content scrolls the owning section")
+rest.ContentsFrame.GetChildren = function()
+	return wheelChild
+end
+rest.count = 10
+capped.scrollOffset, rest.scrollOffset = 0, 0
+scroll.host:MarkDirty()
+scroll.drain()
+wheelChild.scripts.OnMouseWheel(wheelChild, -1)
+scroll.check(capped.scrollOffset == 0 and rest.scrollOffset == 60, "reused content wheels only its current section")
+
 -- A list that shrinks below its cap goes back to the top through the one setter, so the scroll child and the item
 -- buttons see the new view instead of keeping the old one.
 local scrollChanges = capped.scrollChanges
@@ -305,5 +372,29 @@ scroll.check(capped.scrollOffset == 0, "a shrunken list returns to the top")
 scroll.check(capped.scrollFrame:GetVerticalScroll() == 0, "the scroll child returns to the top")
 scroll.check(capped.scrollBar:IsShown() == false, "the shrunken list hides the bar")
 scroll.check(capped.scrollChanges > scrollChanges, "the shrunken list redraws its item buttons")
+
+-- Two visible sections with little room reserve their measured floors without allowing the column to overrun it.
+scroll.native.NineSlice.bottom = 100
+scroll.host:MarkDirty()
+scroll.drain()
+scroll.check(capped.available > 0 and rest.available == 0, "constrained layout gives the remaining section no sliver")
+scroll.check(capped:GetHeight() + rest:GetHeight() <= 100, "constrained layout keeps section geometry within the room")
+
+-- Two overflowing sections must reserve the later section's measured first block before spending the remaining room.
+-- The first pass records the native metrics; the constrained pass then has 200 units, enough for two 75-unit floors
+-- and the inter-section gap. The old allocator spent the whole cap on the first section and left the second below its
+-- usable floor.
+local floors = harness.new({ headerShown = true })
+floors.first.contentHeight, floors.second.contentHeight = 0, 0
+local tall = floors.scrollModule(3, 10, 40)
+local later = floors.scrollModule(4, 2, 40)
+floors.host:MarkDirty()
+floors.drain()
+floors.drain()
+floors.native.NineSlice.bottom = 240
+floors.host:MarkDirty()
+floors.drain()
+floors.check(tall.available >= 75 and later.available >= 75, "measured floors fit across multiple sections")
+floors.check(tall:GetHeight() + later:GetHeight() + 10 <= 220, "floor allocation keeps the constrained column bounded")
 
 print("tracker_host_spec: " .. (t.checks() + asideChecks + scroll.checks()) .. " checks passed")

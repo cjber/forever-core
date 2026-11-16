@@ -1,3 +1,4 @@
+-- luacheck: globals C_QuestInfoSystem CreateFramePool ObjectiveTrackerAnimBlockMixin
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
@@ -24,21 +25,32 @@ local L = ns.L
 ---@type (fun())?
 local apply
 
+-- The runtime store when Core.lua publishes one; an older consumer's spec can still supply ForeverCoreDB directly.
+---@return table?
+local function Database()
+	if type(ns.Store) == "function" then
+		return ns.Store()
+	end
+	return ForeverCoreDB
+end
+
 ---@return boolean
 local function Enabled()
-	return type(ForeverCoreDB) == "table" and ForeverCoreDB.questList == true
+	local db = Database()
+	return type(db) == "table" and db.questList == true
 end
 
 ---@param value boolean
 local function SetEnabled(value)
 	value = not not value
-	if type(ForeverCoreDB) ~= "table" then
-		ForeverCoreDB = {}
-	end
-	if ForeverCoreDB.questList == value then
+	local db = Database()
+	if type(db) ~= "table" then
 		return
 	end
-	ForeverCoreDB.questList = value
+	if db.questList == value then
+		return
+	end
+	db.questList = value
 	if apply then
 		apply()
 	end
@@ -188,15 +200,16 @@ local function CharacterKey()
 end
 
 -- One character's folded quests and zones, made on first read so the table shape is always there.
----@return table
+---@return table?
 local function CharacterState()
-	if type(ForeverCoreDB) ~= "table" then
-		ForeverCoreDB = {}
+	local db = Database()
+	if type(db) ~= "table" then
+		return nil
 	end
-	local all = ForeverCoreDB.questListFold
+	local all = db.questListFold
 	if type(all) ~= "table" then
 		all = {}
-		ForeverCoreDB.questListFold = all
+		db.questListFold = all
 	end
 	local key = CharacterKey()
 	local state = all[key]
@@ -217,26 +230,32 @@ end
 ---@return boolean
 local function IsQuestFolded(questID)
 	local state = CharacterState()
-	return state.quests[questID] == true
+	return state ~= nil and state.quests[questID] == true
 end
 
 ---@param questID number
 ---@param folded boolean
 local function SetQuestFolded(questID, folded)
-	CharacterState().quests[questID] = folded or nil
+	local state = CharacterState()
+	if state ~= nil then
+		state.quests[questID] = folded or nil
+	end
 end
 
 ---@param zone string
 ---@return boolean
 local function IsZoneFolded(zone)
 	local state = CharacterState()
-	return state.zones[zone] == true
+	return state ~= nil and state.zones[zone] == true
 end
 
 ---@param zone string
 ---@param folded boolean
 local function SetZoneFolded(zone, folded)
-	CharacterState().zones[zone] = folded or nil
+	local state = CharacterState()
+	if state ~= nil then
+		state.zones[zone] = folded or nil
+	end
 end
 
 ---@param questID number
@@ -597,6 +616,56 @@ end
 
 ---@class ForeverQuestTrackerOverrides : ForeverQuestTrackerModule
 local Overrides = {}
+
+-- The native quest block shares its POI pool and a lazy manager cache with other Blizzard modules. Keep the same
+-- template and presentation on our blocks, but give this section its own pool and read the POI preference directly.
+local PrivatePOI = {}
+---@param self any
+function PrivatePOI:GetPOIButton(style)
+	local module = self.parentModule
+	if not module.questPOIPool then
+		module.questPOIPool = CreateFramePool("BUTTON", nil, "ObjectiveTrackerPOIButtonTemplate")
+	end
+	local button = self.poiButton
+	if not button then
+		button = module.questPOIPool:Acquire()
+		button:SetParent(self)
+		button:SetQuestID(self.poiQuestID)
+		self.poiButton = button
+		self:SetExtraAddAnimation(button.AddAnim)
+	end
+	button:SetStyle(style)
+	button:SetSelected(self.poiIsSuperTracked)
+	button:UpdateButtonStyle()
+	button:Show()
+	return button
+end
+---@param self any
+function PrivatePOI:CheckAndReleasePOIButton()
+	if self.poiButton then
+		self.parentModule.questPOIPool:Release(self.poiButton)
+		self.poiButton = nil
+		self:SetExtraAddAnimation(nil)
+		self:SetPOIInfo()
+	end
+end
+---@param self any
+function PrivatePOI:OnLayout()
+	if self.poiQuestID and GetCVarBool("questPOI") then
+		self:AddPOIButton()
+	else
+		self:CheckAndReleasePOIButton()
+	end
+	ObjectiveTrackerAnimBlockMixin.OnLayout(self)
+end
+
+-- GetBlock resets and anchors the section's own frame; OnLayout runs later, from LayoutBlock.
+local getPrivateBlock = section.GetBlock
+function Overrides:GetBlock(id, template)
+	local block, existing = getPrivateBlock(self, id, template)
+	Mixin(block, PrivatePOI)
+	return block, existing
+end
 
 -- One thin fill under each unfinished count objective: the client's status bar fill over the template's backing
 -- colour, four UI units high, with no border and no label. The bar is anchored to the line's own text column, so it
@@ -1026,17 +1095,34 @@ local function ClearCombatChange(module)
 	DimItems(module)
 end
 
+-- Read scalar quest data directly. QuestCache:Get lazily writes Blizzard's shared cache and event listener.
+local function QuestData(questID)
+	local index = C_QuestLog.GetLogIndexForQuestID(questID)
+	local info = index and C_QuestLog.GetInfo(index)
+	return {
+		questID = questID,
+		title = info and info.title,
+		isTask = info and info.isTask,
+		isBounty = info and info.isBounty,
+		isAutoComplete = info and info.isAutoComplete,
+	},
+		index
+end
+
 ---@param quest any
 ---@return boolean
-function Overrides:ShouldDisplayQuest(quest)
+function Overrides.ShouldDisplayQuest(_, quest)
 	if not quest then
 		return false
 	end
-	if QuestObjectiveTrackerMixin.ShouldDisplayQuest(self, quest) then
-		return true
+	if C_QuestLog.IsQuestDisabledForSession(quest.questID) then
+		return false
 	end
-	return CampaignQuestObjectiveTrackerMixin ~= nil
-		and CampaignQuestObjectiveTrackerMixin.ShouldDisplayQuest(self, quest) == true
+	-- Match the native normal and campaign filters, including campaign quests marked as tasks.
+	if C_QuestInfoSystem.GetQuestClassification(quest.questID) == Enum.QuestClassification.Campaign then
+		return CampaignQuestObjectiveTrackerMixin ~= nil
+	end
+	return not quest.isTask and not quest.isBounty
 end
 
 -- The quest log header each watched quest sits under, and whether it is on the current map, in one walk of the log.
@@ -1078,14 +1164,14 @@ function Overrides:Records()
 	for index = 1, C_QuestLog.GetNumQuestWatches() do
 		local questID = C_QuestLog.GetQuestIDForQuestWatchIndex(index)
 		if questID then
-			local quest = QuestCache:Get(questID)
+			local quest = QuestData(questID)
 			if self:ShouldDisplayQuest(quest) then
 				local distanceSq = C_QuestLog.GetDistanceSqToQuest(questID)
 				records[#records + 1] = {
 					questID = questID,
 					title = C_QuestLog.GetTitleForQuestID(questID) or (quest and quest.title) or "",
 					zone = zones[questID] or "",
-					ready = C_QuestLog.ReadyForTurnIn(questID) == true or (quest ~= nil and quest:IsComplete()),
+					ready = C_QuestLog.ReadyForTurnIn(questID) == true or C_QuestLog.IsComplete(questID),
 					onMap = onMap[questID] == true,
 					distanceSq = type(distanceSq) == "number" and distanceSq or nil,
 				}
@@ -1203,16 +1289,12 @@ end
 ---@return boolean
 function Overrides:UpdateQuest(record)
 	local questID = record.questID
-	local quest = QuestCache:Get(questID)
-	if not quest then
-		return false
-	end
-	local isComplete = quest:IsComplete()
+	local quest, questLogIndex = QuestData(questID)
+	local isComplete = C_QuestLog.IsComplete(questID)
 	local isSuperTracked = questID == C_SuperTrack.GetSuperTrackedQuestID()
 	local useFullHeight = true
 	local shouldShowWaypoint = isSuperTracked or questID == QuestMapFrame_GetFocusedQuestID()
 	local isSequenced = IsQuestSequenced(questID)
-	local questLogIndex = quest:GetQuestLogIndex() or C_QuestLog.GetLogIndexForQuestID(questID)
 	local block, isExistingBlock = self:GetBlock(questID)
 	local tagText = self:GetQuestTagText(questID)
 
@@ -1385,6 +1467,7 @@ for _, event in ipairs({
 	"QUEST_WATCH_UPDATE",
 	"QUEST_TURNED_IN",
 	"QUEST_POI_UPDATE",
+	"CVAR_UPDATE",
 	"SUPER_TRACKING_CHANGED",
 	"SUPER_TRACKING_PATH_UPDATED",
 	"ZONE_CHANGED_NEW_AREA",
@@ -1394,7 +1477,10 @@ for _, event in ipairs({
 end
 
 ---@param event string
-function Overrides:OnEvent(event)
+function Overrides:OnEvent(event, cvar)
+	if event == "CVAR_UPDATE" and cvar ~= "questPOI" then
+		return
+	end
 	if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
 		ClearCombatChange(self)
 		if apply then

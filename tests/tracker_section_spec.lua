@@ -87,6 +87,53 @@ do
 	check(forwarded == contract, "deferred attach forwards the declarative contract")
 end
 
+-- The actual load callback queues Attach before combat, but the timer executes after combat starts. A reload
+-- already in combat follows the same path. Neither may reparent a section until PLAYER_REGEN_ENABLED.
+for _, combatAtLoad in ipairs({ false, true }) do
+	local t = harness.new({ deferReady = true })
+	t.ready()
+	t.drain()
+	local TrackerSection = LoadSection(t)
+	t.setCombat(combatAtLoad)
+	local show = { get = function() end, set = function() end }
+	local contract = { menu = function() end }
+	local module = TrackerSection.Create("DeferredCombatSection", {}, { show = show, contract = contract })
+	local parents = 0
+	module.SetParent = function(self, owner)
+		assert(not t.inCombat(), "deferred attach must not SetParent in combat")
+		parents = parents + 1
+		self.parent = owner
+	end
+	t.ready()
+	t.setCombat(true)
+	t.drain()
+	t.check(parents == 0 and not t.ns.TrackerHost.IsAttached(module), "the actual attach timer holds in combat")
+	t.setCombat(false)
+	t.fire("PLAYER_REGEN_ENABLED")
+	t.drain()
+	t.check(parents == 1 and module.parent == t.host, "combat ending reparents the section exactly once")
+	t.check(module.show == show and module.trackerMenu == contract.menu, "deferred attachment retains its options")
+	t.fire("PLAYER_REGEN_ENABLED")
+	t.drain()
+	t.check(parents == 1, "a later combat end does not repeat the attachment")
+end
+
+-- Both docking directions can be requested out of combat and reach their queued layout during combat.
+for _, attached in ipairs({ false, true }) do
+	local t = harness.new({ hostSettings = { attached = attached }, headerShown = true })
+	local host = t.ns.TrackerHost
+	local before = t.host.point[2]
+	host.SetAttached(not attached)
+	t.setCombat(true)
+	t.drain()
+	t.check(t.host.point[2] == before, "a queued attach or detach holds its anchor when combat starts")
+	t.setCombat(false)
+	t.fire("PLAYER_REGEN_ENABLED")
+	t.drain()
+	local expected = attached and t.parent or t.native.NineSlice
+	t.check(t.host.point[2] == expected, "combat ending applies the queued attach or detach")
+end
+
 -- No host: the section is refused and the reason is in core's journal.
 do
 	local t = harness.new({ deferReady = true })

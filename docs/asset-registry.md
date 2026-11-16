@@ -59,6 +59,13 @@ no modern replacement and gives a one-line reason for each (the raid target
 markers, `WhiteIconFrame`, the native menu and item-button pieces `wowmock`
 reproduces). Everything else old is fixed to an atlas or template.
 
+The checkbox entries include `UI-CheckBox-Up`, `UI-CheckBox-Check` and
+`UI-CheckBox-Check-Disabled`. These are the exact 32x32 files selected by
+`UICheckButtonArtTemplate` in
+[Blizzard's check-button templates](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/Interface/AddOns/Blizzard_SharedXML/Shared/Button/CheckButtonTemplates.xml).
+The disabled checked state uses its own texture rather than tinting the enabled tick.
+This permits those named native pieces, not the whole checkbox texture family.
+
 The data is generated offline from the pinned build and committed, so the gate needs
 no network:
 

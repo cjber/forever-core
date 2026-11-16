@@ -213,6 +213,22 @@ def build_atlas(root: Path, offline: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
+def flyout_data(flyouts: list[dict[str, str]], slots: list[dict[str, str]]) -> str:
+    by_flyout: dict[int, list[dict[str, str]]] = {}
+    for row in slots:
+        by_flyout.setdefault(int(row["SpellFlyoutID"]), []).append(row)
+    lines = ["return {"]
+    for row in flyouts:
+        members = sorted(by_flyout.get(int(row["ID"]), []), key=lambda slot: int(slot["Slot"]))
+        spell_ids = ",".join(str(int(slot["SpellID"])) for slot in members)
+        lines.append(
+            f"[{int(row['ID'])}]={{name={lua_string(row['Name_lang'])},"
+            f"description={lua_string(row['Description_lang'])},slots={{{spell_ids}}}}},"
+        )
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 def build_data(root: Path, locales: list[str], offline: bool) -> None:
     out = root / "data" / BUILD
     for locale in locales:
@@ -240,6 +256,9 @@ def build_data(root: Path, locales: list[str], offline: bool) -> None:
     target = out / "atlas.lua"
     if not atlas_current(target):
         write(target, build_atlas(root, offline))
+    target = out / "flyouts.lua"
+    if not target.exists():
+        write(target, flyout_data(db2(root, "SpellFlyout", offline), db2(root, "SpellFlyoutItem", offline)))
 
 
 API_CALL = re.compile(r"\b(C_[A-Za-z0-9]+)\.([A-Za-z0-9_]+)\s*\(")

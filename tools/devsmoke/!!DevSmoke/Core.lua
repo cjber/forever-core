@@ -180,7 +180,6 @@ end
 -- and General stays clean. A line is kept under 255 characters because that is where the chat box cuts one.
 local MAX_CHAT_WINDOWS = NUM_CHAT_WINDOWS or 10
 local MAX_LINE = 254
-local COOKING_SKILL_LINE = 185
 
 local function trim(text)
 	return type(text) == "string" and text:match("^%s*(.-)%s*$") or ""
@@ -252,16 +251,97 @@ local function pack(...)
 	return { n = select("#", ...), ... }
 end
 
+-- A proof captures a Lua flow's window only once the flow says it is ready: a snippet may return a function, polled
+-- here the way the client polls a timer, and the screenshot taken when it first returns true is the file the proof
+-- waits for (#593). It is delayed past the screenshot every world load takes, so the two files never share a name in
+-- the Screenshots folder, and a flow with no ready check is captured at that same point. The limit is the proof's
+-- readiness bound, so a check that never turns true stops here rather than taking a late screenshot over the next flow.
+local FLOW_SHOT_DELAY = 3.2
+local FLOW_POLL = 0.25
+local FLOW_READY_LIMIT = 60
+local flowWorldLoaded = false
+local flowWaiting = {}
+
+-- The proof reads the readiness outcome from this addon's SavedVariables, so a failure has to reach disk before the
+-- proof's bounded wait ends. SaveAddOns writes them now; without it the proof's final reload saves the same record.
+local function saveAddOns()
+	local addons = C_AddOns
+	if type(addons) == "table" and type(addons.SaveAddOns) == "function" then
+		pcall(addons.SaveAddOns)
+	end
+end
+
+local function flowWorldReady()
+	flowWorldLoaded = true
+	local waiting = flowWaiting
+	flowWaiting = {}
+	for _, callback in ipairs(waiting) do
+		callback()
+	end
+end
+
+local flowWorld = CreateFrame("Frame")
+flowWorld:RegisterEvent("PLAYER_ENTERING_WORLD")
+flowWorld:SetScript("OnEvent", flowWorldReady)
+
+local function captureFlow(ready)
+	local finished = false
+	local deadline
+	local function stop(status, message)
+		finished = true
+		if DevSmokeDB and DevSmokeDB.eval then
+			DevSmokeDB.eval.ready = status
+			DevSmokeDB.eval.readyErr = message
+			saveAddOns()
+		end
+		say("Dev Smoke: " .. message)
+	end
+	local function poll()
+		if finished then
+			return
+		end
+		local ok, value = true, true
+		if type(ready) == "function" then
+			ok, value = pcall(ready)
+		end
+		if not ok then
+			stop("failed", "the flow's ready check failed: " .. textOf(value))
+		elseif value then
+			finished = true
+			if DevSmokeDB and DevSmokeDB.eval then
+				DevSmokeDB.eval.ready = "captured"
+			end
+			Screenshot()
+		elseif debugprofilestop() > deadline then
+			stop("timeout", ("the flow was not ready to capture within %d s"):format(FLOW_READY_LIMIT))
+		else
+			C_Timer.After(FLOW_POLL, poll)
+		end
+	end
+	local function armed()
+		deadline = debugprofilestop() + FLOW_READY_LIMIT * 1000
+		C_Timer.After(FLOW_SHOT_DELAY, poll)
+	end
+	if flowWorldLoaded then
+		armed()
+	else
+		flowWaiting[#flowWaiting + 1] = armed
+	end
+end
+
 -- The eval inbox: tools/devsmoke/eval.py writes a snippet as the generated !!DevSmokeInbox addon, whose Eval.lua
 -- defines DevSmokeEval. Running it here, under xpcall with print captured, keeps an agent's mistake out of BugGrabber
 -- and puts every line it prints or returns on the Agent tab and in DevSmokeDB.eval.
 --
 -- Eval.lua also defines DevSmokeEvalRun, a fresh token for every write, read before the chunk runs so a snippet that
 -- reuses the name cannot change it. DevSmokeDB.eval.run carries it, so a reader that only has the SavedVariables file
--- can tell this snippet's own result from an earlier session's (#580).
+-- can tell this snippet's own result from an earlier session's (#580). DevSmokeEvalCapture says whether this chunk
+-- is a proof flow: an eval chunk is false, because its delayed ready screenshot would race the reload that saves it
+-- (#588).
 local function runEval()
 	local chunk = DevSmokeEval
 	local token = DevSmokeEvalRun
+	local wantsCapture = _G.DevSmokeEvalCapture
 	agentFrame()
 	local lines = {}
 	local original = _G.print
@@ -282,10 +362,16 @@ local function runEval()
 		returns = pack(chunk())
 	end, capture)
 	_G.print = original
+	local ready
 	local err
 	if ok then
 		for index = 1, returns.n do
-			pushLines(returns[index], lines)
+			local value = returns[index]
+			if type(value) == "function" and ready == nil then
+				ready = value
+			else
+				pushLines(value, lines)
+			end
 		end
 	else
 		err = ("%s\n%s"):format(message or "error", debugstack())
@@ -296,6 +382,9 @@ local function runEval()
 	say(("Dev Smoke: eval %s, %d lines"):format(ok and "ok" or "failed", #lines))
 	for _, line in ipairs(lines) do
 		say(line)
+	end
+	if ok and wantsCapture ~= false then
+		captureFlow(ready)
 	end
 end
 
@@ -511,6 +600,49 @@ end
 
 -- A profession tab needs its window open, and Cooking opens with no profession known, so it is the one the command
 -- uses when nothing is open.
+local pendingProfession
+local professionOpener
+local professionEvents
+
+local function SelectPendingProfession()
+	local window = ProfessionsFrame
+	if pendingProfession and window and window:IsShown() then
+		local tab = pendingProfession
+		pendingProfession = nil
+		ForeverCore.ProfessionTabs.Select(tab)
+		if professionOpener then
+			professionOpener:Hide()
+		end
+	end
+end
+
+local function EnsureProfessionOpener()
+	if professionOpener then
+		return professionOpener
+	end
+	if type(CreateFrame) ~= "function" then
+		return nil
+	end
+	local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(2550) or "Cooking"
+	local button = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate,UIPanelButtonTemplate")
+	if type(button.SetAttribute) ~= "function" then
+		return nil
+	end
+	button:SetAttribute("type", "spell")
+	button:SetAttribute("spell", spellName)
+	button:SetSize(220, 32)
+	button:SetPoint("CENTER")
+	button:SetText("Open Cooking")
+	button:RegisterForClicks("AnyUp", "AnyDown")
+	button:HookScript("OnClick", SelectPendingProfession)
+	button:Hide()
+	professionOpener = button
+	professionEvents = CreateFrame("Frame")
+	professionEvents:RegisterEvent("TRADE_SKILL_SHOW")
+	professionEvents:SetScript("OnEvent", SelectPendingProfession)
+	return button
+end
+
 local function sayProf(argument)
 	local tab = trim(argument)
 	if tab == "" then
@@ -524,12 +656,15 @@ local function sayProf(argument)
 	end
 	local window = ProfessionsFrame
 	if not (window and window:IsShown()) then
-		local tradeSkill = C_TradeSkillUI
-		if type(tradeSkill) ~= "table" or type(tradeSkill.OpenTradeSkill) ~= "function" then
+		local opener = EnsureProfessionOpener()
+		if not opener then
 			say("Dev Smoke: cannot open the Cooking window")
 			return
 		end
-		tradeSkill.OpenTradeSkill(COOKING_SKILL_LINE)
+		pendingProfession = tab
+		opener:Show()
+		say("Dev Smoke: click the Cooking button to open the profession window")
+		return
 	end
 	page.Select(tab)
 	say(("Dev Smoke: profession tab %s"):format(tab))

@@ -158,3 +158,31 @@ L["Share in Chat"] = "채팅으로 공유"
 L["fold this zone"] = "이 지역 접기"
 L["unfold this zone"] = "이 지역 펼치기"
 L["focus this quest"] = "이 퀘스트 집중"
+
+L["ForeverCore startup report"] = "ForeverCore 시작 보고서" -- mt
+L["Core: %s; API %s"] = "Core: %s; API %s" -- mt
+L["Runtime: %s copy %s"] = "런타임: %s, 사본 %s" -- mt
+L["Runtime error: %s"] = "런타임 오류: %s" -- mt
+L["Standalone runtime"] = "독립 실행 런타임" -- mt
+L["Core copies:"] = "Core 사본:" -- mt
+L["Rejected"] = "거부됨" -- mt
+L["Sealed"] = "완료됨" -- mt
+L["Unsealed"] = "미완료" -- mt
+L["%s: build %s, %s"] = "%s: 빌드 %s, %s" -- mt
+L['No installed Forever addon named "%s".'] = '"%s" 이름의 설치된 Forever 애드온이 없습니다.' -- mt
+L["No installed Forever addons found."] = "설치된 Forever 애드온을 찾을 수 없습니다." -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"/fcore 명령이 없으면 AddOns를 열고 ForeverCore 또는 Forever 애드온을 활성화한 뒤 /reload 후 첫 Lua 오류를 확인하세요." -- mt
+L["Installed Forever addons:"] = "설치된 Forever 애드온:" -- mt
+L["Registered"] = "등록됨" -- mt
+L["Loaded but not registered"] = "불러왔으나 등록되지 않음" -- mt
+L["Not loaded"] = "불러오지 않음" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "불러옴: %s; 활성화: %s; Core 버전: %s" -- mt
+L["Requires: %s; optional: %s"] = "필수: %s; 선택: %s" -- mt
+L["Loadable: %s; reason: %s"] = "불러오기 가능: %s; 사유: %s" -- mt
+L["First error: %s"] = "첫 오류: %s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"기록된 오류가 없습니다. /console scriptErrors 1로 Lua 오류를 켜고 /reload 후 %s을(를) 언급하는 첫 오류를 확인하세요." -- mt
+L["Callback error: %s"] = "콜백 오류: %s" -- mt
+L["Login error: %s"] = "로그인 오류: %s" -- mt
+L["Copy %s: %s"] = "사본 %s: %s" -- mt

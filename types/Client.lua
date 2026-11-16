@@ -50,6 +50,8 @@ function GameTooltip_SetTitle(tooltip, text) end
 ---@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
 ---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
+---@field _store? ForeverCoreStoreMeta the reconciled store node and any retained setting conflicts.
+---@field ForeverCoreStore? table the reserved mirror key inside a consumer's account table.
 ---@type ForeverCoreSavedVariables?
 ForeverCoreDB = nil
 

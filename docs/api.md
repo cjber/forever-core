@@ -237,6 +237,13 @@ addon and may change between releases without raising `ForeverCore.API`: `Regist
 `QuestLogTabs`, `MinimapButton`, `SettingsPage`, `SettingsSections`, `Text`, `QuestOrder`, `Family` and `Credits`.
 A section created through `TrackerSection.Create` takes `maxHeight` (`200` units when omitted, or `"remaining"` for
 the column's spare room); the shared host scrolls a taller section under its own header and freezes it in combat.
+After attachment, `TrackerHost.SetSectionMaxHeight(module, height)` changes that section's cap, including its header,
+in UI units. `nil` restores the 200-unit default. It returns `false` for an unattached section or an invalid value
+(negative, nonnumeric or nonfinite), and `true` when accepted. A smaller cap still preserves the measured first-block
+minimum when room allows; short or collapsed sections reserve only their content height. The next normal host layout
+applies it, after combat ends when necessary. Width remains shared across the column and follows the host's scale and
+responsive bounds. The setter neither changes saved variables nor creates a new scroll child; the consumer saves its
+setting and reapplies it after attachment.
 `Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
 a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`

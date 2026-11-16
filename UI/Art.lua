@@ -15,9 +15,10 @@ ns.Art = Art
 -- The step markers every Forever addon draws, written by tools/export_markers.py: the gold numbers 1 to 25, the empty
 -- ring a place a route visits twice stacks behind its marker, and that ring with the goal pin's diamond in it for a
 -- step that has no number next.
-local MARKER_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\%d]]
-local RING_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\Ring]]
-local DIAMOND_FILE = [[Interface\AddOns\ForeverCore\media\Numbers\Diamond]]
+local ROOT = ns.root or [[Interface\AddOns\ForeverCore]]
+local MARKER_FILE = ROOT .. [[\media\Numbers\%d]]
+local RING_FILE = ROOT .. [[\media\Numbers\Ring]]
+local DIAMOND_FILE = ROOT .. [[\media\Numbers\Diamond]]
 local MAX_MARKER = 25
 
 -- The mask and overlay the Cooldown Manager's icon carries, one pair per icon texture. They are weak-keyed so an icon

@@ -277,13 +277,19 @@ function M.build(sim)
 	-- Templates
 	---------------------------------------------------------------------------
 	local function templateNode(name)
-		return T.templates[name]
+		return T.templates[name:lower()]
 	end
 
 	-- The template chain (outermost first) for a node: each inherited template's own chain, in order.
 	local function chain(node, out, seen)
 		out = out or {}
 		seen = seen or {}
+		local intrinsic = T.intrinsics[node.tag]
+		if intrinsic and intrinsic.node ~= node and not seen[intrinsic] then
+			seen[intrinsic] = true
+			chain(intrinsic.node, out, seen)
+			out[#out + 1] = intrinsic
+		end
 		for _, name in ipairs(split(node.attr.inherits)) do
 			local t = templateNode(name)
 			if t and not seen[t] then
@@ -371,7 +377,11 @@ function M.build(sim)
 		elseif t == "boolean" then
 			v = v == "true"
 		elseif t == "global" then
-			v = G[v]
+			local value = G
+			for part in v:gmatch("[^%.]+") do
+				value = value and value[part]
+			end
+			v = value
 		end
 		local k = kv.attr.key
 		if kv.attr.keyType == "number" then
@@ -715,21 +725,18 @@ function M.build(sim)
 	-- Builds obj for an element node under parent: creates it, applies its templates and itself, and queues its
 	-- OnLoad. kindOverride is used for region tags that carry a role (NormalTexture -> Texture).
 	apply = function(node, parent, ctx, kindOverride, layer, sublevel)
-		local kind, intrinsic = kindOf(node)
+		local kind = kindOf(node)
 		kind = kindOverride or kind
 		if node.tag == "Animation" then
 			kind = "Animation"
 		end
 		if not Widgets.TYPES[kind] then
-			if CHILD_ELEMENTS[node.tag] == nil and not T.templates[node.tag] then
+			if CHILD_ELEMENTS[node.tag] == nil and not templateNode(node.tag) then
 				warn(string.format("%s:%s: unknown element <%s>", ctx.file, tostring(node.line), node.tag))
 			end
 			return nil
 		end
 		local templates = chain(node)
-		if intrinsic then
-			table.insert(templates, 1, intrinsic)
-		end
 		local name = node.attr.name
 		local extra = { source = ctx.file, creator = ctx.creator }
 		local obj = W.new(kind, name, parent, extra)
@@ -831,13 +838,18 @@ function M.build(sim)
 			return
 		end
 		local ctx = newContext("CreateFrame", "CreateFrame", Taint.current)
+		local seen = {}
 		for _, name in ipairs(split(templateList)) do
 			local t = templateNode(name)
 			if not t then
 				error(string.format('CreateFrame(): Couldn\'t find inherited node "%s"', name), 3)
 			end
-			local list = chain(t.node)
-			list[#list + 1] = t
+			local list = {}
+			if not seen[t] then
+				chain(t.node, list, seen)
+				seen[t] = true
+				list[#list + 1] = t
+			end
 			for _, tt in ipairs(list) do
 				local tctx = setmetatable({
 					file = tt.file,
@@ -1126,10 +1138,10 @@ function M.build(sim)
 					if node.attr.intrinsic == "true" then
 						entry.name = node.attr.name
 						T.intrinsics[node.attr.name] = entry
-						T.templates[node.attr.name] = entry
+						T.templates[node.attr.name:lower()] = entry
 					elseif node.attr.virtual == "true" then
 						if node.attr.name then
-							T.templates[node.attr.name] = entry
+							T.templates[node.attr.name:lower()] = entry
 						end
 					else
 						-- A frame without its own parent attribute takes its nearest template's (ContainerFrame1..N

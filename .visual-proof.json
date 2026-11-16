@@ -1,23 +1,45 @@
 {
-  "input_digest": "1eb7fd503b519b3fc934200af63785d1bab3d90acbe3f5821f0a87df098bdd62",
-  "runtime_sha256": "1eb7fd503b519b3fc934200af63785d1bab3d90acbe3f5821f0a87df098bdd62",
-  "candidate": "acb8b266a10b2b9d54950c9d452f52859f7f0ae19ec7efdc815f52303a1448ab",
+  "input_digest": "fc705dcc6f08fd5d5b0c9ca4da403b085327c3c06efed2d09f954a683bdd894e",
+  "runtime_sha256": "fc705dcc6f08fd5d5b0c9ca4da403b085327c3c06efed2d09f954a683bdd894e",
+  "candidate": "781bc7fca3acc52fdee6fdf2e9f8ea64a8e2563badf46e45bfb83b740e8b50d8",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "3b731a15026e0df774539f831805e5e344a0cc4f",
+  "source_commit": "85071fb03a9c941fbaa0e9a97215bdea82431cf9",
   "flows": [
     {
-      "name": "goal marker",
+      "name": "settings",
       "steps": [
-        "marker.lua sha256:85151c08f9362967693ad7ed1c17c693f271c1acaad4e11797650328b811d63e"
+        "settings-ready.lua sha256:86dd0d8704d0317ca099aa5fed2f834e11fd1da9c788aaa1965aa6e36b8f451c"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "report",
+      "steps": [
+        "core-report.lua sha256:24028d51ea185ccfbb96d61ddd17eb8b70389cce5f318a1f6ec538ef7bcb5d5d"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "map",
+      "steps": [
+        "core-map.lua sha256:4418e23c78924cee9cc211858704b52e1bf96d25418f5016a22eb30708d91fea"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/cbc05991ab1129f8df5ffc8322d3a5ac/raw/97f9efe0961608823e5b357969360c8f4dad1689/1-goal-marker.png",
-      "sha256": "6b2d84aaaee46386bb6d8b0f7c2943dafa1b573bff75e6c7f3d842d4491df380"
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/1-settings.png",
+      "sha256": "6185fd026cd706f775e7e83a3811a6ebfae45d98923f3a6056132f72ac0d7d3c"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/2-report.png",
+      "sha256": "2b1c506392017998f5e7c2cbd401539786288cc02145b5508be08b32550ff773"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/3-map.png",
+      "sha256": "342fbe05269993d7360aa99edc288a6ee89126e812fecec14a03953517856f94"
     }
   ]
 }

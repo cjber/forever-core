@@ -158,3 +158,31 @@ L["Share in Chat"] = "Compartilhar no chat"
 L["fold this zone"] = "recolher esta zona"
 L["unfold this zone"] = "expandir esta zona"
 L["focus this quest"] = "focar esta missão"
+
+L["ForeverCore startup report"] = "Relatório de inicialização do ForeverCore" -- mt
+L["Core: %s; API %s"] = "Core: %s; API %s" -- mt
+L["Runtime: %s copy %s"] = "Execução: %s, cópia %s" -- mt
+L["Runtime error: %s"] = "Erro de execução: %s" -- mt
+L["Standalone runtime"] = "Execução independente" -- mt
+L["Core copies:"] = "Cópias do Core:" -- mt
+L["Rejected"] = "Rejeitada" -- mt
+L["Sealed"] = "Completa" -- mt
+L["Unsealed"] = "Incompleta" -- mt
+L["%s: build %s, %s"] = "%s: compilação %s, %s" -- mt
+L['No installed Forever addon named "%s".'] = 'Nenhum addon Forever instalado chamado "%s".' -- mt
+L["No installed Forever addons found."] = "Nenhum addon Forever instalado foi encontrado." -- mt
+L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
+	"Se /fcore não for um comando, abra AddOns, ative ForeverCore ou um addon Forever e leia o primeiro erro Lua após /reload." -- mt
+L["Installed Forever addons:"] = "Addons Forever instalados:" -- mt
+L["Registered"] = "Registrado" -- mt
+L["Loaded but not registered"] = "Carregado, mas não registrado" -- mt
+L["Not loaded"] = "Não carregado" -- mt
+L["Load: %s; enabled: %s; core pin: %s"] = "Carregado: %s; ativado: %s; versão do Core: %s" -- mt
+L["Requires: %s; optional: %s"] = "Requer: %s; opcional: %s" -- mt
+L["Loadable: %s; reason: %s"] = "Pode carregar: %s; motivo: %s" -- mt
+L["First error: %s"] = "Primeiro erro: %s" -- mt
+L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
+	"Nenhum erro capturado. Ative os erros Lua com /console scriptErrors 1, use /reload e leia o primeiro erro que mencionar %s." -- mt
+L["Callback error: %s"] = "Erro de callback: %s" -- mt
+L["Login error: %s"] = "Erro de login: %s" -- mt
+L["Copy %s: %s"] = "Cópia %s: %s" -- mt
