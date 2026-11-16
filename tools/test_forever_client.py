@@ -2016,7 +2016,7 @@ class SmokeTest(unittest.TestCase):
                 pass
 
             @staticmethod
-            def released_folders():
+            def released_folders(destination=None):
                 return [("LegacyForever", folder)]
 
         return Tool
@@ -2037,6 +2037,25 @@ class SmokeTest(unittest.TestCase):
                 fc.smoke_folders("legacy-forever", [("LegacyForever", self.build)]),
                 ([("LegacyForever", self.build)], []),
             )
+
+    def test_the_smoke_folders_unpack_the_released_builds_into_a_smoke_private_folder(self):
+        core = self.state / "core"
+        core.mkdir()
+        captured = {}
+
+        class Tool:
+            class ReleasedError(RuntimeError):
+                pass
+
+            @staticmethod
+            def released_folders(destination):
+                captured["destination"] = destination
+                return [("LegacyForever", self.released_folder)]
+
+        with mock.patch.object(fc, "BUILD_ROOT", self.state / "builds"):
+            with mock.patch.object(fc, "released_consumers_tool", return_value=Tool):
+                fc.smoke_folders("forever-core", [("ForeverCore", core)])
+        self.assertEqual(captured["destination"], self.state / "builds" / "forever-core-smoke-released")
 
     def test_a_core_smoke_links_the_consumers_released_builds_and_counts_them(self):
         core = self.state / "core"
@@ -2175,7 +2194,7 @@ class SmokeTest(unittest.TestCase):
                 pass
 
             @staticmethod
-            def released_folders():
+            def released_folders(destination=None):
                 raise Broken.ReleasedError("could not read legacy-forever's latest release")
 
         with (

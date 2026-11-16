@@ -1719,14 +1719,15 @@ def smoke_folders(
     A core release reaches players before the addons that depend on it are re-released, so core's smoke links the builds
     already on the stores beside the candidate and counts their folders too. The two lists are returned separately, so
     the startup check asks after the released addons and no other. The released folders go through the same
-    `link_build` record, so every borrowed AddOns slot, a store install included, is put back.
+    `link_build` record, so every borrowed AddOns slot, a store install included, is put back. They are unpacked into a
+    smoke-private folder so a concurrent suite_load.py cannot remove them while the client has them linked.
     """
     folders = list(folders)
     if repo != CORE_REPO:
         return folders, []
     tool = released_consumers_tool()
     try:
-        released = tool.released_folders()
+        released = tool.released_folders(BUILD_ROOT / "forever-core-smoke-released")
     except tool.ReleasedError as error:
         raise ClientError(str(error)) from None
     print(f"linking {len(released)} released consumer folder(s) beside the candidate core", flush=True)
