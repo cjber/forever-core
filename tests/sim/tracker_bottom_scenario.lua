@@ -113,7 +113,7 @@ scenario("the tracker column moves aside once when the quests reach the bottom",
 	tracker:SetPoint("TOPRIGHT", ui, "TOPRIGHT", 0, -100)
 	tracker:SetHeight(400)
 
-	sim:login({ savedVariables = { ForeverCoreDB = {} } })
+	sim:login({ savedVariables = { ForeverCoreDB = { questList = false } } })
 	sim:advance(0.5)
 
 	-- Drop the native tracker until its own content ends at the screen's bottom: the room below it is then the 24 px
@@ -205,7 +205,7 @@ end)
 scenario("registered viewport caps reuse native scrolling and defer combat geometry", function(sim)
 	local G = sim.G
 	G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", 0, -100)
-	sim:login({ savedVariables = { ForeverCoreDB = {} } })
+	sim:login({ savedVariables = { ForeverCoreDB = { questList = false } } })
 	sim:advance(0.5)
 	local section = G.CreateFrame("Frame", nil, G.UIParent, "ObjectiveTrackerModuleTemplate")
 	function section:LayoutContents()

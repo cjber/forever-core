@@ -3,7 +3,8 @@ Forever addon, so there is nothing to set up, and it has no settings page of its
 for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows.
+  drag it once, and every addon follows. The Forever quest list is on by default and replaces the game's
+  objective tracker. Turn it off in settings, with `/fcore quests`, or from the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and

@@ -54,7 +54,7 @@
 ---@field title string
 ---@field quests ForeverQuestRecord[]
 
--- UI/TrackerQuests.lua, core's own optional section.
+-- UI/TrackerQuests.lua, core's own quest section, enabled unless explicitly turned off.
 ---@class ForeverTrackerQuestsAPI
 ---@field Enabled fun(): boolean
 ---@field SetEnabled fun(value: boolean)

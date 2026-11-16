@@ -46,7 +46,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 -- ForeverCore's own saved variables, from ForeverCore.toc.
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
----@field questList? boolean
+---@field questList? boolean enabled by default, false preserves the player opt-out
 ---@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
 ---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.

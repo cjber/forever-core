@@ -2,7 +2,7 @@
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
--- The optional Forever quest list: the watched quests, campaign quests included, grouped ready-to-turn-in first, then
+-- The default Forever quest list: the watched quests, campaign quests included, grouped ready-to-turn-in first, then
 -- this zone, then every other zone, each nearest first. It is a section of the shared Forever column, built from the
 -- game's own ObjectiveTrackerModuleTemplate and QuestObjectiveTrackerMixin so its header, lines, POI button, fonts,
 -- colours, completed fade and layout are the game's. This file never touches the client's own tracker modules: the
@@ -36,7 +36,7 @@ end
 ---@return boolean
 local function Enabled()
 	local db = Database()
-	return type(db) == "table" and db.questList == true
+	return type(db) == "table" and db.questList ~= false
 end
 
 ---@param value boolean

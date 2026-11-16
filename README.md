@@ -19,8 +19,8 @@ loads when core is missing, and then says on screen how to install it. It has no
 Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows. The column can also list your watched quests itself, with progress, folds,
-  item buttons and scrolling, when you turn it on with `/fcore quests`.
+  drag it once, and every addon follows. The column lists your watched quests by default, with progress, folds,
+  item buttons and scrolling. Turn it off in settings, with `/fcore quests`, or from the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -35,7 +35,7 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no route, profession or challenge sections of its own; the optional quest list is the one section core keeps:
+It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps, enabled by default:
 it lists watched quests in the Forever column and hides the game's whole objective tracker while on, including
 scenarios and bonus objectives, as Questie does. The game's tracker comes back when the list is off. Every other section
 belongs to the addon that owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **The Forever quest list is now on by default and replaces the game's tracker.** Turn it off in settings, with `/fcore quests`, or from the section menu. A saved choice to turn it off is kept. (#693, refs cjber/adventure-guide-forever#468)
+
 ## [1.14.1] - 2026-11-16
 
 - **The game's tracker stays hidden in combat while the Forever quest list is on.** Quest updates no longer make it appear over your quest list, and turning the Forever list off leaves Questie in control of its tracker. Thanks to silhouetteone for the report. (#686)

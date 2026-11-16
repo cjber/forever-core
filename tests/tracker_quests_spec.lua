@@ -137,7 +137,7 @@ local env = setmetatable({
 	QuestObjectiveTrackerMixin = {},
 	CampaignQuestObjectiveTrackerMixin = {},
 	TRACKER_HEADER_QUESTS = "Quests",
-	ForeverCoreDB = { questList = true },
+	ForeverCoreDB = {},
 	EventUtil = { ContinueAfterAllEvents = continueAfterAllEvents },
 	C_AddOns = {
 		IsAddOnLoaded = function(name)
@@ -165,7 +165,18 @@ local function CheckNativeModulesUntouched(note)
 	check(tracker.modules[1] == campaign, note .. " keeps the game's campaign module in the tracker")
 	check(#tracker.modules == 2, note .. " leaves the tracker's module list alone")
 end
+-- Fresh saved settings enable the Forever list; a stored false remains a player opt-out.
+check(TrackerQuests.Enabled(), "fresh_database_enables_forever_quest_list: missing key enables the list")
 ready()
+check(not tracker:IsShown(), "fresh_database_enables_forever_quest_list: native tracker is hidden")
+env.ForeverCoreDB = { questList = false }
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(not TrackerQuests.Enabled(), "stored_false_keeps_native_quest_list: Forever list is inactive")
+check(tracker:IsShown(), "stored_false_keeps_native_quest_list: native tracker stays shown")
+env.ForeverCoreDB = nil
+check(not TrackerQuests.Enabled(), "the list waits for the saved table")
+env.ForeverCoreDB = {}
+section:OnEvent("PLAYER_ENTERING_WORLD")
 check(section.marked ~= nil, "the Forever list is laid out")
 CheckNativeModulesUntouched("turning the list on")
 check(not tracker:IsShown(), "enabling hides the whole native tracker")
