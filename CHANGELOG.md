@@ -7,6 +7,8 @@
   that would break an addon players already have fails before it ships. A consumer that refuses to start on the
   candidate, which shows one error line and raises no Lua error, fails the same way, and a run that finds no released
   consumer at all is an error rather than a pass on core alone. (#666)
+## [1.14.0] - 2026-11-16
+
 - **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's own objective tracker is hidden, as Questie does, including non-quest sections such as scenarios and bonus objectives. It comes back when the list is off. Thanks to the CurseForge player who reported it. (#608)
 - **A watched quest the game reports twice draws once.** The quest list reads the client's watch list by index, and a
   repeated quest ID made it lay that quest's block out twice in one pass, which the client refuses with "Cannot anchor
