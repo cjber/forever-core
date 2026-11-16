@@ -52,4 +52,19 @@ eq(G.GetFlyoutSlotInfo(269, 0), nil)
 eq(G.GetFlyoutSlotInfo(269, count + 1), nil)
 eq(G.GetFlyoutSlotInfo(-1, 1), nil)
 sim:expectNoErrors()
+-- QUEST_ACCEPTED must reach the real top-banner manager rather than its falsey API fallback.
+assert(G.TopBannerMgr, "default startup loads the native top-banner manager")
+sim.impl["C_QuestLog.IsQuestTask"] = function(id)
+	return id == 608001
+end
+sim.impl["C_QuestLog.GetTitleForQuestID"] = function(id)
+	return id == 608001 and "Bonus banner startup fixture" or nil
+end
+sim:login()
+sim:event("QUEST_ACCEPTED", 608001)
+sim:advance(0.1)
+eq(G.ObjectiveTrackerTopBannerFrame:GetQuestID(), 608001)
+eq(G.TopBannerMgr.currentBanner.frame, G.ObjectiveTrackerTopBannerFrame)
+sim:expectNoErrors()
+eq(G.ObjectiveTrackerTopBannerFrame:IsShown(), true)
 print("startup_spec: bare boot, login and SettingsPanel pass with mouse and gamepad; native flyout metadata passes")

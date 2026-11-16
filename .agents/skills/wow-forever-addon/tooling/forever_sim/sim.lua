@@ -97,6 +97,10 @@ Sim.CORE = {
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.lua",
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.xml",
 	"Blizzard_WorldMap",
+	-- Bonus objective QUEST_ACCEPTED events display banners through this native manager.
+	"Blizzard_FrameXML/Mainline/ZoneText.lua",
+	"Blizzard_FrameXML/Mainline/ZoneText.xml",
+	"Blizzard_FrameXML/TopBannerManager.lua",
 	"Blizzard_ObjectiveTracker",
 	"Blizzard_ContentTracking",
 	"Blizzard_TrainerUI",
