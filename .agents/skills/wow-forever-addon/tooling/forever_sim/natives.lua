@@ -757,15 +757,26 @@ function M.build(sim)
 	-- The item button's cooldown and range checks; the client answers no cooldown and out of range.
 	questNative("GetQuestLogSpecialItemCooldown", nil)
 	questNative("IsQuestLogSpecialItemInRange", 0)
-	-- The bonus objectives table: the sim's player has none.
-	G.GetTasksTable = function()
+	-- Legacy task/objective C natives, also present in the committed client probe.
+	G.GetTasksTable = function(...)
+		local tasks = sim.impl.GetTasksTable
+		if tasks then
+			return tasks(...)
+		end
 		return {}
 	end
+	questNative("GetTaskInfo", nil)
+	questNative("GetQuestObjectiveInfo", nil)
+	questNative("GetQuestProgressBarPercent", 0)
 	-- Auto quest pop-ups: none.
 	questNative("GetNumAutoQuestPopUps", 0)
 	-- No scenario: no stages. The tracker compares the count GetInfo returns.
 	G.C_Scenario = G.C_Scenario or {}
-	G.C_Scenario.GetInfo = function()
+	G.C_Scenario.GetInfo = function(...)
+		local info = sim.impl["C_Scenario.GetInfo"]
+		if info then
+			return info(...)
+		end
 		return nil, nil, 0
 	end
 	G.SpellCanTargetQuest = function()

@@ -758,6 +758,38 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(G.IsQuestSequenced(1), true, "the scenario's sequenced flag")
 end)
 
+test("natives: task and scenario data changes preserve native function identities", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	local tasks, info = G.GetTasksTable, G.C_Scenario.GetInfo
+	eq(#tasks(), 0, "no tasks by default")
+	eq(select(3, info()), 0, "no scenario stages by default")
+	sim.impl.GetTasksTable = function()
+		return { 608001 }
+	end
+	sim.impl.GetTaskInfo = function(id)
+		return true, false, 2, "Task " .. id, false
+	end
+	sim.impl.GetQuestObjectiveInfo = function(id, index)
+		return id .. ":" .. index, "monster", false
+	end
+	sim.impl.GetQuestProgressBarPercent = function(id)
+		return id == 608001 and 50 or 0
+	end
+	sim.impl["C_Scenario.GetInfo"] = function()
+		return "Scenario", 1, 2, nil, false
+	end
+	eq(G.GetTasksTable, tasks, "task native identity")
+	eq(G.C_Scenario.GetInfo, info, "scenario native identity")
+	eq(tasks()[1], 608001, "task IDs from public fixture input")
+	eq(select(3, G.GetTaskInfo(608001)), 2, "task objective count")
+	eq(select(4, G.GetTaskInfo(608001)), "Task 608001", "task title")
+	eq(G.GetQuestObjectiveInfo(608001, 2), "608001:2", "objective arguments")
+	eq(G.GetQuestProgressBarPercent(608001), 50, "progress percentage")
+	eq(info(), "Scenario", "scenario title")
+	eq(select(5, info()), false, "scenario trailing value after nil")
+end)
+
 test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()
 	local sim, G = freshClient()
 	sim.docs = {
