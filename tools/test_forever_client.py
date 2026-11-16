@@ -3326,6 +3326,55 @@ class BrokerTest(unittest.TestCase):
             }
         )
 
+    def test_queued_job_yields_to_pending_reload(self):
+        state = live_state(ready=1, reloading=True)
+        fc.state_file().write_text(json.dumps(state))
+        observed = []
+
+        def finish_reload(_seconds):
+            # A waiter must release the flock before sleeping, so serve can take it for teardown.
+            with open(fc.job_lock_path(), "a+") as other:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            observed.append("reload")
+            fc.state_file().unlink()
+
+        with mock.patch.object(fc.time, "sleep", side_effect=finish_reload):
+            handle, token = fc.acquire_job(5, "queued")
+        try:
+            self.assertEqual(observed, ["reload"])
+        finally:
+            fc.release_job(handle, token)
+
+    def test_launcher_sources_detects_content_changes_and_removed_imports(self):
+        dependency = self.state / "helper.py"
+        unrelated = self.state / "unloaded.py"
+        dependency.write_text("before")
+        unrelated.write_text("unloaded")
+        # __file__ determines the repository root, two parents above the launcher.
+        launcher = self.state / "tools/headless/launcher.py"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("launcher")
+        module = mock.Mock(__file__=str(dependency))
+        with mock.patch.object(fc, "__file__", str(launcher)), mock.patch.dict(sys.modules, helper=module):
+            baseline = fc.launcher_sources()
+            self.assertIn(dependency, baseline)
+            with mock.patch.dict(sys.modules, later=mock.Mock(__file__=str(unrelated))):
+                self.assertEqual(fc.launcher_sources(baseline), baseline)
+            unrelated.write_text("changed")
+            os.utime(dependency, (1, 1))
+            self.assertEqual(fc.launcher_sources(), baseline)
+            dependency.write_text("after!")
+            os.utime(dependency, (1, 1))
+            self.assertNotEqual(fc.launcher_sources(), baseline)
+            dependency.write_text("before")
+            self.assertEqual(fc.launcher_sources(), baseline)
+            launcher.write_text("new launcher")
+            self.assertNotEqual(fc.launcher_sources(), baseline)
+            launcher.write_text("launcher")
+            dependency.unlink()
+            self.assertIsNone(fc.launcher_sources()[dependency])
+            self.assertNotEqual(fc.launcher_sources(), baseline)
+
     def test_the_session_ends_after_the_idle_limit_or_at_the_lifetime_cap(self):
         self.assertIsNone(fc.session_end_reason(100, 0, 50, 95))
         self.assertIn(f"{fc.IDLE_LIMIT // 60} min", fc.session_end_reason(fc.IDLE_LIMIT + 50, 0, 50, 50))
@@ -3346,6 +3395,13 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual(fc.last_job_mark(ready=900.0), 900.0)
 
     def test_the_lifetime_cap_waits_for_a_running_job_before_teardown(self):
+        self.check_session_end_waits_for_job(stale=False)
+
+    def test_stale_source_waits_for_a_running_job_before_teardown(self):
+        self.check_session_end_waits_for_job(stale=True)
+
+    def check_session_end_waits_for_job(self, *, stale):
+        self.enterContext(mock.patch.object(fc, "LAUNCHER_SOURCES", {}))
         config = self.state / "env.json"
         config.write_text(
             '{"umu_run":"/faugus/umu-run",'
@@ -3357,9 +3413,11 @@ class BrokerTest(unittest.TestCase):
         clock = FakeClock()
         order = []
 
-        def acquire(timeout, _label):
+        def acquire(timeout, _label, *, session_end=False):
             self.assertIsNone(timeout, "the end waits for the job in flight, never on a timeout")
             clock.sleep(5)  # the job in flight runs on for five seconds
+            self.assertTrue(session_end)
+            self.assertEqual(fc.load_state().get("reloading", False), stale)
             order.append("job-finished")
             return mock.Mock(), "session-end"
 
@@ -3382,7 +3440,10 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc, "teardown", side_effect=teardown),
             mock.patch.object(fc, "acquire_job", side_effect=acquire),
             mock.patch.object(fc, "release_job"),
-            mock.patch.object(fc, "MAX_SESSION", 10),
+            mock.patch.object(fc, "MAX_SESSION", 10**9 if stale else 10),
+            mock.patch.object(
+                fc, "launcher_sources", side_effect=lambda _paths: {"changed": "digest"} if stale and clock.now else {}
+            ),
             mock.patch.object(fc, "IDLE_LIMIT", 10**9),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),

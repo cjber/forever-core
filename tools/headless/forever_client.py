@@ -75,7 +75,8 @@ ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none ha
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
 is `job` under its old name. `lease` holds the job lock for an agent that drives the client across several tool
-calls, and `release TOKEN` ends it.
+calls, and `release TOKEN` ends it. A source digest change in the launcher or its loaded repository modules also
+ends serve through the same locked teardown; the next job starts a fresh serve with the updated code.
 
 Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs as a
 job: it proceeds when `FOREVER_CLIENT_JOB` names the token in `job.json`, and otherwise takes the job lock itself for
@@ -424,6 +425,14 @@ def prepare_headless_addon(character: Mapping[str, str | bool]) -> Path:
 
 def state_file() -> Path:
     return STATE_DIR / "session.json"
+
+
+def write_state(state: Mapping) -> None:
+    """Publish session changes atomically, including the reload gate queued jobs read."""
+    path = state_file()
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(dict(state)))
+    os.replace(temporary, path)
 
 
 def load_state() -> dict:
@@ -1550,7 +1559,9 @@ def job_started() -> float:
     return float(started) if isinstance(started, (int, float)) else time.time()
 
 
-def acquire_job(timeout: float | None, label: str, *, ttl: float | None = None) -> tuple[object, str]:
+def acquire_job(
+    timeout: float | None, label: str, *, ttl: float | None = None, session_end: bool = False
+) -> tuple[object, str]:
     """Take the job lock for this process, waiting up to `timeout` (None: until it is free) for its holder.
 
     The holder is printed once while the wait runs, so an agent knows which job it queues behind. The record names
@@ -1563,6 +1574,11 @@ def acquire_job(timeout: float | None, label: str, *, ttl: float | None = None) 
     while True:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Once serve requests a reload, queued callers yield even if they win the flock race. The active
+            # holder keeps its lock until it finishes; only serve may take it for the pending teardown.
+            if not session_end and (current_session() or {}).get("reloading"):
+                fcntl.flock(handle, fcntl.LOCK_UN)
+                raise BlockingIOError
             break
         except BlockingIOError:
             if not announced:
@@ -2627,14 +2643,41 @@ def last_job_mark(ready: float) -> float:
     return max(time.monotonic() - (time.time() - ended), ready)
 
 
+def launcher_sources(paths: Iterable[Path] | None = None) -> dict[Path, str | None]:
+    """Digest this launcher and loaded Python modules from its repository, excluding installed packages.
+
+    Missing source counts as changed too, so removing a loaded module cannot leave its old code resident.
+    """
+    if paths is None:
+        root = Path(__file__).resolve().parents[2]
+        paths = {Path(__file__).resolve()}
+        for module in tuple(sys.modules.values()):
+            source = getattr(module, "__file__", None)
+            if source:
+                path = Path(source).resolve()
+                if path.suffix == ".py" and path.is_relative_to(root) and "site-packages" not in path.parts:
+                    paths.add(path)
+    digests = {}
+    for path in paths:
+        try:
+            digests[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            digests[path] = None
+    return digests
+
+
+LAUNCHER_SOURCES = launcher_sources()
+
+
 def serve(args: argparse.Namespace, after_ready=None) -> int:
     """The resident session: launch, wait for the world, stay up while jobs arrive, then log out and stop.
 
-    It is the lifecycle `up` always had, with two fixed ends instead of the 30 minute alarm: IDLE_LIMIT after the last
-    job ended (or after READY when none has run), and MAX_SESSION from the launch. At either end it takes the job lock
-    first, so a job in flight always finishes before the client is torn down. `job` starts this detached when no
-    session runs, and `up` is the same verb in the foreground.
+    IDLE_LIMIT after the last job ended (or READY), MAX_SESSION from launch, or changed launcher/imported repository
+    source ends the session. It takes the job lock first, so a job in flight always finishes before teardown.
+    `job` starts this detached when no session runs, and `up` is the same verb in the foreground. After a source
+    change the next job starts a fresh process.
     """
+    sources = LAUNCHER_SOURCES
     recover_links()
     mismatch = nvidia_mismatch()
     if mismatch:
@@ -2777,6 +2820,8 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             return after_ready(state)
         while gamescope.poll() is None:
             reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            if reason is None and launcher_sources(sources) != sources:
+                reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
                 reason = "`down` asked"
             if reason is None:
@@ -2784,11 +2829,18 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 continue
             # A job is never cut off: take the job lock, then decide again with the job's own end recorded. A job
             # that just ended clears the idle reason, so the session stays up for the next one.
-            job, job_token = acquire_job(None, f"the session's end ({reason})")
+            if reason == "launcher source changed":
+                state["reloading"] = True
+                write_state(state)
+            job, job_token = acquire_job(None, f"the session's end ({reason})", session_end=True)
             reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            if reason is None and launcher_sources(sources) != sources:
+                reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
                 reason = "`down` asked"
             if reason is None:
+                state.pop("reloading", None)
+                write_state(state)
                 release_job(job, job_token, ended=False)
                 job = job_token = None
                 continue
