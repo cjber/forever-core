@@ -198,3 +198,14 @@ eq(named:GetName(), "CaseMiXeDInstance")
 local ok, err = pcall(G.CreateFrame, "Frame", nil, G.UIParent, "CaseMiSsInGTemplate")
 assert(not ok and tostring(err):find("CaseMiSsInGTemplate", 1, true))
 sim:expectNoErrors()
+
+local itemLink = "|cff0070dd|Hitem:608002:::::::::|h[Inspection output]|h|r"
+sim.world.items[608002] = { name = "Inspection output", link = itemLink, quality = 3, icon = 134400, count = 8 }
+for _, metadataItem in ipairs({ G.Item:CreateFromItemID(608002), G.Item:CreateFromItemLink(itemLink) }) do
+	eq(metadataItem:IsItemEmpty(), false)
+	eq(metadataItem:GetItemName(), "Inspection output")
+	eq(metadataItem:GetItemQuality(), 3)
+	eq(metadataItem:GetItemIcon(), 134400)
+	eq(G.C_Item.GetItemCount(metadataItem:GetStaticBackingItem()), 8)
+end
+sim:expectNoErrors()

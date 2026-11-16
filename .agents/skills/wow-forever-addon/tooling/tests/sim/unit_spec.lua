@@ -828,6 +828,8 @@ test("world: item identity resolves fixture ItemInfo without default zero", func
 	sim.world.items[9001] = {
 		name = "Delayed ore",
 		link = link,
+		quality = 3,
+		count = 8,
 		itemType = "Trade Goods",
 		itemSubType = "Metal & Stone",
 		itemEquipLoc = "",
@@ -840,6 +842,12 @@ test("world: item identity resolves fixture ItemInfo without default zero", func
 	for _, info in ipairs({ 9001, "item:9001", "Delayed ore", link }) do
 		eq(instant(info), 9001, "known ItemInfo identity")
 		eq(identity(info), 9001, "identity API")
+		eq(sim.impl["C_Item.GetItemNameByID"](info), "Delayed ore", "ItemInfo name")
+		eq(sim.impl["C_Item.GetItemQualityByID"](info), 3, "ItemInfo quality")
+		eq(sim.impl["C_Item.GetItemIconByID"](info), 12345, "ItemInfo icon")
+		eq(sim.impl["C_Item.GetItemCount"](info), 8, "ItemInfo count")
+		eq(sim.impl["C_Item.DoesItemExistByID"](info), true, "ItemInfo existence")
+		eq(sim.impl["C_Item.GetItemInfo"](info), "Delayed ore", "ItemInfo cached metadata")
 	end
 	local id, kind, subtype, equip, icon, class, subclass = instant(9001)
 	eq(id, 9001)
@@ -851,6 +859,11 @@ test("world: item identity resolves fixture ItemInfo without default zero", func
 	eq(subclass, 7)
 	for _, info in ipairs({ 9999, "unknown", "prefix item:9001", "spell:9001", {} }) do
 		eq(instant(info), nil, "unknown or unsupported ItemInfo has no metadata")
+		eq(sim.impl["C_Item.GetItemNameByID"](info), nil, "unknown name")
+		eq(sim.impl["C_Item.GetItemQualityByID"](info), nil, "unknown quality")
+		eq(sim.impl["C_Item.GetItemIconByID"](info), nil, "unknown icon")
+		eq(sim.impl["C_Item.GetItemCount"](info), 0, "unknown count")
+		eq(sim.impl["C_Item.DoesItemExistByID"](info), false, "unknown item does not exist")
 	end
 	eq(identity("unknown"), 0, "unresolved string has no item identity")
 	eq(identity({}), 0, "unsupported type has no item identity")

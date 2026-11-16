@@ -461,8 +461,8 @@ function M.build(sim)
 	impl["C_Item.GetItemIDForItemInfo"] = function(info)
 		return resolveItemInfo(info) or 0
 	end
-	impl["C_Item.GetItemInfo"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemInfo"] = function(info)
+		local _, item = resolveItemInfo(info)
 		if item then
 			return item.name,
 				item.link,
@@ -478,21 +478,26 @@ function M.build(sim)
 		end
 	end
 	G.GetItemInfo = G.C_Item.GetItemInfo
-	impl["C_Item.GetItemNameByID"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemNameByID"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and item.name
 	end
-	impl["C_Item.GetItemIconByID"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemQualityByID"] = function(info)
+		local _, item = resolveItemInfo(info)
+		return item and (item.quality or 1)
+	end
+	impl["C_Item.GetItemIconByID"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and (item.icon or 134400)
 	end
-	impl["C_Item.GetItemCount"] = function(id)
-		local item = W.items[tonumber(id) or 0]
+	impl["C_Item.GetItemCount"] = function(info)
+		local _, item = resolveItemInfo(info)
 		return item and item.count or 0
 	end
 	G.GetItemCount = G.C_Item.GetItemCount
-	impl["C_Item.DoesItemExistByID"] = function(id)
-		return W.items[tonumber(id) or 0] ~= nil
+	impl["C_Item.DoesItemExistByID"] = function(info)
+		local _, item = resolveItemInfo(info)
+		return item ~= nil
 	end
 	impl["C_Item.IsItemDataCachedByID"] = function()
 		return true
