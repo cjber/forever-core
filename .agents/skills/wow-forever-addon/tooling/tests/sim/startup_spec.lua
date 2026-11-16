@@ -209,3 +209,24 @@ for _, metadataItem in ipairs({ G.Item:CreateFromItemID(608002), G.Item:CreateFr
 	eq(G.C_Item.GetItemCount(metadataItem:GetStaticBackingItem()), 8)
 end
 sim:expectNoErrors()
+
+assert(sim.templates.loadXML(here .. "template_intrinsic.xml", "SimTests", "template_intrinsic.xml"))
+for _, button in ipairs({
+	G.CreateFrame("Button", nil, G.UIParent, "SimIntrinsicLeafTemplate"),
+	G.CreateFrame("SimIntrinsicButton", nil, G.UIParent, "SimIntrinsicLeafTemplate"),
+	G.SimIntrinsicParent.Direct,
+}) do
+	eq(button.intrinsicLoads, 1, "intrinsic OnLoad runs once through implicit and explicit inheritance")
+	button:Click("LeftButton")
+	eq(button.intrinsicClicks, 1, "intrinsic click runs once")
+end
+G.C_AddOns.LoadAddOn("Blizzard_Professions")
+local flyoutTemplate = "ProfessionsFlyoutItemButtonTemplate"
+local flyoutInfo = G.C_XMLUtil.GetTemplateInfo(flyoutTemplate)
+local flyoutButton = G.CreateFrame(flyoutInfo.type, nil, G.UIParent, flyoutTemplate)
+eq(
+	type(flyoutButton.SetItemLocation),
+	"function",
+	"native pooled item-button intrinsic methods survive template construction"
+)
+sim:expectNoErrors()

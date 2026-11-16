@@ -284,6 +284,12 @@ function M.build(sim)
 	local function chain(node, out, seen)
 		out = out or {}
 		seen = seen or {}
+		local intrinsic = T.intrinsics[node.tag]
+		if intrinsic and intrinsic.node ~= node and not seen[intrinsic] then
+			seen[intrinsic] = true
+			chain(intrinsic.node, out, seen)
+			out[#out + 1] = intrinsic
+		end
 		for _, name in ipairs(split(node.attr.inherits)) do
 			local t = templateNode(name)
 			if t and not seen[t] then
@@ -719,7 +725,7 @@ function M.build(sim)
 	-- Builds obj for an element node under parent: creates it, applies its templates and itself, and queues its
 	-- OnLoad. kindOverride is used for region tags that carry a role (NormalTexture -> Texture).
 	apply = function(node, parent, ctx, kindOverride, layer, sublevel)
-		local kind, intrinsic = kindOf(node)
+		local kind = kindOf(node)
 		kind = kindOverride or kind
 		if node.tag == "Animation" then
 			kind = "Animation"
@@ -731,9 +737,6 @@ function M.build(sim)
 			return nil
 		end
 		local templates = chain(node)
-		if intrinsic then
-			table.insert(templates, 1, intrinsic)
-		end
 		local name = node.attr.name
 		local extra = { source = ctx.file, creator = ctx.creator }
 		local obj = W.new(kind, name, parent, extra)
@@ -835,13 +838,18 @@ function M.build(sim)
 			return
 		end
 		local ctx = newContext("CreateFrame", "CreateFrame", Taint.current)
+		local seen = {}
 		for _, name in ipairs(split(templateList)) do
 			local t = templateNode(name)
 			if not t then
 				error(string.format('CreateFrame(): Couldn\'t find inherited node "%s"', name), 3)
 			end
-			local list = chain(t.node)
-			list[#list + 1] = t
+			local list = {}
+			if not seen[t] then
+				chain(t.node, list, seen)
+				seen[t] = true
+				list[#list + 1] = t
+			end
 			for _, tt in ipairs(list) do
 				local tctx = setmetatable({
 					file = tt.file,
