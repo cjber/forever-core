@@ -629,23 +629,99 @@ class ForeverClientTest(unittest.TestCase):
             with self.subTest(refused), self.assertRaises(fc.ClientError):
                 fc.allowed_command(refused, addons)
 
-    def test_slash_releases_an_addon_edit_box_before_it_opens_chat(self):
-        calls = []
+    def test_live_protocol_decodes_exact_bits_without_authorizing_a_click(self):
+        row = bytearray(44 * 3)
+        for index, bit in enumerate([1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]):
+            row[(index * 4 + 2) * 3] = bit * 255
         with (
-            mock.patch.object(fc, "send", side_effect=lambda _state, *args: calls.append(args)),
+            mock.patch.object(fc, "shot", return_value=Path("frame.png")) as shot,
+            mock.patch.object(fc, "png_pixels", return_value=(44, 4, 3, [bytes(row)] * 4)),
+        ):
+            self.assertEqual(fc.client_ui({}), {"world": True, "menu": True, "chat": False})
+        self.assertFalse(shot.call_args.kwargs["mark_read"])
+
+    def test_failed_live_captures_report_no_ui(self):
+        failures = [subprocess.CalledProcessError(1, "gamescopectl"), fc.ClientError("capture failed")]
+        for error in failures:
+            with self.subTest(error=error), mock.patch.object(fc, "shot", side_effect=error):
+                self.assertEqual(fc.client_ui({}), dict.fromkeys(("world", "menu", "chat"), False))
+        image = self.state / "truncated.png"
+        image.write_bytes(fc.PNG_SIGNATURE + b"broken")
+        with mock.patch.object(fc, "shot", return_value=image):
+            self.assertEqual(fc.client_ui({}), dict.fromkeys(("world", "menu", "chat"), False))
+
+    def test_unreleased_changelog_is_one_bullet_list(self):
+        changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text()
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0].strip()
+        self.assertNotIn("\n\n- ", unreleased)
+        self.assertNotRegex(unreleased, "[\u2013\u2014]")
+
+    def test_resident_world_check_waits_for_interval_and_job_release_without_changing_ready(self):
+        state = {"ready": 1}
+        with (
+            mock.patch.object(fc.time, "monotonic", return_value=100),
+            mock.patch.object(fc, "job_holder", return_value={"pid": 42}) as holder,
+            mock.patch.object(fc, "client_ui", return_value={"world": False}) as ui,
+        ):
+            self.assertEqual(fc.resident_world_check(state, 0), (0, None))
+            holder.return_value = None
+            self.assertEqual(fc.resident_world_check(state, 100 - fc.WORLD_CHECK + 1), (100 - fc.WORLD_CHECK + 1, None))
+            ui.assert_not_called()
+            self.assertEqual(fc.resident_world_check(state, 100 - fc.WORLD_CHECK), (100, "the client left the world"))
+            self.assertEqual(state, {"ready": 1})
+
+    def test_game_menu_click_is_refused_before_any_mouse_input(self):
+        with (
+            mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 0),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True}),
+            mock.patch.object(fc, "x") as x,
+        ):
+            with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
+                fc.click({"ready": True}, 960, 540, "1")
+        x.assert_not_called()
+
+    def test_logout_never_types_into_a_login_screen(self):
+        with (
+            mock.patch.object(fc, "client_ui", return_value={"world": False, "menu": False, "chat": False}),
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "client_pid", return_value=None),
+        ):
+            fc.log_out({})
+        send.assert_not_called()
+
+    def test_slash_requires_confirmed_chat_focus(self):
+        with (
+            mock.patch.object(fc, "send") as send,
             mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(
+                fc,
+                "client_ui",
+                side_effect=[
+                    {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": True},
+                ],
+            ),
         ):
             fc.slash({}, "/reload")
         self.assertEqual(
-            calls,
+            send.call_args_list,
             [
-                ("key", "Return"),
-                ("key", "Escape"),
-                ("key", "Return"),
-                ("type", "--delay", fc.TYPE_DELAY_MS, "/reload"),
-                ("key", "Return"),
+                mock.call({}, "key", "Return"),
+                mock.call({}, "type", "--delay", fc.TYPE_DELAY_MS, "/reload"),
+                mock.call({}, "key", "Return"),
             ],
         )
+
+    def test_slash_refuses_menu_without_typing(self):
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True, "chat": False}),
+        ):
+            with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
+                fc.slash({}, "/reload")
+        send.assert_not_called()
 
     def test_reload_waits_only_for_a_screenshot_taken_after_the_command_was_sent(self):
         earlier = self.state / "earlier.jpg"
@@ -1711,6 +1787,7 @@ class LinkBuildTest(unittest.TestCase):
         self.build = self.state / "build"
         self.build.mkdir()
         self.folders = [("LegacyForever", self.build)]
+        self.enterContext(mock.patch.object(fc, "prefix_users", return_value=[]))
 
     def test_a_link_is_put_back_at_the_very_target_it_had(self):
         store = self.state / "store/LegacyForever"
@@ -1783,8 +1860,91 @@ class LinkBuildTest(unittest.TestCase):
     def test_the_record_names_the_session_that_wrote_it(self):
         records = fc.link_build(self.folders, self.addons)
         record = json.loads(fc.link_record_path().read_text())
-        self.assertEqual(record["owner"], {"pid": os.getpid(), "started": fc.process_start(os.getpid())})
+        self.assertEqual(
+            record["owner"],
+            {"pid": os.getpid(), "started": fc.process_start(os.getpid()), "boot_id": fc.boot_id()},
+        )
         self.assertEqual(record["links"], records)
+
+    def test_state_writes_fsync_the_file_and_state_directory(self):
+        with mock.patch.object(fc.os, "fsync") as fsync:
+            fc.write_job_record({"pid": os.getpid()})
+        self.assertEqual(fsync.call_count, 2)
+        self.assertEqual(fc.read_job_record(), {"pid": os.getpid()})
+
+    def test_an_empty_record_recovers_store_backups_after_a_reboot(self):
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to(self.build)
+        backup = self.addons / "LegacyForever.smoke-backup"
+        backup.mkdir()
+        (backup / "LegacyForever.toc").write_text("store")
+        fc.link_record_path().write_text("")
+        with (
+            mock.patch.object(fc, "addons_dir", return_value=self.addons),
+            mock.patch.object(fc, "client_in_use", return_value=None),
+        ):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
+        self.assertEqual((slot / "LegacyForever.toc").read_text(), "store")
+
+    def test_dead_smoke_recovers_during_live_resident_session_without_deleting_addon(self):
+        slot = self.killed_session()
+        stale = self.state / "headless-addon"
+        stale.mkdir()
+        fc.state_file().write_text(json.dumps({"headless_addon": str(stale)}))
+        with mock.patch.object(fc, "current_session", return_value={"ready": 1}):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue(stale.is_dir())
+
+    def test_headless_addon_cleanup_respects_starting_session_lock_and_prefix_users(self):
+        for replay in (False, True):
+            for guard in ("session_lock_held", "prefix_users"):
+                with self.subTest(replay=replay, guard=guard):
+                    stale = self.state / "headless-addon"
+                    stale.mkdir(exist_ok=True)
+                    if replay:
+                        fc.link_record_path().write_text(json.dumps({"owner": None, "links": []}))
+                    with (
+                        mock.patch.object(fc, "current_session", return_value=None),
+                        mock.patch.object(fc, "client_in_use", return_value=None),
+                        mock.patch.object(fc, guard, return_value=True if guard == "session_lock_held" else [42]),
+                    ):
+                        fc.recover_links()
+                    self.assertTrue(stale.is_dir())
+
+    def test_torn_record_recovers_backup_regardless_of_target_but_keeps_unbacked_link(self):
+        slot = self.addons / "LegacyForever"
+        slot.symlink_to(self.state.parent / "arbitrary-build")
+        backup = self.addons / "LegacyForever.smoke-backup"
+        backup.mkdir()
+        unbacked = self.addons / "UserBuild"
+        unbacked.symlink_to(self.state / "test-artifacts/user")
+        fc.link_record_path().write_text("{")
+        with (
+            mock.patch.object(fc, "addons_dir", return_value=self.addons),
+            mock.patch.object(fc, "client_in_use", return_value=None),
+        ):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertTrue(slot.is_dir())
+        self.assertFalse(slot.is_symlink())
+        self.assertTrue(unbacked.is_symlink())
+
+    def test_a_stale_headless_addon_without_a_record_is_removed(self):
+        stale = self.state / "headless-addon"
+        stale.mkdir()
+        with mock.patch.object(fc, "client_in_use", return_value=None):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(stale.exists())
+
+    def test_a_record_from_another_boot_is_recovered_even_if_pid_is_live(self):
+        slot = self.killed_session()
+        record = json.loads(fc.link_record_path().read_text())
+        record["owner"] = {"pid": os.getpid(), "started": fc.process_start(os.getpid()), "boot_id": "old-boot"}
+        fc.link_record_path().write_text(json.dumps(record))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(slot.is_symlink())
 
     def test_a_record_from_a_killed_session_puts_the_store_install_back(self):
         slot = self.killed_session()
@@ -2584,6 +2744,7 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc, "allowed_command"),
             mock.patch.object(fc, "reload", side_effect=fake_reload),
             mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": False}),
             mock.patch.object(fc, "x", side_effect=fake_x),
             mock.patch.object(fc.time, "sleep", side_effect=fake_sleep),
             contextlib.redirect_stdout(io.StringIO()) as out,
@@ -3443,6 +3604,7 @@ class BrokerTest(unittest.TestCase):
         def teardown(*_args):
             order.append("teardown")
 
+        self.enterContext(mock.patch.object(fc, "client_ui", return_value={"world": True}))
         gamescope = mock.Mock(pid=123)
         gamescope.poll.return_value = None
         with (
@@ -3482,6 +3644,7 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc, "session_lock_held", return_value=False),
             mock.patch.object(fc, "start_serve", return_value=child) as start,
             mock.patch.object(fc, "current_session", side_effect=[None, None, ready]),
+            mock.patch.object(fc, "client_ui", return_value={"world": True}),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
             contextlib.redirect_stderr(io.StringIO()),
@@ -3493,9 +3656,58 @@ class BrokerTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "start_serve") as start,
             mock.patch.object(fc, "current_session", return_value=ready),
+            mock.patch.object(fc, "client_ui", return_value={"world": True}),
         ):
             self.assertEqual(fc.ensure_session(60), ready)
         start.assert_not_called()
+
+    def test_a_completed_reload_restores_ready_before_reuse(self):
+        state = live_state(world_lost=True)
+        with (
+            mock.patch.object(fc, "current_session", return_value=state),
+            mock.patch.object(fc, "client_ui", return_value={"world": True}),
+            mock.patch.object(fc, "write_state") as write,
+        ):
+            self.assertTrue(fc.ensure_session(60)["ready"])
+        self.assertNotIn("world_lost", write.call_args.args[0])
+
+    def test_an_empty_job_record_does_not_block_a_job(self):
+        fc.job_record_path().write_text("")
+        handle, token = fc.acquire_job(0, "after reboot")
+        try:
+            self.assertEqual(fc.job_holder()["token"], token)
+        finally:
+            fc.release_job(handle, token)
+
+    def test_ready_session_outside_world_is_stopped_and_replaced(self):
+        stale = live_state(ready=1.0)
+        fresh = live_state(ready=2.0)
+        with (
+            mock.patch.object(fc, "current_session", side_effect=[stale, None, fresh]),
+            mock.patch.object(fc, "client_ui", side_effect=[{"world": False}, {"world": True}]),
+            mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
+            mock.patch.object(fc, "write_state") as write,
+            mock.patch.object(fc, "down") as down,
+            mock.patch.object(fc, "session_lock_held", return_value=False),
+            mock.patch.object(fc, "start_serve", return_value=mock.Mock(poll=lambda: None)) as start,
+            mock.patch.object(fc.time, "sleep"),
+        ):
+            self.assertEqual(fc.ensure_session(60), fresh)
+        down.assert_called_once()
+        start.assert_called_once()
+        self.assertNotIn("ready", write.call_args.args[0])
+
+    def test_out_of_world_session_cannot_stop_another_jobs_client(self):
+        with (
+            mock.patch.object(fc, "current_session", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "client_ui", return_value={"world": False}),
+            mock.patch.object(fc, "job_holder", return_value={"pid": -1, "token": "foreign"}),
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(fc, "down") as down,
+        ):
+            with self.assertRaisesRegex(fc.ClientError, "another job"):
+                fc.ensure_session(60)
+        down.assert_not_called()
 
     def test_a_job_runs_its_command_with_the_token_and_releases_the_lock(self):
         state = live_state(ready=1.0, display=":3", runtime_dir="/run/user/1")

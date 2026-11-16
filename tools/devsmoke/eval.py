@@ -62,6 +62,8 @@ TOKEN = "DevSmokeEvalRun"
 # chunk is false, so its second reload cannot see a delayed flow screenshot as the world load (#588).
 CAPTURE = "DevSmokeEvalCapture"
 CAPTURE_PROTOCOL = 1
+# Stay below !!DevSmoke FLOW_READY_LIMIT so readyErr names the missing command.
+SLASH_READY_LIMIT = 55
 
 
 class EvalError(Exception):
@@ -185,16 +187,40 @@ def lua_string(text: str) -> str:
 def slash_source(command: str) -> str:
     """A proof flow's slash command run through the client's own chat parser, with a reported ready check.
 
-    `ChatEdit_SendText` parses and runs the command synchronously, so the flow has run when it returns; the returned
-    function is true once the edit box has released the text. `proof` reads this snippet's own eval record, so a
-    command that did not run fails the flow rather than being recorded as a pass after a fixed pause (#573).
+    Registration may happen in a later PLAYER_LOGIN handler. The polled function waits for the exact parser
+    registration, sends once, and raises before captureFlow's deadline so readyErr names a missing command.
     """
+    word = command.split()[0].lower()
     return (
+        f"local word = {lua_string(word)}\n"
+        "local started = GetTime()\n"
+        "local sent = false\n"
         "local edit = ChatFrame1EditBox\n"
         "if not edit then error('no chat edit box') end\n"
-        f"edit:SetText({lua_string(command)})\n"
-        "ChatEdit_SendText(edit)\n"
+        "local function registered()\n"
+        "\tif word == '/reload' or word == '/rl' or word == '/fstack' "
+        "or word == '/framestack' or word == '/etrace' or word == '/eventtrace' then return true end\n"
+        "\tif hash_SlashCmdList and hash_SlashCmdList[word:upper()] then return true end\n"
+        "\tfor key, handler in pairs(SlashCmdList) do\n"
+        "\t\tlocal index = 1\n"
+        "\t\twhile _G['SLASH_' .. key .. index] do\n"
+        "\t\t\tif type(handler) == 'function' and _G['SLASH_' .. key .. index]:lower() == word then return true end\n"
+        "\t\t\tindex = index + 1\n"
+        "\t\tend\n"
+        "\tend\n"
+        "\treturn false\n"
+        "end\n"
         "return function()\n"
+        "\tif not sent then\n"
+        "\t\tif not registered() then\n"
+        f"\t\t\tif GetTime() - started >= {SLASH_READY_LIMIT} then "
+        "error('slash command never registered: ' .. word) end\n"
+        "\t\t\treturn false\n"
+        "\t\tend\n"
+        f"\t\tedit:SetText({lua_string(command)})\n"
+        "\t\tChatEdit_SendText(edit)\n"
+        "\t\tsent = true\n"
+        "\tend\n"
         "\treturn edit:GetText() == ''\n"
         "end\n"
     )

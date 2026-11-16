@@ -51,11 +51,54 @@ local function safeCharacter()
 	return true, realm or ""
 end
 
+-- A live, unscaled pixel protocol is observable through gamescope while Lua is running. SavedVariables
+-- cannot provide live state: they normally flush only at logout/reload. Hide on leaving world so the
+-- login screen cannot retain a ready signal. Python reads these bits, never text or OCR.
+local inWorld = false
+local status = CreateFrame("Frame", nil, UIParent)
+status:SetIgnoreParentScale(true)
+status:SetFrameStrata("TOOLTIP")
+status:SetSize(44, 4)
+status:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+local cells = {}
+for column = 1, 11 do
+	local texture = status:CreateTexture(nil, "OVERLAY")
+	texture:SetSize(4, 4)
+	texture:SetPoint("TOPLEFT", (column - 1) * 4, 0)
+	cells[column] = texture
+end
+status:SetScript("OnUpdate", function()
+	local box = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow()
+	local bits = {
+		true,
+		false,
+		true,
+		true,
+		false,
+		false,
+		true,
+		false,
+		inWorld,
+		_G.GameMenuFrame and _G.GameMenuFrame:IsShown(),
+		box and box:HasFocus(),
+	}
+	for column = 1, 11 do
+		local value = bits[column] and 1 or 0
+		cells[column]:SetColorTexture(value, value, value, 1)
+	end
+end)
+
 -- Each time the world loads, validate the parked character before taking the screenshot that tells Python the world is
 -- ready.  An unsafe or unknown state produces no readiness screenshot, so no proof flow or reload can begin.
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:SetScript("OnEvent", function()
+frame:RegisterEvent("PLAYER_LEAVING_WORLD")
+frame:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_LEAVING_WORLD" then
+		inWorld = false
+		return
+	end
+	inWorld = true
 	C_Timer.After(2, function()
 		local safe, reason = safeCharacter()
 		if not safe then

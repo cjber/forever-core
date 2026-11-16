@@ -226,6 +226,7 @@ FOREVER_ADDONS = (
     "SkillUpForever",
     "TweaksForever",
 )
+WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
@@ -431,9 +432,23 @@ def state_file() -> Path:
 def write_state(state: Mapping) -> None:
     """Publish session changes atomically, including the reload gate queued jobs read."""
     path = state_file()
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(dict(state)))
+    atomic_write(path, json.dumps(dict(state)))
+
+
+def atomic_write(path: Path, contents: str) -> None:
+    """Publish a small state file durably, including its directory entry."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(contents)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def load_state() -> dict:
@@ -445,7 +460,7 @@ def load_state() -> dict:
 
 def session_alive(state: Mapping) -> bool:
     """Whether the process that wrote session.json still runs; a reused pid is told apart by its start time."""
-    return owner_alive({"pid": state.get("pid"), "started": state.get("start_ticks")})
+    return owner_alive({"pid": state.get("pid"), "started": state.get("start_ticks"), "boot_id": state.get("boot_id")})
 
 
 def current_session() -> dict | None:
@@ -640,7 +655,7 @@ def nvidia_mismatch(module_path: Path = NVIDIA_MODULE_VERSION, run=None) -> str 
     return f"the NVIDIA kernel module ({module}) does not match its userspace{detail}: reboot first"
 
 
-def shot(state: Mapping, path: Path) -> Path:
+def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
     if "runtime_dir" not in state:
         raise ClientError("session has no runtime directory recorded; restart the headless session")
     runtime = runtime_dir({"XDG_RUNTIME_DIR": state["runtime_dir"]}, os.getuid())
@@ -651,7 +666,8 @@ def shot(state: Mapping, path: Path) -> Path:
     subprocess.run(["gamescopectl", "screenshot", str(path)], env=env, check=True, capture_output=True)
     for _ in range(50):
         if _complete_png(path):
-            (STATE_DIR / "last-shot").touch()
+            if mark_read:
+                (STATE_DIR / "last-shot").touch()
             return path
         time.sleep(0.1)
     raise ClientError(f"gamescope wrote no screenshot to {path}")
@@ -669,6 +685,10 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
 
     def launcher_guard():
+        if state.get("ready"):
+            ui = client_ui(state)
+            if not ui["world"] or ui["menu"]:
+                raise ClientError("click refused: outside the world or Game Menu is shown")
         if state.get("manual_launcher") and not state.get("ready") and client_pid():
             raise ClientError("the game has started: wait for READY before clicking")
 
@@ -736,17 +756,41 @@ def allowed_command(command: str, addons: Path | None = None) -> None:
         )
 
 
-def focus_chat(state: Mapping) -> None:
-    """Put keyboard focus in the chat edit box, whichever frame held it.
+def client_ui(state: Mapping) -> dict[str, bool]:
+    """Decode the live pixel protocol; a failed capture means no world, menu or chat."""
+    try:
+        image = shot(state, STATE_DIR / f"client-state-{os.getpid()}.png", mark_read=False)
+        _width, _height, channels, rows = png_pixels(image)
+        bits = []
+        for column in range(11):
+            offset = (column * 4 + 2) * channels
+            bits.append(rows[2][offset] >= 128)
+        valid = bits[:8] == [True, False, True, True, False, False, True, False]
+        return {"world": valid and bits[8], "menu": valid and bits[9], "chat": valid and bits[10]}
+    except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
+        return {"world": False, "menu": False, "chat": False}
 
-    From a clean frame, Return opens chat, Escape closes it and Return opens it again. When an addon EditBox
-    has focus and no OnEnterPressed (the Forever copy-link box), the first Return stays in that
-    box, Escape runs its OnEscapePressed, which closes its window, and the second Return opens chat. A box
-    whose OnEnterPressed clears its own focus lets the Escape through to the game, which closes the topmost
-    window or opens the game menu, so `reload` then times out as before."""
-    send(state, "key", "Return")
-    send(state, "key", "Escape")
-    send(state, "key", "Return")
+
+def resident_world_check(state: Mapping, last_check: float) -> tuple[float, str | None]:
+    """Probe only between jobs; readiness can change only after the caller takes the job lock."""
+    now = time.monotonic()
+    if now - last_check < WORLD_CHECK or job_holder() is not None:
+        return last_check, None
+    return now, None if client_ui(state)["world"] else "the client left the world"
+
+
+def focus_chat(state: Mapping) -> None:
+    """Type only after the client reports that a chat edit box has keyboard focus."""
+    for key in (None, "Return", "Escape", "Return"):
+        if key:
+            send(state, "key", key)
+            time.sleep(0.1)
+        ui = client_ui(state)
+        if not ui["world"] or ui["menu"]:
+            raise ClientError("slash refused: outside the world or Game Menu is shown")
+        if ui["chat"]:
+            return
+    raise ClientError("slash refused: the chat edit box did not acquire focus")
 
 
 def slash(state: Mapping, command: str) -> None:
@@ -1306,10 +1350,22 @@ def process_start(pid: int) -> int | None:
         return None
 
 
+def boot_id() -> str | None:
+    """Identify the kernel boot, since process start ticks restart after reboot."""
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip() or None
+    except OSError:
+        return None
+
+
 def owner_alive(owner: object) -> bool:
     """Whether the session that wrote a link record still runs; a reused pid is told apart by its start time."""
     pid = owner.get("pid") if isinstance(owner, Mapping) else None
     if not isinstance(pid, int) or pid <= 0:
+        return False
+    recorded_boot = owner.get("boot_id") if isinstance(owner, Mapping) else None
+    current_boot = boot_id()
+    if isinstance(recorded_boot, str) and isinstance(current_boot, str) and recorded_boot != current_boot:
         return False
     try:
         os.kill(pid, 0)
@@ -1348,10 +1404,8 @@ def write_link_record(records: Sequence[dict]) -> None:
     """Record the way back before each change, naming this session, in one replace so a kill cannot truncate it."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = link_record_path()
-    owner = {"pid": os.getpid(), "started": process_start(os.getpid())}
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps({"owner": owner, "links": list(records)}))
-    os.replace(temporary, path)
+    owner = {"pid": os.getpid(), "started": process_start(os.getpid()), "boot_id": boot_id()}
+    atomic_write(path, json.dumps({"owner": owner, "links": list(records)}))
 
 
 def link_build(folders: Sequence[tuple[str, Path]], addons: Path) -> list[dict]:
@@ -1436,11 +1490,34 @@ def recover_links() -> int:
     session's own teardown, and this session's own record is left alone too: the smoke reading it here is the one that
     just linked. Anything else is replayed through `restore_links`, the one teardown, before AddOns is used again.
     """
-    record = link_record()
+    try:
+        record = link_record()
+    except ClientError:
+        # A reboot can leave an empty or torn record. Infer only real store backups, never arbitrary slots.
+        backups = sorted(addons_dir().glob("*.smoke-backup"))
+        if not backups or client_in_use():
+            raise
+        links = []
+        for aside in backups:
+            slot = aside.with_name(aside.name.removesuffix(".smoke-backup"))
+            if aside.is_symlink() or not aside.is_dir() or not slot.is_symlink():
+                continue
+            links.append({"slot": str(slot), "was": {"moved": str(aside)}})
+        if not links:
+            raise ClientError(f"cannot recover {link_record_path()}: no safe smoke backups found") from None
+        record = {"owner": None, "links": links}
     if record is None:
+        stale = STATE_DIR / "headless-addon"
+        if stale.is_dir() and current_session() is None and not session_lock_held() and not prefix_users():
+            shutil.rmtree(stale)
+            return 1
         return 0
     owner = record.get("owner")
-    if owner == {"pid": os.getpid(), "started": process_start(os.getpid())}:
+    if owner == {
+        "pid": os.getpid(),
+        "started": process_start(os.getpid()),
+        "boot_id": boot_id(),
+    }:
         return 0
     # A record an older version wrote names no owner, so the client lock and the prefix decide: while any session
     # holds the client, that record may be its live smoke.
@@ -1457,8 +1534,12 @@ def recover_links() -> int:
     except (OSError, ValueError):
         stale_state = {}
     generated = Path(stale_state.get("headless_addon", "")) if stale_state.get("headless_addon") else None
-    if generated and generated.is_dir() and generated.parent == STATE_DIR:
-        shutil.rmtree(generated)
+    if current_session() is None and not session_lock_held() and not prefix_users():
+        if generated and generated.is_dir() and generated.parent == STATE_DIR:
+            shutil.rmtree(generated)
+        stale_addon = STATE_DIR / "headless-addon"
+        if stale_addon.is_dir():
+            shutil.rmtree(stale_addon)
     put_back = [describe_restore(link) for link in links if link.get("restored")]
     if put_back:
         detail = ", ".join(put_back)
@@ -1526,16 +1607,16 @@ def write_job_record(record: Mapping) -> None:
     """Name the lock's holder in one replace, so a waiter never reads half a record."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = job_record_path()
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(dict(record)))
-    os.replace(temporary, path)
+    atomic_write(path, json.dumps(dict(record)))
 
 
 def job_alive(record: object) -> bool:
     """Whether the process that wrote a job.json still runs; a reused pid is told apart by its start time."""
     if not isinstance(record, Mapping):
         return False
-    return owner_alive({"pid": record.get("pid"), "started": record.get("start_ticks")})
+    return owner_alive(
+        {"pid": record.get("pid"), "started": record.get("start_ticks"), "boot_id": record.get("boot_id")}
+    )
 
 
 def job_holder() -> dict | None:
@@ -1596,6 +1677,7 @@ def acquire_job(
     record: dict = {
         "pid": os.getpid(),
         "start_ticks": process_start(os.getpid()),
+        "boot_id": boot_id(),
         "token": token,
         "label": label,
         "started": time.time(),
@@ -2384,7 +2466,7 @@ def proof(args: argparse.Namespace) -> int:
         "images": images,
     }
     target = checkout / PROOF_FILE
-    target.write_text(json.dumps(proof_data, indent=2) + "\n", encoding="utf-8")
+    atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
     print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
     return 0
 
@@ -2424,10 +2506,10 @@ def child_env(token: str, timeout: float = 30) -> dict[str, str]:
 def log_out(state: Mapping) -> None:
     """/quit from the world: the character logs out and the client exits on its own, as a player's would."""
     try:
-        send(state, "key", "Return")
+        focus_chat(state)
         send(state, "type", "--delay", TYPE_DELAY_MS, "/quit")
         send(state, "key", "Return")
-    except subprocess.CalledProcessError:
+    except (ClientError, subprocess.CalledProcessError):
         return
     deadline = time.monotonic() + LOGOUT_WAIT
     while client_pid() and time.monotonic() < deadline:
@@ -2762,6 +2844,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         state = {
             "pid": os.getpid(),
             "start_ticks": process_start(os.getpid()),
+            "boot_id": boot_id(),
             "gamescope": None,
             "gamescope_start": None,
             "token": token,
@@ -2772,7 +2855,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             "link": str(link),
             "headless_addon": str(session_addon),
         }
-        state_file().write_text(json.dumps(state))
+        write_state(state)
         gamescope = subprocess.Popen(
             [
                 "gamescope",
@@ -2798,10 +2881,10 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         )
         state["gamescope"] = gamescope.pid
         state["gamescope_start"] = process_start(gamescope.pid)
-        state_file().write_text(json.dumps(state))
+        write_state(state)
         genv = child_env(token)
         state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
-        state_file().write_text(json.dumps(state))
+        write_state(state)
         print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
 
         nudge = functools.partial(at_character_select, state, args.manual_launcher)
@@ -2811,7 +2894,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             frame = shot(state, STATE_DIR / "failed.png")
             raise ClientError(f"{error}; last frame: {frame}") from None
         state["ready"] = time.time()
-        state_file().write_text(json.dumps(state))
+        write_state(state)
         ready = time.monotonic()
         print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
         # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
@@ -2819,8 +2902,10 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         print("CHARACTER_PREFLIGHT passed", flush=True)
         if after_ready:
             return after_ready(state)
+        last_world_check = ready
         while gamescope.poll() is None:
-            reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            last_world_check, reason = resident_world_check(state, last_world_check)
+            reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -2834,7 +2919,18 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state["reloading"] = True
                 write_state(state)
             job, job_token = acquire_job(None, f"the session's end ({reason})", session_end=True)
-            reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            world = client_ui(state)["world"]
+            if not world:
+                state.pop("ready", None)
+                state["world_lost"] = True
+                write_state(state)
+            if world and not state.get("ready"):
+                state["ready"] = time.time()
+                state.pop("world_lost", None)
+                write_state(state)
+            reason = ("the client left the world" if not world else None) or session_end_reason(
+                time.monotonic(), launched, ready, last_job_mark(ready)
+            )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -2887,7 +2983,7 @@ def down() -> int:
     """
     state = load_state()
     started = state.get("owner_start", state.get("start_ticks"))
-    owner = {"pid": state.get("pid"), "started": started}
+    owner = {"pid": state.get("pid"), "started": started, "boot_id": state.get("boot_id")}
     limit = None
     if owner_alive(owner):
         if state.get("ready") and started is not None:
@@ -2925,6 +3021,9 @@ def down() -> int:
         if load_state() != state:
             raise ClientError("the headless session changed: stale cleanup deferred")
         recover_links()
+        if state.get("boot_id") and boot_id() and state["boot_id"] != boot_id():
+            state_file().unlink(missing_ok=True)
+            return 0
         link = Path(state["link"]) if state.get("link") else CLIENT / "Interface/AddOns" / ADDON.name
         teardown(state.get("gamescope"), state.get("wine") or {}, link, state)
         state_file().unlink(missing_ok=True)
@@ -2967,8 +3066,36 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
     child = None
     while True:
         state = current_session()
-        if state and state.get("ready"):
-            return state
+        if state and (state.get("ready") or state.get("world_lost")):
+            if client_ui(state)["world"]:
+                if not state.get("ready"):
+                    state["ready"] = time.time()
+                    state.pop("world_lost", None)
+                    write_state(state)
+                return state
+            holder = job_holder()
+            if (
+                holder
+                and holder.get("pid") != os.getpid()
+                and not (
+                    os.environ.get("FOREVER_CLIENT_JOB") and holder.get("token") == os.environ["FOREVER_CLIENT_JOB"]
+                )
+            ):
+                raise ClientError("the client left the world while another job holds it")
+            # The caller owns the job lock (or no job does). Clear ready so down uses the resident's
+            # signal teardown, rather than waiting for that same job lock through the stop marker.
+            guard = None
+            if holder is None:
+                guard = acquire_job(0, "replace a client outside the world")
+            try:
+                state.pop("ready", None)
+                write_state(state)
+                down()
+            finally:
+                if guard is not None:
+                    release_job(*guard, ended=False)
+            child = None
+            continue
         if state is None and child is None and not session_lock_held():
             child = start_serve(manual_launcher)
         if child is not None and child.poll() is not None:
@@ -3049,6 +3176,7 @@ def lease(args: argparse.Namespace) -> int:
     write_job_record(
         {
             "pid": holder.pid,
+            "boot_id": boot_id(),
             "start_ticks": process_start(holder.pid),
             "token": token,
             "label": label,
@@ -3139,7 +3267,7 @@ def capture_env() -> int:
     if "PROTONPATH" not in env:
         raise ClientError(f"process {pid} has no PROTONPATH; is it Faugus's umu-run launch?")
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps({"umu_run": script, "env": env}, indent=1, sort_keys=True))
+    atomic_write(CONFIG, json.dumps({"umu_run": script, "env": env}, indent=1, sort_keys=True))
     print(f"recorded {script} and {len(env)} variables from {pid} to {CONFIG}")
     return 0
 
@@ -3471,7 +3599,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.verb == "capture-env":
             return capture_env()
         if args.verb == "status":
-            print(json.dumps(load_state(), indent=1))
+            state = load_state()
+            if state.get("ready") and (not session_alive(state) or not client_ui(state)["world"]):
+                state.pop("ready", None)
+            print(json.dumps(state, indent=1))
             return 0
         if args.verb == "build-dev":
             # A hand link follows this build, so a record a stopped session left is replayed before it.

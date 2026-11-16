@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
+- **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
+- **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)
+- **Slash proof flows wait for their exact command to register** and fail with its name if it never becomes available. (#684)
 - **The glyph check reads every English locale shape the addons use**: `ns.L["key"]` assignments and the fields of an `ns.L = { ... }` table, as well as `L["key"]`. A key whose value is client text, not a string literal, gets no English entry. (#543)
 - **The glyph check accepts reviewed XML font producers with no bindings.** Their source digests still require review when a template changes, and Lua string literals are read only for phrase keys absent from enUS entries. (#543)
 - **Every Forever addon can check its translations against the game's fonts.** The glyph check ships to each addon with its own reviewed list of widgets and fonts. (#543)

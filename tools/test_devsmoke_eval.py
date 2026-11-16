@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -96,6 +98,67 @@ class DevSmokeEvalTest(unittest.TestCase):
         source = ev.slash_source('/say "hi"\\there')
         self.assertIn('edit:SetText("/say \\"hi\\"\\\\there")', source)
         self.assertNotIn("\n\nthere", source, "the command cannot become a second statement")
+
+    def test_slash_waits_for_registration_sends_once_and_names_missing_command(self):
+        script = (
+            """
+local now, sends = 0, 0
+GetTime = function() return now end
+SlashCmdList = {}
+ChatFrame1EditBox = {SetText=function(self, text) self.text=text end,
+    GetText=function(self) return self.text or '' end}
+ChatEdit_SendText = function(edit) sends=sends+1; edit.text='' end
+local function snippet()
+"""
+            + ev.slash_source("/lf")
+            + """
+end
+local ready = snippet()
+assert(sends == 0 and not ready(), 'wait for later PLAYER_LOGIN handlers')
+SlashCmdList.LEGACY = function() end
+SLASH_LEGACY1 = '/lfoo'
+assert(not ready(), 'match exact word')
+SLASH_LEGACY2 = '/lf'
+assert(ready() and ready() and sends == 1, 'send exactly once inside ready')
+SlashCmdList = {}
+local missing = snippet()
+now = 56
+local ok, err = pcall(missing)
+assert(not ok and err:find('slash command never registered: /lf', 1, true))
+now = 0
+hash_SlashCmdList = {['/LF'] = function() end}
+assert(snippet()(), 'cached parser commands work')
+"""
+        )
+        process = subprocess.Popen(
+            ["luajit", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        _out, err = process.communicate(script)
+        self.assertEqual(process.returncode, 0, err)
+
+    def test_slash_deadline_precedes_flow_ready_timeout(self):
+        core = (ev.TOOLS / "devsmoke/!!DevSmoke/Core.lua").read_text()
+        limit = int(re.search(r"local FLOW_READY_LIMIT = (\d+)", core)[1])
+        self.assertLess(ev.SLASH_READY_LIMIT, limit)
+        self.assertIn(f"GetTime() - started >= {ev.SLASH_READY_LIMIT}", ev.slash_source("/lf"))
+
+    def test_generated_builtin_commands_match_client_allowlist(self):
+        commands = set(re.findall(r"word == '([^']+)'", ev.slash_source("/lf")))
+        self.assertEqual(commands, ev.client().UI_COMMANDS)
+
+    def test_builtin_proof_commands_do_not_wait_for_addon_registration(self):
+        script = (
+            "SlashCmdList = {}; GetTime=function() return 0 end; "
+            + "ChatFrame1EditBox={SetText=function() end, GetText=function() return '' end}; "
+            + "ChatEdit_SendText=function() end; local function snippet()\n"
+            + ev.slash_source("/reload")
+            + "end; assert(snippet()())"
+        )
+        process = subprocess.Popen(
+            ["luajit", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        _out, err = process.communicate(script)
+        self.assertEqual(process.returncode, 0, err)
 
     def test_every_write_stamps_its_own_run_token(self):
         # A reader only has the SavedVariables file, which holds the previous session until the next reload, so each

@@ -2,14 +2,19 @@
 local source = assert(io.open("tools/headless/!!ForeverHeadless/ForeverHeadless.lua")):read("*a")
 
 local function run(config, name, guid, resting, dead, combat, lockdown, screenshot)
-	local events, callback = {}, nil
+	local events, callback, update = {}, nil, nil
+	local textures = {}
 	_G.CreateFrame = function()
 		return {
 			RegisterEvent = function(_, event)
 				events[#events + 1] = event
 			end,
-			SetScript = function(_, _, fn)
-				callback = fn
+			SetScript = function(_, script, fn)
+				if script == "OnUpdate" then
+					update = fn
+				else
+					callback = fn
+				end
 			end,
 			SetSize = function() end,
 			SetPoint = function() end,
@@ -17,9 +22,13 @@ local function run(config, name, guid, resting, dead, combat, lockdown, screensh
 			SetFrameStrata = function() end,
 			Hide = function() end,
 			CreateTexture = function()
+				local cell = {}
+				textures[#textures + 1] = cell
 				return {
 					SetAllPoints = function() end,
-					SetColorTexture = function() end,
+					SetColorTexture = function(_, value)
+						cell.value = value
+					end,
 					SetSize = function() end,
 					SetPoint = function() end,
 				}
@@ -60,6 +69,26 @@ local function run(config, name, guid, resting, dead, combat, lockdown, screensh
 	assert(loadstring(source))()
 	assert(events[1] == "PLAYER_ENTERING_WORLD", "registers world readiness")
 	callback(nil, "PLAYER_ENTERING_WORLD")
+	_G.GameMenuFrame = {
+		IsShown = function()
+			return true
+		end,
+	}
+	_G.ChatEdit_GetActiveWindow = function()
+		return {
+			HasFocus = function()
+				return true
+			end,
+		}
+	end
+	update()
+	assert(
+		textures[9].value == 1 and textures[10].value == 1 and textures[11].value == 1,
+		"live protocol reports world, menu and chat focus"
+	)
+	callback(nil, "PLAYER_LEAVING_WORLD")
+	update()
+	assert(textures[9].value == 0, "logout clears live world bit")
 end
 
 local screenshot = { count = 0 }
