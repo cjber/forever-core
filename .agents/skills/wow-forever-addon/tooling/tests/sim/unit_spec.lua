@@ -310,6 +310,57 @@ test("widgets: a script's setter taint stops when the handler returns", function
 	eq(Taint.current, nil, "the caller that triggered it stays secure")
 end)
 
+test("widgets: size notifications reflect changed dimensions exactly once", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local frame = widgets.new("Frame")
+	frame:SetSize(20, 30)
+	widgets.sizePass()
+	local count = 0
+	frame:SetScript("OnSizeChanged", function(self, width, height)
+		count = count + 1
+		assert(count < 8, "unchanged size setter must not recurse")
+		eq(width, self:GetWidth(), "callback width")
+		eq(height, self:GetHeight(), "callback height")
+		self:SetHeight(height)
+	end)
+	frame:SetHeight(30)
+	frame:SetWidth(20)
+	frame:SetSize(20, 30)
+	eq(count, 0, "unchanged dimensions have no notification")
+	frame:SetHeight(40)
+	eq(count, 1, "changed height notifies once")
+	widgets.sizePass()
+	eq(count, 1, "size pass does not duplicate synchronous notification")
+	frame:SetSize(50, 60)
+	eq(count, 2, "changed pair notifies once")
+	widgets.sizePass()
+	eq(count, 2, "changed pair is not repeated")
+	frame:SetWidth(70)
+	eq(count, 3, "changed width notifies once")
+	widgets.sizePass()
+	eq(count, 3, "changed width is not repeated")
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	local parent = widgets.new("Frame", nil, root)
+	parent:SetPoint("TOPLEFT", root, "TOPLEFT")
+	parent:SetSize(100, 100)
+	frame:SetAllPoints(parent)
+	widgets.sizePass()
+	eq(count, 4, "anchor-driven dimension change notifies")
+	parent:SetSize(120, 130)
+	widgets.sizePass()
+	eq(count, 5, "parent resizing notifies anchored child")
+end)
+
 test("widgets: a Frame refuses OnClick, as the client does", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })

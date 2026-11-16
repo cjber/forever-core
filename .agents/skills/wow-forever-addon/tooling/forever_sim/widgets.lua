@@ -1139,7 +1139,16 @@ function M.build(sim)
 		end
 		dirty()
 	end
+	local lastSize = setmetatable({}, { __mode = "k" })
+	local function notifySize(self, oldWidth, oldHeight)
+		local width, height = getWidth(self), getHeight(self)
+		lastSize[self] = { width, height }
+		if width ~= oldWidth or height ~= oldHeight then
+			fire(self, "OnSizeChanged", width, height)
+		end
+	end
 	local function setDim(self, key, value)
+		local oldWidth, oldHeight = getWidth(self), getHeight(self)
 		local s = st(self)
 		if Secret.is(value) then
 			s.secretSize = true
@@ -1147,7 +1156,7 @@ function M.build(sim)
 		s[key] = value
 		dirty()
 		if s.isFrame then
-			fire(self, "OnSizeChanged", getWidth(self), getHeight(self))
+			notifySize(self, oldWidth, oldHeight)
 		end
 	end
 	impl.ScriptRegion.SetWidth = function(self, w)
@@ -1157,6 +1166,7 @@ function M.build(sim)
 		setDim(self, "height", h)
 	end
 	impl.ScriptRegion.SetSize = function(self, w, h)
+		local oldWidth, oldHeight = getWidth(self), getHeight(self)
 		local s = st(self)
 		if Secret.is(w) or Secret.is(h) then
 			s.secretSize = true
@@ -1164,7 +1174,7 @@ function M.build(sim)
 		s.width, s.height = w, h
 		dirty()
 		if s.isFrame then
-			fire(self, "OnSizeChanged", getWidth(self), getHeight(self))
+			notifySize(self, oldWidth, oldHeight)
 		end
 	end
 
@@ -2504,7 +2514,6 @@ function M.build(sim)
 	end
 	W.flatten = flatten
 
-	local lastSize = setmetatable({}, { __mode = "k" })
 	function W.sizePass()
 		for _, obj in ipairs(W.all) do
 			local s = S[obj]
