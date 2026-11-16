@@ -1,10 +1,10 @@
 {
-  "input_digest": "189a0e511f81afb58d82e91db8bb59b4191f99602bbb633f392ea196a7a9e98a",
-  "runtime_sha256": "189a0e511f81afb58d82e91db8bb59b4191f99602bbb633f392ea196a7a9e98a",
-  "candidate": "ccb7e8805ca1b0c6d4c4aff74ac4ad9f9499cf1ff51a7b1d84e870974fb8b830",
+  "input_digest": "31c2481749d491f928e59f2df3e56d0719d155832539963bfb48c72c86f7290b",
+  "runtime_sha256": "31c2481749d491f928e59f2df3e56d0719d155832539963bfb48c72c86f7290b",
+  "candidate": "b27416139c8bc35d0a71bbc8665b81382ee93c1a64ca29ddf9bd9090ebbbbc5e",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "62952abbd70b6d8ff5e22ba20ec26b5d6225e486",
+  "source_commit": "6021887e5aa0db6e79e391d2180cef04bb9b161b",
   "flows": [
     {
       "name": "startup report",
@@ -16,8 +16,8 @@
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/82866f605dfe8573dc22e77caaa2fa94/raw/7ac3a20d982deba4865fa69ae2365e11d754ef2b/1-startup-report.png",
-      "sha256": "a9efad87d81bff1358a5bbddf731e7ace07662f0ae6c1563e9475186b3a27388"
+      "url": "https://gist.githubusercontent.com/cjber/9bea172a3b6518acc33dc0a60d601395/raw/fd082253df5827a2f2334f6acbf0a673b4cf253c/1-startup-report.png",
+      "sha256": "bf03582cdc0a2553a732988c65ebd0421b32571aa2699db485ab212f54daff75"
     }
   ]
 }
