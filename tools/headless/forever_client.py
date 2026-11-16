@@ -51,10 +51,12 @@ each image's sha256, then checks the installed folder with `visual_proof --compa
 checkout. A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
 run rather than a fixed pause (#573). A flow that returns a ready check is captured once `!!DevSmoke` has polled it
 true, so a window filled in from late data is not photographed empty (#593); a check that raises or never turns true
-records its reason and fails the proof with it. There is no default flow: ForeverCore has no shared opener for an
-addon's update notice, so the flow is named on the command line and `wow-forever-addon/in-game.md` shows both. A flow's
-own result is read after its screenshot, and a snippet that raised fails the proof before any gist or
-`.visual-proof.json` exists (#580).
+records its reason and fails the proof with it. A flow whose window needs a real click names it with
+`--flow-click "NAME=X,Y"`: once that reload's world screenshot has landed, `proof` clicks the point inside its own job
+and then waits for the flow's ready screenshot as any other flow does (#655). There is no default flow: ForeverCore has
+no shared opener for an addon's update notice, so the flow is named on the command line and
+`wow-forever-addon/in-game.md` shows both. A flow's own result is read after its screenshot, and a snippet that raised
+fails the proof before any gist or `.visual-proof.json` exists (#580).
 
 The session is shared: `serve` starts the client once, and every `job` runs against that same client, so a test pays
 the login once rather than once per test. A job holds `STATE_DIR/job.lock` only while it touches the client, and
@@ -1779,6 +1781,40 @@ def flow_ready_failure(token: str | None) -> str | None:
     return None
 
 
+def fresh_screenshots(before: set[Path]) -> list[tuple[float, Path]]:
+    """The client's screenshots written since `before`, as (mtime, path); one rotated mid-read is skipped."""
+    fresh = []
+    for path in screenshots() - before:
+        try:
+            fresh.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    return fresh
+
+
+def wait_for_flow_world(
+    before: set[Path], action: str, token: str | None = None, timeout: float = FLOW_READY_SECONDS
+) -> Path:
+    """Block until the reload's own world screenshot is on disk: the frame a flow's click aims at.
+
+    Every reload writes one screenshot as the world loads, before !!DevSmoke can run the flow's own, so it is the
+    first new file after `before` (#593). A flow whose window needs a real click cannot click before that frame
+    exists, so its click waits for this one and the ready screenshot then follows it (#655).
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        fresh = fresh_screenshots(before)
+        if fresh:
+            return max(fresh)[1]
+        failure = flow_ready_failure(token)
+        if failure:
+            raise ClientError(f"the flow {action} could not be captured: {failure}")
+        time.sleep(1)
+    raise ClientError(
+        f"the flow {action}: the world screenshot its reload writes did not appear within {timeout:.0f} s"
+    )
+
+
 def wait_for_flow_ready(
     before: set[Path], action: str, token: str | None = None, timeout: float = FLOW_READY_SECONDS
 ) -> Path:
@@ -1791,12 +1827,7 @@ def wait_for_flow_ready(
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        fresh = []
-        for path in screenshots() - before:
-            try:
-                fresh.append((path.stat().st_mtime, path))
-            except OSError:
-                continue  # the client wrote or rotated it between the glob and the read
+        fresh = fresh_screenshots(before)
         if len(fresh) >= 2:
             return max(fresh)[1]
         failure = flow_ready_failure(token)
@@ -1826,6 +1857,41 @@ def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     return flows
 
 
+def parse_flow_clicks(values: Sequence[str], flows: Sequence[tuple[str, str]]) -> dict[str, tuple[int, int]]:
+    """`--flow-click NAME=X,Y` entries: where a named flow clicks, in the screenshot coordinates `click` takes.
+
+    A click belongs to a flow by name, so a name that matches no `--flow` is a typo the caller must hear about before
+    the build takes the client rather than a flow that quietly never clicks.
+    """
+    names = [name for name, _ in flows]
+    clicks: dict[str, tuple[int, int]] = {}
+    for value in values:
+        name, separator, point = value.partition("=")
+        name = name.strip()
+        if not separator or not name or not point.strip():
+            raise ClientError(f"--flow-click takes NAME=X,Y, not {value!r}")
+        if name not in names:
+            known = ", ".join(names) if names else "no flow is named"
+            raise ClientError(f"--flow-click {name}: no --flow of that name ({known})")
+        try:
+            px, py = (int(part.strip()) for part in point.split(","))
+        except ValueError:
+            raise ClientError(f"--flow-click {name}: X,Y takes two integers, not {point.strip()!r}") from None
+        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+            raise ClientError(f"--flow-click {name}: ({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+        clicks[name] = (px, py)
+    return clicks
+
+
+def flow_record(name: str, action: str, point: tuple[int, int] | None) -> dict:
+    """One entry in the proof's `flows`: what ran, where it clicked, and that it was captured."""
+    record: dict = {"name": name, "steps": [flow_step(action)]}
+    if point:
+        record["click"] = list(point)
+    record["result"] = "pass"
+    return record
+
+
 def flow_capture_failure(state: Mapping, action: str, token: str, timeout: ClientError) -> ClientError:
     """The precise failure for a flow that produced no screenshot, or its timeout when none was recorded.
 
@@ -1845,14 +1911,16 @@ def flow_capture_failure(state: Mapping, action: str, token: str, timeout: Clien
     return timeout
 
 
-def run_flow(state: Mapping, action: str) -> str:
+def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
     """Run one proof flow through !!DevSmoke: a Forever addon's own slash command, or a Lua file.
 
     Both routes write a snippet whose own run token `check_flow_eval` reads once the screenshot is taken: the reload
     that saves the result to disk would close the window the flow just opened (#580). A slash command runs through
     `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed run rather than a fixed pause
     (#573). The flow's ready check is polled by !!DevSmoke, whose screenshot then says the window has drawn, so the
-    capture waits for that file instead of a pause (#593).
+    capture waits for that file instead of a pause (#593). `point` is a click in screenshot coordinates that runs
+    between the reload's world screenshot and the flow's own: opening a protected window is not something a Lua
+    snippet can do, and since #648 no outside `click` can reach the client while this job holds it (#655).
     """
     tool = devsmoke_eval()
     try:
@@ -1870,6 +1938,13 @@ def run_flow(state: Mapping, action: str) -> str:
     reload(state)
     clear_eval_inbox()
     try:
+        if point:
+            world = wait_for_flow_world(before, action, written["token"])
+            # A click must aim at a screenshot newer than the last input; the flow's own world frame is that
+            # screenshot, so the proof clicks through the same `click` an agent uses instead of a second input path.
+            (STATE_DIR / "last-shot").touch()
+            click(state, point[0], point[1], "1")
+            print(f"clicked {point[0]},{point[1]} after {world.name}", flush=True)
         wait_for_flow_ready(before, action, written["token"])
     except ClientError as error:
         raise flow_capture_failure(state, action, written["token"], error) from None
@@ -2023,6 +2098,7 @@ def proof(args: argparse.Namespace) -> int:
 
     It runs as one job: the build and the AddOns links are the smoke's, so every borrowed slot is put back on any
     exit. The job reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist.
+    A flow named in `--flow-click` clicks its point inside this job once its reload's world screenshot has landed.
     The proof is written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
     """
     flows = parse_flows(args.flow)
@@ -2031,6 +2107,7 @@ def proof(args: argparse.Namespace) -> int:
             "proof needs at least one --flow: ForeverCore has no shared opener for an addon's update notice, so name "
             'it here, such as --flow "update notice=/lf" or --flow "update notice=notice.lua"'
         )
+    clicks = parse_flow_clicks(args.flow_click, flows)
     repo = args.repo
     if not SMOKE_REPO.fullmatch(repo):
         raise ClientError(f"--repo takes a repository name, not {repo!r}")
@@ -2076,7 +2153,7 @@ def proof(args: argparse.Namespace) -> int:
             try:
                 reload(state)
                 for index, (name, action) in enumerate(flows, start=1):
-                    flow_token = run_flow(state, action)
+                    flow_token = run_flow(state, action, clicks.get(name))
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
                     if flow_token:
                         # After the shot: the reload that saves the eval opens the world again, which would close
@@ -2106,7 +2183,7 @@ def proof(args: argparse.Namespace) -> int:
         "client_build": client_build(folders[0][1]),
         "tested_artifact": "source-tree",
         "source_commit": commit,
-        "flows": [{"name": name, "steps": [flow_step(action)], "result": "pass"} for name, action in flows],
+        "flows": [flow_record(name, action, clicks.get(name)) for name, action in flows],
         "images": images,
     }
     target = checkout / PROOF_FILE
@@ -3123,6 +3200,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=[],
         metavar="NAME=SLASH_OR_LUA_FILE",
         help="one flow to capture: a Forever addon slash command, or a Lua file run through !!DevSmoke",
+    )
+    p.add_argument(
+        "--flow-click",
+        action="append",
+        default=[],
+        metavar="NAME=X,Y",
+        help="left click X,Y (screenshot coordinates) for the flow called NAME, after its reload's world screenshot "
+        "and before its ready screenshot; a flow that needs a real click to open a protected window",
     )
     p.add_argument(
         "--timeout",

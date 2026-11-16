@@ -188,6 +188,21 @@ true writes the client's own reason to `DevSmokeDB.eval` and saves it; `proof` r
 `ChatEdit_SendText` in the same `!!DevSmoke` route, so its capture follows a confirmed run and its own eval result is
 checked; there is no fixed settle. Name a Lua flow for anything that must wait on data.
 
+A flow whose window only a real click opens names that click with `--flow-click "NAME=X,Y"`, where `X,Y` are the same
+screenshot coordinates `click` takes:
+
+```sh
+python3 $FC proof --repo skillup-forever --ref <sha> --checkout ~/drive/proj/wow/skillup-forever \
+  --flow "professions=professions.lua" --flow-click "professions=960,540"
+```
+
+The click runs inside the proof's own job, once that reload's world screenshot has landed and before the flow's ready
+screenshot is waited for. Opening a profession window is a protected action no Lua snippet can take, and no outside
+`click` can reach the client while the job holds it (#648), so this is how such a window is opened and then captured
+once `professions.lua`'s ready check sees it filled. `NAME` must match a
+`--flow` name, and the proof's flow entry records the point as `click`, so the evidence says what was clicked. A flow
+with no `--flow-click` is unchanged.
+
 `tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
 proof it prints this command for the pull request's head, and the release session runs it and commits the result.
 

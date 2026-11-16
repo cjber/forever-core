@@ -2144,6 +2144,27 @@ class ProofHelpersTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
                 fc.parse_flows([bad])
 
+    def test_parse_flow_clicks_takes_a_named_point_in_screenshot_coordinates(self):
+        flows = [("update notice", "/lf"), ("professions", "/sf")]
+        self.assertEqual(fc.parse_flow_clicks([], flows), {})
+        self.assertEqual(
+            fc.parse_flow_clicks(["professions=400, 300", "update notice = 12,34"], flows),
+            {"professions": (400, 300), "update notice": (12, 34)},
+        )
+
+    def test_parse_flow_clicks_refuses_a_name_no_flow_has(self):
+        flows = [("update notice", "/lf")]
+        with self.assertRaisesRegex(fc.ClientError, r"no --flow of that name \(update notice\)"):
+            fc.parse_flow_clicks(["profession=400,300"], flows)
+
+    def test_parse_flow_clicks_refuses_a_point_that_is_not_two_integers(self):
+        flows = [("professions", "/sf"), ("update notice", "/lf")]
+        for bad in ("professions", "professions=", "=1,2", "professions=1", "professions=1,2,3", "professions=a,b"):
+            with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
+                fc.parse_flow_clicks([bad], flows)
+        with self.assertRaisesRegex(fc.ClientError, "outside the"):
+            fc.parse_flow_clicks([f"professions={fc.WIDTH},10"], flows)
+
     def test_flow_slug_is_a_file_name(self):
         self.assertEqual(fc.flow_slug("Update notice!"), "update-notice")
         self.assertEqual(fc.flow_slug("***"), "flow")
@@ -2164,6 +2185,79 @@ class ProofHelpersTest(unittest.TestCase):
         ):
             fc.clear_eval_inbox()
         tool.clear_inbox.assert_called_once_with(addons=client / "Interface/AddOns")
+
+    def test_a_flow_clicks_after_the_world_screenshot_and_before_its_ready_one(self):
+        client = self.state / "client"
+        shots = client / "Screenshots"
+        shots.mkdir(parents=True)
+        state_dir = self.state / "state"
+        state_dir.mkdir()
+        events = []
+
+        def fake_reload(_state):
+            events.append("reload")
+            return self.state / "reloaded.png"
+
+        def fake_sleep(_seconds):
+            # The reload's world screenshot lands while the flow waits for the frame its click aims at.
+            if not (shots / "1-world.png").exists():
+                (shots / "1-world.png").write_bytes(b"world")
+
+        def fake_x(_state, *args):
+            present = sorted(path.name for path in shots.glob("*"))
+            self.assertEqual(present, ["1-world.png"], "the click follows the world screenshot")
+            self.assertEqual(args, ("mousemove", "400", "300", "click", "1"))
+            events.append("click")
+            (shots / "2-flow.png").write_bytes(b"flow")
+
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {
+            "chunk": Path("/x/Eval.lua"),
+            "snippet": Path("/sf"),
+            "lines": 5,
+            "token": "run-1",
+        }
+        with (
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "STATE_DIR", state_dir),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "reload", side_effect=fake_reload),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "x", side_effect=fake_x),
+            mock.patch.object(fc.time, "sleep", side_effect=fake_sleep),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(fc.run_flow({"ready": True}, "/sf", (400, 300)), "run-1")
+        self.assertEqual(events, ["reload", "click"])
+        self.assertIn("clicked 400,300 after 1-world.png", out.getvalue())
+
+    def test_a_flow_without_a_click_never_clicks_nor_waits_for_the_world_frame(self):
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {
+            "chunk": Path("/x/Eval.lua"),
+            "snippet": Path("/sf"),
+            "lines": 5,
+            "token": "run-1",
+        }
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "click") as clicked,
+            mock.patch.object(fc, "wait_for_flow_world") as world,
+            mock.patch.object(fc, "wait_for_flow_ready") as ready,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.run_flow("state", "/sf"), "run-1")
+        clicked.assert_not_called()
+        world.assert_not_called()
+        ready.assert_called_once_with(set(), "/sf", "run-1")
 
     def test_run_flow_runs_a_slash_command_through_devsmoke(self):
         tool = mock.Mock()
@@ -2500,6 +2594,7 @@ class ProofTest(unittest.TestCase):
         self.busy = [None, None]
         self.slash_error = None
         self.reload = mock.Mock()
+        self.click = mock.Mock()
         self.proof_digests = mock.Mock(return_value={"input_digest": "digest", "candidate": "candidate"})
         self.create_gist = mock.Mock(return_value="abc123")
         self.upload = mock.Mock(
@@ -2529,6 +2624,7 @@ class ProofTest(unittest.TestCase):
             "ref": "main",
             "checkout": self.checkout,
             "flow": ["update notice=/lf"],
+            "flow_click": [],
             "timeout": 600,
             "manual_launcher": False,
         }
@@ -2587,6 +2683,8 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "job_started", return_value=3.0))
             stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
             stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
+            stack.enter_context(mock.patch.object(fc, "wait_for_flow_world", return_value=self.state / "world.jpg"))
+            stack.enter_context(mock.patch.object(fc, "click", self.click))
             stack.enter_context(mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool))
             stack.enter_context(mock.patch.object(fc, "shot", side_effect=self.fake_shot))
             stack.enter_context(mock.patch.object(fc, "proof_digests", self.proof_digests))
@@ -2642,6 +2740,29 @@ class ProofTest(unittest.TestCase):
         self.assertIn("wrote", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
+
+    def test_a_proof_clicks_the_point_its_flow_names_and_records_it(self):
+        code, printed, _err = self.run_proof(flow_click=["update notice=400, 300"])
+        self.assertEqual(code, 0)
+        self.click.assert_called_once_with(mock.ANY, 400, 300, "1")
+        self.assertIn("clicked 400,300", printed)
+        proof = json.loads((self.checkout / ".visual-proof.json").read_text())
+        self.assertEqual(
+            proof["flows"],
+            [{"name": "update notice", "steps": ["/lf"], "click": [400, 300], "result": "pass"}],
+        )
+
+    def test_a_proof_without_a_flow_click_clicks_nothing(self):
+        code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.click.assert_not_called()
+        proof = json.loads((self.checkout / ".visual-proof.json").read_text())
+        self.assertNotIn("click", proof["flows"][0])
+
+    def test_a_flow_click_that_names_no_flow_is_refused_before_the_build(self):
+        with self.assertRaisesRegex(fc.ClientError, "no --flow of that name"):
+            self.run_proof(flow_click=["profession=400,300"])
+        self.build_dev.assert_not_called()
 
     def test_a_proof_compare_that_fails_removes_the_proof_it_wrote(self):
         self.compare.side_effect = fc.ClientError("installed build differs")
@@ -2809,6 +2930,8 @@ class ProofTest(unittest.TestCase):
                     str(self.checkout),
                     "--flow",
                     "update notice=/lf",
+                    "--flow-click",
+                    "update notice=400,300",
                     "--manual-launcher",
                 ]
             )
@@ -2817,6 +2940,7 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(options.repo, "legacy-forever")
         self.assertEqual(options.checkout, self.checkout)
         self.assertEqual(options.flow, ["update notice=/lf"])
+        self.assertEqual(options.flow_click, ["update notice=400,300"])
         self.assertTrue(options.manual_launcher)
 
 
