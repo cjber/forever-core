@@ -242,6 +242,18 @@ DROP = {
 }
 
 
+# A headless session plays nothing to the person at the desk. Disabling Wine's audio drivers leaves the game with no
+# output device, so it runs silent. This acts on the session's process environment only: muting through the game's
+# sound CVars would be saved into the shared Config.wtf and silence the player's own client too.
+SILENT_AUDIO = ("winepulse.drv=d", "winealsa.drv=d")
+
+
+def silenced(env: Mapping[str, str]) -> dict[str, str]:
+    """The launch environment with Wine's audio drivers disabled, keeping any DLL overrides it already carries."""
+    overrides = [o for o in env.get("WINEDLLOVERRIDES", "").split(";") if o]
+    return {**env, "WINEDLLOVERRIDES": ";".join([*overrides, *SILENT_AUDIO])}
+
+
 class ClientError(Exception):
     """A failure the agent should read: printed without a traceback, exit status 2."""
 
@@ -2669,6 +2681,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         env["XDG_RUNTIME_DIR"] = str(runtime)
         token = uuid.uuid4().hex
         env["FOREVER_CLIENT_SESSION"] = token
+        env = silenced(env)
         before = screenshots()
         started = time.time()
         launched = time.monotonic()

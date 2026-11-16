@@ -386,6 +386,13 @@ class ForeverClientTest(unittest.TestCase):
         self.assertTrue(state.get("token"))
         self.assertEqual(state.get("wine"), {"PROTONPATH": "/runner"})
 
+    def test_silenced_disables_wine_audio_and_keeps_existing_overrides(self):
+        self.assertEqual(
+            fc.silenced({"WINEDLLOVERRIDES": "d3d12=n", "WINE": "/w"}),
+            {"WINEDLLOVERRIDES": "d3d12=n;winepulse.drv=d;winealsa.drv=d", "WINE": "/w"},
+        )
+        self.assertEqual(fc.silenced({})["WINEDLLOVERRIDES"], "winepulse.drv=d;winealsa.drv=d")
+
     def test_wine_env_keeps_the_launch_and_drops_the_desktop(self):
         env = fc.wine_env(
             {
