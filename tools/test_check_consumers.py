@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 import check_consumers
+from check_core_shared import REQUIRED_GATE_CHECKS
 
 SHARED = b"# checker\n"
 CORE = Path(__file__).resolve().parent.parent
@@ -42,6 +43,7 @@ class CheckConsumersTest(unittest.TestCase):
         self.repo = self.checkouts / "legacy-forever"
         (self.repo / "tools").mkdir(parents=True)
         (self.repo / "tools" / "check_core_shared.py").write_bytes(SHARED)
+        (self.repo / "tools/typecheck.sh").write_text("".join(f"python3 {script}\n" for script in REQUIRED_GATE_CHECKS))
         self.pin = self.repo / "tools" / "forever-core.txt"
         self.pin.write_text("v1.4.0\n", encoding="utf-8")
 
@@ -52,6 +54,14 @@ class CheckConsumersTest(unittest.TestCase):
         for patcher in self.patches:
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_local_consumer_requires_gate_invocations(self):
+        (self.repo / "tools/typecheck.sh").write_text("# python3 tools/lint_client_calls.py\n")
+        with mock.patch.dict(check_consumers.VENDORED, {"tools/lint_client_calls.py": ("legacy-forever",)}):
+            failures = check_consumers.check_consumer_gates("legacy-forever", "main", self.checkouts)
+        self.assertTrue(
+            any("tools/lint_client_calls.py: tools/typecheck.sh never runs it" in failure for failure in failures)
+        )
 
     def run_main(self):
         out = io.StringIO()

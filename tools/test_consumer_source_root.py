@@ -35,6 +35,7 @@ class ConsumerSourceRootTest(unittest.TestCase):
             'VENDORED = {"UI/Shared.lua": ("consumer",)}\n'
             "CONSUMER_ROOT = {}\n"
             'def source(path): return "UI/Canonical.lua"\n'
+            "def check_gate_invocations(repo, gates): return []\n"
         )
         for directory in (self.producer, self.consumer):
             (directory / "UI").mkdir(parents=True)
@@ -92,6 +93,7 @@ class ConsumerSourceRootTest(unittest.TestCase):
             'VENDORED = {"UI/Shared.lua": ("consumer",)}\n'
             'CONSUMER_ROOT = {"consumer": "addon/Consumer"}\n'
             'def source(path): return "UI/Canonical.lua"\n'
+            "def check_gate_invocations(repo, gates): return []\n"
         )
 
 

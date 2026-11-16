@@ -22,6 +22,7 @@ drifts the same way:
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
   its BigWigs packager, so a core release that lands after CI is caught before the upload.
+- A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
 - The step that runs `tools/check_package.py` in a consumer's own `ci.yml` must carry an authenticated GitHub token.
   That check reads core's latest published release through `forever_tools.core_pin`; an anonymous read shares the
   runner address's hourly limit and fails the package job with no code cause, so `tools/sync_consumers.py` adds
@@ -44,7 +45,7 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import quote
 
-from check_core_shared import CONSUMER_ROOT, VENDORED, source
+from check_core_shared import CONSUMER_ROOT, VENDORED, check_gate_invocations, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
 TOOLING = CORE_ROOT / ".agents/skills/wow-forever-addon/tooling"
@@ -677,6 +678,20 @@ def check_visual_workflow(repo, branch, local):
     return failures + tooling_sync_problems(repo, branch, local)
 
 
+def check_consumer_gates(repo, branch, local):
+    """Read only the consumer-owned typecheck gate, locally or remotely."""
+    if repo not in VENDORED.get("tools/lint_client_calls.py", ()):
+        return []
+    path = consumer_path(repo, "tools/typecheck.sh")
+    data, error = read_consumer(repo, path, branch, local)
+    if error:
+        return [f"{repo}: {path}: {error}"]
+    return [
+        f"{repo}: {failure}"
+        for failure in check_gate_invocations(repo, data.decode("utf-8", "replace") if data is not None else "")
+    ]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--branch", default="main", help="the consumers' branch to compare (default: main)")
@@ -736,6 +751,7 @@ def main(argv=None):
     # publishes a visual-proof workflow.
     for repo in repos:
         failures += check_package_token(repo, arguments.branch, arguments.local)
+        failures += check_consumer_gates(repo, arguments.branch, arguments.local)
 
     if failures:
         print("Consumers differ from this repo:")

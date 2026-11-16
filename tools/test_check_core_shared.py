@@ -53,6 +53,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         self.core = dict(CORE)
         for path in check_core_shared.paths_for(self.root.name):
             self.write(path, self.fetch(path))
+        self.write("tools/typecheck.sh", self.gate_script())
         self.write("Core/Own.lua", b"own\n")
         self.commit("base")
         git(self.root, "branch", "base")
@@ -62,6 +63,69 @@ class CheckCoreSharedTest(unittest.TestCase):
     def tearDown(self):
         os.chdir(self.cwd)
         self.tmp.cleanup()
+
+    def gate_script(self):
+        return "".join(f"python3 {script}\n" for script in check_core_shared.REQUIRED_GATE_CHECKS).encode()
+
+    def test_missing_invocation_fails(self):
+        self.write("tools/typecheck.sh", b"true\n")
+        code, out = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("tools/lint_client_calls.py: tools/typecheck.sh never runs it", out)
+
+    def test_comments_and_mentions_do_not_run_a_check(self):
+        self.write("tools/typecheck.sh", self.gate_script().replace(b"python3 tools/lint", b"# python3 tools/lint"))
+        code, out = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("tools/lint_client_calls.py: tools/typecheck.sh never runs it", out)
+
+    def test_base_checks_gate_changes_without_vendored_changes(self):
+        self.write("tools/typecheck.sh", b"true\n")
+        self.commit("remove invocations")
+        code, out = self.run_check("--base", "base")
+        self.assertEqual(code, 1)
+        self.assertIn("tools/lint_client_calls.py: tools/typecheck.sh never runs it", out)
+
+    def test_base_checks_invocation_when_vendored_script_changes(self):
+        script = "tools/lint_client_calls.py"
+        self.write("tools/typecheck.sh", self.gate_script().replace(f"python3 {script}\n".encode(), b""))
+        self.core[script] = b"updated lint\n"
+        self.write(script, self.core[script])
+        self.commit("sync lint without invocation")
+        code, out = self.run_check("--base", "base")
+        self.assertEqual(code, 1)
+        self.assertIn(f"{script}: tools/typecheck.sh never runs it", out)
+
+    def test_missing_typecheck_fails(self):
+        (self.root / "tools/typecheck.sh").unlink()
+        self.assertEqual(self.run_check()[0], 1)
+
+    def test_consumer_outside_vendored_is_skipped(self):
+        self.assertEqual(check_core_shared.check_gate_invocations("other-consumer", ""), [])
+
+    def test_base_skips_invocation_for_unrelated_change(self):
+        self.write("tools/typecheck.sh", b"true\n")
+        self.commit("base without invocation")
+        git(self.root, "branch", "without-invocation")
+        self.write("Core/Own.lua", b"changed\n")
+        self.commit("unrelated")
+        self.assertEqual(self.run_check("--base", "without-invocation")[0], 0)
+
+    def test_exact_command_invocations(self):
+        for line in (
+            "python tools/lint_client_calls.py",
+            "python3 tools/lint_client_calls.py",
+            "uv run --project tools --frozen python3 tools/lint_client_calls.py",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(list(check_core_shared.gate_commands(line)), ["tools/lint_client_calls.py"])
+        for line in (
+            "# python3 tools/lint_client_calls.py",
+            "echo tools/lint_client_calls.py",
+            "uv run tools/lint_client_calls.py",
+            "python3 other/tools/lint_client_calls.py",
+        ):
+            self.assertNotIn("tools/lint_client_calls.py", check_core_shared.gate_commands(line))
 
     def fetch(self, path):
         return self.core[check_core_shared.source(path)]
