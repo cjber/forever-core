@@ -143,8 +143,8 @@ Screenshots, the full feature list and the changelog are on CurseForge: <CurseFo
 Source and issues: <GitHub repo URL>
 ```
 
-Wago has no gallery to maintain. When a Wago gallery still holds images, list their captions for the
-user to delete on `addons.wago.io/addons/<slug>/gallery`.
+Wago has no gallery to maintain. When a Wago gallery still holds images, delete them on
+`addons.wago.io/addons/<slug>/gallery`.
 
 ## Store updates
 
@@ -181,9 +181,9 @@ Measure the current grid width; Up and Down move by a row and Left and Right mov
 row. Re-read the image URLs in order after each drop, click Done, then check after a reload
 and on `curseforge.com/wow/addons/<slug>/gallery`. The public page can lag behind the author page.
 
-For an approved removal, identify the old card by image URL and verify its replacement
+To remove a stale image, identify the old card by image URL and verify its replacement
 first. Hover the exact card to reveal its trash button and selection checkbox. For a batch,
-check the selected image URLs and count against the approved list before confirming.
+check the selected image URLs and count against the images to remove before confirming.
 Wait for those cards to disappear before leaving the page. Reload and read back before
 retrying a deletion, as the first reload can still show stale cards.
 
@@ -271,5 +271,6 @@ then silently skips that site while the run stays green.
 ## Things only the user can do
 
 Uploading the CurseForge logo, setting the API-token secrets, and anything needing a login. Say
-exactly which, with the command or page to use. Deleting store files or gallery images is permanent:
-list each one by caption and position per store, and delete only after the user approves that list.
+exactly which, with the command or page to use. Deleting a released store file is permanent: list
+each one per store and delete it only after the user approves. Stale gallery images are different:
+the user has given standing permission, so delete them yourself as "Keep galleries in sync" describes.
