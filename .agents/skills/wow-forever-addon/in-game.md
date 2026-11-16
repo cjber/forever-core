@@ -11,11 +11,14 @@ The client exists to test the Forever addons' interface. These rules hold for ev
 them where it can:
 
 1. **Interface only.** Open and close frames, click or scroll addon UI, send slash commands, `/reload`, take
-   screenshots, read SavedVariables and Lua errors. Never move the character, target, fight, loot, quest, trade, chat
-   to other players or use the auction house. `slash` sends only the Forever addons' own commands (read from their
-   `SLASH_` globals) and `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there
-   is no free typing; `click` and `scroll` refuse until a `shot` was taken after the last input, so each input aims
-   at UI you have just read in the frame.
+   screenshots, read SavedVariables and Lua errors. To reach a place a check needs (an auction house, a trainer, a
+   vendor), walk with Click-to-Move: `eval` `SetCVar("autoInteract", 1)`, then `click --button 3` on the ground or the
+   NPC, and put the CVar back to its earlier value before the job ends. At an auction house, open it and search; never
+   bid, buy or post. Never attack a creature or walk into one's aggro range, fight, loot, quest, trade or chat to
+   other players. `slash` sends only the Forever addons' own commands (read from their `SLASH_` globals) and
+   `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there is no free typing;
+   `click` and `scroll` refuse until a `shot` was taken after the last input, so each input aims at UI you have just
+   read in the frame.
 2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
    Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs
    inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
