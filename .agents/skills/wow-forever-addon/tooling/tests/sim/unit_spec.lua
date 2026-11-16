@@ -790,6 +790,24 @@ test("natives: task and scenario data changes preserve native function identitie
 	eq(select(5, info()), false, "scenario trailing value after nil")
 end)
 
+test("natives: achievement category arrays remain stable fixture entry points", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	for _, name in ipairs({ "GetGuildCategoryList", "GetStatisticsCategoryList" }) do
+		local native = G[name]
+		eq(type(native), "function", name .. " is an engine native")
+		eq(#native(), 0, name .. " default is empty")
+		local first = native()
+		first[1] = 999
+		eq(#native(), 0, name .. " returns an independent default array")
+		sim.impl[name] = function()
+			return { 608 }
+		end
+		eq(native()[1], 608, name .. " fixture categories")
+		eq(G[name], native, name .. " native identity")
+	end
+end)
+
 test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()
 	local sim, G = freshClient()
 	sim.docs = {

@@ -56,6 +56,9 @@ Sim.CORE = {
 	"Blizzard_FrameXML/DeprecatedTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",
+	"Blizzard_FrameXML/Mainline/AlertFrameSystems.lua",
+	"Blizzard_FrameXML/Camelot/AlertFrameSystemsOverride.lua",
+	"Blizzard_FrameXML/Mainline/AlertFrameSystems.xml",
 	-- SplashFrame's OnLoad disables alerts through AlertFrame, so it loads after the alert frames it names.
 	"Blizzard_SplashFrame",
 	"Blizzard_FrameXML/Mainline/NavigationBar.lua",

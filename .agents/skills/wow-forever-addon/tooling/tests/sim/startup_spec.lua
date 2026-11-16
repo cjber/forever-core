@@ -75,4 +75,18 @@ eq(G.ObjectiveTrackerTopBannerFrame:GetQuestID(), 608001)
 eq(G.TopBannerMgr.currentBanner.frame, G.ObjectiveTrackerTopBannerFrame)
 sim:expectNoErrors()
 eq(G.ObjectiveTrackerTopBannerFrame:IsShown(), true)
+-- The native completion events must reach real alert systems and lazy-loaded Achievement UI.
+sim.impl.GetAchievementInfo = function(id)
+	return id, "Completion fixture", 10, true, 1, 1, 2026, "Completed", 0, 134400, "", false, true
+end
+sim.impl["C_PerksActivities.GetPerksActivityInfo"] = function(id)
+	return { ID = id, activityName = "Monthly completion fixture", completed = true }
+end
+sim:event("ACHIEVEMENT_EARNED", 608002, false)
+sim:event("PERKS_ACTIVITY_COMPLETED", 608003)
+sim:advance(0.1)
+sim:expectNoErrors()
+assert(G.AchievementFrame, "native achievement UI loaded from the completion event")
+assert(G.AchievementAlertSystem, "native achievement alert system initialized")
+assert(G.MonthlyActivityAlertSystem, "native monthly alert system initialized")
 print("startup_spec: bare boot, login and SettingsPanel pass with mouse and gamepad; native flyout metadata passes")

@@ -768,6 +768,16 @@ function M.build(sim)
 	questNative("GetTaskInfo", nil)
 	questNative("GetQuestObjectiveInfo", nil)
 	questNative("GetQuestProgressBarPercent", 0)
+	-- Achievement UI reads these legacy C natives while its Lua file initializes.
+	for _, name in ipairs({ "GetGuildCategoryList", "GetStatisticsCategoryList" }) do
+		G[name] = function(...)
+			local categories = sim.impl[name]
+			if categories then
+				return categories(...)
+			end
+			return {}
+		end
+	end
 	-- Auto quest pop-ups: none.
 	questNative("GetNumAutoQuestPopUps", 0)
 	-- No scenario: no stages. The tracker compares the count GetInfo returns.
