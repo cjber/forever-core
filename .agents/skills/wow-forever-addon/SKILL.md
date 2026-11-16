@@ -378,3 +378,5 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   (`forever_tools.locales`) runs in `typecheck.sh`: it fails on an unknown key, a file LuaJIT can't parse or the TOC
   doesn't load, and a placeholder or escape that differs from English, and prints each locale's coverage (a gap falls
   back to English, so it never fails).
+  Each addon also runs `python3 tools/check_font_glyphs.py` from `tools/typecheck.sh`, with a reviewed
+  `tools/font_bindings.json` naming the font object of each widget that shows a locale phrase.

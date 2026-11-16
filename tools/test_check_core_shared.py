@@ -11,6 +11,7 @@ from pathlib import Path
 import check_core_shared
 
 CORE = {
+    "tools/consumer/check_font_glyphs.py": b"consumer glyph check\n",
     "tools/check_core_shared.py": b"core checker\n",
     "tools/check_client_load.py": b"core client load\n",
     "tools/blizzard_fonts.txt": b"core fonts\n",
@@ -148,7 +149,7 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_full_check_passes_when_every_copy_matches(self):
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("22 vendored files match", out)
+        self.assertIn("23 vendored files match", out)
 
     def test_check_copy_comes_from_the_skill_pack(self):
         self.assertEqual(
@@ -157,7 +158,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         )
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("22 vendored files match", out)
+        self.assertIn("23 vendored files match", out)
 
     def test_full_check_reports_a_consumer_that_lags_behind_core(self):
         self.core["tools/check_client_load.py"] = b"core client load, newer\n"
@@ -222,7 +223,7 @@ class CheckCoreSharedTest(unittest.TestCase):
         os.chdir(worktree)
         code, out = self.run_check()
         self.assertEqual(code, 0, out)
-        self.assertIn("22 vendored files match", out)
+        self.assertIn("23 vendored files match", out)
 
     def test_a_consumer_with_an_addon_folder_uses_the_prefixed_paths(self):
         git(self.root, "remote", "set-url", "origin", "git@github.com:cjber/kiln-forever.git")

@@ -1,7 +1,9 @@
 """Consumer sync and drift checks use the producer even when launched elsewhere."""
 
 import contextlib
+import hashlib
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -95,6 +97,67 @@ class ConsumerSourceRootTest(unittest.TestCase):
             'def source(path): return "UI/Canonical.lua"\n'
             "def check_gate_invocations(repo, gates): return []\n"
         )
+
+
+class ConsumerFontGlyphsTest(unittest.TestCase):
+    def test_vendored_wrapper_checks_reviewed_consumer_fonts(self):
+        import check_core_shared
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "tools"
+            tools.mkdir()
+            core = Path(__file__).resolve().parent.parent
+            wrapper = "tools/check_font_glyphs.py"
+            self.assertEqual(check_core_shared.VENDORED[wrapper], check_core_shared.SUITE_CONSUMERS)
+            self.assertNotIn(wrapper, check_core_shared.REQUIRED_GATE_CHECKS)
+            shutil.copyfile(core / check_core_shared.source(wrapper), root / wrapper)
+            shutil.copytree(
+                core / ".agents/skills/wow-forever-addon/tooling/forever_tools",
+                tools / "forever_tools",
+            )
+            locales = root / "Locales"
+            locales.mkdir()
+            (locales / "enUS.lua").write_text('local _, ns = ...\nlocal L = {}\nns.L = L\nL["Hello"] = "Hello"\n')
+            producer = root / "Widget.lua"
+            producer.write_text('local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")\n')
+            (tools / "font_bindings.json").write_text(
+                json.dumps(
+                    {
+                        "producers": [
+                            {
+                                "source": "Widget.lua",
+                                "sha256": hashlib.sha256(producer.read_bytes()).hexdigest(),
+                                "review": "The label uses GameFontNormal and the Hello phrase.",
+                                "bindings": [{"font": "GameFontNormal", "widget": "label", "phrase": "Hello"}],
+                            }
+                        ]
+                    }
+                )
+            )
+            for translation, expected in (("Hello ·", 1), ("Hello", 0)):
+                with self.subTest(translation=translation):
+                    (locales / "ruRU.lua").write_text(
+                        "local _, ns = ...\n"
+                        'if GetLocale() ~= "ruRU" then return end\n'
+                        "local L = ns.L\n"
+                        f'L["Hello"] = "{translation}"\n',
+                        encoding="utf-8",
+                    )
+                    result = subprocess.run(
+                        [sys.executable, str(root / wrapper)],
+                        cwd=directory,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    if expected:
+                        self.assertIn("U+00B7", result.stdout)
+                        self.assertIn("frizqt___cyr.ttf", result.stdout)
+                        self.assertIn("ruRU.lua", result.stdout)
+                    else:
+                        self.assertEqual(result.stdout, "")
 
 
 class MissingRemoteTest(unittest.TestCase):
