@@ -26,8 +26,9 @@ if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
 end
 ```
 
-`ForeverCore` itself exists only once the client has loaded ForeverCore, which `## Dependencies: ForeverCore` in your
-TOC guarantees before your files run.
+`ForeverCore` itself exists only once the client has loaded ForeverCore, which `## OptionalDeps: ForeverCore` in your
+TOC makes the client load before your files when core is installed. Do not use `## Dependencies`: the client would skip
+your addon when core is missing. Show a missing core with the vendored `Core/ForeverRequire.lua` instead.
 
 ## `ForeverCore.APIKit`
 

@@ -6,11 +6,15 @@ button, the quest log side tabs, the settings-page chrome and the family page.
 
 ## The dependency
 
-The TOC declares the runtime load dependency:
+The TOC declares it as an optional dependency:
 
 ```toc
-## Dependencies: ForeverCore
+## OptionalDeps: ForeverCore
 ```
+
+The client loads ForeverCore before the addon when it is installed, and the addon still loads when it is missing,
+which is what lets its vendored `Core/ForeverRequire.lua` show one line saying how to install core. Do not declare
+ForeverCore in `## Dependencies`: the client would skip the addon entirely, and the player would see nothing.
 
 The store relation uses the CurseForge project slug, `forevercore` (project 1796337):
 
@@ -26,8 +30,7 @@ and `## X-Forever-Core:` must continue to name the same release. The runtime loa
 
 A store relation does not prove that an existing installation acquires an independently managed dependency.
 Wago's documented upload metadata has no dependency field. Keep the fallback on every channel until that channel
-passes the [dependency transition](dependency-transition.md) upgrade and uninstall checks. Do not list ForeverCore
-in `OptionalDeps`.
+passes the [dependency transition](dependency-transition.md) upgrade and uninstall checks.
 
 ## Asking for per-addon services
 

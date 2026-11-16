@@ -6,6 +6,10 @@
   repeated quest ID made it lay that quest's block out twice in one pass, which the client refuses with "Cannot anchor
   to a region dependent on it" while the tracker lays itself out. Each unique quest now gets one record and one block.
   Thanks to a player on CurseForge for the report. (#609)
+- **A Forever addon now tells you when ForeverCore is missing or turned off.** Each addon loads even without ForeverCore
+  and shows one line naming the fix: install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge
+  app, because the app does not restore ForeverCore from the other addon's row. If ForeverCore is installed but
+  disabled, the line asks you to enable it in the AddOns list. (#659)
 
 ## [1.13.0] - 2026-11-16
 

@@ -13,7 +13,7 @@ drifts the same way:
   addon's specs and CI test against the core a player runs. The tag comes from `forever_tools.core_pin.latest_release`,
   the same read every consumer's package and release gates use; with `--local` it is this checkout's newest `v*` tag
   from `git describe`. A latest release that cannot be read fails this gate rather than skipping the check.
-- `.pkgmeta`, when the consumer's root TOC lists ForeverCore in `## Dependencies`, must retain its pinned fallback
+- `.pkgmeta`, when the consumer's root TOC names ForeverCore in `## OptionalDeps`, must retain its pinned fallback
   during standalone dependency adoption: `externals:` downloads `ForeverCore-<pin>-forever.zip` from the release the
   consumer's `tools/forever-core.txt` names and `move-folders:` places it beside the addon's own folder. The sync adds
   `forevercore` under `required-dependencies`; bundle-only consumers remain valid during adoption. Removal needs the
@@ -234,13 +234,23 @@ def block_entries(lines):
     return list(block_values(lines))
 
 
-def requires_core(toc):
-    """Whether a TOC's `## Dependencies` header lists ForeverCore."""
+def toc_names(toc, header):
+    """The names in a TOC's `## <header>:` line, lowercased."""
+    wanted = f"## {header}".lower()
     for line in toc.decode("utf-8", "replace").splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("## dependencies:"):
-            return FOREVER_CORE in (name.strip().lower() for name in stripped.split(":", 1)[1].split(","))
-    return False
+        name, separator, value = line.strip().partition(":")
+        if separator and name.strip().lower() == wanted:
+            return {part.strip().lower() for part in value.split(",")}
+    return set()
+
+
+def toc_core(toc):
+    """Whether a TOC names ForeverCore in each dependency header: `(required, optional)`.
+
+    Consumers declare `## OptionalDeps: ForeverCore` so the addon still loads without core and can say what is
+    missing; `## Dependencies: ForeverCore` makes the client skip the addon entirely, so it is a failure.
+    """
+    return FOREVER_CORE in toc_names(toc, "Dependencies"), FOREVER_CORE in toc_names(toc, "OptionalDeps")
 
 
 def root_toc(repo, pkgmeta, branch, local):
@@ -301,12 +311,28 @@ def check_packaging(repo, pin, branch, local):
         return []
     pkgmeta = data.decode("utf-8", "replace")
     toc = root_toc(repo, pkgmeta, branch, local)
-    if toc is None or not requires_core(toc):
+    if toc is None:
         return []
     package = pkgmeta_field(pkgmeta, "package-as")
     toc_path = consumer_path(repo, f"{package}.toc")
+    required, optional = toc_core(toc)
     blocks = pkgmeta_blocks(pkgmeta)
-    failures = [
+    ships = bool(core_pin.external_line(pkgmeta))
+    declares = "forevercore" in block_entries(blocks.get("required-dependencies", []))
+    failures = []
+    if required:
+        failures.append(
+            f"{repo}: {toc_path}: lists ForeverCore in `## Dependencies`, so the client skips the addon when core is"
+            " missing; move it to `## OptionalDeps` and keep the other names on that line"
+        )
+    if not (required or optional or ships or declares):
+        return failures
+    if not optional and not required:
+        failures.append(
+            f"{repo}: {toc_path}: a Forever addon with no `## OptionalDeps: ForeverCore`; add it so the client loads"
+            " core first when it is installed and this addon still loads without it"
+        )
+    failures += [
         f"{repo}: {failure}"
         for failure in compare(
             pin or "",

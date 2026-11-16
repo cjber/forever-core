@@ -1,4 +1,4 @@
 ## Interface: 16001
 ## Title: SimExerciseCore
-## Dependencies: ForeverCore
+## OptionalDeps: ForeverCore
 SimExerciseCore.lua

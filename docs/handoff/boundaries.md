@@ -33,7 +33,7 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 9. No addon guides a fixed authored route. That is Polestar; Adventure Guide and Tweaks step aside for it.
 10. Field Guide does not award anything that is not cosmetic, and does not duplicate Legacy's challenge tracking. Legacy may read Field Guide for a zone milestone (see §3).
 11. Every addon must work alone: anything another addon provides has a fallback that works with none of the others installed. ForeverCore is the one required companion, and the stores install it automatically.
-12. Shared code lives in ForeverCore and is required with `## Dependencies: ForeverCore`, never re-implemented or copied per addon (§5).
+12. Shared code lives in ForeverCore and is loaded with `## OptionalDeps: ForeverCore`, never re-implemented or copied per addon (§5).
 
 ## 3. Feature to owner
 
@@ -94,8 +94,9 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 
 ForeverCore owns the code that is shared by every addon, not the features those addons draw.
 
-- **Required, not copied.** Every Forever addon declares `## Dependencies: ForeverCore` and lists ForeverCore under
-  `required-dependencies` in `.pkgmeta`. ForeverCore loads first, so exactly one copy of `Core/SafeCall.lua`,
+- **Required, not copied.** Every Forever addon names ForeverCore in `## OptionalDeps: ForeverCore` and lists ForeverCore
+  under `required-dependencies` in `.pkgmeta`, so the addon still loads and can say what to install when core is
+  missing. ForeverCore loads first, so exactly one copy of `Core/SafeCall.lua`,
   `Core/Log.lua`, `UI/Report.lua`, `UI/ForeverFamily.lua`, the tracker files and the rest runs in the game.
 - **One source of truth.** A shared change lands in ForeverCore and ships with its own release. Nothing is copied into
   a consumer. The development tooling in `tools/check_core_shared.py`'s `VENDORED` still travels with

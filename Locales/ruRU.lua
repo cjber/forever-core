@@ -136,6 +136,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"Не удалось запустить запись отладки: ForeverCore ещё не загрузился."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: установленный ForeverCore является другим аддоном (%s). Удалите его и установите ForeverCore с CurseForge." -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s требует ForeverCore. Установите его с CurseForge или выберите «Переустановить» для ForeverCore в приложении CurseForge." -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore отключён. Включите его в списке аддонов, чтобы исправить это." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"Ни один аддон Forever ещё ничего не записал для этого персонажа."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
