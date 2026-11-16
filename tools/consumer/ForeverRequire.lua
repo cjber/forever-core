@@ -115,6 +115,13 @@ local function foreign()
 		end
 	end
 end
+local function show(text)
+	if _G.UIErrorsFrame and _G.UIErrorsFrame.AddMessage then
+		_G.UIErrorsFrame:AddMessage(text, 1, 0.1, 0.1)
+	end
+end
+-- The frame a line waits on until the world is drawn, kept here so the client does not collect it before then.
+local worldFrame
 function ns.ForeverRequire(ready)
 	if ready then
 		return true
@@ -149,8 +156,18 @@ function ns.ForeverRequire(ready)
 			text = phrase("%s could not start. Reinstall %s to fix this.", own, own)
 		end
 	end
-	if _G.UIErrorsFrame and _G.UIErrorsFrame.AddMessage then
-		_G.UIErrorsFrame:AddMessage(text, 1, 0.1, 0.1)
+	-- This runs while the addon's files load, so the loading screen covers the line and it has faded before the world is
+	-- drawn (#659). A player who is still logging in sees it on the first PLAYER_ENTERING_WORLD instead, once.
+	if _G.IsLoggedIn and not _G.IsLoggedIn() and type(_G.CreateFrame) == "function" then
+		worldFrame = _G.CreateFrame("Frame", nil, _G.UIParent)
+		worldFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+		worldFrame:SetScript("OnEvent", function(frame)
+			-- An unregister keeps a later zone change from showing the line again.
+			frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+			show(text)
+		end)
+	else
+		show(text)
 	end
 	return false
 end

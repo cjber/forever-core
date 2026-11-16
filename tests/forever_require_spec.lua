@@ -20,6 +20,8 @@ local MISSING =
 local DISABLED = "My Addon: ForeverCore is turned off. Enable it in the AddOns list to fix this."
 local addons = {}
 local messages = {}
+local frames = {}
+local loggedIn = true
 
 local function entry(overrides)
 	local item = {
@@ -49,6 +51,32 @@ _G.UIErrorsFrame = {
 		messages[#messages + 1] = { text = text, red = red, green = green, blue = blue }
 	end,
 }
+
+-- Enough of the client's frame API for a line that waits for the world: registering, unregistering and one script.
+_G.IsLoggedIn = function()
+	return loggedIn
+end
+_G.CreateFrame = function()
+	local frame = { events = {}, scripts = {} }
+	function frame:RegisterEvent(event)
+		self.events[event] = true
+	end
+	function frame:UnregisterEvent(event)
+		self.events[event] = nil
+	end
+	function frame:SetScript(name, handler)
+		self.scripts[name] = handler
+	end
+	frames[#frames + 1] = frame
+	return frame
+end
+local function fire(event)
+	for _, frame in ipairs(frames) do
+		if frame.events[event] and frame.scripts.OnEvent then
+			frame.scripts.OnEvent(frame, event)
+		end
+	end
+end
 
 _G.C_AddOns = {
 	GetNumAddOns = function()
@@ -92,7 +120,7 @@ _G.C_AddOns = {
 	end,
 }
 
-local function run(entries, ready, L, core_addon)
+local function run(entries, ready, L, core_addon, logged)
 	addons = {
 		{ name = "MyAddon", title = own.title, loaded = true, enabled = 2, deps = { "ForeverCore" }, tag = own.tag },
 	}
@@ -103,6 +131,8 @@ local function run(entries, ready, L, core_addon)
 		addons[#addons + 1] = item
 	end
 	messages = {}
+	frames = {}
+	loggedIn = logged ~= false
 	local ns = { L = L }
 	assert(loadfile("tools/consumer/ForeverRequire.lua"))("MyAddon", ns)
 	local result = ns.ForeverRequire(ready)
@@ -115,6 +145,7 @@ do
 	equal(result, true, "ready returns true")
 	equal(ns.broken, nil, "ready leaves the addon unbroken")
 	equal(#messages, 0, "ready shows no message")
+	equal(#frames, 0, "ready creates no frame")
 end
 
 -- No ForeverCore folder at all names the install, whatever else is installed.
@@ -370,6 +401,41 @@ do
 	local L = { [FOREIGN_KEY] = "%s: %s is not our core." }
 	local _, _, overridden = run({}, false, L, other)
 	equal(overridden, "My Addon: Another Core UI is not our core.", "ns.L overrides the foreign phrase")
+end
+
+-- A player still on the loading screen sees the line once the world is drawn, and only once.
+do
+	local ns, result = run({}, false, nil, false, false)
+	equal(result, false, "a logged out addon returns false")
+	equal(ns.broken, true, "a logged out addon is marked broken")
+	equal(#messages, 0, "a logged out addon shows no line while the world loads")
+	equal(#frames, 1, "a logged out addon waits on one frame")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "the first entering world shows the line")
+	equal(messages[1].text, MISSING, "the line kept for the world is the same text")
+	equal(messages[1].red, 1, "the world line uses the error red")
+	equal(messages[1].green, 0.1, "the world line uses the error green")
+	equal(messages[1].blue, 0.1, "the world line uses the error blue")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "a second entering world does not repeat the line")
+
+	local off = { name = "ForeverCore", title = "ForeverCore", loaded = false, enabled = 0, project = "1796337" }
+	local _, _, text = run({}, false, nil, off, false)
+	equal(text, nil, "a logged out turned off core waits too")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(messages[1] and messages[1].text, DISABLED, "the world shows the branch the addon took")
+end
+
+-- A player already in the world sees the line at once, as before.
+do
+	local ns, result, text = run({}, false, nil, false, true)
+	equal(result, false, "a logged in addon returns false")
+	equal(ns.broken, true, "a logged in addon is marked broken")
+	equal(text, MISSING, "a logged in player sees the line at once")
+	equal(#messages, 1, "a logged in player takes one line")
+	equal(#frames, 0, "a logged in player needs no frame")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "a later entering world adds no second line")
 end
 
 print(("forever_require_spec: %d checks passed"):format(checks))
