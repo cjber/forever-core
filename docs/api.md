@@ -12,6 +12,7 @@ convention and the next read after this page.
 
 ```lua
 ForeverCore.API -- integer
+ForeverCore.minor -- integer
 ```
 
 The interface version of the table below. It is `2` today. It changes only when a member a third-party addon may
@@ -26,8 +27,26 @@ if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
 end
 ```
 
-`ForeverCore` itself exists only once the client has loaded ForeverCore, which `## Dependencies: ForeverCore` in your
-TOC guarantees before your files run.
+`ForeverCore` itself exists only once the client has loaded ForeverCore, which `## OptionalDeps: ForeverCore` in your
+TOC makes the client load before your files when core is installed. Do not use `## Dependencies`: the client would skip
+your addon when core is missing. Show a missing core with the vendored `Core/ForeverRequire.lua` instead.
+
+`minor` is the core table's own version and rises with each member this page adds outside a module. It is `1` today,
+and `Registered` arrived in minor 1. A member added here keeps `API` and raises `minor`, so check it before you use
+such a member: `if (ForeverCore.minor or 0) >= 1 and ForeverCore.Registered then ... end`.
+
+## `ForeverCore.Registered`
+
+```lua
+ForeverCore.Registered(addonName) --> boolean
+```
+
+Whether the addon named `addonName` has called `ForeverCore.Register`, which every Forever addon does after its
+`Core/Require.lua` has feature-checked the core members it needs. It is true once that has happened, and false for a
+name that never got there, including a loaded addon whose `Require` refused to start it on this core. That refusal is
+one UIErrorsFrame line and a stopped file list rather than a Lua error, so an error count cannot see it; call this to
+tell an addon that started from one that did not. It publishes nothing and changes nothing, and anything that is not a
+string answers false. (minor 1)
 
 ## `ForeverCore.APIKit`
 

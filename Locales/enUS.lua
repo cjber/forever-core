@@ -57,6 +57,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"Debug capture could not start because ForeverCore has not finished loading."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."
 L["Don't suggest this again"] = "Don't suggest this again"
 L["Drag to move"] = "Drag to move"
 L["Feature request"] = "Feature request"
@@ -72,8 +76,8 @@ L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
 	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "Lock the tracker"
 L["Last"] = "Last"
 L["Memory KB"] = "Memory KB"

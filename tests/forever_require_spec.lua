@@ -8,13 +8,20 @@ local function equal(actual, expected, label)
 end
 
 local own = { title = "My Addon", tag = "v1.5.0" }
-local core = { name = "ForeverCore", title = "ForeverCore", project = "1796337" }
+local core = { name = "ForeverCore", title = "ForeverCore", project = "1796337", loaded = true, enabled = 2 }
 local FOREIGN_KEY = "%s: the installed ForeverCore is another addon (%s). "
 	.. "Remove it and install ForeverCore from CurseForge."
 local FOREIGN = "My Addon: the installed ForeverCore is another addon (Another Core UI). "
 	.. "Remove it and install ForeverCore from CurseForge."
+local MISSING_KEY =
+	"%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."
+local MISSING =
+	"My Addon needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."
+local DISABLED = "My Addon: ForeverCore is turned off. Enable it in the AddOns list to fix this."
 local addons = {}
 local messages = {}
+local frames = {}
+local loggedIn = true
 
 local function entry(overrides)
 	local item = {
@@ -44,6 +51,32 @@ _G.UIErrorsFrame = {
 		messages[#messages + 1] = { text = text, red = red, green = green, blue = blue }
 	end,
 }
+
+-- Enough of the client's frame API for a line that waits for the world: registering, unregistering and one script.
+_G.IsLoggedIn = function()
+	return loggedIn
+end
+_G.CreateFrame = function()
+	local frame = { events = {}, scripts = {} }
+	function frame:RegisterEvent(event)
+		self.events[event] = true
+	end
+	function frame:UnregisterEvent(event)
+		self.events[event] = nil
+	end
+	function frame:SetScript(name, handler)
+		self.scripts[name] = handler
+	end
+	frames[#frames + 1] = frame
+	return frame
+end
+local function fire(event)
+	for _, frame in ipairs(frames) do
+		if frame.events[event] and frame.scripts.OnEvent then
+			frame.scripts.OnEvent(frame, event)
+		end
+	end
+end
 
 _G.C_AddOns = {
 	GetNumAddOns = function()
@@ -82,17 +115,24 @@ _G.C_AddOns = {
 	GetAddOnDependencies = function(index)
 		return unpack(addons[index] and addons[index].deps or {})
 	end,
+	GetAddOnOptionalDependencies = function(index)
+		return unpack(addons[index] and addons[index].optional or {})
+	end,
 }
 
-local function run(entries, ready, L, installed)
+local function run(entries, ready, L, core_addon, logged)
 	addons = {
 		{ name = "MyAddon", title = own.title, loaded = true, enabled = 2, deps = { "ForeverCore" }, tag = own.tag },
-		installed or core,
 	}
+	if core_addon ~= false then
+		addons[#addons + 1] = core_addon or core
+	end
 	for _, item in ipairs(entries or {}) do
 		addons[#addons + 1] = item
 	end
 	messages = {}
+	frames = {}
+	loggedIn = logged ~= false
 	local ns = { L = L }
 	assert(loadfile("tools/consumer/ForeverRequire.lua"))("MyAddon", ns)
 	local result = ns.ForeverRequire(ready)
@@ -105,6 +145,45 @@ do
 	equal(result, true, "ready returns true")
 	equal(ns.broken, nil, "ready leaves the addon unbroken")
 	equal(#messages, 0, "ready shows no message")
+	equal(#frames, 0, "ready creates no frame")
+end
+
+-- No ForeverCore folder at all names the install, whatever else is installed.
+do
+	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
+	local ns, result, text = run({ culprit }, false, nil, false)
+	equal(result, false, "a missing core returns false")
+	equal(ns.broken, true, "a missing core marks the addon broken")
+	equal(text, MISSING, "a missing core names the install")
+	equal(#messages, 1, "a missing core takes one line")
+	equal(messages[1].red, 1, "the missing core line uses the error red")
+	equal(messages[1].green, 0.1, "the missing core line uses the error green")
+	equal(messages[1].blue, 0.1, "the missing core line uses the error blue")
+end
+
+-- A missing core is named before an out-of-date dependent or a reinstall.
+do
+	local _, _, text = run({}, false, nil, false)
+	equal(text, MISSING, "a missing core is named with nothing else installed")
+	local L = { [MISSING_KEY] = "%s: install ForeverCore first." }
+	local _, _, overridden = run({}, false, L, false)
+	equal(overridden, "My Addon: install ForeverCore first.", "ns.L overrides the missing phrase")
+end
+
+-- An installed but turned off ForeverCore asks for it to be enabled, not installed again.
+do
+	local off = { name = "ForeverCore", title = "ForeverCore", loaded = false, enabled = 0, project = "1796337" }
+	local ns, result, text = run({}, false, nil, off)
+	equal(result, false, "a turned off core returns false")
+	equal(ns.broken, true, "a turned off core marks the addon broken")
+	equal(text, DISABLED, "a turned off core asks for it to be enabled")
+	equal(#messages, 1, "a turned off core takes one line")
+	equal(messages[1].red, 1, "the turned off line uses the error red")
+	equal(messages[1].green, 0.1, "the turned off line uses the error green")
+	equal(messages[1].blue, 0.1, "the turned off line uses the error blue")
+	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
+	local _, _, blames = run({ culprit }, false, nil, off)
+	equal(blames, text, "a turned off core is named instead of the out-of-date addon")
 end
 
 -- One older culprit is named.
@@ -152,6 +231,36 @@ do
 	local other = entry({ name = "QuestAddon", title = "Quest Addon", tag = "v1.0.0", deps = { "Questie" } })
 	local _, _, text = run({ other }, false)
 	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "a non-dependent addon is ignored")
+end
+
+-- A consumer that names ForeverCore in OptionalDeps is still named when it is out of date.
+do
+	local optional = entry({
+		name = "OptionalForever",
+		title = "Optional Forever",
+		tag = "v1.4.0",
+		deps = {},
+		optional = { "ForeverCore" },
+	})
+	local _, _, text = run({ optional }, false)
+	equal(
+		text,
+		"My Addon: Optional Forever is out of date. Update it to fix this.",
+		"an optional-dependent addon is named"
+	)
+end
+
+-- Without a readable addon list, the checks fall back to the reinstall line rather than claiming core is missing.
+do
+	local global = _G.C_AddOns.GetNumAddOns
+	_G.C_AddOns.GetNumAddOns = nil
+	local _, _, text = run({}, false)
+	_G.C_AddOns.GetNumAddOns = global
+	equal(
+		text,
+		"My Addon could not start. Reinstall My Addon to fix this.",
+		"an unreadable addon list keeps the reinstall line"
+	)
 end
 
 -- No culprit gives the reinstall line.
@@ -205,7 +314,7 @@ end
 
 -- A ForeverCore folder that is another addon's is named in one line, never blamed on an out-of-date dependent.
 do
-	local other = { name = "ForeverCore", title = "Another Core UI", project = "5842317" }
+	local other = { name = "ForeverCore", title = "Another Core UI", project = "5842317", loaded = true, enabled = 2 }
 	local ns, result, text = run({}, false, nil, other)
 	equal(result, false, "a foreign core returns false")
 	equal(ns.broken, true, "a foreign core marks the addon broken")
@@ -222,7 +331,7 @@ end
 
 -- Our project ID keeps the existing branches, whether a dependent is out of date or nothing is named.
 do
-	local ours = { name = "ForeverCore", title = "ForeverCore", project = "1796337" }
+	local ours = { name = "ForeverCore", title = "ForeverCore", project = "1796337", loaded = true, enabled = 2 }
 	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
 	local _, _, text = run({ culprit }, false, nil, ours)
 	equal(
@@ -236,17 +345,29 @@ end
 
 -- A core that predates the project ID is still ours by its website, and another site is another addon.
 do
-	local old = { name = "ForeverCore", title = "ForeverCore", website = "https://github.com/cjber/forever-core" }
+	local old = {
+		name = "ForeverCore",
+		title = "ForeverCore",
+		website = "https://github.com/cjber/forever-core",
+		loaded = true,
+		enabled = 2,
+	}
 	local _, _, text = run({}, false, nil, old)
 	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "our website keeps the reinstall line")
-	local other = { name = "ForeverCore", title = "Another Core UI", website = "https://example.com/forever-core-ui" }
+	local other = {
+		name = "ForeverCore",
+		title = "Another Core UI",
+		website = "https://example.com/forever-core-ui",
+		loaded = true,
+		enabled = 2,
+	}
 	local _, _, named = run({}, false, nil, other)
 	equal(named, FOREIGN, "another website names the addon")
 end
 
 -- A core naming neither marker cannot be proved foreign, so the reinstall line stays.
 do
-	local bare = { name = "ForeverCore", title = "Another Core UI" }
+	local bare = { name = "ForeverCore", title = "Another Core UI", loaded = true, enabled = 2 }
 	local _, _, text = run({}, false, nil, bare)
 	equal(
 		text,
@@ -257,7 +378,7 @@ end
 
 -- A metadata call that errors is handled: no Lua error, and the existing line.
 do
-	local broken = { name = "ForeverCore", title = "ForeverCore", project_error = true }
+	local broken = { name = "ForeverCore", title = "ForeverCore", project_error = true, loaded = true, enabled = 2 }
 	local _, _, text = run({}, false, nil, broken)
 	equal(
 		text,
@@ -268,12 +389,53 @@ end
 
 -- Colour codes come off the foreign core's title, and ns.L overrides the new phrase.
 do
-	local other = { name = "ForeverCore", title = "|cffff0000Another Core UI|r", project = "5842317" }
+	local other = {
+		name = "ForeverCore",
+		title = "|cffff0000Another Core UI|r",
+		project = "5842317",
+		loaded = true,
+		enabled = 2,
+	}
 	local _, _, text = run({}, false, nil, other)
 	equal(text, FOREIGN, "the foreign title is stripped")
 	local L = { [FOREIGN_KEY] = "%s: %s is not our core." }
 	local _, _, overridden = run({}, false, L, other)
 	equal(overridden, "My Addon: Another Core UI is not our core.", "ns.L overrides the foreign phrase")
+end
+
+-- A player still on the loading screen sees the line once the world is drawn, and only once.
+do
+	local ns, result = run({}, false, nil, false, false)
+	equal(result, false, "a logged out addon returns false")
+	equal(ns.broken, true, "a logged out addon is marked broken")
+	equal(#messages, 0, "a logged out addon shows no line while the world loads")
+	equal(#frames, 1, "a logged out addon waits on one frame")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "the first entering world shows the line")
+	equal(messages[1].text, MISSING, "the line kept for the world is the same text")
+	equal(messages[1].red, 1, "the world line uses the error red")
+	equal(messages[1].green, 0.1, "the world line uses the error green")
+	equal(messages[1].blue, 0.1, "the world line uses the error blue")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "a second entering world does not repeat the line")
+
+	local off = { name = "ForeverCore", title = "ForeverCore", loaded = false, enabled = 0, project = "1796337" }
+	local _, _, text = run({}, false, nil, off, false)
+	equal(text, nil, "a logged out turned off core waits too")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(messages[1] and messages[1].text, DISABLED, "the world shows the branch the addon took")
+end
+
+-- A player already in the world sees the line at once, as before.
+do
+	local ns, result, text = run({}, false, nil, false, true)
+	equal(result, false, "a logged in addon returns false")
+	equal(ns.broken, true, "a logged in addon is marked broken")
+	equal(text, MISSING, "a logged in player sees the line at once")
+	equal(#messages, 1, "a logged in player takes one line")
+	equal(#frames, 0, "a logged in player needs no frame")
+	fire("PLAYER_ENTERING_WORLD")
+	equal(#messages, 1, "a later entering world adds no second line")
 end
 
 print(("forever_require_spec: %d checks passed"):format(checks))

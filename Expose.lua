@@ -9,6 +9,9 @@ core.name = "ForeverCore"
 -- Raised when a change breaks the interface below, so an addon can refuse to run against an older core. Version 2
 -- retired Forever Leaderboards and peer stats; theirs are the no-op answers in Core/RetiredLeaderboards.lua.
 core.API = 2
+-- The core table's own minor, raised with each member added here outside a module. `Registered` arrived in minor 1;
+-- a caller that needs it checks this first, the way a module member checks that module's minor.
+core.minor = 1
 
 core.TrackerHost = ns.TrackerHost
 core.TrackerSection = ns.TrackerSection
@@ -114,6 +117,18 @@ function core.Register(addonName, spec)
 		AttachDb(context, spec.db)
 	end
 	return context
+end
+
+-- Whether an addon has reached Register, and so got far enough to start: every Forever addon's Core/Require.lua calls
+-- Register after feature-checking the core members it needs. A consumer whose Require refused is a UIErrorsFrame line
+-- and a stopped file list, never a Lua error, so a release gate asks this instead of reading the error frame.
+---@param addonName string
+---@return boolean
+function core.Registered(addonName)
+	if type(addonName) ~= "string" then
+		return false
+	end
+	return contexts[addonName] ~= nil
 end
 
 -- Core's own errors and lines are recorded under ForeverCore. Core.lua's Start (converted copies) or its one

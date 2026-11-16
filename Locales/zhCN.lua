@@ -47,8 +47,8 @@ L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
 	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "锁定追踪器"
 L["No addon has attached its log yet."] = "还没有插件附加日志。"
 L["No one is listed yet."] = "还没有列出任何人。"
@@ -123,6 +123,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"无法启动调试捕获，因为 ForeverCore 尚未完成加载。"
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s：已安装的 ForeverCore 是另一个插件（%s）。请移除它，并从 CurseForge 安装 ForeverCore。" -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s 需要 ForeverCore。请从 CurseForge 安装它，或在 CurseForge 应用中选择 ForeverCore 的“重新安装”。" -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s：ForeverCore 已关闭。请在插件列表中启用它。" -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"还没有任何 Forever 插件为这个角色记录内容。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

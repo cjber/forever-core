@@ -1,23 +1,23 @@
 {
-  "input_digest": "880a60a54dc0a26cfe4d7dca634f7434f69d63ba53c205b6dcd939db77f5acb3",
-  "runtime_sha256": "880a60a54dc0a26cfe4d7dca634f7434f69d63ba53c205b6dcd939db77f5acb3",
-  "candidate": "e3bced791052dbd074ffe045f2d7c7c2c93cd99120eceaeb1e741ce2f99be91e",
+  "input_digest": "393c85a3409af06bb53bbe3c0f349a11cfa218e850047f81377144b4ce53c76c",
+  "runtime_sha256": "393c85a3409af06bb53bbe3c0f349a11cfa218e850047f81377144b4ce53c76c",
+  "candidate": "21429b89d24086cce729955e3002c16b705fd05f31c9a64e991c7a88cd6938ab",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "b7e63539fecee7fd18eefabaf9b75c989b153f84",
+  "source_commit": "5965d99fbefdc70d6e6d22fb5fd2cdee635e3152",
   "flows": [
     {
-      "name": "settings",
+      "name": "quest list with game tracker hidden",
       "steps": [
-        "settings-ready.lua sha256:86dd0d8704d0317ca099aa5fed2f834e11fd1da9c788aaa1965aa6e36b8f451c"
+        "core686-tracker.lua sha256:48d08f996082d86c2bd0a597898f9ddea3a19a34e81e2f178b2d5a695f1c719a"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/becb5be4755e234c5eaf1c2fe2d87f73/raw/fe3dac28fd78ca4f67b39afbaf1ce04221522e5d/1-settings.png",
-      "sha256": "52dc4cf3444ab6c8f2693230004db30822fd10d6cfe9c760cbeee8985ae0300e"
+      "url": "https://gist.githubusercontent.com/cjber/6fd570c4b88d99f47c7a1223c0d46e9e/raw/ffd353717825eaa899cfc22af15eff864cf1670e/1-quest-list-with-game-tracker-hidden.png",
+      "sha256": "23572a47bbe3d05cb255369d25921c55fd2bf25cd99590dc1a50beaba66c2e9f"
     }
   ]
 }

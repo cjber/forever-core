@@ -25,7 +25,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write # the packager creates the GitHub release; a manual release creates its tag
       # Read for release_check.py's CI runs, and write for the consumer sync this job starts itself: a tag a workflow
@@ -135,6 +135,15 @@ jobs:
       - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
         with:
           tools: lua
+      # A core release reaches players before the consumers are re-released, so the exact candidate is loaded with
+      # every consumer's latest released build here, after CI passed and before anything is packaged or uploaded.
+      - name: Exercise the released consumer builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/release-sim
+        run: |
+          python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+          python3 tools/suite_load.py --released -v
       - name: Build the release zip without uploading
         uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:

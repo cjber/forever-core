@@ -1,7 +1,8 @@
 # AGENTS.md
 
 ForeverCore is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
-`ForeverCore`, and every Forever addon requires it with `## Dependencies: ForeverCore`. It owns the one objective-tracker
+`ForeverCore`, and every Forever addon declares it with `## OptionalDeps: ForeverCore`, so the client loads it first
+when it is installed and the addon still loads when it is not. It owns the one objective-tracker
 column the suite docks into, the grip and Lock switch that move it, the section order that stacks them, the Questie and
 EQOT bridges that keep the column out from under another tracker's quest list, the report and issue windows, the error
 journal and debug log, the minimap button, the world map quest log tabs, the settings-page chrome and the Forever
@@ -45,6 +46,8 @@ python3 tools/headless/forever_client.py lease     # hold the client for an inte
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
 python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session
+python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
+python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
@@ -234,10 +237,12 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
-  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC lists
-  ForeverCore in `## Dependencies` must ship it in its own zip (`externals:` at the pin and
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC names
+  ForeverCore in `## OptionalDeps` must ship it in its own zip (`externals:` at the pin and
   `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
   `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
+  A `## Dependencies` line naming ForeverCore fails, because the client would skip the addon and it could never say
+  core is missing.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also
   requires the pin to name cjber/forever-core's latest published GitHub release, read with `GH_TOKEN` or
   `GITHUB_TOKEN` when either is set. It fails closed when that release cannot be read. The package job runs it in every
@@ -255,7 +260,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `tools/forever_tools/` or `tools/forever_sim/`, runs the same syncs as `sync_consumers.py`, regenerates each
   consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and moves each consumer's `tools/forever-core.txt`
   pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone). Every run
-  also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, and, when the consumer ships
+  also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, moves a TOC that still names
+  ForeverCore in `## Dependencies` to `## OptionalDeps` beside its other names, and, when the consumer ships
   core and its latest released tag bundles a core different from the pin, adds a marked `CHANGELOG.md` release entry
   (above a marked entry whose own tag is already released), then the run creates the signed commit through the GraphQL
   `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
@@ -281,7 +287,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
   addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
-  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. `proof --repo R --ref SHA
+  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. For forever-core it links
+  every consumer's latest release beside the candidate and, after the selftest, asks `ForeverCore.Registered` for each
+  released folder through one `!!DevSmoke` eval: a released addon that refused to start on the candidate raises no Lua
+  error, so it is counted as a failure of its own. `proof --repo R --ref SHA
   --checkout PATH --flow NAME=SLASH_OR_LUA_FILE` builds and links the same way, reloads, runs each flow (a Forever
   addon's slash command or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new
   secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
@@ -321,8 +330,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 
 `.github/workflows/ci.yml` runs on every PR and push to main: `deadcode`, `check` (luacheck, the specs, the native
 tracker spec, StyLua, ruff, the `tools/` unit tests, `tools/changelog.py --check` against the `v*` tags), `typecheck`,
-`project-rules` (the client load rule and the menu rule), `packaged`, `secrets` and `workflows` (actionlint and zizmor
-over `.github` and the consumer workflow template).
+`project-rules` (the client load rule and the menu rule), `visual-proof`, `released-consumers` (this checkout with every
+consumer's latest released build, under forever_sim), `packaged`, `secrets` and `workflows` (actionlint and zizmor over
+`.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and every tool it installs
 comes from `tools/toolchain.json` through `.github/actions/toolchain`: `build.sh` builds LuaJIT, the PUC Lua 5.1.5
@@ -338,7 +348,12 @@ Dependabot itself (`/.github/dependabot.yml`) updates the actions and the `uv` g
 ForeverCore and every published addon's main and runs `tests/suite/suite_scenario.lua`, which loads ForeverCore first
 with the addons that require it in one forever_sim client and calls `sim:exercise()`. It reads other repositories'
 main, so it is not a PR job. Locally, `python3 tools/suite_load.py --root ..` runs it over the sibling checkouts as
-they are.
+they are. The `released-consumers` job runs `python3 tools/suite_load.py --released` on every PR and push instead:
+`tools/released_consumers.py` unpacks each consumer's latest release and the scenario loads this checkout with those
+builds, so a core that would break an addon already on the stores fails here. After the exercise the scenario asks
+`ForeverCore.Registered` for every addon in the suite, in every mode, so a consumer whose startup check refused this
+core fails too even though it raised no Lua error. `release.yml` runs the same check again
+for the exact release candidate, before it packages anything.
 
 ## Agent skills
 
@@ -372,6 +387,7 @@ require it; nothing is copied into them. Raise `ForeverCore.API` only when the p
 
 ## Load order
 
-`ForeverCore.toc` loads the module files, then `Expose.lua` last. Consumers declare `## Dependencies: ForeverCore`, so
-the client loads ForeverCore before them and exactly one copy of each shared file runs. `ForeverCore.toc` has no
+`ForeverCore.toc` loads the module files, then `Expose.lua` last. Consumers declare `## OptionalDeps: ForeverCore`, so
+the client loads ForeverCore before them when it is installed and exactly one copy of each shared file runs; without
+it, the consumer still loads and its vendored `Core/ForeverRequire.lua` says what is missing. `ForeverCore.toc` has no
 `OptionalDeps`: it does not adopt anything built by another addon.

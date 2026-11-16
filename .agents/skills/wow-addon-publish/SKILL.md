@@ -40,9 +40,13 @@ updates acquire manager-owned core; a declared relation does not establish that 
 metadata has no dependency field, so verify its manager path separately. In the TOC:
 
 ```toc
-## Dependencies: ForeverCore
+## OptionalDeps: ForeverCore
 ## X-Forever-Core: v1.4.1
 ```
+
+Never name ForeverCore in `## Dependencies`: the client would skip the addon when core is missing, and the player would
+see nothing. As an optional dependency it loads first when installed, and without it the addon still loads and its
+`Core/ForeverRequire.lua` shows one line naming the install.
 
 In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
 addon's own folder, plus the standalone required relation:
@@ -71,10 +75,11 @@ Do not claim Wago installs dependencies merely because `.pkgmeta` declares them.
 
 Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
 `<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails
-a TOC that lists core in `## Dependencies` but names no core release. The field is what a sibling addon reads at load to
-name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge `forevercore` (project 1796337;
+a TOC that names core in `## Dependencies` or that ships core without `## OptionalDeps: ForeverCore`. The field is what
+a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge
+`forevercore` (project 1796337;
 `forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core` (project ID `RNL4RQNo`). Do not
-list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
+copy its runtime files into the addon.
 
 Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
 release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC
@@ -138,8 +143,8 @@ Screenshots, the full feature list and the changelog are on CurseForge: <CurseFo
 Source and issues: <GitHub repo URL>
 ```
 
-Wago has no gallery to maintain. When a Wago gallery still holds images, list their captions for the
-user to delete on `addons.wago.io/addons/<slug>/gallery`.
+Wago has no gallery to maintain. When a Wago gallery still holds images, delete them on
+`addons.wago.io/addons/<slug>/gallery`.
 
 ## Store updates
 
@@ -176,9 +181,9 @@ Measure the current grid width; Up and Down move by a row and Left and Right mov
 row. Re-read the image URLs in order after each drop, click Done, then check after a reload
 and on `curseforge.com/wow/addons/<slug>/gallery`. The public page can lag behind the author page.
 
-For an approved removal, identify the old card by image URL and verify its replacement
+To remove a stale image, identify the old card by image URL and verify its replacement
 first. Hover the exact card to reveal its trash button and selection checkbox. For a batch,
-check the selected image URLs and count against the approved list before confirming.
+check the selected image URLs and count against the images to remove before confirming.
 Wait for those cards to disappear before leaving the page. Reload and read back before
 retrying a deletion, as the first reload can still show stale cards.
 
@@ -266,5 +271,6 @@ then silently skips that site while the run stays green.
 ## Things only the user can do
 
 Uploading the CurseForge logo, setting the API-token secrets, and anything needing a login. Say
-exactly which, with the command or page to use. Deleting store files or gallery images is permanent:
-list each one by caption and position per store, and delete only after the user approves that list.
+exactly which, with the command or page to use. Deleting a released store file is permanent: list
+each one per store and delete it only after the user approves. Stale gallery images are different:
+the user has given standing permission, so delete them yourself as "Keep galleries in sync" describes.

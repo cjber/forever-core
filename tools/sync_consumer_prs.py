@@ -37,8 +37,10 @@ pinned external and move rule. See docs/dependency-transition.md for the gates b
 
 The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
 it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
-(adding it after `## Dependencies:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
-repaired even when the pin does not move. The changelog decision is that same fact rather than whether this run moved
+(adding it after `## OptionalDeps:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
+repaired even when the pin does not move. Every run also moves a TOC that still names ForeverCore in
+`## Dependencies` to `## OptionalDeps`, keeping every other name on the line, so the addon loads when core is missing
+and can say what is. The changelog decision is that same fact rather than whether this run moved
 the pin: the run reads the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta`
 ForeverCore external, or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from
 the pin, so a re-run repairs a consumer whose `main` already pins the new core while its last release still ships an
@@ -99,6 +101,12 @@ RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # The consumer-side bundle a moved pin rewrites: the shipped core's `.pkgmeta` external, the TOC field naming it, and
 # the changelog release entry that `tools/release_consumers.py` finds by this marker.
 PKGMETA = ".pkgmeta"
+# The two TOC dependency headers. Consumers name ForeverCore in `## OptionalDeps`, so the addon still loads without
+# core; a leftover `## Dependencies:` name makes the client skip the addon entirely.
+TOC_DEPENDENCY_LINE = re.compile(
+    r"^##[ \t]*(?P<header>Dependencies|OptionalDeps)[ \t]*:(?P<value>[^\r\n]*)", re.IGNORECASE
+)
+TOC_OPTIONAL_DEPS = re.compile(r"^##[ \t]*OptionalDeps[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 TOC_DEPENDENCIES = re.compile(r"^##[ \t]*Dependencies[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 CHANGELOG = "CHANGELOG.md"
 # The addon's own release workflow, where the sync inserts the ForeverCore pin gate directly above the packager.
@@ -359,11 +367,84 @@ def root_toc_path(root: Path) -> Path | None:
     return root / consumer_path(root.name, f"{package}.toc") if package else None
 
 
+def dependency_names(value: str) -> list[str]:
+    """The addon names in a TOC dependency header's value, in order, without blanks."""
+    return [name.strip() for name in value.split(",") if name.strip()]
+
+
+def line_ending(line: str) -> str:
+    """The line ending a TOC line carries, so a rewrite keeps the file's CRLF or LF form."""
+    return line[len(line.rstrip("\r\n")) :]
+
+
+def move_core_to_optional(text: str) -> str:
+    """Move ForeverCore from a TOC's `## Dependencies` header to `## OptionalDeps`, keeping every other name.
+
+    The client skips an addon whose required dependency is missing, so a consumer that names core there never loads
+    and can never say what to install. `## OptionalDeps` keeps the load order when core is present and lets the addon
+    load without it. Names beside ForeverCore on either line keep their order, and a `## Dependencies` line left empty
+    is replaced by the optional one in place.
+    """
+    lines = text.splitlines(keepends=True)
+    required = optional = None
+    for index, line in enumerate(lines):
+        match = TOC_DEPENDENCY_LINE.match(line)
+        if match is None:
+            continue
+        if match["header"].lower() == "dependencies" and required is None:
+            required = index
+        elif match["header"].lower() == "optionaldeps" and optional is None:
+            optional = index
+    if required is None:
+        return text
+    match = TOC_DEPENDENCY_LINE.match(lines[required])
+    names = dependency_names(match["value"])
+    if not any(name.lower() == "forevercore" for name in names):
+        return text
+    kept = [name for name in names if name.lower() != "forevercore"]
+    ending = line_ending(lines[required])
+    optional_names = []
+    if optional is not None:
+        optional_match = TOC_DEPENDENCY_LINE.match(lines[optional])
+        optional_names = dependency_names(optional_match["value"])
+    if not any(name.lower() == "forevercore" for name in optional_names):
+        optional_names.append("ForeverCore")
+    optional_line = f"## OptionalDeps: {', '.join(optional_names)}{ending}"
+    updated = []
+    for index, line in enumerate(lines):
+        if index == optional:
+            updated.append(optional_line)
+        elif index == required:
+            if kept:
+                updated.append(f"## Dependencies: {', '.join(kept)}{ending}")
+                if optional is None:
+                    updated.append(optional_line)
+            elif optional is None:
+                updated.append(optional_line)
+        else:
+            updated.append(line)
+    return "".join(updated)
+
+
+def rewrite_toc_dependencies(root: Path) -> bool:
+    """Move ForeverCore out of the root TOC's `## Dependencies`, so the addon loads when core is missing."""
+    path = root_toc_path(root)
+    if path is None or not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    updated = move_core_to_optional(text)
+    if updated == text:
+        return False
+    path.write_text(updated, encoding="utf-8")
+    return True
+
+
 def rewrite_toc_core_field(root: Path, pin: str) -> bool:
-    """Set the root TOC's `## X-Forever-Core:` to `pin`, adding it after `## Dependencies:` when absent.
+    """Set the root TOC's `## X-Forever-Core:` to `pin`, adding it after `## OptionalDeps:` when absent.
 
     The client reads the field at load, so a player's other Forever addon can name a sibling that bundles a different
-    core. A TOC with no `## Dependencies:` line is left alone rather than guessed at.
+    core. A TOC with neither dependency header is left alone rather than guessed at. This runs after the sync has
+    moved ForeverCore to `## OptionalDeps`, so that header is where the field belongs.
     """
     path = root_toc_path(root)
     if path is None or not path.is_file():
@@ -373,11 +454,14 @@ def rewrite_toc_core_field(root: Path, pin: str) -> bool:
     if TOC_CORE_FIELD.search(text):
         updated = TOC_CORE_FIELD.sub(field, text, count=1)
     else:
-        dependencies = TOC_DEPENDENCIES.search(text)
-        if not dependencies:
-            print(f"{root.name}: {path.name} has no `## Dependencies:` line; leaving out `## X-Forever-Core:`.")
+        header = TOC_OPTIONAL_DEPS.search(text) or TOC_DEPENDENCIES.search(text)
+        if not header:
+            print(
+                f"{root.name}: {path.name} has no `## OptionalDeps:` or `## Dependencies:` line;"
+                " leaving out `## X-Forever-Core:`."
+            )
             return False
-        updated = f"{text[: dependencies.end()]}\n{field}{text[dependencies.end() :]}"
+        updated = f"{text[: header.end()]}\n{field}{text[header.end() :]}"
     if updated == text:
         return False
     path.write_text(updated, encoding="utf-8")
@@ -505,6 +589,7 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     """
     bundles = ships_core(root)
     dependency_changed = ensure_core_dependency(root)
+    rewrite_toc_dependencies(root)
     before = bundle_tag(root) or previous_pin
     rewrite_core_external(root, pin)
     rewrite_toc_core_field(root, pin)

@@ -49,8 +49,8 @@ L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
 	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "Verfolgung sperren"
 L["No addon has attached its log yet."] = "Noch kein Addon hat sein Protokoll angehängt."
 L["No one is listed yet."] = "Noch ist niemand aufgeführt."
@@ -126,6 +126,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"Die Debug-Aufzeichnung konnte nicht starten, weil ForeverCore noch nicht fertig geladen ist."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: Das installierte ForeverCore ist ein anderes Addon (%s). Entferne es und installiere ForeverCore von CurseForge." -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s braucht ForeverCore. Installiere es von CurseForge oder wähle in der CurseForge-App bei ForeverCore „Neu installieren“." -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore ist installiert, aber ausgeschaltet. Aktiviere es in der Addon-Liste, um das zu beheben." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"Noch kein Forever-Addon hat für diesen Charakter etwas aufgezeichnet."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

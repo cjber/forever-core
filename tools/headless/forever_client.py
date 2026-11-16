@@ -25,23 +25,31 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
-    forever_client.py smoke --repo R --ref SHA  # build that commit, selftest it, post the headless-smoke status
+    forever_client.py smoke --repo R --ref SHA [--no-post]
+                                          # build the commit, selftest it, post its status (--no-post prints instead)
+    forever_client.py smoke --repo forever-core --ref SHA
+                                          # the same with every consumer's latest released build linked beside core
     forever_client.py proof --repo R --ref SHA --checkout PATH --flow NAME=SLASH_OR_LUA_FILE
                                           # record the checkout's .visual-proof.json from a client session
 
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
 commit as the `headless-smoke` commit status, which `tools/release_check.py` requires and `tools/smoke_queue.py`
-fills in. It runs as one job: it ensures a session, takes the job lock, builds and links the candidate, reloads so
-the client loads it, runs the checks, puts the links back and releases the lock. `--manual-launcher` starts a
-session that way while launcher OCR is not finding Play (cjber/forever-core#547), so an agent runs `smoke
---manual-launcher` in the background, takes `shot` and clicks Play itself; those two launcher verbs run without the
-job lock, so they cannot queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded
-failure, 3 means the player's own client is running (the Wine prefix is used by processes this tool does not own), so
-nothing is posted and a caller retries later; another agent's job is waited for, up to `--timeout`. The AddOns folder
-is shared: every slot the smoke borrows is put back exactly as it was, including a store install it moved aside. A
-stop that never reaches Python's handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`,
-`smoke`, `proof` or `build-dev` replays it before it touches AddOns.
+fills in. When the repository is ForeverCore itself it also links every consumer's latest released build from
+`tools/released_consumers.py` beside the candidate, so a core release is tested against the addons already on the
+stores, and counts their folders too: a consumer Lua error, or a released addon that never reached
+`ForeverCore.Registered` because its startup check refused this core, fails the status. It runs as one job: it
+ensures a session, takes the job lock, builds and links the candidate, reloads so the client loads it, runs the
+checks, puts the links back and releases the lock. `--no-post` runs exactly the same checks and prints the result
+without posting a commit status, for a local demonstration. `--manual-launcher` starts a session that way while
+launcher OCR is not finding Play (cjber/forever-core#547), so an agent runs `smoke --manual-launcher` in the
+background, takes `shot` and clicks Play itself; those two launcher verbs run without the job lock, so they cannot
+queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded failure, 3 means the player's
+own client is running (the Wine prefix is used by processes this tool does not own), so nothing is posted and a caller
+retries later; another agent's job is waited for, up to `--timeout`. The AddOns folder is shared: every slot the smoke
+borrows is put back exactly as it was, including a store install it moved aside. A stop that never reaches Python's
+handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`, `smoke`, `proof` or `build-dev` replays
+it before it touches AddOns.
 
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
@@ -140,6 +148,9 @@ PACKAGE_AS = re.compile(r"^package-as:\s*(\S+)\s*$", re.MULTILINE)
 SMOKE_OWNER = "cjber"
 SMOKE_CONTEXT = "headless-smoke"
 SMOKE_REPO = re.compile(r"^[A-Za-z0-9._-]+$")
+# ForeverCore's own repository: its smoke also links the consumers' latest released builds, because a core release
+# reaches players before the addons that depend on it are re-released.
+CORE_REPO = "forever-core"
 STATUS_LIMIT = 140
 # The visual proof a release prep or a Core pin bump records: `.visual-proof.json` in the checkout the proof is for,
 # its screenshots in a secret gist, and the client build the session's own log names.
@@ -229,6 +240,18 @@ DROP = {
     "UMU_INVOCATION_ID",
     "PROTON_VERB",
 }
+
+
+# A headless session plays nothing to the person at the desk. Disabling Wine's audio drivers leaves the game with no
+# output device, so it runs silent. This acts on the session's process environment only: muting through the game's
+# sound CVars would be saved into the shared Config.wtf and silence the player's own client too.
+SILENT_AUDIO = ("winepulse.drv=d", "winealsa.drv=d")
+
+
+def silenced(env: Mapping[str, str]) -> dict[str, str]:
+    """The launch environment with Wine's audio drivers disabled, keeping any DLL overrides it already carries."""
+    overrides = [o for o in env.get("WINEDLLOVERRIDES", "").split(";") if o]
+    return {**env, "WINEDLLOVERRIDES": ";".join([*overrides, *SILENT_AUDIO])}
 
 
 class ClientError(Exception):
@@ -988,6 +1011,7 @@ def play_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
 
     The label is found inside the button the launcher draws, not by the page layout tesseract guesses for the whole
     frame: a whole-page pass skips the filled button and its word even when the word is plainly drawn (#547).
+    The entire region must read as one Play word, so a promo button like Play Now is never a target (#681).
     """
     width, height, channels, rows = png_pixels(image)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -995,9 +1019,12 @@ def play_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
     targets = []
     for _area, left, top, box_width, box_height in fill_regions(width, height, channels, rows):
         write_ppm(crop, rows, channels, (left, top, box_width, box_height))
-        for text, confidence, x, y, word_width, word_height in ocr_words(crop):
-            if text.casefold() == PLAY_LABEL and confidence >= 0 and word_width > 0 and word_height > 0:
-                targets.append((left + x, top + y, word_width, word_height, confidence))
+        words = [word for word in ocr_words(crop) if word[0]]
+        if len(words) != 1:
+            continue
+        text, confidence, x, y, word_width, word_height = words[0]
+        if text.casefold() == PLAY_LABEL and confidence >= 0 and word_width > 0 and word_height > 0:
+            targets.append((left + x, top + y, word_width, word_height, confidence))
     return targets
 
 
@@ -1023,8 +1050,9 @@ def press_play(state: dict) -> None:
     image = shot(state, STATE_DIR / "launcher.png")
     targets = play_targets(image)
     if not targets:
-        # The launcher can still be painting its signed-in page. The startup loop
-        # retries within its existing deadline; never click an unobserved target.
+        # A launcher dialog can cover the page. Dismiss it on the discovered
+        # Battle.net window, then let the startup loop inspect a fresh frame.
+        x(state, "key", "--window", found.stdout.split()[0], "Escape")
         if not state.get("play_target_missing_reported"):
             print(
                 f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
@@ -1619,14 +1647,21 @@ def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[st
     return counts
 
 
-def smoke_description(counts: Mapping[str, int]) -> str:
-    """The commit status's text: the error count, or that the addon folders are clean."""
+def smoke_description(counts: Mapping[str, int], not_started: Sequence[str] = (), error: str | None = None) -> str:
+    """The commit status's text: the Lua error count, any released addon that never started, or why it stopped."""
     total = sum(counts.values())
-    if not total:
+    if not total and not not_started and not error:
         folders = len(counts)
         return f"clean: no Lua errors in {folders} addon folder{'s' if folders != 1 else ''}"
-    named = ", ".join(f"{count} {name}" for name, count in counts.items() if count)
-    return f"{total} Lua error{'s' if total != 1 else ''}: {named}"[:STATUS_LIMIT]
+    parts = []
+    if total:
+        named = ", ".join(f"{count} {name}" for name, count in counts.items() if count)
+        parts.append(f"{total} Lua error{'s' if total != 1 else ''}: {named}")
+    if not_started:
+        parts.append(f"{len(not_started)} did not start: {', '.join(not_started)}")
+    if error:
+        parts.append(f"smoke did not finish: {error}")
+    return "; ".join(parts)[:STATUS_LIMIT]
 
 
 def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
@@ -1655,9 +1690,13 @@ def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
         raise ClientError(f"could not post {SMOKE_CONTEXT} on {SMOKE_OWNER}/{repo}@{commit[:7]}: {detail}")
 
 
-def report_smoke(repo: str, commit: str, outcome: Mapping) -> int:
-    """Post a smoke's result and say it, from whatever its job recorded: a count per folder, or the error."""
+def report_smoke(repo: str, commit: str, outcome: Mapping, *, post: bool = True) -> int:
+    """Post a smoke's result and say it, from whatever its job recorded: a count per folder, or the error.
+
+    `post=False` is `--no-post`: the result is printed exactly as it would be posted and no commit status is written.
+    """
     counts = outcome["counts"]
+    not_started = outcome.get("not_started") or []
     if outcome["error"]:
         print(f"{repo}@{commit[:7]}: {outcome['error']}", file=sys.stderr)
     if not counts and not outcome["error"]:
@@ -1665,14 +1704,110 @@ def report_smoke(repo: str, commit: str, outcome: Mapping) -> int:
         return 1
     if not counts:
         description = f"no result: {outcome['error'] or 'the session ended before the checks ran'}"
+        if not post:
+            print(f"{repo}@{commit[:7]}: {description} (not posted)", flush=True)
+            return 1
         post_status(repo, commit, False, description)
         print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
         return 1
-    ok = not any(counts.values())
-    description = smoke_description(counts)
+    ok = not any(counts.values()) and not not_started and not outcome["error"]
+    description = smoke_description(counts, not_started, outcome["error"])
+    if not post:
+        print(f"{repo}@{commit[:7]}: {description} (not posted)", flush=True)
+        return 0 if ok else 1
     post_status(repo, commit, ok, description)
     print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
     return 0 if ok else 1
+
+
+def released_consumers_tool():
+    """tools/released_consumers.py: the consumer release downloads a core smoke links beside the candidate."""
+    tools = Path(__file__).resolve().parents[1]
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    return load_tool("released_consumers", tools / "released_consumers.py")
+
+
+def smoke_folders(
+    repo: str, folders: Sequence[tuple[str, Path]]
+) -> tuple[list[tuple[str, Path]], list[tuple[str, Path]]]:
+    """A candidate's addon folders and, when the candidate is ForeverCore, every consumer's latest released build.
+
+    A core release reaches players before the addons that depend on it are re-released, so core's smoke links the builds
+    already on the stores beside the candidate and counts their folders too. The two lists are returned separately, so
+    the startup check asks after the released addons and no other. The released folders go through the same
+    `link_build` record, so every borrowed AddOns slot, a store install included, is put back. They are unpacked into a
+    smoke-private folder so a concurrent suite_load.py cannot remove them while the client has them linked.
+    """
+    folders = list(folders)
+    if repo != CORE_REPO:
+        return folders, []
+    tool = released_consumers_tool()
+    try:
+        released = tool.released_folders(BUILD_ROOT / "forever-core-smoke-released")
+    except tool.ReleasedError as error:
+        raise ClientError(str(error)) from None
+    print(f"linking {len(released)} released consumer folder(s) beside the candidate core", flush=True)
+    return [*folders, *released], released
+
+
+# The line the startup-check snippet prints for a released addon that never called ForeverCore.Register: its prefix
+# and the folder, so the smoke can name it in the commit status.
+NOT_REGISTERED = "not registered: "
+
+
+def registration_source(names: Sequence[str]) -> str:
+    """The Lua !!DevSmoke runs after the selftest: one line per addon that never called ForeverCore.Register.
+
+    Every Forever addon registers from its own files once its `Core/Require.lua` feature check passed. A refusal is one
+    UIErrorsFrame line and a stopped file list, not a Lua error, so a folder that loaded but never registered is a
+    consumer that did not start (#666).
+    """
+    strings = devsmoke_eval().lua_string
+    listed = ", ".join(strings(name) for name in names)
+    return (
+        "local core = _G.ForeverCore\n"
+        "if type(core) ~= 'table' or type(core.Registered) ~= 'function' then\n"
+        "\terror('this ForeverCore does not publish Registered, so the startup check cannot run')\n"
+        "end\n"
+        f"for _, name in ipairs({{ {listed} }}) do\n"
+        f"\tif not core.Registered(name) then print({strings(NOT_REGISTERED)} .. name) end\n"
+        "end\n"
+    )
+
+
+def not_registered(lines: Sequence) -> list[str]:
+    """The folders the startup-check snippet named, in the order it printed them."""
+    prefix = NOT_REGISTERED
+    return [line[len(prefix) :] for line in lines if isinstance(line, str) and line.startswith(prefix)]
+
+
+def smoke_registrations(state: Mapping, folders: Sequence[tuple[str, Path]]) -> list[str]:
+    """Each folder that never called ForeverCore.Register, read through one !!DevSmoke eval after the selftest.
+
+    The snippet prints a line per unregistered folder. The eval route reloads twice: the first reload runs the snippet
+    at login, and the second saves its record to disk, because SavedVariables reach disk only at a reload (#580).
+    """
+    names = [name for name, _folder in folders]
+    snippet = STATE_DIR / "smoke-registered.lua"
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    snippet.write_text(registration_source(names), encoding="utf-8")
+    tool = devsmoke_eval()
+    try:
+        written = tool.write_snippet(snippet, addons=CLIENT / "Interface/AddOns", capture=False)
+    except tool.EvalError as error:
+        raise ClientError(f"could not check the released addons' startup: {error}") from None
+    try:
+        reload(state)
+        clear_eval_inbox()
+        reload(state)
+        data = saved_eval(written["token"])
+    finally:
+        clear_eval_inbox(quiet=True)
+    report, ok = format_eval(data)
+    if not ok:
+        raise ClientError(f"the released addons' startup check failed: {report}")
+    return not_registered(_ordered(data.get("out")))
 
 
 def smoke(args: argparse.Namespace) -> int:
@@ -1680,10 +1815,14 @@ def smoke(args: argparse.Namespace) -> int:
 
     It ensures a session, takes the job lock, builds and links the candidate, reloads so the client loads it, runs
     `/forever selftest` and `errors --addon` for each folder, and puts the links back before it releases the lock.
-    Exit 0 is a clean commit and 1 a failure that was recorded; 3 means the player's own client is running, so nothing
-    is posted and a caller retries later. Another agent's job is waited for. A smoke that could not run at all (no
-    checkout, no such ref) raises ClientError and posts nothing either. `--manual-launcher` starts the session that
-    way, so the caller can take `shot` and click Play itself.
+    ForeverCore's candidate is linked with every consumer's latest released build, and those folders count too; after
+    the selftest, one !!DevSmoke eval asks `ForeverCore.Registered` for each of them, so a released addon that refused
+    to start on this core fails even though it raised no Lua error. A released build that cannot be fetched is a
+    `ClientError` before anything is linked, so nothing is posted and the commit is smoked again later. Exit 0 is a
+    clean commit and 1 a failure that was recorded; 3 means the player's own client is running, so nothing is posted and
+    a caller retries later. Another agent's job is waited for. A smoke that could not run at all (no checkout, no such
+    ref) raises ClientError and posts nothing either. `--manual-launcher` starts the session that way, so the caller can
+    take `shot` and click Play itself, and `--no-post` prints the result without posting a commit status.
     """
     repo = args.repo
     if not SMOKE_REPO.fullmatch(repo):
@@ -1692,13 +1831,14 @@ def smoke(args: argparse.Namespace) -> int:
     if not root.is_dir():
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    post = not args.no_post
     recover_links()
     busy = foreign_client()
     if busy:
         print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
         return 3
     handle, job_token = acquire_job(args.timeout, f"smoke {repo}@{commit[:7]}")
-    outcome: dict = {"counts": {}, "error": None}
+    outcome: dict = {"counts": {}, "not_started": [], "error": None}
     try:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
@@ -1708,7 +1848,7 @@ def smoke(args: argparse.Namespace) -> int:
                 print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
                 return 3
             outcome["error"] = str(error)
-            return report_smoke(repo, commit, outcome)
+            return report_smoke(repo, commit, outcome, post=post)
         # The client log holds every job's lines: this job's result starts where its own work starts.
         state = {**state, "started": job_started()}
         recover_links()
@@ -1716,6 +1856,7 @@ def smoke(args: argparse.Namespace) -> int:
         folders = addon_folders(folder, package_name(root, commit))
         if not folders:
             raise ClientError(f"{folder} ships no addon folder")
+        folders, released = smoke_folders(repo, folders)
         previous = stop_handlers()
         try:
             clear_eval_inbox()
@@ -1725,6 +1866,8 @@ def smoke(args: argparse.Namespace) -> int:
                 slash(state, "/forever selftest")
                 # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
                 outcome["counts"] = smoke_counts(state, folders)
+                if released:
+                    outcome["not_started"] = smoke_registrations(state, released)
             finally:
                 restore_links(records)
         except ClientError as error:
@@ -1737,7 +1880,7 @@ def smoke(args: argparse.Namespace) -> int:
             restore_handlers(previous)
     finally:
         release_job(handle, job_token)
-    return report_smoke(repo, commit, outcome)
+    return report_smoke(repo, commit, outcome, post=post)
 
 
 # --- the visual proof ------------------------------------------------------------------------------------------
@@ -2167,6 +2310,15 @@ def proof(args: argparse.Namespace) -> int:
         finally:
             clear_eval_inbox(quiet=True)
             restore_handlers(previous)
+        if screenshots:
+            # A queued proof can rebuild this shared folder as soon as the job lock is released.
+            build = client_build(folders[0][1])
+            try:
+                proof_compare(checkout, folders[0][1])
+            except ClientError:
+                # A proof that does not describe the installed build must never be left where it could be committed.
+                (checkout / PROOF_FILE).unlink(missing_ok=True)
+                raise
     finally:
         release_job(handle, job_token)
     if not screenshots:
@@ -2180,7 +2332,7 @@ def proof(args: argparse.Namespace) -> int:
         "input_digest": digests["input_digest"],
         "runtime_sha256": digests["input_digest"],
         "candidate": digests["candidate"],
-        "client_build": client_build(folders[0][1]),
+        "client_build": build,
         "tested_artifact": "source-tree",
         "source_commit": commit,
         "flows": [flow_record(name, action, clicks.get(name)) for name, action in flows],
@@ -2188,12 +2340,6 @@ def proof(args: argparse.Namespace) -> int:
     }
     target = checkout / PROOF_FILE
     target.write_text(json.dumps(proof_data, indent=2) + "\n", encoding="utf-8")
-    try:
-        proof_compare(checkout, folders[0][1])
-    except ClientError:
-        # A proof that does not describe the installed build must never be left where it could be committed.
-        target.unlink(missing_ok=True)
-        raise
     print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
     return 0
 
@@ -2535,6 +2681,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         env["XDG_RUNTIME_DIR"] = str(runtime)
         token = uuid.uuid4().hex
         env["FOREVER_CLIENT_SESSION"] = token
+        env = silenced(env)
         before = screenshots()
         started = time.time()
         launched = time.monotonic()
@@ -3189,6 +3336,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--manual-launcher",
         action="store_true",
         help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+    )
+    p.add_argument(
+        "--no-post",
+        action="store_true",
+        help="run the whole smoke and print its result without posting the headless-smoke commit status",
     )
     p = sub.add_parser("proof", help="record a commit's .visual-proof.json from a client session")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")

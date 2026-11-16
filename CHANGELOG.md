@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+- **The game's tracker stays hidden in combat while the Forever quest list is on.** Quest updates no longer make it appear over your quest list, and turning the Forever list off leaves Questie in control of its tracker. Thanks to silhouetteone for the report. (#686)
+- **A ForeverCore release is checked against the addons already on the stores.** Every release candidate now loads
+  with each addon's latest published release, in the simulator on every change and in the headless client, so a core
+  that would break an addon players already have fails before it ships. A consumer that refuses to start on the
+  candidate, which shows one error line and raises no Lua error, fails the same way, and a run that finds no released
+  consumer at all is an error rather than a pass on core alone. (#666)
+## [1.14.0] - 2026-11-16
+
+- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's own objective tracker is hidden, as Questie does, including non-quest sections such as scenarios and bonus objectives. It comes back when the list is off. Thanks to the CurseForge player who reported it. (#608)
+- **A watched quest the game reports twice draws once.** The quest list reads the client's watch list by index, and a
+  repeated quest ID made it lay that quest's block out twice in one pass, which the client refuses with "Cannot anchor
+  to a region dependent on it" while the tracker lays itself out. Each unique quest now gets one record and one block.
+  Thanks to a player on CurseForge for the report. (#609)
+- **A Forever addon now tells you when ForeverCore is missing or turned off.** Each addon loads even without ForeverCore
+  and shows one line naming the fix: install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge
+  app, because the app does not restore ForeverCore from the other addon's row. If ForeverCore is installed but
+  disabled, the line asks you to enable it in the AddOns list. (#659)
+
 ## [1.13.0] - 2026-11-16
 
 - **A different addon named ForeverCore no longer breaks every Forever addon.** If another addon installs its own folder named ForeverCore over ours, each Forever addon now shows one line naming that addon, asking you to remove it and install ForeverCore from CurseForge, instead of saying it could not start. (#610)

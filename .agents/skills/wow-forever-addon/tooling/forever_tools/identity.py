@@ -5,8 +5,9 @@ side tab, window portrait, leaderboard tab and addon compartment. The value live
 `## X-Forever-Icon: Interface\\Icons\\<name>`, and the runtime reads it with
 `C_AddOns.GetAddOnMetadata(addonName, "X-Forever-Icon")`. This check fails an addon TOC (every TOC except
 ForeverCore's) that omits the field, a value that is not a client icon in the pinned build, or the declared
-path repeated in the addon's shipped Lua. A Forever addon is a TOC whose dependencies name ForeverCore; a library
-shipped beside it, such as Tweaks' LibAHTab, has no identity of its own.
+path repeated in the addon's shipped Lua. A Forever addon is a TOC whose dependency headers name ForeverCore; a library
+shipped beside it, such as Tweaks' LibAHTab, has no identity of its own. Consumers name core in `## OptionalDeps`, and
+an older release may still name it in `## Dependencies`.
 """
 
 import argparse
@@ -19,11 +20,11 @@ FIELD = "X-Forever-Icon"
 ICON = re.compile(r"(?i)^interface[\\/]+icons[\\/]+[^\\/]+$")
 
 
-DEPENDENCY_FIELDS = {"## dependencies", "## requireddeps"}
+DEPENDENCY_FIELDS = {"## dependencies", "## requireddeps", "## optionaldeps", "## optionaldependencies"}
 
 
 def forever_addon(toc_path: Path) -> bool:
-    """True when the TOC requires ForeverCore, which makes it a Forever addon with an identity."""
+    """True when the TOC names ForeverCore in its required or optional dependencies, which makes it a Forever addon."""
     for line in toc_path.read_text(encoding="utf-8-sig").splitlines():
         name, separator, value = line.partition(":")
         if separator and name.strip().lower() in DEPENDENCY_FIELDS:

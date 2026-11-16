@@ -44,9 +44,9 @@ error in the scenario, on any client error the addon caused (raised in its code,
 taint reached), and on any protected call refused because of a field the addon wrote. `allowErrors` and
 `allowGamepadTaint` options turn those checks off for a scenario that asserts on them itself. After the declared
 scenarios, and whether or not `tests/sim` holds any, the runner runs `sim:exercise()` for the repository's addon.
-An addon whose TOC lists ForeverCore in `## Dependencies` gets that checkout loaded for the exercise, from
-`$FOREVER_CORE` or the sibling `../forever-core`, so the addon's UI is really built and the exercise means
-something; the walk still covers only the repository's own widgets.
+An addon whose TOC names ForeverCore in `## OptionalDeps` or `## Dependencies` gets that checkout loaded for the
+exercise, from `$FOREVER_CORE` or the sibling `../forever-core`, so the addon's UI is really built and the exercise
+means something; the walk still covers only the repository's own widgets.
 
 ## Steps and checks
 

@@ -49,8 +49,8 @@ L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
 	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
 	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own quest list is hidden while this is on."
+L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
+	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "추적기 잠금"
 L["No addon has attached its log yet."] = "아직 기록을 첨부한 애드온이 없습니다."
 L["No one is listed yet."] = "아직 등록된 사람이 없습니다."
@@ -128,6 +128,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"ForeverCore 로드가 끝나지 않아 디버그 캡처를 시작할 수 없습니다."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: 설치된 ForeverCore는 다른 애드온입니다(%s). 해당 애드온을 제거하고 CurseForge에서 ForeverCore를 설치하세요." -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	'%s에 ForeverCore가 필요합니다. CurseForge에서 설치하거나 CurseForge 앱에서 ForeverCore의 "다시 설치"를 선택하세요.' -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore가 꺼져 있습니다. 애드온 목록에서 ForeverCore를 활성화하세요." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"아직 이 캐릭터에 대해 기록한 Forever 애드온이 없습니다."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
