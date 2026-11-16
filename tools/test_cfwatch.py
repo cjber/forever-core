@@ -274,6 +274,49 @@ class LinkedTest(unittest.TestCase):
         self.assertIn("[skillup-forever] thread #11: cjber/skillup-forever#7 released in v1.5.1", output)
         self.assertIn("1 due, 0 answered, 0 still waiting", output)
 
+    def test_a_player_post_after_the_owners_reply_leaves_the_thread_answered(self):
+        links = {"11": [self.link(number=7)]}
+        rows = [
+            comment(11, "needs a fix"),
+            owner_reply(10, 11, posted=1_800_000_000_000),
+            comment(12, "Works great! Cheers!", parent=11, posted=1_800_000_100_000),
+        ]
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            due = run(["--due"], fake_fetch(rows), links=links)
+            waiting = run(["--unanswered"], fake_fetch(rows))
+        self.assertNotIn("thread #11:", due)
+        self.assertIn("0 due, 1 answered, 0 still waiting", due)
+        self.assertIn("=== [test-mod] thread #11, 3 posts", waiting)
+
+    def test_a_nested_owner_reply_after_the_release_has_answered_the_thread(self):
+        links = {"11": [self.link(number=7)]}
+        rows = [
+            comment(
+                11,
+                "needs a fix",
+                replies=[
+                    comment(
+                        20,
+                        "same here",
+                        parent=11,
+                        replies=[owner_reply(21, 20, posted=1_800_000_000_000)],
+                    )
+                ],
+            )
+        ]
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            output = run(["--due"], fake_fetch(rows), links=links)
+        self.assertNotIn("thread #11:", output)
+        self.assertIn("0 due, 1 answered, 0 still waiting", output)
+
 
 class DueCallsTest(unittest.TestCase):
     """A due run answers from local tags and makes a bounded, cached number of REST calls."""

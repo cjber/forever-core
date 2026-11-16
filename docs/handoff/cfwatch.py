@@ -11,10 +11,11 @@ skips one only until somebody posts in it again.
 
 An issue filed from a comment carries the line `CurseForge thread <id> (<addon>)`. `--unanswered` reads those lines
 from every Forever issue and prints a linked thread as waiting on its issue and the issue's state. `--due` lists the
-threads whose issues all closed as completed and whose fix is in a released tag, with that version, unless the owner
-has already replied since that release. A release is found from the sibling checkout's git tags, not one compare call
-per tag, and a closed issue's answer is cached in cfwatch-released.json beside the seen IDs, keyed by its current close
-time so a reopened or reclosed issue recomputes.
+threads whose issues all closed as completed and whose fix is in a released tag, with that version, unless an owner
+post in the thread is dated after that release, whether it is a top-level reply or nested at any depth. A player post
+after that answer belongs to `--unanswered`, not `--due`. A release is found from the sibling checkout's git tags, not
+one compare call per tag, and a closed issue's answer is cached in cfwatch-released.json beside the seen IDs, keyed by
+its current close time so a reopened or reclosed issue recomputes.
 
 The watched projects are every addon in `forever_tools.family.ADDONS` plus ForeverCore. Each project's ID comes from
 its own root TOC's `## X-Curse-Project-ID` line, read from the sibling checkout, or through `gh api` when that
@@ -449,6 +450,14 @@ def posted_after(comment, published):
     return datetime.datetime.fromtimestamp(comment["datePosted"] / 1000, datetime.timezone.utc) > release
 
 
+def answered_since(rows, published):
+    """True when any owner post in the thread, at any depth, is dated after the release.
+
+    A player post after that answer does not reopen the thread: it belongs to `--unanswered` instead.
+    """
+    return any(is_owner(comment) and posted_after(comment, published) for comment in rows)
+
+
 def when(comment):
     posted = datetime.datetime.fromtimestamp(comment["datePosted"] / 1000, datetime.timezone.utc)
     return posted.strftime("%Y-%m-%d %H:%M")
@@ -543,11 +552,11 @@ def main(argv=None, fetch=None):
                 versions.append(released[key])
             if not all(versions):
                 continue
-            # An owner reply after the release already answered the thread, so it is not due again.
-            rows = by_thread.get(thread)
-            latest = rows[-1] if rows else None
+            # An owner post after the release already answered the thread, so it is not due again, even when
+            # the player has posted since (a thank-you belongs to --unanswered, not here).
+            rows = by_thread.get(thread, [])
             shipped = max((version.published for version in versions if version.published), default="")
-            if latest and is_owner(latest) and posted_after(latest, shipped):
+            if answered_since(rows, shipped):
                 answered += 1
                 continue
             for issue, version in zip(issues, versions, strict=True):
