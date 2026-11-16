@@ -1,10 +1,10 @@
 {
-  "input_digest": "3d2eaed543a233f31c66a6ae449fcfa9f24c4b606237f59d6bcc86ce30f9d4d2",
-  "runtime_sha256": "3d2eaed543a233f31c66a6ae449fcfa9f24c4b606237f59d6bcc86ce30f9d4d2",
-  "candidate": "6783c02e6b8fdc6434e5034c3d61cc57c2a35f3f049f7e2d5faa98d791a4ec0b",
+  "input_digest": "fc705dcc6f08fd5d5b0c9ca4da403b085327c3c06efed2d09f954a683bdd894e",
+  "runtime_sha256": "fc705dcc6f08fd5d5b0c9ca4da403b085327c3c06efed2d09f954a683bdd894e",
+  "candidate": "781bc7fca3acc52fdee6fdf2e9f8ea64a8e2563badf46e45bfb83b740e8b50d8",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "fab093b857a2d9c92b00fa8815da4f5e8d9e96a7",
+  "source_commit": "85071fb03a9c941fbaa0e9a97215bdea82431cf9",
   "flows": [
     {
       "name": "settings",
@@ -16,71 +16,30 @@
     {
       "name": "report",
       "steps": [
-        "report-ready.lua sha256:649eb0ecb209425c2bea3b65f3b4d029933d2ba5e031816c3aff6eb7c8d896a4"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "profession",
-      "steps": [
-        "profession-ready.lua sha256:bbc84835f52b1436a1bcb6a0f677fe4b6039ed8282bbdbe25e936ebe0268e0fc",
-        "Click the visible Open Cooking secure button, then require Cooking shown and SkillUp selected; no crafting"
+        "core-report.lua sha256:24028d51ea185ccfbb96d61ddd17eb8b70389cce5f318a1f6ec538ef7bcb5d5d"
       ],
       "result": "pass"
     },
     {
       "name": "map",
       "steps": [
-        "map-ready.lua sha256:87441a92f36c96faada0a73be3a06c63971b1c4f43f7f9ea9372187b690dd46d"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "quest-tabs",
-      "steps": [
-        "/lf",
-        "Click native map minimize button",
-        "Click Adventure Guide side tab, then return to Quests and restore fullscreen map"
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "tracker",
-      "steps": [
-        "/devsmoke close",
-        "Inspect quest, Adventure Guide, journey and reagent tracker sections"
+        "core-map.lua sha256:4418e23c78924cee9cc211858704b52e1bf96d25418f5016a22eb30708d91fea"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/settings.png",
-      "sha256": "59983cadc6a851dbcc7c36251a3fb3b2c65f5f02e2229e583d7ff99af8dcfb70"
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/1-settings.png",
+      "sha256": "6185fd026cd706f775e7e83a3811a6ebfae45d98923f3a6056132f72ac0d7d3c"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/report.png",
-      "sha256": "dd31dd6295be09834154b14f9f8e8d0faeb1224ea6973eea2eae015a077dedf2"
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/2-report.png",
+      "sha256": "2b1c506392017998f5e7c2cbd401539786288cc02145b5508be08b32550ff773"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/profession.png",
-      "sha256": "ac660afe39484f79064ce55ffcf308ebba0e14955f5323a5e4840ccf8297e2db"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/map.png",
-      "sha256": "dab59ac6c970f0c8d4775398026a879ae566d05f8917fe180081cd893ef5a8a1"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/quest-tabs.png",
-      "sha256": "423145d9831cdaae03696e1dd938a5f6d90fb2a28ffd4fece6149b9ac56e6e98"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/tracker.png",
-      "sha256": "6c4c33b1c66a65c41f24e36d95d3d9a03d7b9e2d2f45e9f95eccbf90acb7fc5a"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/9f4fe0eb93124135a27d0da0d9c91e5c/raw/552a0c6fdf0731765036d6c86df22b44cb00fab0/profession-button.png",
-      "sha256": "89b975ee7416f2a1409b061b1b4b71eb7e038cc068ee4f2ec75bc32dff6e2bb0"
+      "url": "https://gist.githubusercontent.com/cjber/ad54088897e870468e5c02b87f408155/raw/e374e293ca45dada7906a8c9426549f73a535ddd/3-map.png",
+      "sha256": "342fbe05269993d7360aa99edc288a6ee89126e812fecec14a03953517856f94"
     }
   ]
 }
