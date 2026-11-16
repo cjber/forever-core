@@ -751,6 +751,8 @@ function M.build(sim)
 	questNative("GetNumQuestLeaderBoards", 0)
 	questNative("GetQuestLogLeaderBoard", nil)
 	questNative("GetQuestLogCompletionText", nil)
+	questNative("GetQuestLink", nil)
+	questNative("IsCurrentQuestFailed", false)
 	questNative("IsQuestSequenced", false)
 	-- The quest's special item, if any. Blizzard's tracker asks before it makes the item button; no item means none.
 	questNative("GetQuestLogSpecialItemInfo", nil)

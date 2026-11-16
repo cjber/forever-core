@@ -807,6 +807,18 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(select(3, G.GetQuestLogLeaderBoard(2, 1)), true, "the scenario's finished flag")
 	eq(G.GetQuestLogCompletionText(1), "Return to the quest giver", "the scenario's completion text")
 	eq(G.IsQuestSequenced(1), true, "the scenario's sequenced flag")
+	local nativeLink = G.GetQuestLink
+	eq(nativeLink(608001), nil, "no quest link by default")
+	sim.impl.GetQuestLink = function(id)
+		return id == 608001 and "|Hquest:608001|h[Quest]|h" or nil
+	end
+	eq(G.GetQuestLink(608001), "|Hquest:608001|h[Quest]|h", "quest link comes from public fixture data")
+	eq(G.GetQuestLink, nativeLink, "quest link engine identity stays stable")
+	eq(G.IsCurrentQuestFailed(), false, "no failed current quest by default")
+	sim.impl.IsCurrentQuestFailed = function()
+		return true
+	end
+	eq(G.IsCurrentQuestFailed(), true, "current quest failure comes from public fixture data")
 end)
 
 test("world: item identity resolves fixture ItemInfo without default zero", function()

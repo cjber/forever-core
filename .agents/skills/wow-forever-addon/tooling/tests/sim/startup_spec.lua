@@ -36,6 +36,14 @@ end
 
 local sim = Sim.new()
 local G = sim.G
+assert(
+	G.ChatFrameUtil and G.ChatFrameUtil.TryInsertQuestLinkForQuestID,
+	"native quest clicks have their chat dependency"
+)
+sim:input(function()
+	G.ChatFrameUtil.TryInsertQuestLinkForQuestID(608001)
+end)
+sim:expectNoErrors()
 -- The pinned SpellFlyout and SpellFlyoutItem tables define Warrior stances even before any are learned.
 local name, description, count, known = G.GetFlyoutInfo(269)
 eq(name, "Stances")
