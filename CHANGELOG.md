@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **A watched quest the game reports twice draws once.** The quest list reads the client's watch list by index, and a
+  repeated quest ID made it lay that quest's block out twice in one pass, which the client refuses with "Cannot anchor
+  to a region dependent on it" while the tracker lays itself out. Each unique quest now gets one record and one block.
+  Thanks to a player on CurseForge for the report. (#609)
+
 ## [1.13.0] - 2026-11-16
 
 - **A different addon named ForeverCore no longer breaks every Forever addon.** If another addon installs its own folder named ForeverCore over ours, each Forever addon now shows one line naming that addon, asking you to remove it and install ForeverCore from CurseForge, instead of saying it could not start. (#610)
