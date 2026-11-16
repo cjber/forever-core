@@ -1,5 +1,5 @@
 {
-  "policy": "Only reviewed text producers with exact widget FontObjects are checked. Source changes invalidate the whole mapping, including aliases, callbacks and font overrides. Review source and callers before updating sha256. Unlisted dynamic text, template-owned fonts and consumer helper arguments have no coverage claim.",
+  "policy": "Only reviewed text producers with exact widget FontObjects are checked. English text is the explicit enUS entry when present, otherwise the phrase key, which must occur as an exact decoded Lua string literal in the producer source. Source changes invalidate the whole mapping, including aliases, callbacks and font overrides. Review source and callers before updating sha256. Unlisted dynamic text, template-owned fonts and consumer helper arguments have no coverage claim.",
   "producers": [
     {
       "source": "UI/TrackerLock.lua",

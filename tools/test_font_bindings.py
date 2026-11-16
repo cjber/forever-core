@@ -87,6 +87,39 @@ class BindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown English phrase"):
             check_bindings(self.root, DATA, self.manifest)
 
+    def test_key_fallback_checks_translations_and_missing_translations(self):
+        (self.root / "Locales/enUS.lua").write_text(
+            "local L = setmetatable({}, {__index = function(_, key) return key end})\n"
+        )
+        self.assertIn("U+00B7", check_bindings(self.root, DATA, self.manifest)[0])
+        self.write_russian("•")
+        self.assertEqual(check_bindings(self.root, DATA, self.manifest), [])
+        self.russian.write_text('local _, ns = ...\nif GetLocale() ~= "ruRU" then return end\nlocal L = ns.L\n')
+        self.assertEqual(check_bindings(self.root, DATA, self.manifest), [])
+
+    def test_key_fallback_requires_exact_decoded_source_literal(self):
+        (self.root / "Locales/enUS.lua").write_text("local L = {}\n")
+        for source, passes in (
+            ('-- "Label"\nlocal x = "Labels"', False),
+            ('local x = "La" .. "bel"', False),
+            ('local x = "La\\098el"', True),
+            ("local x = [=[Label]=]", True),
+        ):
+            with self.subTest(source=source):
+                self.source.write_text(source)
+                self.manifest["producers"][0]["sha256"] = hashlib.sha256(self.source.read_bytes()).hexdigest()
+                self.write_russian("•")
+                if passes:
+                    self.assertEqual(check_bindings(self.root, DATA, self.manifest), [])
+                else:
+                    with self.assertRaisesRegex(ValueError, "absent from enUS entries and producer string literals"):
+                        check_bindings(self.root, DATA, self.manifest)
+
+    def test_explicit_english_entry_takes_precedence_without_source_literal(self):
+        self.manifest["producers"][0]["bindings"][0]["phrase"] = "Other"
+        (self.root / "Locales/enUS.lua").write_text('local L = {}\nL["Other"] = "·"\n')
+        self.assertIn("enUS.lua:2", check_bindings(self.root, DATA, self.manifest)[0])
+
     def test_automatic_cli_gate(self):
         path = self.root / "bindings.json"
         path.write_text(json.dumps(self.manifest))

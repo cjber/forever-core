@@ -380,3 +380,5 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   back to English, so it never fails).
   Each addon also runs `python3 tools/check_font_glyphs.py` from `tools/typecheck.sh`, with a reviewed
   `tools/font_bindings.json` naming the font object of each widget that shows a locale phrase.
+  English text uses the explicit enUS entry when present, otherwise the phrase key. A key without an
+  enUS entry must occur as an exact decoded Lua string literal in the binding's producer source.
