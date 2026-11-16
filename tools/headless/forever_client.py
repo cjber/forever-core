@@ -5,6 +5,8 @@ The client runs under gamescope's headless backend: it renders on the real GPU i
 window reaches the desktop and the player's mouse and keyboard are never touched. Every verb talks to that display
 only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server. The host also
 needs `tesseract` on PATH to locate the launcher's visible Play control from the private screenshot.
+Startup stops with the launcher frame path when Battle.net shows an update or installation dialog, or two Play
+attempts produce no game process. Update the game in Battle.net before retrying an update failure.
 
     forever_client.py serve               # the resident session: start, wait for the world, stay up while jobs arrive
     forever_client.py up                  # the same lifecycle in the foreground
@@ -170,6 +172,11 @@ LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
+# Battle.net modal title and page banner observed in #316.
+LAUNCHER_UPDATE_LABELS = (("installation", "required"), ("upgrade", "available"))
+# Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
+MAX_PLAY_CLICKS = 2
+PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
 # A driver upgrade whose loaded kernel module is still the old one makes Vulkan fail before gamescope can start. The
 # module names itself here, and nvidia-smi or the installed userspace library names the other half (#567).
 NVIDIA_MODULE_VERSION = Path("/sys/module/nvidia/version")
@@ -1047,7 +1054,26 @@ def press_play(state: dict) -> None:
         raise ClientError("Battle.net launcher window was not found")
     if shutil.which("tesseract") is None:
         raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
+    if client_pid():
+        return
     image = shot(state, STATE_DIR / "launcher.png")
+    words = [word[0].casefold() for word in ocr_words(image) if word[0]]
+    # These exact Battle.net UI labels name the blocked launch state; unrelated prose is not an update signal.
+    if any(
+        words[index : index + len(phrase)] == list(phrase)
+        for phrase in LAUNCHER_UPDATE_LABELS
+        for index in range(len(words))
+    ):
+        raise ClientError(
+            f"the game needs an update in Battle.net before the headless client can start; inspect {image}"
+        )
+    clicks = state.get("play_clicks", 0)
+    if clicks and time.monotonic() - state["last_play_click"] < PLAY_RETRY_WAIT:
+        return
+    if clicks >= MAX_PLAY_CLICKS:
+        raise ClientError(
+            f"no game process appeared after {MAX_PLAY_CLICKS} Play clicks in Battle.net; inspect {image}"
+        )
     targets = play_targets(image)
     if not targets:
         # A launcher dialog can cover the page. Dismiss it on the discovered
@@ -1068,6 +1094,8 @@ def press_play(state: dict) -> None:
     x(state, "mousemove", str(left + width // 2), str(top + height // 2))
     time.sleep(0.5)
     x(state, "click", "1")
+    state["play_clicks"] = clicks + 1
+    state["last_play_click"] = time.monotonic()
     (STATE_DIR / "last-input").touch()
 
 
@@ -2557,7 +2585,7 @@ def wait_for_session(lock, timeout: float) -> None:
         time.sleep(WAIT_POLL)
 
 
-def at_character_select(state: Mapping, manual_launcher: bool) -> None:
+def at_character_select(state: dict, manual_launcher: bool) -> None:
     """Nudge the launch along, every 15 s until the world loads.
 
     Enter at the character list enters the world with the last character; before then it does nothing. It is sent

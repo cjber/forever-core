@@ -674,6 +674,8 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.subprocess, "run", side_effect=[found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "ocr_words", return_value=[]),
             mock.patch.object(fc, "play_targets", return_value=[(1390, 580, 72, 24, 96.5)]) as targets,
             mock.patch.object(fc, "x") as x,
             mock.patch.object(fc.time, "sleep"),
@@ -690,6 +692,45 @@ class ForeverClientTest(unittest.TestCase):
         self.assertNotIn("--window", x.call_args_list[0].args)
         self.assertTrue((self.state / "last-input").exists())
 
+    def test_press_play_stops_on_exact_update_labels_before_sending_input(self):
+        for label in ("Installation Required", "Upgrade Available"):
+            with (
+                self.subTest(label=label),
+                mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
+                mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+                mock.patch.object(fc, "client_pid", return_value=None),
+                mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+                mock.patch.object(fc, "ocr_words", return_value=[(word, 95.0, 0, 0, 20, 20) for word in label.split()]),
+                mock.patch.object(fc, "play_targets") as targets,
+                mock.patch.object(fc, "x") as x,
+                self.assertRaisesRegex(fc.ClientError, "needs an update in Battle.net.*launcher.png"),
+            ):
+                fc.press_play({"display": ":1"})
+            x.assert_not_called()
+            targets.assert_not_called()
+
+    def test_press_play_caps_attempts_without_a_game_process(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "ocr_words", return_value=[]),
+            mock.patch.object(fc, "play_targets", return_value=[(100, 100, 40, 20, 95.0)]),
+            mock.patch.object(fc, "x") as x,
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc.time, "monotonic") as now,
+        ):
+            for attempt in range(fc.MAX_PLAY_CLICKS):
+                now.return_value = attempt * fc.PLAY_RETRY_WAIT
+                fc.press_play(state)
+                fc.press_play(state)  # The same frame time cannot trigger another attempt.
+            now.return_value = fc.MAX_PLAY_CLICKS * fc.PLAY_RETRY_WAIT
+            with self.assertRaisesRegex(fc.ClientError, "no game process.*launcher.png"):
+                fc.press_play(state)
+        self.assertEqual(x.call_args_list.count(mock.call(state, "click", "1")), fc.MAX_PLAY_CLICKS)
+
     def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
@@ -697,6 +738,8 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.subprocess, "run", side_effect=[found, found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "ocr_words", return_value=[]),
             mock.patch.object(fc, "play_targets", return_value=[]),
             mock.patch.object(fc, "x") as x,
             contextlib.redirect_stderr(io.StringIO()) as warning,
@@ -797,6 +840,8 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.subprocess, "run", side_effect=[found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "ocr_words", return_value=[]),
             mock.patch.object(fc, "play_targets", return_value=targets),
             mock.patch.object(fc, "x") as x,
             self.assertRaisesRegex(fc.ClientError, "expected one visible Play target"),
@@ -837,6 +882,23 @@ class ForeverClientTest(unittest.TestCase):
         self.assertGreaterEqual(confidence, 0)
         self.assertTrue(71 <= left and left + width <= 71 + 232, f"the label {left}..{left + width} is in the button")
         self.assertTrue(100 <= top and top + height <= 100 + 56, f"the label {top}..{top + height} is in the button")
+
+    @unittest.skipUnless(shutil.which("tesseract"), "needs tesseract to read the saved launcher frame")
+    def test_press_play_accepts_the_saved_launcher_frame_without_an_update(self):
+        fixture = Path(__file__).parent / "headless/launcher-play.png"
+        words = fc.ocr_words(fixture)
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "shot", return_value=fixture),
+            mock.patch.object(fc, "ocr_words", return_value=words),
+            mock.patch.object(fc, "play_targets", return_value=[(81, 110, 40, 20, 96.0)]),
+            mock.patch.object(fc, "x") as x,
+            mock.patch.object(fc.time, "sleep"),
+        ):
+            fc.press_play(state)
+        x.assert_any_call(state, "click", "1")
 
     def test_character_select_nudge_waits_while_the_launcher_has_focus(self):
         state = {"display": ":1"}
