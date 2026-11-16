@@ -348,6 +348,7 @@ capped.scrollOffset = 0
 scroll.host:MarkDirty()
 scroll.drain()
 wheelChild.scripts.OnMouseWheel(wheelChild, -1)
+scroll.check(wheelChild.trackerWheelModule == nil, "wheel routing adds no ownership field to descendant frames")
 scroll.check(childWheelCalls == 1, "content wheel handlers remain installed")
 scroll.check(capped.scrollOffset == 60, "wheel input over content scrolls the owning section")
 rest.ContentsFrame.GetChildren = function()

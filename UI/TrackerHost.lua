@@ -639,6 +639,7 @@ end
 
 -- Mouse-wheel input is delivered to the deepest mouse-enabled descendant, not bubbled to its scroll frame. Keep the
 -- existing descendant handlers, but hook every pooled content frame so scrolling works over text, icons and buttons.
+local trackerWheelModules = setmetatable({}, { __mode = "k" })
 local function BindTrackerWheel(frame, handler, seen)
 	if not frame then
 		return
@@ -646,7 +647,7 @@ local function BindTrackerWheel(frame, handler, seen)
 	local fresh = not seen[frame]
 	seen[frame] = true
 	if frame ~= handler.owner then
-		frame.trackerWheelModule = handler.module
+		trackerWheelModules[frame] = handler.module
 	end
 	if fresh and frame ~= handler.owner and frame.EnableMouseWheel and frame.HookScript then
 		frame:EnableMouseWheel(true)
@@ -683,7 +684,7 @@ function Module:LayoutTrackerScroll()
 			owner = contents,
 			module = self,
 			callback = function(frame, delta)
-				if frame.trackerWheelModule == self then
+				if trackerWheelModules[frame] == self then
 					self:OnTrackerWheel(delta)
 				end
 			end,
