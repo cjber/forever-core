@@ -509,20 +509,29 @@ function M.build(sim)
 	W.rect = rect
 
 	-- True when the region's placement depends on a region with a secret aspect (the client's secret anchoring).
-	local function anchoringSecret(obj, depth)
-		local s = S[obj]
-		if not s or (depth or 0) > 50 then
-			return false
-		end
-		if s.secretSize then
-			return true
-		end
-		for _, p in ipairs(s.points) do
-			local target = p.relativeTo or s.parent
-			if target and target ~= root then
-				local ts = S[target]
-				if ts and (next(ts.aspects) ~= nil or anchoringSecret(target, (depth or 0) + 1)) then
-					return true
+	local function anchoringSecret(obj)
+		local pending, seen = { obj }, {}
+		while #pending > 0 do
+			local current = table.remove(pending)
+			if not seen[current] then
+				seen[current] = true
+				local s = S[current]
+				if s then
+					if s.secretSize then
+						return true
+					end
+					for _, p in ipairs(s.points) do
+						local target = p.relativeTo or s.parent
+						if target and target ~= root then
+							local ts = S[target]
+							if ts then
+								if next(ts.aspects) ~= nil then
+									return true
+								end
+								pending[#pending + 1] = target
+							end
+						end
+					end
 				end
 			end
 		end
@@ -531,18 +540,24 @@ function M.build(sim)
 	W.anchoringSecret = anchoringSecret
 
 	-- Would anchoring obj to target create a loop?
-	local function dependsOn(target, obj, depth)
-		if target == obj then
-			return true
-		end
-		local s = S[target]
-		if not s or (depth or 0) > 100 then
-			return false
-		end
-		for _, p in ipairs(s.points) do
-			local t = p.relativeTo or s.parent
-			if t and dependsOn(t, obj, (depth or 0) + 1) then
+	local function dependsOn(target, obj)
+		local pending, seen = { target }, {}
+		while #pending > 0 do
+			local current = table.remove(pending)
+			if current == obj then
 				return true
+			end
+			if not seen[current] then
+				seen[current] = true
+				local s = S[current]
+				if s then
+					for _, p in ipairs(s.points) do
+						local dependency = p.relativeTo or s.parent
+						if dependency then
+							pending[#pending + 1] = dependency
+						end
+					end
+				end
 			end
 		end
 		return false

@@ -1062,5 +1062,58 @@ test("docs: a restriction keeps every class its tag names, and any one refuses t
 	eq(Docs.applies({ "untagged" }, false, true), false, "untagged keeps the combat-only rule")
 end)
 
+test("widgets: dependency cycles are rejected beyond recursive depth limits", function()
+	Taint.current = nil
+	local W = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	W.finalize()
+	local root = W.new("Frame")
+	W.setRoot(root)
+	root:SetSize(800, 600)
+	local base = W.new("Frame", nil, root)
+	base:SetSize(10, 10)
+	base:SetPoint("TOPLEFT", root, "TOPLEFT")
+	local last = base
+	for _ = 1, 120 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetSize(10, 10)
+		frame:SetPoint("TOPLEFT", last, "BOTTOMLEFT")
+		last = frame
+	end
+	local ok, err = pcall(base.SetPoint, base, "TOPLEFT", last, "BOTTOMLEFT")
+	assert(not ok and tostring(err):find("dependent on it", 1, true), "deep dependency cycle must be rejected")
+end)
+
+test("widgets: secret anchoring follows deep chains and shared dependencies", function()
+	Taint.current = nil
+	local W = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	W.finalize()
+	local root = W.new("Frame")
+	W.setRoot(root)
+	root:SetSize(800, 600)
+	local secret = W.new("Frame", nil, root)
+	secret:SetWidth(Veil.wrap(10))
+	secret:SetHeight(10)
+	secret:SetPoint("TOPLEFT", root, "TOPLEFT")
+	local last = secret
+	for _ = 1, 60 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetSize(10, 10)
+		frame:SetPoint("TOPLEFT", last, "BOTTOMLEFT")
+		last = frame
+	end
+	assert(last:IsAnchoringSecret(), "deep secret dependency remains secret")
+	local public = W.new("Frame", nil, root)
+	public:SetSize(10, 10)
+	public:SetPoint("TOPLEFT", root, "TOPLEFT")
+	last = public
+	for _ = 1, 28 do
+		local frame = W.new("Frame", nil, root)
+		frame:SetPoint("TOPLEFT", last, "TOPLEFT")
+		frame:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT")
+		last = frame
+	end
+	assert(not last:IsAnchoringSecret(), "shared-edge DAG remains public")
+end)
+
 print(string.format("unit_spec: %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
