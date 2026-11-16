@@ -808,6 +808,42 @@ test("natives: achievement category arrays remain stable fixture entry points", 
 	end
 end)
 
+test("natives: legacy achievement search and chain preserve fixture contracts", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	eq(type(G.SetAchievementSearchString), "function", "search native")
+	eq(type(G.GetPreviousAchievement), "function", "chain native")
+	eq(G.GetPreviousAchievement(401), nil, "no previous achievement by default")
+	eq(G.GetNumFilteredAchievements(), 0, "no search results by default")
+	eq(G.GetFilteredAchievementID(1), nil, "no result identity by default")
+	sim.impl.GetNumFilteredAchievements = function()
+		return 1
+	end
+	sim.impl.GetFilteredAchievementID = function(index)
+		return index == 1 and 401 or nil
+	end
+	eq(G.GetNumFilteredAchievements(), 1, "explicit search count")
+	eq(G.GetFilteredAchievementID(1), 401, "explicit search result identity")
+	local search
+	sim.impl.SetAchievementSearchString = function(text)
+		search = text
+	end
+	eq(select("#", G.SetAchievementSearchString("Exact search")), 0, "search has no invented return")
+	eq(search, "Exact search", "search passed to fixture")
+	sim.impl.GetPreviousAchievement = function(id)
+		return id == 402 and 401 or nil
+	end
+	eq(G.GetPreviousAchievement(402), 401, "explicit previous achievement")
+	eq(G.GetPreviousAchievement(401), nil, "chain terminates")
+	eq(G.GetNextAchievement(402), nil, "no next achievement by default")
+	sim.impl.GetNextAchievement = function(id)
+		return id == 401 and 402 or nil, false
+	end
+	local nextID, completed = G.GetNextAchievement(401)
+	eq(nextID, 402, "next achievement identity")
+	eq(completed, false, "next achievement completion")
+end)
+
 test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()
 	local sim, G = freshClient()
 	sim.docs = {

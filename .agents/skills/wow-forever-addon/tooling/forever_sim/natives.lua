@@ -778,6 +778,24 @@ function M.build(sim)
 			return {}
 		end
 	end
+	-- Legacy Challenges search state and results belong to explicit fixture callbacks; the default has no results.
+	G.SetAchievementSearchString = function(text)
+		local search = sim.impl.SetAchievementSearchString
+		if search then
+			search(text)
+		end
+	end
+	questNative("GetPreviousAchievement", nil)
+	questNative("GetNextAchievement", nil)
+	questNative("GetAchievementGuildRep", nil)
+	G.SetFocusedAchievement = function(id)
+		local focus = sim.impl.SetFocusedAchievement
+		if focus then
+			focus(id)
+		end
+	end
+	questNative("GetNumFilteredAchievements", 0)
+	questNative("GetFilteredAchievementID", nil)
 	-- Auto quest pop-ups: none.
 	questNative("GetNumAutoQuestPopUps", 0)
 	-- No scenario: no stages. The tracker compares the count GetInfo returns.

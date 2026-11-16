@@ -76,6 +76,7 @@ eq(G.TopBannerMgr.currentBanner.frame, G.ObjectiveTrackerTopBannerFrame)
 sim:expectNoErrors()
 eq(G.ObjectiveTrackerTopBannerFrame:IsShown(), true)
 -- The native completion events must reach real alert systems and lazy-loaded Achievement UI.
+local worldAchievementInfo = sim.impl.GetAchievementInfo
 sim.impl.GetAchievementInfo = function(id)
 	return id, "Completion fixture", 10, true, 1, 1, 2026, "Completed", 0, 134400, "", false, true
 end
@@ -89,4 +90,46 @@ sim:expectNoErrors()
 assert(G.AchievementFrame, "native achievement UI loaded from the completion event")
 assert(G.AchievementAlertSystem, "native achievement alert system initialized")
 assert(G.MonthlyActivityAlertSystem, "native monthly alert system initialized")
+-- Exercise an active Camelot category, not the no-renown early return.
+sim.impl.GetAchievementInfo = worldAchievementInfo
+sim.world.achievements.categories = {
+	{ id = 1, name = "Challenges", achievements = { { id = 608002, name = "Completion fixture" } } },
+}
+sim.impl["C_MajorFactions.GetCurrentRenownLevel"] = function()
+	return 1
+end
+sim.impl["C_AchievementInfo.IsValidAchievement"] = function(id)
+	return id == 608002
+end
+local searched, focused
+sim.impl.SetFocusedAchievement = function(id)
+	focused = id
+end
+sim.impl.SetAchievementSearchString = function(text)
+	searched = text
+end
+sim.impl.GetNumFilteredAchievements = function()
+	return 1
+end
+sim.impl.GetFilteredAchievementID = function(index)
+	return index == 1 and 608002 or nil
+end
+sim:loadBlizzard("Blizzard_LegacySystem/Blizzard_LegacySystem_Bootstrap.lua")
+for _, shown in ipairs({ true, false }) do
+	sim:input(function()
+		G.ToggleAchievementFrame()
+		if shown then
+			G.AchievementFrame_SelectAchievement(608002)
+		end
+	end)
+	sim:advance(0.1)
+	sim:expectNoErrors()
+	eq(G.LegacySystemFrame:IsShown(), shown)
+	if shown then
+		eq(searched, "")
+		eq(focused, 608002)
+		local selected = G.AchievementFrameAchievements_GetSelectedElementData()
+		assert(selected and selected.id == 608002, "native detail selection reaches the requested achievement")
+	end
+end
 print("startup_spec: bare boot, login and SettingsPanel pass with mouse and gamepad; native flyout metadata passes")
