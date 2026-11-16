@@ -1507,6 +1507,24 @@ function M.build(sim)
 		end
 	end
 
+	-- QuestPOIFrame's area drawing, which the map's quest blob pin calls. It records the quest IDs a frame was
+	-- asked to draw: DrawBlob(questID, true) adds one and DrawNone clears every drawn area. It does not model the
+	-- drawn geometry, merging, smoothing or textures, DrawBlob's documented draw=false form (the pinned UI never
+	-- passes it), or DrawAll (which the pinned UI never calls).
+	local function blobQuestIDs(self)
+		local s = st(self)
+		s.blobQuestIDs = s.blobQuestIDs or {}
+		return s.blobQuestIDs
+	end
+	impl.QuestPOIFrame.DrawBlob = function(self, questID, draw)
+		if draw then
+			blobQuestIDs(self)[questID] = true
+		end
+	end
+	impl.QuestPOIFrame.DrawNone = function(self)
+		st(self).blobQuestIDs = {}
+	end
+
 	-- Button.
 	local function buttonRegion(self, key, kind, layer, value)
 		local s = st(self)

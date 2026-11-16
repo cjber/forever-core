@@ -814,6 +814,13 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	end
 	eq(G.GetQuestLink(608001), "|Hquest:608001|h[Quest]|h", "quest link comes from public fixture data")
 	eq(G.GetQuestLink, nativeLink, "quest link engine identity stays stable")
+	-- The quest map asks HaveQuestData before it draws or lists a quest; a scenario answers for the quests it holds.
+	eq(G.HaveQuestData(608001), false, "no quest data by default")
+	sim.impl.HaveQuestData = function(id)
+		return id == 608001
+	end
+	eq(G.HaveQuestData(608001), true, "quest data comes from public fixture data")
+	eq(G.HaveQuestData(608002), false, "a quest the fixture does not hold")
 	eq(G.IsCurrentQuestFailed(), false, "no failed current quest by default")
 	sim.impl.IsCurrentQuestFailed = function()
 		return true
@@ -1060,6 +1067,19 @@ test("docs: a restriction keeps every class its tag names, and any one refuses t
 	eq(Docs.applies(classes["X.Both"], true, true), true, "nocombat refuses in combat")
 	eq(Docs.applies(classes["X.Always"], false, true), true, "always refuses regardless")
 	eq(Docs.applies({ "untagged" }, false, true), false, "untagged keeps the combat-only rule")
+end)
+
+test("widgets: a quest POI frame records the quest areas it draws", function()
+	Taint.current = nil
+	local W = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	W.finalize()
+	local frame = W.new("QuestPOIFrame")
+	frame:DrawBlob(608001, true)
+	frame:DrawBlob(608002, true)
+	assert(W.state[frame].blobQuestIDs[608001], "first drawn quest recorded")
+	assert(W.state[frame].blobQuestIDs[608002], "second drawn quest recorded")
+	frame:DrawNone()
+	assert(next(W.state[frame].blobQuestIDs) == nil, "DrawNone clears every drawn quest area")
 end)
 
 test("widgets: dependency cycles are rejected beyond recursive depth limits", function()

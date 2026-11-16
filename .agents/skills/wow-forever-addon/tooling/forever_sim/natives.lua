@@ -741,6 +741,9 @@ function M.build(sim)
 	questNative("GetQuestLogLeaderBoard", nil)
 	questNative("GetQuestLogCompletionText", nil)
 	questNative("GetQuestLink", nil)
+	-- Whether the client holds data for the quest, which the quest map asks before it pins or draws a quest. Present
+	-- in the committed client probe; a scenario with quests answers through sim.impl, and the default is no data.
+	questNative("HaveQuestData", false)
 	questNative("IsCurrentQuestFailed", false)
 	questNative("IsQuestSequenced", false)
 	-- The quest's special item, if any. Blizzard's tracker asks before it makes the item button; no item means none.
