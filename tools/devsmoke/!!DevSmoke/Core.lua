@@ -253,14 +253,39 @@ end
 
 -- A proof captures a Lua flow's window only once the flow says it is ready: a snippet may return a function, polled
 -- here the way the client polls a timer, and the screenshot taken when it first returns true is the file the proof
--- waits for (#593). It is delayed past the screenshot every world load takes, so the two files never share a name in
--- the Screenshots folder, and a flow with no ready check is captured at that same point. The limit is the proof's
--- readiness bound, so a check that never turns true stops here rather than taking a late screenshot over the next flow.
+-- waits for (#593). It arms after the point the world load's own screenshot is usually taken, and a flow with no
+-- ready check is captured at that same point. The delay only gives that shot a head start: captureFlow itself waits
+-- out a shot that is still pending and the second the last one finished in, because a file name is to the second, so
+-- the delay alone cannot keep the two names apart (#664). The limit is the proof's readiness bound, so a check that
+-- never turns true stops here rather than taking a late screenshot over the next flow.
 local FLOW_SHOT_DELAY = 3.2
 local FLOW_POLL = 0.25
 local FLOW_READY_LIMIT = 60
 local flowWorldLoaded = false
 local flowWaiting = {}
+
+-- The client names a screenshot file to the second (WoWScrnShot_MMDDYY_HHMMSS.jpg), so two shots taken in the same
+-- second share a name and the second overwrites the first. !!ForeverHeadless takes the world load's own shot, and a
+-- flow ready on its first poll used to shoot into that same second, leaving the proof one new file instead of two and
+-- timing out (#664). Track the shot in flight and the second the last one finished in, so poll can wait them out.
+local flowShotPending = false
+local flowShotSecond = 0
+local flowShots = CreateFrame("Frame")
+flowShots:RegisterEvent("SCREENSHOT_STARTED")
+flowShots:RegisterEvent("SCREENSHOT_SUCCEEDED")
+flowShots:RegisterEvent("SCREENSHOT_FAILED")
+flowShots:SetScript("OnEvent", function(_, event)
+	if event == "SCREENSHOT_STARTED" then
+		flowShotPending = true
+	else
+		flowShotPending = false
+		flowShotSecond = time()
+	end
+end)
+-- A shot requested earlier in this same frame may not have raised SCREENSHOT_STARTED yet, so the call itself marks it.
+hooksecurefunc("Screenshot", function()
+	flowShotPending = true
+end)
 
 -- The proof reads the readiness outcome from this addon's SavedVariables, so a failure has to reach disk before the
 -- proof's bounded wait ends. SaveAddOns writes them now; without it the proof's final reload saves the same record.
@@ -306,7 +331,8 @@ local function captureFlow(ready)
 		end
 		if not ok then
 			stop("failed", "the flow's ready check failed: " .. textOf(value))
-		elseif value then
+		-- File names are to the second: wait out a shot in flight, and the second the last one finished in (#664).
+		elseif value and not flowShotPending and time() > flowShotSecond then
 			finished = true
 			if DevSmokeDB and DevSmokeDB.eval then
 				DevSmokeDB.eval.ready = "captured"
