@@ -1,13 +1,13 @@
 {
-  "input_digest": "84471829132c7c2f54526fd8c50607aae799ccdb2d1e36f601d344f7a4409b9c",
-  "runtime_sha256": "84471829132c7c2f54526fd8c50607aae799ccdb2d1e36f601d344f7a4409b9c",
-  "candidate": "643609d59bbcdd645696c925c3c719c5308761768df42109fee3cd24d3d1fed5",
+  "input_digest": "189a0e511f81afb58d82e91db8bb59b4191f99602bbb633f392ea196a7a9e98a",
+  "runtime_sha256": "189a0e511f81afb58d82e91db8bb59b4191f99602bbb633f392ea196a7a9e98a",
+  "candidate": "ccb7e8805ca1b0c6d4c4aff74ac4ad9f9499cf1ff51a7b1d84e870974fb8b830",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "4eb643e757ec2eff26c3c71594b4ccb34b38f0d0",
+  "source_commit": "62952abbd70b6d8ff5e22ba20ec26b5d6225e486",
   "flows": [
     {
-      "name": "settings",
+      "name": "startup report",
       "steps": [
         "/fcore"
       ],
@@ -16,8 +16,8 @@
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/9296e59e77849e089b2f1a74fb01a229/raw/51decfa76563e84f89c40941ef34454fb11c4ac9/1-settings.png",
-      "sha256": "5e49e4d2229da7e17c8711fbdc60fe5e1c80c9d8f451ede0d20222277c911470"
+      "url": "https://gist.githubusercontent.com/cjber/82866f605dfe8573dc22e77caaa2fa94/raw/7ac3a20d982deba4865fa69ae2365e11d754ef2b/1-startup-report.png",
+      "sha256": "a9efad87d81bff1358a5bbddf731e7ace07662f0ae6c1563e9475186b3a27388"
     }
   ]
 }
