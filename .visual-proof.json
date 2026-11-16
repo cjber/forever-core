@@ -1,23 +1,23 @@
 {
-  "input_digest": "9856d9fca39667383fdb38000bc77bab9a08c68e0f52cfdaa3d7846d4b21dd16",
-  "runtime_sha256": "9856d9fca39667383fdb38000bc77bab9a08c68e0f52cfdaa3d7846d4b21dd16",
-  "candidate": "32a9dba7213d52e76efd84f0c18d123f6110aaccbb84dcabced06959a68178a2",
+  "input_digest": "84471829132c7c2f54526fd8c50607aae799ccdb2d1e36f601d344f7a4409b9c",
+  "runtime_sha256": "84471829132c7c2f54526fd8c50607aae799ccdb2d1e36f601d344f7a4409b9c",
+  "candidate": "643609d59bbcdd645696c925c3c719c5308761768df42109fee3cd24d3d1fed5",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "4ec8809ff13729c84122ab778c357e4f335fdcbb",
+  "source_commit": "4eb643e757ec2eff26c3c71594b4ccb34b38f0d0",
   "flows": [
     {
       "name": "settings",
       "steps": [
-        "settings-ready.lua sha256:86dd0d8704d0317ca099aa5fed2f834e11fd1da9c788aaa1965aa6e36b8f451c"
+        "/fcore"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/2c17f330ba11d8aa9cd504d31ba52e76/raw/7407ab941538148f089cf17f7472de235bbb0ff5/1-settings.png",
-      "sha256": "9fcc4d02d215a73aa145ce12da55b44be0155c87755d94340f43dbbc0d6c7f08"
+      "url": "https://gist.githubusercontent.com/cjber/9296e59e77849e089b2f1a74fb01a229/raw/51decfa76563e84f89c40941ef34454fb11c4ac9/1-settings.png",
+      "sha256": "5e49e4d2229da7e17c8711fbdc60fe5e1c80c9d8f451ede0d20222277c911470"
     }
   ]
 }
