@@ -131,6 +131,8 @@ def check_bindings(root, data, manifest):
     CreateFontString match alone cannot rule out. Review callers before updating
     a digest. English uses an explicit enUS entry when present, otherwise the
     phrase key, which must occur as an exact decoded Lua string in the producer.
+    A producer is read as Lua only for that fallback, so a reviewed XML template
+    with no bindings still pins its digest.
     Dynamic text and unlisted producers have no coverage claim.
     """
     problems = []
@@ -149,8 +151,7 @@ def check_bindings(root, data, manifest):
         if hashlib.sha256(path.read_bytes()).hexdigest() != producer["sha256"]:
             problems.append(f"{path}: font binding source changed; review widget and callers before refreshing digest")
             continue
-        tokens, _ = tokenize(path.read_text(encoding="utf-8"))
-        literals = {_string(token): token.line for token in tokens if token.kind == "string"}
+        literals = None
         for binding in producer["bindings"]:
             if ("phrase" in binding) == ("literal" in binding):
                 raise ValueError("binding must name exactly one phrase or runtime literal")
@@ -158,6 +159,9 @@ def check_bindings(root, data, manifest):
             for locale, (locale_path, entries) in locales.items():
                 if "phrase" in binding:
                     key = binding["phrase"]
+                    if key not in english and literals is None:
+                        tokens, _ = tokenize(path.read_text(encoding="utf-8"))
+                        literals = {_string(t): t.line for t in tokens if t.kind == "string"}
                     if key not in english and key not in literals:
                         raise LocaleError(
                             f"{path}: binding names unknown English phrase {key!r}: "

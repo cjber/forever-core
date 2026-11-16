@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **The glyph check accepts reviewed XML font producers with no bindings.** Their source digests still require review when a template changes, and Lua string literals are read only for phrase keys absent from enUS entries. (#543)
 - **Every Forever addon can check its translations against the game's fonts.** The glyph check ships to each addon with its own reviewed list of widgets and fonts. (#543)
 - **The glyph check covers the quest tracker's fonts** and reads an addon's English phrases from its code when its English locale file lists none. (#543)
 - **A consumer whose `tools/typecheck.sh` does not run the client-call lint now fails the shared tooling check.** SkillUp vendored the lint without running it. (#539)

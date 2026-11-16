@@ -61,6 +61,23 @@ class BindingTests(unittest.TestCase):
         self.source.write_text(self.source.read_text().replace("GameFontNormal", "NumberFontNormal"))
         self.assertIn("source changed", check_bindings(self.root, DATA, self.manifest)[0])
 
+    def test_xml_producer_without_bindings_still_checks_digest(self):
+        self.write_russian("•")
+        source = self.root / "Tracker.xml"
+        source.write_text('<!-- Reviewed template font -->\n<Ui/>\n')
+        self.manifest["producers"].append(
+            {
+                "source": "Tracker.xml",
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "bindings": [],
+            }
+        )
+        self.assertEqual(check_bindings(self.root, DATA, self.manifest), [])
+        source.write_text('<Ui><Font name="Changed"/></Ui>\n')
+        problems = check_bindings(self.root, DATA, self.manifest)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Tracker.xml: font binding source changed", problems[0])
+
     def test_font_choice_not_inferred_from_characters(self):
         manifest = copy.deepcopy(self.manifest)
         font = next(
