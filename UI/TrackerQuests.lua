@@ -67,8 +67,8 @@ ns.TrackerQuests = TrackerQuests
 -- the false a file loaded too early would read.
 local settingsRegistered = false
 local TOOLTIP = "Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the "
-	.. "rest by zone, nearest first. The game's own quest list stays in the game's tracker; click its header to "
-	.. "collapse it."
+	.. "rest by zone, nearest first. The game's own quest list stays in the game's tracker; the button at the right "
+	.. "of its header collapses it."
 local function RegisterSettings()
 	if settingsRegistered or not ns.SettingsPage then
 		return

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's tracker could report "Auras cannot be accessed when secret while tainted by 'ForeverCore'". ForeverCore no longer changes the game's own tracker, so with the Forever quest list on the game's own Quests section now shows as well; click its header to collapse it. Thanks to the CurseForge player who reported it. (#608)
+- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's tracker could report "Auras cannot be accessed when secret while tainted by 'ForeverCore'". ForeverCore no longer changes the game's own tracker, so with the Forever quest list on the game's own Quests section now shows as well; the button at the right of its header collapses it. Thanks to the CurseForge player who reported it. (#608)
 
 ## [1.13.0] - 2026-11-16
 
