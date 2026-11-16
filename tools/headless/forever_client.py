@@ -2167,6 +2167,15 @@ def proof(args: argparse.Namespace) -> int:
         finally:
             clear_eval_inbox(quiet=True)
             restore_handlers(previous)
+        if screenshots:
+            # A queued proof can rebuild this shared folder as soon as the job lock is released.
+            build = client_build(folders[0][1])
+            try:
+                proof_compare(checkout, folders[0][1])
+            except ClientError:
+                # A proof that does not describe the installed build must never be left where it could be committed.
+                (checkout / PROOF_FILE).unlink(missing_ok=True)
+                raise
     finally:
         release_job(handle, job_token)
     if not screenshots:
@@ -2180,7 +2189,7 @@ def proof(args: argparse.Namespace) -> int:
         "input_digest": digests["input_digest"],
         "runtime_sha256": digests["input_digest"],
         "candidate": digests["candidate"],
-        "client_build": client_build(folders[0][1]),
+        "client_build": build,
         "tested_artifact": "source-tree",
         "source_commit": commit,
         "flows": [flow_record(name, action, clicks.get(name)) for name, action in flows],
@@ -2188,12 +2197,6 @@ def proof(args: argparse.Namespace) -> int:
     }
     target = checkout / PROOF_FILE
     target.write_text(json.dumps(proof_data, indent=2) + "\n", encoding="utf-8")
-    try:
-        proof_compare(checkout, folders[0][1])
-    except ClientError:
-        # A proof that does not describe the installed build must never be left where it could be committed.
-        target.unlink(missing_ok=True)
-        raise
     print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
     return 0
 

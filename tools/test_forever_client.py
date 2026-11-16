@@ -2741,6 +2741,25 @@ class ProofTest(unittest.TestCase):
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
 
+    def test_shared_build_reads_finish_before_the_job_lock_is_released(self):
+        def read_while_locked(*_args):
+            self.released.assert_not_called()
+            return mock.DEFAULT
+
+        def upload_after_release(*_args):
+            self.released.assert_called_once()
+            return mock.DEFAULT
+
+        self.client_build.side_effect = read_while_locked
+        self.compare.side_effect = read_while_locked
+        self.create_gist.side_effect = upload_after_release
+        self.upload.side_effect = upload_after_release
+        code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.client_build.assert_called_once_with(self.build)
+        self.compare.assert_called_once_with(self.checkout, self.build)
+        self.released.assert_called_once()
+
     def test_a_proof_clicks_the_point_its_flow_names_and_records_it(self):
         code, printed, _err = self.run_proof(flow_click=["update notice=400, 300"])
         self.assertEqual(code, 0)
@@ -2764,12 +2783,16 @@ class ProofTest(unittest.TestCase):
             self.run_proof(flow_click=["profession=400,300"])
         self.build_dev.assert_not_called()
 
-    def test_a_proof_compare_that_fails_removes_the_proof_it_wrote(self):
+    def test_a_proof_compare_that_fails_removes_a_stale_proof(self):
+        (self.checkout / ".visual-proof.json").write_text("stale proof")
         self.compare.side_effect = fc.ClientError("installed build differs")
         with self.assertRaisesRegex(fc.ClientError, "installed build differs"):
             self.run_proof()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
         self.assertFalse((self.addons / "LegacyForever").exists())
+        self.released.assert_called_once()
+        self.create_gist.assert_not_called()
+        self.upload.assert_not_called()
 
     def test_the_checkout_is_never_committed_or_pushed(self):
         code, _printed, _err = self.run_proof()
