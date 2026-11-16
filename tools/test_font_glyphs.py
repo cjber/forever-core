@@ -176,6 +176,37 @@ class FontGlyphTests(unittest.TestCase):
             self.assertEqual(len(problems), 1)
             self.assertIn(":4: 'x': U+2022", problems[0])
 
+    def test_english_assignment_forms(self):
+        source = (
+            "local _, ns = ...\n"
+            "ns.L = {\n"
+            '\tGO = "Go",\n'
+            '\tLONG = "a" .. "b";\n'
+            '\t["Key"] = "Text",\n'
+            '\tRACES = ITEM_RACES_ALLOWED or "Races: %s",\n'
+            '\tCALL = format("%d", 1),\n'
+            "}\n"
+            'ns.L["Later"] = "Later"\n'
+            'local L = ns.L\nL.NAME = "Name"\n'
+            '_G.BINDING_HEADER_X = "Ignored"\n'
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "enUS.lua"
+            path.write_text(source)
+            locale, entries = read_entries(path)
+        self.assertEqual(locale, "enUS")
+        self.assertEqual(
+            {key: (entry.text, entry.line) for key, entry in entries.items()},
+            {"GO": ("Go", 3), "LONG": ("ab", 4), "Key": ("Text", 5), "Later": ("Later", 9), "NAME": ("Name", 11)},
+        )
+
+    def test_english_duplicate_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "enUS.lua"
+            path.write_text('local _, ns = ...\nns.L = { A = "a" }\nns.L.A = "b"\n')
+            with self.assertRaisesRegex(ValueError, "assigned twice"):
+                read_entries(path)
+
     def test_english_fallback_uses_target_locale_font(self):
         with tempfile.TemporaryDirectory() as folder:
             english, russian = Path(folder) / "enUS.lua", Path(folder) / "ruRU.lua"

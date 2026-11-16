@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **The glyph check reads every English locale shape the addons use**: `ns.L["key"]` assignments and the fields of an `ns.L = { ... }` table, as well as `L["key"]`. A key whose value is client text, not a string literal, gets no English entry. (#543)
 - **The glyph check accepts reviewed XML font producers with no bindings.** Their source digests still require review when a template changes, and Lua string literals are read only for phrase keys absent from enUS entries. (#543)
 - **Every Forever addon can check its translations against the game's fonts.** The glyph check ships to each addon with its own reviewed list of widgets and fonts. (#543)
 - **The glyph check covers the quest tracker's fonts** and reads an addon's English phrases from its code when its English locale file lists none. (#543)

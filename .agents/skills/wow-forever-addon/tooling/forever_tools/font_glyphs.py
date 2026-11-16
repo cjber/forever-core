@@ -85,23 +85,92 @@ def read_entries(path):
     source = path.read_text(encoding="utf-8")
     if path.stem != "enUS":
         return parse(source)
-    # English initializes ns.L before the phrase assignments. Locate the first
-    # assignment through the lexer, then let the same strict locale parser read
-    # the complete suffix. Unsupported statements in that suffix still fail.
-    tokens, _ = tokenize(source)
-    for index, token in enumerate(tokens[:-5]):
-        if (
-            token.text == "L"
-            and tokens[index + 1].text == "["
-            and tokens[index + 2].kind == "string"
-            and tokens[index + 3].text == "]"
-            and tokens[index + 4].text == "="
-        ):
-            lines = source.splitlines(keepends=True)
-            prefix = 'local _, ns = ...\nif GetLocale() ~= "enUS" then return end\nlocal L = ns.L\n'
-            _, entries = parse(prefix + "".join(lines[token.line - 1 :]))
-            return "enUS", {key: Entry(entry.text, entry.line + token.line - 4) for key, entry in entries.items()}
-    return "enUS", {}
+    return "enUS", read_english(source)
+
+
+CONTINUES = {"..", "or", "and", "(", "[", ".", ":", "+", "-", "*", "/", "%", "^", "==", "~=", "<", ">", "<=", ">="}
+
+
+def read_english(source):
+    """English phrase assignments, read from the syntax the addons write.
+
+    English builds `ns.L` itself, so it has no translation layout. It defines
+    phrases as `L["key"] = "text"`, `L.KEY = "text"` (either may be written
+    `ns.L`), or as the fields of an `ns.L = { ... }` constructor. Only a value
+    made of string literals is the addon's own phrase; a key given an
+    expression such as `ITEM_RACES_ALLOWED or "Races: %s"` shows client text,
+    so it gets no entry and a binding naming it fails as unknown.
+    """
+    try:
+        tokens, _ = tokenize(source)
+    except LuaSyntaxError as error:
+        raise LocaleError(f"syntax error at line {error}") from error
+    entries = {}
+
+    def target(i):
+        """The index just past `L` or `ns.L` when one starts at i, else None."""
+        if i and tokens[i - 1].text in (".", ":"):
+            return None
+        if tokens[i].text == "L":
+            return i + 1
+        if tokens[i].text == "ns" and tokens[i + 1].text == "." and tokens[i + 2].text == "L":
+            return i + 3
+        return None
+
+    def value(i, key, line):
+        """Record key when the value at i is only string literals; return the index past what was read."""
+        j = i
+        if tokens[j].kind == "string":
+            while tokens[j + 1].text == ".." and tokens[j + 2].kind == "string":
+                j += 2
+            if tokens[j + 1].text not in CONTINUES:
+                if key in entries:
+                    raise LocaleError(f"line {line}: {key!r} is assigned twice (first at line {entries[key].line})")
+                entries[key] = Entry("".join(_string(t) for t in tokens[i : j + 1 : 2]), line)
+                return j + 1
+        return i
+
+    def field_end(i):
+        depth = 0
+        while not (depth == 0 and tokens[i].text in (",", ";", "}")):
+            if tokens[i].text == "<eof>":
+                raise LocaleError("ns.L constructor is not closed")
+            depth += tokens[i].text in ("(", "{", "[")
+            depth -= tokens[i].text in (")", "}", "]")
+            i += 1
+        return i
+
+    i = 0
+    while tokens[i].text != "<eof>":
+        after = target(i)
+        if after is None:
+            i += 1
+            continue
+        line = tokens[i].line
+        at = [token.text for token in tokens[after : after + 4]]
+        if at[0] == "[" and tokens[after + 1].kind == "string" and at[2:4] == ["]", "="]:
+            i = value(after + 4, _string(tokens[after + 1]), line)
+        elif at[0] == "." and tokens[after + 1].kind == "name" and at[2] == "=":
+            i = value(after + 3, tokens[after + 1].text, line)
+        elif at[:2] == ["=", "{"] and tokens[i].text == "ns":
+            i = after + 2
+            while tokens[i].text != "}":
+                field = tokens[i].line
+                if tokens[i].kind == "name" and tokens[i + 1].text == "=":
+                    i = value(i + 2, tokens[i].text, field)
+                elif tokens[i].text == "[" and tokens[i + 1].kind == "string" and tokens[i + 2].text == "]":
+                    if tokens[i + 3].text != "=":
+                        raise LocaleError(f"line {field}: expected = after the ns.L key")
+                    i = value(i + 4, _string(tokens[i + 1]), field)
+                else:
+                    raise LocaleError(f'line {field}: ns.L fields must be NAME = ... or ["key"] = ...')
+                i = field_end(i)
+                if tokens[i].text in (",", ";"):
+                    i += 1
+            i += 1
+        else:
+            i = after
+    return entries
 
 
 def check(path, data, font_object, fallback=None):
