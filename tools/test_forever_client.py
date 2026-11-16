@@ -683,7 +683,7 @@ class ForeverClientTest(unittest.TestCase):
         self.assertNotIn("--window", x.call_args_list[0].args)
         self.assertTrue((self.state / "last-input").exists())
 
-    def test_press_play_waits_for_a_loading_launcher_without_clicking(self):
+    def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
         with (
@@ -696,7 +696,10 @@ class ForeverClientTest(unittest.TestCase):
         ):
             fc.press_play(state)
             fc.press_play(state)
-        x.assert_not_called()
+        self.assertEqual(
+            x.call_args_list,
+            [mock.call(state, "key", "--window", "12345", "Escape")] * 2,
+        )
         self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
         self.assertIn(str(self.state / "launcher.png"), warning.getvalue())
         self.assertIn("--manual-launcher", warning.getvalue())
@@ -805,6 +808,18 @@ class ForeverClientTest(unittest.TestCase):
             "the largest fill the launcher draws is the Play button, not the gear drawn beside it",
         )
         self.assertGreaterEqual(regions[1][1], 71 + 232, "the gear is the next region, to the right of Play")
+
+    def test_play_targets_requires_exactly_one_play_word_in_the_region(self):
+        fixture = Path(__file__).parent / "headless/launcher-play.png"
+        play = ("Play", 96.0, 10, 10, 40, 20)
+        now = ("Now", 95.0, 55, 10, 35, 20)
+        for words, expected in (([play, now], []), ([play, play], []), ([play], [(81, 110, 40, 20, 96.0)])):
+            with (
+                self.subTest(words=words),
+                mock.patch.object(fc, "fill_regions", return_value=[(12992, 71, 100, 232, 56)]),
+                mock.patch.object(fc, "ocr_words", return_value=words),
+            ):
+                self.assertEqual(fc.play_targets(fixture), expected)
 
     @unittest.skipUnless(shutil.which("tesseract"), "needs tesseract to read the saved launcher frame")
     def test_the_play_label_is_read_inside_the_button_the_launcher_draws(self):

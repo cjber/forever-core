@@ -999,6 +999,7 @@ def play_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
 
     The label is found inside the button the launcher draws, not by the page layout tesseract guesses for the whole
     frame: a whole-page pass skips the filled button and its word even when the word is plainly drawn (#547).
+    The entire region must read as one Play word, so a promo button like Play Now is never a target (#681).
     """
     width, height, channels, rows = png_pixels(image)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1006,9 +1007,12 @@ def play_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
     targets = []
     for _area, left, top, box_width, box_height in fill_regions(width, height, channels, rows):
         write_ppm(crop, rows, channels, (left, top, box_width, box_height))
-        for text, confidence, x, y, word_width, word_height in ocr_words(crop):
-            if text.casefold() == PLAY_LABEL and confidence >= 0 and word_width > 0 and word_height > 0:
-                targets.append((left + x, top + y, word_width, word_height, confidence))
+        words = [word for word in ocr_words(crop) if word[0]]
+        if len(words) != 1:
+            continue
+        text, confidence, x, y, word_width, word_height = words[0]
+        if text.casefold() == PLAY_LABEL and confidence >= 0 and word_width > 0 and word_height > 0:
+            targets.append((left + x, top + y, word_width, word_height, confidence))
     return targets
 
 
@@ -1034,8 +1038,9 @@ def press_play(state: dict) -> None:
     image = shot(state, STATE_DIR / "launcher.png")
     targets = play_targets(image)
     if not targets:
-        # The launcher can still be painting its signed-in page. The startup loop
-        # retries within its existing deadline; never click an unobserved target.
+        # A launcher dialog can cover the page. Dismiss it on the discovered
+        # Battle.net window, then let the startup loop inspect a fresh frame.
+        x(state, "key", "--window", found.stdout.split()[0], "Escape")
         if not state.get("play_target_missing_reported"):
             print(
                 f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
