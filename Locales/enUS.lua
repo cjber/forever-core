@@ -57,6 +57,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"Debug capture could not start because ForeverCore has not finished loading."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."
 L["Don't suggest this again"] = "Don't suggest this again"
 L["Drag to move"] = "Drag to move"
 L["Feature request"] = "Feature request"

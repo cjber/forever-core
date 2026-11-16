@@ -13,8 +13,9 @@
 
 ## What it is
 
-ForeverCore is a library, not a feature addon. Every Forever addon requires it with `## Dependencies: ForeverCore`,
-so the game loads it first and exactly one copy of each shared file runs. It has no settings page of its own. Your
+ForeverCore is a library, not a feature addon. Every Forever addon declares it with `## OptionalDeps: ForeverCore`,
+so the game loads it first when it is installed and exactly one copy of each shared file runs. A Forever addon still
+loads when core is missing, and then says on screen how to install it. It has no settings page of its own. Your
 Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or

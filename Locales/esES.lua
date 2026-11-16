@@ -128,6 +128,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"La captura de depuración no pudo iniciarse porque ForeverCore aún no ha terminado de cargarse."
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s: El ForeverCore instalado es otro addon (%s). Elimínalo e instala ForeverCore desde CurseForge." -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s necesita ForeverCore. Instálalo desde CurseForge o elige Reinstalar en ForeverCore en la aplicación de CurseForge." -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s: ForeverCore está desactivado. Actívalo en la lista de addons para solucionarlo." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"Ningún addon de Forever ha registrado nada para este personaje todavía."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

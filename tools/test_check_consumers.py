@@ -65,9 +65,9 @@ class CheckConsumersTest(unittest.TestCase):
     def write_toc(self, text):
         (self.repo / "LegacyForever.toc").write_text(text, encoding="utf-8")
 
-    def write_core_toc(self, pin="v1.4.0", dependencies="ForeverCore"):
-        """The root TOC of a consumer that depends on ForeverCore and names the core release its zip bundles."""
-        self.write_toc(f"## Interface: 16001\n## Dependencies: {dependencies}\n## X-Forever-Core: {pin}\n")
+    def write_core_toc(self, pin="v1.4.0", optional="ForeverCore"):
+        """The root TOC of a consumer that loads ForeverCore when installed and names the core its zip bundles."""
+        self.write_toc(f"## Interface: 16001\n## OptionalDeps: {optional}\n## X-Forever-Core: {pin}\n")
 
     def write_core_pkgmeta(self, pin="v1.4.0", package="LegacyForever", declares_required=False):
         """The `.pkgmeta` of a consumer that ships `pin`'s ForeverCore, optionally also asking for it by name."""
@@ -157,7 +157,7 @@ class CheckConsumersTest(unittest.TestCase):
 
     def test_a_missing_x_forever_core_field_fails(self):
         self.write_core_pkgmeta()
-        self.write_toc("## Interface: 16001\n## Dependencies: ForeverCore\n")
+        self.write_toc("## Interface: 16001\n## OptionalDeps: ForeverCore\n")
         code, out = self.run_main()
         self.assertEqual(code, 1, out)
         self.assertIn("no `## X-Forever-Core:` line names the core release the zip bundles", out)
@@ -173,7 +173,36 @@ class CheckConsumersTest(unittest.TestCase):
 
     def test_the_x_forever_core_field_is_read_case_insensitively(self):
         self.write_core_pkgmeta()
-        self.write_toc("## Interface: 16001\n## Dependencies: ForeverCore\n## x-forever-core: v1.4.0\n")
+        self.write_toc("## Interface: 16001\n## OptionalDeps: ForeverCore\n## x-forever-core: v1.4.0\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+
+    def test_the_optional_deps_header_is_read_case_insensitively(self):
+        self.write_core_pkgmeta()
+        self.write_toc("## Interface: 16001\n## optionaldeps: ForeverCore\n## X-Forever-Core: v1.4.0\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+
+    def test_a_dependencies_line_naming_core_fails(self):
+        self.write_core_pkgmeta()
+        self.write_toc(
+            "## Interface: 16001\n## Dependencies: ForeverCore\n## OptionalDeps: Questie\n## X-Forever-Core: v1.4.0\n"
+        )
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("lists ForeverCore in `## Dependencies`", out)
+        self.assertIn("move it to `## OptionalDeps`", out)
+
+    def test_a_bundled_consumer_without_optional_deps_fails(self):
+        self.write_core_pkgmeta()
+        self.write_toc("## Interface: 16001\n## OptionalDeps: Questie\n## X-Forever-Core: v1.4.0\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("no `## OptionalDeps: ForeverCore`", out)
+
+    def test_optional_deps_keeps_other_addons_on_the_same_line(self):
+        self.write_core_pkgmeta()
+        self.write_toc("## Interface: 16001\n## OptionalDeps: Questie, ForeverCore\n## X-Forever-Core: v1.4.0\n")
         code, out = self.run_main()
         self.assertEqual(code, 0, out)
 

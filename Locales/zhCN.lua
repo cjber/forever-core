@@ -123,6 +123,10 @@ L["Debug capture could not start because ForeverCore has not finished loading."]
 	"无法启动调试捕获，因为 ForeverCore 尚未完成加载。"
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
 	"%s：已安装的 ForeverCore 是另一个插件（%s）。请移除它，并从 CurseForge 安装 ForeverCore。" -- mt
+L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
+	"%s 需要 ForeverCore。请从 CurseForge 安装它，或在 CurseForge 应用中选择 ForeverCore 的“重新安装”。" -- mt
+L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
+	"%s：ForeverCore 已关闭。请在插件列表中启用它。" -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"还没有任何 Forever 插件为这个角色记录内容。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

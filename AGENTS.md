@@ -1,7 +1,8 @@
 # AGENTS.md
 
 ForeverCore is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
-`ForeverCore`, and every Forever addon requires it with `## Dependencies: ForeverCore`. It owns the one objective-tracker
+`ForeverCore`, and every Forever addon declares it with `## OptionalDeps: ForeverCore`, so the client loads it first
+when it is installed and the addon still loads when it is not. It owns the one objective-tracker
 column the suite docks into, the grip and Lock switch that move it, the section order that stacks them, the Questie and
 EQOT bridges that keep the column out from under another tracker's quest list, the report and issue windows, the error
 journal and debug log, the minimap button, the world map quest log tabs, the settings-page chrome and the Forever
@@ -234,10 +235,12 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
-  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC lists
-  ForeverCore in `## Dependencies` must ship it in its own zip (`externals:` at the pin and
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC names
+  ForeverCore in `## OptionalDeps` must ship it in its own zip (`externals:` at the pin and
   `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
   `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
+  A `## Dependencies` line naming ForeverCore fails, because the client would skip the addon and it could never say
+  core is missing.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also
   requires the pin to name cjber/forever-core's latest published GitHub release, read with `GH_TOKEN` or
   `GITHUB_TOKEN` when either is set. It fails closed when that release cannot be read. The package job runs it in every
@@ -255,7 +258,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `tools/forever_tools/` or `tools/forever_sim/`, runs the same syncs as `sync_consumers.py`, regenerates each
   consumer's `Locales/phrases.txt` when it has `tools/phrases.py`, and moves each consumer's `tools/forever-core.txt`
   pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone). Every run
-  also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, and, when the consumer ships
+  also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, moves a TOC that still names
+  ForeverCore in `## Dependencies` to `## OptionalDeps` beside its other names, and, when the consumer ships
   core and its latest released tag bundles a core different from the pin, adds a marked `CHANGELOG.md` release entry
   (above a marked entry whose own tag is already released), then the run creates the signed commit through the GraphQL
   `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
@@ -372,6 +376,7 @@ require it; nothing is copied into them. Raise `ForeverCore.API` only when the p
 
 ## Load order
 
-`ForeverCore.toc` loads the module files, then `Expose.lua` last. Consumers declare `## Dependencies: ForeverCore`, so
-the client loads ForeverCore before them and exactly one copy of each shared file runs. `ForeverCore.toc` has no
+`ForeverCore.toc` loads the module files, then `Expose.lua` last. Consumers declare `## OptionalDeps: ForeverCore`, so
+the client loads ForeverCore before them when it is installed and exactly one copy of each shared file runs; without
+it, the consumer still loads and its vendored `Core/ForeverRequire.lua` says what is missing. `ForeverCore.toc` has no
 `OptionalDeps`: it does not adopt anything built by another addon.
