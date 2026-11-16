@@ -1161,9 +1161,15 @@ end
 function Overrides:Records()
 	local zones, onMap = LogZones()
 	local records = {}
-	for index = 1, C_QuestLog.GetNumQuestWatches() do
+	-- One record per quest: the client's watch list is read by index and can answer the same quest ID twice, and the
+	-- section keeps one block per ID. Asking for that block twice in one layout pass makes Blizzard anchor it under
+	-- itself, which the client refuses with "Cannot anchor to a region dependent on it" (#609).
+	local seen = {}
+	local count = C_QuestLog.GetNumQuestWatches()
+	for index = 1, count do
 		local questID = C_QuestLog.GetQuestIDForQuestWatchIndex(index)
-		if questID then
+		if questID and not seen[questID] then
+			seen[questID] = true
 			local quest = QuestData(questID)
 			if self:ShouldDisplayQuest(quest) then
 				local distanceSq = C_QuestLog.GetDistanceSqToQuest(questID)

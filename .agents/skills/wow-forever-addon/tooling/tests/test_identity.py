@@ -140,6 +140,26 @@ class IdentityTest(unittest.TestCase):
             self.assertEqual(assets.main(), 1)
         run.assert_called_once_with(root.resolve())
 
+    def test_an_optional_dependency_on_core_still_needs_an_icon(self):
+        root = self.make(
+            {
+                "Addon.toc": "## Interface: 16001\n## OptionalDeps: Questie, ForeverCore\nCore.lua\n",
+                "Core.lua": "",
+            }
+        )
+        problems = identity.check(root)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("X-Forever-Icon", problems[0])
+
+    def test_a_library_beside_the_addon_needs_no_icon(self):
+        root = self.make(
+            {
+                "Addon.toc": "## Interface: 16001\n## Dependencies: LibAHTab\nCore.lua\n",
+                "Core.lua": "",
+            }
+        )
+        self.assertEqual(identity.check(root), [])
+
 
 if __name__ == "__main__":
     unittest.main()

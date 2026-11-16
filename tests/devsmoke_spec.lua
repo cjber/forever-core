@@ -371,8 +371,17 @@ _G.C_Spell = {
 	end,
 }
 
+-- The client's time() is whole seconds, so two calls inside one second answer the same value. The spec's clock moves
+-- on every call so a timer chain always makes progress, and pinnedSecond makes the next call answer a chosen second,
+-- which is how a world screenshot and the poll behind it can land in the same second (#664).
 local clock = 0
+local pinnedSecond
 _G.time = function()
+	if pinnedSecond then
+		local value = pinnedSecond
+		pinnedSecond = nil
+		return value
+	end
 	clock = clock + 1
 	return clock
 end
@@ -395,6 +404,15 @@ local function drain()
 		steps = steps + 1
 		assert(steps < 1000, "the step queue did not settle")
 	end
+end
+
+-- The next queued timer's handler, so a test can stop between two polls instead of settling the whole chain.
+local function runNext()
+	local handler = table.remove(queue, 1)
+	if handler then
+		handler()
+	end
+	return handler ~= nil
 end
 
 local function latest()
@@ -464,6 +482,23 @@ local function importSlashLists()
 	end
 	meta.__index = proxy
 	setmetatable(SlashCmdList, meta)
+end
+
+-- The client finishes a screenshot on a later frame than the Screenshot() call, so its SCREENSHOT_SUCCEEDED waits in
+-- the timer queue. hooksecurefunc runs the hook after the original, as the client's does.
+local countShot = _G.Screenshot
+_G.Screenshot = function()
+	countShot()
+	queue[#queue + 1] = function()
+		fire("SCREENSHOT_SUCCEEDED")
+	end
+end
+_G.hooksecurefunc = function(name, hook)
+	local original = _G[name]
+	_G[name] = function(...)
+		original(...)
+		hook(...)
+	end
 end
 
 local beforeLoad = {}
@@ -780,9 +815,71 @@ command("eval")
 drain()
 equal(screenshots, 2, "a flow without a ready check is captured once the world is up")
 
+-- A ready-at-once flow whose world shot finished in this same second waits for the next one: the client's file name
+-- is only to the second, so a shot taken now would overwrite the world shot's file and leave the proof one new image
+-- instead of two (#664).
+local shotsBefore = screenshots
+fire("SCREENSHOT_STARTED")
+fire("SCREENSHOT_SUCCEEDED")
+local worldShotSecond = clock
+local sameSecondPolls = 0
+DevSmokeEvalRun = "run-same-second"
+DevSmokeEval = function()
+	return function()
+		sameSecondPolls = sameSecondPolls + 1
+		return true
+	end
+end
+command("eval")
+pinnedSecond = worldShotSecond
+drain()
+equal(sameSecondPolls, 2, "a flow ready at once is polled again when the world shot's second has not ended")
+equal(screenshots, shotsBefore + 1, "the capture waits for the next second")
+equal(DevSmokeDB.eval.ready, "captured", "the waited capture still records its readiness")
+
+-- A shot still in flight delays the capture even in a later second: the client has not written its file yet, and a
+-- shot from this poll could take its name (#664).
+shotsBefore = screenshots
+fire("SCREENSHOT_STARTED")
+local pendingPolls = 0
+DevSmokeEvalRun = "run-pending-shot"
+DevSmokeEval = function()
+	return function()
+		pendingPolls = pendingPolls + 1
+		return true
+	end
+end
+command("eval")
+runNext()
+runNext()
+equal(screenshots, shotsBefore, "a pending screenshot holds the capture back")
+equal(pendingPolls, 2, "the flow is polled while the shot is in flight")
+fire("SCREENSHOT_SUCCEEDED")
+drain()
+equal(screenshots, shotsBefore + 1, "the capture follows the shot that was pending")
+equal(DevSmokeDB.eval.ready, "captured", "the flow is captured once its shot has finished")
+
+-- A world shot requested in the same frame as the first poll has raised no event yet: the call itself holds the
+-- capture back, so the two shots still land in different files (#664).
+drain()
+shotsBefore = screenshots
+DevSmokeEvalRun = "run-same-frame"
+DevSmokeEval = function()
+	return function()
+		return true
+	end
+end
+command("eval")
+_G.Screenshot()
+runNext()
+equal(screenshots, shotsBefore + 1, "a shot called this frame holds the capture back before any event")
+drain()
+equal(screenshots, shotsBefore + 2, "the capture follows once that shot has finished")
+
 -- A ready check that raises records the client's own reason and saves it for the proof, which then reports that
 -- reason instead of only its timeout (#593).
 local savesBefore = saves
+local shotsBeforeFailure = screenshots
 DevSmokeEvalRun = "run-failed-ready"
 DevSmokeEval = function()
 	return function()
@@ -792,7 +889,7 @@ end
 command("eval")
 fire("PLAYER_ENTERING_WORLD")
 drain()
-equal(screenshots, 2, "a failed ready check takes no screenshot")
+equal(screenshots, shotsBeforeFailure, "a failed ready check takes no screenshot")
 equal(DevSmokeDB.eval.ready, "failed", "the readiness failure is recorded")
 check(DevSmokeDB.eval.readyErr:find("ready boom", 1, true) ~= nil, "the client's reason is kept")
 equal(saves, savesBefore + 1, "the failure is saved so the proof can read it")
@@ -806,7 +903,7 @@ DevSmokeEval = function()
 end
 command("eval")
 drain()
-equal(screenshots, 2, "a timed out ready check takes no screenshot")
+equal(screenshots, shotsBeforeFailure, "a timed out ready check takes no screenshot")
 equal(DevSmokeDB.eval.ready, "timeout", "readiness stops at the proof's bound")
 check(DevSmokeDB.eval.readyErr:find("60 s", 1, true) ~= nil, "the timeout names its exact bound")
 equal(saves, savesBefore + 2, "a timeout is saved for the proof reader")

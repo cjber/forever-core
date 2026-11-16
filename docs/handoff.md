@@ -19,7 +19,8 @@ canonical attribution. Do not add manual signing flags or signoff trailers.
 
 ## What stays true
 
-- Every Forever addon declares `## Dependencies: ForeverCore`; ForeverCore loads first and no runtime file is copied.
+- Every Forever addon names ForeverCore in `## OptionalDeps`; the client loads ForeverCore first when it is installed,
+  and no runtime file is copied.
 - The sync adds the `forevercore` required store relation while retaining the pinned bundle. Automatic dependency
   installation is a per-manager verification gate, not a claim supported by Wago upload metadata.
 - Core's scheduled check does not run on push, because consumers adopt tooling changes on their own release schedules.

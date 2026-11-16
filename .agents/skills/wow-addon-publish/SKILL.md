@@ -40,9 +40,13 @@ updates acquire manager-owned core; a declared relation does not establish that 
 metadata has no dependency field, so verify its manager path separately. In the TOC:
 
 ```toc
-## Dependencies: ForeverCore
+## OptionalDeps: ForeverCore
 ## X-Forever-Core: v1.4.1
 ```
+
+Never name ForeverCore in `## Dependencies`: the client would skip the addon when core is missing, and the player would
+see nothing. As an optional dependency it loads first when installed, and without it the addon still loads and its
+`Core/ForeverRequire.lua` shows one line naming the install.
 
 In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
 addon's own folder, plus the standalone required relation:
@@ -71,10 +75,11 @@ Do not claim Wago installs dependencies merely because `.pkgmeta` declares them.
 
 Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
 `<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails
-a TOC that lists core in `## Dependencies` but names no core release. The field is what a sibling addon reads at load to
-name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge `forevercore` (project 1796337;
+a TOC that names core in `## Dependencies` or that ships core without `## OptionalDeps: ForeverCore`. The field is what
+a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge
+`forevercore` (project 1796337;
 `forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core` (project ID `RNL4RQNo`). Do not
-list ForeverCore under `OptionalDeps` and do not copy its runtime files into the addon.
+copy its runtime files into the addon.
 
 Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
 release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC

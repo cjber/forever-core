@@ -935,7 +935,7 @@ class BundleTest(unittest.TestCase):
     )
     TOC = "## Interface: 16001\n## Dependencies: ForeverCore\n## Title: Legacy Forever\n"
     TOC_WITH_FIELD = (
-        "## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n"
+        "## Interface: 16001\n## OptionalDeps: ForeverCore\n## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n"
     )
     CHANGELOG = (
         "# Changelog\n\n"
@@ -1002,11 +1002,11 @@ class BundleTest(unittest.TestCase):
         )
         self.assertIn("  LegacyForever/ForeverCore: ForeverCore\n", self.pkgmeta.read_text(encoding="utf-8"))
 
-    def test_a_moved_pin_adds_the_toc_field_after_dependencies(self):
+    def test_a_moved_pin_adds_the_toc_field_after_optional_deps(self):
         self.bump()
         self.assertEqual(
             self.toc.read_text(encoding="utf-8"),
-            "## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: v1.4.0\n## Title: Legacy Forever\n",
+            "## Interface: 16001\n## OptionalDeps: ForeverCore\n## X-Forever-Core: v1.4.0\n## Title: Legacy Forever\n",
         )
 
     def test_an_existing_toc_field_is_replaced_in_place(self):
@@ -1016,7 +1016,7 @@ class BundleTest(unittest.TestCase):
         self.bump()
         self.assertEqual(
             self.toc.read_text(encoding="utf-8"),
-            "## Interface: 16001\n## X-Forever-Core: v1.4.0\n## Dependencies: ForeverCore\n",
+            "## Interface: 16001\n## X-Forever-Core: v1.4.0\n## OptionalDeps: ForeverCore\n",
         )
 
     def test_a_moved_pin_puts_the_shared_bullet_under_the_unreleased_notes(self):
@@ -1217,13 +1217,26 @@ class BundleTest(unittest.TestCase):
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
         self.assertEqual(self.changelog.read_text(encoding="utf-8"), self.CHANGELOG)
 
+    def test_a_bump_moves_core_beside_the_other_optional_deps(self):
+        self.toc.write_text(
+            "## Interface: 16001\n## Dependencies: ForeverCore\n## OptionalDeps: Questie\n"
+            "## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n",
+            encoding="utf-8",
+        )
+        self.bump("v1.3.2")
+        self.assertEqual(
+            self.toc.read_text(encoding="utf-8"),
+            "## Interface: 16001\n## OptionalDeps: Questie, ForeverCore\n"
+            "## X-Forever-Core: v1.3.2\n## Title: Legacy Forever\n",
+        )
+
     def test_a_toc_without_dependencies_is_not_guessed_at(self):
         self.toc.write_text("## Interface: 16001\n## Title: Legacy Forever\n", encoding="utf-8")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             sync.bump_pin(self.root, "v1.4.0", self.DAY)
         self.assertEqual(self.toc.read_text(encoding="utf-8"), "## Interface: 16001\n## Title: Legacy Forever\n")
-        self.assertIn("has no `## Dependencies:` line", out.getvalue())
+        self.assertIn("has no `## OptionalDeps:` or `## Dependencies:` line", out.getvalue())
 
     def test_a_nested_addon_gets_its_bundle_below_its_addon_folder(self):
         root = Path(self.tmp.name) / "kiln-forever"
@@ -1240,6 +1253,50 @@ class BundleTest(unittest.TestCase):
         self.assertIn("v1.4.0/ForeverCore-v1.4.0-forever.zip", (addon / ".pkgmeta").read_text(encoding="utf-8"))
         self.assertIn("## X-Forever-Core: v1.4.0\n", (addon / "KilnForever.toc").read_text(encoding="utf-8"))
         self.assertIn(sync.SYNC_BULLET, (root / "CHANGELOG.md").read_text(encoding="utf-8"))
+
+
+class OptionalDependencyTest(unittest.TestCase):
+    """The TOC contract: ForeverCore loads first when installed, and the addon still loads without it."""
+
+    def test_dependencies_core_moves_to_optional_deps(self):
+        self.assertEqual(
+            sync.move_core_to_optional("## Interface: 16001\n## Dependencies: ForeverCore\n"),
+            "## Interface: 16001\n## OptionalDeps: ForeverCore\n",
+        )
+
+    def test_other_dependencies_keep_their_order_on_both_lines(self):
+        self.assertEqual(
+            sync.move_core_to_optional(
+                "## Interface: 16001\n## Dependencies: Ace3, ForeverCore, CallbackHandler\n## OptionalDeps: Questie\n"
+            ),
+            "## Interface: 16001\n## Dependencies: Ace3, CallbackHandler\n## OptionalDeps: Questie, ForeverCore\n",
+        )
+
+    def test_an_existing_optional_line_keeps_core_once(self):
+        text = "## Interface: 16001\n## Dependencies: ForeverCore\n## OptionalDeps: Questie, ForeverCore\n"
+        self.assertEqual(
+            sync.move_core_to_optional(text), "## Interface: 16001\n## OptionalDeps: Questie, ForeverCore\n"
+        )
+
+    def test_a_toc_without_core_in_dependencies_is_unchanged(self):
+        text = "## Interface: 16001\n## Dependencies: Ace3\n## OptionalDeps: Questie\n"
+        self.assertEqual(sync.move_core_to_optional(text), text)
+
+    def test_a_toc_with_no_dependency_headers_is_unchanged(self):
+        text = "## Interface: 16001\n## Title: Legacy Forever\n"
+        self.assertEqual(sync.move_core_to_optional(text), text)
+
+    def test_crlf_lines_keep_their_endings(self):
+        self.assertEqual(
+            sync.move_core_to_optional("## Interface: 16001\r\n## Dependencies: ForeverCore\r\n"),
+            "## Interface: 16001\r\n## OptionalDeps: ForeverCore\r\n",
+        )
+
+    def test_a_lowercase_header_is_moved(self):
+        self.assertEqual(
+            sync.move_core_to_optional("## interface: 16001\n## dependencies: forevercore\n"),
+            "## interface: 16001\n## OptionalDeps: ForeverCore\n",
+        )
 
 
 class RemoteReleaseTest(unittest.TestCase):
