@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **The game's tracker stays hidden in combat while the Forever quest list is on.** Quest updates no longer make it appear over your quest list, and turning the Forever list off leaves Questie in control of its tracker. Thanks to silhouetteone for the report. (#686)
 - **A ForeverCore release is checked against the addons already on the stores.** Every release candidate now loads
   with each addon's latest published release, in the simulator on every change and in the headless client, so a core
   that would break an addon players already have fails before it ships. A consumer that refuses to start on the

@@ -101,6 +101,17 @@ scenario("the Forever quest list leaves the native scenario tracker's aura read 
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
 
+	-- #686: Blizzard's container Update calls Show when it has content, including when a quest progresses in
+	-- combat. Exercise that real producer with the native frame protected, so core cannot re-hide it until regen.
+	local protectedChild = sim.G.CreateFrame("Button", nil, tracker, "SecureActionButtonTemplate")
+	assert(protectedChild:IsProtected() and tracker:IsProtected(), "the native tracker is protected")
+	sim:enterCombat()
+	NativeUpdate()
+	assert(tracker:IsShown() and tracker:GetAlpha() == 0, "a protected native combat layout stays invisible")
+	sim:leaveCombat()
+	sim:advance(0.5)
+	assert(not tracker:IsShown(), "combat ending finishes the native hide")
+
 	sim:enterCombat()
 	sim:slash("/fcore quests")
 	assert(not tracker:IsShown(), "restore requested in combat waits")

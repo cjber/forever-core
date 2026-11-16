@@ -13,10 +13,19 @@ end
 -- Every call the list must never make raises, so a failure names the call.
 local tracker = { modules = {} }
 local trackerShown, trackerProtected, showHook, hookCount = true, false, nil, 0
+local trackerAlpha = 0.75
+local nativeShows = 0
+function tracker.SetAlpha(_, alpha)
+	trackerAlpha = alpha
+end
+function tracker.GetAlpha()
+	return trackerAlpha
+end
 function tracker.Hide()
 	trackerShown = false
 end
 function tracker.Show()
+	nativeShows = nativeShows + 1
 	trackerShown = true
 	if showHook then
 		showHook()
@@ -164,12 +173,24 @@ tracker:Show()
 check(not tracker:IsShown(), "native OnShow is suppressed")
 check(hookCount == 1, "visibility hook is installed once")
 
+-- Blizzard_ObjectiveTrackerContainerMixin:Update calls Show whenever it has content. A combat quest update
+-- takes this same path, even though PLAYER_REGEN_DISABLED itself has no native tracker Show handler (#686).
+trackerProtected = true
+combat = true
+tracker:Show()
+check(tracker:IsShown() and trackerAlpha == 0, "a protected native show in combat stays invisible")
+combat = false
+visibility.callback()
+check(not tracker:IsShown(), "combat ending applies the deferred hide")
+trackerProtected = false
+
 -- Turning the list off and back on restores and hides the native frame; its modules stay where the client left them.
 local marked = section.marked
 TrackerQuests.SetEnabled(false)
 check(section.marked > marked, "turning the list off redraws the Forever section")
 CheckNativeModulesUntouched("turning the list off")
 check(tracker:IsShown(), "disabling restores the native tracker")
+check(trackerAlpha == 0.75, "disabling restores the original native alpha")
 TrackerQuests.SetEnabled(true)
 CheckNativeModulesUntouched("turning the list on again")
 
@@ -214,6 +235,21 @@ ns.TrackerQuestie = {
 }
 TrackerQuests.SetEnabled(false)
 check(not tracker:IsShown(), "disabling yields native visibility to active Questie")
+-- Questie's suppression belongs to Questie. Core must neither show the native frame nor restore its alpha,
+-- including when a native layout shows it during combat and Questie's OnShow suppression keeps it transparent.
+tracker:SetAlpha(0)
+trackerProtected = true
+combat = true
+tracker:Show()
+local showsBeforeQuestieCombat = nativeShows
+section:OnEvent("QUEST_LOG_UPDATE")
+check(trackerAlpha == 0, "list off leaves Questie's combat suppression alone")
+combat = false
+tracker:Hide()
+section:OnEvent("PLAYER_REGEN_ENABLED")
+check(not tracker:IsShown() and trackerAlpha == 0, "combat ending leaves Questie's native hide alone")
+check(nativeShows == showsBeforeQuestieCombat, "core never shows the native frame over Questie across combat")
+trackerProtected = false
 ns.TrackerQuestie = nil
 TrackerQuests.SetEnabled(true)
 

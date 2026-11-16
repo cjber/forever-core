@@ -45,6 +45,7 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| silhouetteone | The game's tracker stays hidden in combat | CurseForge; thread 8731206; #686 |
 | [kowakowa93](https://github.com/kowakowa93) | Forever sections follow Kaliel's Tracker | Contributor integration branch; #602 |
 | xh43k | Reported clipped tracker rows and quest item art | CurseForge; thread 8715086; #603 |
 | cotijelucie | Shared settings retained across embedded core copies | Reported uninstalling a bundled core on Discord; #448 |

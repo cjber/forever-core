@@ -4,6 +4,7 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "silhouetteone", what = "The game's tracker stays hidden in combat" },
 		{ name = "kowakowa93", what = "Forever sections follow Kaliel's Tracker" },
 		{ name = "xh43k", what = "Reported clipped tracker rows and quest item art" },
 		{ name = "cotijelucie", what = "Shared settings retained across embedded core copies" },

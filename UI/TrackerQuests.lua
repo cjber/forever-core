@@ -119,23 +119,34 @@ local ownedByOther = false
 local section
 
 -- Questie's Forever visibility pattern: keep suppression and restore ownership in private locals, never on the
--- native frame. A protected hide or any restore waits for combat to end and uses the latest request.
+-- native frame. Alpha keeps a protected native Show invisible in combat; the Hide and any restore wait for combat
+-- to end and use the latest request.
 local hideNativeTracker = false
 local hidNativeTracker = false
+local nativeTrackerAlpha = 1
 local visibilityFrame = CreateFrame("Frame")
 local function ApplyNativeVisibility()
+	if hideNativeTracker then
+		if not hidNativeTracker then
+			nativeTrackerAlpha = ObjectiveTrackerFrame:GetAlpha()
+			hidNativeTracker = true
+		end
+		-- Blizzard's container layout can Show again on a combat quest update. Hide may be protected then, but
+		-- alpha is not: suppress that Show immediately rather than exposing the tracker until combat ends.
+		ObjectiveTrackerFrame:SetAlpha(0)
+	end
 	if InCombatLockdown() and (not hideNativeTracker or ObjectiveTrackerFrame:IsProtected()) then
 		visibilityFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
 	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 	if hideNativeTracker then
-		hidNativeTracker = true
 		ObjectiveTrackerFrame:Hide()
 	elseif hidNativeTracker then
 		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
 		hidNativeTracker = false
 		if not OtherOwner() then
+			ObjectiveTrackerFrame:SetAlpha(nativeTrackerAlpha)
 			ObjectiveTrackerFrame:Show()
 		end
 	end
