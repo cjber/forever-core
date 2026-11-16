@@ -20,7 +20,7 @@
     "run.lua": "dd18ec31ce2bf8ef0067c134d45bf956900aee52280522ab15a66426239cb076",
     "scenario.lua": "6a63f49e8323376ccd725fd5d6320191d55e368da0cbab30d55a9dc59dbf68dd",
     "script_types.lua": "24540b2a24f0ba9994c2a01d3e2fac555b814e321eade675bf823a734e1ae8f0",
-    "sim.lua": "174a66ebd355c6e7961d822f20d465a9d06f9d6ed6ab2c784e29b09afc3c1ec7",
+    "sim.lua": "2a6b509730611fa5acfbe3cf3964e765e2ec63b23f7bbfb63d0a48df44374ca6",
     "stubgen.lua": "8debdfe7e27995a8596785a087a49bcd9d127942469e866ce58eaf30f447362b",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",

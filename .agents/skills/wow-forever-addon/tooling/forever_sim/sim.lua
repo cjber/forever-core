@@ -86,6 +86,8 @@ Sim.CORE = {
 	"Blizzard_GamepadSharedUtility",
 	"Blizzard_GamepadSmartNavigation",
 	"Blizzard_GamepadActionBars",
+	-- Action-bar click handlers consume modifiers through the native targeting controller.
+	"Blizzard_GamepadTargeting/TargetLogic.lua",
 	"Blizzard_ChatFrameBase/Shared/SlashCommands.lua",
 	-- The map, quest log and fog-of-war pieces of Blizzard_UIPanels_Game, in its TOC order, plus the quest frame
 	-- the quest log's OnHide closes the quest portrait through.

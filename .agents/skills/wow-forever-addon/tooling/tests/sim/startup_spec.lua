@@ -24,6 +24,14 @@ for _, gamepad in ipairs({ false, true }) do
 	sim:advance(0.1)
 	eq(G.SettingsPanel:IsShown(), false)
 	sim:expectNoErrors()
+	if gamepad then
+		sim:input(function()
+			local shortcuts = G.GamepadMainActionBarFrame.PageUnit.ShortcutsActionBar
+			shortcuts:Show()
+			shortcuts.dpadTopButton:Click("LeftButton", true)
+		end)
+		sim:expectNoErrors()
+	end
 end
 
 local sim = Sim.new()
