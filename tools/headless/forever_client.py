@@ -173,8 +173,9 @@ LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
-# Battle.net modal title and page banner observed in #316.
-LAUNCHER_UPDATE_LABELS = (("installation", "required"), ("upgrade", "available"))
+# Battle.net's modal title when the game must install or update first (#316). The page's "Upgrade Available" banner
+# is not one: it advertises an account upgrade and shows beside a working Play button.
+LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.

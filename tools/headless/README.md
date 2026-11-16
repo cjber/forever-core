@@ -19,8 +19,9 @@ world-ready marker. A missing or malformed block stops before the launcher start
 headless addon copy and its generated Lua configuration live only under the session state
 directory and are removed during normal or stale-session cleanup.
 
-Startup reads each launcher frame before clicking Play. The exact Battle.net labels
-`Installation Required` and `Upgrade Available` stop startup with the frame
-path and a message to update the game in Battle.net. No dialog button is clicked.
+Startup reads each launcher frame before clicking Play. The exact Battle.net label
+`Installation Required` stops startup with the frame path and a message to update the
+game in Battle.net. No dialog button is clicked. The page's `Upgrade Available` banner
+advertises an account upgrade and does not stop startup.
 Without a game process, startup allows two Play attempts, at least 15 seconds apart,
 each requiring a fresh visible Play target, then fails with the frame path.

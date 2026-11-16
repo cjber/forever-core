@@ -693,7 +693,7 @@ class ForeverClientTest(unittest.TestCase):
         self.assertTrue((self.state / "last-input").exists())
 
     def test_press_play_stops_on_exact_update_labels_before_sending_input(self):
-        for label in ("Installation Required", "Upgrade Available"):
+        for label in ("Installation Required",):
             with (
                 self.subTest(label=label),
                 mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
@@ -708,6 +708,25 @@ class ForeverClientTest(unittest.TestCase):
                 fc.press_play({"display": ":1"})
             x.assert_not_called()
             targets.assert_not_called()
+
+    def test_press_play_ignores_the_upgrade_available_banner(self):
+        # The banner advertises an account upgrade beside a working Play button, so it must not stop startup.
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(
+                fc, "ocr_words", return_value=[(w, 95.0, 0, 0, 20, 20) for w in ("Upgrade", "Available")]
+            ),
+            mock.patch.object(fc, "play_targets", return_value=[]) as targets,
+            mock.patch.object(fc, "x"),
+        ):
+            try:
+                fc.press_play({"display": ":1"})
+            except fc.ClientError as error:
+                self.assertNotIn("needs an update", str(error))
+            targets.assert_called()
 
     def test_press_play_caps_attempts_without_a_game_process(self):
         state = {"display": ":1"}
