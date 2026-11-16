@@ -1401,7 +1401,11 @@ def recover_links() -> int:
 
 
 def client_in_use() -> str | None:
-    """Why no session can start now, or None: the player's client, another session's lock, or Wine in the prefix."""
+    """Why no session can start now, or None: a client in the prefix, another session's lock, or a free client.
+
+    A Wow.exe in the prefix is named as the player's only when it is one of the prefix's own processes; a headless
+    session's client is named as that session's (#652).
+    """
     users = prefix_users()
     if users:
         return prefix_who(users)
@@ -1409,10 +1413,12 @@ def client_in_use() -> str | None:
 
 
 def foreign_client() -> str | None:
-    """Why the player's own client blocks every job, or None when the Wine prefix is ours or empty.
+    """Why the player's own client or a session this tool does not own blocks every job, or None when the Wine prefix
+    is ours or empty.
 
     A resident session's Wine processes carry its token, so another agent's session is not a busy client: its job is
-    waited for. Exit 3 is this reason only, the processes this tool does not own.
+    waited for. Exit 3 is this reason only, the processes this tool does not own; the sentence names a headless
+    session's own client as that session's, never as the player's (#652).
     """
     state = current_session()
     if state is None and session_lock_held():
@@ -2280,13 +2286,21 @@ def lock_holder() -> str:
 
 
 def prefix_who(users: Sequence[int]) -> str:
-    """Who is using the Wine prefix, for the sentence `up` prints when it refuses to start."""
+    """Who is using the Wine prefix, for the sentence a caller prints when it refuses to start.
+
+    A Wow.exe is the player's client only when it is one of the processes being refused over: a live headless
+    session's own client runs beside the Wine processes a dead session left behind, and naming that the player's sends
+    an agent to wait for a person who is not there (#652). A Wow.exe whose environment carries
+    FOREVER_CLIENT_SESSION belongs to a headless session, which the sentence names by pid.
+    """
     game = client_pid()
-    return (
-        f"the player's client is running (Wow.exe, pid {game})"
-        if game
-        else f"{len(users)} Wine processes still run in it"
-    )
+    if game is None:
+        return f"{len(users)} Wine processes still run in it"
+    if read_environ(game).get("FOREVER_CLIENT_SESSION"):
+        return f"a headless session holds the client (Wow.exe, pid {game})"
+    if game in users:
+        return f"the player's client is running (Wow.exe, pid {game})"
+    return f"{len(users)} Wine processes still run in it"
 
 
 def wait_for_session(lock, timeout: float) -> None:

@@ -459,9 +459,31 @@ class ForeverClientTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "prefix_users", return_value=[42, 43]),
             mock.patch.object(fc, "client_pid", return_value=43),
+            mock.patch.object(fc, "read_environ", return_value={"WINEPREFIX": str(fc.PREFIX)}),
             self.assertRaisesRegex(fc.ClientError, r"player's client is running .*pid 43"),
         ):
             fc.up(args())
+
+    def test_up_refuses_while_a_headless_session_holds_the_client(self):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[43]),
+            mock.patch.object(fc, "client_pid", return_value=43),
+            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "another-session"}),
+            self.assertRaisesRegex(fc.ClientError, r"a headless session holds the client \(Wow.exe, pid 43\)"),
+        ):
+            fc.up(args())
+
+    def test_wait_names_a_headless_session_that_keeps_the_prefix_in_use(self):
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc, "prefix_users", return_value=[43]),
+            mock.patch.object(fc, "client_pid", return_value=43),
+            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "another-session"}),
+            self.assertRaisesRegex(fc.ClientError, r"a headless session holds the client \(Wow.exe, pid 43\)"),
+        ):
+            fc.up(argparse.Namespace(wait=True, timeout=5))
 
     def test_up_puts_back_a_record_a_stopped_session_left_before_it_checks_the_client(self):
         addons = self.state / "AddOns"
@@ -1766,8 +1788,49 @@ class ClientInUseTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "prefix_users", return_value=[43]),
             mock.patch.object(fc, "client_pid", return_value=43),
+            mock.patch.object(fc, "read_environ", return_value={"WINEPREFIX": str(fc.PREFIX)}),
         ):
             self.assertIn("player's client is running", fc.client_in_use())
+
+    def test_a_headless_clients_wow_exe_outside_the_users_is_not_the_players(self):
+        # #652: a live session's Wow.exe ran beside a dead session's leftovers, and the proof blamed the player.
+        processes = {
+            43: {"WINEPREFIX": str(fc.PREFIX)},
+            44: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "another-session"},
+        }
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[43]),
+            mock.patch.object(fc, "client_pid", return_value=44),
+            mock.patch.object(fc, "read_environ", side_effect=lambda pid: processes[pid]),
+        ):
+            reason = fc.client_in_use()
+        self.assertNotIn("player", reason)
+        self.assertEqual(reason, "a headless session holds the client (Wow.exe, pid 44)")
+
+    def test_a_headless_clients_wow_exe_among_the_users_is_not_the_players_either(self):
+        # `up --wait` refuses over every prefix process, so the session's own client is in `users` here.
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[44]),
+            mock.patch.object(fc, "client_pid", return_value=44),
+            mock.patch.object(fc, "read_environ", return_value={"FOREVER_CLIENT_SESSION": "another-session"}),
+        ):
+            reason = fc.client_in_use()
+        self.assertEqual(reason, "a headless session holds the client (Wow.exe, pid 44)")
+
+    def test_leftover_processes_only_give_the_count(self):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[41, 42]),
+            mock.patch.object(fc, "client_pid", return_value=None),
+        ):
+            self.assertEqual(fc.client_in_use(), "2 Wine processes still run in it")
+
+    def test_a_wow_exe_outside_the_users_without_a_session_is_not_the_players(self):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[41, 42]),
+            mock.patch.object(fc, "client_pid", return_value=44),
+            mock.patch.object(fc, "read_environ", return_value={"WINEPREFIX": str(fc.PREFIX)}),
+        ):
+            self.assertEqual(fc.client_in_use(), "2 Wine processes still run in it")
 
     def test_another_sessions_lock_is_named(self):
         holder = open(self.state / "lock", "w")
@@ -3037,13 +3100,28 @@ class BrokerTest(unittest.TestCase):
             self.assertIsNone(fc.foreign_client())
 
     def test_the_players_client_is_the_only_busy_reason(self):
-        processes = {42: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "someone-else"}}
+        processes = {42: {"WINEPREFIX": str(fc.PREFIX)}}
         with (
             mock.patch.object(fc, "prefix_snapshot", return_value=processes),
             mock.patch.object(fc, "current_session", return_value=None),
             mock.patch.object(fc, "client_pid", return_value=42),
+            mock.patch.object(fc, "read_environ", return_value={"WINEPREFIX": str(fc.PREFIX)}),
         ):
             self.assertIn("player's client is running", fc.foreign_client())
+
+    def test_a_headless_clients_wow_exe_beside_a_dead_sessions_leftovers_is_not_the_players(self):
+        # #652: the other session's Wow.exe carried its token, the leftovers did not, and the proof blamed the player.
+        processes = {
+            42: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "session-token"},
+            43: {"WINEPREFIX": str(fc.PREFIX)},
+        }
+        with (
+            mock.patch.object(fc, "prefix_snapshot", return_value=processes),
+            mock.patch.object(fc, "current_session", return_value=live_state(token="session-token")),
+            mock.patch.object(fc, "client_pid", return_value=42),
+            mock.patch.object(fc, "read_environ", side_effect=lambda pid: processes[pid]),
+        ):
+            self.assertEqual(fc.foreign_client(), "a headless session holds the client (Wow.exe, pid 42)")
 
     def test_down_asks_the_session_to_stop_after_the_job_in_flight(self):
         fc.state_file().write_text(json.dumps(live_state(ready=1.0)))
