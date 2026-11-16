@@ -821,6 +821,22 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(G.IsCurrentQuestFailed(), true, "current quest failure comes from public fixture data")
 end)
 
+test("world: fixed recipe reagent slots include the required variable quantity list", function()
+	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {}, api = {
+		zero = function()
+			return {}
+		end,
+	} }
+	require("world").build(sim)
+	sim.world.professions =
+		{ { skillLineID = 164, recipes = { { id = 901, name = "Fixed reagent recipe", reagents = { { 9001, 5 } } } } } }
+	local slot = sim.impl["C_TradeSkillUI.GetRecipeSchematic"](901).reagentSlotSchematics[1]
+	eq(type(slot.variableQuantities), "table", "required nonnil list")
+	eq(#slot.variableQuantities, 0, "fixed reagent has no variable quantities")
+	eq(slot.quantityRequired, 5, "fixed required quantity")
+	eq(slot.reagents[1].itemID, 9001, "reagent identity")
+end)
+
 test("world: item identity resolves fixture ItemInfo without default zero", function()
 	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {} }
 	require("world").build(sim)

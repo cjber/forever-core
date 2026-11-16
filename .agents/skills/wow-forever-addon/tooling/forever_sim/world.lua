@@ -401,6 +401,7 @@ function M.build(sim)
 			s.reagentSlotSchematics[i] = {
 				reagents = { { itemID = reagent[1] } },
 				reagentType = 1,
+				variableQuantities = {},
 				quantityRequired = reagent[2],
 				slotIndex = i,
 				dataSlotType = 1,
