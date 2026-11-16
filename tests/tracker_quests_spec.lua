@@ -1,9 +1,8 @@
--- The Forever quest list owns the game's Quests and Campaign sections while it is on. Collapsing them was not enough:
--- a collapsed module still draws its header, so an empty "Quests" header stayed above the Forever list's own
--- "Quests 11/30". The list now takes the two modules out of the client's tracker collection and asks each to lay out in
--- no room, which is how the client hides a module with no contents, and gives them back when the list is off. This
--- spec loads UI/TrackerQuests.lua against a tracker that records those calls, and fails if the list ever collapses,
--- hides or reparents a module by hand instead.
+-- The Forever quest list is a section of the Forever column and leaves the client's own tracker modules alone. It used
+-- to take the game's Quests and Campaign sections out of the tracker, which wrote the container's dirty flag and
+-- module list from addon code and tainted the client's next layout (issue #608). This spec loads
+-- UI/TrackerQuests.lua against a tracker whose AddModule and RemoveModule and native modules whose Update and
+-- MarkDirty raise, so turning the list on, off, in combat and back on must never touch them.
 local checks = 0
 local function check(value, message)
 	assert(value, message)
@@ -11,6 +10,7 @@ local function check(value, message)
 end
 
 -- The client's tracker collection: it holds the modules it lays out, as Blizzard's ObjectiveTrackerContainerMixin does.
+-- Every call the list must never make raises, so a failure names the call.
 local tracker = { modules = {} }
 function tracker:HasModule(module)
 	for _, held in ipairs(self.modules) do
@@ -20,42 +20,25 @@ function tracker:HasModule(module)
 	end
 	return false
 end
-function tracker:AddModule(module)
-	if not self:HasModule(module) then
-		self.modules[#self.modules + 1] = module
-	end
-	self.added = (self.added or 0) + 1
+function tracker.AddModule()
+	error("the Forever quest list must never add a module to the client's tracker")
 end
-function tracker:RemoveModule(module)
-	for index, held in ipairs(self.modules) do
-		if held == module then
-			table.remove(self.modules, index)
-			break
-		end
-	end
-	self.removed = (self.removed or 0) + 1
-end
--- The container's own update: every module it holds is laid out in the room left. A module it does not hold is never
--- laid out, which is why a removed module cannot draw its header again.
-function tracker:Layout(available)
-	for _, module in ipairs(self.modules) do
-		module:Update(available)
-	end
+function tracker.RemoveModule()
+	error("the Forever quest list must never remove a module from the client's tracker")
 end
 
--- A native quest module: its own Update draws it, and its EndLayout hides it when it has no room. SetCollapsed,
--- SetParent and Hide are traps: the list must reach the module through Update and the container instead.
+-- A native quest module: the client's own layout drives it, and the list must never update, dirty, collapse, reparent
+-- or hide it.
 local function nativeModule(name)
 	local module = { name = name, shown = true }
-	function module:Update(available)
-		self.available = available
-		self.shown = available ~= 0
+	function module.Update()
+		error(name .. " must not be updated by the quest list")
 	end
-	function module:MarkDirty()
-		self.dirty = true
+	function module.MarkDirty()
+		error(name .. " must not be marked dirty by the quest list")
 	end
 	function module.SetCollapsed()
-		error(name .. " must not be collapsed: a collapsed module keeps drawing its header")
+		error(name .. " must not be collapsed by hand")
 	end
 	function module.SetParent()
 		error(name .. " must not be reparented")
@@ -128,91 +111,46 @@ local env = setmetatable({
 	InCombatLockdown = function()
 		return combat
 	end,
-	-- A table method post-hook: the original runs first, then the hook, with the same arguments, as hooksecurefunc does
-	-- on an instance method in the client.
-	hooksecurefunc = function(target, name, post)
-		local original = target[name]
-		target[name] = function(...)
-			local result = original(...)
-			post(...)
-			return result
-		end
-	end,
 }, { __index = _G })
 env._G = env
 setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
 local TrackerQuests = assert(ns.TrackerQuests, "the list registers itself on the namespace")
 check(type(ready) == "function", "the list waits for the client's own load events")
 
--- The list is on: both game modules leave the tracker and are asked to lay out in no room, so the client's own layout
--- hides them and no empty header is left above the Forever list's header.
+-- The list is on: it draws its own section, and the client's tracker and its modules are untouched.
+local function CheckNativeModulesUntouched(note)
+	check(tracker:HasModule(quests), note .. " keeps the game's quest module in the tracker")
+	check(tracker:HasModule(campaign), note .. " keeps the game's campaign module in the tracker")
+	check(#tracker.modules == 2, note .. " leaves the tracker's module list alone")
+end
 ready()
-check(tracker:HasModule(quests) == false, "the game's quest module leaves the tracker")
-check(tracker:HasModule(campaign) == false, "the game's campaign module leaves the tracker")
-check(quests.available == 0 and quests.shown == false, "the game's quest module is laid out in no room and hidden")
-check(campaign.available == 0 and campaign.shown == false, "the campaign module is hidden the same way")
-check(section.marked ~= nil, "and the Forever list is laid out")
+check(section.marked ~= nil, "the Forever list is laid out")
+CheckNativeModulesUntouched("turning the list on")
 
--- The list is off: the modules come back to the tracker and are marked dirty, so the client's next layout draws the
--- game's own quests again, exactly as they were.
+-- Turning the list off and back on only redraws the Forever section; the client's own modules stay where the client
+-- left them.
+local marked = section.marked
 TrackerQuests.SetEnabled(false)
-check(tracker:HasModule(quests) == true, "turning the list off gives the game's quest module back")
-check(tracker:HasModule(campaign) == true, "and the campaign module")
-check(quests.dirty == true and campaign.dirty == true, "the returned modules are marked for the client's next layout")
-tracker:Layout(100)
-check(quests.shown == true, "the client's next layout draws the game's own Quests section again")
-
--- In combat nothing is taken out or given back: the change waits for the client's own PLAYER_REGEN_ENABLED pass, the
--- same deferred pass every other layout change of the column waits for.
-combat = true
+check(section.marked > marked, "turning the list off redraws the Forever section")
+CheckNativeModulesUntouched("turning the list off")
 TrackerQuests.SetEnabled(true)
-check(tracker:HasModule(quests) == true, "a change asked for in combat takes nothing out yet")
-check(quests.available == 100, "and the game's module keeps its layout through the fight")
--- A second change in the same fight wins, as the column records only the latest state the player asked for.
+CheckNativeModulesUntouched("turning the list on again")
+
+-- In combat, and through the client's own PLAYER_REGEN_ENABLED pass, the list still touches no client module.
+combat = true
 TrackerQuests.SetEnabled(false)
 TrackerQuests.SetEnabled(true)
 combat = false
 section:OnEvent("PLAYER_REGEN_ENABLED")
-check(tracker:HasModule(quests) == false, "the deferred pass takes the game's module out")
-check(quests.available == 0 and quests.shown == false, "and hides it")
-check(tracker:HasModule(campaign) == false, "and the campaign module with it")
+CheckNativeModulesUntouched("a change asked for in combat")
 
--- Another tracker owning the quest list gives the game's modules back, the same as turning the list off.
+-- Another tracker owning the quest list only changes the Forever section's own layout.
 addons["!KalielsTracker"] = true
-quests.dirty = nil
 section:OnEvent("PLAYER_ENTERING_WORLD")
-check(quests.dirty == true, "another tracker owning the list gives the game's quest module back")
-check(tracker:HasModule(quests) == true, "and it is in the tracker again")
+CheckNativeModulesUntouched("another tracker owning the list")
 addons["!KalielsTracker"] = nil
 section:OnEvent("PLAYER_ENTERING_WORLD")
-check(tracker:HasModule(quests) == false, "the list takes the game's module back once no other tracker owns it")
-
--- The client's own ObjectiveTrackerManager adds the game's modules through the container's AddModule, and the tracker
--- keeps the fixed height Edit Mode gave it, so modules join with no size change at all. The list's one secure
--- post-hook on AddModule takes a native module as it joins while the list is ready and on.
-tracker.modules = {}
-check(TrackerQuests.Enabled() and #tracker.modules == 0, "the list is on and ready before the tracker holds a module")
-tracker:AddModule(campaign)
-tracker:AddModule(quests)
-check(tracker:HasModule(quests) == false, "a quest module that joins is taken by the AddModule post-hook")
-check(tracker:HasModule(campaign) == false, "and the campaign module with it")
-check(quests.available == 0 and quests.shown == false, "the joined quest module is laid out in no room and hidden")
-check(campaign.available == 0 and campaign.shown == false, "and so is the joined campaign module")
-
--- Turning the list off gives both modules back through AddModule; the list's own give-back is marked, so the hook
--- does not take them again, and they stay in the tracker.
-TrackerQuests.SetEnabled(false)
-check(tracker:HasModule(quests) == true, "turning the list off gives the game's quest module back")
-check(tracker:HasModule(campaign) == true, "and the campaign module")
-tracker:Layout(100)
-check(quests.shown == true, "the client's next layout draws the game's own Quests section again")
-
--- With the list off a module the client adds stays put; turning the list on then takes what the tracker holds.
-tracker.modules = {}
-tracker:AddModule(quests)
-check(tracker:HasModule(quests) == true, "a module the client adds while the list is off stays in the tracker")
-TrackerQuests.SetEnabled(true)
-check(tracker:HasModule(quests) == false, "turning the list on takes the module the tracker holds")
+CheckNativeModulesUntouched("the list taking over again")
 
 -- Private records and rendering must not populate Blizzard's shared lazy QuestCache.
 env.QuestCache = {

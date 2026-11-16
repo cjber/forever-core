@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's tracker could report "Auras cannot be accessed when secret while tainted by 'ForeverCore'". ForeverCore no longer changes the game's own tracker, so with the Forever quest list on the game's own Quests section now shows as well; click its header to collapse it. Thanks to the CurseForge player who reported it. (#608)
+
 ## [1.13.0] - 2026-11-16
 
 - **A different addon named ForeverCore no longer breaks every Forever addon.** If another addon installs its own folder named ForeverCore over ours, each Forever addon now shows one line naming that addon, asking you to remove it and install ForeverCore from CurseForge, instead of saying it could not start. (#610)

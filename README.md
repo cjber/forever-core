@@ -34,11 +34,11 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no route, profession or challenge sections of its own; the optional quest list is the one section core keeps,
-because it replaces the game's quest list rather than adding a feature. Every other section belongs to the addon that
-owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon
-through `ForeverCore.Register` and the modules on the `ForeverCore` table; see [`docs/adoption.md`](docs/adoption.md).
-The shape every addon's own public API follows is in
+It draws no route, profession or challenge sections of its own; the optional quest list is the one section core keeps:
+it lists the watched quests in the Forever column and leaves the game's own quest list in place. Every other section
+belongs to the addon that owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its
+shared code is added to an addon through `ForeverCore.Register` and the modules on the `ForeverCore` table; see
+[`docs/adoption.md`](docs/adoption.md). The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).
 A third-party addon reads the members it may rely on, and the suite's published APIs, in [`docs/api.md`](docs/api.md).
 
