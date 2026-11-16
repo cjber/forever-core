@@ -5,10 +5,9 @@ local _, ns = ...
 -- The optional Forever quest list: the watched quests, campaign quests included, grouped ready-to-turn-in first, then
 -- this zone, then every other zone, each nearest first. It is a section of the shared Forever column, built from the
 -- game's own ObjectiveTrackerModuleTemplate and QuestObjectiveTrackerMixin so its header, lines, POI button, fonts,
--- colours, completed fade and layout are the game's. While this list is on, the game's own Quests and Campaign modules
--- leave the client's tracker through its own RemoveModule, so no empty Quests header is left above this one, and come
--- back through its AddModule when the list is off. One secure post-hook on the tracker's AddModule, and no replaced
--- method, moved module or reparented frame, is the whole of the client code this file touches.
+-- colours, completed fade and layout are the game's. This file never touches the client's own tracker modules: the
+-- whole native tracker is hidden while this list is active, as Questie does. Only frame visibility changes; no
+-- addon code writes the native tracker's state or schedules its layout.
 --
 -- The list adds the parts a player misses from a third-party tracker: a thin progress fill under every unfinished
 -- count, one fold per quest and per zone saved for the character, a height cap with scrolling, the game's quest item
@@ -68,7 +67,7 @@ ns.TrackerQuests = TrackerQuests
 -- the false a file loaded too early would read.
 local settingsRegistered = false
 local TOOLTIP = "Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the "
-	.. "rest by zone, nearest first. The game's own quest list is hidden while this is on."
+	.. "rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 local function RegisterSettings()
 	if settingsRegistered or not ns.SettingsPage then
 		return
@@ -115,77 +114,38 @@ local function OtherOwner()
 	return C_AddOns.IsAddOnLoaded("!KalielsTracker") == true
 end
 
--- The game's own quest modules, by the names the client's tracker holds them under. The Forever list replaces them
--- while it is on and gives them back when it is off.
-local NATIVE_MODULES = { "QuestObjectiveTracker", "CampaignQuestObjectiveTracker" }
-
--- What the game's own Quests and Campaign modules do while the Forever list is on. Collapsing them is not enough: a
--- collapsed module still draws its header over an empty contents frame, which is the bare "Quests" header a player saw
--- above the Forever list's own "Quests 11/30". So each module leaves the tracker's module list, which stops the
--- client's own layout from laying it out or showing it again, and its own Update is called with no available height:
--- it adds no block, and its EndLayout hides it, exactly as the client leaves a module with no room left in the column.
--- Giving the list back is the same pair of the client's methods in reverse, so the game's own Quests section returns
--- as it was, folded or not, just as if the Forever list had never been on.
---
--- Every call is a public method of the client's own objective tracker, made out of combat only, from the same deferred
--- pass this file already used to collapse the modules: the container's RemoveModule and AddModule, and the module's
--- Update. The one hook is a secure post-hook on ObjectiveTrackerFrame.AddModule, installed below and never a
--- replacement of the method; no protected frame is reparented or hidden by addon code, and no secure quest item button
--- is shown, hidden or moved here: the module hides itself through its own layout, so nothing the client does later
--- with its own frames is tainted.
---
--- Each module is checked against the tracker on every pass rather than remembered by one flag: the client's own
--- ObjectiveTrackerManager adds its modules at PLAYER_ENTERING_WORLD, and this file's first pass can run before that,
--- so a module is taken whenever the tracker holds it, and only a module taken here is given back.
----@type table<string, boolean>
-local taken = {}
--- True only around this file's own AddModule give-back, so the AddModule post-hook below knows the join it sees is
--- the list returning a module to the client, not the client adding one to be taken.
-local givingBack = false
----@param drawn boolean whether the game's own quest modules should draw
-local function SetNativeModulesDrawn(drawn)
-	local tracker = ObjectiveTrackerFrame
-	for _, name in ipairs(NATIVE_MODULES) do
-		local module = rawget(_G, name)
-		if module then
-			if drawn then
-				if taken[name] then
-					givingBack = true
-					tracker:AddModule(module)
-					givingBack = false
-					module:MarkDirty()
-					taken[name] = nil
-				end
-			elseif tracker:HasModule(module) then
-				tracker:RemoveModule(module)
-				module:Update(0)
-				taken[name] = true
-			end
-		end
-	end
-end
-
 local ready = false
 local ownedByOther = false
 local section
----@type boolean?
-local pendingNative
 
--- The game's modules are taken out and given back only out of combat. A change asked for in combat is remembered and
--- applied at PLAYER_REGEN_ENABLED, which this section's own OnEvent already runs apply() from, like every other
--- deferred layout change: the secure item buttons inside the game's modules never move while the player is fighting.
----@param replace boolean whether the Forever list replaces the game's own modules
-local function ApplyNativeModules(replace)
-	if InCombatLockdown() then
-		pendingNative = replace
+-- Questie's Forever visibility pattern: keep suppression and restore ownership in private locals, never on the
+-- native frame. A protected hide or any restore waits for combat to end and uses the latest request.
+local hideNativeTracker = false
+local hidNativeTracker = false
+local visibilityFrame = CreateFrame("Frame")
+local function ApplyNativeVisibility()
+	if InCombatLockdown() and (not hideNativeTracker or ObjectiveTrackerFrame:IsProtected()) then
+		visibilityFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
-	if pendingNative ~= nil then
-		replace = pendingNative
+	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	if hideNativeTracker then
+		hidNativeTracker = true
+		ObjectiveTrackerFrame:Hide()
+	elseif hidNativeTracker then
+		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
+		hidNativeTracker = false
+		if not OtherOwner() then
+			ObjectiveTrackerFrame:Show()
+		end
 	end
-	pendingNative = nil
-	SetNativeModulesDrawn(not replace)
 end
+visibilityFrame:SetScript("OnEvent", ApplyNativeVisibility)
+ObjectiveTrackerFrame:HookScript("OnShow", function()
+	if hideNativeTracker then
+		ApplyNativeVisibility()
+	end
+end)
 
 -- The character the folds are saved for. ForeverCoreDB is account wide, so every saved fold lives under one key per
 -- realm and character and a second character starts unfolded.
@@ -1512,35 +1472,13 @@ apply = function()
 	CreateItemPool(section)
 	ownedByOther = OtherOwner()
 	local active = TrackerQuests.Enabled() and not ownedByOther
+	hideNativeTracker = active
+	ApplyNativeVisibility()
 	if not active then
 		HideItems(section)
 	end
 	section:MarkDirty()
-	ApplyNativeModules(active)
 end
-
--- The client's own ObjectiveTrackerManager adds the game's quest modules from its own ContinueAfterAllEvents pass on
--- the same two events this file waits for, so this file's first pass can run before the tracker holds a module to
--- take. A module joining the tracker is the signal that matters, and the tracker's height never follows it: Edit Mode
--- gives ObjectiveTrackerFrame a fixed height, so modules can join without a size change. This one secure post-hook on
--- the container's own ObjectiveTrackerFrame.AddModule, never a replacement of the method, takes a native module as it
--- joins while the list is ready and active. ApplyNativeModules defers in combat and checks every module against the
--- tracker, so a pass that finds nothing costs nothing and a module that joined later is still taken. The give-back in
--- SetNativeModulesDrawn runs with givingBack set so the list's own AddModule call is not taken again.
----@param _ any the container, passed through unchanged by the post-hook
----@param module any the module the container just accepted
-local function NativeModuleJoined(_, module)
-	if givingBack or not ready or not TrackerQuests.Enabled() or ownedByOther then
-		return
-	end
-	for _, name in ipairs(NATIVE_MODULES) do
-		if rawget(_G, name) == module then
-			ApplyNativeModules(true)
-			return
-		end
-	end
-end
-hooksecurefunc(ObjectiveTrackerFrame, "AddModule", NativeModuleJoined)
 
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true

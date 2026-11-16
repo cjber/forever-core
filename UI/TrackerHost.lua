@@ -23,14 +23,12 @@ local _, ns = ...
 ---@field Text FontString
 ---@field MinimizeButton Button
 
--- The client's own objective tracker is the module container its Quests and Campaign sections belong to, so taking a
--- module out of it and giving it back are the container's own methods (UI/TrackerQuests.lua calls both).
+-- The client's own objective tracker: the module container its Quests and Campaign sections belong to. ForeverCore
+-- reads the frame, and never adds or removes one of the client's own modules.
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field Header ForeverNativeTrackerHeader
 ---@field NineSlice Frame?
 ---@field isCollapsed? boolean
----@field AddModule fun(self: ForeverNativeTrackerFrame, module: any)
----@field RemoveModule fun(self: ForeverNativeTrackerFrame, module: any)
 ---@field HasModule fun(self: ForeverNativeTrackerFrame, module: any): boolean
 
 -- Sharing the native tracker collection also shares its Edit Mode execution path.
@@ -1129,7 +1127,7 @@ local function LayoutAttached()
 		-- until the move that follows reflows it.
 		return
 	end
-	if NativeCollapsed() then
+	if ObjectiveTrackerFrame:IsShown() and NativeCollapsed() then
 		host:Hide()
 		aside = false
 		return
@@ -1146,9 +1144,9 @@ local function LayoutAttached()
 	host:ClearAllPoints()
 	-- The column hangs from the bottom of the native content region (NineSlice, which Blizzard anchors to its last
 	-- module), so it follows the quests as they grow or shrink with no reflow of ours. A native tracker with nothing to
-	-- show hides itself, and Questie hides it too: then the column takes its slot from the top. Blizzard anchors the
-	-- NineSlice's top corners to the tracker asymmetrically, so its centre is not the tracker's: the anchor's x offset is
-	-- the measured gap between the two centres, in the host's units, which puts the column on the tracker's own edges.
+	-- show hides itself; Questie and the Forever quest list hide it too. Then the column takes its slot from the top.
+	-- Blizzard anchors the NineSlice's top corners asymmetrically, so its centre is not the tracker's: the anchor's
+	-- x offset is the measured gap between the two centres, in host units, placing the column on the tracker's edges.
 	---@type Frame, FramePoint
 	local edge, edgePoint = ObjectiveTrackerFrame, "TOP"
 	if ObjectiveTrackerFrame:IsShown() then
@@ -1332,9 +1330,9 @@ function host.MarkDirty(_)
 		C_Timer.After(0, Layout)
 	end
 end
--- Questie or EQOT hides the native tracker and its header, so a collapsed All Objectives no longer hides the sections.
+-- A hidden native tracker has no visible collapse control, so its saved collapse does not hide the Forever sections.
 function host.IsCollapsed(_)
-	return attached == true and not besideList and NativeCollapsed()
+	return attached == true and not besideList and ObjectiveTrackerFrame:IsShown() and NativeCollapsed()
 end
 function host:ForceExpand()
 	self:MarkDirty()

@@ -328,23 +328,26 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	assert(blocks[6].id == 103 and blocks[6].text:find("Other One", 1, true), "the other zone quest follows")
 	assert(blocks[6].text:find("(10 yd)", 1, true), "the other zone quest shows its distance")
 
-	-- The game's own quest modules leave the client's tracker collection while the Forever list draws: a collapsed
-	-- module still drew its own empty "Quests" header above this list's header, so they are taken out and asked to lay
-	-- out in no room, and the client's own layout hides them. They come back when the list is off.
+	-- The game's own quest modules stay where the client put them: the Forever list is a section of the Forever column
+	-- and never takes a native module out of the tracker (issue #608).
 	local tracker = sim.G.ObjectiveTrackerFrame
 	local function NativeDrawn()
-		return tracker:HasModule(sim.G.QuestObjectiveTracker) and sim.G.QuestObjectiveTracker:IsShown()
+		return tracker:IsShown()
+			and tracker:HasModule(sim.G.QuestObjectiveTracker)
+			and sim.G.QuestObjectiveTracker:IsShown()
 	end
-	assert(NativeDrawn() == false, "the game's quest module is not in the tracker and draws nothing")
+	assert(not NativeDrawn(), "the whole native tracker is hidden while the Forever list draws")
 	assert(
-		tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == false,
-		"the game's campaign module leaves the tracker too"
+		tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == true,
+		"the game's campaign module stays in the tracker too"
 	)
-	assert(
-		sim.G.QuestObjectiveTracker.Header:IsVisible() == false,
-		"the game's own Quests header is off screen, so only the Forever list's header shows"
-	)
-	assert(section.Header:IsVisible() == true, "the Forever list's own Quests header is the one that shows")
+	assert(section.Header:IsVisible() == true, "the Forever list's own Quests header shows")
+	tracker.isCollapsed = true
+	sim.G.ForeverTrackerCompanion:MarkDirty()
+	sim:advance(0.2)
+	assert(section.Header:IsVisible(), "a hidden native collapsed header does not hide the replacement list")
+	assert(not sim.G.ForeverTrackerCompanion:IsCollapsed(), "the hidden native tracker does not own collapse")
+	tracker.isCollapsed = false
 
 	local questBlock
 	for _, block in pairs(section.usedBlocks["ObjectiveTrackerQuestPOIBlockTemplate"] or {}) do
@@ -515,17 +518,18 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	local settled = Text(Blocks())
 	-- The section's own OnEvent, not the game's: if Mixin copies before OnEvent is defined, the section keeps
 	-- QuestObjectiveTrackerMixin:OnEvent, which only marks the module dirty. Another tracker taking the list makes
-	-- our OnEvent run apply(), which gives the game's modules back and empties the Forever list; the game's does not.
+	-- our OnEvent run apply(), which empties the Forever list; the game's does not. The client's own modules stay put
+	-- either way.
 	sim.loader.loaded["!KalielsTracker"] = {}
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "the section's own OnEvent gives the game's quest module back")
-	assert(#Blocks() == 0, "and empties the Forever list when another tracker owns it")
+	assert(not tracker:IsShown(), "handoff leaves native visibility to the other tracker")
+	assert(#Blocks() == 0, "the section's own OnEvent empties the Forever list when another tracker owns it")
 	assert(section.questPOIPool:GetNumActive() == 0, "freeing the private blocks releases every private POI")
 	sim.loader.loaded["!KalielsTracker"] = nil
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(NativeDrawn() == false, "giving the list back takes the game's quest module out again")
+	assert(not NativeDrawn(), "taking over hides the whole native tracker")
 	assert(Text(Blocks()) == settled, "and rebuilds the Forever list")
 	assert(section.questPOIPool:GetNumActive() > 0, "rebuilt blocks reacquire private POIs")
 
@@ -538,11 +542,14 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "turning the list off draws the game's own quest module again")
-	assert(tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == true, "and gives the campaign module back as well")
+	assert(NativeDrawn() == true, "turning the list off leaves the game's own quest module drawn")
+	assert(
+		tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == true,
+		"and the campaign module stays in the tracker"
+	)
 	assert(#Blocks() == 0, "and empties the Forever list")
-	-- The taint check for the takeover: the game's own tracker builds its secure quest item button while the list is
-	-- off, in combat, and the same with the list on and its modules taken out of the tracker by it.
+	-- The game's own tracker builds its secure quest item button in combat, with the list off and with it on: the
+	-- Forever list never touches the tracker's modules, so the client's own frames stay secure either way.
 	sim.impl["GetQuestLogSpecialItemInfo"] = function(questLogIndex)
 		if questLogIndex == 3 then
 			return "item:5512", 5512, 1, true
@@ -570,11 +577,11 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	assert(nativeItemButton ~= nil, "the game's tracker built its secure quest item button")
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(NativeDrawn() == false, "turning the list on takes the quest module out of the tracker again")
+	assert(not NativeDrawn(), "turning the list on hides the whole native tracker")
 	CombatQuestRefresh()
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "turning the list off again draws the game's own quest module")
+	assert(NativeDrawn() == true, "turning the list off again leaves the game's own quest module drawn")
 
 	sim:setGamepad(true)
 	sim:gamepadNavigate()
@@ -825,10 +832,11 @@ end)
 -- The client's own ObjectiveTrackerManager adds its modules from its own ContinueAfterAllEvents pass on the same two
 -- events this file waits for, so the list's first pass can run over a tracker that holds nothing. When that Init adds
 -- the game's Quests and Campaign modules later, they arrive through the container's AddModule, and the tracker's height
--- does not change: Edit Mode gives ObjectiveTrackerFrame a fixed height, so modules joining never resize it. The list's
--- one secure post-hook on AddModule must take them as they join: otherwise the native quest list stays above it and, in
--- the live client, leaves the Forever section no room and hides it, so no later pass of its own ever runs.
-scenario("the Forever quest list takes native modules that join after its first pass", function(sim)
+-- does not change: Edit Mode gives ObjectiveTrackerFrame a fixed height, so modules joining never resize it. The list
+-- is a section of the Forever column and leaves those modules where the client put them: issue #608 was the old
+-- takeover writing the container's state from addon code, so this run proves the modules join and stay while the
+-- Forever list keeps drawing.
+scenario("the Forever quest list leaves native modules that join after its first pass alone", function(sim)
 	local Enum = sim.G.Enum
 	local NORMAL = Enum.QuestClassification.Normal
 	local entries, byID = {}, {}
@@ -972,13 +980,13 @@ scenario("the Forever quest list takes native modules that join after its first 
 	manager:Init()
 	sim:advance(0.2)
 
+	assert(tracker:HasModule(questModule) == true, "the game's quest module that joins stays in the tracker")
+	assert(tracker:HasModule(campaignModule) == true, "and the game's campaign module stays with it")
 	assert(
-		tracker:HasModule(questModule) == false,
-		"the game's quest module that joins after the first pass is taken by the AddModule post-hook"
+		not tracker:IsShown() and not questModule.Header:IsVisible(),
+		"joining modules stay hidden with the native tracker"
 	)
-	assert(tracker:HasModule(campaignModule) == false, "and the game's campaign module with it")
-	assert(questModule.Header:IsVisible() == false, "the game's own Quests header is not left above the list")
-	assert(section:IsShown() and section.Header:IsVisible(), "the Forever list draws after the modules join")
+	assert(section:IsShown() and section.Header:IsVisible(), "the Forever list still draws after the modules join")
 	assert(#Blocks() == 3, "and keeps its zone and both quests")
 
 	sim:setGamepad(true)
