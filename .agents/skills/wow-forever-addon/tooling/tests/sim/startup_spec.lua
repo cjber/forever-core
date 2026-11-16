@@ -172,3 +172,29 @@ sim:event("ITEM_DATA_LOAD_RESULT", 9001, true)
 eq(loaded, 1)
 sim:expectNoErrors()
 print("startup_spec: bare boot, login and SettingsPanel pass with mouse and gamepad; native flyout metadata passes")
+
+-- The pinned quest XML defines Checkbox and inherits CheckBox. Template identity ignores case,
+-- while Lua child fields and instance names retain their original spelling.
+for _, template in ipairs({
+	"QuestLogTrackCheckboxTemplate",
+	"QuestLogTrackCheckBoxTemplate",
+	"QUESTLOGTRACKCHECKBOXTEMPLATE",
+}) do
+	assert(G.CreateFrame("Frame", nil, G.UIParent, template).CheckMark, template)
+end
+local templateErrors = #sim.templates.errors
+assert(sim.templates.loadXML(here .. "template_case.xml", "SimTests", "template_case.xml"))
+eq(#sim.templates.errors, templateErrors)
+for _, template in ipairs({ "CaseLeafTemplate", "cASElEAFtEMPLATE", "CASELEAFTEMPLATE" }) do
+	local frame = G.CreateFrame("Frame", nil, G.UIParent, template)
+	eq(frame:GetWidth(), 61)
+	eq(frame:GetHeight(), 29)
+	eq(frame.CaseMarker:GetWidth(), 13)
+	eq(frame.casemarker, nil)
+end
+eq(G.CaseNonIntrinsicTag, nil)
+local named = G.CreateFrame("Frame", "CaseMiXeDInstance", G.UIParent, "caseleaftemplate")
+eq(named:GetName(), "CaseMiXeDInstance")
+local ok, err = pcall(G.CreateFrame, "Frame", nil, G.UIParent, "CaseMiSsInGTemplate")
+assert(not ok and tostring(err):find("CaseMiSsInGTemplate", 1, true))
+sim:expectNoErrors()

@@ -1,0 +1,9 @@
+<Ui>
+ <Frame name="CaseBaseTemplate" virtual="true">
+  <Size x="61" y="29"/>
+  <Frames><Frame parentKey="CaseMarker"><Size x="13" y="17"/></Frame></Frames>
+ </Frame>
+ <Frame name="CaseDerivedTemplate" virtual="true" inherits="cASEbASEtEMPLATE"/>
+ <Frame name="CaseLeafTemplate" virtual="true" inherits="CASEDERIVEDTEMPLATE"/>
+ <Frame><Frames><CaseBaseTemplate name="CaseNonIntrinsicTag"/></Frames></Frame>
+</Ui>

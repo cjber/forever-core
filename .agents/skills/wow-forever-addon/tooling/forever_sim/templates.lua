@@ -277,7 +277,7 @@ function M.build(sim)
 	-- Templates
 	---------------------------------------------------------------------------
 	local function templateNode(name)
-		return T.templates[name]
+		return T.templates[name:lower()]
 	end
 
 	-- The template chain (outermost first) for a node: each inherited template's own chain, in order.
@@ -725,7 +725,7 @@ function M.build(sim)
 			kind = "Animation"
 		end
 		if not Widgets.TYPES[kind] then
-			if CHILD_ELEMENTS[node.tag] == nil and not T.templates[node.tag] then
+			if CHILD_ELEMENTS[node.tag] == nil and not templateNode(node.tag) then
 				warn(string.format("%s:%s: unknown element <%s>", ctx.file, tostring(node.line), node.tag))
 			end
 			return nil
@@ -1130,10 +1130,10 @@ function M.build(sim)
 					if node.attr.intrinsic == "true" then
 						entry.name = node.attr.name
 						T.intrinsics[node.attr.name] = entry
-						T.templates[node.attr.name] = entry
+						T.templates[node.attr.name:lower()] = entry
 					elseif node.attr.virtual == "true" then
 						if node.attr.name then
-							T.templates[node.attr.name] = entry
+							T.templates[node.attr.name:lower()] = entry
 						end
 					else
 						-- A frame without its own parent attribute takes its nearest template's (ContainerFrame1..N
