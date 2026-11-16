@@ -8,6 +8,11 @@ local function equal(actual, expected, label)
 end
 
 local own = { title = "My Addon", tag = "v1.5.0" }
+local core = { name = "ForeverCore", title = "ForeverCore", project = "1796337" }
+local FOREIGN_KEY = "%s: the installed ForeverCore is another addon (%s). "
+	.. "Remove it and install ForeverCore from CurseForge."
+local FOREIGN = "My Addon: the installed ForeverCore is another addon (Another Core UI). "
+	.. "Remove it and install ForeverCore from CurseForge."
 local addons = {}
 local messages = {}
 
@@ -58,6 +63,15 @@ _G.C_AddOns = {
 		if field == "X-Forever-Core" then
 			return item.tag
 		end
+		if field == "X-Curse-Project-ID" then
+			if item.project_error then
+				error("metadata unavailable")
+			end
+			return item.project
+		end
+		if field == "X-Website" then
+			return item.website
+		end
 	end,
 	IsAddOnLoaded = function(index)
 		return addons[index] and addons[index].loaded
@@ -70,9 +84,10 @@ _G.C_AddOns = {
 	end,
 }
 
-local function run(entries, ready, L)
+local function run(entries, ready, L, installed)
 	addons = {
 		{ name = "MyAddon", title = own.title, loaded = true, enabled = 2, deps = { "ForeverCore" }, tag = own.tag },
+		installed or core,
 	}
 	for _, item in ipairs(entries or {}) do
 		addons[#addons + 1] = item
@@ -186,6 +201,79 @@ do
 	local second = entry({ name = "BetaForever", title = "Beta", tag = "v1.3.0" })
 	local _, _, text = run({ first, second }, false, L)
 	equal(text, "My Addon must be updated: Alpha and Beta.", "a translated string is printed")
+end
+
+-- A ForeverCore folder that is another addon's is named in one line, never blamed on an out-of-date dependent.
+do
+	local other = { name = "ForeverCore", title = "Another Core UI", project = "5842317" }
+	local ns, result, text = run({}, false, nil, other)
+	equal(result, false, "a foreign core returns false")
+	equal(ns.broken, true, "a foreign core marks the addon broken")
+	equal(text, FOREIGN, "a foreign core is named")
+	equal(#messages, 1, "a foreign core takes one line")
+	equal(messages[1].red, 1, "the foreign core line uses the error red")
+	equal(messages[1].green, 0.1, "the foreign core line uses the error green")
+	equal(messages[1].blue, 0.1, "the foreign core line uses the error blue")
+
+	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
+	local _, _, blames = run({ culprit }, false, nil, other)
+	equal(blames, text, "a foreign core is named instead of the out-of-date addon")
+end
+
+-- Our project ID keeps the existing branches, whether a dependent is out of date or nothing is named.
+do
+	local ours = { name = "ForeverCore", title = "ForeverCore", project = "1796337" }
+	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
+	local _, _, text = run({ culprit }, false, nil, ours)
+	equal(
+		text,
+		"My Addon: Legacy Forever is out of date. Update it to fix this.",
+		"our core keeps the out-of-date line"
+	)
+	local _, _, reinstall = run({}, false, nil, ours)
+	equal(reinstall, "My Addon could not start. Reinstall My Addon to fix this.", "our core keeps the reinstall line")
+end
+
+-- A core that predates the project ID is still ours by its website, and another site is another addon.
+do
+	local old = { name = "ForeverCore", title = "ForeverCore", website = "https://github.com/cjber/forever-core" }
+	local _, _, text = run({}, false, nil, old)
+	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "our website keeps the reinstall line")
+	local other = { name = "ForeverCore", title = "Another Core UI", website = "https://example.com/forever-core-ui" }
+	local _, _, named = run({}, false, nil, other)
+	equal(named, FOREIGN, "another website names the addon")
+end
+
+-- A core naming neither marker cannot be proved foreign, so the reinstall line stays.
+do
+	local bare = { name = "ForeverCore", title = "Another Core UI" }
+	local _, _, text = run({}, false, nil, bare)
+	equal(
+		text,
+		"My Addon could not start. Reinstall My Addon to fix this.",
+		"an unidentifiable core asks for a reinstall"
+	)
+end
+
+-- A metadata call that errors is handled: no Lua error, and the existing line.
+do
+	local broken = { name = "ForeverCore", title = "ForeverCore", project_error = true }
+	local _, _, text = run({}, false, nil, broken)
+	equal(
+		text,
+		"My Addon could not start. Reinstall My Addon to fix this.",
+		"a metadata error keeps the reinstall line"
+	)
+end
+
+-- Colour codes come off the foreign core's title, and ns.L overrides the new phrase.
+do
+	local other = { name = "ForeverCore", title = "|cffff0000Another Core UI|r", project = "5842317" }
+	local _, _, text = run({}, false, nil, other)
+	equal(text, FOREIGN, "the foreign title is stripped")
+	local L = { [FOREIGN_KEY] = "%s: %s is not our core." }
+	local _, _, overridden = run({}, false, L, other)
+	equal(overridden, "My Addon: Another Core UI is not our core.", "ns.L overrides the foreign phrase")
 end
 
 print(("forever_require_spec: %d checks passed"):format(checks))

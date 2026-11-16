@@ -134,6 +134,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"Запись отладки выключена, настройки клиента восстановлены; журнал отладки выключен и откреплён."
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"Не удалось запустить запись отладки: ForeverCore ещё не загрузился."
+L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
+	"%s: установленный ForeverCore является другим аддоном (%s). Удалите его и установите ForeverCore с CurseForge." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"Ни один аддон Forever ещё ничего не записал для этого персонажа."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

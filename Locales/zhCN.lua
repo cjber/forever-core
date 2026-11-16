@@ -121,6 +121,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"调试捕获已关闭，客户端设置已恢复；调试日志已关闭并取消固定。"
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"无法启动调试捕获，因为 ForeverCore 尚未完成加载。"
+L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
+	"%s：已安装的 ForeverCore 是另一个插件（%s）。请移除它，并从 CurseForge 安装 ForeverCore。" -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"还没有任何 Forever 插件为这个角色记录内容。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

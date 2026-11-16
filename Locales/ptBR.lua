@@ -126,6 +126,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"A captura de depuração está desativada e as configurações do cliente voltaram; o registro de depuração está desativado e não está fixado."
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"A captura de depuração não pôde iniciar porque o ForeverCore ainda não terminou de carregar."
+L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
+	"%s: o ForeverCore instalado é outro addon (%s). Remova-o e instale o ForeverCore pelo CurseForge." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"Nenhum addon Forever registrou nada para este personagem ainda."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =

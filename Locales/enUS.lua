@@ -55,6 +55,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"Debug capture is off and the client's settings are back; the debug log is off and unpinned."
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"Debug capture could not start because ForeverCore has not finished loading."
+L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
+	"%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."
 L["Don't suggest this again"] = "Don't suggest this again"
 L["Drag to move"] = "Drag to move"
 L["Feature request"] = "Feature request"

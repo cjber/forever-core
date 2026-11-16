@@ -126,6 +126,8 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 	"디버그 캡처가 꺼졌고 클라이언트 설정이 복원되었습니다. 디버그 로그도 꺼졌고 고정이 해제되었습니다."
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"ForeverCore 로드가 끝나지 않아 디버그 캡처를 시작할 수 없습니다."
+L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
+	"%s: 설치된 ForeverCore는 다른 애드온입니다(%s). 해당 애드온을 제거하고 CurseForge에서 ForeverCore를 설치하세요." -- mt
 L["No Forever addon has recorded anything for this character yet."] =
 	"아직 이 캐릭터에 대해 기록한 Forever 애드온이 없습니다."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
