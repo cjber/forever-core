@@ -821,6 +821,26 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(G.IsCurrentQuestFailed(), true, "current quest failure comes from public fixture data")
 end)
 
+test("natives: color markup retains text and forces opaque RGB codes", function()
+	local sim, G = freshClient()
+	sim.G = G
+	require("natives").build(sim)
+	local code = sim.impl["C_ColorUtil.GenerateTextColorCode"]
+	local wrap = sim.impl["C_ColorUtil.WrapTextInColorCode"]
+	eq(code({ r = 1, g = 0.5, b = 0, a = 0.25 }), "ffff8000", "opaque rounded RGB")
+	eq(
+		sim.impl["C_ColorUtil.WrapTextInColor"]("Inspection output", { r = 1, g = 1, b = 1, a = 0 }),
+		"|cffffffffInspection output|r",
+		"colored text retained"
+	)
+	eq(
+		wrap("Case %s |Ticon:8|t", "80402010"),
+		"|c80402010Case %s |Ticon:8|t|r",
+		"literal text and explicit alpha preserved"
+	)
+	eq(wrap("", "ffffffff"), "|cffffffff|r", "empty colored text")
+end)
+
 test("world: fixed recipe reagent slots include the required variable quantity list", function()
 	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {}, api = {
 		zero = function()
@@ -970,6 +990,34 @@ test("natives: legacy achievement search and chain preserve fixture contracts", 
 	local nextID, completed = G.GetNextAchievement(401)
 	eq(nextID, 402, "next achievement identity")
 	eq(completed, false, "next achievement completion")
+end)
+
+test("stubgen: native color results include numeric channels before mixing methods", function()
+	local sim, G = freshClient()
+	require("natives").build(sim)
+	sim.docs = { enums = {}, constants = {}, systems = {}, events = {}, widgets = {}, structures = {} }
+	sim.dataDir = here .. "../../forever_sim/no-data"
+	G.ColorMixin = {
+		GetRGBA = function(self)
+			return self.r, self.g, self.b, self.a
+		end,
+	}
+	require("stubgen").build(sim)
+	local rgb = sim.api.zero({ Type = "colorRGB", Mixin = "ColorMixin" })
+	local r, g, b, a = rgb:GetRGBA()
+	eq(r, 0)
+	eq(g, 0)
+	eq(b, 0)
+	eq(a, nil, "RGB has no invented alpha")
+	local rgba = sim.api.zero({ Type = "colorRGBA", Mixin = "ColorMixin" })
+	r, g, b, a = rgba:GetRGBA()
+	eq(r, 0)
+	eq(g, 0)
+	eq(b, 0)
+	eq(a, 0, "RGBA zero alpha")
+	eq(sim.api.zero({ Type = "colorRGBA", Mixin = "ColorMixin", Nilable = true }), nil, "nilable color remains absent")
+	rgb.r = 1
+	eq(sim.api.zero({ Type = "colorRGB" }).r, 0, "results do not share channel tables")
 end)
 
 test("stubgen: QuestConsts aliases the documented QuestInfoLuaConsts", function()

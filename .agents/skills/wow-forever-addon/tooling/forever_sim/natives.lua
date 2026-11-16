@@ -879,6 +879,16 @@ function M.build(sim)
 		end
 		return math.floor(x + 0.5)
 	end
+	-- ColorUtilDocumentation: text markup uses opaque ARGB, independent of ColorMixin alpha.
+	I["C_ColorUtil.GenerateTextColorCode"] = function(color)
+		return string.format("ff%02x%02x%02x", round(color.r * 255), round(color.g * 255), round(color.b * 255))
+	end
+	I["C_ColorUtil.WrapTextInColorCode"] = function(text, code)
+		return "|c" .. code .. text .. "|r"
+	end
+	I["C_ColorUtil.WrapTextInColor"] = function(text, color)
+		return I["C_ColorUtil.WrapTextInColorCode"](text, I["C_ColorUtil.GenerateTextColorCode"](color))
+	end
 	local function clamp(v, lo, hi)
 		return math.min(math.max(v, lo), hi)
 	end

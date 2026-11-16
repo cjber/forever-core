@@ -222,6 +222,10 @@ function M.build(sim)
 			return 0
 		elseif STRING_TYPES[t] then
 			return ""
+		elseif t == "colorRGB" then
+			return { r = 0, g = 0, b = 0 }
+		elseif t == "colorRGBA" then
+			return { r = 0, g = 0, b = 0, a = 0 }
 		elseif t == "table" then
 			return {}
 		elseif docs.enums[t] then
