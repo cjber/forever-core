@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 - **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's own objective tracker is hidden, as Questie does, including non-quest sections such as scenarios and bonus objectives. It comes back when the list is off. Thanks to the CurseForge player who reported it. (#608)
+- **A watched quest the game reports twice draws once.** The quest list reads the client's watch list by index, and a
+  repeated quest ID made it lay that quest's block out twice in one pass, which the client refuses with "Cannot anchor
+  to a region dependent on it" while the tracker lays itself out. Each unique quest now gets one record and one block.
+  Thanks to a player on CurseForge for the report. (#609)
 - **A Forever addon now tells you when ForeverCore is missing or turned off.** Each addon loads even without ForeverCore
   and shows one line naming the fix: install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge
   app, because the app does not restore ForeverCore from the other addon's row. If ForeverCore is installed but
