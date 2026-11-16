@@ -160,9 +160,10 @@ local function Watch(frame, onChange)
 			end
 			return
 		end
+		local wasHidden = hidden
 		hidden = false
 		local place = Place(frame)
-		if place ~= lastPlace then
+		if wasHidden or place ~= lastPlace then
 			lastPlace = place
 			onChange()
 		end

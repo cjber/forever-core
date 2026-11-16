@@ -438,6 +438,13 @@ for _, scale in ipairs({ 0.75, 1, 1.25 }) do
 			f.tick(1)
 			f.tick(1)
 			check(frameReads == 0, label .. ": a faded EQOT list is not read on every tick")
+			f.eqotFrame.alpha = 1
+			f.tick(1)
+			f.drain()
+			check(
+				clears(f.host, f.eqotFrame),
+				label .. ": the column clears EQOT when its fade returns at the same place"
+			)
 
 			-- A detached column the player has not dragged starts beside EQOT's bounds, not the hidden native one.
 			local detachedBounds = { left = 40, right = 440, top = 900, bottom = 100 }
