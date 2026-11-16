@@ -171,7 +171,9 @@
 
 ---@class ForeverCoreAPI
 ---@field API integer the interface version; 2 retired leaderboards and peer stats
+---@field minor integer raised with each member core adds outside a module; 1 added Registered
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
+---@field Registered fun(addonName: string): boolean whether that addon reached Register, so its files started
 ---@field TrackerHost? ForeverTrackerHostAPI
 ---@field TrackerSection? ForeverTrackerSectionAPI
 ---@field TrackerLine? ForeverTrackerLineAPI

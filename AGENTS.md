@@ -45,6 +45,8 @@ python3 tools/headless/forever_client.py lease     # hold the client for an inte
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
 python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session
+python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
+python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
@@ -281,7 +283,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
   addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
-  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. `proof --repo R --ref SHA
+  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. For forever-core it links
+  every consumer's latest release beside the candidate and, after the selftest, asks `ForeverCore.Registered` for each
+  released folder through one `!!DevSmoke` eval: a released addon that refused to start on the candidate raises no Lua
+  error, so it is counted as a failure of its own. `proof --repo R --ref SHA
   --checkout PATH --flow NAME=SLASH_OR_LUA_FILE` builds and links the same way, reloads, runs each flow (a Forever
   addon's slash command or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new
   secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
@@ -321,8 +326,9 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
 
 `.github/workflows/ci.yml` runs on every PR and push to main: `deadcode`, `check` (luacheck, the specs, the native
 tracker spec, StyLua, ruff, the `tools/` unit tests, `tools/changelog.py --check` against the `v*` tags), `typecheck`,
-`project-rules` (the client load rule and the menu rule), `packaged`, `secrets` and `workflows` (actionlint and zizmor
-over `.github` and the consumer workflow template).
+`project-rules` (the client load rule and the menu rule), `visual-proof`, `released-consumers` (this checkout with every
+consumer's latest released build, under forever_sim), `packaged`, `secrets` and `workflows` (actionlint and zizmor over
+`.github` and the consumer workflow template).
 `.github/workflows/forever-tools.yml` and `.github/workflows/forever-sim.yml` test the skill pack's tooling on every PR,
 with no path filter, so they can be required checks. Every PR job runs on `ubuntu-24.04`, and every tool it installs
 comes from `tools/toolchain.json` through `.github/actions/toolchain`: `build.sh` builds LuaJIT, the PUC Lua 5.1.5
@@ -338,7 +344,12 @@ Dependabot itself (`/.github/dependabot.yml`) updates the actions and the `uv` g
 ForeverCore and every published addon's main and runs `tests/suite/suite_scenario.lua`, which loads ForeverCore first
 with the addons that require it in one forever_sim client and calls `sim:exercise()`. It reads other repositories'
 main, so it is not a PR job. Locally, `python3 tools/suite_load.py --root ..` runs it over the sibling checkouts as
-they are.
+they are. The `released-consumers` job runs `python3 tools/suite_load.py --released` on every PR and push instead:
+`tools/released_consumers.py` unpacks each consumer's latest release and the scenario loads this checkout with those
+builds, so a core that would break an addon already on the stores fails here. After the exercise the scenario asks
+`ForeverCore.Registered` for every addon in the suite, in every mode, so a consumer whose startup check refused this
+core fails too even though it raised no Lua error. `release.yml` runs the same check again
+for the exact release candidate, before it packages anything.
 
 ## Agent skills
 

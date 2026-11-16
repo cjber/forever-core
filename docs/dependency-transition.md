@@ -52,7 +52,8 @@ Start with one consumer on one verified channel, then expand after its update an
 The unbundled artifact keeps the TOC dependency and store relation. Retire its external, move rule and bundle-only
 version diagnostics together; update the checker, sync producer, release automation and publishing skills in the
 same reviewed effort. Independent core releases then replace suite-wide rereleases for core-only changes, with
-consumer tests checking the supported core API compatibility contract.
+the WFA-39 gate (core's `released-consumers` check and `headless-smoke` on the released consumer zips) keeping
+every consumer release on the stores working.
 
 If providers need different archives, add explicit channel-specific packaging and tests before rollout. Keep a
 self-contained fallback for channels that cannot resolve dependencies, including manual ZIP users, until a supported

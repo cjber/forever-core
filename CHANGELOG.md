@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **A ForeverCore release is checked against the addons already on the stores.** Every release candidate now loads
+  with each addon's latest published release, in the simulator on every change and in the headless client, so a core
+  that would break an addon players already have fails before it ships. A consumer that refuses to start on the
+  candidate, which shows one error line and raises no Lua error, fails the same way, and a run that finds no released
+  consumer at all is an error rather than a pass on core alone. (#666)
+
 ## [1.13.0] - 2026-11-16
 
 - **A different addon named ForeverCore no longer breaks every Forever addon.** If another addon installs its own folder named ForeverCore over ours, each Forever addon now shows one line naming that addon, asking you to remove it and install ForeverCore from CurseForge, instead of saying it could not start. (#610)

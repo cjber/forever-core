@@ -113,6 +113,31 @@ jobs:
           VISUAL_BASE: ${{ github.event.pull_request.base.sha || (github.ref == 'refs/heads/main' && github.event.before) || 'origin/main' }}
         run: python3 tools/check_visual_proof.py --base "$VISUAL_BASE"
 
+  # A core release reaches players before the addons that depend on it are re-released, so a candidate core has to
+  # load with the addon releases already on the stores. suite_load.py --released downloads each consumer's latest
+  # release and exercises it together with this checkout; release.yml runs the same check on the exact candidate.
+  released-consumers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      FOREVER_SIM_CACHE: ${{ github.workspace }}/.cache/forever_sim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/forever_sim
+          key: forever-sim-${{ hashFiles('.agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py') }}
+      - run: python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+      - name: Exercise the released consumer builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/suite_load.py --released -v
+
   packaged:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

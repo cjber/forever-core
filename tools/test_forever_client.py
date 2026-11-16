@@ -1872,7 +1872,10 @@ class SmokeTest(unittest.TestCase):
         self.build.mkdir()
         self.workspace = self.state / "workspace"
         (self.workspace / "legacy-forever").mkdir(parents=True)
+        (self.workspace / "forever-core").mkdir()
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
+        self.released_folder = self.state / "released/LegacyForever"
+        self.released_folder.mkdir(parents=True)
         self.posted = mock.Mock()
         self.reload = mock.Mock()
         self.ensure = mock.Mock(side_effect=self.start_session)
@@ -1890,17 +1893,36 @@ class SmokeTest(unittest.TestCase):
         return mock.patch.object(fc, "errors", side_effect=answers)
 
     def smoke(self, argv=None):
-        options = {"repo": "legacy-forever", "ref": "main", "timeout": 600, "manual_launcher": False}
+        options = {
+            "repo": "legacy-forever",
+            "ref": "main",
+            "timeout": 600,
+            "manual_launcher": False,
+            "no_post": False,
+        }
         options.update(argv or {})
         return fc.smoke(argparse.Namespace(**options))
 
-    def run_smoke(self, answers=(0,), busy=None, later=None, ensure=None, main_argv=None):
+    def run_smoke(
+        self,
+        answers=(0,),
+        busy=None,
+        later=None,
+        ensure=None,
+        main_argv=None,
+        repo=None,
+        folders=None,
+        registrations=None,
+        startup=None,
+    ):
+        folders = folders or [("LegacyForever", self.build)]
+        startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
         with (
             mock.patch.object(fc, "git", return_value="0123456789abcdef0123456789abcdef01234567"),
             mock.patch.object(fc, "foreign_client", side_effect=[busy, later]),
             mock.patch.object(fc, "build_dev", return_value=self.build) as build,
             mock.patch.object(fc, "package_name", return_value="LegacyForever"),
-            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
+            mock.patch.object(fc, "addon_folders", return_value=folders),
             mock.patch.object(fc, "ensure_session", ensure or self.ensure),
             mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
             mock.patch.object(fc, "release_job", self.released),
@@ -1910,10 +1932,11 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "post_status", self.posted),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
+            mock.patch.object(fc, "smoke_registrations", startup),
             self.report(*answers),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            code = fc.main(main_argv) if main_argv else self.smoke()
+            code = fc.main(main_argv) if main_argv else self.smoke({"repo": repo} if repo else None)
         return code, out.getvalue(), build
 
     def test_a_clean_commit_posts_success_and_exits_zero(self):
@@ -1983,6 +2006,220 @@ class SmokeTest(unittest.TestCase):
         code, _printed, _build = self.run_smoke(busy=None)
         self.assertEqual(code, 0)
         self.posted.assert_called_once()
+
+    def released_tool(self):
+        """A stand-in for tools/released_consumers.py: one consumer's released folder, no network."""
+        folder = self.released_folder
+
+        class Tool:
+            class ReleasedError(RuntimeError):
+                pass
+
+            @staticmethod
+            def released_folders():
+                return [("LegacyForever", folder)]
+
+        return Tool
+
+    def test_the_smoke_folders_add_the_released_builds_for_core_only(self):
+        core = self.state / "core"
+        core.mkdir()
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
+            self.assertEqual(
+                fc.smoke_folders("forever-core", [("ForeverCore", core)]),
+                (
+                    [("ForeverCore", core), ("LegacyForever", self.released_folder)],
+                    [("LegacyForever", self.released_folder)],
+                ),
+            )
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=AssertionError("no release download")):
+            self.assertEqual(
+                fc.smoke_folders("legacy-forever", [("LegacyForever", self.build)]),
+                ([("LegacyForever", self.build)], []),
+            )
+
+    def test_a_core_smoke_links_the_consumers_released_builds_and_counts_them(self):
+        core = self.state / "core"
+        core.mkdir()
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
+            code, printed, _build = self.run_smoke(answers=(0, 0), repo="forever-core", folders=[("ForeverCore", core)])
+        self.assertEqual(code, 0)
+        self.posted.assert_called_once_with(
+            "forever-core",
+            "0123456789abcdef0123456789abcdef01234567",
+            True,
+            "clean: no Lua errors in 2 addon folders",
+        )
+        self.assertIn("linking 1 released consumer folder", printed)
+        self.assertFalse((self.addons / "ForeverCore").exists())
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_released_consumer_that_did_not_start_fails_the_status(self):
+        core = self.state / "core"
+        core.mkdir()
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
+            code, printed, _build = self.run_smoke(
+                answers=(0, 0),
+                repo="forever-core",
+                folders=[("ForeverCore", core)],
+                registrations=["LegacyForever"],
+            )
+        self.assertEqual(code, 1)
+        self.posted.assert_called_once_with(
+            "forever-core",
+            "0123456789abcdef0123456789abcdef01234567",
+            False,
+            "1 did not start: LegacyForever",
+        )
+        self.assertIn("1 did not start: LegacyForever", printed)
+
+    def test_smoke_description_names_lua_errors_and_unstarted_addons(self):
+        self.assertEqual(
+            fc.smoke_description({"LegacyForever": 2, "SkillUpForever": 0}, ["TweaksForever"]),
+            "2 Lua errors: 2 LegacyForever; 1 did not start: TweaksForever",
+        )
+
+    def test_the_startup_check_asks_after_every_released_folder(self):
+        source = fc.registration_source(["LegacyForever", "TweaksForever"])
+        self.assertIn("core.Registered(name)", source)
+        self.assertIn('"LegacyForever"', source)
+        self.assertIn('"TweaksForever"', source)
+        self.assertIn('print("not registered: "', source)
+
+    def test_only_the_startup_checks_own_lines_name_unstarted_folders(self):
+        lines = ["not registered: TweaksForever", "something else", "not registered: LegacyForever", 7]
+        self.assertEqual(fc.not_registered(lines), ["TweaksForever", "LegacyForever"])
+
+    def test_smoke_registrations_reads_the_snippet_own_eval_record(self):
+        class Tool:
+            class EvalError(RuntimeError):
+                pass
+
+            @staticmethod
+            def lua_string(value):
+                return f'"{value}"'
+
+            @staticmethod
+            def write_snippet(path, addons=None, capture=False):
+                self.assertEqual(capture, False)
+                return {"token": "run-token"}
+
+        record = {"ok": True, "out": {1: "not registered: TweaksForever"}}
+        with (
+            mock.patch.object(fc, "devsmoke_eval", return_value=Tool),
+            mock.patch.object(fc, "reload") as reloaded,
+            mock.patch.object(fc, "clear_eval_inbox") as cleared,
+            mock.patch.object(fc, "saved_eval", return_value=record) as saved,
+        ):
+            names = fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+        self.assertEqual(names, ["TweaksForever"])
+        self.assertEqual(reloaded.call_count, 2)
+        self.assertEqual(cleared.call_count, 2)
+        saved.assert_called_once_with("run-token")
+
+    def test_a_startup_check_snippet_that_raises_is_an_error(self):
+        class Tool:
+            class EvalError(RuntimeError):
+                pass
+
+            @staticmethod
+            def lua_string(value):
+                return f'"{value}"'
+
+            @staticmethod
+            def write_snippet(path, addons=None, capture=False):
+                return {"token": "run-token"}
+
+        with (
+            mock.patch.object(fc, "devsmoke_eval", return_value=Tool),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(
+                fc, "saved_eval", return_value={"ok": False, "out": [], "err": "ForeverCore.Registered is missing"}
+            ),
+            self.assertRaisesRegex(fc.ClientError, "startup check failed"),
+        ):
+            fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+
+    def test_the_startup_check_runs_for_released_folders_only(self):
+        core = self.state / "core"
+        core.mkdir()
+        registrations = mock.Mock(return_value=[])
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
+            self.run_smoke(answers=(0, 0), repo="forever-core", folders=[("ForeverCore", core)], startup=registrations)
+        registrations.assert_called_once()
+        self.assertEqual(registrations.call_args.args[1], [("LegacyForever", self.released_folder)])
+
+    def test_a_startup_check_that_could_not_run_fails_the_status(self):
+        core = self.state / "core"
+        core.mkdir()
+        with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
+            code, printed, _build = self.run_smoke(
+                answers=(0, 0),
+                repo="forever-core",
+                folders=[("ForeverCore", core)],
+                startup=mock.Mock(side_effect=fc.ClientError("no !!DevSmoke link")),
+            )
+        self.assertEqual(code, 1)
+        self.posted.assert_called_once_with(
+            "forever-core",
+            "0123456789abcdef0123456789abcdef01234567",
+            False,
+            "smoke did not finish: no !!DevSmoke link",
+        )
+        self.assertIn("no !!DevSmoke link", printed)
+
+    def test_a_core_smoke_that_cannot_fetch_the_released_builds_posts_nothing(self):
+        class Broken:
+            class ReleasedError(RuntimeError):
+                pass
+
+            @staticmethod
+            def released_folders():
+                raise Broken.ReleasedError("could not read legacy-forever's latest release")
+
+        with (
+            mock.patch.object(fc, "git", return_value="a" * 40),
+            mock.patch.object(fc, "foreign_client", return_value=None),
+            mock.patch.object(fc, "build_dev", return_value=self.build),
+            mock.patch.object(fc, "package_name", return_value="ForeverCore"),
+            mock.patch.object(fc, "addon_folders", return_value=[("ForeverCore", self.build)]),
+            mock.patch.object(fc, "ensure_session", side_effect=self.start_session),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job") as release_job,
+            mock.patch.object(fc, "post_status", self.posted),
+            mock.patch.object(fc, "released_consumers_tool", return_value=Broken),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+        ):
+            code = fc.main(["smoke", "--repo", "forever-core", "--ref", "main"])
+        self.assertEqual(code, 2)
+        self.posted.assert_not_called()
+        self.assertIn("could not read legacy-forever's latest release", err.getvalue())
+        release_job.assert_called_once()
+
+    def test_no_post_prints_the_result_and_posts_nothing(self):
+        argv = ["smoke", "--repo", "legacy-forever", "--ref", "main", "--no-post"]
+        code, printed, _build = self.run_smoke(main_argv=argv)
+        self.assertEqual(code, 0)
+        self.posted.assert_not_called()
+        self.assertIn("clean: no Lua errors in 1 addon folder (not posted)", printed)
+
+    def test_no_post_still_exits_one_on_errors(self):
+        argv = ["smoke", "--repo", "legacy-forever", "--ref", "main", "--no-post"]
+        code, printed, _build = self.run_smoke(answers=(2,), main_argv=argv)
+        self.assertEqual(code, 1)
+        self.posted.assert_not_called()
+        self.assertIn("2 Lua errors: 2 LegacyForever (not posted)", printed)
+
+    def test_a_no_post_result_with_no_counts_is_printed_and_not_posted(self):
+        with (
+            contextlib.redirect_stdout(io.StringIO()) as out,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": "boom"}, post=False)
+        self.assertEqual(code, 1)
+        self.posted.assert_not_called()
+        self.assertIn("no result: boom (not posted)", out.getvalue())
 
     def leftover(self) -> Path:
         """What a SIGKILLed smoke leaves: the store install aside, its link in the slot, and the record."""
