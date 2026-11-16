@@ -332,14 +332,22 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	-- and never takes a native module out of the tracker (issue #608).
 	local tracker = sim.G.ObjectiveTrackerFrame
 	local function NativeDrawn()
-		return tracker:HasModule(sim.G.QuestObjectiveTracker) and sim.G.QuestObjectiveTracker:IsShown()
+		return tracker:IsShown()
+			and tracker:HasModule(sim.G.QuestObjectiveTracker)
+			and sim.G.QuestObjectiveTracker:IsShown()
 	end
-	assert(NativeDrawn() == true, "the game's quest module stays in the tracker and draws")
+	assert(not NativeDrawn(), "the whole native tracker is hidden while the Forever list draws")
 	assert(
 		tracker:HasModule(sim.G.CampaignQuestObjectiveTracker) == true,
 		"the game's campaign module stays in the tracker too"
 	)
 	assert(section.Header:IsVisible() == true, "the Forever list's own Quests header shows")
+	tracker.isCollapsed = true
+	sim.G.ForeverTrackerCompanion:MarkDirty()
+	sim:advance(0.2)
+	assert(section.Header:IsVisible(), "a hidden native collapsed header does not hide the replacement list")
+	assert(not sim.G.ForeverTrackerCompanion:IsCollapsed(), "the hidden native tracker does not own collapse")
+	tracker.isCollapsed = false
 
 	local questBlock
 	for _, block in pairs(section.usedBlocks["ObjectiveTrackerQuestPOIBlockTemplate"] or {}) do
@@ -515,13 +523,13 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	sim.loader.loaded["!KalielsTracker"] = {}
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "the game's quest module stays in the tracker when another tracker owns the list")
+	assert(not tracker:IsShown(), "handoff leaves native visibility to the other tracker")
 	assert(#Blocks() == 0, "the section's own OnEvent empties the Forever list when another tracker owns it")
 	assert(section.questPOIPool:GetNumActive() == 0, "freeing the private blocks releases every private POI")
 	sim.loader.loaded["!KalielsTracker"] = nil
 	sim:event("PLAYER_ENTERING_WORLD")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "the game's quest module is still in the tracker when the list takes over again")
+	assert(not NativeDrawn(), "taking over hides the whole native tracker")
 	assert(Text(Blocks()) == settled, "and rebuilds the Forever list")
 	assert(section.questPOIPool:GetNumActive() > 0, "rebuilt blocks reacquire private POIs")
 
@@ -569,7 +577,7 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	assert(nativeItemButton ~= nil, "the game's tracker built its secure quest item button")
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
-	assert(NativeDrawn() == true, "turning the list on leaves the game's own quest module drawn")
+	assert(not NativeDrawn(), "turning the list on hides the whole native tracker")
 	CombatQuestRefresh()
 	sim:slash("/fcore quests")
 	sim:advance(0.2)
@@ -974,7 +982,10 @@ scenario("the Forever quest list leaves native modules that join after its first
 
 	assert(tracker:HasModule(questModule) == true, "the game's quest module that joins stays in the tracker")
 	assert(tracker:HasModule(campaignModule) == true, "and the game's campaign module stays with it")
-	assert(questModule.Header:IsVisible() == true, "the game's own Quests header is drawn")
+	assert(
+		not tracker:IsShown() and not questModule.Header:IsVisible(),
+		"joining modules stay hidden with the native tracker"
+	)
 	assert(section:IsShown() and section.Header:IsVisible(), "the Forever list still draws after the modules join")
 	assert(#Blocks() == 3, "and keeps its zone and both quests")
 

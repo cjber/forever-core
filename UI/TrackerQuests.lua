@@ -6,8 +6,8 @@ local _, ns = ...
 -- this zone, then every other zone, each nearest first. It is a section of the shared Forever column, built from the
 -- game's own ObjectiveTrackerModuleTemplate and QuestObjectiveTrackerMixin so its header, lines, POI button, fonts,
 -- colours, completed fade and layout are the game's. This file never touches the client's own tracker modules: the
--- game's own Quests and Campaign sections stay where the client put them, so no addon code writes the tracker's
--- state or schedules its layout.
+-- whole native tracker is hidden while this list is active, as Questie does. Only frame visibility changes; no
+-- addon code writes the native tracker's state or schedules its layout.
 --
 -- The list adds the parts a player misses from a third-party tracker: a thin progress fill under every unfinished
 -- count, one fold per quest and per zone saved for the character, a height cap with scrolling, the game's quest item
@@ -67,8 +67,7 @@ ns.TrackerQuests = TrackerQuests
 -- the false a file loaded too early would read.
 local settingsRegistered = false
 local TOOLTIP = "Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the "
-	.. "rest by zone, nearest first. The game's own quest list stays in the game's tracker; the button at the right "
-	.. "of its header collapses it."
+	.. "rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 local function RegisterSettings()
 	if settingsRegistered or not ns.SettingsPage then
 		return
@@ -118,6 +117,35 @@ end
 local ready = false
 local ownedByOther = false
 local section
+
+-- Questie's Forever visibility pattern: keep suppression and restore ownership in private locals, never on the
+-- native frame. A protected hide or any restore waits for combat to end and uses the latest request.
+local hideNativeTracker = false
+local hidNativeTracker = false
+local visibilityFrame = CreateFrame("Frame")
+local function ApplyNativeVisibility()
+	if InCombatLockdown() and (not hideNativeTracker or ObjectiveTrackerFrame:IsProtected()) then
+		visibilityFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+		return
+	end
+	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	if hideNativeTracker then
+		hidNativeTracker = true
+		ObjectiveTrackerFrame:Hide()
+	elseif hidNativeTracker then
+		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
+		hidNativeTracker = false
+		if not OtherOwner() then
+			ObjectiveTrackerFrame:Show()
+		end
+	end
+end
+visibilityFrame:SetScript("OnEvent", ApplyNativeVisibility)
+ObjectiveTrackerFrame:HookScript("OnShow", function()
+	if hideNativeTracker then
+		ApplyNativeVisibility()
+	end
+end)
 
 -- The character the folds are saved for. ForeverCoreDB is account wide, so every saved fold lives under one key per
 -- realm and character and a second character starts unfolded.
@@ -1438,6 +1466,8 @@ apply = function()
 	CreateItemPool(section)
 	ownedByOther = OtherOwner()
 	local active = TrackerQuests.Enabled() and not ownedByOther
+	hideNativeTracker = active
+	ApplyNativeVisibility()
 	if not active then
 		HideItems(section)
 	end

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's tracker could report "Auras cannot be accessed when secret while tainted by 'ForeverCore'". ForeverCore no longer changes the game's own tracker, so with the Forever quest list on the game's own Quests section now shows as well; the button at the right of its header collapses it. Thanks to the CurseForge player who reported it. (#608)
+- **Scenario and Maw tracker errors from ForeverCore are fixed.** With the Forever quest list on, the game's own objective tracker is hidden, as Questie does, including non-quest sections such as scenarios and bonus objectives. It comes back when the list is off. Thanks to the CurseForge player who reported it. (#608)
 - **A Forever addon now tells you when ForeverCore is missing or turned off.** Each addon loads even without ForeverCore
   and shows one line naming the fix: install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge
   app, because the app does not restore ForeverCore from the other addon's row. If ForeverCore is installed but

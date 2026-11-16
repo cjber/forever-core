@@ -12,13 +12,32 @@ end
 -- The client's tracker collection: it holds the modules it lays out, as Blizzard's ObjectiveTrackerContainerMixin does.
 -- Every call the list must never make raises, so a failure names the call.
 local tracker = { modules = {} }
-function tracker:HasModule(module)
-	for _, held in ipairs(self.modules) do
-		if held == module then
-			return true
-		end
+local trackerShown, trackerProtected, showHook, hookCount = true, false, nil, 0
+function tracker.Hide()
+	trackerShown = false
+end
+function tracker.Show()
+	trackerShown = true
+	if showHook then
+		showHook()
 	end
-	return false
+end
+function tracker.IsShown()
+	return trackerShown
+end
+function tracker.IsProtected()
+	return trackerProtected
+end
+function tracker.HookScript(_, script, callback)
+	assert(script == "OnShow")
+	showHook = callback
+	hookCount = hookCount + 1
+end
+function tracker.Update()
+	error("native tracker must not be updated")
+end
+function tracker.MarkDirty()
+	error("native tracker must not be marked dirty")
 end
 function tracker.AddModule()
 	error("the Forever quest list must never add a module to the client's tracker")
@@ -87,7 +106,21 @@ local ns = {
 		end,
 	},
 }
+local visibility = { events = {} }
+function visibility:RegisterEvent(event)
+	self.events[event] = true
+end
+function visibility:UnregisterEvent(event)
+	self.events[event] = nil
+end
+function visibility:SetScript(script, callback)
+	assert(script == "OnEvent")
+	self.callback = callback
+end
 local env = setmetatable({
+	CreateFrame = function()
+		return visibility
+	end,
 	_G = nil,
 	ObjectiveTrackerFrame = tracker,
 	QuestObjectiveTracker = quests,
@@ -117,40 +150,72 @@ setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
 local TrackerQuests = assert(ns.TrackerQuests, "the list registers itself on the namespace")
 check(type(ready) == "function", "the list waits for the client's own load events")
 
--- The list is on: it draws its own section, and the client's tracker and its modules are untouched.
+-- The list is on: it draws its own section and hides the native frame without changing its modules.
 local function CheckNativeModulesUntouched(note)
-	check(tracker:HasModule(quests), note .. " keeps the game's quest module in the tracker")
-	check(tracker:HasModule(campaign), note .. " keeps the game's campaign module in the tracker")
+	check(tracker.modules[2] == quests, note .. " keeps the game's quest module in the tracker")
+	check(tracker.modules[1] == campaign, note .. " keeps the game's campaign module in the tracker")
 	check(#tracker.modules == 2, note .. " leaves the tracker's module list alone")
 end
 ready()
 check(section.marked ~= nil, "the Forever list is laid out")
 CheckNativeModulesUntouched("turning the list on")
+check(not tracker:IsShown(), "enabling hides the whole native tracker")
+tracker:Show()
+check(not tracker:IsShown(), "native OnShow is suppressed")
+check(hookCount == 1, "visibility hook is installed once")
 
--- Turning the list off and back on only redraws the Forever section; the client's own modules stay where the client
--- left them.
+-- Turning the list off and back on restores and hides the native frame; its modules stay where the client left them.
 local marked = section.marked
 TrackerQuests.SetEnabled(false)
 check(section.marked > marked, "turning the list off redraws the Forever section")
 CheckNativeModulesUntouched("turning the list off")
+check(tracker:IsShown(), "disabling restores the native tracker")
 TrackerQuests.SetEnabled(true)
 CheckNativeModulesUntouched("turning the list on again")
 
 -- In combat, and through the client's own PLAYER_REGEN_ENABLED pass, the list still touches no client module.
 combat = true
 TrackerQuests.SetEnabled(false)
+check(not tracker:IsShown(), "restoring waits in combat")
+check(visibility.events.PLAYER_REGEN_ENABLED, "restore registers a combat retry")
 TrackerQuests.SetEnabled(true)
 combat = false
-section:OnEvent("PLAYER_REGEN_ENABLED")
+visibility.callback()
+check(not tracker:IsShown(), "combat retry uses the latest enabled request")
+check(not visibility.events.PLAYER_REGEN_ENABLED, "applied retry unregisters")
+TrackerQuests.SetEnabled(false)
+trackerProtected = true
+combat = true
+TrackerQuests.SetEnabled(true)
+check(tracker:IsShown(), "protected hide waits in combat")
+TrackerQuests.SetEnabled(false)
+combat = false
+visibility.callback()
+check(tracker:IsShown(), "latest disabled request cancels the protected hide")
+TrackerQuests.SetEnabled(true)
+check(not tracker:IsShown(), "protected tracker hides after combat")
 CheckNativeModulesUntouched("a change asked for in combat")
 
--- Another tracker owning the quest list only changes the Forever section's own layout.
+-- Another tracker owning the quest list gets control of native visibility when the Forever section steps aside.
 addons["!KalielsTracker"] = true
 section:OnEvent("PLAYER_ENTERING_WORLD")
 CheckNativeModulesUntouched("another tracker owning the list")
+check(not tracker:IsShown(), "handoff does not show another tracker's hidden native frame")
 addons["!KalielsTracker"] = nil
 section:OnEvent("PLAYER_ENTERING_WORLD")
 CheckNativeModulesUntouched("the list taking over again")
+
+-- Questie's active list owns the native hide when our list is released.
+env.ForeverTrackerCompanion = { MarkDirty = function() end }
+ns.TrackerQuestie = {
+	List = function()
+		return {}
+	end,
+}
+TrackerQuests.SetEnabled(false)
+check(not tracker:IsShown(), "disabling yields native visibility to active Questie")
+ns.TrackerQuestie = nil
+TrackerQuests.SetEnabled(true)
 
 -- Private records and rendering must not populate Blizzard's shared lazy QuestCache.
 env.QuestCache = {
