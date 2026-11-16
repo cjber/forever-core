@@ -159,15 +159,18 @@ def check_bindings(root, data, manifest):
             for locale, (locale_path, entries) in locales.items():
                 if "phrase" in binding:
                     key = binding["phrase"]
-                    if key not in english and literals is None:
-                        tokens, _ = tokenize(path.read_text(encoding="utf-8"))
-                        literals = {_string(t): t.line for t in tokens if t.kind == "string"}
-                    if key not in english and key not in literals:
-                        raise LocaleError(
-                            f"{path}: binding names unknown English phrase {key!r}: "
-                            "absent from enUS entries and producer string literals"
-                        )
-                    fallback = english[key] if key in english else Entry(key, literals[key])
+                    if key in english:
+                        fallback = english[key]
+                    else:
+                        if literals is None:
+                            tokens, _ = tokenize(path.read_text(encoding="utf-8"))
+                            literals = {_string(t): t.line for t in tokens if t.kind == "string"}
+                        if key not in literals:
+                            raise LocaleError(
+                                f"{path}: binding names unknown English phrase {key!r}: "
+                                "absent from enUS entries and producer string literals"
+                            )
+                        fallback = Entry(key, literals[key])
                     entry = entries.get(key, fallback)
                     origin = locale_path if key in entries else english_path if key in english else path
                     location = f"{origin}:{entry.line}"

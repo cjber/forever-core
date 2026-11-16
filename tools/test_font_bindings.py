@@ -64,7 +64,7 @@ class BindingTests(unittest.TestCase):
     def test_xml_producer_without_bindings_still_checks_digest(self):
         self.write_russian("•")
         source = self.root / "Tracker.xml"
-        source.write_text('<!-- Reviewed template font -->\n<Ui/>\n')
+        source.write_text("<!-- Reviewed template font -->\n<Ui/>\n")
         self.manifest["producers"].append(
             {
                 "source": "Tracker.xml",
