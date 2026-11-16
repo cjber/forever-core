@@ -434,6 +434,33 @@ function M.build(sim)
 	end
 
 	-- Items.
+	local function resolveItemInfo(info)
+		if type(info) == "number" then
+			return info, W.items[info]
+		end
+		if type(info) == "string" then
+			for id, item in pairs(W.items) do
+				if info == item.link or info == item.name or info == "item:" .. id then
+					return id, item
+				end
+			end
+		end
+	end
+	impl["C_Item.GetItemInfoInstant"] = function(info)
+		local id, item = resolveItemInfo(info)
+		if item then
+			return id,
+				item.itemType or "",
+				item.itemSubType or "",
+				item.itemEquipLoc or "",
+				item.icon or 134400,
+				item.classID or 0,
+				item.subClassID or 0
+		end
+	end
+	impl["C_Item.GetItemIDForItemInfo"] = function(info)
+		return resolveItemInfo(info) or 0
+	end
 	impl["C_Item.GetItemInfo"] = function(id)
 		local item = W.items[tonumber(id) or 0]
 		if item then

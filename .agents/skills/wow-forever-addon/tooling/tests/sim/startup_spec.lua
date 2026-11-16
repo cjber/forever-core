@@ -132,4 +132,35 @@ for _, shown in ipairs({ true, false }) do
 		assert(selected and selected.id == 608002, "native detail selection reaches the requested achievement")
 	end
 end
+-- Native recipe continuations must register the item's identity, rather than a generated zero default.
+sim.world.items[9001] = { name = "Delayed ore", count = 2 }
+local itemCached, requested, loaded = false, nil, 0
+sim.impl["C_Item.IsItemDataCachedByID"] = function(id)
+	return id ~= 9001 or itemCached
+end
+sim.impl["C_Item.RequestLoadItemDataByID"] = function(id)
+	requested = id
+end
+local item = G.Item:CreateFromItemID(9001)
+eq(item:GetItemID(), 9001)
+local continuables = G.ContinuableContainer:Create()
+continuables:AddContinuable(item)
+eq(
+	continuables:ContinueOnLoad(function()
+		loaded = loaded + 1
+	end),
+	false
+)
+eq(requested, 9001)
+eq(loaded, 0)
+itemCached = true
+sim:event("ITEM_DATA_LOAD_RESULT", 9001, true)
+eq(loaded, 1)
+local canceled = item:ContinueWithCancelOnRecordLoad(function()
+	loaded = loaded + 1
+end)
+eq(canceled(), true)
+sim:event("ITEM_DATA_LOAD_RESULT", 9001, true)
+eq(loaded, 1)
+sim:expectNoErrors()
 print("startup_spec: bare boot, login and SettingsPanel pass with mouse and gamepad; native flyout metadata passes")

@@ -809,6 +809,42 @@ test("natives: the quest-log leaderboard helpers answer the client's zero values
 	eq(G.IsQuestSequenced(1), true, "the scenario's sequenced flag")
 end)
 
+test("world: item identity resolves fixture ItemInfo without default zero", function()
+	local sim = { G = { C_Item = {}, C_AddOns = {} }, impl = {} }
+	require("world").build(sim)
+	local link = "|cff0070dd|Hitem:9001:::::::::|h[Delayed ore]|h|r"
+	sim.world.items[9001] = {
+		name = "Delayed ore",
+		link = link,
+		itemType = "Trade Goods",
+		itemSubType = "Metal & Stone",
+		itemEquipLoc = "",
+		icon = 12345,
+		classID = 7,
+		subClassID = 7,
+	}
+	local instant = sim.impl["C_Item.GetItemInfoInstant"]
+	local identity = sim.impl["C_Item.GetItemIDForItemInfo"]
+	for _, info in ipairs({ 9001, "item:9001", "Delayed ore", link }) do
+		eq(instant(info), 9001, "known ItemInfo identity")
+		eq(identity(info), 9001, "identity API")
+	end
+	local id, kind, subtype, equip, icon, class, subclass = instant(9001)
+	eq(id, 9001)
+	eq(kind, "Trade Goods")
+	eq(subtype, "Metal & Stone")
+	eq(equip, "")
+	eq(icon, 12345)
+	eq(class, 7)
+	eq(subclass, 7)
+	for _, info in ipairs({ 9999, "unknown", "prefix item:9001", "spell:9001", {} }) do
+		eq(instant(info), nil, "unknown or unsupported ItemInfo has no metadata")
+	end
+	eq(identity("unknown"), 0, "unresolved string has no item identity")
+	eq(identity({}), 0, "unsupported type has no item identity")
+	eq(identity(9999), 9999, "numeric identity does not require cached metadata")
+end)
+
 test("natives: task and scenario data changes preserve native function identities", function()
 	local sim, G = freshClient()
 	require("natives").build(sim)
