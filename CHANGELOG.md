@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- **A Forever addon now tells you when ForeverCore is missing or turned off.** Each addon loads even without ForeverCore
+  and shows one line naming the fix: install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge
+  app, because the app does not restore ForeverCore from the other addon's row. If ForeverCore is installed but
+  disabled, the line asks you to enable it in the AddOns list. (#659)
+
 ## [1.13.0] - 2026-11-16
 
 - **A different addon named ForeverCore no longer breaks every Forever addon.** If another addon installs its own folder named ForeverCore over ours, each Forever addon now shows one line naming that addon, asking you to remove it and install ForeverCore from CurseForge, instead of saying it could not start. (#610)

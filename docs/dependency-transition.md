@@ -1,16 +1,16 @@
 # Standalone ForeverCore dependency
 
-Every consumer already requires `ForeverCore` in its TOC. The release transition establishes independent manager
-ownership before removing the shared folder from consumer archives. It addresses [#448](https://github.com/cjber/forever-core/issues/448):
-uninstalling the consumer that a manager considers the folder's owner can delete core from underneath other addons.
-Adding metadata alone does not resolve that issue.
+Every consumer already names `ForeverCore` in its TOC's `## OptionalDeps`. The release transition establishes independent
+manager ownership before removing the shared folder from consumer archives. It addresses
+[#448](https://github.com/cjber/forever-core/issues/448): uninstalling the consumer that a manager considers the
+folder's owner can delete core from underneath other addons. Adding metadata alone does not resolve that issue.
 
 ## 1. Declare the dependency and retain the fallback
 
 The shared consumer sync adds `required-dependencies: - forevercore` to consumers that bundle core, preserving other
-relations, the pinned GitHub ZIP external, `move-folders`, the TOC dependency and `X-Forever-Core` field. Existing
-bundle-only consumers remain accepted during adoption. Consumer PRs need their normal checks and a published release
-before the relation reaches users. No consumer bundle is removed in this phase.
+relations, the pinned GitHub ZIP external, `move-folders`, the TOC optional dependency and `X-Forever-Core` field.
+Existing bundle-only consumers remain accepted during adoption. Consumer PRs need their normal checks and a published
+release before the relation reaches users. No consumer bundle is removed in this phase.
 
 Verify the published CurseForge file relation is `requiredDependency` for project 1796337, not `embeddedLibrary`.
 BigWigs packager v2.7.0 automatically overrides relations for an external with a CurseForge slug. Our external is a
@@ -49,10 +49,10 @@ path before continuing.
 ## 3. Remove bundles only on proven channels
 
 Start with one consumer on one verified channel, then expand after its update and uninstall evidence passes.
-The unbundled artifact keeps the TOC dependency and store relation. Retire its external, move rule and bundle-only
-version diagnostics together; update the checker, sync producer, release automation and publishing skills in the
-same reviewed effort. Independent core releases then replace suite-wide rereleases for core-only changes, with
-consumer tests checking the supported core API compatibility contract.
+The unbundled artifact keeps the TOC's `## OptionalDeps: ForeverCore` and store relation. Retire its external, move rule
+and bundle-only version diagnostics together; update the checker, sync producer, release automation and publishing
+skills in the same reviewed effort. Independent core releases then replace suite-wide rereleases for core-only changes,
+with consumer tests checking the supported core API compatibility contract.
 
 If providers need different archives, add explicit channel-specific packaging and tests before rollout. Keep a
 self-contained fallback for channels that cannot resolve dependencies, including manual ZIP users, until a supported

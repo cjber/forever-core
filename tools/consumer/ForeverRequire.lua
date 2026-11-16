@@ -18,18 +18,43 @@ local function outdated(tag, mine)
 	a, b, c = tonumber(a), tonumber(b), tonumber(c)
 	return a < mine[1] or a == mine[1] and (b < mine[2] or b == mine[2] and c < mine[3])
 end
-local function candidate(index)
+local function enabled(index)
 	local state = safe("GetAddOnEnableState", index, _G.UnitName and _G.UnitName("player"))
-	if not (safe("IsAddOnLoaded", index) or (type(state) == "number" and state > 0)) then
-		return false
+	return safe("IsAddOnLoaded", index) or (type(state) == "number" and state > 0)
+end
+-- The index of an installed folder named ForeverCore, false when no such folder is installed at all, and nil when
+-- the client will not say. A disabled addon is still installed, which is a different problem from having none.
+local function installed()
+	local total = safe("GetNumAddOns")
+	if type(total) ~= "number" then
+		return nil
 	end
-	local result = { pcall(C_AddOns and C_AddOns.GetAddOnDependencies, index) }
+	for index = 1, total do
+		local name = safe("GetAddOnInfo", index)
+		if type(name) == "string" and name:lower() == "forevercore" then
+			return index
+		end
+	end
+	return false
+end
+-- Whether `getter` names ForeverCore among an addon's dependencies.
+local function declares(getter, index)
+	local result = { pcall(getter, index) }
 	for position = 2, result[1] and #result or 0 do
 		local dependency = result[position]
 		if type(dependency) == "string" and dependency:lower() == "forevercore" then
 			return true
 		end
 	end
+end
+-- A loaded addon naming ForeverCore in either dependency list: consumers moved it to `## OptionalDeps` so they load
+-- and can say what is missing, and an older release still names it in `## Dependencies`.
+local function candidate(index)
+	if not enabled(index) then
+		return false
+	end
+	return declares(C_AddOns and C_AddOns.GetAddOnDependencies, index)
+		or declares(C_AddOns and C_AddOns.GetAddOnOptionalDependencies, index)
 end
 local function culprits()
 	local own = safe("GetAddOnMetadata", addonName, "X-Forever-Core")
@@ -96,9 +121,17 @@ function ns.ForeverRequire(ready)
 	end
 	ns.broken = true
 	local own = title(addonName, addonName)
+	local core = installed()
 	local other = foreign()
 	local text
-	if other then
+	if core == false then
+		text = phrase(
+			"%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app.",
+			own
+		)
+	elseif core and not enabled(core) then
+		text = phrase("%s: ForeverCore is turned off. Enable it in the AddOns list to fix this.", own)
+	elseif other then
 		text = phrase(
 			"%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge.",
 			own,

@@ -82,7 +82,7 @@ test("a declared exercise passes its own options and is not run a second time", 
 	has(out, "1 passed, 0 failed")
 end)
 
-test("an addon that depends on ForeverCore gets that checkout loaded for the exercise", function()
+test("an addon that names ForeverCore in OptionalDeps gets that checkout loaded for the exercise", function()
 	local core = fixtures .. "SimExerciseCore/ForeverCore"
 	local out = runFixture("SimExerciseCore", 'FOREVER_CORE="' .. core .. '"')
 	-- The addon's own button was created and clicked in combat: core was registered, its files did not stop.

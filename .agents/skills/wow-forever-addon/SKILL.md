@@ -23,8 +23,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-2** Zero setup. Every feature works out of the box: no required settings, extra downloads
   or companion installs. Data ships in the release zip (`.pkgmeta` `move-folders` for a
   load-on-demand data addon). Anything off by default is off because it acts for the player.
-  ForeverCore is the one required companion, and the addon's own zip ships it: declare `## Dependencies: ForeverCore`
-  in the TOC, and in `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
+  ForeverCore is the one required companion, and the addon's own zip ships it: declare `## OptionalDeps: ForeverCore`
+  in the TOC, never `## Dependencies`, so the addon still loads when core is missing and can say what to install, and in
+  `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
   with `move-folders:` `<package-as>/ForeverCore: ForeverCore`. Add the CurseForge slug `forevercore` under
   `required-dependencies` while retaining that pinned bundle during standalone dependency adoption. Existing installs
   must acquire manager-owned core through ordinary updates, including a direct jump that skips bridge releases, before
@@ -49,8 +50,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   stating its source, and the player sees a live in-game value over the bundled one wherever the
   client offers it. A server-emulator dump (CMaNGOS classic-db) describes Classic Era, not Forever:
   it is never the source for a dataset QuestieDB or AtlasLoot holds. `.pkgmeta` lists the CurseForge
-  slug of every TOC `OptionalDeps` folder under `optional-dependencies` (QuestieDB is `questiedb`,
-  AtlasLoot's Forever build `atlasloot-forever`): the TOC line only orders loading, and the store
+  slug of every TOC `OptionalDeps` data folder under `optional-dependencies` (QuestieDB is `questiedb`,
+  AtlasLoot's Forever build `atlasloot-forever`), and ForeverCore, the one non-data entry, under
+  `required-dependencies` instead: the TOC line only orders loading, and the store
   relation is what makes the CurseForge app offer the data addon. Wrong or missing data in either is
   fixed upstream, by a report or PR to that project (Questie's in-game debug offer already collects
   missing quest, NPC and loot data), not by an override table in the addon, which drifts from what
