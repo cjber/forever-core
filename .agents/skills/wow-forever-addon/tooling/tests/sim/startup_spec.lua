@@ -13,6 +13,17 @@ for _, gamepad in ipairs({ false, true }) do
 	sim:expectNoErrors()
 	sim:setGamepad(gamepad)
 	sim:expectNoErrors()
+	-- Native recraft callbacks use this undocumented enum from addon-owned forms too.
+	sim:runAs(
+		"ItemSoundEnumProbe",
+		[=[
+        assert(Enum.ItemSoundType.Pickup == 0)
+        assert(Enum.ItemSoundType.Drop == 1)
+        assert(Enum.ItemSoundType.Use == 2)
+        assert(Enum.ItemSoundType.Close == 3)
+    ]=]
+	)
+	sim:expectNoErrors()
 	local G = sim.G
 	sim:input(function()
 		G.ShowUIPanel(G.SettingsPanel)
