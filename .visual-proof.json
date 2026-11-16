@@ -1,10 +1,10 @@
 {
-  "input_digest": "ca0c334049a5c3bfa79e605d08e910ded9ad221064e05bcad3a83c9607602d0c",
-  "runtime_sha256": "ca0c334049a5c3bfa79e605d08e910ded9ad221064e05bcad3a83c9607602d0c",
-  "candidate": "a1c5b6c3938d49cf930e4606a9f274ddbdaf9e864dd3710eaf1e480ed669ab0f",
+  "input_digest": "c60f2af0573c2c735433df1d77fbaa88959e8677eafafac5495e9b5f05c6f429",
+  "runtime_sha256": "c60f2af0573c2c735433df1d77fbaa88959e8677eafafac5495e9b5f05c6f429",
+  "candidate": "9fb3317e281479117cb312305a8b317cced2233373c3712e9ec62d56a203cddd",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "c5afa65e743fd9db72f2ea4b0b889208ae39bf63",
+  "source_commit": "8cdd9f31999177966d71f1fa65f10f9ee76721ee",
   "flows": [
     {
       "name": "quest list on, game tracker hidden",
@@ -23,12 +23,12 @@
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/9d4f869eb1f664199c794af8baa4242a/raw/903fb89c1702eece0b48facbaa66c38fab9aea94/1-quest-list-on-game-tracker-hidden.png",
-      "sha256": "27424b12dd3bf60d7456d310289cea05b0cb44e1faafbd70e22051f5b8d321b9"
+      "url": "https://gist.githubusercontent.com/cjber/557061b4795db3f1ed21f7235285a669/raw/fe923b9cbe00a7ad134a39d2497c6cca76ad56bc/1-quest-list-on-game-tracker-hidden.png",
+      "sha256": "3323f09e9ecb5fcc302e7473d819c4f7b7e1b864acdeb2be483cd9e237d1ff48"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/9d4f869eb1f664199c794af8baa4242a/raw/903fb89c1702eece0b48facbaa66c38fab9aea94/2-quest-list-off-game-tracker-back.png",
-      "sha256": "a841f9412e10b90b19687bc30d3c81c94a4f44ebfd2668be48fe9b1bfc5bfa00"
+      "url": "https://gist.githubusercontent.com/cjber/557061b4795db3f1ed21f7235285a669/raw/fe923b9cbe00a7ad134a39d2497c6cca76ad56bc/2-quest-list-off-game-tracker-back.png",
+      "sha256": "d0ca0ddb46270991cd71aa6e243a01699dea0ced7d881c04b03118dfbc85bbfe"
     }
   ]
 }
