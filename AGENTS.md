@@ -40,7 +40,8 @@ python3 tools/dependabot_merge.py --dry-run # Dependabot's open PRs in core and 
 python3 tools/gen_forever_api.py          # regenerate forever_tools/client_names.txt from the pinned UI source
 python3 tools/lint_client_calls.py        # refuse a call of a client function the Forever client does not have
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
-python3 tools/headless/forever_client.py run -- tools/headless/perf_run.sh  # one profiled session in the headless client
+python3 tools/headless/forever_client.py job -- tools/headless/perf_run.sh  # one profiled job in the shared session
+python3 tools/headless/forever_client.py lease     # hold the client for an interactive agent, prints a token
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
 python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session

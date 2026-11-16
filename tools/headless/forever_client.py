@@ -6,10 +6,13 @@ window reaches the desktop and the player's mouse and keyboard are never touched
 only: screenshots through `gamescopectl`, input through `xdotool` on gamescope's nested X server. The host also
 needs `tesseract` on PATH to locate the launcher's visible Play control from the private screenshot.
 
-    forever_client.py up                  # start, wait until in the world, print READY, hold until stopped
-    forever_client.py up --manual-launcher # inspect and left-click the private launcher instead of OCR
-    forever_client.py run -- <command>    # up, run the command with the session's display, then stop
-    forever_client.py down                # stop the session and everything it started
+    forever_client.py serve               # the resident session: start, wait for the world, stay up while jobs arrive
+    forever_client.py up                  # the same lifecycle in the foreground
+    forever_client.py job -- <command>    # run one job in the session, holding the job lock for its length
+    forever_client.py run -- <command>    # the same verb under the name it had before
+    forever_client.py lease [--ttl S]     # hold the job lock for an interactive agent; prints a token
+    forever_client.py release TOKEN       # end that lease now
+    forever_client.py down                # stop the session once the job in flight, if any, has finished
     forever_client.py status
     forever_client.py shot [PATH]         # PNG of what the client shows now
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
@@ -28,27 +31,43 @@ needs `tesseract` on PATH to locate the launcher's visible Play control from the
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
 commit as the `headless-smoke` commit status, which `tools/release_check.py` requires and `tools/smoke_queue.py`
-fills in. It starts the client the way `up` does, and `--manual-launcher` is passed through to it, so while launcher
-OCR is not finding Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes
-`shot` and clicks Play itself. Exit 0 is a clean commit, 1 a recorded failure, 3 means the client is in use (the
-player's game or another session) so nothing is posted and a caller retries later. The AddOns folder is shared: every
-slot the smoke borrows is put back exactly as it was, including a store install it moved aside. A stop that never
-reaches Python's handlers leaves that record behind, and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays
-it before it touches AddOns.
+fills in. It runs as one job: it ensures a session, takes the job lock, builds and links the candidate, reloads so
+the client loads it, runs the checks, puts the links back and releases the lock. `--manual-launcher` starts a
+session that way while launcher OCR is not finding Play (cjber/forever-core#547), so an agent runs `smoke
+--manual-launcher` in the background, takes `shot` and clicks Play itself; those two launcher verbs run without the
+job lock, so they cannot queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded
+failure, 3 means the player's own client is running (the Wine prefix is used by processes this tool does not own), so
+nothing is posted and a caller retries later; another agent's job is waited for, up to `--timeout`. The AddOns folder
+is shared: every slot the smoke borrows is put back exactly as it was, including a store install it moved aside. A
+stop that never reaches Python's handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`,
+`smoke`, `proof` or `build-dev` replays it before it touches AddOns.
 
-`proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It builds and links the
-candidate the way `smoke` does, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` (a Forever addon's own slash
-command, or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new secret gist, and
-writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256,
-then checks the installed folder with `visual_proof --compare`. It never commits or pushes the checkout. There is no
+`proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
+`smoke` does, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` (a Forever addon's own slash command, or a Lua
+file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new secret gist, and writes
+`<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
+checks the installed folder with `visual_proof --compare`. It never commits or pushes the checkout. There is no
 default flow: ForeverCore has no shared opener for an addon's update notice, so the flow is named on the command line
 and `wow-forever-addon/in-game.md` shows it. A Lua flow's own result is read after its screenshot, and a snippet that
 raised fails the proof before any gist or `.visual-proof.json` exists (#580).
 
-One Battle.net account means one client: `up` holds an exclusive lock for the session's lifetime and refuses to
-start while any process uses the Wine prefix, which is how a player's own running client is left alone. `--wait`
-queues behind another agent's session instead of failing, and keeps waiting until the lock is free and the
-previous session's Wine processes have gone, or `--timeout` passes.
+The session is shared: `serve` starts the client once, and every `job` runs against that same client, so a test pays
+the login once rather than once per test. A job holds `STATE_DIR/job.lock` only while it touches the client, and
+`STATE_DIR/job.json` names its holder (pid, token, label, start) so a waiter can say who it waits for. The session
+ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
+`MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
+`job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
+is `job` under its old name. `lease` holds the job lock for an agent that drives the client across several tool
+calls, and `release TOKEN` ends it.
+
+Every verb that touches the client (`shot`, `click`, `key`, `slash`, `reload`, `eval`, `errors`) runs as a job: it
+proceeds when `FOREVER_CLIENT_JOB` names the token in `job.json`, and otherwise takes the job lock itself for that one
+invocation. `status` and `sv` need no lock.
+
+One Battle.net account means one client: a resident session holds an exclusive lock for its lifetime and refuses to
+start while any process uses the Wine prefix, which is how a player's own running client is left alone. Another
+agent's session is reused and its job is waited for up to `--timeout`; only the player's own client makes a job exit
+3.
 
 The client is for testing the Forever addons' interface, never for playing, and the verbs hold to that:
 
@@ -56,11 +75,11 @@ The client is for testing the Forever addons' interface, never for playing, and 
   `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` needs a
   screenshot taken since the last input, so every click aims at UI the agent has just seen. `slash` puts the
   keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
-- `--manual-launcher` (`up`, `run`, `smoke`) disables OCR clicks and permits shots and left clicks before READY,
-  only while the game process is absent. Inspect each private screenshot before clicking. Never click Uninstall or
-  change credentials.
-- Short sessions. A session ends after MAX_SESSION at the latest, and every ending (the test returning, a failure,
-  a signal, the cap) logs the character out and stops the client.
+- `--manual-launcher` (`serve`, `up`, `job`, `run`, `lease`, `smoke`, `proof`) disables OCR clicks and permits shots
+  and left clicks before READY, only while the game process is absent. Inspect each private screenshot before
+  clicking. Never click Uninstall or change credentials.
+- One client, one job. The session ends 10 minutes after the last job and 3 hours at most, and every ending logs the
+  character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
 """
 
@@ -134,13 +153,29 @@ STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "forever-client/env.json"
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
 WIDTH, HEIGHT = 1920, 1080
-MAX_SESSION = 30 * 60
-WAIT_POLL = 1.0  # how often a `--wait` queue checks the lock and the Wine prefix
+# The session is shared, so the client stays up while jobs arrive instead of ending after one test. These are fixed
+# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY when none has run yet), and
+# never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is never cut off.
+IDLE_LIMIT = 10 * 60
+MAX_SESSION = 3 * 60 * 60
+WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
+JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
+# A `down` waits for the job in flight to finish first: a smoke is the longest job.
+STOP_WAIT = 30 * 60
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
 # Seconds a proof waits after a slash flow before its screenshot (run_flow).
 SLASH_SETTLE_SECONDS = 3
+# The job lock's file, the holder it names, the mark of the last job's end, the stop `down` asks for, and the
+# session's own log.
+JOB_LOCK = "job.lock"
+JOB_RECORD = "job.json"
+LAST_JOB = "last-job"
+STOP = "stop"
+SERVE_LOG = "serve.log"
+LEASE_TTL = 10 * 60
+LEASE_MAX = 30 * 60
 FOREVER_ADDONS = (
     # The dev addon behind /devsmoke: its commands are the suite's own test surface.
     "!!DevSmoke",
@@ -303,6 +338,36 @@ def load_state() -> dict:
         return json.loads(state_file().read_text())
     except (OSError, ValueError):
         raise ClientError("no headless session is running: start one with `forever_client.py up`") from None
+
+
+def session_alive(state: Mapping) -> bool:
+    """Whether the process that wrote session.json still runs; a reused pid is told apart by its start time."""
+    return owner_alive({"pid": state.get("pid"), "started": state.get("start_ticks")})
+
+
+def current_session() -> dict | None:
+    """The live session's state, or None when none runs or its process is gone."""
+    try:
+        state = json.loads(state_file().read_text())
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) and session_alive(state) else None
+
+
+def session_lock_held() -> bool:
+    """Whether a process holds the session lock, whether or not it has written session.json yet."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = open(STATE_DIR / "lock", "w")
+    except OSError:
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    finally:
+        handle.close()
+    return False
 
 
 def screenshots() -> set[Path]:
@@ -867,18 +932,163 @@ def client_in_use() -> str | None:
     users = prefix_users()
     if users:
         return prefix_who(users)
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        lock = open(STATE_DIR / "lock", "w")
-    except OSError:
+    return "another session holds the client" if session_lock_held() else None
+
+
+def foreign_client() -> str | None:
+    """Why the player's own client blocks every job, or None when the Wine prefix is ours or empty.
+
+    A resident session's Wine processes carry its token, so another agent's session is not a busy client: its job is
+    waited for. Exit 3 is this reason only, the processes this tool does not own.
+    """
+    state = current_session()
+    if state is None and session_lock_held():
+        # A session is starting (or finishing) and has not written its token yet: its Wine processes are ours.
         return None
+    processes = prefix_snapshot()
+    _, foreign = prefix_ownership(processes, state.get("token") if state else None)
+    return prefix_who(foreign) if foreign else None
+
+
+# --- the job lock ------------------------------------------------------------------------------------------------
+#
+# One client and one AddOns folder are shared by every agent, but the session is not the unit of exclusion: the reload
+# and the input are. A job holds `job.lock` only while it touches the client, and `job.json` names its holder so a
+# waiter can say who it waits for. flock releases the lock when the holder dies, so a `job.json` whose pid is gone is
+# stale and treated as free.
+
+
+def job_lock_path() -> Path:
+    return STATE_DIR / JOB_LOCK
+
+
+def job_record_path() -> Path:
+    return STATE_DIR / JOB_RECORD
+
+
+def read_job_record() -> dict | None:
+    """The job.json a holder wrote, or None when there is none to read: it names the holder, never the lock."""
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        return "another session holds the client"
+        record = json.loads(job_record_path().read_text())
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def write_job_record(record: Mapping) -> None:
+    """Name the lock's holder in one replace, so a waiter never reads half a record."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = job_record_path()
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(dict(record)))
+    os.replace(temporary, path)
+
+
+def job_alive(record: object) -> bool:
+    """Whether the process that wrote a job.json still runs; a reused pid is told apart by its start time."""
+    if not isinstance(record, Mapping):
+        return False
+    return owner_alive({"pid": record.get("pid"), "started": record.get("start_ticks")})
+
+
+def job_holder() -> dict | None:
+    """The live holder named by job.json, or None when the file is missing or its owner is gone."""
+    record = read_job_record()
+    return record if job_alive(record) else None
+
+
+def describe_job() -> str:
+    """Who holds the job lock, for a waiter's line: its label, pid and token."""
+    record = job_holder()
+    if record is None:
+        return "another job"
+    label = record.get("label") or "a job"
+    return f"{label} (pid {record.get('pid')}, token {str(record.get('token') or '')[:8]})"
+
+
+def job_started() -> float:
+    """When the job holding the client started, which is where an `errors` read begins."""
+    record = job_holder()
+    started = record.get("started") if record else None
+    return float(started) if isinstance(started, (int, float)) else time.time()
+
+
+def acquire_job(timeout: float | None, label: str, *, ttl: float | None = None) -> tuple[object, str]:
+    """Take the job lock for this process, waiting up to `timeout` (None: until it is free) for its holder.
+
+    The holder is printed once while the wait runs, so an agent knows which job it queues behind. The record names
+    this process and its start time, so a later reader can tell a live holder from a dead one's leftover file.
+    """
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(job_lock_path(), "a+")
+    deadline = None if timeout is None else time.monotonic() + timeout
+    announced = False
+    while True:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if not announced:
+                print(f"forever_client: waiting for {describe_job()}", file=sys.stderr, flush=True)
+                announced = True
+            if deadline is not None and time.monotonic() >= deadline:
+                handle.close()
+                raise ClientError(
+                    f"another job still holds the client after waiting {timeout:.0f} s: {describe_job()}; "
+                    "pass a longer --timeout to queue"
+                ) from None
+            time.sleep(JOB_POLL)
+    token = uuid.uuid4().hex
+    record: dict = {
+        "pid": os.getpid(),
+        "start_ticks": process_start(os.getpid()),
+        "token": token,
+        "label": label,
+        "started": time.time(),
+    }
+    if ttl is not None:
+        record["expires"] = time.time() + ttl
+    write_job_record(record)
+    return handle, token
+
+
+def release_job(handle, token: str, *, ended: bool = True) -> None:
+    """Release the job lock, record when the job ended, and forget its holder before the lock opens.
+
+    `ended` is False for a session's own teardown, which is not a job ending: the next session's idle limit starts
+    from its READY, not from a mark this teardown would leave.
+    """
+    try:
+        if ended:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (STATE_DIR / LAST_JOB).touch()
     finally:
-        lock.close()
-    return None
+        record = read_job_record()
+        if record is not None and record.get("token") == token:
+            job_record_path().unlink(missing_ok=True)
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+
+
+def with_job(label: str, timeout: float, action) -> int:
+    """Run one verb that touches the client: inside the job that gave it the token, or holding the lock itself.
+
+    A verb invoked by a `job` command carries `FOREVER_CLIENT_JOB`, and proceeds without taking the lock again. A
+    verb run on its own takes the job lock for this one invocation, waiting for the job in flight, and releases it
+    afterwards. A token that is not the holder's queues like any other caller.
+    """
+    token = os.environ.get("FOREVER_CLIENT_JOB")
+    holder = job_holder()
+    if token and holder is not None and holder.get("token") == token:
+        return action(load_state())
+    handle, own = acquire_job(timeout, label)
+    try:
+        state = load_state()
+        if not session_alive(state):
+            raise ClientError("the session ended while this verb waited for the client: run it again")
+        return action(state)
+    finally:
+        release_job(handle, own)
 
 
 def stop_handlers() -> dict[int, object]:
@@ -964,64 +1174,12 @@ def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
         raise ClientError(f"could not post {SMOKE_CONTEXT} on {SMOKE_OWNER}/{repo}@{commit[:7]}: {detail}")
 
 
-def smoke(args: argparse.Namespace) -> int:
-    """Build a repository's commit, test it in the client, and record the result as a commit status.
-
-    Exit 0 is a clean commit and 1 a failure that was recorded; 3 means the client is in use, so nothing is posted and
-    a caller retries later. A smoke that could not run at all (no checkout, no such ref) raises ClientError and posts
-    nothing either. `--manual-launcher` reaches `up` unchanged, so the caller can take `shot` and click Play itself.
-    """
-    repo = args.repo
-    if not SMOKE_REPO.fullmatch(repo):
-        raise ClientError(f"--repo takes a repository name, not {repo!r}")
-    root = WORKSPACE / repo
-    if not root.is_dir():
-        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
-    commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
-    recover_links()
-    busy = client_in_use()
-    if busy:
-        print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
-        return 3
-    folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-smoke", repo_root=root)
-    folders = addon_folders(folder, package_name(root, commit))
-    if not folders:
-        raise ClientError(f"{folder} ships no addon folder")
-    outcome: dict = {"counts": {}, "error": None}
-    previous = stop_handlers()
-    try:
-        clear_eval_inbox()
-        records = link_build(folders, addons_dir())
-        try:
-
-            def checks(state):
-                slash(state, "/forever selftest")
-                # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
-                outcome["counts"] = smoke_counts(state, folders)
-                return 0
-
-            options = argparse.Namespace(wait=False, manual_launcher=args.manual_launcher, timeout=args.timeout)
-            try:
-                up(options, after_ready=checks)
-            except ClientError as error:
-                busy = client_in_use()
-                if not outcome["counts"] and busy:
-                    print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
-                    return 3
-                outcome["error"] = str(error)
-        finally:
-            restore_links(records)
-    except KeyboardInterrupt:
-        print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
-        return 1
-    finally:
-        clear_eval_inbox(quiet=True)
-        restore_handlers(previous)
+def report_smoke(repo: str, commit: str, outcome: Mapping) -> int:
+    """Post a smoke's result and say it, from whatever its job recorded: a count per folder, or the error."""
     counts = outcome["counts"]
     if outcome["error"]:
         print(f"{repo}@{commit[:7]}: {outcome['error']}", file=sys.stderr)
     if not counts and not outcome["error"]:
-        # `up` returns normally when a signal ends the session it holds, so a stopped smoke is not a result.
         print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
         return 1
     if not counts:
@@ -1034,6 +1192,71 @@ def smoke(args: argparse.Namespace) -> int:
     post_status(repo, commit, ok, description)
     print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
     return 0 if ok else 1
+
+
+def smoke(args: argparse.Namespace) -> int:
+    """Build a repository's commit, test it in the client as one job, and record the result as a commit status.
+
+    It ensures a session, takes the job lock, builds and links the candidate, reloads so the client loads it, runs
+    `/forever selftest` and `errors --addon` for each folder, and puts the links back before it releases the lock.
+    Exit 0 is a clean commit and 1 a failure that was recorded; 3 means the player's own client is running, so nothing
+    is posted and a caller retries later. Another agent's job is waited for. A smoke that could not run at all (no
+    checkout, no such ref) raises ClientError and posts nothing either. `--manual-launcher` starts the session that
+    way, so the caller can take `shot` and click Play itself.
+    """
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
+    recover_links()
+    busy = foreign_client()
+    if busy:
+        print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
+        return 3
+    handle, job_token = acquire_job(args.timeout, f"smoke {repo}@{commit[:7]}")
+    outcome: dict = {"counts": {}, "error": None}
+    try:
+        try:
+            state = ensure_session(args.timeout, args.manual_launcher)
+        except ClientError as error:
+            busy = foreign_client()
+            if busy:
+                print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
+                return 3
+            outcome["error"] = str(error)
+            return report_smoke(repo, commit, outcome)
+        # The client log holds every job's lines: this job's result starts where its own work starts.
+        state = {**state, "started": job_started()}
+        recover_links()
+        folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-smoke", repo_root=root)
+        folders = addon_folders(folder, package_name(root, commit))
+        if not folders:
+            raise ClientError(f"{folder} ships no addon folder")
+        previous = stop_handlers()
+        try:
+            clear_eval_inbox()
+            records = link_build(folders, addons_dir())
+            try:
+                reload(state)
+                slash(state, "/forever selftest")
+                # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
+                outcome["counts"] = smoke_counts(state, folders)
+            finally:
+                restore_links(records)
+        except ClientError as error:
+            outcome["error"] = str(error)
+        except KeyboardInterrupt:
+            print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
+            return 1
+        finally:
+            clear_eval_inbox(quiet=True)
+            restore_handlers(previous)
+    finally:
+        release_job(handle, job_token)
+    return report_smoke(repo, commit, outcome)
 
 
 # --- the visual proof ------------------------------------------------------------------------------------------
@@ -1246,9 +1469,9 @@ def proof_compare(checkout: Path, installed: Path) -> dict:
 def proof(args: argparse.Namespace) -> int:
     """Record a commit's in-game visual proof into the checkout the pull request carries.
 
-    The build and the AddOns links are the smoke's, so every borrowed slot is put back on any exit. The session
-    reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist. The proof is
-    written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
+    It runs as one job: the build and the AddOns links are the smoke's, so every borrowed slot is put back on any
+    exit. The job reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist.
+    The proof is written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
     """
     flows = parse_flows(args.flow)
     if not flows:
@@ -1270,56 +1493,54 @@ def proof(args: argparse.Namespace) -> int:
     if head != commit:
         raise ClientError(f"{checkout} is at {head[:7]}, not {repo}@{commit[:7]}: check out the proof's commit first")
     recover_links()
-    busy = client_in_use()
+    busy = foreign_client()
     if busy:
         print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
         return 3
-    folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-proof", repo_root=root)
-    folders = addon_folders(folder, package_name(root, commit))
-    if not folders:
-        raise ClientError(f"{folder} ships no addon folder")
+    handle, job_token = acquire_job(args.timeout, f"proof {repo}@{commit[:7]}")
     screenshots: list[Path] = []
     shots_folder = PROOF_SCRATCH / f"proof-{repo}-{commit[:7]}"
-    previous = stop_handlers()
+    folders: list[tuple[str, Path]] = []
     try:
-        clear_eval_inbox()
-        records = link_build(folders, addons_dir())
         try:
-            entered = []
-
-            def record(state):
-                entered.append(True)
+            state = ensure_session(args.timeout, args.manual_launcher)
+        except ClientError:
+            # Only the player's own client makes a proof exit 3; another agent's job was waited for above.
+            busy = foreign_client()
+            if busy:
+                print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
+                return 3
+            raise
+        state = {**state, "started": job_started()}
+        recover_links()
+        folder = build_dev(repo, commit, destination=BUILD_ROOT / f"{repo}-proof", repo_root=root)
+        folders = addon_folders(folder, package_name(root, commit))
+        if not folders:
+            raise ClientError(f"{folder} ships no addon folder")
+        previous = stop_handlers()
+        try:
+            clear_eval_inbox()
+            records = link_build(folders, addons_dir())
+            try:
                 reload(state)
                 for index, (name, action) in enumerate(flows, start=1):
-                    token = run_flow(state, action)
+                    flow_token = run_flow(state, action)
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
-                    if token:
+                    if flow_token:
                         # After the shot: the reload that saves the eval opens the world again, which would close
                         # what the flow showed (#580).
-                        check_flow_eval(state, action, token)
-                return 0
-
-            options = argparse.Namespace(wait=False, manual_launcher=args.manual_launcher, timeout=args.timeout)
-            try:
-                up(options, after_ready=record)
-            except ClientError:
-                # Once the session is in the world it holds the lock itself, so a failure there is its own, not
-                # another session's: report the real error (#573).
-                busy = None if entered else client_in_use()
-                if not screenshots and busy:
-                    print(f"client in use: {busy}; no proof recorded for {repo}@{commit[:7]}", flush=True)
-                    return 3
-                raise
+                        check_flow_eval(state, action, flow_token)
+            finally:
+                restore_links(records)
+        except KeyboardInterrupt:
+            print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
+            return 1
         finally:
-            restore_links(records)
-    except KeyboardInterrupt:
-        print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
-        return 1
+            clear_eval_inbox(quiet=True)
+            restore_handlers(previous)
     finally:
-        clear_eval_inbox(quiet=True)
-        restore_handlers(previous)
+        release_job(handle, job_token)
     if not screenshots:
-        # `up` turns a signal into a normal return after its own teardown, so an empty run is a stopped session.
         print(f"proof of {repo}@{commit[:7]} stopped before it finished; nothing recorded", file=sys.stderr)
         return 1
     digests = proof_digests(checkout)
@@ -1486,59 +1707,99 @@ def at_character_select(state: Mapping, manual_launcher: bool) -> None:
         press_play(state)
 
 
-def up(args: argparse.Namespace, after_ready=None) -> int:
+def session_end_reason(now: float, started: float, ready: float, last_job: float) -> str | None:
+    """Why the resident session should stop now, or None. Two fixed limits, checked in this order:
+
+    - MAX_SESSION from the launch: the lifetime cap, whatever jobs arrive.
+    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming.
+
+    `last_job` is never before `ready`: `last_job_mark` clamps it, because a mark an earlier session left says
+    nothing about this one.
+    """
+    if now - started >= MAX_SESSION:
+        return f"the {MAX_SESSION // 3600} h lifetime cap"
+    if now - last_job >= IDLE_LIMIT:
+        return f"{IDLE_LIMIT // 60} min without a job"
+    return None
+
+
+def last_job_mark(ready: float) -> float:
+    """When the last job ended on the monotonic clock, never before READY.
+
+    The mark is a file's mtime, so it is converted from the wall clock; a mark an earlier session left is clamped to
+    READY, and the idle limit starts from there.
+    """
+    try:
+        ended = (STATE_DIR / LAST_JOB).stat().st_mtime
+    except OSError:
+        return ready
+    return max(time.monotonic() - (time.time() - ended), ready)
+
+
+def serve(args: argparse.Namespace, after_ready=None) -> int:
+    """The resident session: launch, wait for the world, stay up while jobs arrive, then log out and stop.
+
+    It is the lifecycle `up` always had, with two fixed ends instead of the 30 minute alarm: IDLE_LIMIT after the last
+    job ended (or after READY when none has run), and MAX_SESSION from the launch. At either end it takes the job lock
+    first, so a job in flight always finishes before the client is torn down. `job` starts this detached when no
+    session runs, and `up` is the same verb in the foreground.
+    """
     recover_links()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (STATE_DIR / STOP).unlink(missing_ok=True)
     lock = open(STATE_DIR / "lock", "w")
-    if args.wait:
-        wait_for_session(lock, args.timeout)
-    else:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ClientError(
-                f"another agent's session holds the client: {lock_holder()}; pass --wait to queue"
-            ) from None
-        users = prefix_users()
-        if users:
-            raise ClientError(
-                f"the Wine prefix {PREFIX} is in use: {prefix_who(users)}. "
-                "A second client would log the first one out, so no session starts."
-            )
-    runtime = runtime_dir(os.environ, os.getuid())
     try:
-        socket.create_connection(BATTLE_NET, timeout=10).close()
-    except OSError as error:
-        raise ClientError(
-            f"cannot reach Battle.net at {BATTLE_NET[0]}:{BATTLE_NET[1]} ({error}): the launcher could not log in. "
-            "A sandboxed shell has no network: run forever_client.py outside the sandbox."
-        ) from None
-    if not CONFIG.exists():
-        raise ClientError(
-            f"no launch recorded: start Battle.net from Faugus, then run `forever_client.py capture-env` ({CONFIG})"
-        )
-    launch = json.loads(CONFIG.read_text())
-    if "umu_run" not in launch:
-        raise ClientError(
-            f"{CONFIG} records an older Wine launch: start Battle.net from Faugus, "
-            "then run `forever_client.py capture-env`"
-        )
-    wine = launch["env"]
+        if args.wait:
+            wait_for_session(lock, args.timeout)
+        else:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ClientError(
+                    f"another agent's session holds the client: {lock_holder()}; pass --wait to queue"
+                ) from None
+            users = prefix_users()
+            if users:
+                raise ClientError(
+                    f"the Wine prefix {PREFIX} is in use: {prefix_who(users)}. "
+                    "A second client would log the first one out, so no session starts."
+                )
+        runtime = runtime_dir(os.environ, os.getuid())
+        try:
+            socket.create_connection(BATTLE_NET, timeout=10).close()
+        except OSError as error:
+            raise ClientError(
+                f"cannot reach Battle.net at {BATTLE_NET[0]}:{BATTLE_NET[1]} ({error}): the launcher could not log in. "
+                "A sandboxed shell has no network: run forever_client.py outside the sandbox."
+            ) from None
+        if not CONFIG.exists():
+            raise ClientError(
+                f"no launch recorded: start Battle.net from Faugus, then run `forever_client.py capture-env` ({CONFIG})"
+            )
+        launch = json.loads(CONFIG.read_text())
+        if "umu_run" not in launch:
+            raise ClientError(
+                f"{CONFIG} records an older Wine launch: start Battle.net from Faugus, "
+                "then run `forever_client.py capture-env`"
+            )
+        wine = launch["env"]
+    except BaseException:
+        # The session lock is held through these checks, so a refusal must not leave its descriptor open.
+        lock.close()
+        raise
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
     gamescope: subprocess.Popen | None = None
     state: dict | None = None
-    stop = {"signal": None}
+    job = None
+    job_token = None
 
-    def on_signal(signum, _frame):
-        stop["signal"] = signum
+    def on_signal(_signum, _frame):
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGHUP, on_signal)
-    signal.signal(signal.SIGALRM, on_signal)
-    signal.alarm(MAX_SESSION)
     log = open(STATE_DIR / "session.log", "w")
     try:
         if not link.exists():
@@ -1553,6 +1814,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         env["FOREVER_CLIENT_SESSION"] = token
         before = screenshots()
         started = time.time()
+        launched = time.monotonic()
         gamescope = subprocess.Popen(
             [
                 "gamescope",
@@ -1578,6 +1840,7 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
         )
         state = {
             "pid": os.getpid(),
+            "start_ticks": process_start(os.getpid()),
             "gamescope": gamescope.pid,
             "token": token,
             "started": started,
@@ -1591,42 +1854,260 @@ def up(args: argparse.Namespace, after_ready=None) -> int:
 
         nudge = functools.partial(at_character_select, state, args.manual_launcher)
         try:
-            ready = wait_for_world(before, min(args.timeout, MAX_SESSION), nudge=nudge)
+            ready_shot = wait_for_world(before, args.timeout, nudge=nudge)
         except ClientError as error:
             frame = shot(state, STATE_DIR / "failed.png")
             raise ClientError(f"{error}; last frame: {frame}") from None
         state["ready"] = time.time()
         state_file().write_text(json.dumps(state))
-        print(f"READY in the world after {time.time() - started:.0f} s ({ready.name})", flush=True)
+        ready = time.monotonic()
+        print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
         if after_ready:
             return after_ready(state)
         while gamescope.poll() is None:
-            time.sleep(1)
-        raise ClientError("the client exited on its own")
+            reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            if reason is None and (STATE_DIR / STOP).exists():
+                reason = "`down` asked"
+            if reason is None:
+                time.sleep(1)
+                continue
+            # A job is never cut off: take the job lock, then decide again with the job's own end recorded. A job
+            # that just ended clears the idle reason, so the session stays up for the next one.
+            job, job_token = acquire_job(None, f"the session's end ({reason})")
+            reason = session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            if reason is None and (STATE_DIR / STOP).exists():
+                reason = "`down` asked"
+            if reason is None:
+                release_job(job, job_token, ended=False)
+                job = job_token = None
+                continue
+            print(f"forever_client: the session is ending: {reason}", flush=True)
+            break
+        else:
+            raise ClientError("the client exited on its own")
+        return 0
     except KeyboardInterrupt:
-        if stop["signal"] == signal.SIGALRM:
-            print(f"forever_client: the session reached its {MAX_SESSION // 60} min cap", file=sys.stderr)
-            return 2
         return 0
     finally:
-        signal.alarm(0)
-        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGALRM):
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
-        teardown(gamescope, wine, link, state)
+        try:
+            teardown(gamescope, wine, link, state)
+        finally:
+            # The job lock stays held through teardown, so no job starts against a client being stopped.
+            if job is not None:
+                release_job(job, job_token, ended=False)
+            (STATE_DIR / STOP).unlink(missing_ok=True)
+            log.close()
+            lock.close()
         print("stopped: logged out, gamescope, Wine and the dev addon link are gone", flush=True)
 
 
+# `up` is the same lifecycle in the foreground: the verb an agent already knows keeps working unchanged.
+up = serve
+
+
 def down() -> int:
+    """Stop the resident session once the job in flight, if any, has finished."""
     state = load_state()
-    os.kill(state["pid"], signal.SIGTERM)
-    # Teardown logs out (up to LOGOUT_WAIT), then gives gamescope 20 s and ends Wine.
-    limit = LOGOUT_WAIT + 60
-    deadline = time.monotonic() + limit
+    if not session_alive(state):
+        state_file().unlink(missing_ok=True)
+        return 0
+    if not state.get("ready") or "start_ticks" not in state:
+        # A session still starting has no resident loop to read the stop marker, and one an older version started
+        # has no stop loop at all: their own SIGTERM teardown is the way out. A starting session never reached the
+        # world, so nothing is logged out.
+        os.kill(state["pid"], signal.SIGTERM)
+    else:
+        (STATE_DIR / STOP).touch()
+    # A job in flight finishes first, then teardown logs out (up to LOGOUT_WAIT), gives gamescope 20 s and ends Wine.
+    deadline = time.monotonic() + STOP_WAIT
     while time.monotonic() < deadline:
         if not state_file().exists():
+            (STATE_DIR / STOP).unlink(missing_ok=True)
             return 0
         time.sleep(0.5)
-    raise ClientError(f"session {state['pid']} did not stop within {limit} s")
+    raise ClientError(f"session {state['pid']} did not stop within {STOP_WAIT} s")
+
+
+def start_serve(manual_launcher: bool) -> subprocess.Popen:
+    """Start the resident session detached, its lines in serve.log, and hand back the process to watch."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    env = {k: v for k, v in os.environ.items() if k != "FOREVER_CLIENT_JOB"}
+    log = open(STATE_DIR / SERVE_LOG, "a")
+    command = [sys.executable, str(Path(__file__).resolve()), "serve"]
+    if manual_launcher:
+        command.append("--manual-launcher")
+    print(f"starting a session: {STATE_DIR / SERVE_LOG}", file=sys.stderr, flush=True)
+    try:
+        return subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    finally:
+        log.close()
+
+
+def serve_tail() -> str:
+    """The last line the session's own log wrote, for a start that failed."""
+    try:
+        lines = [line.strip() for line in (STATE_DIR / SERVE_LOG).read_text(errors="replace").splitlines()]
+    except OSError:
+        return "the session wrote no log"
+    written = [line for line in lines if line]
+    return written[-1] if written else "the session wrote no log"
+
+
+def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
+    """The running session's state, starting a detached `serve` when none runs and waiting for READY.
+
+    A session another agent is starting is waited for, never started twice: the session lock is what decides. The
+    session's own idle and lifetime limits cannot end it while a job holds the job lock, so a caller that has the job
+    lock can rely on this answer until it releases.
+    """
+    deadline = time.monotonic() + timeout
+    child = None
+    while True:
+        state = current_session()
+        if state and state.get("ready"):
+            return state
+        if state is None and child is None and not session_lock_held():
+            child = start_serve(manual_launcher)
+        if child is not None and child.poll() is not None:
+            # Our serve exited before READY. Another agent's serve may hold the lock now: wait for that one instead.
+            if not session_lock_held():
+                raise ClientError(f"the headless session did not start: {serve_tail()}")
+            child = None
+        if time.monotonic() >= deadline:
+            raise ClientError(f"the session did not reach READY within {timeout:.0f} s: {serve_tail()}")
+        time.sleep(WAIT_POLL)
+
+
+def job(args: argparse.Namespace) -> int:
+    """Run a command as one job against the shared session, holding the job lock for exactly its length.
+
+    It takes the job lock first, so the session cannot end between ensuring it and running the command, then starts
+    or reuses the session. The command sees `FOREVER_CLIENT_JOB`, so a `forever_client.py` verb it runs proceeds
+    without taking the lock again, and `FOREVER_CLIENT_DISPLAY`, the session's private display. The lock is released,
+    and the job's end recorded, whatever the command returns.
+    """
+    command = [word for word in args.command if word != "--"]
+    if not command:
+        raise ClientError("job needs a command after --")
+    label = (args.label or Path(command[0]).name)[:80]
+    handle, token = acquire_job(args.timeout, label)
+    try:
+        state = ensure_session(args.timeout, args.manual_launcher)
+        recover_links()
+        env = {
+            **os.environ,
+            "XDG_RUNTIME_DIR": state["runtime_dir"],
+            "FOREVER_CLIENT_DISPLAY": state["display"],
+            "FOREVER_CLIENT_JOB": token,
+        }
+        return subprocess.run(command, env=env, check=False).returncode
+    finally:
+        release_job(handle, token)
+
+
+def start_holder(handle, token: str, ttl: float) -> subprocess.Popen:
+    """Start the detached process that keeps the job lock until release, the ttl, or the session's end.
+
+    The lock's open file description is handed to the child, so it stays held after this process exits: flock is
+    released only when every descriptor of that description is closed.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "FOREVER_CLIENT_JOB"}
+    log = open(STATE_DIR / SERVE_LOG, "a")
+    command = [sys.executable, str(Path(__file__).resolve()), "lease-hold", str(handle.fileno()), token, str(ttl)]
+    try:
+        return subprocess.Popen(
+            command,
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            pass_fds=(handle.fileno(),),
+        )
+    finally:
+        log.close()
+
+
+def lease(args: argparse.Namespace) -> int:
+    """Hold the job lock for an interactive agent and print its token, leaving a detached holder to keep it.
+
+    The holder releases the lock at `release TOKEN`, at the ttl, or when the session ends. The record names the
+    holder, not this short-lived process, so a waiter reports a live pid and the expiry.
+    """
+    if not 0 < args.ttl <= LEASE_MAX:
+        raise ClientError(f"--ttl takes 1 to {LEASE_MAX} s")
+    label = (args.label or "a lease")[:80]
+    handle, token = acquire_job(args.timeout, label, ttl=args.ttl)
+    try:
+        ensure_session(args.timeout, args.manual_launcher)
+        holder = start_holder(handle, token, args.ttl)
+    except BaseException:
+        release_job(handle, token, ended=False)
+        raise
+    write_job_record(
+        {
+            "pid": holder.pid,
+            "start_ticks": process_start(holder.pid),
+            "token": token,
+            "label": label,
+            "started": time.time(),
+            "expires": time.time() + args.ttl,
+            "lease": True,
+        }
+    )
+    handle.close()
+    print(token, flush=True)
+    return 0
+
+
+def lease_hold(fd: int, token: str, ttl: float) -> int:
+    """Keep the inherited job lock until `release TOKEN`, the ttl, or the session's end.
+
+    The lock arrives as an open file description, so this process holds it without taking it again; the flock is
+    released when the process exits and every descriptor of that description is closed.
+    """
+    handle = os.fdopen(fd, "a+")
+    expires = time.monotonic() + ttl
+    stopped = {"stop": False}
+
+    def on_signal(_signum, _frame):
+        stopped["stop"] = True
+
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    for signum in previous:
+        signal.signal(signum, on_signal)
+    try:
+        while not stopped["stop"] and time.monotonic() < expires and current_session() is not None:
+            time.sleep(1)
+    finally:
+        restore_handlers(previous)
+        release_job(handle, token)
+    return 0
+
+
+def release(token: str) -> int:
+    """End a lease: signal its holder, which releases the job lock and its record on the way out."""
+    record = job_holder()
+    if record is None:
+        raise ClientError("no job or lease holds the client")
+    if record.get("token") != token:
+        raise ClientError(f"that token is not the holder's: {describe_job()}")
+    if not record.get("lease"):
+        raise ClientError(f"that token is a job's, not a lease's: {describe_job()}")
+    try:
+        os.kill(record["pid"], signal.SIGTERM)
+    except (ProcessLookupError, KeyError, TypeError):
+        raise ClientError("the lease's holder is already gone") from None
+    # The holder removes its record before it releases the lock, so the record going away is the lease ending. A
+    # holder whose pid lingers as a zombie (its parent has not reaped it) has already done both.
+    deadline = time.monotonic() + LOGOUT_WAIT
+    while time.monotonic() < deadline:
+        current = read_job_record()
+        if current is None or current.get("token") != token:
+            return 0
+        time.sleep(0.2)
+    raise ClientError(f"the lease's holder {record['pid']} did not release the client within {LOGOUT_WAIT} s")
 
 
 def wineserver(wine: Mapping[str, str]) -> Path:
@@ -1771,10 +2252,66 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
+JOB_VERBS = {"shot", "click", "key", "slash", "reload", "eval", "errors"}
+
+
+def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
+    """A `shot` or button-1 `click` on the launcher of a manual session that is not in the world yet.
+
+    `--manual-launcher` (needed while launcher OCR misses Play, cjber/forever-core#547) leaves clicking Play to the
+    agent, from calls of its own, while the `job`, `lease`, `smoke` or `proof` that started the session holds the job
+    lock waiting for READY. Those two verbs therefore run without that lock, or they would queue behind the job they
+    are unblocking; every other verb still waits for it and is then refused before READY.
+    """
+    return (
+        bool(state.get("manual_launcher"))
+        and not state.get("ready")
+        and (verb == "shot" or (verb == "click" and button == "1"))
+    )
+
+
+def input_verb(state: Mapping, args: argparse.Namespace) -> int:
+    """One verb that touches the client, run inside the job that holds it."""
+    if not state.get("ready") and not launcher_verb(state, args.verb, getattr(args, "button", None)):
+        raise ClientError("the session is not in the world yet: wait for `up` to print READY")
+    if args.verb == "shot":
+        print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
+    elif args.verb == "click":
+        click(state, args.x, args.y, args.button)
+    elif args.verb == "key":
+        press(state, args.keys)
+    elif args.verb == "slash":
+        slash(state, args.command)
+    elif args.verb == "reload":
+        print(f"reloaded ({reload(state).name})")
+    elif args.verb == "eval":
+        tool = devsmoke_eval()
+        try:
+            try:
+                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
+            except tool.EvalError as error:
+                raise ClientError(str(error)) from None
+            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+            # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
+            reload(state)
+            report, ok = eval_result(state, written["token"])
+            print(report)
+            return 0 if ok else 1
+        finally:
+            clear_eval_inbox(quiet=True)
+    elif args.verb == "errors":
+        # A shared session's log holds every job's lines: read from where this job's own work started.
+        completed = errors({**state, "started": job_started()}, args.addon)
+        sys.stdout.write(completed.stdout)
+        sys.stderr.write(completed.stderr)
+        return completed.returncode
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="verb", required=True)
-    for name in ("up", "run"):
+    for name in ("up", "serve"):
         p = sub.add_parser(name)
         p.add_argument("--wait", action="store_true", help="queue behind another agent's session")
         p.add_argument(
@@ -1788,35 +2325,80 @@ def main(argv: Sequence[str] | None = None) -> int:
             default=600,
             help="seconds to wait behind another session and to reach the world",
         )
-        if name == "run":
-            p.add_argument("command", nargs=argparse.REMAINDER)
+    for name in ("job", "run"):
+        p = sub.add_parser(name, help="run a command as one job in the shared session")
+        p.add_argument("--label", default=None, help="what a waiter is told this job is")
+        p.add_argument(
+            "--wait",
+            action="store_true",
+            help=argparse.SUPPRESS,
+        )
+        p.add_argument(
+            "--manual-launcher",
+            action="store_true",
+            help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+        )
+        p.add_argument(
+            "--timeout",
+            type=float,
+            default=1800,
+            help="seconds to reach the world and to wait for the job in flight",
+        )
+        p.add_argument("command", nargs=argparse.REMAINDER)
+    p = sub.add_parser("lease", help="hold the job lock for an interactive agent and print its token")
+    p.add_argument("--ttl", type=float, default=LEASE_TTL, help=f"seconds to hold it, at most {LEASE_MAX}")
+    p.add_argument("--label", default=None, help="what a waiter is told this lease is")
+    p.add_argument(
+        "--manual-launcher",
+        action="store_true",
+        help="disable launcher OCR clicks; allow shot and fresh-screenshot left clicks before READY",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=1800,
+        help="seconds to reach the world and to wait for the job in flight",
+    )
+    p = sub.add_parser("release", help="end a lease now")
+    p.add_argument("token")
+    p = sub.add_parser("lease-hold")
+    p.add_argument("fd", type=int)
+    p.add_argument("token")
+    p.add_argument("ttl", type=float)
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    sub.add_parser("reload")
-    p = sub.add_parser("shot")
-    p.add_argument("path", nargs="?", type=Path)
-    p = sub.add_parser("click")
-    p.add_argument("x", type=int)
-    p.add_argument("y", type=int)
-    p.add_argument("--button", default="1", choices=("1", "3"))
-    p = sub.add_parser("key")
-    p.add_argument("keys", nargs="+")
-    p = sub.add_parser("slash")
-    p.add_argument("command")
+    for name in ("reload", "shot", "click", "key", "slash", "eval", "errors"):
+        p = sub.add_parser(name)
+        p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
+        if name == "shot":
+            p.add_argument("path", nargs="?", type=Path)
+        elif name == "click":
+            p.add_argument("x", type=int)
+            p.add_argument("y", type=int)
+            p.add_argument("--button", default="1", choices=("1", "3"))
+        elif name == "key":
+            p.add_argument("keys", nargs="+")
+        elif name == "slash":
+            p.add_argument("command")
+        elif name == "eval":
+            p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
+        elif name == "errors":
+            p.add_argument("--addon")
     p = sub.add_parser("sv")
     p.add_argument("addon")
-    p = sub.add_parser("eval")
-    p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
-    p = sub.add_parser("errors")
-    p.add_argument("--addon")
     p = sub.add_parser("build-dev", help="write test-artifacts/<repo>-dev from a ref")
     p.add_argument("repo", help="the repository under ~/drive/proj/wow")
     p.add_argument("ref")
     p = sub.add_parser("smoke", help="build the commit a release would ship, test it, and post its status")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
     p.add_argument("--ref", required=True, help="the commit the next release would ship")
-    p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=1800,
+        help="seconds to reach the world and to wait for the job in flight",
+    )
     p.add_argument(
         "--manual-launcher",
         action="store_true",
@@ -1833,7 +2415,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="NAME=SLASH_OR_LUA_FILE",
         help="one flow to capture: a Forever addon slash command, or a Lua file run through !!DevSmoke",
     )
-    p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=1800,
+        help="seconds to reach the world and to wait for the job in flight",
+    )
     p.add_argument(
         "--manual-launcher",
         action="store_true",
@@ -1842,22 +2429,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.verb == "up":
+        if args.verb in ("up", "serve"):
             return up(args)
-        if args.verb == "run":
-            command = [c for c in args.command if c != "--"]
-            if not command:
-                raise ClientError("run needs a command after --")
-
-            def run_command(state):
-                env = {
-                    **os.environ,
-                    "XDG_RUNTIME_DIR": state["runtime_dir"],
-                    "FOREVER_CLIENT_DISPLAY": state["display"],
-                }
-                return subprocess.run(command, env=env, check=False).returncode
-
-            return up(args, after_ready=run_command)
+        if args.verb in ("job", "run"):
+            return job(args)
+        if args.verb == "lease":
+            return lease(args)
+        if args.verb == "release":
+            return release(args.token)
+        if args.verb == "lease-hold":
+            return lease_hold(args.fd, args.token, args.ttl)
         if args.verb == "down":
             return down()
         if args.verb == "capture-env":
@@ -1870,11 +2451,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             recover_links()
             root = WORKSPACE / args.repo
             commit = git(root, "rev-parse", "--verify", f"{args.ref}^{{commit}}")
-            release = tag_name(root, commit)
-            if release:
+            release_tag = tag_name(root, commit)
+            if release_tag:
                 # A ref at a release tag is that release: point the client back at the store build instead.
                 print(
-                    f"{args.repo}: {args.ref} is release {release}; "
+                    f"{args.repo}: {args.ref} is release {release_tag}; "
                     "run: wowaddon --flavor forever sync after removing its dev link"
                 )
                 return 0
@@ -1884,48 +2465,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             return smoke(args)
         if args.verb == "proof":
             return proof(args)
-        state = load_state()
-        launcher_action = state.get("manual_launcher") and (
-            args.verb == "shot" or (args.verb == "click" and args.button == "1")
-        )
-        if not state.get("ready") and not launcher_action:
-            raise ClientError("the session is not in the world yet: wait for `up` to print READY")
-        if args.verb == "shot":
-            print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
-        elif args.verb == "click":
-            click(state, args.x, args.y, args.button)
-        elif args.verb == "key":
-            press(state, args.keys)
-        elif args.verb == "slash":
-            slash(state, args.command)
-        elif args.verb == "reload":
-            print(f"reloaded ({reload(state).name})")
-        elif args.verb == "sv":
+        if args.verb in JOB_VERBS:
+            state = load_state()
+            if session_alive(state) and launcher_verb(state, args.verb, getattr(args, "button", None)):
+                # Nothing to queue for: the launcher input itself is what the job holding the lock waits for.
+                return input_verb(state, args)
+            return with_job(args.verb, args.timeout, lambda current: input_verb(current, args))
+        load_state()
+        if args.verb == "sv":
             files = saved_variables(args.addon)
             if not files:
                 raise ClientError(f"no SavedVariables for {args.addon}: it writes them at a reload or logout")
             for f in files:
                 print(f"-- {f}\n{f.read_text(errors='replace')}")
-        elif args.verb == "eval":
-            tool = devsmoke_eval()
-            try:
-                try:
-                    written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns")
-                except tool.EvalError as error:
-                    raise ClientError(str(error)) from None
-                print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-                # This reload runs the snippet; eval_result's own reload saves that result for the reader (#580).
-                reload(state)
-                report, ok = eval_result(state, written["token"])
-                print(report)
-                return 0 if ok else 1
-            finally:
-                clear_eval_inbox(quiet=True)
-        elif args.verb == "errors":
-            completed = errors(state, args.addon)
-            sys.stdout.write(completed.stdout)
-            sys.stderr.write(completed.stderr)
-            return completed.returncode
         return 0
     except ClientError as error:
         print(f"forever_client: {error}", file=sys.stderr)

@@ -12,9 +12,9 @@ kind is left alone, so a green main head costs nothing and a failed one is not r
     python3 tools/smoke_queue.py --dry-run   # print the commits that would be smoked
 
 `tools/systemd/forever-smoke.timer` runs it every 30 minutes at `Nice=10` on the machine that has the client; see
-`wow-forever-addon/in-game.md` for installing it. One client means one session: a smoke that exits 3 (the player's game
-or another session holds the client) stops the run at once and leaves every later commit for the next timer, so the
-queue never queues behind the player. It reads the same repository list, head commit and status as
+`wow-forever-addon/in-game.md` for installing it. One client means one session, shared with an agent's jobs: a smoke
+that exits 3 (the player's own client is running) stops the run at once and leaves every later commit for the next
+timer, so the queue never queues behind the player. It reads the same repository list, head commit and status as
 `tools/release_consumers.py`, so a new addon needs no edit here.
 """
 

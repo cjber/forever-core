@@ -10,5 +10,6 @@ Type=oneshot
 Nice=10
 # The checkout that holds core's own tools and the addon workspaces beside it. Edit this line if they live elsewhere.
 ExecStart=/usr/bin/env python3 %h/drive/proj/wow/forever-core/tools/smoke_queue.py
-# A smoke is a login, a selftest, one reload per addon folder and a logout, each session capped at 30 minutes.
+# A smoke is one job in the shared session: it links the build, reloads, runs the selftest and one errors read per
+# addon folder, then puts the links back. The session ends 10 minutes after the last job, 3 hours at most.
 TimeoutStartSec=3h

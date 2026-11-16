@@ -16,37 +16,65 @@ them where it can:
    globals) and `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there is no
    free typing; `click` refuses until a `shot` was taken after the last input, so each click aims at UI you have
    just read in the frame.
-2. **Short sessions.** Log in, test, log out. Every ending, whether the test returns, fails, is cancelled or hits
-   the 30 minute cap, types `/quit` so the character logs out, then stops the client. Prefer `run -- <script>` so
-   the session lasts only as long as the test.
+2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
+   Every verb that touches the client (`shot`, `click`, `key`, `slash`, `reload`, `eval`, `errors`) runs inside a
+   job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception is the
+   `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job lock. The
+   session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit` so the
+   character logs out, then stops the client.
 3. **Human pace.** Inputs are at least 1.5 s apart across invocations and slash commands type at 120 ms a key.
    Never loop inputs: take a shot, read it, decide the next action.
 
-## One client at a time
+## One client, one job at a time
 
-There is one Battle.net account, so one client. `up` holds an exclusive lock for its session and refuses to start
-while anything runs in the Wine prefix, which includes the player's own game: it fails with the reason and exits 2.
-Another agent's session makes it fail too, unless `--wait` queues behind it. When the player is in game, the test
-waits for them; a PR then lists its `/reload` steps for the player instead.
+There is one Battle.net account, so one client, and one AddOns folder, so one job. `serve` starts the client once
+and keeps it up while jobs arrive; `job -- <command>` starts that session when none runs, waits for any job in
+flight, and runs the command with the job lock held. A verb run on its own (`shot`, `slash`, `errors`, ...) takes
+the same lock for that one invocation. `job.json` in `~/.local/state/forever-client` names the holder, so a waiter
+prints what it waits for.
+
+A job exits 3 only when the player's own client is running, because the Wine prefix is used by processes this tool
+does not own. Another agent's job is waited for, up to `--timeout` (1800 s for `job`, `lease`, `smoke` and `proof`,
+600 s for a single verb or for `up`/`serve` to reach the world). When the player is in game, the test waits for them;
+a PR then lists its `/reload` steps for the player instead.
+
+`lease` holds the job lock for an agent driving the client across several tool calls: it prints a token, and every
+verb run with `FOREVER_CLIENT_JOB=<token>` in its environment proceeds without waiting. `release <token>` ends it,
+as does its `--ttl` (10 minutes by default, 30 at most) or the session ending.
 
 ## A session
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC up            # run in the background; prints READY once in the world (about 1 to 3 min)
-python3 $FC shot          # prints the PNG path; read it to see the frame
-python3 $FC click 960 540 # points in the 1920x1080 frame, on UI from the last shot
-python3 $FC key Escape    # Return, Escape or BackSpace
-python3 $FC slash "/fgf"  # a Forever addon's own command
-python3 $FC reload        # /reload, returns once the world is back
-python3 $FC errors --addon FieldGuideForever   # reload, then this session's Lua errors (exit 1 when any)
+python3 $FC job -- ./my-test.sh   # start or reuse the session, wait for the job lock, run the script
+python3 $FC shot                  # prints the PNG path; read it to see the frame
+python3 $FC click 960 540         # points in the 1920x1080 frame, on UI from the last shot
+python3 $FC key Escape            # Return, Escape or BackSpace
+python3 $FC slash "/fgf"          # a Forever addon's own command
+python3 $FC reload                # /reload, returns once the world is back
+python3 $FC errors --addon FieldGuideForever   # reload, then this job's Lua errors (exit 1 when any)
 python3 $FC sv FieldGuideForever               # SavedVariables as of the last reload
 python3 $FC eval /tmp/probe.lua                # write a snippet through !!DevSmoke, reload, print DevSmokeDB.eval
-python3 $FC down          # logs out, stops gamescope and every Wine process, removes the dev addon link
+python3 $FC down                  # stop the session once the job in flight, if any, has finished
 ```
 
-`run -- <command>` does `up`, runs the command with `FOREVER_CLIENT_DISPLAY` set, and logs out and stops the client
-whatever the command returns. Stopping `up` with SIGTERM, SIGHUP, Ctrl-C or the 30 minute cap ends it the same way.
+`job -- <command>` runs the command with `FOREVER_CLIENT_DISPLAY` and `FOREVER_CLIENT_JOB` set, so the verbs the
+script calls join its job instead of queueing behind it. The session it starts stays up for the next job; `serve`
+runs the same lifecycle in the foreground and `up` is its old name. Each verb run outside a job takes the job lock
+for that one call.
+
+Driving the client across several tool calls, use a lease:
+
+```sh
+TOKEN=$(python3 $FC lease)        # starts or reuses the session, prints the token
+FOREVER_CLIENT_JOB=$TOKEN python3 $FC shot
+FOREVER_CLIENT_JOB=$TOKEN python3 $FC click 960 540
+python3 $FC release $TOKEN
+```
+
+A session ends 10 minutes after the last job ended (or after READY when none has run) and never later than 3 hours
+from its start. At either end it takes the job lock first, so a job in flight is never cut off; `down` does the
+same. Every ending logs the character out and stops the client.
 
 ## Smoking a release commit
 
@@ -56,31 +84,36 @@ written to a local file:
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC smoke --repo legacy-forever --ref <sha>   # build, lock, selftest, errors, logout, post the status
+python3 $FC smoke --repo legacy-forever --ref <sha>   # build, link, reload, selftest, errors, restore, post status
 ```
 
-`smoke` builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way `rebuild-dev.sh` did (the same
-code, `forever_client.py build-dev <repo> <ref>`, writes `test-artifacts/<repo>-dev` for a hand link), points the
-build's addon folders at it in `Interface/AddOns`, then runs `up`, `/forever selftest`, `errors --addon <folder>` for
-each of the repo's addon folders, and `down`. It posts the result with
+`smoke` runs as one job. It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way
+`rebuild-dev.sh` did (the same code, `forever_client.py build-dev <repo> <ref>`, writes
+`test-artifacts/<repo>-dev` for a hand link), ensures a session, takes the job lock, points the build's addon
+folders at it in `Interface/AddOns`, reloads so the client loads it, runs `/forever selftest` and `errors --addon
+<folder>` for each of the repo's addon folders, and puts the links back before it releases the lock. It posts the
+result with
 `gh api repos/cjber/<repo>/statuses/<sha> -f state=success|failure -f context=headless-smoke -f description=...`,
-the error count or "clean". `--manual-launcher` is passed through to `up`, so while launcher OCR is not finding Play
-(cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes `shot`, and clicks Play
-itself.
+the error count or "clean". `--manual-launcher` starts the session that way, so while launcher OCR is not finding
+Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes `shot`, and clicks
+Play itself. While that job holds the job lock and waits for READY, `shot` and a button-1 `click` act on the launcher
+without the lock, so they never queue behind the job they are unblocking; `key` and `slash` still refuse until READY.
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
-- Exit 3 means the client cannot start: the player's game is running, or another agent's session holds it. Nothing is
-  posted then, so a caller runs it again later.
+- Exit 3 means the player's own client is running: the Wine prefix is used by processes this tool does not own.
+  Nothing is posted then, so a caller runs it again later. Another agent's job is waited for, up to `--timeout`.
 - The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
   moved back from `<folder>.smoke-backup`. The record of what it borrowed is `~/.local/state/forever-client/smoke-links.json`
-  while the session runs, kept only if a restore could not finish. A stop that never reaches Python's own handlers
-  (SIGKILL, or a signal aimed at the shell around it) leaves that record and its links behind; the next `up`, `run`,
-  `smoke` or `build-dev` puts them back before it touches AddOns and says what it restored, and a record whose session
-  is still running is left to that session's own teardown.
+  while the job runs, kept only if a restore could not finish. A stop that never reaches Python's own handlers
+  (SIGKILL, or a signal aimed at the shell around it) leaves that record and its links behind; the next `up`,
+  `serve`, `job`, `run`, `smoke` or `build-dev` puts them back before it touches AddOns and says what it restored,
+  and a record whose session is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
-head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never fights
-the player for the client. `python3 tools/smoke_queue.py --dry-run` lists them without starting anything.
+head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never
+fights the player for the client. Each smoke is one job in the resident session, so the queue shares the client
+with an agent instead of waiting for a whole session to end. `python3 tools/smoke_queue.py --dry-run` lists them
+without starting anything.
 
 Its timer is `tools/systemd/forever-smoke.timer`, every 30 minutes at `Nice=10`. Install it once, without editing
 anything else:
@@ -112,23 +145,24 @@ python3 $FC proof --repo legacy-forever --ref <sha> --checkout ~/drive/proj/wow/
   --flow "update notice=/lf"
 ```
 
-`proof` builds that commit's dev archive under `test-artifacts/<repo>-proof` as `smoke` does, points the build's
-addon folders at it in `Interface/AddOns`, starts the client, reloads once, and then for each flow runs the flow and
-takes a screenshot. A flow is a Forever addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs;
-anything longer than a `/run` line belongs in a file, exactly as `eval` takes it. The PNGs go to a new secret gist,
-and `<checkout>/.visual-proof.json` gets their full-SHA raw URLs and sha256s beside `visual_proof --digests`' input and
-candidate digests and the client build. It then runs `visual_proof --compare` against the installed build, so a
-mismatch fails before the proof is committed. Every AddOns slot is put back exactly as it was, and the checkout is
-never committed or pushed: commit `.visual-proof.json` yourself, in the pull request it proves.
+`proof` runs as one job, as `smoke` does: it builds that commit's dev archive under `test-artifacts/<repo>-proof`,
+ensures a session, takes the job lock, points the build's addon folders at it in `Interface/AddOns`, reloads once,
+and then for each flow runs the flow and takes a screenshot. A flow is a Forever addon's own slash command after
+`=`, or a Lua file that `!!DevSmoke` runs; anything longer than a `/run` line belongs in a file, exactly as `eval`
+takes it. The PNGs go to a new secret gist, and `<checkout>/.visual-proof.json` gets their full-SHA raw URLs and
+sha256s beside `visual_proof --digests`' input and candidate digests and the client build. It then runs
+`visual_proof --compare` against the installed build, so a mismatch fails before the proof is committed. Every
+AddOns slot is put back exactly as it was, and the checkout is never committed or pushed: commit
+`.visual-proof.json` yourself, in the pull request it proves.
 
 There is no default flow. ForeverCore has no shared opener for an addon's update notice: every addon prints it as one
 chat line at login, and a dev build's stamped version does not equal the addon's `WHATS_NEW_VERSION`, so that line
 does not fire on its own in a proof session. Name the flow that shows the changed text: the addon's own slash command
 (the `SLASH_` globals in its files, such as `/lf` or `/fgf`), or a Lua file through `!!DevSmoke` for anything a chat
-command cannot reach, written as the eval section below shows. Exit 3 means the client is in use (the player's game or
-another session), so nothing was recorded and a later run tries again; exit 1 is a session that stopped before its
-flows ran, and exit 2 is a failure the tool names. `--manual-launcher` is passed through to `up` while launcher OCR is
-not finding Play.
+command cannot reach, written as the eval section below shows. Exit 3 means the player's own client is running, so
+nothing was recorded and a later run tries again; another agent's job is waited for. Exit 1 is a job that stopped
+before its flows ran, and exit 2 is a failure the tool names. `--manual-launcher` starts the session that way while
+launcher OCR is not finding Play.
 
 `tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
 proof it prints this command for the pull request's head, and the release session runs it and commits the result.
@@ -198,10 +232,10 @@ is what tells a result apart from an earlier snippet's (#580). Use eval for anyt
   runner on the prefix `~/Games/battlenet`. `capture-env` records it into `~/.config/forever-client/env.json` while
   Battle.net runs from Faugus, and is needed again only when the game's runner in Faugus changes. One Wine build per
   prefix: a launch with another Wine logs Battle.net out.
-- Battle.net needs the network, so run the tool outside the agent sandbox; `up` checks Battle.net is reachable
-  before it starts anything.
+- Battle.net needs the network, so run the tool outside the agent sandbox; `serve` (and the `job` that starts it)
+  checks Battle.net is reachable before it starts anything.
 - The launcher logs in on its own and opens the WoW: Forever page, but ignores the launch it was started with, so
-  until the game starts `up` clicks Play every 15 s (`PLAY_BUTTON`, measured in the launcher window gamescope
+  until the game starts the session clicks Play every 15 s (`PLAY_BUTTON`, measured in the launcher window gamescope
   gives it; a launcher redesign moves it). Enter at the character list enters with the last character. A timeout prints the last frame's path: a login form or an update prompt there needs the player.
 
 ## Scope

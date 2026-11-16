@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -25,6 +26,11 @@ SPEC.loader.exec_module(fc)
 
 def args() -> argparse.Namespace:
     return argparse.Namespace(wait=False, timeout=5, manual_launcher=False)
+
+
+def live_state(**extra) -> dict:
+    """A session.json a live process wrote, for the verbs that re-check the session after taking the job lock."""
+    return {"pid": os.getpid(), "start_ticks": fc.process_start(os.getpid()), **extra}
 
 
 def dead_pid() -> int:
@@ -132,7 +138,7 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc, "prefix_users", return_value=[]),
             mock.patch.object(fc.socket, "create_connection"),
             mock.patch.object(fc.signal, "signal") as install,
-            mock.patch.object(fc.signal, "alarm"),
+            mock.patch.object(fc.signal, "alarm") as alarm,
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
             mock.patch.object(fc, "wait_for_world") as wait,
@@ -159,7 +165,8 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.up(options, after_ready=lambda state: state["runtime_dir"]), str(self.runtime))
             self.assertEqual(x.call_args.args[1:], ("key", "Return"))
         handled = {call.args[0] for call in install.call_args_list}
-        self.assertEqual(handled, {fc.signal.SIGTERM, fc.signal.SIGHUP, fc.signal.SIGINT, fc.signal.SIGALRM})
+        self.assertEqual(handled, {fc.signal.SIGTERM, fc.signal.SIGHUP, fc.signal.SIGINT})
+        alarm.assert_not_called()
         env = spawn.call_args.kwargs["env"]
         command = spawn.call_args.args[0]
         self.assertEqual(command[command.index("--") + 1 :], ["/faugus/umu-run", str(fc.LAUNCHER), *fc.LAUNCH_ARGS])
@@ -170,6 +177,7 @@ class ForeverClientTest(unittest.TestCase):
         self.assertNotIn("WAYLAND_DISPLAY", env)
         self.assertIn(str(self.runtime), (self.state / "session.json").read_text())
         self.assertIn('"manual_launcher": true', (self.state / "session.json").read_text())
+        self.assertIn('"start_ticks"', (self.state / "session.json").read_text())
 
     def test_wine_env_keeps_the_launch_and_drops_the_desktop(self):
         env = fc.wine_env(
@@ -316,21 +324,33 @@ class ForeverClientTest(unittest.TestCase):
             fc.up(argparse.Namespace(wait=True, timeout=5))
         self.assertGreaterEqual(clock.now, 5)
 
-    def test_a_run_that_waits_out_its_timeout_exits_non_zero(self):
-        (self.state / "session.json").write_text('{"pid": 7}')
+    def test_a_job_that_waits_out_its_timeout_exits_non_zero(self):
+        holder = open(self.state / "job.lock", "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        fc.write_job_record(
+            {
+                "pid": os.getpid(),
+                "start_ticks": fc.process_start(os.getpid()),
+                "token": "held",
+                "label": "smoke legacy-forever",
+                "started": time.time(),
+            }
+        )
         clock = FakeClock()
         err = io.StringIO()
         with (
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
-            mock.patch.object(fc.fcntl, "flock", side_effect=BlockingIOError()),
             mock.patch.object(fc.subprocess, "run") as ran,
             contextlib.redirect_stderr(err),
+            contextlib.redirect_stdout(io.StringIO()),
         ):
-            code = fc.main(["run", "--wait", "--timeout", "5", "--", "true"])
+            code = fc.main(["job", "--timeout", "5", "--", "true"])
         self.assertEqual(code, 2)
         ran.assert_not_called()
         self.assertIn("after waiting 5 s", err.getvalue())
+        self.assertIn("smoke legacy-forever", err.getvalue())
 
     def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
         addons = self.state / "AddOns"
@@ -439,9 +459,11 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("--manual-launcher", warning.getvalue())
 
     def test_manual_launcher_cli_only_allows_shot_and_left_click_before_ready(self):
-        state = {"manual_launcher": True}
+        state = live_state(manual_launcher=True)
         with (
             mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")),
+            mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "shot", return_value=self.state / "frame.png") as shot,
             mock.patch.object(fc, "click") as click,
             mock.patch.object(fc, "press") as press,
@@ -458,9 +480,42 @@ class ForeverClientTest(unittest.TestCase):
             press.assert_not_called()
             slash.assert_not_called()
 
+    def test_launcher_verbs_skip_the_job_lock_a_starting_manual_session_holds(self):
+        # `job`, `lease`, `smoke` and `proof` hold the job lock while `ensure_session` waits for READY, and the agent
+        # that clicks Play is what lets them get there: its own shot and left click must not queue behind them (#646).
+        holder = open(self.state / "job.lock", "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        state = live_state(manual_launcher=True)
+        err = io.StringIO()
+        with (
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "shot", return_value=self.state / "frame.png") as shot,
+            mock.patch.object(fc, "click") as click,
+            mock.patch.object(fc, "press") as press,
+            mock.patch.object(fc, "slash") as slash,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            # The held lock is never waited for: a zero-second timeout still takes the launcher verbs.
+            self.assertEqual(fc.main(["shot", "--timeout", "0"]), 0)
+            self.assertEqual(fc.main(["click", "100", "200", "--timeout", "0"]), 0)
+            shot.assert_called_once()
+            click.assert_called_once_with(state, 100, 200, "1")
+            # Every other verb refuses before READY, as it did, and says why rather than naming the lock.
+            fcntl.flock(holder, fcntl.LOCK_UN)
+            for command in (["key", "Return"], ["slash", "/fgf"], ["click", "100", "200", "--button", "3"]):
+                self.assertEqual(fc.main(command), 2)
+            self.assertIn("not in the world yet", err.getvalue())
+            press.assert_not_called()
+            slash.assert_not_called()
+            self.assertEqual(click.call_args_list, [mock.call(state, 100, 200, "1")])
+
     def test_default_launcher_still_blocks_actions_before_ready(self):
         with (
-            mock.patch.object(fc, "load_state", return_value={}),
+            mock.patch.object(fc, "load_state", return_value=live_state()),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")),
+            mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "shot") as shot,
             mock.patch.object(fc, "click") as click,
             contextlib.redirect_stderr(io.StringIO()),
@@ -470,12 +525,16 @@ class ForeverClientTest(unittest.TestCase):
             shot.assert_not_called()
             click.assert_not_called()
 
-    def test_manual_launcher_flag_reaches_up_and_run(self):
+    def test_manual_launcher_flag_reaches_up_and_job(self):
         with mock.patch.object(fc, "up", return_value=0) as up:
             self.assertEqual(fc.main(["up", "--manual-launcher"]), 0)
             self.assertTrue(up.call_args.args[0].manual_launcher)
+        with mock.patch.object(fc, "job", return_value=0) as job:
             self.assertEqual(fc.main(["run", "--manual-launcher", "--", "true"]), 0)
-            self.assertTrue(up.call_args.args[0].manual_launcher)
+            self.assertTrue(job.call_args.args[0].manual_launcher)
+            self.assertEqual(job.call_args.args[0].command, ["--", "true"])
+            self.assertEqual(fc.main(["job", "--label", "probe", "--", "true"]), 0)
+            self.assertEqual(job.call_args.args[0].label, "probe")
 
     def test_press_play_refuses_ambiguous_ocr_targets(self):
         state = {"display": ":1"}
@@ -777,7 +836,7 @@ class ForeverClientTest(unittest.TestCase):
                 '\t["out"] = { "a printed line", "42" },\n}'
             )
             tool = self.eval_tool()
-            state = {"ready": 1.0}
+            state = live_state(ready=1.0)
             out = io.StringIO()
             with (
                 mock.patch.object(fc, "load_state", return_value=state),
@@ -803,7 +862,7 @@ class ForeverClientTest(unittest.TestCase):
             self.saved_smoke('{\n\t["run"] = "earlier",\n\t["ran"] = 1763000000,\n\t["ok"] = true,\n}')
             err = io.StringIO()
             with (
-                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
                 mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
                 mock.patch.object(fc, "reload"),
                 contextlib.redirect_stdout(io.StringIO()),
@@ -821,7 +880,7 @@ class ForeverClientTest(unittest.TestCase):
             )
             out = io.StringIO()
             with (
-                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
                 mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
                 mock.patch.object(fc, "reload"),
                 contextlib.redirect_stdout(out),
@@ -837,7 +896,7 @@ class ForeverClientTest(unittest.TestCase):
         tool.write_snippet.side_effect = Refused("probe.lua:2: 'end' expected")
         err = io.StringIO()
         with (
-            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
             mock.patch.object(fc, "reload") as reload,
             contextlib.redirect_stderr(err),
@@ -850,7 +909,7 @@ class ForeverClientTest(unittest.TestCase):
         with mock.patch.object(fc, "CLIENT", self.state / "client"):
             self.saved_smoke('{\n\t["run"] = "run-1",\n\t["ran"] = 7,\n\t["ok"] = true,\n\t["out"] = { "shown" },\n}')
             with (
-                mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+                mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
                 mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
                 mock.patch.object(fc, "reload"),
                 mock.patch.object(fc, "clear_eval_inbox") as clear,
@@ -866,7 +925,7 @@ class ForeverClientTest(unittest.TestCase):
         tool = self.eval_tool(Refused)
         tool.write_snippet.side_effect = Refused("probe.lua:2: 'end' expected")
         with (
-            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
             mock.patch.object(fc, "reload") as reload,
             mock.patch.object(fc, "clear_eval_inbox") as clear,
@@ -886,7 +945,7 @@ class ForeverClientTest(unittest.TestCase):
         err = io.StringIO()
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
-            mock.patch.object(fc, "load_state", return_value={"ready": 1.0}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
             mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool()),
             mock.patch.object(fc, "reload"),
             contextlib.redirect_stderr(err),
@@ -1283,11 +1342,12 @@ class SmokeTest(unittest.TestCase):
         (self.workspace / "legacy-forever").mkdir(parents=True)
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
         self.posted = mock.Mock()
-        self.up = mock.Mock(side_effect=self.start_session)
+        self.reload = mock.Mock()
+        self.ensure = mock.Mock(side_effect=self.start_session)
+        self.released = mock.Mock()
 
-    def start_session(self, options, after_ready=None):
-        state = {"started": 1.0, "ready": 2.0, "display": ":1"}
-        return after_ready(state) if after_ready else 0
+    def start_session(self, _timeout, _manual_launcher=False):
+        return {"started": 1.0, "ready": 2.0, "display": ":1", "runtime_dir": "/run/user/1"}
 
     def report(self, *counts):
         """`errors --addon` answering with one live group per count, as forever_errors.py --json does."""
@@ -1302,14 +1362,18 @@ class SmokeTest(unittest.TestCase):
         options.update(argv or {})
         return fc.smoke(argparse.Namespace(**options))
 
-    def run_smoke(self, answers=(0,), busy=None, later=None, up=None, main_argv=None):
+    def run_smoke(self, answers=(0,), busy=None, later=None, ensure=None, main_argv=None):
         with (
             mock.patch.object(fc, "git", return_value="0123456789abcdef0123456789abcdef01234567"),
-            mock.patch.object(fc, "client_in_use", side_effect=[busy, later, None, None]),
+            mock.patch.object(fc, "foreign_client", side_effect=[busy, later]),
             mock.patch.object(fc, "build_dev", return_value=self.build) as build,
             mock.patch.object(fc, "package_name", return_value="LegacyForever"),
             mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
-            mock.patch.object(fc, "up", up or self.up),
+            mock.patch.object(fc, "ensure_session", ensure or self.ensure),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job", self.released),
+            mock.patch.object(fc, "reload", self.reload),
+            mock.patch.object(fc, "job_started", return_value=3.0),
             mock.patch.object(fc, "slash"),
             mock.patch.object(fc, "post_status", self.posted),
             mock.patch.object(fc, "stop_handlers", return_value={}),
@@ -1331,6 +1395,8 @@ class SmokeTest(unittest.TestCase):
         )
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
+        self.reload.assert_called_once()
+        self.released.assert_called_once()
 
     def test_a_smoke_clears_the_eval_inbox_when_it_starts_and_ends(self):
         with mock.patch.object(fc, "clear_eval_inbox") as clear:
@@ -1338,14 +1404,14 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
 
-    def test_manual_launcher_flag_reaches_up(self):
+    def test_manual_launcher_flag_reaches_the_session(self):
         argv = ["smoke", "--repo", "legacy-forever", "--ref", "main"]
         code, _printed, _build = self.run_smoke(main_argv=argv)
         self.assertEqual(code, 0)
-        self.assertFalse(self.up.call_args.args[0].manual_launcher)
+        self.assertFalse(self.ensure.call_args.args[1])
         code, _printed, _build = self.run_smoke(main_argv=[*argv, "--manual-launcher"])
         self.assertEqual(code, 0)
-        self.assertTrue(self.up.call_args.args[0].manual_launcher)
+        self.assertTrue(self.ensure.call_args.args[1])
 
     def test_errors_post_failure_with_the_count(self):
         code, _printed, _build = self.run_smoke(answers=(3,))
@@ -1362,25 +1428,26 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("client in use", printed)
 
     def test_the_session_stops_at_once_when_wine_fills_with_the_players_client(self):
-        def start(_options, after_ready=None):
+        def start(_timeout, _manual_launcher=False):
             raise fc.ClientError("the Wine prefix is in use")
 
-        code, _printed, _build = self.run_smoke(up=start, later="the player's client is running")
+        code, _printed, _build = self.run_smoke(ensure=start, later="the player's client is running")
         self.assertEqual(code, 3)
         self.posted.assert_not_called()
         self.assertFalse((self.addons / "LegacyForever").exists())
 
     def test_a_session_that_cannot_start_posts_failure(self):
-        def start(_options, after_ready=None):
+        def start(_timeout, _manual_launcher=False):
             raise fc.ClientError("the world did not load within 600 s")
 
-        code, _printed, _build = self.run_smoke(up=start)
+        code, _printed, _build = self.run_smoke(ensure=start)
         self.assertEqual(code, 1)
         self.assertEqual(self.posted.call_args.args[2], False)
         self.assertIn("no result: the world did not load", self.posted.call_args.args[3])
         self.assertFalse((self.addons / "LegacyForever").exists())
 
-    def test_a_client_in_use_that_clears_during_the_build_still_posts(self):
+    def test_a_client_that_is_not_in_use_smokes(self):
+        # A resident session's own Wine processes are not a busy client: only the player's game is.
         code, _printed, _build = self.run_smoke(busy=None)
         self.assertEqual(code, 0)
         self.posted.assert_called_once()
@@ -1423,35 +1490,39 @@ class SmokeTest(unittest.TestCase):
         self.assertFalse(fc.link_record_path().exists())
 
     def test_a_sigterm_restores_the_links_and_posts_nothing(self):
-        def stop(_options, after_ready=None):
-            raise KeyboardInterrupt
-
-        code, _printed, _build = self.run_smoke(up=stop)
+        self.reload.side_effect = KeyboardInterrupt
+        code, _printed, _build = self.run_smoke()
         self.assertEqual(code, 1)
         self.posted.assert_not_called()
         self.assertFalse((self.addons / "LegacyForever").exists())
+        self.released.assert_called_once()
 
-    def test_a_session_up_returns_from_without_a_result_posts_nothing(self):
-        # `up` turns SIGTERM into a normal return after its own teardown, so an empty result is a stopped session.
-        code, _printed, _build = self.run_smoke(up=lambda _options, after_ready=None: 0)
+    def test_a_result_with_no_counts_and_no_error_posts_nothing(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": None})
         self.assertEqual(code, 1)
         self.posted.assert_not_called()
-        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.assertIn("stopped before it finished", err.getvalue())
 
-    def test_the_selftest_runs_before_the_errors_are_read(self):
+    def test_the_linked_build_is_reloaded_then_selftested_then_read(self):
         calls = []
 
-        def start(_options, after_ready=None):
-            return after_ready({"started": 1.0, "ready": 2.0})
+        def selftest(_state, command):
+            calls.append(command)
+            # The linked candidate is what the client just reloaded, before the selftest runs.
+            self.assertTrue((self.addons / "LegacyForever").is_symlink())
 
         with (
             mock.patch.object(fc, "git", return_value="a" * 40),
-            mock.patch.object(fc, "client_in_use", return_value=None),
+            mock.patch.object(fc, "foreign_client", return_value=None),
             mock.patch.object(fc, "build_dev", return_value=self.build),
             mock.patch.object(fc, "package_name", return_value="LegacyForever"),
             mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
-            mock.patch.object(fc, "up", side_effect=start),
-            mock.patch.object(fc, "slash", side_effect=lambda _state, command: calls.append(command)),
+            mock.patch.object(fc, "ensure_session", side_effect=self.start_session),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: calls.append("reload")),
+            mock.patch.object(fc, "slash", side_effect=selftest),
             mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
             mock.patch.object(fc, "post_status"),
             mock.patch.object(fc, "stop_handlers", return_value={}),
@@ -1459,8 +1530,9 @@ class SmokeTest(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(self.smoke(), 0)
-        self.assertEqual(calls, ["/forever selftest"])
+        self.assertEqual(calls, ["reload", "/forever selftest"])
         read.assert_called_once_with(mock.ANY, "LegacyForever", as_json=True)
+        self.assertFalse((self.addons / "LegacyForever").exists())
 
     def test_a_smoke_rejects_a_repository_name_that_is_a_path(self):
         with self.assertRaisesRegex(fc.ClientError, "repository name"):
@@ -1473,11 +1545,14 @@ class SmokeTest(unittest.TestCase):
     def test_an_errors_read_that_prints_no_json_fails_the_smoke(self):
         with (
             mock.patch.object(fc, "git", return_value="a" * 40),
-            mock.patch.object(fc, "client_in_use", return_value=None),
+            mock.patch.object(fc, "foreign_client", return_value=None),
             mock.patch.object(fc, "build_dev", return_value=self.build),
             mock.patch.object(fc, "package_name", return_value="LegacyForever"),
             mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
-            mock.patch.object(fc, "up", side_effect=self.start_session),
+            mock.patch.object(fc, "ensure_session", side_effect=self.start_session),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "reload"),
             mock.patch.object(fc, "slash"),
             mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
             mock.patch.object(fc, "post_status") as posted,
@@ -1795,12 +1870,11 @@ class ProofTest(unittest.TestCase):
         self.client_build = mock.Mock(return_value="1.60.1.70938 (Interface 16001)")
         self.compare = mock.Mock(return_value={"equivalent": True})
         self.build_dev = mock.Mock(return_value=self.build)
-        self.up = mock.Mock(side_effect=self.start_session)
+        self.ensure = mock.Mock(side_effect=self.start_session)
+        self.released = mock.Mock()
 
-    def start_session(self, options, after_ready=None):
-        if after_ready:
-            return after_ready({"started": 1.0, "ready": 2.0, "display": ":1"})
-        return 0
+    def start_session(self, _timeout, _manual_launcher=False):
+        return {"started": 1.0, "ready": 2.0, "display": ":1", "runtime_dir": "/run/user/1"}
 
     def options(self, **overrides):
         values = {
@@ -1850,36 +1924,38 @@ class ProofTest(unittest.TestCase):
         return path
 
     def run_proof(self, **overrides):
-        up = overrides.pop("up", None)
-        with (
-            mock.patch.object(fc, "git", side_effect=self.fake_git),
-            mock.patch.object(fc, "client_in_use", side_effect=self.busy),
-            mock.patch.object(fc, "recover_links"),
-            mock.patch.object(fc, "build_dev", self.build_dev),
-            mock.patch.object(fc, "package_name", return_value="LegacyForever"),
-            mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]),
-            mock.patch.object(fc, "up", up or self.up),
-            mock.patch.object(fc, "reload", self.reload),
-            mock.patch.object(fc, "slash", side_effect=self.fake_slash),
-            mock.patch.object(fc, "shot", side_effect=self.fake_shot),
-            mock.patch.object(fc, "proof_digests", self.proof_digests),
-            mock.patch.object(fc, "create_gist", self.create_gist),
-            mock.patch.object(fc, "upload_screenshots", self.upload),
-            mock.patch.object(fc, "client_build", self.client_build),
-            mock.patch.object(fc, "proof_compare", self.compare),
-            mock.patch.object(fc, "stop_handlers", return_value={}),
-            mock.patch.object(fc, "restore_handlers"),
-            mock.patch.object(fc.time, "sleep"),
-            contextlib.redirect_stdout(io.StringIO()) as out,
-            contextlib.redirect_stderr(io.StringIO()) as err,
-        ):
+        ensure = overrides.pop("ensure", None)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(fc, "git", side_effect=self.fake_git))
+            stack.enter_context(mock.patch.object(fc, "foreign_client", side_effect=self.busy))
+            stack.enter_context(mock.patch.object(fc, "recover_links"))
+            stack.enter_context(mock.patch.object(fc, "build_dev", self.build_dev))
+            stack.enter_context(mock.patch.object(fc, "package_name", return_value="LegacyForever"))
+            stack.enter_context(mock.patch.object(fc, "addon_folders", return_value=[("LegacyForever", self.build)]))
+            stack.enter_context(mock.patch.object(fc, "ensure_session", ensure or self.ensure))
+            stack.enter_context(mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")))
+            stack.enter_context(mock.patch.object(fc, "release_job", self.released))
+            stack.enter_context(mock.patch.object(fc, "reload", self.reload))
+            stack.enter_context(mock.patch.object(fc, "job_started", return_value=3.0))
+            stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
+            stack.enter_context(mock.patch.object(fc, "shot", side_effect=self.fake_shot))
+            stack.enter_context(mock.patch.object(fc, "proof_digests", self.proof_digests))
+            stack.enter_context(mock.patch.object(fc, "create_gist", self.create_gist))
+            stack.enter_context(mock.patch.object(fc, "upload_screenshots", self.upload))
+            stack.enter_context(mock.patch.object(fc, "client_build", self.client_build))
+            stack.enter_context(mock.patch.object(fc, "proof_compare", self.compare))
+            stack.enter_context(mock.patch.object(fc, "stop_handlers", return_value={}))
+            stack.enter_context(mock.patch.object(fc, "restore_handlers"))
+            stack.enter_context(mock.patch.object(fc.time, "sleep"))
+            out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            err = stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
             code = fc.proof(self.options(**overrides))
         return code, out.getvalue(), err.getvalue()
 
-    def test_the_manual_launcher_flag_reaches_up(self):
+    def test_the_manual_launcher_flag_reaches_the_session(self):
         code, _printed, _err = self.run_proof(manual_launcher=True)
         self.assertEqual(code, 0)
-        self.assertTrue(self.up.call_args.args[0].manual_launcher)
+        self.assertTrue(self.ensure.call_args.args[1])
 
     def test_the_build_is_the_smokes_build_beside_the_others(self):
         code, _printed, _err = self.run_proof()
@@ -1913,6 +1989,7 @@ class ProofTest(unittest.TestCase):
         self.compare.assert_called_once_with(self.checkout, self.build)
         self.assertIn("wrote", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
+        self.released.assert_called_once()
 
     def test_a_proof_compare_that_fails_removes_the_proof_it_wrote(self):
         self.compare.side_effect = fc.ClientError("installed build differs")
@@ -1950,41 +2027,34 @@ class ProofTest(unittest.TestCase):
         with self.assertRaisesRegex(fc.ClientError, "no checkout at"):
             fc.proof(self.options(checkout=self.state / "missing"))
 
-    def test_a_session_that_stops_before_the_flows_records_nothing(self):
-        code, _printed, err = self.run_proof(up=lambda _options, after_ready=None: 0)
+    def test_a_job_that_stops_before_the_flows_records_nothing(self):
+        self.reload.side_effect = KeyboardInterrupt
+        code, _printed, err = self.run_proof()
         self.assertEqual(code, 1)
         self.create_gist.assert_not_called()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
         self.assertIn("stopped before it finished", err)
+        self.released.assert_called_once()
 
     def test_a_client_that_fills_while_the_build_links_stops_at_once(self):
-        def start(_options, after_ready=None):
+        def start(_timeout, _manual_launcher=False):
             raise fc.ClientError("the Wine prefix is in use")
 
         self.busy = [None, "the player's client is running (Wow.exe, pid 43)"]
-        code, printed, _err = self.run_proof(up=start)
+        code, printed, _err = self.run_proof(ensure=start)
         self.assertEqual(code, 3)
         self.create_gist.assert_not_called()
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.assertIn("client in use", printed)
 
     def test_a_failed_flow_puts_the_links_back_and_records_nothing(self):
-        def start(options, after_ready=None):
-            return after_ready({"display": ":1"})
-
-        self.slash_error = "refused /lf"
-        with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
-            self.run_proof(up=start)
-        self.assertFalse((self.addons / "LegacyForever").exists())
-        self.create_gist.assert_not_called()
-        self.assertFalse((self.checkout / ".visual-proof.json").exists())
-
-    def test_a_flow_that_fails_in_the_world_reports_its_own_error_not_a_busy_client(self):
-        # In the world the session holds the client's lock itself, so client_in_use would name it as another's.
-        self.busy = [None, "another session holds the client", "another session holds the client"]
         self.slash_error = "refused /lf"
         with self.assertRaisesRegex(fc.ClientError, "refused /lf"):
             self.run_proof()
+        self.assertFalse((self.addons / "LegacyForever").exists())
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+        self.released.assert_called_once()
 
     def test_a_lua_flow_takes_a_shot_after_the_snippet_ran(self):
         lua = self.state / "notice.lua"
@@ -2080,6 +2150,294 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(options.checkout, self.checkout)
         self.assertEqual(options.flow, ["update notice=/lf"])
         self.assertTrue(options.manual_launcher)
+
+
+class BrokerTest(unittest.TestCase):
+    """The resident session and the short job lock: one client, several agents, no login per test."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+
+    def holder(self, token="held", label="smoke legacy-forever", pid=None, start_ticks=None):
+        """A job.json naming a live holder, as a job or a lease writes it."""
+        fc.write_job_record(
+            {
+                "pid": pid if pid is not None else os.getpid(),
+                "start_ticks": start_ticks if start_ticks is not None else fc.process_start(os.getpid()),
+                "token": token,
+                "label": label,
+                "started": time.time(),
+            }
+        )
+
+    def test_the_session_ends_after_the_idle_limit_or_at_the_lifetime_cap(self):
+        self.assertIsNone(fc.session_end_reason(100, 0, 50, 95))
+        self.assertIn(f"{fc.IDLE_LIMIT // 60} min", fc.session_end_reason(fc.IDLE_LIMIT + 50, 0, 50, 50))
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, fc.MAX_SESSION - 1))
+        # The lifetime cap wins when both limits are due, so the session never outlives it.
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0))
+
+    def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):
+        stale = self.state / "last-job"
+        stale.touch()
+        os.utime(stale, (0, 0))
+        clock = FakeClock()
+        clock.now = 1000.0
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "time", return_value=10_000.0),
+        ):
+            self.assertEqual(fc.last_job_mark(ready=900.0), 900.0)
+
+    def test_the_lifetime_cap_waits_for_a_running_job_before_teardown(self):
+        config = self.state / "env.json"
+        config.write_text('{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"}}')
+        client = self.state / "client"
+        (client / "Interface/AddOns").mkdir(parents=True)
+        clock = FakeClock()
+        order = []
+
+        def acquire(timeout, _label):
+            self.assertIsNone(timeout, "the end waits for the job in flight, never on a timeout")
+            clock.sleep(5)  # the job in flight runs on for five seconds
+            order.append("job-finished")
+            return mock.Mock(), "session-end"
+
+        def teardown(*_args):
+            order.append("teardown")
+
+        gamescope = mock.Mock(pid=123)
+        gamescope.poll.return_value = None
+        with (
+            mock.patch.object(fc, "CONFIG", config),
+            mock.patch.object(fc, "CLIENT", client),
+            mock.patch.object(fc, "prefix_users", return_value=[]),
+            mock.patch.object(fc.socket, "create_connection"),
+            mock.patch.object(fc.signal, "signal"),
+            mock.patch.object(fc, "runtime_dir", return_value=self.state / "runtime"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}),
+            mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")),
+            mock.patch.object(fc, "teardown", side_effect=teardown),
+            mock.patch.object(fc, "acquire_job", side_effect=acquire),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "MAX_SESSION", 10),
+            mock.patch.object(fc, "IDLE_LIMIT", 10**9),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            mock.patch.object(fc.time, "time", return_value=1000.0),
+            mock.patch.object(fc.subprocess, "Popen", return_value=gamescope),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.up(args()), 0)
+        self.assertEqual(order, ["job-finished", "teardown"])
+
+    def test_a_job_starts_a_session_when_none_runs_and_reuses_a_ready_one(self):
+        clock = FakeClock()
+        child = mock.Mock(pid=999)
+        child.poll.return_value = None
+        ready = live_state(ready=1.0, display=":3", runtime_dir="/run/user/1")
+        with (
+            mock.patch.object(fc, "session_lock_held", return_value=False),
+            mock.patch.object(fc, "start_serve", return_value=child) as start,
+            mock.patch.object(fc, "current_session", side_effect=[None, None, ready]),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(fc.ensure_session(60), ready)
+        start.assert_called_once_with(False)
+        self.assertGreater(clock.now, 0)
+
+        with (
+            mock.patch.object(fc, "start_serve") as start,
+            mock.patch.object(fc, "current_session", return_value=ready),
+        ):
+            self.assertEqual(fc.ensure_session(60), ready)
+        start.assert_not_called()
+
+    def test_a_job_runs_its_command_with_the_token_and_releases_the_lock(self):
+        state = live_state(ready=1.0, display=":3", runtime_dir="/run/user/1")
+        with (
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "ensure_session", return_value=state),
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc, "release_job") as released,
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=7)) as run,
+        ):
+            code = fc.job(argparse.Namespace(command=["--", "probe.sh"], label=None, timeout=5, manual_launcher=False))
+        self.assertEqual(code, 7)
+        self.assertEqual(run.call_args.args[0], ["probe.sh"])
+        env = run.call_args.kwargs["env"]
+        self.assertEqual(env["FOREVER_CLIENT_JOB"], "job-token")
+        self.assertEqual(env["FOREVER_CLIENT_DISPLAY"], ":3")
+        released.assert_called_once_with(mock.ANY, "job-token")
+
+    def test_a_job_waits_for_the_lock_and_names_the_holder_once(self):
+        self.holder(label="smoke legacy-forever")
+        clock = FakeClock()
+        out = io.StringIO()
+        calls = {"count": 0}
+
+        def flock(_handle, _operation):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise BlockingIOError
+
+        with (
+            mock.patch.object(fc.fcntl, "flock", side_effect=flock),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            contextlib.redirect_stderr(out),
+        ):
+            handle, token = fc.acquire_job(60, "shot")
+            try:
+                self.assertEqual(out.getvalue().count("waiting for"), 1)
+                self.assertIn("smoke legacy-forever", out.getvalue())
+                record = json.loads(fc.job_record_path().read_text())
+                self.assertEqual((record["token"], record["label"]), (token, "shot"))
+            finally:
+                fc.release_job(handle, token)
+        self.assertFalse(fc.job_record_path().exists())
+        self.assertTrue((self.state / "last-job").exists())
+
+    def test_a_job_that_waits_out_its_timeout_names_the_holder(self):
+        holder = open(self.state / "job.lock", "w")
+        self.addCleanup(holder.close)
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        self.holder()
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaisesRegex(fc.ClientError, "after waiting 5 s.*smoke legacy-forever"),
+        ):
+            fc.acquire_job(5, "shot")
+
+    def test_a_dead_job_json_owner_is_treated_as_free(self):
+        fc.write_job_record({"pid": dead_pid(), "start_ticks": 1, "token": "old", "label": "a dead job", "started": 0})
+        self.assertIsNone(fc.job_holder())
+        self.assertEqual(fc.describe_job(), "another job")
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "old"}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "new")) as acquire,
+            mock.patch.object(fc, "release_job"),
+        ):
+            self.assertEqual(fc.with_job("shot", 5, lambda _state: 0), 0)
+        acquire.assert_called_once_with(5, "shot")
+
+    def test_a_lease_token_is_accepted_and_a_foreign_token_queues(self):
+        self.holder(token="lease-token")
+        state = live_state(ready=1.0)
+        action = mock.Mock(return_value=0)
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "lease-token"}),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job") as acquire,
+        ):
+            self.assertEqual(fc.with_job("shot", 600, action), 0)
+        acquire.assert_not_called()
+        action.assert_called_once_with(state)
+
+        action.reset_mock()
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "another-job"}),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")) as acquire,
+            mock.patch.object(fc, "release_job"),
+        ):
+            self.assertEqual(fc.with_job("shot", 600, action), 0)
+        acquire.assert_called_once_with(600, "shot")
+
+    def test_a_lease_prints_its_token_and_names_the_holder(self):
+        holder = mock.Mock(pid=os.getpid())
+        out = io.StringIO()
+        with (
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "lease-token")),
+            mock.patch.object(fc, "ensure_session", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "start_holder", return_value=holder) as start,
+            contextlib.redirect_stdout(out),
+        ):
+            options = argparse.Namespace(ttl=600, timeout=5, manual_launcher=False, label="interactive")
+            self.assertEqual(fc.lease(options), 0)
+        self.assertEqual(out.getvalue().strip(), "lease-token")
+        record = json.loads(fc.job_record_path().read_text())
+        self.assertEqual(record["token"], "lease-token")
+        self.assertEqual(record["pid"], os.getpid())
+        self.assertEqual(record["label"], "interactive")
+        self.assertIn("expires", record)
+        start.assert_called_once()
+
+    def test_a_lease_ttl_is_capped(self):
+        options = argparse.Namespace(ttl=fc.LEASE_MAX + 1, timeout=5, manual_launcher=False, label=None)
+        with self.assertRaisesRegex(fc.ClientError, f"1 to {fc.LEASE_MAX}"):
+            fc.lease(options)
+
+    def test_release_ends_only_the_lease_that_owns_the_token(self):
+        self.holder(token="lease-token", label="a lease")
+        with self.assertRaisesRegex(fc.ClientError, "not the holder's"):
+            fc.release("another-token")
+
+    def test_release_refuses_a_job_that_is_not_a_lease(self):
+        self.holder(token="job-token", label="smoke legacy-forever")
+        with self.assertRaisesRegex(fc.ClientError, "not a lease's"):
+            fc.release("job-token")
+
+    def test_a_resident_sessions_processes_are_not_a_busy_client(self):
+        state = live_state(token="session-token")
+        processes = {42: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "session-token"}}
+        with (
+            mock.patch.object(fc, "prefix_snapshot", return_value=processes),
+            mock.patch.object(fc, "current_session", return_value=state),
+            mock.patch.object(fc, "client_pid", return_value=42),
+        ):
+            self.assertIsNone(fc.foreign_client())
+
+    def test_the_players_client_is_the_only_busy_reason(self):
+        processes = {42: {"WINEPREFIX": str(fc.PREFIX), "FOREVER_CLIENT_SESSION": "someone-else"}}
+        with (
+            mock.patch.object(fc, "prefix_snapshot", return_value=processes),
+            mock.patch.object(fc, "current_session", return_value=None),
+            mock.patch.object(fc, "client_pid", return_value=42),
+        ):
+            self.assertIn("player's client is running", fc.foreign_client())
+
+    def test_down_asks_the_session_to_stop_after_the_job_in_flight(self):
+        fc.state_file().write_text(json.dumps(live_state(ready=1.0)))
+        clock = FakeClock()
+        seen = {}
+
+        def tick(seconds):
+            clock.sleep(seconds)
+            seen["stop"] = (self.state / "stop").exists()
+            fc.state_file().unlink(missing_ok=True)
+
+        with (
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", side_effect=tick),
+        ):
+            self.assertEqual(fc.down(), 0)
+        self.assertTrue(seen["stop"])
+        self.assertFalse((self.state / "stop").exists())
+
+    def test_down_stops_a_session_that_is_still_starting(self):
+        fc.state_file().write_text(json.dumps(live_state()))
+        clock = FakeClock()
+
+        def tick(seconds):
+            clock.sleep(seconds)
+            fc.state_file().unlink(missing_ok=True)
+
+        with (
+            mock.patch.object(fc.os, "kill") as kill,
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", side_effect=tick),
+        ):
+            self.assertEqual(fc.down(), 0)
+        kill.assert_any_call(os.getpid(), signal.SIGTERM)
 
 
 if __name__ == "__main__":
