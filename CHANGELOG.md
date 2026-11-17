@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - **The mouse wheel scrolls a tracker section over its text.** A quest taller than its space now scrolls a page at a time with overlap, so every objective stays reachable even in a short column. (#616, #615)
+- **Release tooling:** `changelog.py --check` fails on a bullet that appears twice in one section, an addon PR's package check no longer fails while a new ForeverCore awaits CurseForge moderation (the release workflow still requires the latest core), and a proof records a Lua flow as `sha256:<digest> <file>` so a file named with `api` or `key` no longer trips gitleaks. (#660, #661, #656)
 - **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
 - **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
 - **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)

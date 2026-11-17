@@ -377,10 +377,9 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     parser.add_argument("--release-dir", type=Path, default=root / ".release", help="the packager's release folder")
     args = parser.parse_args(argv)
     problems = check(args.release_dir, policy)
-    # The pin has to name core's latest published release, and the shipped external and the TOC field have to name
-    # that same tag, or the zip a release builds carries a core older than the one every player has. A latest release
-    # that cannot be read fails here rather than passing the pin unchecked.
-    problems += core_pin.check_latest(root)
+    # PR CI compares the three committed copies offline. The release workflow checks --latest immediately
+    # before uploading, so a new core awaiting store moderation does not block an unrelated addon PR.
+    problems += core_pin.check(root)
     # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
     problems += widget_handlers.check_root(args.release_dir, policy.addons)
     for addon in policy.addons:

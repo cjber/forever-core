@@ -170,41 +170,31 @@ class CorePinTest(unittest.TestCase):
         out = io.StringIO()
         with (
             mock.patch.object(package, "check", return_value=[]),
-            mock.patch.object(core_pin, "latest_release", return_value="v1.4.0"),
+            mock.patch.object(core_pin, "latest_release", return_value="v1.5.0") as latest,
+            mock.patch.object(core_pin.urllib.request, "urlopen") as network,
             mock.patch.object(package.lua51, "check", return_value=[]),
             mock.patch.object(package, "run_specs", return_value=[]),
             contextlib.redirect_stderr(out),
         ):
             self.assertEqual(package.main(self.root, policy, []), 1)
+        latest.assert_not_called()
+        network.assert_not_called()
         self.assertIn("`externals:` ships ForeverCore from", out.getvalue())
 
-    def test_the_package_job_fails_a_pin_behind_the_latest_release(self):
+    def test_the_package_job_passes_an_agreeing_older_pin_without_network(self):
         self.write()
         policy = package.Policy(addons=("LegacyForever",))
-        out = io.StringIO()
         with (
             mock.patch.object(package, "check", return_value=[]),
-            mock.patch.object(core_pin, "latest_release", return_value="v1.5.0"),
+            mock.patch.object(core_pin, "latest_release", return_value="v1.5.0") as latest,
+            mock.patch.object(core_pin.urllib.request, "urlopen") as network,
             mock.patch.object(package.lua51, "check", return_value=[]),
             mock.patch.object(package, "run_specs", return_value=[]),
-            contextlib.redirect_stderr(out),
+            contextlib.redirect_stdout(io.StringIO()),
         ):
-            self.assertEqual(package.main(self.root, policy, []), 1)
-        self.assertIn("pin v1.4.0, core's latest release is v1.5.0", out.getvalue())
-
-    def test_the_package_job_fails_closed_when_the_latest_release_is_unknown(self):
-        self.write()
-        policy = package.Policy(addons=("LegacyForever",))
-        out = io.StringIO()
-        with (
-            mock.patch.object(package, "check", return_value=[]),
-            mock.patch.object(core_pin, "latest_release", side_effect=core_pin.LatestReleaseUnavailable("404")),
-            mock.patch.object(package.lua51, "check", return_value=[]),
-            mock.patch.object(package, "run_specs", return_value=[]),
-            contextlib.redirect_stderr(out),
-        ):
-            self.assertEqual(package.main(self.root, policy, []), 1)
-        self.assertIn("could not read cjber/forever-core's latest published release (404)", out.getvalue())
+            self.assertEqual(package.main(self.root, policy, []), 0)
+        latest.assert_not_called()
+        network.assert_not_called()
 
 
 if __name__ == "__main__":

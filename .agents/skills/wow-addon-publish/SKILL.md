@@ -250,6 +250,8 @@ By hand, in a session, the same checks are:
    BugGrabber, `taint.log` and the selftest's failed surfaces. Exit 1 blocks the release: fix the error first.
 4. Point the link back at `test-artifacts/<repo>-dev` and `/reload`.
 
+After merging main into a release branch, re-read the version section; `changelog.py --check` catches a bullet that appears twice.
+
 Before the tag, check the changelog entry: a feature release (major or minor bump) names its hero, one of
 the repo's own rendered screenshots showing the new feature at its native size, at the top of its section
 with `<!-- discord-image: docs/screenshots/<file>.png -->`; `tools/changelog.py --check X.Y.Z` fails without

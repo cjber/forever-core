@@ -17,10 +17,6 @@ release gate directly above the BigWigs packager step in every consumer that has
 that lands between CI and the upload is still caught. A workflow with no packager step (kiln-forever's own tar build)
 is left alone and its exact step is printed for the maintainer.
 
-The CI workflow is the addon's own too. A full sync gives the step that runs `tools/check_package.py` the
-`GH_TOKEN: ${{ github.token }}` its latest-release read needs, adding it to any existing `env:` rather than replacing
-one. Without it the read is anonymous and shares the runner address's hourly limit, so the package job fails now and
-then with no code cause.
 """
 
 import argparse
@@ -30,15 +26,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from check_consumers import (
-    CI_WORKFLOW,
-    PACKAGE_TOKEN,
-    UnsupportedEnv,
-    package_command,
-    pkgmeta_field,
-    step_fields,
-    workflow_steps,
-)
+from check_consumers import pkgmeta_field
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -91,8 +79,8 @@ def release_gate_step(indent="      "):
     """The release-workflow step that fails a stale pin immediately before the packager uploads."""
     return (
         f"{indent}# A ForeverCore release can land between this commit's CI and this upload, and the zip carries the\n"
-        f"{indent}# core its pin names. The package job already gates the pin; run the same gate once more here, with\n"
-        f"{indent}# nothing between it and the packager.\n"
+        f"{indent}# core its pin names. The package job compares the three copies offline; check --latest here,\n"
+        f"{indent}# with nothing between it and the packager.\n"
         f"{indent}- name: {RELEASE_GATE_NAME}\n"
         f"{indent}  env:\n"
         f"{indent}    GH_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}\n"
@@ -131,67 +119,6 @@ def sync_release_gate(root, repo, dry_run):
     if path is None or updated is None:
         return 0
     print(f"{repo}: {RELEASE_WORKFLOW}")
-    if not dry_run:
-        path.write_text(updated, encoding="utf-8")
-    return 1
-
-
-def package_token_edit(root, repo):
-    """`(path, updated_text)` for the step that runs `tools/check_package.py` in `repo`'s CI.
-
-    `updated_text` is None when nothing should be written: there is no CI workflow, no step runs the package check, or
-    every such step already carries `GH_TOKEN` or `GITHUB_TOKEN`. A step with an existing `env:` keeps every entry and
-    gains the token as one more; a step without one gets its own `env:` block. Nothing else in the workflow changes.
-    """
-    path = root / CI_WORKFLOW
-    if not path.is_file():
-        return None, None
-    text = path.read_text(encoding="utf-8")
-    lines = text.splitlines(keepends=True)
-    newline = "\r\n" if "\r\n" in text else "\n"
-    changed = False
-    # From the last step backwards, so an insertion never moves an earlier step's line indexes.
-    for first, stop, indent in reversed(workflow_steps(lines)):
-        fields = step_fields(lines, first, stop)
-        if fields.run is None or not package_command(fields.run):
-            continue
-        if fields.env_error is not None:
-            raise UnsupportedEnv(fields.env_error)
-        env = fields.env
-        if env is not None and env.token:
-            continue
-        changed = True
-        if env is not None and env.token_line is not None:
-            # The entry exists but names no value, so repair it rather than write a duplicate key.
-            raw = lines[env.token_line]
-            entry_indent = len(raw) - len(raw.lstrip(" \t"))
-            lines[env.token_line] = f"{' ' * entry_indent}{PACKAGE_TOKEN}{newline}"
-        elif env is not None:
-            if env.insert_at > 0 and not lines[env.insert_at - 1].endswith(("\n", "\r")):
-                lines[env.insert_at - 1] += newline
-            lines.insert(env.insert_at, f"{' ' * env.entry_indent}{PACKAGE_TOKEN}{newline}")
-        else:
-            key_indent = indent + 2
-            insert_at = stop
-            while insert_at > first + 1 and not lines[insert_at - 1].strip():
-                insert_at -= 1
-            if insert_at > 0 and not lines[insert_at - 1].endswith(("\n", "\r")):
-                lines[insert_at - 1] += newline
-            lines[insert_at:insert_at] = [
-                f"{' ' * key_indent}env:{newline}",
-                f"{' ' * (key_indent + 2)}{PACKAGE_TOKEN}{newline}",
-            ]
-    if not changed:
-        return path, None
-    return path, "".join(lines)
-
-
-def sync_package_token(root, repo, dry_run):
-    """Add the authenticated token to `repo`'s package check step, returning whether it changed."""
-    path, updated = package_token_edit(root, repo)
-    if path is None or updated is None:
-        return 0
-    print(f"{repo}: {CI_WORKFLOW}")
     if not dry_run:
         path.write_text(updated, encoding="utf-8")
     return 1
@@ -244,11 +171,6 @@ def main(argv=None):
                 changed += sync_release_gate(root, repo, arguments.dry_run)
             except OSError as error:
                 print(f"{repo}: {RELEASE_WORKFLOW}: {error}", file=sys.stderr)
-                return 1
-            try:
-                changed += sync_package_token(root, repo, arguments.dry_run)
-            except (OSError, UnsupportedEnv) as error:
-                print(f"{repo}: {CI_WORKFLOW}: {error}", file=sys.stderr)
                 return 1
     if changed and not arguments.dry_run:
         print("Run each changed consumer's gates and open one PR per consumer for the shared tooling.")
