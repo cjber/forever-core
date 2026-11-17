@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **The mouse wheel scrolls a tracker section over its text.** A quest taller than its space now scrolls a page at a time with overlap, so every objective stays reachable even in a short column. (#616, #615)
 - **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
 - **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
 - **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)
@@ -12,6 +13,11 @@
 - **The glyph check covers the quest tracker's fonts** and reads an addon's English phrases from its code when its English locale file lists none. (#543)
 - **A consumer whose `tools/typecheck.sh` does not run the client-call lint now fails the shared tooling check.** SkillUp vendored the lint without running it. (#539)
 - **Headless startup stops when Battle.net needs a game update.** It reports the launcher frame instead of clicking Play until the timeout, and stops after two Play clicks that start no game. (#316)
+
+### For addon authors
+
+- **The simulator keeps native load-on-demand template initialization secure** while preserving the caller and addon template ownership. (#640)
+- **Native quest header clicks have a simulator regression** using the real tracker and chat utility; the quest-list scenario no longer replaces ChatFrameUtil. (#630)
 
 ## [1.14.2] - 2026-11-16
 

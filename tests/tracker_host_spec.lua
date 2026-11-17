@@ -397,4 +397,76 @@ floors.drain()
 floors.check(tall.available >= 75 and later.available >= 75, "measured floors fit across multiple sections")
 floors.check(tall:GetHeight() + later:GetHeight() + 10 <= 220, "floor allocation keeps the constrained column bounded")
 
-print("tracker_host_spec: " .. (t.checks() + asideChecks + scroll.checks()) .. " checks passed")
+-- A constrained column can clip even its first block: content wheels must traverse that block in both directions.
+local paging = harness.new({ headerShown = true })
+paging.first.contentHeight, paging.second.contentHeight = 0, 0
+local oversized = paging.scrollModule(3, 1, 500)
+local objective = paging.env.CreateFrame("Button")
+local clicks = 0
+objective:SetScript("OnClick", function()
+	clicks = clicks + 1
+end)
+oversized.ContentsFrame.GetChildren = function()
+	return objective
+end
+paging.native.NineSlice.bottom = 200
+paging.host:MarkDirty()
+paging.drain()
+paging.drain()
+paging.check(oversized.trackerOverflow and oversized.trackerViewport < 500, "one tall block overflows its viewport")
+local function ContentWheel(delta)
+	objective.scripts.OnMouseWheel(objective, delta)
+end
+ContentWheel(-1)
+paging.check(oversized.scrollOffset > 0, "content wheel moves within a single overflowing block")
+paging.check(oversized.scrollOffset < oversized.trackerViewport, "a tall block scrolls with visible overlap")
+for _ = 1, 20 do
+	local before = oversized.scrollOffset
+	ContentWheel(-1)
+	paging.check(
+		oversized.scrollOffset >= before and oversized.scrollOffset - before < oversized.trackerViewport,
+		"downward ticks preserve overlap through a tall block and at its end"
+	)
+end
+paging.check(oversized.scrollOffset == oversized.scrollRange, "repeated wheels reach the end of one tall block")
+for _ = 1, 20 do
+	local before = oversized.scrollOffset
+	ContentWheel(1)
+	paging.check(
+		oversized.scrollOffset <= before and before - oversized.scrollOffset < oversized.trackerViewport,
+		"upward ticks preserve overlap through a tall block and at its start"
+	)
+end
+paging.check(oversized.scrollOffset == 0, "repeated upward wheels return through the tall block to the top")
+objective.scripts.OnClick(objective)
+paging.check(clicks == 1, "content wheel binding preserves child click actions")
+
+-- Keep the first block tall and append a short block without asking layout to rebuild the fixture.
+local short = paging.env.CreateFrame("Frame")
+short.id, short.height = 2, 40
+oversized.firstBlock.nextBlock = short
+oversized.scrollRange = oversized.scrollRange + 50
+ContentWheel(-1)
+paging.check(oversized.scrollOffset < oversized.trackerViewport, "a next block does not skip unseen tall-block rows")
+local previous = oversized.scrollOffset
+ContentWheel(-1)
+paging.check(oversized.scrollOffset > previous, "successive ticks continue through the tall first block")
+ContentWheel(1)
+paging.check(
+	oversized.scrollOffset < previous + oversized.trackerViewport and oversized.scrollOffset > 0,
+	"upward paging within a tall block preserves overlap instead of jumping to its top"
+)
+oversized:SetScrollOffset(oversized:BlockStarts()[2].start)
+ContentWheel(1)
+paging.check(oversized.scrollOffset > 0, "upward wheel from the next block pages through the tall first block")
+paging.setCombat(true)
+local heldOffset = oversized.scrollOffset
+ContentWheel(-1)
+ContentWheel(1)
+paging.check(oversized.scrollOffset == heldOffset, "combat freezes tall-block content wheels in both directions")
+paging.setCombat(false)
+oversized.trackerOverflow = false
+ContentWheel(-1)
+paging.check(oversized.scrollOffset == heldOffset, "a section without overflow ignores content wheels")
+
+print("tracker_host_spec: " .. (t.checks() + asideChecks + scroll.checks() + paging.checks()) .. " checks passed")

@@ -517,13 +517,33 @@ function Module:OnTrackerWheel(delta)
 	if #starts == 0 then
 		return
 	end
-	local index = self:TopBlockIndex(starts)
-	local target = index + (delta > 0 and -1 or 1)
-	target = math.max(1, math.min(#starts, target))
-	if target == index then
+	local offset = self.scrollOffset or 0
+	local viewport = self.trackerViewport or 0
+	if viewport <= 0 then
 		return
 	end
-	self:SetScrollOffset(target == 1 and 0 or starts[target].start)
+	-- Keep a line of overlap on a full page, and half the view when less than two lines fit.
+	local page = viewport - math.min(16, viewport / 2)
+	local target = delta > 0 and 0 or (self.scrollRange or 0)
+	for index, entry in ipairs(starts) do
+		local start = index == 1 and 0 or entry.start
+		if delta > 0 then
+			if start < offset then
+				target = start
+			else
+				break
+			end
+		elseif start > offset then
+			target = start
+			break
+		end
+	end
+	if delta > 0 then
+		target = math.max(target, offset - page)
+	else
+		target = math.min(target, offset + page)
+	end
+	self:SetScrollOffset(target)
 end
 
 ---@param percentage number
