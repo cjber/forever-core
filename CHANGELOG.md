@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - **The Forever quest list steps aside for your UI suite's tracker**, including EllesmereUI. Turn the list off or on from the Tracker menu on any Forever section. (#736, cjber/shortest-path-forever#949) Thanks to dokiz, user_vyffn82yvmu3bflh and user_8vheexbirr5v6h4a for the reports.
+- **Headless startup stops when Battle.net needs the player to sign in.** Queued starts stay blocked until a manual launcher session reaches READY, and smoke posts nothing while blocked. (#731)
+- **Client commands require the shared in-game caller marker.** Jobs preserve it and the smoke queue sets its own marker. (#741)
 - **Package diagnostics name the exclusion source**, distinguishing a matching `.pkgmeta` ignore rule from an untracked or Git-ignored runtime file. (#732)
 - **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)

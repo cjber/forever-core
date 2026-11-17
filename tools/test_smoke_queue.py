@@ -110,6 +110,7 @@ class QueueTest(unittest.TestCase):
     def test_the_smoke_is_the_client_tools_own_verb_for_that_commit(self):
         with mock.patch.object(queue.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
             self.assertEqual(queue.smoke("legacy-forever", SHA), 0)
+        self.assertEqual(run.call_args.kwargs["env"]["FOREVER_CLIENT_CALLER"], "smoke-queue")
         self.assertEqual(
             run.call_args.args[0],
             [sys.executable, str(queue.CLIENT), "smoke", "--repo", "legacy-forever", "--ref", SHA],
