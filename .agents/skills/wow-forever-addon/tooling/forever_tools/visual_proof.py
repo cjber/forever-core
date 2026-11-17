@@ -182,7 +182,7 @@ def _runtime_map(root: Path) -> dict[str, Path]:
 def _excluded_runtime(files: dict[str, Path], manifest: pkgmeta.Manifest) -> list[str]:
     """Loaded Lua, XML or TOC files the package selection drops, which no installed addon can load."""
     return [
-        f"{name}: .pkgmeta ignore excludes this TOC/XML-loaded runtime file from the package"
+        f"{name}: {manifest.exclusion_reason(name)} excludes this TOC/XML-loaded runtime file from the package"
         for name in sorted(files)
         if not manifest.keeps(name) and Path(name).suffix.lower() in SCRIPT_SUFFIXES
     ]
