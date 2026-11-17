@@ -15,6 +15,7 @@ ship for the same numbers, so an addon reads its markers from core instead of ca
 import argparse
 import io
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -34,6 +35,10 @@ PIN_SIZE = 128
 # The pin's diamond sits in the dark circle: a polygon this far from this centre, one factor for both axes.
 DIAMOND_CENTRE = (64, 50)
 DIAMOND_RADIUS = 17
+# Measured once on art(pin-gold.png, PIN_SIZE), inspecting the four face tips
+# at pixel centres (63.5, 35.5), (77.5, 49.5), (63.5, 63.5), (49.5, 49.5).
+# Their opposite-tip midpoints exclude the dark down-right shadow.
+DIAMOND_FACE_CENTRE = (Fraction(127, 2), Fraction(99, 2))
 # The diamond fills this share of a marker's width, so it sits inside the ring's opening.
 DIAMOND_SHARE = 0.42
 # The polygon is drawn this many times too large and scaled down, so its edge is smooth and not stepped.
@@ -86,47 +91,38 @@ def diamond_mask() -> Image.Image:
     return mask.resize((PIN_SIZE, PIN_SIZE), Image.Resampling.LANCZOS)
 
 
-def diamond_cut(pin: Image.Image) -> Image.Image:
-    """The goal pin's diamond, cut out by `diamond_mask` and cropped to what is left of the art."""
+def diamond_cut(pin: Image.Image) -> tuple[Image.Image, tuple[Fraction, Fraction]]:
+    """The cropped diamond and its face anchor, translated from pin to crop coordinates."""
     cut = pin.copy()
     cut.putalpha(Image.composite(pin.getchannel("A"), Image.new("L", pin.size, 0), diamond_mask()))
-    return cut.crop(cut.getchannel("A").point(lambda value: 255 if value > 8 else 0).getbbox())
+    bounds = cut.getchannel("A").point(lambda value: 255 if value > 8 else 0).getbbox()
+    centre = tuple(point - origin for point, origin in zip(DIAMOND_FACE_CENTRE, bounds[:2], strict=True))
+    return cut.crop(bounds), centre
 
 
 def with_diamond(ring: Image.Image, pin: Image.Image) -> Image.Image:
     """`ring` with the pin's diamond drawn at `DIAMOND_SHARE` of its width, centred over the ring."""
-    cut = diamond_cut(pin)
+    cut, centre = diamond_cut(pin)
     size = round(ring.width * DIAMOND_SHARE)
     scale = size / max(cut.size)  # one factor for both axes: the diamond keeps its shape
-    cut = cut.resize((round(cut.width * scale), round(cut.height * scale)), Image.Resampling.LANCZOS)
-    return Image.alpha_composite(ring, diamond_overlay(ring, cut))
+    dimensions = (round(cut.width * scale), round(cut.height * scale))
+    centre = tuple(point * Fraction(new, old) for point, new, old in zip(centre, dimensions, cut.size, strict=True))
+    cut = cut.resize(dimensions, Image.Resampling.LANCZOS)
+    return Image.alpha_composite(ring, diamond_overlay(ring, cut, centre))
 
 
-def diamond_overlay(ring: Image.Image, cut: Image.Image) -> Image.Image:
-    """Render the odd-sized diamond at the exact half-pixel canvas centre."""
-    # The 27 px sprite has to sit at 18.5 px in the 64 px marker. Render the
-    # transparent overlay at a higher resolution so both halves of that
-    # half-pixel placement survive the final downsample symmetrically.
+def diamond_origin(ring: Image.Image, centre: tuple[Fraction, Fraction]) -> tuple[Fraction, Fraction]:
+    """Translation that puts the transformed face anchor at the ring's geometric centre."""
+    return tuple(Fraction(size, 2) - point for size, point in zip(ring.size, centre, strict=True))
+
+
+def diamond_overlay(ring: Image.Image, cut: Image.Image, centre: tuple[Fraction, Fraction]) -> Image.Image:
+    """Place the diamond's gold face over the ring, retaining its down-right shadow."""
     scale = COMPOSITE_SUPERSAMPLE
     high = cut.resize((cut.width * scale, cut.height * scale), Image.Resampling.LANCZOS)
-    high_layer = Image.new("RGBA", (ring.width * scale, ring.height * scale), (0, 0, 0, 0))
-
-    def centroid(axis):
-        alpha = high.getchannel("A")
-        total = sum(alpha.getpixel((x, y)) for y in range(high.height) for x in range(high.width))
-        weighted = sum(
-            ((x if axis == 0 else y) + 0.5) * alpha.getpixel((x, y))
-            for y in range(high.height)
-            for x in range(high.width)
-        )
-        return weighted / total
-
-    x = round(ring.width * scale / 2 - centroid(0))
-    y = round(ring.height * scale / 2 - centroid(1))
-    high_layer.paste(high, (x, y))
-    # BOX averages each 4x4 block, preserving the exact half-pixel centroid.
-    layer = high_layer.resize(ring.size, Image.Resampling.BOX)
-    return layer
+    layer = Image.new("RGBA", (ring.width * scale, ring.height * scale), (0, 0, 0, 0))
+    layer.paste(high, tuple(round(point * scale) for point in diamond_origin(ring, centre)))
+    return layer.resize(ring.size, Image.Resampling.BOX)
 
 
 def encode(image: Image.Image) -> bytes:

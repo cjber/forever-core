@@ -5,13 +5,14 @@ import io
 import sys
 import tempfile
 import unittest
+from fractions import Fraction
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 import export_markers  # noqa: E402
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 
 class MarkersTest(unittest.TestCase):
@@ -55,28 +56,44 @@ class MarkersTest(unittest.TestCase):
         changed = [point for point in rim if diamond.getpixel(point) != ring.getpixel(point)]
         self.assertEqual(changed, [], "the diamond is pasted inside the ring's opening only")
 
-    def test_the_odd_sized_diamond_is_centred_on_the_even_sized_marker(self):
+    def test_the_transformed_face_centre_is_exact(self):
         ring = export_markers.art(export_markers.SOURCE / export_markers.RING_SOURCE)
         pin = export_markers.art(export_markers.SOURCE / export_markers.PIN_SOURCE, export_markers.PIN_SIZE)
-        cut = export_markers.diamond_cut(pin)
-        size = round(ring.width * export_markers.DIAMOND_SHARE)
-        scaled = cut.resize(
-            (round(cut.width * size / max(cut.size)), round(cut.height * size / max(cut.size))),
-            Image.Resampling.LANCZOS,
-        )
-        self.assertEqual((scaled.width, scaled.height), (27, 27))
-        self.assertEqual((ring.width - scaled.width) / 2, 18.5)
-        self.assertEqual((ring.height - scaled.height) / 2, 18.5)
+        cut, centre = export_markers.diamond_cut(pin)
+        self.assertEqual(centre, (Fraction(33, 2), Fraction(33, 2)))
+        original_overlay = export_markers.diamond_overlay
 
-        # The supersampled overlay has equal alpha mass on both sides of the
-        # exact canvas centre, rather than rounding to either neighbouring
-        # pixel. This catches a regression to integer-only placement.
-        overlay = export_markers.diamond_overlay(ring, scaled)
-        weights = [(x, y, overlay.getpixel((x, y))[3]) for y in range(64) for x in range(64)]
-        total = sum(a for _, _, a in weights)
-        self.assertGreater(total, 0)
-        self.assertAlmostEqual(sum((x + 0.5) * a for x, _, a in weights) / total, 32.0, delta=0.05)
-        self.assertAlmostEqual(sum((y + 0.5) * a for _, y, a in weights) / total, 32.0, delta=0.05)
+        def check_overlay(ring, scaled, face):
+            expected = tuple(
+                point * Fraction(new, old) for point, new, old in zip(centre, scaled.size, cut.size, strict=True)
+            )
+            self.assertEqual(face, expected)
+            origin = export_markers.diamond_origin(ring, face)
+            self.assertEqual(tuple(a + b for a, b in zip(origin, face, strict=True)), (Fraction(32), Fraction(32)))
+            return original_overlay(ring, scaled, face)
+
+        with mock.patch.object(export_markers, "diamond_overlay", side_effect=check_overlay):
+            export_markers.with_diamond(ring, pin)
+
+    def test_rendered_face_extent_is_symmetric(self):
+        # Isolate the measured face silhouette from its differently shaded facets
+        # and shadow. Keep the real pin's alpha so the production crop is unchanged.
+        pin = export_markers.art(export_markers.SOURCE / export_markers.PIN_SOURCE, export_markers.PIN_SIZE)
+        face = Image.new("RGBA", pin.size, (0, 0, 0, 255))
+        ImageDraw.Draw(face).polygon([(63, 35), (77, 49), (63, 63), (49, 49)], fill="white")
+        face.putalpha(pin.getchannel("A"))
+        ring = Image.new("RGBA", (64, 64), (0, 0, 0, 255))
+        rendered = export_markers.with_diamond(ring, face)
+        # Half coverage is the geometric edge of the white silhouette, independent
+        # of the source's gold RGB values. Pixel edges, rather than indices, bound it.
+        bounds = rendered.convert("L").point(lambda coverage: 255 if coverage >= 128 else 0).getbbox()
+        self.assertIsNotNone(bounds)
+        for axis in (0, 1):
+            self.assertAlmostEqual(
+                (bounds[axis] + bounds[axis + 2]) / 2,
+                ring.size[axis] / 2,
+                delta=1 / export_markers.COMPOSITE_SUPERSAMPLE,
+            )
 
     def test_check_passes_on_the_repository(self):
         self.assertEqual(export_markers.main(["--check"]), 0)
