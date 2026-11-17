@@ -156,8 +156,7 @@ local rest = scroll.scrollModule(4, 2, 40, "remaining")
 scroll.first.contentHeight, scroll.second.contentHeight = 0, 0
 scroll.host:MarkDirty()
 scroll.drain()
--- The gutter changes the contents width after the first measure, so a second pass settles the text at the new width.
-scroll.drain()
+scroll.check(scroll.pending() == 0, "the first layout settles in one frame")
 scroll.check(capped.available == 200, "a section other than Quests caps at 200 units")
 scroll.check(capped.trackerOverflow == true and capped.scrollRange == 325, "the capped section scrolls its overflow")
 scroll.check(capped:GetContentsHeight() == 200, "the capped section reports its visible height")
@@ -169,11 +168,16 @@ scroll.check(
 )
 scroll.check(capped.scrollBar:GetVisibleExtentPercentage() == 175 / 500, "the bar shows the viewport's fraction")
 scroll.check(capped.ContentsFrame:GetWidth() == capped:GetWidth() - 18, "the bar takes its 18-unit gutter")
-scroll.check(capped.firstContentsWidth == 250, "the first pass measured in the width set at creation")
-scroll.check(capped.updates >= 2, "the gutter's width change asks for another measuring pass")
+scroll.check(
+	capped.firstContentsWidth == capped:GetWidth() - 18,
+	"the first build measures its text in the column's width less the gutter"
+)
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
-scroll.check(rest.ContentsFrame:GetWidth() == rest:GetWidth(), "a short section keeps the full block width")
+scroll.check(
+	rest.ContentsFrame:GetWidth() == rest:GetWidth() - 18,
+	"a short section keeps the gutter, so its text wraps the same if it starts to scroll"
+)
 
 local scrollFrame = capped.scrollFrame
 local sectionWidth = capped:GetWidth()

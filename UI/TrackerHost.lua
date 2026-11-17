@@ -304,7 +304,10 @@ end
 -- Every section but the one that fills the rest of the column caps at this many UI units. The Quests section asks for
 -- the room the others leave, so a long quest list scrolls while Legacy's zone and SkillUp's reagents stay in view.
 local SECTION_MAX_HEIGHT = 200
-local SCROLL_GUTTER = 18 -- the bar's track plus the item frame's overhang and its spacing
+-- The bar's track plus the item frame's overhang and its spacing. Every section keeps it whether or not it scrolls,
+-- so its text width never depends on how tall its blocks turn out: a list that starts or stops scrolling keeps its
+-- wrapping and needs no second build at another width (#795).
+local SCROLL_GUTTER = 18
 local SCROLL_BAR_GAP = 10 -- the space between the blocks and the bar
 local SCROLL_HEADER_GAP = 4 -- the bar starts this far under the header's rule
 
@@ -532,13 +535,10 @@ function Module:CreateTrackerScroll()
 	contents:ClearAllPoints()
 	scroll:SetScrollChild(contents)
 	contents:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
-	-- Creation happens before the column gives the module its width, so keep a real width here: the first Update
-	-- measures its text in this width, and LayoutTrackerScroll marks the module dirty when the gutter changes it.
-	local contentsWidth = math.max(0, self:GetWidth() or 0)
-	contents:SetWidth(contentsWidth)
+	-- The blocks take the column's width less the gutter from the start, so the first build measures its text there.
 	contents:SetHeight(0)
-	self.scrollContentsWidth = contentsWidth
 	self.scrollFrame = scroll
+	self:SetTrackerContentsWidth()
 
 	-- The client's minimal scrollbar is an EventFrame on ScrollBarMixin, not a Slider. Its percentage drives the
 	-- viewport; the wheel above moves one block.
@@ -557,6 +557,16 @@ function Module:CreateTrackerScroll()
 		self:OnTrackerWheel(delta)
 	end)
 	self:SetScrollFrozen(InCombatLockdown())
+end
+
+-- The blocks' width: the section's, less the gutter the bar sits in.
+function Module:SetTrackerContentsWidth()
+	local width = math.max(0, (self:GetWidth() or 0) - SCROLL_GUTTER)
+	if self.scrollFrame and self.scrollContentsWidth ~= width then
+		self.scrollContentsWidth = width
+		self.ContentsFrame:SetWidth(width)
+	end
+	return width
 end
 
 -- A native quest POI sits left of its block, and an item hotkey may extend right. A ScrollFrame clips both
@@ -641,7 +651,7 @@ function Module:LayoutTrackerScroll()
 	self.trackerBody, self.trackerViewport, self.scrollRange = body, viewport, range
 	self.trackerOverflow = range > 0
 
-	local width = math.max(0, (self:GetWidth() or 0) - (range > 0 and SCROLL_GUTTER or 0))
+	local width = self:SetTrackerContentsWidth()
 	local contents = self.ContentsFrame
 	local seen = self.trackerWheelFrames or {}
 	self.trackerWheelFrames = seen
@@ -659,23 +669,11 @@ function Module:LayoutTrackerScroll()
 		self.trackerWheelHandler = handler
 	end
 	BindTrackerWheel(contents, handler, seen)
-	if self.scrollContentsWidth ~= width then
-		self.scrollContentsWidth = width
-		contents:SetWidth(width)
-		-- The text was measured in the old width, so a gutter change needs one more layout pass at the new one.
-		self:MarkDirty()
-	end
 	contents:SetHeight(body)
 	self.scrollFrame:SetHeight(viewport)
 	local clipLeft, clipRight = HorizontalOverflow(contents, width)
 	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
-	self.scrollFrame:SetPoint(
-		"TOPRIGHT",
-		self.Header,
-		"BOTTOMRIGHT",
-		(range > 0 and -SCROLL_GUTTER or 0) + clipRight,
-		0
-	)
+	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + clipRight, 0)
 	contents:SetPoint("TOPLEFT", self.scrollFrame, "TOPLEFT", clipLeft, 0)
 	-- The bar belongs in the section's gutter, independent of the viewport's clipping expansion.
 	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
@@ -791,11 +789,33 @@ function Module:IsTruncated()
 	return false
 end
 
+-- A section from Blizzard's template rebuilds its blocks only when its own data marked it dirty or the column's width
+-- changed under it, as the client's own container does. A new cap only resizes its viewport: a scrollable section lays
+-- every block out whatever its cap. So a host pass for another section's change, combat ending or a new cap leaves
+-- every other section's blocks and header alone (#795). A section with no room keeps its blocks and stays dirty until
+-- it has some, since Blizzard's Update with no room would free them. A frame without IsDirty cannot say what changed,
+-- so it rebuilds on every pass.
 function Module:Update(availableHeight, dirtyUpdate)
 	self.trackerCap = availableHeight
-	if type(self.baseUpdate) == "function" then
+	if type(self.baseUpdate) ~= "function" then
+		return
+	end
+	if not self.trackerScrollable then
 		return self.baseUpdate(self, availableHeight, dirtyUpdate)
 	end
+	local width = self:SetTrackerContentsWidth()
+	if type(self.IsDirty) == "function" then
+		local stale = self:IsDirty() or self.trackerBuiltWidth ~= width
+		if not stale or availableHeight <= 0 then
+			self:UpdateHeight()
+			return self:GetContentsHeight(), self:IsTruncated()
+		end
+		-- A section that cannot update now (combat) keeps its blocks, and its last build width with them.
+		if self:CanUpdate() then
+			self.trackerBuiltWidth = width
+		end
+	end
+	return self.baseUpdate(self, availableHeight, dirtyUpdate)
 end
 
 function Module:BeginLayout()
@@ -859,8 +879,7 @@ end
 --
 -- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so the
 -- quest list is the one that scrolls. It is laid out after the others so their real heights are known first.
-local function LayoutModules(width, available, reserve)
-	ns.TrackerOrder.Sort(modules)
+local function LayoutPass(width, available, reserve)
 	local restIndex
 	for index, module in ipairs(modules) do
 		if module.trackerScrollable and module.trackerMaxHeight == "remaining" then
@@ -886,6 +905,7 @@ local function LayoutModules(width, available, reserve)
 			end
 		end
 	end
+	local floorsMoved = false
 	local function LayOut(index, cap)
 		local module = modules[index]
 		local laterMinimum = 0
@@ -914,7 +934,7 @@ local function LayoutModules(width, available, reserve)
 			and module.trackerScrollable
 			and (minimum ~= previousMinimum or UsableHeight(module) ~= previousUsable)
 		then
-			host:MarkDirty()
+			floorsMoved = true
 		end
 		if cap > 0 and minimum > cap then
 			-- The cap is the room left after sections above this one. Never borrow from their accounting or make the
@@ -953,6 +973,25 @@ local function LayoutModules(width, available, reserve)
 		end
 	end
 	host:SetHeight(math.max(1, height))
+	return hasSections, floorsMoved
+end
+
+-- Every cap is measured from the floors the sections' last builds left. A section that rebuilds in a pass can move its
+-- own floor, so the caps the sections above it got are stale, and the pass runs again in this frame, before anything
+-- is drawn. A repeat rebuilds no section: each one the first pass built is clean at this width, and a cap alone only
+-- resizes a viewport. It can build a dirty section the first pass gave no room, which can move one more floor, so a
+-- third pass settles that; a column still unsettled after it lays out again in the next frame.
+local MAX_PASSES = 3
+local function LayoutModules(width, available, reserve)
+	ns.TrackerOrder.Sort(modules)
+	local hasSections, floorsMoved
+	for _ = 1, MAX_PASSES do
+		hasSections, floorsMoved = LayoutPass(width, available, reserve)
+		if not floorsMoved then
+			return hasSections
+		end
+	end
+	host:MarkDirty()
 	return hasSections
 end
 -- The private column sits wherever the player dragged it, or at its default spot, and never anchors to another frame.

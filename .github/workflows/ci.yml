@@ -48,11 +48,12 @@ jobs:
       # fails here. The UI source is fetched at its pin into the gitignored cache.
       - name: Client names data
         run: python3 tools/gen_forever_api.py --check
-      # The host spec runs Blizzard's own tracker source, fetched at a pinned revision.
+      # The host and reflow specs run Blizzard's own tracker source, fetched at a pinned revision.
       - name: Native tracker integration
         run: |
           python3 tools/fetch_tracker_ui.py
           TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
+          TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_reflow_spec.lua
       - run: stylua --check .
       # The Python tools are tools/pyproject.toml's dev group, resolved in tools/uv.lock; uv keeps the environment at
       # tools/.venv, which every linter ignores.

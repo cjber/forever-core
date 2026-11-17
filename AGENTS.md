@@ -25,6 +25,7 @@ luacheck .
 stylua --check .
 python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py   # every spec, in parallel
 python3 tools/fetch_tracker_ui.py && TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_host_spec.lua
+TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_reflow_spec.lua
 bash tools/typecheck.sh                   # LuaLS and the WoW API annotations at tools/toolchain.json's pins
 python3 tools/check_consumers.py          # every consumer's tooling, ForeverCore pin and packaging match this repo
 python3 tools/check_client_load.py        # every font object exists in the client; no TOC lists Bindings.xml (WFA-37)
@@ -60,9 +61,11 @@ uv run --project tools --frozen --group dev ruff format --check tools
 uv run --project tools --frozen --group dev python -m unittest discover -s tools -p "test_*.py"
 ```
 
-`tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source,
-fetched at a pinned revision by `tools/fetch_tracker_ui.py`, against this host. The other tracker specs stub everything
-and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fake addons and checks the public API.
+`tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source, fetched
+at a pinned revision by `tools/fetch_tracker_ui.py`, against this host. `tests/tracker_reflow_spec.lua` runs the same
+source to check that a client event or another frame moving never moves the column, and that only a dirty section
+rebuilds. The other tracker specs stub everything and run anywhere. `tests/api_spec.lua` loads the TOC in order,
+registers two fake addons and checks the public API.
 
 ## Layout
 
