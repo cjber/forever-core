@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import itertools
 import json
 import os
 import re
@@ -293,6 +294,95 @@ class CollectTest(unittest.TestCase):
             ],
         )
         self.assertIn("skipping skillup-forever: connection reset", errors.getvalue())
+
+
+def at(day, hour, minute=0, second=0):
+    return datetime(2026, 11, day, hour, minute, second, tzinfo=timezone.utc)
+
+
+class ScheduledWindowsTest(unittest.TestCase):
+    def test_a_delayed_run_still_posts_the_digest(self):
+        windows = digest.scheduled_windows(at(16, 17, 10), at(16, 18, 50))
+        self.assertEqual(windows.features, (at(16, 17, 10), at(16, 18, 50)))
+        self.assertEqual(windows.digest, (at(15, 18), at(16, 18)))
+
+    def test_only_the_first_run_past_the_hour_posts_the_digest(self):
+        self.assertIsNone(digest.scheduled_windows(at(16, 18, 50), at(16, 19, 5)).digest)
+
+    def test_a_dropped_hour_widens_the_feature_window(self):
+        windows = digest.scheduled_windows(at(17, 1, 50), at(17, 10, 20))
+        self.assertEqual(windows.features, (at(17, 1, 50), at(17, 10, 20)))
+        self.assertIsNone(windows.digest)
+
+    def test_a_day_without_an_hour_18_run_posts_on_the_next_run(self):
+        # The 17 November runs: 01:50, 10:20, then 19:39, none in hour 18.
+        windows = digest.scheduled_windows(at(17, 10, 20), at(17, 19, 39))
+        self.assertEqual(windows.digest, (at(16, 18), at(17, 18)))
+
+    def test_days_without_runs_fold_into_one_digest(self):
+        windows = digest.scheduled_windows(at(14, 12), at(17, 2))
+        self.assertEqual(windows.digest, (at(13, 18), at(16, 18)))
+
+    def test_consecutive_windows_meet(self):
+        starts = [at(16, 17, 10), at(16, 18, 50), at(17, 1, 50), at(17, 10, 20), at(17, 19, 39), at(18, 18, 0)]
+        digests = []
+        for previous, current in itertools.pairwise(starts):
+            windows = digest.scheduled_windows(previous, current)
+            self.assertEqual(windows.features[0], previous)
+            if windows.digest:
+                digests.append(windows.digest)
+        self.assertEqual(digests, [(at(15, 18), at(16, 18)), (at(16, 18), at(17, 18)), (at(17, 18), at(18, 18))])
+
+    def test_the_first_run_looks_back_one_hour(self):
+        windows = digest.scheduled_windows(None, at(17, 10, 20))
+        self.assertEqual(windows.features, (at(17, 9, 20), at(17, 10, 20)))
+        self.assertIsNone(windows.digest)
+
+    def test_a_digest_over_several_days_names_its_start(self):
+        data = dataset([release("1.0.1", at(15, 9))], {"1.0.1": digest.ChangelogEntry(("Fix.",))})
+        payload = digest.build_digest([data], at(13, 18), at(16, 18))
+        self.assertTrue(payload["content"].startswith("**Updates since Friday 13 November**"))
+
+
+class RunWindowsTest(unittest.TestCase):
+    def test_previous_successful_scheduled_run_sets_the_windows(self):
+        api = "https://api.github.com/repos/cjber/forever-core/actions"
+        responses = {
+            f"{api}/runs/3": {"id": 3, "workflow_id": 9, "run_started_at": "2026-11-17T19:39:37Z"},
+            f"{api}/workflows/9/runs?event=schedule&status=success&per_page={digest.RUNS_PAGE}": {
+                "workflow_runs": [
+                    {"id": 4, "run_started_at": "2026-11-17T20:05:00Z"},
+                    {"id": 2, "run_started_at": "2026-11-17T10:20:15Z"},
+                    {"id": 1, "run_started_at": "2026-11-17T01:50:14Z"},
+                ]
+            },
+        }
+        with mock.patch.object(digest, "_get", side_effect=lambda url, token: json.dumps(responses[url])):
+            windows = digest.fetch_run_windows("token", "cjber/forever-core", "3")
+        self.assertEqual(windows.features, (at(17, 10, 20, 15), at(17, 19, 39, 37)))
+        self.assertEqual(windows.digest, (at(16, 18), at(17, 18)))
+
+    def test_schedule_mode_posts_features_before_the_digest(self):
+        data = dataset(
+            [release("1.0.0", at(15, 9)), release("1.1.0", at(17, 12))],
+            {"1.1.0": digest.ChangelogEntry(("The big feature.",))},
+        )
+        windows = digest.Windows((at(17, 10, 20), at(17, 19, 39)), (at(16, 18), at(17, 18)))
+        output = io.StringIO()
+        with (
+            mock.patch.object(digest, "fetch_run_windows", return_value=windows),
+            mock.patch.object(digest, "collect_datasets", return_value=[data]),
+            mock.patch.dict(
+                os.environ,
+                {"DISCORD_ANNOUNCE_WEBHOOK": "", "GITHUB_TOKEN": "", "GITHUB_REPOSITORY": "r", "GITHUB_RUN_ID": "1"},
+            ),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(digest.main(["--mode", "schedule"]), 0)
+        contents = [json.loads(line)["content"] for line in output.getvalue().splitlines()]
+        self.assertEqual(len(contents), 2)
+        self.assertTrue(contents[0].startswith("**New in Shortest Path Forever 1.1**"))
+        self.assertTrue(contents[1].startswith("**Today's updates · Tuesday 17 November**"))
 
 
 class MainTest(unittest.TestCase):

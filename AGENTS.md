@@ -322,8 +322,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   read their own snippet's result rather than the session before it (#580). `tests/devsmoke_spec.lua` is its spec,
   `tools/test_devsmoke_eval.py` the writer's.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
-  `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
-  schedule only; `tools/test_discord_digest.py` is its spec.
+  `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` runs hourly with
+  `--mode schedule`, which takes its windows from the previous successful scheduled run (GitHub drops and delays
+  scheduled runs), never the wall clock; a dispatch backfills with `since` and `until`. `tools/test_discord_digest.py`
+  is its spec.
 - `tools/release_check.py` and `tools/changelog.py`: the release gate (the commit's full CI run on main and its green
   `headless-smoke` status, which a missing or pending one makes wait and a failed one names) and the version's
   CHANGELOG notes, both thin wrappers over the skill pack's `forever_tools`.

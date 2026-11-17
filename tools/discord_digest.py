@@ -6,6 +6,11 @@ builders.
 
     python3 tools/discord_digest.py --mode digest --dry-run
     python3 tools/discord_digest.py --mode features --now 2026-11-07T18:00:00Z
+    python3 tools/discord_digest.py --mode schedule   # in the scheduled workflow run
+
+GitHub delivers the hourly schedule late and drops runs, so a scheduled run never reads its windows off the wall
+clock. It asks the Actions API when the last successful scheduled run started and covers everything since: feature
+posts for the releases in between, and the daily digest once that span crosses a DIGEST_HOUR boundary.
 """
 
 import argparse
@@ -32,7 +37,9 @@ USER_AGENT = "forever-core-discord-digest"
 WEBHOOK_USERNAME = "Forever Addons"
 
 DIGEST_WINDOW = timedelta(hours=24)
+DIGEST_HOUR = 18
 FEATURE_WINDOW = timedelta(hours=1)
+RUNS_PAGE = 30
 MAX_EMBEDS = 10
 MAX_DESCRIPTION = 4096
 MAX_EMBED_TEXT = 6000
@@ -174,6 +181,33 @@ def parse_time(value):
 
 def floor_hour(moment):
     return moment.replace(minute=0, second=0, microsecond=0)
+
+
+def digest_boundary(moment):
+    """The latest DIGEST_HOUR:00 UTC at or before the moment: the end of the newest digest day it has reached."""
+    boundary = moment.replace(hour=DIGEST_HOUR, minute=0, second=0, microsecond=0)
+    return boundary if boundary <= moment else boundary - timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class Windows:
+    features: tuple[datetime, datetime]
+    digest: tuple[datetime, datetime] | None
+
+
+def scheduled_windows(previous, current):
+    """The windows a scheduled run starting at `current` covers, given the previous successful run's start.
+
+    Every successful run posted what was due up to its own start, so this run covers [previous, current) for feature
+    posts and owes a digest for each DIGEST_HOUR boundary crossed since then, folded into one post that reaches back to
+    the last boundary the previous run had passed. Consecutive runs' windows therefore meet exactly, whatever the
+    delay or the number of runs GitHub dropped in between. Without a previous run (the first ever), the features look
+    back one FEATURE_WINDOW.
+    """
+    if previous is None:
+        previous = current - FEATURE_WINDOW
+    last, due = digest_boundary(previous), digest_boundary(current)
+    return Windows((previous, current), (last, due) if last < due else None)
 
 
 def _release_key(release):
@@ -342,7 +376,7 @@ def build_digest(datasets, since, now, backfill=False):
     specs = fit_embeds([spec for spec, _count in planned])
     releases = sum(count for _spec, count in planned)
     addons = len(planned)
-    if backfill:
+    if backfill or now - since > DIGEST_WINDOW:
         heading = f"**Updates since {_date_label(since)}**"
     else:
         heading = f"**Today's updates · {_date_label(now)}**"
@@ -454,6 +488,22 @@ def collect_datasets(token=None):
     return datasets
 
 
+def fetch_run_windows(token, repository, run_id):
+    """Fetch this run's start and the previous successful scheduled run's start, and return its Windows."""
+    api = f"https://api.github.com/repos/{repository}/actions"
+    current = json.loads(_get(f"{api}/runs/{run_id}", token))
+    started = parse_time(current["run_started_at"])
+    url = f"{api}/workflows/{current['workflow_id']}/runs?event=schedule&status=success&per_page={RUNS_PAGE}"
+    runs = json.loads(_get(url, token)).get("workflow_runs", [])
+    starts = [
+        parse_time(run["run_started_at"])
+        for run in runs
+        if run.get("id") != current["id"] and run.get("run_started_at")
+    ]
+    previous = max((start for start in starts if start < started), default=None)
+    return scheduled_windows(previous, started)
+
+
 def post(webhook, payload):
     separator = "&" if "?" in webhook else "?"
     request = Request(
@@ -476,6 +526,16 @@ def post(webhook, payload):
 
 
 def _payloads(args, now, token):
+    if args.mode == "schedule":
+        windows = fetch_run_windows(token, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_RUN_ID"])
+        datasets = collect_datasets(token)
+        # Feature posts go first: the digest points at them with "see the post above".
+        payloads = build_features(datasets, *windows.features)
+        if windows.digest:
+            payload = build_digest(datasets, *windows.digest)
+            if payload:
+                payloads.append(payload)
+        return payloads
     since = parse_time(args.since) if args.since else now - DIGEST_WINDOW
     datasets = collect_datasets(token)
     if args.mode == "digest":
@@ -486,7 +546,7 @@ def _payloads(args, now, token):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Post the Forever addons' release digest to Discord.")
-    parser.add_argument("--mode", choices=("digest", "features"), required=True)
+    parser.add_argument("--mode", choices=("digest", "features", "schedule"), required=True)
     parser.add_argument("--now", help="window end as an ISO time; defaults to the current UTC hour")
     parser.add_argument("--since", help="digest window start as an ISO time")
     parser.add_argument("--dry-run", action="store_true", help="print the payload instead of posting it")
