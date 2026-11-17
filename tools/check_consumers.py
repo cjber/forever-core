@@ -11,7 +11,7 @@ drifts the same way:
 
 - `tools/forever-core.txt`, when the consumer carries it, must name core's latest published release tag, so the
   addon's specs and CI test against the core a player runs. The tag comes from `forever_tools.core_pin.latest_release`,
-  the same read every consumer's package and release gates use; with `--local` it is this checkout's newest `v*` tag
+  the same read every consumer's release gate uses; with `--local` it is this checkout's newest `v*` tag
   from `git describe`. A latest release that cannot be read fails this gate rather than skipping the check.
 - `.pkgmeta`, when the consumer's root TOC names ForeverCore in `## OptionalDeps`, must retain its pinned fallback
   during standalone dependency adoption: `externals:` downloads `ForeverCore-<pin>-forever.zip` from the release the
@@ -23,10 +23,7 @@ drifts the same way:
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
   its BigWigs packager, so a core release that lands after CI is caught before the upload.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
-- The step that runs `tools/check_package.py` in a consumer's own `ci.yml` must carry an authenticated GitHub token.
-  That check reads core's latest published release through `forever_tools.core_pin`; an anonymous read shares the
-  runner address's hourly limit and fails the package job with no code cause, so `tools/sync_consumers.py` adds
-  `GH_TOKEN: ${{ github.token }}` to the step's `env:` and this gate refuses a workflow that drops it.
+
 
 Those shared copies are compared by `forever_tools.core_pin`, the same function the vendored package check runs in each
 consumer, so this gate and a consumer's own CI agree on the rule.
@@ -36,13 +33,11 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import NamedTuple
 from urllib.parse import quote
 
 from check_core_shared import CONSUMER_ROOT, VENDORED, check_gate_invocations, source
@@ -74,50 +69,6 @@ RELEASE_WORKFLOW = ".github/workflows/release.yml"
 # verifies the step is still there and still last before the upload rather than comparing its bytes.
 RELEASE_GATE = "Verify the ForeverCore pin is core's latest release"
 RELEASE_GATE_COMMAND = "tools.forever_tools.core_pin --latest"
-# The workflow file and the step that reads core's latest published release. The token is the one environment entry
-# `tools/sync_consumers.py` adds to that step, so the read is authenticated and never shares the anonymous limit.
-CI_WORKFLOW = ".github/workflows/ci.yml"
-PACKAGE_STEP = "tools/check_package.py"
-PACKAGE_TOKEN = "GH_TOKEN: ${{ github.token }}"
-
-STEPS = re.compile(r"^(?P<indent>[ \t]*)steps:[ \t]*(?P<value>.*)$")
-# The suite's dedicated package step: the command must start a line, so a script that only echoes or comments the path
-# is not mistaken for the check itself.
-PACKAGE_COMMAND = re.compile(r"^python3?[ \t]+tools/check_package\.py(?:[ \t]|$)")
-TOKEN_ENTRY = re.compile(r"^(?:GH_TOKEN|GITHUB_TOKEN)[ \t]*:[ \t]*(?P<value>.*)$")
-
-
-class UnsupportedEnv(ValueError):
-    """A step's `env:` is not the block mapping this gate and the sync know how to read and edit."""
-
-
-class StepEnv(NamedTuple):
-    """A step's `env:` block: where it starts, whether it authenticates, and where a new entry goes."""
-
-    index: int
-    entry_indent: int
-    token: bool
-    token_line: int | None
-    insert_at: int
-
-
-class StepFields(NamedTuple):
-    """The two fields of a step this gate reads, plus a reason an `env:` could not be read."""
-
-    run: str | None
-    env: StepEnv | None
-    env_error: str | None
-
-
-def token_value(line):
-    """Accept the built-in Actions token, which is present even when fork secrets are unavailable."""
-    match = TOKEN_ENTRY.match(line)
-    if match is None:
-        return False
-    value = match["value"].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-        value = value[1:-1]
-    return value in ("${{ github.token }}", "${{ secrets.GITHUB_TOKEN }}")
 
 
 def digest(data):
@@ -154,8 +105,8 @@ def remote_json(url):
 def latest_tag(local):
     """Core's newest published release tag, or `LatestReleaseUnavailable` when it cannot be read.
 
-    The GitHub API read is `forever_tools.core_pin.latest_release`, the function every consumer's package and release
-    gate calls, so this gate and a consumer's own CI agree on both the tag and how a failed read behaves: it fails.
+    The GitHub API read is `forever_tools.core_pin.latest_release`, the function every consumer's release
+    gate calls, so both release checks agree on the tag and fail when it cannot be read.
     """
     if local:
         tag = local_latest_tag()
@@ -353,181 +304,6 @@ def check_packaging(repo, pin, branch, local):
         )
     # During standalone dependency adoption the pinned bundle remains the fallback for old installations.
     # Removal is gated by manager lifecycle proof, documented in docs/dependency-transition.md.
-    return failures
-
-
-def indent_of(line):
-    """The leading whitespace width of a workflow line."""
-    return len(line) - len(line.lstrip(" \t"))
-
-
-def workflow_steps(lines):
-    """Every step under a `steps:` block, as `(first, stop, indent)` line indexes.
-
-    Only a `steps:` key opens a step list, so a `- run:` under a matrix or another list is never read as a step.
-    `lines[first:stop]` is one step; the next item at the same indent or the job's next key ends it.
-    """
-    blocks = []
-    steps_indent = step_indent = first = None
-    for index, line in enumerate(lines):
-        stripped = line.lstrip(" \t")
-        if not stripped or stripped.startswith("#"):
-            continue
-        leading = indent_of(line)
-        match = STEPS.match(line)
-        if steps_indent is None and match is not None and not match["value"].strip():
-            steps_indent, step_indent, first = leading, None, None
-            continue
-        if steps_indent is None:
-            continue
-        if leading <= steps_indent:
-            if first is not None:
-                blocks.append((first, index, step_indent))
-            steps_indent = step_indent = first = None
-            continue
-        if stripped.startswith("- "):
-            if step_indent is None:
-                step_indent = leading
-            if leading == step_indent:
-                if first is not None:
-                    blocks.append((first, index, step_indent))
-                first = index
-    if first is not None:
-        blocks.append((first, len(lines), step_indent))
-    return blocks
-
-
-def _step_property(lines, index, stop, key_indent, value):
-    """A property's value, folding a block scalar, and the line after it."""
-    value = value.strip()
-    if not value.startswith(("|", ">")):
-        return value, index + 1
-    content = []
-    cursor = index + 1
-    while cursor < stop:
-        raw = lines[cursor]
-        stripped = raw.lstrip(" \t")
-        if not stripped:
-            content.append("")
-            cursor += 1
-            continue
-        if indent_of(raw) <= key_indent:
-            break
-        content.append(stripped.rstrip("\r\n"))
-        cursor += 1
-    return "\n".join(content), cursor
-
-
-def _step_env(lines, start, stop, key_indent, env_index):
-    """Read direct environment keys, preserving GH_TOKEN's precedence over GITHUB_TOKEN."""
-    entry_indent = None
-    tokens = {}
-    token_lines = {}
-    insert_at = start
-    for cursor in range(start, stop):
-        child = lines[cursor]
-        stripped = child.lstrip(" \t")
-        if not stripped.strip() or stripped.startswith("#"):
-            continue
-        if indent_of(child) <= key_indent:
-            break
-        if entry_indent is None:
-            entry_indent = indent_of(child)
-        insert_at = cursor + 1
-        if indent_of(child) != entry_indent or not TOKEN_ENTRY.match(stripped):
-            continue
-        key, _, value = stripped.partition(":")
-        if value.strip().startswith(("|", ">")):
-            raise UnsupportedEnv("token block scalars need a built-in token expression")
-        tokens[key] = token_value(stripped)
-        token_lines[key] = cursor
-    key = "GH_TOKEN" if "GH_TOKEN" in tokens else "GITHUB_TOKEN"
-    return StepEnv(env_index, entry_indent or key_indent + 2, tokens.get(key, False), token_lines.get(key), insert_at)
-
-
-def step_fields(lines, first, stop):
-    """A step's `run` and `env`, read only at its own property indentation.
-
-    A block scalar's body is folded into its property's value, so a script's own `run:` or `env:` text is never read
-    as a property. An inline `env:` is reported through `env_error` instead of guessed at, because the sync cannot
-    add an entry to it without rewriting the line.
-    """
-    key_indent = indent_of(lines[first]) + 2
-    run = None
-    env = None
-    env_error = None
-    head = lines[first].lstrip(" \t")[2:]
-    index = first + 1
-    if head and not head.startswith("#"):
-        key, separator, value = head.partition(":")
-        if separator:
-            key = key.strip()
-            value, index = _step_property(lines, first, stop, key_indent, value)
-            if key == "run":
-                run = value
-            elif key == "env":
-                if value:
-                    env_error = "`env:` is an inline mapping"
-                else:
-                    env = _step_env(lines, index, stop, key_indent, first)
-    while index < stop:
-        raw = lines[index]
-        stripped = raw.lstrip(" \t")
-        if not stripped or stripped.startswith("#") or indent_of(raw) != key_indent:
-            index += 1
-            continue
-        key, separator, value = stripped.partition(":")
-        if not separator:
-            index += 1
-            continue
-        key = key.strip()
-        property_index = index
-        value, index = _step_property(lines, index, stop, key_indent, value)
-        if key == "run":
-            run = value
-        elif key == "env":
-            if value:
-                env_error = "`env:` is an inline mapping"
-            else:
-                env = _step_env(lines, index, stop, key_indent, property_index)
-    return StepFields(run, env, env_error)
-
-
-def package_command(value):
-    """Whether a `run:` value actually invokes the suite's package check, not merely mentions it."""
-    return any(PACKAGE_COMMAND.match(line) for line in value.splitlines())
-
-
-def check_package_token(repo, branch, local):
-    """Every step that runs `tools/check_package.py` carries an authenticated GitHub token.
-
-    The package check reads core's latest published release, and an anonymous read shares the runner address's hourly
-    GitHub limit. A step without `GH_TOKEN` or `GITHUB_TOKEN` in its own `env:` can pass on a quiet runner and fail
-    with a 403 on a busy one, so this gate fails the workflow rather than the release.
-    """
-    path = CI_WORKFLOW
-    data, error = read_consumer(repo, path, branch, local)
-    if error:
-        return [f"{repo}: {path}: {error}"]
-    if data is None:
-        return []
-    lines = data.decode("utf-8", "replace").splitlines(keepends=True)
-    failures = []
-    for first, stop, _ in workflow_steps(lines):
-        try:
-            fields = step_fields(lines, first, stop)
-        except UnsupportedEnv as error:
-            failures.append(f"{repo}: {path}: {error}")
-            continue
-        if fields.run is None or not package_command(fields.run):
-            continue
-        if fields.env is not None and fields.env.token:
-            continue
-        reason = fields.env_error or "no `GH_TOKEN` or `GITHUB_TOKEN` in its `env:`"
-        failures.append(
-            f"{repo}: {path}: the step running `python3 {PACKAGE_STEP}` has no authenticated token ({reason});"
-            f" add `env:` with `{PACKAGE_TOKEN}` to that step"
-        )
     return failures
 
 
@@ -750,7 +526,6 @@ def main(argv=None):
     # Any consumer's own CI may run the package check; each such step must be authenticated, whether or not the addon
     # publishes a visual-proof workflow.
     for repo in repos:
-        failures += check_package_token(repo, arguments.branch, arguments.local)
         failures += check_consumer_gates(repo, arguments.branch, arguments.local)
 
     if failures:

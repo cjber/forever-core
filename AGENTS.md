@@ -245,12 +245,11 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   core is missing.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also
   requires the pin to name cjber/forever-core's latest published GitHub release, read with `GH_TOKEN` or
-  `GITHUB_TOKEN` when either is set. It fails closed when that release cannot be read. The package job runs it in every
-  consumer as part of `tools/check_package.py`, and `tools/sync_consumers.py` inserts the same gate directly above the
+  `GITHUB_TOKEN` when either is set. It fails closed when that release cannot be read. The package job compares the three copies offline in every
+  consumer as part of `tools/check_package.py`, and `tools/sync_consumers.py` inserts the latest-release gate directly above the
   packager in each consumer's `release.yml`, so a commit that moves one copy without the others, or a core release that
   lands between CI and the upload, fails before a player is downgraded. This gate also checks that each published
-  consumer's `release.yml` still runs the pin step directly above its packager, so a hand edit cannot reopen it, and
-  that the step running `tools/check_package.py` in its `ci.yml` carries the built-in Actions token in `GH_TOKEN` or `GITHUB_TOKEN`, so the latest-release read is authenticated; the sync adds `GH_TOKEN: ${{ github.token }}` to that step. That
+  consumer's `release.yml` still runs the pin step directly above its packager, so a hand edit cannot reopen it. That
   job also runs `forever_tools/widget_handlers.py` over the packaged files, so a widget method that takes parameters
   passed straight as a script handler fails before it can reach a player. `.github/workflows/drift.yml` runs the
   checker on a schedule only, so a core change never blocks on consumer release timing.

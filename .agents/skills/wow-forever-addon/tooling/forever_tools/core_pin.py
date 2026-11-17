@@ -11,9 +11,9 @@ against.
 
 `--latest` is the release gate. It reads `cjber/forever-core`'s latest published GitHub release (with `GH_TOKEN` or
 `GITHUB_TOKEN` when either is set) and fails closed when that release cannot be read, so an unknown latest release can
-never pass a stale pin. The consumer's package job runs it, and its release workflow runs it again directly before the
-packager uploads. A consumer whose `.pkgmeta` ships no ForeverCore external bundles no core, so the bundle comparison
-is skipped; its pin is still checked against the latest release.
+never pass a stale pin. The consumer's package job compares the three copies offline; its release workflow runs
+`--latest` directly before the packager uploads. A consumer whose `.pkgmeta` ships no ForeverCore external bundles no
+core, so the bundle comparison is skipped; `--latest` still checks its pin against the latest release.
 """
 
 import argparse

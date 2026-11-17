@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 - **A Forever addon's minimap button can register with LibDBIcon** so SexyMap and other minimap managers can show it on hover, move and hide it. The tooltip says it can be dragged. Thanks to Laddylucks, thirex, axejess, p1tu and Mirades96 for the reports. (#685)
+- **Release tooling:** `changelog.py --check` fails on a bullet that appears twice in one section, an addon PR's package check no longer fails while a new ForeverCore awaits CurseForge moderation (the release workflow still requires the latest core), and a proof records a Lua flow as `sha256:<digest> <file>` so a file named with `api` or `key` no longer trips gitleaks. (#660, #661, #656)
+- **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
+- **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
+- **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)
+- **Slash proof flows wait for their exact command to register** and fail with its name if it never becomes available. (#684)
 - **The glyph check reads every English locale shape the addons use**: `ns.L["key"]` assignments and the fields of an `ns.L = { ... }` table, as well as `L["key"]`. A key whose value is client text, not a string literal, gets no English entry. (#543)
 - **The glyph check accepts reviewed XML font producers with no bindings.** Their source digests still require review when a template changes, and Lua string literals are read only for phrase keys absent from enUS entries. (#543)
 - **Every Forever addon can check its translations against the game's fonts.** The glyph check ships to each addon with its own reviewed list of widgets and fonts. (#543)

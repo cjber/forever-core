@@ -78,6 +78,20 @@ def _check_unique_headings(text: str) -> None:
         raise SystemExit(f"CHANGELOG.md has duplicate sections for {', '.join(duplicates)}")
 
 
+def _check_unique_bullets(text: str) -> None:
+    headings = sorted([*HEADING.finditer(text), *UNRELEASED.finditer(text)], key=lambda match: match.start())
+    for index, heading in enumerate(headings):
+        name = heading.groupdict().get("version") or "Unreleased"
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        body = text[heading.end() : end].strip()
+        bullets: set[str] = set()
+        for match in re.finditer(r"^[-*+] (.+(?:\n[ \t]+[^\n]+)*)", body, re.MULTILINE):
+            bullet = " ".join(match[1].split())
+            if bullet in bullets:
+                raise SystemExit(f"CHANGELOG.md's section for {name} has duplicate bullet: {bullet}")
+            bullets.add(bullet)
+
+
 def is_feature(version: str, versions: list[str]) -> bool:
     """Whether `version` raises the major or minor over the newest of `versions` (oldest first).
 
@@ -117,8 +131,10 @@ def check(text: str, versions: list[str], tagged: Callable[[str], str | None] | 
     """Every version in `versions` (oldest first) has a section. With `tagged` (a version's changelog at its tag),
     the newest one must also read as it did at its tag: a branch that merges main after a release lands its
     Unreleased bullets under that newest heading. Older sections are left alone, since a few were reworded on
-    purpose, and a tag whose file has no section for it is skipped."""
+    purpose, and a tag whose file has no section for it is skipped. Every section, including Unreleased,
+    must have unique bullets."""
     _check_unique_headings(text)
+    _check_unique_bullets(text)
     if not UNRELEASED.search(text):
         raise SystemExit("CHANGELOG.md has no ## [Unreleased] heading")
     for version in versions:
