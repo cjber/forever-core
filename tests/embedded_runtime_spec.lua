@@ -66,6 +66,13 @@ local function session(order, saved)
 	local runtime = loader.Namespace()
 	local stack = "@" .. loader.Selected().root:gsub("\\", "/") .. "/Core/Log.lua:3"
 	check(runtime.SafeCallFor("ForeverCore"):Own(stack), "core errors match the elected runtime root")
+	-- #791: the elected copy lives in its host's folder, but a core error is core's alone.
+	local host = runtime.SafeCallFor(loader.Selected().folder)
+	check(not host:Own(stack), "a core error is not filed under the host addon")
+	local hostLine = "@Interface/AddOns/" .. loader.Selected().folder .. "/UI/Window.lua:5"
+	check(host:Own(hostLine), "the host's own files still match the host")
+	check(host:Own(stack .. "\n" .. hostLine), "a host frame calling into core still matches the host")
+	check(not runtime.SafeCallFor("ForeverCore"):Own(hostLine), "a host error is not filed under core")
 	local icons = {}
 	local icon = runtime.Art.Icon
 	runtime.Art.Icon = function(texture, file, size)
