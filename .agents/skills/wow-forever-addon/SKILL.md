@@ -244,11 +244,11 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
-  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges:
-  `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <the pull request's tree>
-  --flow "update notice=<the addon's slash command or Lua file>"` builds the commit, runs the flow, uploads its
-  screenshots to a secret gist and writes `.visual-proof.json`; commit that file with the change (the full flow is in
-  [in-game.md](in-game.md)). The required `visual-proof` check then passes without an admin merge.
+  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges: send the
+  in-game agent an `INGAME ... kind: proof` request with the checkout and `flows: update notice=<the addon's slash
+  command or Lua file>` ([in-game.md](in-game.md)). It builds the commit, runs the flow, uploads the screenshots to a
+  secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change. The required
+  `visual-proof` check then passes without an admin merge.
 - **WFA-39** A ForeverCore release keeps every consumer release already on the stores working, including one
   pinned to an older core: players and the CurseForge app update core on its own, before the sync re-releases reach
   them. Core changes are additive. A public function, field, event, slash command or saved-variable shape a released

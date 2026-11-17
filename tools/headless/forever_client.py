@@ -279,6 +279,10 @@ class ClientError(Exception):
     """A failure the agent should read: printed without a traceback, exit status 2."""
 
 
+class SafetyRefusal(ClientError):
+    """Live character safety is unsafe or unknown, exit status 4. No recovery input is sent."""
+
+
 def wine_env(environ: Mapping[str, str]) -> dict[str, str]:
     """The part of a running client's environment that launches another one the same way."""
     return {k: v for k, v in environ.items() if k.startswith(KEEP_PREFIXES) and k not in DROP}
@@ -504,10 +508,14 @@ def screenshots() -> set[Path]:
     return set(folder.glob("*")) if folder.is_dir() else set()
 
 
-def wait_for_world(before: set[Path], timeout: float, nudge=None, *, require_marker: bool = False) -> Path:
+def wait_for_world(
+    before: set[Path], timeout: float, nudge=None, *, require_marker: bool = False, safety_state: Mapping | None = None
+) -> Path:
     """Block until the dev addon's screenshot appears: the world has loaded. `nudge` runs every 15 s meanwhile."""
     deadline, next_nudge = time.monotonic() + timeout, time.monotonic() + 20
     while time.monotonic() < deadline:
+        if safety_state is not None:
+            require_safe(safety_state, waiting=True)
         new = screenshots() - before
         if new:
             candidates = []
@@ -534,6 +542,7 @@ def wait_for_world(before: set[Path], timeout: float, nudge=None, *, require_mar
 
 
 def x(state: Mapping, *args: str) -> None:
+    require_safe(state, waiting=not state.get("ready"))
     # Under a nested Hyprland, XWayland puts the client's output at its own root offset; a point is in the output's
     # pixels, the same pixels a screenshot of it shows, so the offset is added here, once, for every absolute move.
     origin = state.get("origin")
@@ -778,18 +787,41 @@ def allowed_command(command: str, addons: Path | None = None) -> None:
 
 
 def client_ui(state: Mapping) -> dict[str, bool]:
-    """Decode the live pixel protocol; a failed capture means no world, menu or chat."""
+    """Decode live safety, identifying older strips for guarded session replacement."""
+    unknown = {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True}
+    # Every gameplay verb reads the strip, so its full-frame capture is removed once decoded rather than left behind.
+    path = STATE_DIR / f"client-state-{os.getpid()}.png"
     try:
-        image = shot(state, STATE_DIR / f"client-state-{os.getpid()}.png", mark_read=False)
+        image = shot(state, path, mark_read=False)
         _width, _height, channels, rows = png_pixels(image)
         bits = []
-        for column in range(11):
+        for column in range(8):
             offset = (column * 4 + 2) * channels
             bits.append(rows[2][offset] >= 128)
-        valid = bits[:8] == [True, False, True, True, False, False, True, False]
-        return {"world": valid and bits[8], "menu": valid and bits[9], "chat": valid and bits[10]}
+        if bits == [True, False, True, True, False, False, True, False]:
+            return unknown | {"outdated": True}
+        if bits != [False, True, True, True, False, False, True, False]:
+            return unknown
+        for column in range(8, 13):
+            offset = (column * 4 + 2) * channels
+            bits.append(rows[2][offset] >= 128)
+        return dict(zip(("world", "menu", "chat", "dead", "combat"), bits[8:], strict=True)) | {"safety": True}
     except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
-        return {"world": False, "menu": False, "chat": False}
+        return unknown
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def require_safe(state: Mapping, *, waiting: bool = False) -> None:
+    ui = client_ui(state)
+    if not ui.get("safety"):
+        if waiting:
+            return  # Loading screens have no strip. Keep waiting for the world.
+        raise SafetyRefusal("live safety protocol unavailable or outdated: version 2 headless addon required")
+    if ui["dead"]:
+        raise SafetyRefusal("player is dead or a ghost")
+    if ui["combat"]:
+        raise SafetyRefusal("player is in combat")
 
 
 def resident_world_check(state: Mapping, last_check: float) -> tuple[float, str | None]:
@@ -1214,7 +1246,7 @@ def reload(state: Mapping, timeout: float = 120) -> Path:
     # The new cycle's screenshots are the ones after the command was sent: a screenshot an earlier reload's flow
     # still takes would otherwise be read as this one's world load.
     slash(state, "/reload")
-    return wait_for_world(screenshots(), timeout)
+    return wait_for_world(screenshots(), timeout, safety_state=state)
 
 
 # --- dev builds ------------------------------------------------------------------------------------------------
@@ -1990,6 +2022,9 @@ def smoke(args: argparse.Namespace) -> int:
     try:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
+            require_safe(state)
+        except SafetyRefusal:
+            raise
         except ClientError as error:
             busy = foreign_client()
             if busy:
@@ -2018,6 +2053,8 @@ def smoke(args: argparse.Namespace) -> int:
                     outcome["not_started"] = smoke_registrations(state, released)
             finally:
                 restore_links(records)
+        except SafetyRefusal:
+            raise
         except ClientError as error:
             outcome["error"] = str(error)
         except KeyboardInterrupt:
@@ -2085,7 +2122,12 @@ def fresh_screenshots(before: set[Path]) -> list[tuple[float, Path]]:
 
 
 def wait_for_flow_world(
-    before: set[Path], action: str, token: str | None = None, timeout: float = FLOW_READY_SECONDS
+    before: set[Path],
+    action: str,
+    token: str | None = None,
+    timeout: float = FLOW_READY_SECONDS,
+    *,
+    state: Mapping | None = None,
 ) -> Path:
     """Block until the reload's own world screenshot is on disk: the frame a flow's click aims at.
 
@@ -2095,6 +2137,8 @@ def wait_for_flow_world(
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if state is not None:
+            require_safe(state, waiting=True)
         fresh = fresh_screenshots(before)
         if fresh:
             return max(fresh)[1]
@@ -2108,7 +2152,12 @@ def wait_for_flow_world(
 
 
 def wait_for_flow_ready(
-    before: set[Path], action: str, token: str | None = None, timeout: float = FLOW_READY_SECONDS
+    before: set[Path],
+    action: str,
+    token: str | None = None,
+    timeout: float = FLOW_READY_SECONDS,
+    *,
+    state: Mapping | None = None,
 ) -> Path:
     """Block until a flow says its window is ready, by the screenshot it takes then or the failure it records.
 
@@ -2119,6 +2168,8 @@ def wait_for_flow_ready(
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if state is not None:
+            require_safe(state, waiting=True)
         fresh = fresh_screenshots(before)
         if len(fresh) >= 2:
             return max(fresh)[1]
@@ -2195,6 +2246,8 @@ def flow_capture_failure(state: Mapping, action: str, token: str, timeout: Clien
         return ClientError(f"the flow {action} could not be captured: {failure}")
     try:
         reload(state)
+    except SafetyRefusal:
+        raise
     except ClientError:
         return timeout
     failure = flow_ready_failure(token)
@@ -2231,13 +2284,15 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     clear_eval_inbox()
     try:
         if point:
-            world = wait_for_flow_world(before, action, written["token"])
+            world = wait_for_flow_world(before, action, written["token"], state=state)
             # A click must aim at a screenshot newer than the last input; the flow's own world frame is that
             # screenshot, so the proof clicks through the same `click` an agent uses instead of a second input path.
             (STATE_DIR / "last-shot").touch()
             click(state, point[0], point[1], "1")
             print(f"clicked {point[0]},{point[1]} after {world.name}", flush=True)
-        wait_for_flow_ready(before, action, written["token"])
+        wait_for_flow_ready(before, action, written["token"], state=state)
+    except SafetyRefusal:
+        raise
     except ClientError as error:
         raise flow_capture_failure(state, action, written["token"], error) from None
     return written["token"]
@@ -2425,6 +2480,9 @@ def proof(args: argparse.Namespace) -> int:
     try:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
+            require_safe(state)
+        except SafetyRefusal:
+            raise
         except ClientError:
             # Only the player's own client makes a proof exit 3; another agent's job was waited for above.
             busy = foreign_client()
@@ -3191,7 +3249,8 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
     while True:
         state = current_session()
         if state and (state.get("ready") or state.get("world_lost")):
-            if client_ui(state)["world"]:
+            ui = client_ui(state)
+            if ui.get("safety") and ui["world"]:
                 if not state.get("ready"):
                     state["ready"] = time.time()
                     state.pop("world_lost", None)
@@ -3252,6 +3311,7 @@ def job(args: argparse.Namespace) -> int:
     handle, token = acquire_job(args.timeout, label)
     try:
         state = ensure_session(args.timeout, args.manual_launcher)
+        require_safe(state)
         recover_links()
         env = {
             **os.environ,
@@ -3342,7 +3402,7 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
     try:
         handle, token = acquire_job(args.timeout, args.label or "Hyprland job")
         try:
-            ensure_session(args.timeout, args.manual_launcher)
+            require_safe(ensure_session(args.timeout, args.manual_launcher))
             if hyprland_request():
                 raise ClientError("another Hyprland job is waiting for serve")
             request = {
@@ -3507,7 +3567,7 @@ def lease(args: argparse.Namespace) -> int:
     label = (args.label or "a lease")[:80]
     handle, token = acquire_job(args.timeout, label)
     try:
-        ensure_session(args.timeout, args.manual_launcher)
+        require_safe(ensure_session(args.timeout, args.manual_launcher))
         path = lease_path(token)
         path.parent.mkdir(parents=True, exist_ok=True)
         started = time.time()
@@ -3701,6 +3761,8 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     """One verb that touches the client, run inside the job that holds it."""
     if not state.get("ready") and not launcher_verb(state, args.verb, getattr(args, "button", None)):
         raise ClientError("the session is not in the world yet: wait for `up` to print READY")
+    if args.verb != "shot" and state.get("ready"):
+        require_safe(state)
     if args.verb == "shot":
         print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
     elif args.verb == "click":
@@ -3933,7 +3995,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     except ClientError as error:
         print(f"forever_client: {error}", file=sys.stderr)
-        return 2
+        return 4 if isinstance(error, SafetyRefusal) else 2
 
 
 if __name__ == "__main__":

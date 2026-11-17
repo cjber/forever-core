@@ -28,6 +28,7 @@ SPEC = importlib.util.spec_from_file_location("forever_client", Path(__file__).p
 fc = importlib.util.module_from_spec(SPEC)
 sys.modules["forever_client"] = fc
 SPEC.loader.exec_module(fc)
+REAL_REQUIRE_SAFE = fc.require_safe
 
 
 def args() -> argparse.Namespace:
@@ -66,6 +67,7 @@ class FakeClock:
 
 class ForeverClientTest(unittest.TestCase):
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.runtime = self.state / "runtime"
@@ -630,25 +632,49 @@ class ForeverClientTest(unittest.TestCase):
                 fc.allowed_command(refused, addons)
 
     def test_live_protocol_decodes_exact_bits_without_authorizing_a_click(self):
-        row = bytearray(44 * 3)
-        for index, bit in enumerate([1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]):
-            row[(index * 4 + 2) * 3] = bit * 255
+        row = bytearray(52 * 3)
+        for index, bit in enumerate([0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0]):
+            row[(index * 4 + 2) * 3 : (index * 4 + 2) * 3 + 3] = bytes([bit * 255]) * 3
         with (
             mock.patch.object(fc, "shot", return_value=Path("frame.png")) as shot,
-            mock.patch.object(fc, "png_pixels", return_value=(44, 4, 3, [bytes(row)] * 4)),
+            mock.patch.object(fc, "png_pixels", return_value=(52, 4, 3, [bytes(row)] * 4)),
         ):
-            self.assertEqual(fc.client_ui({}), {"world": True, "menu": True, "chat": False})
+            self.assertEqual(
+                fc.client_ui({}),
+                {"world": True, "menu": True, "chat": False, "safety": True, "dead": False, "combat": False},
+            )
         self.assertFalse(shot.call_args.kwargs["mark_read"])
 
     def test_failed_live_captures_report_no_ui(self):
         failures = [subprocess.CalledProcessError(1, "gamescopectl"), fc.ClientError("capture failed")]
         for error in failures:
             with self.subTest(error=error), mock.patch.object(fc, "shot", side_effect=error):
-                self.assertEqual(fc.client_ui({}), dict.fromkeys(("world", "menu", "chat"), False))
+                self.assertEqual(
+                    fc.client_ui({}),
+                    {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True},
+                )
         image = self.state / "truncated.png"
         image.write_bytes(fc.PNG_SIGNATURE + b"broken")
         with mock.patch.object(fc, "shot", return_value=image):
-            self.assertEqual(fc.client_ui({}), dict.fromkeys(("world", "menu", "chat"), False))
+            self.assertEqual(
+                fc.client_ui({}),
+                {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True},
+            )
+
+    def test_a_live_capture_is_removed_once_decoded(self):
+        def capture(_state, path, mark_read=True):
+            path.write_bytes(b"frame")
+            return path
+
+        for pixels in ({"return_value": (52, 4, 3, [bytes(52 * 3)] * 4)}, {"side_effect": OSError("unreadable")}):
+            with (
+                self.subTest(pixels=pixels),
+                mock.patch.object(fc, "STATE_DIR", self.state),
+                mock.patch.object(fc, "shot", side_effect=capture),
+                mock.patch.object(fc, "png_pixels", **pixels),
+            ):
+                fc.client_ui({})
+                self.assertEqual(list(self.state.glob("client-state-*.png")), [])
 
     def test_unreleased_changelog_is_one_bullet_list(self):
         changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text()
@@ -2125,7 +2151,20 @@ class StopHandlersTest(unittest.TestCase):
 class SmokeTest(unittest.TestCase):
     """The release smoke: build, selftest, errors per folder, one commit status, links put back."""
 
+    def test_smoke_refuses_live_unsafe_state_before_build_or_input(self):
+        with (
+            mock.patch.object(fc, "require_safe", REAL_REQUIRE_SAFE),
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": False, "combat": True}),
+            mock.patch.object(fc, "x") as inputs,
+            self.assertRaisesRegex(fc.SafetyRefusal, "player is in combat"),
+        ):
+            self.run_smoke()
+        inputs.assert_not_called()
+        self.reload.assert_not_called()
+        self.released.assert_called_once()
+
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.client = self.state / "client"
@@ -2649,6 +2688,7 @@ class ProofHelpersTest(unittest.TestCase):
     """The pieces of `proof` that hold without a client or a network."""
 
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "PROOF_SCRATCH", self.state / "scratch"))
 
@@ -2778,7 +2818,7 @@ class ProofHelpersTest(unittest.TestCase):
             self.assertEqual(fc.run_flow("state", "/sf"), "run-1")
         clicked.assert_not_called()
         world.assert_not_called()
-        ready.assert_called_once_with(set(), "/sf", "run-1")
+        ready.assert_called_once_with(set(), "/sf", "run-1", state="state")
 
     def test_run_flow_runs_a_slash_command_through_devsmoke(self):
         tool = mock.Mock()
@@ -2804,7 +2844,7 @@ class ProofHelpersTest(unittest.TestCase):
         tool.write_slash.assert_called_once_with("/lf", addons=self.state / "client/Interface/AddOns", capture=True)
         reload.assert_called_once_with("state")
         clear.assert_called_once_with()
-        ready.assert_called_once_with(set(), "/lf", "run-slash")
+        ready.assert_called_once_with(set(), "/lf", "run-slash", state="state")
         self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from /lf (5 lines)", out.getvalue())
 
     def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
@@ -2856,7 +2896,7 @@ class ProofHelpersTest(unittest.TestCase):
             self.assertEqual(fc.run_flow("state", "notice.lua"), "run-1")
         reload.assert_called_once_with("state")
         clear.assert_called_once_with()
-        ready.assert_called_once_with(earlier, "notice.lua", "run-1")
+        ready.assert_called_once_with(earlier, "notice.lua", "run-1", state="state")
         saved.assert_not_called()  # the result is read after the flow's screenshot
         tool.write_snippet.assert_called_once_with(
             Path("notice.lua"), addons=self.state / "client/Interface/AddOns", capture=True
@@ -3088,7 +3128,20 @@ class ProofHelpersTest(unittest.TestCase):
 class ProofTest(unittest.TestCase):
     """`proof`: smoke's build and links, one reload, a shot per flow, a gist and the checkout's proof file."""
 
+    def test_proof_refuses_live_unsafe_state_before_build_or_input(self):
+        with (
+            mock.patch.object(fc, "require_safe", REAL_REQUIRE_SAFE),
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": False, "combat": True}),
+            mock.patch.object(fc, "x") as inputs,
+            self.assertRaisesRegex(fc.SafetyRefusal, "player is in combat"),
+        ):
+            self.run_proof()
+        inputs.assert_not_called()
+        self.reload.assert_not_called()
+        self.released.assert_called_once()
+
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state / "state"))
         self.enterContext(mock.patch.object(fc, "PROOF_SCRATCH", self.state / "scratch"))
@@ -3492,6 +3545,7 @@ class BrokerTest(unittest.TestCase):
     """The resident session and the short job lock: one client, several agents, no login per test."""
 
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
 
@@ -3605,7 +3659,7 @@ class BrokerTest(unittest.TestCase):
         def teardown(*_args):
             order.append("teardown")
 
-        self.enterContext(mock.patch.object(fc, "client_ui", return_value={"world": True}))
+        self.enterContext(mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}))
         gamescope = mock.Mock(pid=123)
         gamescope.poll.return_value = None
         with (
@@ -3645,7 +3699,7 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc, "session_lock_held", return_value=False),
             mock.patch.object(fc, "start_serve", return_value=child) as start,
             mock.patch.object(fc, "current_session", side_effect=[None, None, ready]),
-            mock.patch.object(fc, "client_ui", return_value={"world": True}),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}),
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
             contextlib.redirect_stderr(io.StringIO()),
@@ -3657,7 +3711,7 @@ class BrokerTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "start_serve") as start,
             mock.patch.object(fc, "current_session", return_value=ready),
-            mock.patch.object(fc, "client_ui", return_value={"world": True}),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}),
         ):
             self.assertEqual(fc.ensure_session(60), ready)
         start.assert_not_called()
@@ -3666,7 +3720,7 @@ class BrokerTest(unittest.TestCase):
         state = live_state(world_lost=True)
         with (
             mock.patch.object(fc, "current_session", return_value=state),
-            mock.patch.object(fc, "client_ui", return_value={"world": True}),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}),
             mock.patch.object(fc, "write_state") as write,
         ):
             self.assertTrue(fc.ensure_session(60)["ready"])
@@ -3685,7 +3739,7 @@ class BrokerTest(unittest.TestCase):
         fresh = live_state(ready=2.0)
         with (
             mock.patch.object(fc, "current_session", side_effect=[stale, None, fresh]),
-            mock.patch.object(fc, "client_ui", side_effect=[{"world": False}, {"world": True}]),
+            mock.patch.object(fc, "client_ui", side_effect=[{"world": False}, {"world": True, "safety": True}]),
             mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
             mock.patch.object(fc, "write_state") as write,
             mock.patch.object(fc, "down") as down,
@@ -4079,6 +4133,8 @@ class HyprlandJobTest(unittest.TestCase):
     def setUp(self):
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        # These cover the queue and the return; LiveSafetyTest covers the Hyprland job's refusal.
+        self.enterContext(mock.patch.object(fc, "require_safe"))
 
     def request(self, **extra) -> dict:
         return {
@@ -4526,3 +4582,162 @@ class NestedHyprlandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveSafetyTest(unittest.TestCase):
+    def test_decode_version_old_header_and_unsafe_bits(self):
+        for header, dead, combat in [
+            ("01110010", False, False),
+            ("01110010", True, False),
+            ("01110010", False, True),
+            ("10110010", False, False),
+        ]:
+            with self.subTest(header=header, dead=dead, combat=combat):
+                row = b"".join(
+                    bytes([128 if bit else 127]) * 12
+                    for bit in [*(c == "1" for c in header), True, False, False, dead, combat]
+                )
+                with (
+                    mock.patch.object(fc, "shot"),
+                    mock.patch.object(fc, "png_pixels", return_value=(52, 4, 3, [row] * 4)),
+                ):
+                    ui = fc.client_ui({})
+                self.assertEqual(ui["safety"], header == "01110010")
+                self.assertEqual(ui["dead"], dead if ui["safety"] else True)
+                self.assertEqual(ui["combat"], combat if ui["safety"] else True)
+
+    def test_every_input_verb_refuses_before_any_action(self):
+        for verb in ("slash", "click", "scroll", "key", "reload", "eval", "errors"):
+            for dead, combat, reason in [
+                (True, False, "player is dead or a ghost"),
+                (False, True, "player is in combat"),
+            ]:
+                with self.subTest(verb=verb, reason=reason), contextlib.ExitStack() as stack:
+                    stack.enter_context(
+                        mock.patch.object(
+                            fc, "client_ui", return_value={"safety": True, "dead": dead, "combat": combat}
+                        )
+                    )
+                    actions = [
+                        stack.enter_context(mock.patch.object(fc, name))
+                        for name in ("x", "slash", "click", "scroll", "press", "reload", "devsmoke_eval")
+                    ]
+                    with self.assertRaisesRegex(fc.SafetyRefusal, reason):
+                        fc.input_verb({"ready": True}, argparse.Namespace(verb=verb))
+                    for action in actions:
+                        action.assert_not_called()
+
+    def test_each_low_level_send_rechecks_safety_including_typed_input(self):
+        with (
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": True, "combat": False}),
+            mock.patch.object(fc, "mark", return_value=0),
+            mock.patch.object(fc.subprocess, "run") as inputs,
+            self.assertRaisesRegex(fc.SafetyRefusal, "player is dead or a ghost"),
+        ):
+            fc.send({"ready": True}, "type", "/forever")
+        inputs.assert_not_called()
+
+    def test_jobs_and_lease_refuse_before_starting_children_and_release_lock(self):
+        argvs = {
+            "job": ["job", "--", "true"],
+            "hyprland": ["job", "--hyprland", "--", "true"],
+            "lease": ["lease"],
+        }
+        for verb, argv in argvs.items():
+            state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+            with (
+                self.subTest(verb=verb),
+                mock.patch.object(fc, "STATE_DIR", state),
+                mock.patch.object(fc, "nested_hyprland"),
+                mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "token")),
+                mock.patch.object(fc, "ensure_session", return_value={"ready": True}),
+                mock.patch.object(fc, "release_job") as released,
+                mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": True, "combat": False}),
+                mock.patch.object(fc.subprocess, "run") as inputs,
+                mock.patch.object(fc.subprocess, "Popen") as children,
+                contextlib.redirect_stderr(io.StringIO()) as error,
+            ):
+                self.assertEqual(fc.main(argv), 4)
+                self.assertIn("player is dead or a ghost", error.getvalue())
+                inputs.assert_not_called()
+                children.assert_not_called()
+                released.assert_called_once()
+                # Neither a lease record nor a Hyprland request is left for serve or a verb to act on.
+                self.assertEqual(list(state.rglob("*.json")), [])
+
+    def test_unusable_resident_is_replaced_without_safety_refusal(self):
+        for stale, header in [
+            ({"ready": True}, "10110010"),
+            ({"world_lost": True}, "00000000"),
+            ({"ready": True}, "00000000"),
+        ]:
+            with self.subTest(stale=stale, header=header):
+                fresh = {"ready": True}
+                # A v1 capture is only 44 pixels wide, with no safety cells.
+                row = b"".join(bytes([255 if bit == "1" else 0]) * 12 for bit in header + "100")
+                with (
+                    mock.patch.object(fc, "current_session", side_effect=[stale, None, fresh]),
+                    mock.patch.object(fc, "shot"),
+                    mock.patch.object(fc, "png_pixels", return_value=(44, 4, 3, [row] * 4)),
+                ):
+                    old_ui = fc.client_ui(stale)
+                    self.assertEqual(old_ui.get("outdated", False), header == "10110010")
+                    with (
+                        mock.patch.object(fc, "client_ui", side_effect=[old_ui, {"world": True, "safety": True}]) as ui,
+                        mock.patch.object(fc, "require_safe") as safety,
+                        mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
+                        mock.patch.object(fc, "write_state"),
+                        mock.patch.object(fc, "down") as stop,
+                        mock.patch.object(fc, "session_lock_held", return_value=False),
+                        mock.patch.object(fc, "start_serve", return_value=mock.Mock(poll=lambda: None)) as start,
+                        mock.patch.object(fc.time, "sleep"),
+                    ):
+                        self.assertIs(fc.ensure_session(1), fresh)
+                    stop.assert_called_once()
+                    start.assert_called_once()
+                    self.assertEqual(ui.call_count, 2)
+                    safety.assert_not_called()
+
+    def test_reload_and_flow_waits_report_live_refusal_without_sleeping(self):
+        with (
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": False, "combat": True}),
+            mock.patch.object(fc.time, "sleep") as sleep,
+        ):
+            for wait in (
+                lambda: fc.wait_for_world(set(), 10, safety_state={}),
+                lambda: fc.wait_for_flow_world(set(), "/lf", state={}),
+                lambda: fc.wait_for_flow_ready(set(), "/lf", state={}),
+            ):
+                with self.assertRaisesRegex(fc.SafetyRefusal, "player is in combat"):
+                    wait()
+            sleep.assert_not_called()
+
+    def test_verbs_inside_an_existing_job_still_refuse_input(self):
+        for verb in (["slash", "/forever"], ["key", "Escape"], ["click", "2", "2"]):
+            with (
+                self.subTest(verb=verb),
+                mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "token"}),
+                mock.patch.object(fc, "job_holder", return_value={"token": "token"}),
+                mock.patch.object(fc, "load_state", return_value={"ready": True}),
+                mock.patch.object(fc, "session_alive", return_value=True),
+                mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": False, "combat": True}),
+                mock.patch.object(fc, "x") as inputs,
+                mock.patch.object(fc, "acquire_job") as lock,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(fc.main(verb), 4)
+                inputs.assert_not_called()
+                lock.assert_not_called()
+
+    def test_read_only_verbs_remain_available_without_input_or_reload(self):
+        with (
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "dead": True, "combat": True}),
+            mock.patch.object(fc, "shot") as shot,
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "job_started", return_value=0),
+            mock.patch.object(fc.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.input_verb({"ready": True}, argparse.Namespace(verb="shot", path=None)), 0)
+            shot.assert_called_once()
+            reload.assert_not_called()

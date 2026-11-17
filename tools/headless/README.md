@@ -26,6 +26,22 @@ advertises an account upgrade and does not stop startup.
 Without a game process, startup allows two Play attempts, at least 15 seconds apart,
 each requiring a fresh visible Play target, then fails with the frame path.
 
+## Live safety
+
+The version 2 pixel strip reports death or ghost state and combat or combat lockdown every
+frame. Unknown API answers are unsafe. Jobs, Hyprland jobs, leases, proofs and smokes check
+immediately after ensuring the session. Every input verb and each input send checks again, including
+commands inside a job using `FOREVER_CLIENT_JOB`. Screenshots and status remain available. Error reads reload to flush SavedVariables and
+are refused when unsafe. Reload and proof waits report a live safety refusal as soon as the strip shows it.
+
+Walking and opening or searching the auction house are allowed. Bidding, buying, posting,
+fighting, resurrection and automatic recovery are forbidden. A refusal sends no recovery input.
+An older resident addon or an unreadable safety strip is replaced through the guarded
+session teardown path before reuse. Unknown safety still refuses input.
+
+Exit 3 means the player's client is in use. Exit 4 means live safety refused the operation:
+`player is dead or a ghost`, `player is in combat`, or the version 2 safety protocol is
+unavailable or outdated. Other client errors use exit 2.
 
 ## Shared commands
 
