@@ -1,4 +1,4 @@
--- Lock the Forever tracker in place: while it is on, the grip ignores drag and says so, and it can be turned on or
+-- Lock the Forever tracker in place: while it is on, a section header's drag moves nothing, and it can be turned on or
 -- off in combat because it is a saved switch read when the player drags, never a frame move.
 --
 -- tests/tracker_host_spec.lua covers the rest of the host and stays at the gate's 1000-line limit, so the lock's cases
@@ -10,19 +10,9 @@ local function check(value, message)
 	checks = checks + 1
 end
 local function noop() end
--- The two places the player reads the switch: the grip's tooltip, and the grip's own label.
-local tooltipText
-local GameTooltip = {
-	SetOwner = noop,
-	Show = noop,
-	Hide = noop,
-	SetText = function(_, text)
-		tooltipText = text
-	end,
-}
 local timers, showed, frames, combat = {}, nil, {}, false
 local parent
--- The frame API the host and the grip use, so a suppressed drag can be told from a move and from a native write.
+-- The frame API the host and the header drag use, so a suppressed drag can be told from a move and from a native write.
 local function frame()
 	local f = { width = 250, height = 0, scripts = {} }
 	function f:SetPoint(...)
@@ -84,7 +74,7 @@ local function frame()
 		self.point = nil
 	end
 	f.RegisterEvent = noop
-	f.SetMovable, f.RegisterForDrag = noop, noop
+	f.SetMovable, f.RegisterForDrag, f.EnableMouse = noop, noop, noop
 	f.clamped = true
 	function f:SetClampedToScreen(value)
 		self.clamped = value
@@ -106,15 +96,6 @@ local function frame()
 	end
 	f.Hide = function(self)
 		self.shown = false
-	end
-	-- The grip's label is the only font string the host makes, so it is read back here.
-	function f:CreateFontString()
-		local fontString = { SetPoint = noop }
-		function fontString.SetText(label, value)
-			label.text = value
-		end
-		self.label = fontString
-		return fontString
 	end
 	-- The optional backdrop is the only texture the host makes; the lock spec only needs it not to error.
 	function f.CreateTexture(_)
@@ -227,11 +208,20 @@ local env = setmetatable({
 	end,
 }, { __index = _G })
 env._G = env
--- In TOC order: UI/TrackerLock.lua draws the grip, then the host is handed it.
+-- In TOC order: UI/TrackerLock.lua, then the host that hands it each section header.
 setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", ns)
 setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", ns) -- the section order, loaded before the host
 setfenv(assert(loadfile("UI/TrackerHost.lua")), env)("Test", ns)
-local host, grip, label = frames[6], frames[7], frames[7].label
+local host = frames[6]
+-- One section, so there is a header to drag. It draws nothing: the lock cases need no layout.
+local section = frame()
+section.Header = frame()
+section.Update = noop
+function section.GetContentsHeight()
+	return 0
+end
+ns.TrackerHost.Attach(section)
+local header = section.Header
 local function drain()
 	local pending = timers
 	timers = {}
@@ -242,15 +232,12 @@ end
 showed()
 drain()
 local function drag()
-	grip.scripts.OnDragStart(grip)
+	header.scripts.OnMouseDown(header, "LeftButton")
+	header.scripts.OnDragStart(header)
 	-- Let go somewhere a drag would have put it: a suppressed drag must neither move nor save.
 	host.left, host.top = 500, 900
-	grip.scripts.OnDragStop(grip)
+	header.scripts.OnDragStop(header)
 	drain()
-end
-local function hover()
-	tooltipText = nil
-	grip.scripts.OnEnter(grip)
 end
 
 -- Off for a fresh player, for a missing value and for one that is not a boolean.
@@ -261,34 +248,21 @@ check(ns.TrackerHost.IsLocked() == false, "a saved lock that is not a boolean re
 hostSettings.locked = nil
 check(ns.TrackerHost.IsLocked() == false, "a missing lock reads as off")
 
--- Unlocked: the grip drags the column.
-hover()
-check(tooltipText == "Drag to move", "an unlocked grip offers to be dragged")
-check(label.text == "Forever tracker", "an unlocked grip keeps the tracker's title")
+-- Unlocked: a section header drags the column.
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "an unlocked drag moves and saves")
-grip.scripts.OnLeave(grip)
 
--- Locked: OnDragStart returns before it starts anything, so the column stays put and nothing is saved. The grip draws
--- no sentence of its own: the locked text lives only in the tooltip, and the short title returns on hover.
+-- Locked: OnDragStart returns before it starts anything, so the column stays put and nothing is saved.
 ns.TrackerHost.SetLocked(true)
 check(ns.TrackerHost.IsLocked(), "lock reads back from the saved settings")
-check(label.text == "", "a locked grip draws no text until it is hovered")
-hover()
-check(tooltipText == "The tracker is locked. Turn off Lock the tracker to move it.", "a locked grip says it is locked")
-check(label.text == "Forever tracker", "a hovered locked grip shows only the tracker's title")
-grip.scripts.OnLeave(grip)
-check(label.text == "", "leaving a locked grip hides its text again")
 local savedX, savedY = hostSettings.x, hostSettings.y
 drag()
 check(not host.moving, "a locked drag never starts moving the column")
 check(hostSettings.x == savedX and hostSettings.y == savedY, "a locked drag saves no new position")
 
--- The next drag after unlocking works again, and the tooltip follows the switch at the moment it is read.
+-- The next drag after unlocking works again.
 ns.TrackerHost.SetLocked(false)
 check(not ns.TrackerHost.IsLocked() and hostSettings.locked == false, "turning lock off saves it")
-hover()
-check(tooltipText == "Drag to move" and label.text == "Forever tracker", "an unlocked grip offers to be dragged again")
 drag()
 check(not host.moving and hostSettings.x == 500 and hostSettings.y == -180, "the next drag saves again")
 ns.TrackerHost.SetLocked(true)
@@ -331,9 +305,9 @@ host.SetPoint, host.SetHeight, host.ClearAllPoints = setPoint, setHeight, clearP
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "the drag works again after combat")
 
--- The retired attach switch leaves the grip shown and the column free.
+-- The retired attach switch leaves the column free.
 ns.TrackerHost.SetAttached(true)
 drain()
-check(grip.shown == true and not ns.TrackerHost.IsAttachedToQuestTracker(), "attaching is a no-op that keeps the grip")
+check(not ns.TrackerHost.IsAttachedToQuestTracker(), "attaching is a no-op")
 
 print("tracker_host_lock_spec: " .. checks .. " checks passed")

@@ -1,13 +1,12 @@
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
--- The shared tracker's grip, drawn on the private column UI/TrackerHost.lua owns, and the Lock switch that keeps the
--- column where the player put it: while Lock is on the grip ignores drag and says so rather than offering one. Locking
--- writes the saved switch and redraws the label, never a frame, so it is safe to change in combat. This file and
--- UI/TrackerHost.lua are the same in every Forever addon that ships the host.
+-- How the player moves the shared tracker: a left-button drag on any section header moves the whole private column
+-- UI/TrackerHost.lua owns, and the Lock switch in the header's right-click menu stops that drag. There is no handle,
+-- cursor or hint of its own. Locking writes the saved switch, never a frame, so it is safe to change in combat.
 --
--- Shared with UI/TrackerHost.lua: TrackerLock.Locked reads the switch through the host's own IsLocked, and the grip's
--- OnDragStop hands a finished drag to the host's SavePosition.
+-- Shared with UI/TrackerHost.lua: TrackerLock.Locked reads the switch through the host's own IsLocked, and a finished
+-- drag goes to the host's SavePosition.
 ---@class ForeverTrackerLock
 local TrackerLock = {}
 ns.TrackerLock = TrackerLock
@@ -19,55 +18,23 @@ function TrackerLock.Locked()
 	return host ~= nil and host.IsLocked ~= nil and host.IsLocked() == true
 end
 
--- Draws the grip on `host`, the column it drags, and returns what the host needs from it: whether the grip is shown at
--- all, and the label redrawn from the settings the moment Lock is switched rather than on the next hover.
+-- Returns what the host needs to let its headers drag `host`: Attach for each section header, whether a drag is in
+-- progress, and whether the press that just ended was a drag, so the header's click action skips it.
 ---@param host Frame
 ---@param source ForeverTrackerHostAPI
----@return ForeverTrackerGrip
-function TrackerLock.Grip(host, source)
-	local grip = CreateFrame("Button", nil, host)
-	grip:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
-	grip:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
-	grip:SetHeight(24)
-	grip:RegisterForDrag("LeftButton")
-	local L = ns.L
-	local title = L["Forever tracker"]
-	local drag = L["Drag to move"]
-	local locked = L["The tracker is locked. Turn off Lock the tracker to move it."]
-	local label = grip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	label:SetPoint("CENTER", grip, "CENTER", 0, 0)
-	label:SetText(title)
-	-- While Lock is on the grip draws no sentence of its own: one unclamped FontString centred on the grip is wider
-	-- than the column, so it overlaps the UI below and runs off screen at an edge. The locked sentence lives only in
-	-- the tooltip, which the game keeps on screen; the short title returns only while the pointer is over the grip.
-	local hovered = false
-	local function DrawLabel(isLocked)
-		label:SetText(isLocked and (hovered and title or "") or title)
-	end
-	-- Only a drag this grip started keeps moving, so OnDragStop ignores whatever the host refused to start.
-	local dragging = false
-	grip:SetScript("OnEnter", function(self)
-		local isLocked = TrackerLock.Locked()
-		hovered = true
-		DrawLabel(isLocked)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText(isLocked and locked or drag)
-		GameTooltip:Show()
-	end)
-	grip:SetScript("OnLeave", function()
-		hovered = false
-		DrawLabel(TrackerLock.Locked())
-		GameTooltip:Hide()
-	end)
-	grip:SetScript("OnDragStart", function()
+---@return ForeverTrackerDrag
+function TrackerLock.Drag(host, source)
+	-- Only a drag a header started keeps moving, so OnDragStop ignores whatever a locked or combat press refused.
+	local dragging, dragged = false, false
+	local function Start()
 		-- The column holds still in combat, when its secure item buttons are protected.
 		if TrackerLock.Locked() or InCombatLockdown() then
 			return
 		end
-		dragging = true
+		dragging, dragged = true, true
 		host:StartMoving()
-	end)
-	grip:SetScript("OnDragStop", function()
+	end
+	local function Stop()
 		if not dragging then
 			return
 		end
@@ -75,17 +42,23 @@ function TrackerLock.Grip(host, source)
 		host:StopMovingOrSizing()
 		local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 		source.SavePosition((host:GetLeft() or 0) * scale, (host:GetTop() or 0) * scale - UIParent:GetHeight())
-	end)
-	grip:Hide()
+	end
 	return {
-		Show = function(value)
-			grip:SetShown(value)
-		end,
-		SetLabel = function(value)
-			DrawLabel(value)
+		---@param header Frame
+		Attach = function(header)
+			header:RegisterForDrag("LeftButton")
+			-- A new press starts undragged, whichever of OnDragStop and OnMouseUp the client sends first.
+			header:HookScript("OnMouseDown", function()
+				dragged = false
+			end)
+			header:HookScript("OnDragStart", Start)
+			header:HookScript("OnDragStop", Stop)
 		end,
 		Dragging = function()
 			return dragging
+		end,
+		Dragged = function()
+			return dragged
 		end,
 	}
 end

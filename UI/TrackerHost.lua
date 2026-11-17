@@ -188,9 +188,9 @@ host:SetWidth(WIDTH)
 host:SetHeight(1)
 host:SetMovable(true)
 host:SetClampedToScreen(true)
--- The grip and the Lock switch that suppresses its drag live in their own file (UI/TrackerLock.lua), which the TOC
--- loads before this one. It hands back the label redraw for a Lock change and the grip's show switch.
-local Grip = ns.TrackerLock.Grip(host, api)
+-- A header drag moves the column, and the Lock switch stops it; both live in UI/TrackerLock.lua, which the TOC loads
+-- before this one.
+local Drag = ns.TrackerLock.Drag(host, api)
 -- The optional backdrop spans the whole private column, so every Forever section sits on it at once. It is one
 -- texture on the host rather than chrome each addon draws, and it uses the game's own tooltip background art, tinted
 -- the way the tooltip tints it. Off is simply opacity 0; drawing it only changes a texture, never a frame, so the
@@ -200,8 +200,7 @@ local BACKDROP_INSET = 6
 local backdrop = host:CreateTexture(nil, "BACKGROUND")
 -- art-ok: the tooltip's own centre fill, a tiling texture stretched to the column by design
 backdrop:SetAtlas(BACKDROP_ATLAS)
--- No inset at the top: the grip sits there. The backdrop pads the sides and the bottom instead.
-backdrop:SetPoint("TOPLEFT", host, "TOPLEFT", -BACKDROP_INSET, 0)
+backdrop:SetPoint("TOPLEFT", host, "TOPLEFT", -BACKDROP_INSET, BACKDROP_INSET)
 backdrop:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", BACKDROP_INSET, -BACKDROP_INSET)
 backdrop:Hide()
 
@@ -868,7 +867,7 @@ end
 --
 -- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so that
 -- long section is the one that scrolls. It is laid out after the others so their real heights are known first.
-local function LayoutPass(width, available, reserve)
+local function LayoutPass(width, available)
 	local restIndex
 	for index, module in ipairs(modules) do
 		if module.trackerScrollable and module.trackerMaxHeight == "remaining" then
@@ -952,7 +951,7 @@ local function LayoutPass(width, available, reserve)
 		LayOut(restIndex, math.max(0, available - total - GAP))
 	end
 	local hasSections = total > 0
-	local height = hasSections and reserve or 0
+	local height = 0
 	for index, module in ipairs(modules) do
 		module:ClearAllPoints()
 		module:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -height)
@@ -971,11 +970,11 @@ end
 -- resizes a viewport. It can build a dirty section the first pass gave no room, which can move one more floor, so a
 -- third pass settles that; a column still unsettled after it lays out again in the next frame.
 local MAX_PASSES = 3
-local function LayoutModules(width, available, reserve)
+local function LayoutModules(width, available)
 	ns.TrackerOrder.Sort(modules)
 	local hasSections, floorsMoved
 	for _ = 1, MAX_PASSES do
-		hasSections, floorsMoved = LayoutPass(width, available, reserve)
+		hasSections, floorsMoved = LayoutPass(width, available)
 		if not floorsMoved then
 			return hasSections
 		end
@@ -992,9 +991,9 @@ local function Place(settings)
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(WIDTH, screenWidth)
 	host:SetWidth(width)
-	-- A drag in progress owns the column's position: the grip's StartMoving placed it, and its OnDragStop saves it.
-	if Grip.Dragging() then
-		host:SetShown(LayoutModules(width, math.max(24, (host:GetTop() or screenHeight) - 24), 24))
+	-- A drag in progress owns the column's position: a header's StartMoving placed it, and its OnDragStop saves it.
+	if Drag.Dragging() then
+		host:SetShown(LayoutModules(width, math.max(24, host:GetTop() or screenHeight)))
 		return
 	end
 	local top
@@ -1009,7 +1008,7 @@ local function Place(settings)
 		top = host:GetTop() or screenHeight
 	end
 	-- With no section to show, the column hides entirely, its title too; the next layout with content shows it again.
-	if not LayoutModules(width, math.max(24, top - 24), 24) then
+	if not LayoutModules(width, math.max(24, top)) then
 		host:Hide()
 	end
 end
@@ -1024,7 +1023,6 @@ local function Layout()
 	end
 	local settings = Settings()
 	ApplyBackdrop(settings)
-	Grip.Show(true)
 	MatchScale()
 	Place(settings)
 end
@@ -1092,7 +1090,6 @@ end
 ---@param value boolean
 function api.SetLocked(value)
 	Settings().locked = not not value
-	Grip.SetLabel(value)
 end
 -- Compatibility for consumers written when the column could attach to the quest tracker: it never does now, so these
 -- answer false, change nothing and never call back.
@@ -1108,12 +1105,6 @@ function api.SavePosition(x, y)
 	end
 	local settings = Settings()
 	settings.x, settings.y = x, y
-	host:MarkDirty()
-end
--- Forgets the dragged position, so the column pins beside the game's quest tracker again.
-function api.ResetPosition()
-	local settings = Settings()
-	settings.x, settings.y = nil, nil
 	host:MarkDirty()
 end
 
@@ -1228,7 +1219,6 @@ local function NewTrackerMenu(root, module, target)
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
-		tracker:CreateButton(ns.L["Reset position"], api.ResetPosition)
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
 			return api.GetBackdropOpacity() == 0
@@ -1291,13 +1281,17 @@ local function AddHeaderMenu(module)
 	module.headerMenu = true
 	local L = ns.L
 	local lock = L["Lock the tracker"]
-	local reset = L["Reset position"]
 	local background = L["Tracker background"]
 	local hide = L["Hide this section"]
 	header:EnableMouse(true)
+	Drag.Attach(header)
 	header:HookScript("OnMouseUp", function(_, button)
 		local target = { kind = "section", module = module }
 		if button ~= "RightButton" then
+			-- Letting go of a drag is not a click.
+			if Drag.Dragged() then
+				return
+			end
 			if type(module.trackerClick) == "function" then
 				local ok, accepted, reason =
 					RunSafe(module.safeCall, "tracker section click", module.trackerClick, target, button)
@@ -1321,7 +1315,6 @@ local function AddHeaderMenu(module)
 					api.SetLocked(not api.IsLocked())
 				end)
 			end
-			root:CreateButton(reset, api.ResetPosition)
 			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its
 			-- own. The values are the saved fractions the host draws, and picking one only recolours the texture.
 			local backgroundMenu = root:CreateButton(background)

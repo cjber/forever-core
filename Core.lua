@@ -22,8 +22,8 @@ do
 end
 
 -- ForeverCore is the shared floor under the Forever addons: one objective-tracker column the suite docks into, the
--- grip and Lock switch that move it, and the section order that stacks them. Every Forever addon requires this addon
--- (docs/adoption.md), so exactly one copy of each shared file loads in the game. This file is ForeverCore's own
+-- header drag and Lock switch that move it, and the section order that stacks them. Every Forever addon requires this
+-- addon (docs/adoption.md), so exactly one copy of each shared file loads in the game. This file is ForeverCore's own
 -- install of the tracker contract: the settings the host reads, the one ns.Store() seam, and the explicit ns.Start()
 -- a converted copy gets from the loader (with the transitional ADDON_LOADED handler for the unwrapped standalone).
 

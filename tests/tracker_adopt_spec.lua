@@ -570,7 +570,8 @@ local function LoadVendored()
 	function ns.TrackerHostSettings()
 		return settings
 	end
-	setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("FieldGuide", ns)
+	-- The store build's own grip, which its host draws: the header drag replaced it in core, not in released copies.
+	setfenv(assert(loadfile("tests/fixtures/tracker-lock-f109009.lua")), env)("FieldGuide", ns)
 	setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("FieldGuide", ns)
 	setfenv(assert(loadfile("tests/fixtures/tracker-host-f109009.lua")), env)("FieldGuide", ns)
 	return ns

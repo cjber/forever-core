@@ -3,7 +3,7 @@
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ deferReady = true })
 local check, drain = t.check, t.drain
-local host, grip = t.host, t.grip
+local host = t.host
 local first, second = t.first, t.second
 
 check(t.pending() == 0, "must not render before player and saved data are ready")
@@ -16,7 +16,7 @@ check(
 t.ready()
 check(t.pending() == 1, "first layout is deferred")
 drain()
-check(first.point[5] == -24 and second.point[5] == -114, "sections follow uiOrder under the grip")
+check(first.point[5] == 0 and second.point[5] == -90, "sections follow uiOrder from the column's top")
 check(host.width == 260, "the column takes the section template's width")
 -- By default the column's top right corner is pinned to the game tracker's top left corner.
 local function Pinned(ctx)
@@ -33,9 +33,8 @@ local function CornersTouch(ctx)
 end
 check(Pinned(t), "the column pins its top right corner to the game tracker's top left corner")
 check(CornersTouch(t), "the two top corners touch")
-check(grip.shown == true, "the grip is always shown")
 -- The first section's 80 and the gap under it, then the gap the second section leaves under itself.
-check(second.available == 880 - 24 - 90 - 10, "remaining space runs from the pin to the screen's bottom, less each gap")
+check(second.available == 880 - 90 - 10, "remaining space runs from the pin to the screen's bottom, less each gap")
 
 -- A section created just before combat may reach Attach from its deferred timer after combat starts. SetParent is
 -- protected for the quest descendants, so the host keeps the request and applies it on the first safe event.
@@ -62,7 +61,7 @@ first.contentHeight, second.contentHeight = 0, 0
 host:MarkDirty()
 drain()
 check(host.shown == false, "host hides when no section draws")
-check(first.point[5] == 0 and second.point[5] == 0, "no grip gap is reserved without section content")
+check(first.point[5] == 0 and second.point[5] == 0, "an empty column keeps its sections at its top")
 
 -- An Edit Mode move of the game tracker carries the column with it: the engine keeps the anchor, so the host runs no
 -- layout and sets no point of its own.
@@ -79,12 +78,20 @@ pinned.host:MarkDirty()
 pinned.drain()
 pinned.check(Pinned(pinned) and CornersTouch(pinned), "a later layout keeps the pin")
 
--- A drag gives the column a free position and releases the pin; Reset pins it again.
+-- A drag on a section header gives the column a free position and releases the pin. Letting go is not a click.
 local settings = pinned.hostSettings
-pinned.grip.scripts.OnDragStart(pinned.grip)
-pinned.host.left, pinned.host.top = 100, 1080 - 200
-pinned.grip.scripts.OnDragStop(pinned.grip)
+local headerClicks = 0
+pinned.first.OnHeaderClick = function()
+	headerClicks = headerClicks + 1
+end
+pinned.drag(pinned.first.Header, function()
+	pinned.host.left, pinned.host.top = 100, 1080 - 200
+end)
 pinned.host.left, pinned.host.top = nil, nil
+pinned.check(headerClicks == 0, "letting go of a header drag runs no header click")
+pinned.first.Header.scripts.OnMouseDown(pinned.first.Header, "LeftButton")
+pinned.first.Header.scripts.OnMouseUp(pinned.first.Header, "LeftButton")
+pinned.check(headerClicks == 1, "a plain header click still runs")
 pinned.drain()
 pinned.check(settings.x == 100 and settings.y == -200, "a drag saves a free position")
 local point = pinned.host.point
@@ -105,13 +112,10 @@ local function Entry(entries, text)
 end
 pinned.host.shown = true
 pinned.first.Header.scripts.OnMouseUp(pinned.first.Header, "RightButton")
-local reset = Entry(pinned.menus[#pinned.menus].entries, "Reset position")
-pinned.check(reset ~= nil, "the section menu offers Reset position")
-reset.callback()
-pinned.drain()
-pinned.check(settings.x == nil and settings.y == nil, "Reset forgets the dragged position")
-pinned.check(Pinned(pinned) and CornersTouch(pinned), "Reset pins the column to the game tracker again")
-pinned.check(settings.locked == false, "Reset leaves the Lock switch alone")
+-- Moving is the header drag and the Lock switch in this menu, nothing else.
+local entries = pinned.menus[#pinned.menus].entries
+pinned.check(Entry(entries, "Lock the tracker") ~= nil, "the section menu offers Lock")
+pinned.check(Entry(entries, "Reset position") == nil, "and no Reset entry")
 
 -- Old placements migrate once to the pin and keep the player's Lock choice: an attached one drops its saved spot, and
 -- a beside one never had one.
@@ -145,7 +149,7 @@ migrated.check(not notified, "an attachment callback is never called")
 
 -- A layout during a drag leaves the column where the drag holds it.
 local dragged = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
-dragged.grip.scripts.OnDragStart(dragged.grip)
+dragged.drag(dragged.first.Header)
 dragged.host.point = { "TOPLEFT", dragged.parent, "TOPLEFT", 300, -300 }
 dragged.host:MarkDirty()
 dragged.drain()

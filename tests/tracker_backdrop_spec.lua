@@ -14,7 +14,7 @@ end
 check(backdrop ~= nil, "the host builds the optional backdrop")
 check(backdrop.atlas == "Tooltip-NineSlice-Center", "the backdrop uses the game's tooltip background art")
 check(#backdrop.points == 2, "the backdrop spans the column's two corners")
-check(backdrop.points[1][5] == 0, "the backdrop stops at the column's top, clear of the native quests")
+check(backdrop.points[1][5] == 6, "the backdrop pads the column's top")
 check(backdrop.points[2][5] == -6, "the backdrop pads the column's bottom")
 check(backdrop.shown == false, "a fresh tracker draws no backdrop")
 check(host.GetBackdropOpacity() == 0, "the backdrop opacity starts at 0")

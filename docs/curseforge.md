@@ -6,8 +6,8 @@ My addons use it for:
 
 - **One tracker column.** Each of my addons adds its section to the same column, a frame of its own that sits to
   the left of the game's quest tracker, top edges level, and follows it when you move that tracker in Edit Mode. Drag
-  it anywhere and it stays there; Reset position in any section's right-click menu puts it back. Scale or lock it
-  once, and every addon follows. It never changes the game's quest tracker.
+  any section's header to put it anywhere; Lock in the header's right-click menu keeps it there. Scale it once, and
+  every addon follows. It never changes the game's quest tracker.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and

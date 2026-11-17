@@ -186,7 +186,10 @@ function harness.new(options)
 			self.events = self.events or {}
 			self.events[event] = true
 		end
-		f.SetMovable, f.RegisterForDrag = noop, noop
+		f.SetMovable = noop
+		function f:RegisterForDrag(button)
+			self.dragButton = button
+		end
 		f.clamped = true
 		function f:SetClampedToScreen(value)
 			self.clamped = value
@@ -477,7 +480,7 @@ function harness.new(options)
 		path = path or "UI/TrackerHost.lua"
 		setfenv(assert(loadfile("UI/ContextMenu.lua")), env)("Test", namespace)
 		namespace.ContextMenu = captureMenu
-		setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", namespace) -- the grip, before the host
+		setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", namespace) -- the header drag, before the host
 		setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", namespace) -- the section order
 		setfenv(assert(loadfile(path)), env)("Test", namespace)
 	end
@@ -549,13 +552,23 @@ function harness.new(options)
 	function ctx.blocksReleased()
 		return released
 	end
+	-- A left-button press on a section header that drags, as the client sends it; `release` lets go.
+	function ctx.drag(header, release)
+		header.scripts.OnMouseDown(header, "LeftButton")
+		header.scripts.OnDragStart(header)
+		if release then
+			release()
+			header.scripts.OnDragStop(header)
+			header.scripts.OnMouseUp(header, "LeftButton")
+		end
+	end
 	-- Where the frame's top right corner resolves, with its anchors.
 	function ctx.topRight(target)
 		return target:GetRight(), target:GetTop()
 	end
-	-- Saves a dragged position that leaves exactly `room` units for the sections under the column's grip.
+	-- Saves a dragged position that leaves exactly `room` units for the sections under the column's top.
 	function ctx.room(room)
-		hostSettings.x, hostSettings.y = 0, room + 24 - parent:GetHeight()
+		hostSettings.x, hostSettings.y = 0, room - parent:GetHeight()
 		ctx.host:MarkDirty()
 	end
 	-- A module shaped like Blizzard's own, with a real block chain, so a spec can see the shared scroll wrapper: the
@@ -616,7 +629,7 @@ function harness.new(options)
 		return m
 	end
 	ctx.loadHost(ns)
-	ctx.host, ctx.grip = frames[2], frames[3]
+	ctx.host = frames[2]
 	ctx.first, ctx.second = ctx.module(1), ctx.module(2)
 	if not options.deferReady then
 		ctx.ready()

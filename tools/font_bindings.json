@@ -2,23 +2,6 @@
   "policy": "Only reviewed text producers with exact widget FontObjects are checked. English text is the explicit enUS entry when present, otherwise the phrase key, which must occur as an exact decoded Lua string literal in the producer source. Source changes invalidate the whole mapping, including aliases, callbacks and font overrides. Review source and callers before updating sha256. Unlisted dynamic text, template-owned fonts and consumer helper arguments have no coverage claim.",
   "producers": [
     {
-      "source": "UI/TrackerLock.lua",
-      "sha256": "5e2dceac75cd62dae4f4b6e923467afa2c7d221a2d62a99c38a9c7a42aacf5fb",
-      "review": "Grip reads title from ns.L, creates label with GameFontNormal, and DrawLabel reuses title or the empty literal. Tooltip text is excluded because its font belongs to the tooltip template.",
-      "bindings": [
-        {
-          "font": "GameFontNormal",
-          "widget": "TrackerLock.Grip label and DrawLabel",
-          "phrase": "Forever tracker"
-        },
-        {
-          "font": "GameFontNormal",
-          "widget": "TrackerLock.Grip DrawLabel",
-          "literal": ""
-        }
-      ]
-    },
-    {
       "source": "UI/Credits.lua",
       "sha256": "72f3ffbe71ba0a6ba49b2e5d01474560229a8d79cf0adbf4312fbb05bb65a0a8",
       "review": "Strings reads ns.L. Build assigns subtitle directly. Refresh creates emptyText directly and creates item.count with GameFontHighlightSmall; count receives x%d:format(row.count) or empty text. External player names and generated detail text are excluded.",

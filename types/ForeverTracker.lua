@@ -21,10 +21,10 @@
 ---@field x? number
 ---@field y? number
 
----@class ForeverTrackerGrip
----@field Show fun(value: boolean) shows or hides the grip, which the host always shows
----@field SetLabel fun(value: boolean) redraws the label from the switch, without waiting for a hover
----@field Dragging fun(): boolean whether a drag the grip started is still moving the column
+---@class ForeverTrackerDrag
+---@field Attach fun(header: Frame) lets a left-button drag on this section header move the column
+---@field Dragging fun(): boolean whether a drag a header started is still moving the column
+---@field Dragged fun(): boolean whether the press that just ended was a drag, so its click action is skipped
 
 ---@class ForeverTrackerShowSetting
 ---@field get fun(): boolean whether the section is currently shown
@@ -48,7 +48,6 @@
 ---@field SetAttached fun(value: boolean) compatibility: does nothing
 ---@field OnAttachmentChanged fun(callback: fun(attached: boolean)) compatibility: the callback is never called
 ---@field SavePosition fun(x: number, y: number) a dragged position, which releases the pin
----@field ResetPosition? fun() forgets the dragged position and pins the column beside the game's tracker again; core's host only
 ---@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for an addon's debug command
 
 ---@class ForeverTrackerTarget
@@ -163,7 +162,7 @@
 
 ---@class ForeverTrackerLock
 ---@field Locked fun(): boolean reads the saved switch through the host
----@field Grip fun(host: Frame, source: ForeverTrackerHostAPI): ForeverTrackerGrip draws the grip on the column it drags
+---@field Drag fun(host: Frame, source: ForeverTrackerHostAPI): ForeverTrackerDrag the header drag that moves the column
 
 ---@class ForeverTrackerNamespace
 ---@field NewMenuDescription fun(kind: ForeverMenuEntryKind, text?: string): ForeverMenuDescription

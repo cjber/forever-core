@@ -1,8 +1,7 @@
 local _, ns = ...
 
 -- English phrases are the keys, so a phrase with no translation reads as English. These are the phrases core's own
--- files draw: the tracker column, its grip, the report and issue windows, the debug log, the minimap notice and the
--- settings page.
+-- files draw: the tracker column, the report and issue windows, the debug log and the settings page.
 ---@type table<string, string>
 local L = setmetatable({}, {
 	__index = function(_, key)
@@ -55,16 +54,13 @@ L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on Fore
 	"%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."
 L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
 	"%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."
-L["Drag to move"] = "Drag to move"
 L["Feature request"] = "Feature request"
 L["Feature request: "] = "Feature request: "
 L["ForeverCore"] = "ForeverCore"
 L["Forever addons"] = "Forever addons"
-L["Forever tracker"] = "Forever tracker"
 L["Hide this section"] = "Hide this section"
 L["Inspired by"] = "Inspired by"
 L["Lock the tracker"] = "Lock the tracker"
-L["Reset position"] = "Reset position"
 L["Last"] = "Last"
 L["Memory KB"] = "Memory KB"
 L["Memory: not available on this client."] = "Memory: not available on this client."
@@ -86,8 +82,6 @@ L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browse
 L["The players who helped each Forever addon."] = "The players who helped each Forever addon."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."
-L["The tracker is locked. Turn off Lock the tracker to move it."] =
-	"The tracker is locked. Turn off Lock the tracker to move it."
 L["Title"] = "Title"
 L["Tracker background"] = "Tracker background"
 L["Tracker"] = "Tracker"

@@ -3,8 +3,8 @@
 ForeverCore is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
 `ForeverCore`, and every Forever addon declares it with `## OptionalDeps: ForeverCore`, so the client loads it first
 when it is installed and the addon still loads when it is not. It owns the one tracker
-column the suite docks into, pinned beside the game's quest tracker until the player drags it, the grip and Lock switch
-that move it,
+column the suite docks into, pinned beside the game's quest tracker until the player drags a section header, the Lock
+switch that stops the drag,
 the section order that stacks them, the report and issue windows, the error journal and debug log,
 the world map quest log tabs and the settings-page chrome. It is GPL-3.0-or-later.
 
@@ -106,7 +106,7 @@ registers two fake addons and checks the public API.
   tooltip-art backdrop and opacity, its layout and combat handling, the one-time move of an old attached or beside
   placement to the pin, and the one-time migration from a consumer's old tracker settings. By default its `TOPRIGHT`
   is anchored to `ObjectiveTrackerFrame`'s `TOPLEFT`, one `SetPoint` the engine keeps through Edit Mode moves and
-  while that tracker is hidden; a drag saves a free position and releases the pin, and Reset position pins it again.
+  while that tracker is hidden; a header drag saves a free position and releases the pin.
   The anchor is the only use of the native tracker: nothing in core reads its contents, visibility or geometry, or
   writes to it (no alpha, state driver, hook, Show, Hide or SetPoint), and placement never reads the column's own
   height. `tests/tracker_host_harness.lua`'s native tracker fails any read or write, and `tests/tracker_host_spec.lua`
@@ -114,7 +114,7 @@ registers two fake addons and checks the public API.
   addon's.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on
   this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
-- `UI/TrackerLock.lua`: the grip and the Lock switch, which load before the host.
+- `UI/TrackerLock.lua`: the header drag and the Lock switch that stops it, which load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,
   restoring the client's own pages on demand and telling a panel through `shown` when it becomes visible or stops

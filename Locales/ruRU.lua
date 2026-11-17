@@ -28,16 +28,13 @@ L["Debug log is off."] = "Журнал отладки выключен."
 L["Debug log is on and pinned for this character."] =
 	"Журнал отладки включён и закреплён для этого персонажа."
 L["Debug log is on for this session."] = "Журнал отладки включён для этого сеанса."
-L["Drag to move"] = "Перетащите, чтобы переместить"
 L["Feature request"] = "Предложение функции"
 L["Feature request: "] = "Предложение функции: "
 L["ForeverCore"] = "ForeverCore"
 L["Forever addons"] = "Модификации Forever"
-L["Forever tracker"] = "Отслеживание Forever"
 L["Hide this section"] = "Hide this section"
 L["Inspired by"] = "Вдохновили"
 L["Lock the tracker"] = "Закрепить трекер"
-L["Reset position"] = "Сбросить положение"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
 L["No one is listed yet."] = "Пока никого нет в списке."
@@ -52,8 +49,6 @@ L["The players who helped each Forever addon."] =
 	"Игроки, которые помогли каждому аддону Forever."
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
 	"Текст выделен. Нажмите Ctrl+C (Cmd+C на Mac), чтобы скопировать его, затем вставьте в сообщение об ошибке."
-L["The tracker is locked. Turn off Lock the tracker to move it."] =
-	"Трекер закреплён. Отключите «Закрепить трекер», чтобы переместить его."
 L["Title"] = "Заголовок"
 L["Tracker background"] = "Фон отслеживания"
 L["Tracker"] = "Отслеживание"
