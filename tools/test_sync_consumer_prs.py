@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -23,6 +24,56 @@ from check_consumers import core_pin
 
 def listed(*names, archived=()):
     return [{"name": name, "archived": name in archived} for name in names]
+
+
+class RateLimitTest(unittest.TestCase):
+    @staticmethod
+    def response(status, headers="", body="{}", error=""):
+        return subprocess.CompletedProcess(
+            [], int(status >= 400), f"HTTP/2.0 {status} Test\r\n{headers}\r\n{body}", error
+        )
+
+    def test_reset_and_retry_after_are_honoured_and_json_has_no_headers(self):
+        for status, headers, delay in (
+            (403, "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 1121\r\n", 122),
+            (429, "Retry-After: 25\r\n", 25),
+        ):
+            with (
+                self.subTest(status=status),
+                mock.patch.object(
+                    sync, "run", side_effect=[self.response(status, headers), self.response(200, body='{"ok": true}')]
+                ) as run,
+                mock.patch.object(time, "time", return_value=1000),
+                mock.patch.object(time, "sleep") as sleep,
+            ):
+                self.assertEqual(sync.api_json("repos/cjber/test"), {"ok": True})
+                self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), delay)
+                self.assertEqual(run.call_count, 2)
+                self.assertIn("--include", run.call_args.args[0])
+
+    def test_permission_denied_and_excessive_reset_do_not_retry(self):
+        for headers in ("", "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 99999\r\n"):
+            with (
+                self.subTest(headers=headers),
+                mock.patch.object(
+                    sync, "run", return_value=self.response(403, headers, error="Forbidden (HTTP 403)")
+                ) as run,
+                mock.patch.object(time, "time", return_value=1000),
+                mock.patch.object(time, "sleep") as sleep,
+                self.assertRaises(sync.SyncError),
+            ):
+                sync.gh("api", "repos/cjber/test")
+            run.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_retries_are_bounded_even_with_check_false(self):
+        with (
+            mock.patch.object(sync, "run", return_value=self.response(429, "Retry-After: 1\r\n")) as run,
+            mock.patch.object(time, "sleep") as sleep,
+        ):
+            self.assertNotEqual(sync.gh("api", "repos/cjber/test", check=False).returncode, 0)
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
 
 
 class ConsumerTest(unittest.TestCase):

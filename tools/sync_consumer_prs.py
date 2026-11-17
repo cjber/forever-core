@@ -74,6 +74,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -158,7 +159,45 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 
 
 def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
-    return run(["gh", *args], check=check)
+    # Include headers on API calls so rate-limit decisions use the response, never error-message matching.
+    command = ["gh", *args, "--include"] if args and args[0] == "api" else ["gh", *args]
+    waited = 0.0
+    for attempt in range(3):
+        result = run(command, check=False)
+        headers = {}
+        status = None
+        if args and args[0] == "api" and result.stdout.startswith("HTTP/"):
+            head, _, body = result.stdout.replace("\r\n", "\n").partition("\n\n")
+            lines = head.splitlines()
+            status = int(lines[0].split()[1])
+            headers = {
+                key.lower(): value.strip() for line in lines[1:] if ":" in line for key, value in [line.split(":", 1)]
+            }
+            result = subprocess.CompletedProcess(result.args, result.returncode, body, result.stderr)
+        delay = None
+        if result.returncode and status in (403, 429):
+            try:
+                if "retry-after" in headers:
+                    delay = max(0, float(headers["retry-after"]))
+                elif headers.get("x-ratelimit-remaining") == "0":
+                    delay = max(0, float(headers["x-ratelimit-reset"]) - time.time()) + 1
+                elif status == 429:
+                    delay = 60 * 2**attempt
+            except (KeyError, ValueError):
+                delay = None
+        # At most two retries and one hour of waiting, including a primary bucket reset.
+        if delay is None or attempt == 2 or not 0 <= delay <= 3600 - waited:
+            break
+        print(f"::notice::GitHub rate limited the request (HTTP {status}); retrying in {delay:.0f} s", flush=True)
+        waited += delay
+        while delay > 0:
+            pause = min(delay, 60)
+            time.sleep(pause)
+            delay -= pause
+    if check and result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise SyncError(f"{' '.join(command)} failed: {detail}")
+    return result
 
 
 def api(path: str, *args: str, check: bool = True) -> subprocess.CompletedProcess:

@@ -416,7 +416,7 @@ function M.build(sim)
 				end
 			else
 				out = { n = 0 }
-				for i, r in ipairs(returns) do
+				for i, r in ipairs(fdoc.MayReturnNothing and {} or returns) do
 					if r.StrideIndex then
 						break
 					end

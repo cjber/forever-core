@@ -34,6 +34,54 @@ local function eq(a, b, label)
 	end
 end
 
+test("widgets: EditBox inserts at the caret, replaces selection and respects maxLetters", function()
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local edit = widgets.new("EditBox")
+	edit:SetText("ab")
+	edit:SetCursorPosition(1)
+	edit:Insert("X")
+	eq(edit:GetText(), "aXb", "caret insertion")
+	eq(edit:GetCursorPosition(), 2, "caret follows inserted text")
+	edit:HighlightText(1, 2)
+	edit:Insert("YZ")
+	eq(edit:GetText(), "aYZb", "selection replacement")
+	edit:SetMaxLetters(5)
+	edit:HighlightText(1, 3)
+	edit:Insert("12345")
+	eq(edit:GetText(), "a123b", "limit preserves unselected suffix")
+	eq(edit:GetCursorPosition(), 4)
+	edit:Insert("ignored")
+	eq(edit:GetText(), "a123b", "full box accepts no more text")
+	edit:SetMaxLetters(0)
+	edit:HighlightText()
+	edit:Insert("new")
+	eq(edit:GetText(), "new", "default highlight replaces all text")
+	edit:Insert("!")
+	eq(edit:GetText(), "new!", "insertion clears selection")
+end)
+
+test("stubgen: MayReturnNothing defaults to no results but preserves implementations", function()
+	local sim, G = freshClient()
+	sim.dataDir = here .. "../../forever_sim/no-data"
+	sim.docs = {
+		enums = {},
+		constants = {},
+		events = {},
+		widgets = {},
+		structures = {},
+		systems = {
+			{ Functions = { { Name = "OptionalResult", MayReturnNothing = true, Returns = { { Type = "number" } } } } },
+		},
+	}
+	require("stubgen").build(sim)
+	eq(select("#", G.OptionalResult()), 0, "absent optional result")
+	sim.impl.OptionalResult = function()
+		return 7
+	end
+	eq(G.OptionalResult(), 7, "explicit implementation")
+end)
+
 test("widgets: GetAttribute reads the secure prefix and suffix form", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })

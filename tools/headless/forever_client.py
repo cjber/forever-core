@@ -2009,6 +2009,39 @@ def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise ClientError(f"could not post {SMOKE_CONTEXT} on {SMOKE_OWNER}/{repo}@{commit[:7]}: {detail}")
+    if ok:
+        dispatch_consumer_release_check(repo, commit)
+
+
+def dispatch_consumer_release_check(repo: str, commit: str) -> None:
+    """Wake the release gate after its final smoke status, independently of GitHub's cron delivery."""
+    if repo == "forever-core":
+        return
+    tools = Path(__file__).resolve().parents[1]
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    sync = load_tool("sync_consumer_prs", tools / "sync_consumer_prs.py")
+    try:
+        if repo not in sync.consumer_repos():
+            return
+        head = sync.api_json(f"repos/{SMOKE_OWNER}/{repo}/git/ref/heads/main")["object"]["sha"]
+        if head != commit:
+            return
+        sync.gh(
+            "api",
+            f"repos/{SMOKE_OWNER}/forever-core/actions/workflows/release-consumers.yml/dispatches",
+            "--method",
+            "POST",
+            "-f",
+            "ref=main",
+        )
+    except (sync.SyncError, OSError, ValueError, KeyError, TypeError) as error:
+        # The status is already posted and the scheduled release check still picks the commit up, so the smoke
+        # result stands; the failed wake-up is only worth a warning.
+        print(
+            f"warning: smoke status posted, but could not dispatch consumer release check: {error}",
+            file=sys.stderr,
+        )
 
 
 def report_smoke(repo: str, commit: str, outcome: Mapping, *, post: bool = True) -> int:
@@ -3418,6 +3451,10 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
     deadline = time.monotonic() + timeout
     child = None
     while True:
+        # A queued caller keeps its imported decoder while detached serve loads the current files. Do not
+        # let an old caller repeatedly reject sessions launched from a newer protocol implementation.
+        if launcher_sources(LAUNCHER_SOURCES) != LAUNCHER_SOURCES:
+            raise ClientError("launcher source changed while this command was waiting; rerun the command")
         require_launcher_available(manual_launcher)
         state = current_session()
         if state and (state.get("ready") or state.get("world_lost")):
@@ -3430,6 +3467,17 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
                     state.pop("world_lost", None)
                     write_state(state)
                 return state
+            if child is not None:
+                reason = (
+                    "headless addon source changed during startup"
+                    if not addon_matches
+                    else "live safety protocol unavailable or outdated"
+                    if not ui.get("safety")
+                    else "the client left the world"
+                )
+                # This invocation just launched this session. Repeating that launch cannot repair a waiter
+                # whose loaded decoder disagrees with the new addon, and used to bypass the timeout forever.
+                raise ClientError(f"fresh session reached READY but cannot be used: {reason}; rerun the command")
             holder = job_holder()
             if (
                 holder

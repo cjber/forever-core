@@ -2837,6 +2837,63 @@ class SmokeTest(unittest.TestCase):
         ):
             self.assertIn(value, run.call_args.args[0])
 
+    def test_successful_consumer_main_smoke_dispatches_release_check_after_status(self):
+        tool = mock.Mock()
+        tool.consumer_repos.return_value = ["legacy-forever"]
+        tool.api_json.return_value = {"object": {"sha": "a" * 40}}
+        tool.SyncError = RuntimeError
+        calls = []
+        tool.gh.side_effect = lambda *args: calls.append("dispatch")
+        with (
+            mock.patch.object(fc, "load_tool", return_value=tool),
+            mock.patch.object(
+                fc.subprocess, "run", side_effect=lambda *a, **k: calls.append("status") or mock.Mock(returncode=0)
+            ),
+        ):
+            fc.post_status("legacy-forever", "a" * 40, True, "clean")
+        self.assertEqual(calls, ["status", "dispatch"])
+        tool.gh.assert_called_once_with(
+            "api",
+            "repos/cjber/forever-core/actions/workflows/release-consumers.yml/dispatches",
+            "--method",
+            "POST",
+            "-f",
+            "ref=main",
+        )
+
+    def test_failure_core_and_nonmain_smokes_do_not_dispatch_release_check(self):
+        for repo, ok, head in (
+            ("legacy-forever", False, "a" * 40),
+            ("forever-core", True, "a" * 40),
+            ("legacy-forever", True, "b" * 40),
+        ):
+            tool = mock.Mock()
+            tool.consumer_repos.return_value = ["legacy-forever"]
+            tool.api_json.return_value = {"object": {"sha": head}}
+            tool.SyncError = RuntimeError
+            with (
+                self.subTest(repo=repo, ok=ok, head=head),
+                mock.patch.object(fc, "load_tool", return_value=tool),
+                mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=0)),
+            ):
+                fc.post_status(repo, "a" * 40, ok, "result")
+            tool.gh.assert_not_called()
+
+    def test_dispatch_failure_after_posted_smoke_status_is_a_warning(self):
+        tool = mock.Mock()
+        tool.consumer_repos.return_value = ["legacy-forever"]
+        tool.api_json.return_value = {"object": {"sha": "a" * 40}}
+        tool.SyncError = RuntimeError
+        tool.gh.side_effect = RuntimeError("Forbidden")
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(fc, "load_tool", return_value=tool),
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=0)),
+            contextlib.redirect_stderr(stderr),
+        ):
+            fc.post_status("legacy-forever", "a" * 40, True, "clean")
+        self.assertRegex(stderr.getvalue(), "warning: smoke status posted.*release check.*Forbidden")
+
     def test_a_status_that_cannot_be_posted_is_an_error(self):
         failed = mock.Mock(returncode=1, stdout="", stderr="gh: Bad credentials (HTTP 401)")
         with (
@@ -3908,6 +3965,37 @@ class BrokerTest(unittest.TestCase):
         ):
             self.assertEqual(fc.ensure_session(60), ready)
         start.assert_not_called()
+
+    def test_a_waiter_with_changed_loaded_source_fails_before_starting_a_session(self):
+        baseline = {Path("launcher.py"): "old decoder"}
+        with (
+            mock.patch.object(fc, "LAUNCHER_SOURCES", baseline),
+            mock.patch.object(fc, "launcher_sources", return_value={Path("launcher.py"): "new decoder"}),
+            mock.patch.object(fc, "start_serve") as start,
+            self.assertRaisesRegex(fc.ClientError, "launcher source changed.*rerun"),
+        ):
+            fc.ensure_session(5)
+        start.assert_not_called()
+
+    def test_a_fresh_ready_session_with_unreadable_protocol_fails_without_relaunch(self):
+        clock = FakeClock()
+        ready = live_state(ready=1.0)
+        child = mock.Mock(poll=lambda: None)
+        with (
+            mock.patch.object(fc, "current_session", side_effect=[None, ready, None]),
+            mock.patch.object(fc, "session_lock_held", return_value=False),
+            mock.patch.object(fc, "start_serve", return_value=child) as start,
+            mock.patch.object(fc, "client_ui", return_value={"safety": False, "world": False}),
+            mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
+            mock.patch.object(fc, "write_state"),
+            mock.patch.object(fc, "down") as stop,
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "fresh session reached READY.*live safety protocol"),
+        ):
+            fc.ensure_session(1)
+        start.assert_called_once()
+        stop.assert_not_called()
 
     def test_a_completed_reload_restores_ready_before_reuse(self):
         state = live_state(world_lost=True)

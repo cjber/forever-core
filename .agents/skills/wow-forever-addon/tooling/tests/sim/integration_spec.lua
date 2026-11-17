@@ -180,6 +180,11 @@ end)
 
 test("switching to the gamepad runs the interface transition, so a pooled menu's submenu opens clean", function()
 	local sim = Sim.new()
+	-- This test needs a world-quest submenu, so provide a bounty set explicitly instead of relying on
+	-- the generated stub inventing a result for a MayReturnNothing API on Orgrimmar.
+	sim.impl["C_QuestLog.GetBountySetInfoForMapID"] = function()
+		return sim.G.Enum.MapOverlayDisplayLocation.TopLeft, 0, 1, false
+	end
 	orgrimmar(sim)
 	sim:login()
 	local transitions = {}
