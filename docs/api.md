@@ -268,6 +268,13 @@ a contract and go once no supported release calls them. [`docs/adoption.md`](ado
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
 instead.
 
+`SettingsPage.Register(name, build, L, safeCall)` builds a canvas page using the caller's locale table and callbacks.
+Inside `build(panel, page)`, `page.AddHeader(panel, label, tooltip?)` returns a native settings section header.
+Both phrases read through that page's `L`, falling back to the supplied text. Add related controls with `AddCheck`,
+`AddSlider` or `AddButton` after each header. The header claims space in the same row cursor, using the native
+45-unit height and expanding for wrapped headings. It does not read or change saved settings. Consumers keep their
+heading phrases in their own locale files. On older core builds, check `page.AddHeader` before calling it.
+
 ## `ForeverCore.Open`
 
 `ForeverCore.Open(addon, where?) --> accepted, reason` (core minor 2).

@@ -114,3 +114,37 @@ scenario("native section groups preserve control order and values", function(sim
 	assert(ns.testSaved.first == true and ns.testSaved.second == true, "native control writes only its own setting")
 	sim:expectNoErrors(ADDON)
 end)
+
+scenario("canvas section headings preserve localized controls", function(sim)
+	sim.impl["C_SettingsUtil.OpenSettingsPanel"] = function(id, element)
+		return sim.G.SettingsPanel:OpenToCategory(id, element)
+	end
+	sim:login()
+	sim.G.CreateSecureDelegate = nil
+	local ns = assert(sim.loader.addons[ADDON]).ns
+	sim:runAs(
+		ADDON,
+		[[
+ local ns = ...
+ ns.testSaved = { enabled = true }
+ local category, panel = ns.SettingsPage.Register("Canvas groups", function(target, page)
+  ns.testHeader = page.AddHeader(target, "Heading", "Help")
+  ns.testCheck = page.AddCheck(target, "Enabled", function() return ns.testSaved.enabled end,
+   function(value) ns.testSaved.enabled = value end)
+ end, { Heading = "Localized heading", Help = "Localized help" })
+ ns.testCategory, ns.testPanel = category, panel
+ ]],
+		ns
+	)
+	sim:input(function()
+		ns.OpenSettingsPanel(ns.testCategory:GetID())
+	end)
+	sim:advance(0.2)
+	assert(ns.testHeader.Title:GetText() == "Localized heading", "canvas header reads its page locale")
+	assert(ns.testCheck:GetChecked(), "saved check is shown beneath the heading")
+	sim:input(function()
+		ns.testCheck:Click()
+	end)
+	assert(not ns.testSaved.enabled, "the grouped check writes its own saved value")
+	sim:expectNoErrors(ADDON)
+end)

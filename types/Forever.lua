@@ -94,6 +94,7 @@
 -- UI/SettingsPage.lua, the shared settings canvas a consumer's settings page is drawn on.
 ---@class ForeverSettingsPageModule
 ---@field Register fun(name: string, build: function, L?: table<string, string>, safeCall?: function): table?, Frame?
+---@field AddHeader fun(panel: Frame, label: string, tooltip?: string): Frame
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
 
 -- UI/SettingsSections.lua, native vertical-list headings registered through Blizzard's Settings API.

@@ -46,6 +46,80 @@ that proof; they do not establish a manager's ownership behavior. Keep #448 open
 passes. If a manager removes core despite the dependency relation, retain the fallback and fix or report that manager
 path before continuing.
 
+## Phase 2 results
+
+The disposable-installation runs in [#650](https://github.com/cjber/forever-core/issues/650) cover CurseForge app
+1.326.0-42377 and WowUp-CF 2.25.5 with the CurseForge provider. The bundled Macro Assist Forever and Field Guide Forever
+archives contain ForeverCore v1.12.1. The unbundled canary is Macro Assist Forever v0.7.2-alpha.1, CurseForge file
+9648139, with `RequiredDependency forevercore`.
+
+Deleting either bundled consumer deletes `ForeverCore/` in both apps, regardless of the delete-dependencies setting.
+A separate installed record for core does not protect its folder. This reproduces
+[#448](https://github.com/cjber/forever-core/issues/448).
+
+| Scenario | CurseForge app and WowUp-CF results |
+| --- | --- |
+| U1: update A to the alpha while B stays bundled | Updating A deletes the core folder in both apps. |
+| U2: update A alone to the alpha | Core is deleted. Rescan, app restart and Update All do not restore it. |
+| U6: restore the missing core | WowUp restores it by installing core or reinstalling A. CurseForge app restores it only with Reinstall on core's own row. |
+| U3: fresh install of alpha A | Both apps install core as its own record and folder. |
+| U4: delete alpha A, then bundled B | Core survives deletion of A. Deleting B removes core. |
+| U5: delete alpha A alone | Core stays unless WowUp's remove-dependencies prompt is accepted or CurseForge's Delete orphaned libraries is enabled. |
+
+Every tested update that drops the bundled folder deletes core once, and neither manager reinstalls it by itself.
+Neither CurseForge app nor WowUp-CF passes the ordinary-update-acquires-standalone-core gate. Once no bundled consumer
+remains, fresh install and uninstall behave according to the dependency settings. Keep the bundled fallback and #448
+open. These results are partial evidence for #650, not completion of its lifecycle matrix.
+
+The remaining checks are wowaddon, manual ZIP installation, two consumers at mixed versions in both update orders,
+a consumer downgrade, and a headless client smoke for each resulting addon set. The WowUp Wago provider also needs
+independent evidence before its channel can pass the gate.
+
+### Run the manager harness
+
+`tools/manager_lifecycle/` contains the repeatable UI drivers and JSON/Markdown report builder. It needs Linux,
+`dbus-run-session`, `xvfb-run`, extracted CurseForge and WowUp-CF application directories, and the Python dependencies
+in `tools/uv.lock`. It opens isolated manager profiles under Xvfb and never starts the game client. Run only one copy
+at a time, with no other process using its disposable folder or debugging ports 9301, 9302 and 9312.
+
+Prepare a dedicated scratch folder and mark it as disposable:
+
+```sh
+export MANAGER_LIFECYCLE_ROOT="$HOME/.cache/agent-scratch/manager-lifecycle"
+mkdir -p "$MANAGER_LIFECYCLE_ROOT"
+keeper claim "$MANAGER_LIFECYCLE_ROOT"
+touch "$MANAGER_LIFECYCLE_ROOT/.manager-lifecycle-disposable"
+```
+
+Place the extracted apps at `dl/wux/squashfs-root/wowup-cf` and `dl/cfx/squashfs-root/curseforge` beneath that root,
+or set `MANAGER_LIFECYCLE_WOWUP_BIN` and `MANAGER_LIFECYCLE_CF_BIN` to their executable paths. Keep each executable
+beside its extracted resources. Copy the installation metadata fixtures `.build.info`, `.product.db` and
+`_forever_/.flavor.info` into `metadata/` beneath the root. These fixtures identify the disposable installation to the
+managers; do not point the harness at a live client. The harness creates an empty `Wow.exe` placeholder.
+
+From the repository root:
+
+```sh
+bash tools/manager_lifecycle/run-all.sh
+bash tools/manager_lifecycle/run-updates.sh
+# One scenario, with the same options accepted by the matrix scripts:
+uv run --project tools --frozen --group dev python -m tools.manager_lifecycle.run --app wowup --scenario U2
+```
+
+Use `--a`, `--b`, `--a-name`, `--b-name` and `--channel` to choose consumers and release channels. The update matrix
+selects the newest alpha offered by the manager, so verify its file ID in the report before comparing it with these
+results. U1 and U2 include the U6 recovery steps. `--remove-deps yes` enables dependency removal; CurseForge also
+accepts `--cf-libs-separate yes`.
+
+Paths default beneath the scratch root: `fakewow/World of Warcraft` for the disposable client, `state/` for app
+profiles, `logs/`, `archives/`, `reports/` and `metadata/`. Override them with `MANAGER_LIFECYCLE_CLIENT`,
+`MANAGER_LIFECYCLE_STATE`, `MANAGER_LIFECYCLE_LOGS`, `MANAGER_LIFECYCLE_ARCHIVES`, `MANAGER_LIFECYCLE_REPORTS` and
+`MANAGER_LIFECYCLE_METADATA`. Reset targets must remain beneath the marked scratch root and outside the repository.
+Each run deletes and recreates the disposable client and the selected app's profile. Reports record manager version,
+archive hashes, installed records, folder contents and screenshots after each action. App processes are stopped on
+exit; a nonempty `processes_left` or a recorded action error makes the command fail. Keep those reports with the
+issue evidence. Pure tests run as part of the tools unittest discovery without launching an app.
+
 ## 3. Remove bundles only on proven channels
 
 Start with one consumer on one verified channel, then expand after its update and uninstall evidence passes.

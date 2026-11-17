@@ -10,6 +10,7 @@ local _, ns = ...
 ---@field foreverL? table<string, string>
 ---@field foreverSafeCall? ForeverSafeCall|false
 ---@field settingsRowY? number
+---@field settingsRows? table[]
 ---@field title? FontString
 ---@field category? table
 
@@ -50,13 +51,41 @@ local TITLE = 16
 local CHECK, SLIDER, BUTTON = 28, 56, 36
 
 ---@param panel ForeverSettingsPanel
----@param height integer
----@return integer
+---@param height number
+---@return number
 local function Next(panel, height)
 	-- The first row starts below the title; every row after it starts below the one before.
 	local y = panel.settingsRowY or -(TITLE + 32)
 	panel.settingsRowY = y - height
 	return y
+end
+
+-- Keep canvas rows in order so a width change can remeasure wrapped headings and move every later row together.
+---@param panel ForeverSettingsPanel
+local function Layout(panel)
+	panel.settingsRowY = nil
+	for _, row in ipairs(panel.settingsRows or {}) do
+		local y = Next(panel, 0)
+		row.widget:SetPoint("TOPLEFT", row.x, y)
+		local height = row.height
+		if row.header then
+			row.widget:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, y)
+			height = math.max(45, 16 + row.widget.Title:GetStringHeight() + 10)
+			row.widget:SetHeight(height)
+		end
+		Next(panel, height)
+	end
+end
+
+---@param panel ForeverSettingsPanel
+---@param widget Region
+---@param x number
+---@param height number
+---@param header? boolean
+local function Place(panel, widget, x, height, header)
+	panel.settingsRows = panel.settingsRows or {}
+	table.insert(panel.settingsRows, { widget = widget, x = x, height = height, header = header })
+	widget:SetPoint("TOPLEFT", x, Next(panel, height))
 end
 
 -- Register `build` as the addon's settings page under the category `name` (a phrase, read through L).
@@ -99,10 +128,33 @@ function Page.Register(name, build, L, safeCall)
 		RefreshNotice()
 	end
 	Run(panel, "settings page", build, panel, Page)
+	panel:HookScript("OnSizeChanged", function()
+		Layout(panel)
+	end)
+	Layout(panel)
 	local category = Settings.RegisterCanvasLayoutCategory(panel, Text(panel, name))
 	Settings.RegisterAddOnCategory(category)
 	panel.category = category
 	return category, panel
+end
+
+-- The native settings heading is 45 units tall with a 16-unit top inset. Keep that rhythm, expanding for wrapped
+-- consumer phrases so the next row always clears the title. The template owns its font, tooltip and narration.
+---@class ForeverSettingsHeader : Frame
+---@field Title FontString
+---@field Init fun(self: ForeverSettingsHeader, initializer: table)
+
+---@param panel ForeverSettingsPanel
+---@param label string a phrase, read through the page's L
+---@param tooltip? string a phrase, read through the page's L
+---@return ForeverSettingsHeader
+function Page.AddHeader(panel, label, tooltip)
+	local header = CreateFrame("Frame", nil, panel, "SettingsListSectionHeaderTemplate") --[[@as ForeverSettingsHeader]]
+	Place(panel, header, 9, 45, true)
+	header:Init(CreateSettingsListSectionHeaderInitializer(Text(panel, label), tooltip and Text(panel, tooltip)))
+	header.Title:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, -16)
+	header.Title:SetWordWrap(true)
+	return header
 end
 
 -- A tick box that reads `get()` when it is drawn and writes `set(checked)` when the player changes it. The setter is
@@ -115,7 +167,7 @@ end
 ---@return CheckButton
 function Page.AddCheck(panel, label, get, set, tooltip)
 	local check = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-	check:SetPoint("TOPLEFT", 16, Next(panel, CHECK))
+	Place(panel, check, 16, CHECK)
 	local ok, checked = Run(panel, "settings checkbox", get)
 	check:SetChecked(ok and checked == true)
 	local text = check:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -142,7 +194,7 @@ end
 ---@return Slider
 function Page.AddSlider(panel, label, get, set, minimum, maximum, step, tooltip)
 	local text = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-	text:SetPoint("TOPLEFT", 16, Next(panel, SLIDER))
+	Place(panel, text, 16, SLIDER)
 	text:SetText(Text(panel, label))
 	local slider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
 	slider:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -8)
@@ -170,7 +222,7 @@ end
 function Page.AddButton(panel, label, callback, tooltip)
 	local button = CreateFrame("Button", nil, panel, "SharedButtonSmallTemplate")
 	button:SetSize(180, 24)
-	button:SetPoint("TOPLEFT", 16, Next(panel, BUTTON))
+	Place(panel, button --[[@as Button]], 16, BUTTON)
 	button:SetText(Text(panel, label))
 	button:SetScript("OnClick", function()
 		Run(panel, "settings button", callback)
