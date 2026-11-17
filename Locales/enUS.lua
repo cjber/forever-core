@@ -97,7 +97,6 @@ L["Unavailable in combat"] = "Unavailable in combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "What happened, or what you would like"
-L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."
 L["MENU_BACK"] = "Back"
 L["Quests"] = "Quests"
 
@@ -128,5 +127,3 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Callback error: %s"
 L["Login error: %s"] = "Login error: %s"
 L["Copy %s: %s"] = "Copy %s: %s"
-
-L.MINIMAP_DRAG_HINT = "Drag to move it around the minimap."

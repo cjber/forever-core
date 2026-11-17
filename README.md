@@ -27,7 +27,7 @@ Forever addons use it for:
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
+- **The common chrome.** The quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 
 The column can wear an optional dark background from any section's right-click menu, drawn with the game's own tooltip

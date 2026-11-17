@@ -13,7 +13,7 @@ My addons use it for:
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
+- **The common chrome.** The quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 
 Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help and each day's release notes, [join me on Discord](https://discord.gg/FpHugGxRJY).

@@ -61,7 +61,6 @@ L["Unavailable in combat"] = "전투 중에는 사용할 수 없음"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"사용법: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "무슨 일이 있었는지 또는 원하는 기능"
-L.MINIMAP_UNAVAILABLE = "미니맵을 사용할 수 없어 사용자 지정 버튼을 건너뜁니다."
 L["MENU_BACK"] = "뒤로"
 
 L["1 ms"] = "1 ms"
@@ -127,5 +126,3 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "콜백 오류: %s" -- mt
 L["Login error: %s"] = "로그인 오류: %s" -- mt
 L["Copy %s: %s"] = "사본 %s: %s" -- mt
-
-L.MINIMAP_DRAG_HINT = "드래그하여 미니맵 주위로 버튼을 이동하세요." -- mt

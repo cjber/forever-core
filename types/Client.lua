@@ -83,41 +83,12 @@ ForeverTrackerHost = nil
 ---@return ForeverPrivatePoolCollection
 function CreateFramePoolCollection() end
 
--- The saved table a consumer hands the shared minimap button: the angle and the hide flag live in it.
----@class ForeverMinimapButtonSpec
----@field libDBIcon? string launcher name in minimap managers; opt in and Create at PLAYER_LOGIN or later
----@field name string the frame name, unique in the addon
----@field icon string|number the addon's own content icon
----@field title string the tooltip title
----@field binding? string shown under the title, e.g. "Shift-F"
----@field subtext? string the tooltip's one line about what a click does
----@field onClick? fun(button: Frame, mouseButton: string) what a left click runs
----@field settings? table the saved table holding the angle and hide flag
----@field angleKey? string the settings key holding the angle, default "minimapButtonAngle"
----@field hiddenKey? string the settings key holding the hide flag, default "minimapButtonHidden"; only false shows the button
----@field getShown? fun(): boolean an addon-owned visibility rule, which wins over the hide flag
----@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
----@field host? table receives the frame as its minimapButton
-
--- The registry Core/MinimapButton.lua shares across the suite, one button per addon.
----@class ForeverMinimapButtonRegistry
----@field buttons ForeverMinimapButton[] every addon button, in creation order
-
--- The frame Core/MinimapButton.lua builds: LibDBIcon's minimap button, the addon's icon and the angle on the rim.
----@class ForeverMinimapButton : Button
----@field minimapButtonSpec ForeverMinimapButtonSpec the spec the consumer passed to Create
----@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall, when it gave one
----@field icon Texture the addon's icon drawn inside LibDBIcon's border
----@field angle number the angle around the Minimap, in degrees
----@field libDBIcon? table optional LibDBIcon library owning this button
----@field libDBIconDB? table settings proxy passed to LibDBIcon
----@field dragging boolean? true while the player drags the button around the rim
-
+-- The retired minimap button's calls, kept one release as no-ops for addons released before it went.
 ---@class ForeverMinimapButtonAPI
----@field Create fun(spec: ForeverMinimapButtonSpec): ForeverMinimapButton?
----@field Destroy fun(button: ForeverMinimapButton?)
+---@field Create fun(spec: table): nil
+---@field Destroy fun(button: any)
 ---@field Refresh fun()
----@field SetShown fun(button: ForeverMinimapButton?, shown: boolean)
+---@field SetShown fun(button: any, shown: boolean)
 
 -- UI/QuestLogTabs.lua: the tab it builds from Blizzard's LargeSideTabButtonTemplate.
 ---@class ForeverQuestLogTab : Button

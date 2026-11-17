@@ -5,7 +5,7 @@ ForeverCore is the shared library under the WoW: Forever addon suite (Interface 
 when it is installed and the addon still loads when it is not. It owns the one tracker
 column the suite docks into, pinned beside the game's quest tracker until the player drags it, the grip and Lock switch
 that move it,
-the section order that stacks them, the report and issue windows, the error journal and debug log, the minimap button,
+the section order that stacks them, the report and issue windows, the error journal and debug log,
 the world map quest log tabs and the settings-page chrome. It is GPL-3.0-or-later.
 
 ## The two rules that matter
@@ -127,7 +127,6 @@ registers two fake addons and checks the public API.
   for the suite's published API list. `docs/api-conventions.md` is the convention, `docs/api.md` is ForeverCore's own
   page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
   `docs/api.md`.
-- `Core/MinimapButton.lua`: the one minimap ring; each addon draws one button.
 - `Core/Text.lua`: the shared search fold and ranking.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
   calling addon's L, and carries the debug-capture notice while `/forever debug on` is active.

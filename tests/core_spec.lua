@@ -34,7 +34,6 @@ for _, path in ipairs({
 	"Core/OpenMap.lua",
 	"Core/OpenSettings.lua",
 	"Core/Text.lua",
-	"Core/MinimapButton.lua",
 	"Core/APIKit.lua",
 	"UI/Art.lua",
 	"UI/Report.lua",
@@ -198,8 +197,7 @@ ns.TrackerHost = { name = "host" }
 ns.TrackerSection, ns.TrackerLine = { name = "section" }, { name = "line" }
 ns.TrackerLock, ns.TrackerOrder = { name = "lock" }, { name = "order" }
 ns.QuestLogTabs, ns.ProfessionTabs = { name = "tabs" }, { name = "professions" }
-ns.MinimapButton, ns.SettingsPage, ns.SettingsSections =
-	{ name = "minimap" }, { name = "settings" }, { name = "sections" }
+ns.SettingsPage, ns.SettingsSections = { name = "settings" }, { name = "sections" }
 ns.Text = { name = "text" }
 ns.OpenMap, ns.OpenSettingsPanel = function()
 	return true
@@ -275,7 +273,6 @@ for _, field in ipairs({
 	"TrackerOrder",
 	"QuestLogTabs",
 	"ProfessionTabs",
-	"MinimapButton",
 	"SettingsPage",
 	"SettingsSections",
 	"Text",
@@ -301,6 +298,11 @@ end
 -- The Forever addons page is gone; its API stays one release as a no-op so a consumer's calls still resolve.
 check(ForeverCore.Family.Hint() == false and ForeverCore.Family.Once() == false, "the family hints do nothing")
 check(ForeverCore.Family.ShowLink() == false, "and the family link draws nothing")
+-- The minimap button is gone the same way: an older addon's Create gets no button, and its settings calls do nothing.
+check(ForeverCore.MinimapButton.Create({ name = "OldAddonMinimapButton" }) == nil, "the minimap button draws nothing")
+ForeverCore.MinimapButton.Refresh()
+ForeverCore.MinimapButton.SetShown(nil, true)
+ForeverCore.MinimapButton.Destroy(nil)
 local category = {
 	GetID = function()
 		return 7

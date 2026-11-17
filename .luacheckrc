@@ -236,7 +236,7 @@ globals[#globals + 1] = "ForeverCore"
 globals[#globals + 1] = "ForeverCoreDB"
 -- Core/Loader.lua: the schema 1 registry every embedded ForeverCore copy shares.
 globals[#globals + 1] = "ForeverCoreLoader"
--- Core/MinimapButton.lua says why a button was skipped when the client has no Minimap.
+-- Core/Open.lua says why an addon could not be opened.
 read_globals[#read_globals + 1] = "DEFAULT_CHAT_FRAME"
 globals[#globals + 1] = "SLASH_FOREVERCORE1"
 globals[#globals + 1] = "SLASH_FOREVERCORE2"

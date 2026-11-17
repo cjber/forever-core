@@ -48,7 +48,6 @@ equal(
 		"lua Core/Capture.lua",
 		"lua Core/Performance.lua",
 		"lua Core/Text.lua",
-		"lua Core/MinimapButton.lua",
 		"lua UI/Art.lua",
 		"lua UI/Report.lua",
 		"lua UI/Credits.lua",

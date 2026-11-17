@@ -61,7 +61,6 @@ L["Unavailable in combat"] = "No disponible en combate"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Uso: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "Qué pasó o qué te gustaría"
-L.MINIMAP_UNAVAILABLE = "Minimapa no disponible; se omite el botón personalizado."
 L["MENU_BACK"] = "Volver"
 
 L["1 ms"] = "1 ms"
@@ -127,5 +126,3 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Error de callback: %s" -- mt
 L["Login error: %s"] = "Error de inicio de sesión: %s" -- mt
 L["Copy %s: %s"] = "Copia %s: %s" -- mt
-
-L.MINIMAP_DRAG_HINT = "Arrastra para moverlo alrededor del minimapa." -- mt

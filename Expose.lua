@@ -20,7 +20,15 @@ core.TrackerLock = ns.TrackerLock
 core.TrackerOrder = ns.TrackerOrder
 core.QuestLogTabs = ns.QuestLogTabs
 core.ProfessionTabs = ns.ProfessionTabs
-core.MinimapButton = ns.MinimapButton
+-- No Forever addon draws a minimap button any more. An addon release from before that still creates one while it
+-- loads, so the table stays for one release as answers that draw nothing. Remove it once no supported release calls it.
+---@type ForeverMinimapButtonAPI
+core.MinimapButton = {
+	Create = function() end,
+	Destroy = function() end,
+	Refresh = function() end,
+	SetShown = function() end,
+}
 core.SettingsPage = ns.SettingsPage
 core.SettingsSections = ns.SettingsSections
 core.Text = ns.Text

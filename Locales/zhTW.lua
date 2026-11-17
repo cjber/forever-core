@@ -60,7 +60,6 @@ L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
 L["What happened, or what you would like"] = "請描述遇到的問題或希望新增的功能"
-L.MINIMAP_UNAVAILABLE = "小地圖不可用，已略過自訂按鈕。"
 L["MENU_BACK"] = "返回"
 
 L["1 ms"] = "1 毫秒"
@@ -124,5 +123,3 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "回呼錯誤：%s"
 L["Login error: %s"] = "登入錯誤：%s"
 L["Copy %s: %s"] = "副本 %s：%s"
-
-L.MINIMAP_DRAG_HINT = "拖曳可沿小地圖移動按鈕。" -- mt

@@ -65,8 +65,6 @@ L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug 
 	"Использование: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] =
 	"Что произошло или что вы хотели бы видеть"
-L.MINIMAP_UNAVAILABLE =
-	"Миникарта недоступна; пользовательская кнопка пропущена."
 L["MENU_BACK"] = "Назад"
 
 L["1 ms"] = "1 мс"
@@ -135,5 +133,3 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- mt
 L["Login error: %s"] = "Ошибка входа: %s" -- mt
 L["Copy %s: %s"] = "Копия %s: %s" -- mt
-
-L.MINIMAP_DRAG_HINT = "Перетащите кнопку вдоль края мини-карты." -- mt

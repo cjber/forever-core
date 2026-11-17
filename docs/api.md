@@ -247,8 +247,8 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
 `TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `QuestLogTabs`, `MinimapButton`, `SettingsPage`,
-`SettingsSections`, `Text`, `Family` and `Credits`. `Family` answers without drawing anything: the Forever addons page
-it drew is gone, and it stays only so an older addon release still loads.
+`SettingsSections`, `Text`, `Family` and `Credits`. `Family` and `MinimapButton` answer without drawing anything: the
+Forever addons page and the minimap button are gone, and they stay only so an older addon release still loads.
 A section created through `TrackerSection.Create` takes `maxHeight` (`200` units when omitted, or `"remaining"` for
 the column's spare room); the shared host scrolls a taller section under its own header and freezes it in combat.
 After attachment, `TrackerHost.SetSectionMaxHeight(module, height)` changes that section's cap, including its header,
