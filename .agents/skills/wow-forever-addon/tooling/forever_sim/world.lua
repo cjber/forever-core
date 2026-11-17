@@ -468,7 +468,36 @@ function M.build(sim)
 		end
 		return ids
 	end
-	impl["C_TradeSkillUI.GetFilteredRecipeIDs"] = impl["C_TradeSkillUI.GetAllRecipeIDs"]
+	-- See README.md's profession search contract and pinned-source evidence.
+	local recipeNameFilter = ""
+	local recipeListUpdatePending = false
+	impl["C_TradeSkillUI.GetRecipeItemNameFilter"] = function()
+		return recipeNameFilter
+	end
+	impl["C_TradeSkillUI.SetRecipeItemNameFilter"] = function(text)
+		text = text or ""
+		if text == recipeNameFilter then
+			return
+		end
+		recipeNameFilter = text
+		if not recipeListUpdatePending then
+			recipeListUpdatePending = true
+			sim.impl["C_Timer.After"](0, function()
+				recipeListUpdatePending = false
+				sim.events.fire("TRADE_SKILL_LIST_UPDATE")
+			end)
+		end
+	end
+	impl["C_TradeSkillUI.GetFilteredRecipeIDs"] = function()
+		local ids = {}
+		local filter = recipeNameFilter:lower()
+		for _, r in ipairs((open() or {}).recipes or {}) do
+			if r.name:lower():find(filter, 1, true) then
+				ids[#ids + 1] = r.id
+			end
+		end
+		return ids
+	end
 	impl["C_TradeSkillUI.GetRecipeInfo"] = function(id)
 		local r = recipe(id)
 		return r and recipeInfo(r)

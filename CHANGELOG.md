@@ -48,6 +48,10 @@
 - **A tracker menu stays where it opened while its block moves**, so a click lands on the entry you aimed at, and block menus offer Hide this section too. The tracker menu builder's Primary slot returns its description so addons can attach warning tooltips. (#754, #717, #718)
 - **The attached tracker column starts below an enlarged minimap when they overlap**, with its sections sized to the space left on screen. (#720)
 
+### For addon authors
+
+- **Simulator profession searches filter recipe names and refresh visible rows**, with case-insensitive matching, clearing and list-update events. (#762)
+
 ## [1.14.2] - 2026-11-16
 
 - **The Forever quest list is now on by default and replaces the game's tracker.** Turn it off in settings, with `/fcore quests`, or from the section menu. A saved choice to turn it off is kept. (#693, refs cjber/adventure-guide-forever#468)
