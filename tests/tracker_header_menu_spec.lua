@@ -325,3 +325,29 @@ check(contractModule.trackerClick == previousClick, "rejection preserves the pre
 check(contractModule.show == previousShow, "rejection preserves the previous show setting")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")
+
+-- Named openers use the core path, without a second refusal report.
+t.setCombat(false)
+setfenv(assert(loadfile("Core/APIKit.lua")), t.env)("Test", t.ns)
+t.ns.SafeCallFor = function()
+	return {
+		SafeCall = function(_, _, fn, ...)
+			return pcall(fn, ...)
+		end,
+	}
+end
+t.ns.RegisterOpener("PanelAddon", function(where)
+	check(where == "target", "named Open passes the opaque target")
+	return false, "collapsed sidebar"
+end, true)
+contractModule.trackerMenu = function(_, builder)
+	builder:Open("Named panel", "PanelAddon", "target")
+end
+local named = Menu(contractModule)
+local beforeMessages = #messages
+Entry(named, "Named panel").callback()
+check(#messages == beforeMessages + 1, "named Open reports a refusal once")
+t.setCombat(true)
+Entry(named, "Named panel").callback()
+check(#messages == beforeMessages + 2, "named Open reports combat once")
+t.setCombat(false)

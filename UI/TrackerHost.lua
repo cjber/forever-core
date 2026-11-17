@@ -1003,9 +1003,7 @@ local function RunSafe(safe, label, fn, ...)
 end
 
 local function ReportRefusal(reason)
-	if reason and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-		DEFAULT_CHAT_FRAME:AddMessage(tostring(reason))
-	end
+	ns.ReportRefusal(reason)
 end
 
 -- The cap a section gets from the column. A scrollable section never takes more than 200 units, except the one that
@@ -1511,7 +1509,7 @@ local function NewTrackerMenu(root, module, target)
 		end
 		entry.onClick = function()
 			local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
-			if ok and accepted == false then
+			if ok and accepted == false and not (opts and opts.reported) then
 				ReportRefusal(reason or text)
 			end
 			return accepted, reason
@@ -1525,7 +1523,7 @@ local function NewTrackerMenu(root, module, target)
 					return false, reason
 				end
 				local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
-				if ok and accepted == false then
+				if ok and accepted == false and not (opts and opts.reported) then
 					ReportRefusal(reason or text)
 				end
 				return accepted, reason
@@ -1554,7 +1552,15 @@ local function NewTrackerMenu(root, module, target)
 	function menu:Submenu(text)
 		return self:Action(text)
 	end
-	function menu.Open(_, text, fn)
+	function menu.Open(_, text, fn, where)
+		if type(fn) == "string" then
+			local addon = fn
+			slots.open = slots.open
+				or Entry(text, function()
+					return ns.Open(addon, where)
+				end, { reported = true })
+			return slots.open
+		end
 		slots.open = slots.open or Entry(text, fn, { combat = true })
 		return slots.open
 	end

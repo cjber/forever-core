@@ -25,6 +25,7 @@ Locales\zhCN.lua
 Locales\zhTW.lua
 Data\Credits.lua
 Core\SafeCall.lua
+Core\Open.lua
 Core\OpenMap.lua
 Core\OpenSettings.lua
 Core\Log.lua
@@ -53,6 +54,7 @@ UI\TrackerQuests.lua
 UI\MapCanvas.lua
 Core\RetiredLeaderboards.lua
 Core\APIKit.lua
+Core\Journey.lua
 Core\ProfileCode.lua
 UI\QuestLogTabs.lua
 UI\ProfessionTabs.lua

@@ -11,7 +11,7 @@ core.name = "ForeverCore"
 core.API = 2
 -- The core table's own minor, raised with each member added here outside a module. `Registered` arrived in minor 1;
 -- a caller that needs it checks this first, the way a module member checks that module's minor.
-core.minor = 1
+core.minor = 2
 
 core.TrackerHost = ns.TrackerHost
 core.TrackerSection = ns.TrackerSection
@@ -31,6 +31,8 @@ core.SettingsSections = ns.SettingsSections
 core.Text = ns.Text
 core.QuestOrder = ns.QuestOrder
 core.APIKit = ns.APIKit
+core.Open = ns.Open
+core.Journey = ns.Journey
 core.OpenMap = ns.OpenMap
 core.OpenSettingsPanel = ns.OpenSettingsPanel
 core.Family = ns.Family
@@ -72,6 +74,9 @@ end
 function core.Register(addonName, spec)
 	addonName = tostring(addonName or "?")
 	spec = spec or {}
+	if spec.open ~= nil then
+		ns.RegisterOpener(addonName, spec.open, spec.openSecure)
+	end
 	local context = contexts[addonName]
 	if context then
 		if spec.db ~= nil then

@@ -46,7 +46,7 @@ end
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "the TOC publishes ForeverCore")
 equal(ForeverCore.API, 2, "the interface version is 2")
-equal(ForeverCore.minor, 1, "the core table's own minor is 1")
+equal(ForeverCore.minor, 2, "the core table's own minor is 2")
 check(type(ForeverCore.Register) == "function", "Register is the per-addon factory")
 check(type(ForeverCore.Registered) == "function", "Registered says whether an addon reached Register")
 check(not ForeverCore.Registered("AddonA"), "an addon that has not registered yet is false")
@@ -190,3 +190,6 @@ host.Attach(later)
 equal(env.ForeverCoreDB.trackerHost.scale, 1.5, "a later offer changes nothing")
 
 print(("api_spec: %d checks passed"):format(checks))
+
+check(type(ForeverCore.Open) == "function", "Open is published")
+check(type(ForeverCore.Journey.Claim) == "function", "Journey is published")

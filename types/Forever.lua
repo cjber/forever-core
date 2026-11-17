@@ -124,7 +124,11 @@
 ---@field SetTooltip fun(self: ForeverMenuDescription, tooltip: function)
 ---@field SetScrollMode fun(self: ForeverMenuDescription, extent: number)
 
+---@alias ForeverCoreOpenCallback fun(where: any): boolean?, string?
+
 ---@class ForeverCoreSpec
+---@field open? fun(where: any): boolean?, string?
+---@field openSecure? boolean refuse opens in combat when true
 ---@field title? string|fun(): string the report window's title
 ---@field lines? fun(): string[] the addon's own report lines
 ---@field db? table the addon's saved table, when it is already loaded
@@ -191,6 +195,8 @@
 ---@field Text? table
 ---@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
 ---@field APIKit? ForeverCoreAPIKit
+---@field Open fun(addon: string, where?: any): boolean?, string?
+---@field Journey ForeverCoreJourney
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field Family? ForeverFamilyAPI
@@ -279,6 +285,8 @@ ForeverCoreLoader = nil
 ForeverCore = nil
 
 ---@class ForeverTrackerNamespace
+---@field ReportRefusal fun(reason: any)
+---@field RegisterOpener fun(addon: string, callback: ForeverCoreOpenCallback, secure?: boolean)
 ---@field folder? string
 ---@field root? string
 ---@field copy? ForeverCoreLoaderCopy
@@ -288,6 +296,8 @@ ForeverCore = nil
 ---@field Start fun()
 ---@field Login fun()
 ---@field ForeverCore? ForeverCoreAPI
+---@field Open fun(addon: string, where?: any): boolean?, string?
+---@field Journey ForeverCoreJourney
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
@@ -303,3 +313,11 @@ ForeverCore = nil
 ---@class ForeverCoreReconcileOptions
 ---@field NextNode? fun(): string
 ---@field preferredFolder? string
+
+---@class ForeverCoreJourney
+---@field minor integer
+---@field Claim fun(addon: string, label: string, finish: fun(reason: string)): boolean?, string?
+---@field Owner fun(): string?, string?
+---@field End fun(owner?: string): boolean?, string?
+---@field Release fun(addon: string): boolean?, string?
+---@field Subscribe fun(callback: fun(changes: ForeverCoreAPIChanges)): fun()

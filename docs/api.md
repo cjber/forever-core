@@ -31,8 +31,8 @@ end
 TOC makes the client load before your files when core is installed. Do not use `## Dependencies`: the client would skip
 your addon when core is missing. Show a missing core with the vendored `Core/ForeverRequire.lua` instead.
 
-`minor` is the core table's own version and rises with each member this page adds outside a module. It is `1` today,
-and `Registered` arrived in minor 1. A member added here keeps `API` and raises `minor`, so check it before you use
+`minor` is the core table's own version and rises with each member this page adds outside a module. It is `2` today,
+and `Registered` arrived in minor 1. Minor 2 adds `Open`, registration fields `open` and `openSecure`, and `Journey`. A member added here keeps `API` and raises `minor`, so check it before you use
 such a member: `if (ForeverCore.minor or 0) >= 1 and ForeverCore.Registered then ... end`.
 
 ## `ForeverCore.Registered`
@@ -267,3 +267,33 @@ setting and reapplies it after attachment.
 a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
 instead.
+
+## `ForeverCore.Open`
+
+`ForeverCore.Open(addon, where?) --> accepted, reason` (core minor 2).
+Register an opener with `ForeverCore.Register(addon, { open = function(where) ... end, openSecure = true })`.
+A later Register with `open` replaces it. The opaque `where` belongs to the addon. The callback runs under its
+SafeCall and returns true, or false/nil plus a localized refusal reason. Core prints the reason once and returns
+both values. A thrown error is journalled and returns false. `openSecure` refuses combat with the existing localized
+combat message; the opener still owns its secure execution boundary. Invalid names return `nil, "invalid"`;
+an unknown addon or one without an opener returns `nil, "none"`. Tracker `menu:Open(text, addon, where?)` routes through this API and reports once, including combat refusals.
+The existing `menu:Open(text, function)` form keeps its combat guard and the same shared refusal reporter.
+
+## `ForeverCore.Journey`
+
+`ForeverCore.Journey.minor` is 1. All functions below arrived in module minor 1 (core minor 2).
+
+- `Claim(addon, label, finish) --> true` claims the current journey. Non-empty name and label and a function are
+  required, otherwise `nil, "invalid"`. Reclaiming the same name updates its label and callback. A different owner
+  replaces it and calls the previous callback with `"replaced"` under that addon's SafeCall.
+- `Owner() --> addon, label` returns strings, or `nil, "none"` when no journey is claimed.
+- `End(owner?) --> boolean` ends the current journey, or only the named owner when supplied. A mismatched or invalid
+  owner returns `nil, "invalid"`; no current journey returns `nil, "none"`. Core clears the claim before calling
+  its callback with `"ended"` under its SafeCall. A callback error returns false and leaves the claim cleared.
+- `Release(addon) --> boolean` clears only that addon's claim without calling its callback. It returns false for
+  another owner or no owner, and `nil, "invalid"` for a bad name.
+- `Subscribe(callback) --> unsubscribe` uses APIKit.Hub: next-frame coalesced `{ journey = true }` notifications,
+  fresh per subscriber, for claims, releases and ends. Read Owner again on notification.
+
+Ownership changes precede callbacks, so callbacks may Release safely or explicitly claim a new journey. Claims
+are session-only: consumers reclaim from their own restored state after reload; core cannot persist callbacks.
