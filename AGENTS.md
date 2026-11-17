@@ -41,11 +41,13 @@ python3 tools/dependabot_merge.py --dry-run # Dependabot's open PRs in core and 
 python3 tools/gen_forever_api.py          # regenerate forever_tools/client_names.txt from the pinned UI source
 python3 tools/lint_client_calls.py        # refuse a call of a client function the Forever client does not have
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
-python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
-python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
-python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
-python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
-python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
+# The forever_client.py lines below are for the `wow in-game` agent only; every other agent sends it an INGAME
+# request (wow-forever-addon/in-game.md#requesting-a-check).
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
@@ -268,8 +270,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
   branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
   `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green. A sync PR that changes runtime
-  files or moves the pin cannot record the visual proof itself, so the run prints the `forever_client.py proof`
-  command for that PR's head and the release session runs it and commits `.visual-proof.json`.
+  files or moves the pin cannot record the visual proof itself, so the run prints the `INGAME ... kind: proof`
+  request for that PR's head; the release session sends it to the in-game agent and commits `.visual-proof.json`.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
@@ -282,7 +284,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   Every core release therefore re-releases every consumer, whose zips all carry the same `ForeverCore` folder. It is
   dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
   prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
-- `tools/headless/forever_client.py`: the one way an agent touches the client (`wow-forever-addon/in-game.md`). `up`,
+- `tools/headless/forever_client.py`: the one way the `wow in-game` agent touches the client; every other agent sends
+  that agent a request (`wow-forever-addon/in-game.md`). `up`,
   `run`, `shot`, `slash`, `errors` and the rest act on a private gamescope display only, one session at a time. Its
   `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
   `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
@@ -378,10 +381,9 @@ Every version needs a `CHANGELOG.md` entry before its `v*` tag. `.github/workflo
 the commit, checks it with `tools/release_check.py`, writes the version's notes with `tools/changelog.py`, and runs the
 packager with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so the GitHub release, CurseForge and Wago all get the
 same words. A release preparation that edits the update notice or a locale records the visual proof its runtime change
-needs with `python3 tools/headless/forever_client.py proof --repo <repo> --ref <sha> --checkout <tree> --flow
-"update notice=<slash command or Lua file>"` and commits the `.visual-proof.json` it writes, so the required
-`visual-proof` check passes without an admin merge; a sync PR that moves the ForeverCore pin runs the command its own
-run prints. See `wow-forever-addon/in-game.md`. CurseForge is the published description and gallery; Wago is an upload
+needs through an `INGAME ... kind: proof` request to the in-game agent with `flows: update notice=<slash command or
+Lua file>`, and commits the `.visual-proof.json` it writes, so the required `visual-proof` check passes without an
+admin merge; a sync PR that moves the ForeverCore pin sends the request its own run prints. See `wow-forever-addon/in-game.md`. CurseForge is the published description and gallery; Wago is an upload
 mirror with a fixed stub pointing at CurseForge. A core version bump reaches consumers through the stores, since they
 require it; nothing is copied into them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
 

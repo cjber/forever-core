@@ -1,0 +1,5 @@
+<Ui>
+ <Frame name="AddonContextTemplate" virtual="true">
+  <Scripts><OnLoad>self.initialized = true</OnLoad></Scripts>
+ </Frame>
+</Ui>
