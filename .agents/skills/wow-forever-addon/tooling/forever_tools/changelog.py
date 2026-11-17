@@ -18,8 +18,9 @@ tag (a merge that moved new bullets under it), since those words already shipped
 import argparse
 import re
 import subprocess
+import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 HEADING = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]? - \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
@@ -331,7 +332,7 @@ def main(root: Path, argv: list[str] | None = None) -> None:
     parser.add_argument("value", nargs="?")
     parser.add_argument("--check", nargs="?", const="", metavar="VERSION")
     parser.add_argument("--base")
-    parser.add_argument("--date", default=datetime.now(timezone.utc).date().isoformat())
+    parser.add_argument("--date", default=time.strftime("%Y-%m-%d", time.gmtime()))
     parser.add_argument("--section", choices=SECTIONS, default="Changed")
     args = parser.parse_args(argv)
     if args.command == "fragment":
