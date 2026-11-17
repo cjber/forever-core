@@ -241,7 +241,13 @@ def check_base(root: Path, base: str) -> None:
     after = git("show", "HEAD:CHANGELOG.md")
     if before == after:
         return
+    tags = set(released(root))
+    # A section with no tag yet is a release still being prepared, so a release commit may rewrite it whole.
     old = HEADING.search(before)
+    while old is not None and old["version"] not in tags:
+        following = HEADING.search(before, old.end())
+        before = before[: old.start()] + (before[following.start() :] if following else "")
+        old = HEADING.search(before)
     first = HEADING.search(after)
     valid = old is not None and first is not None
     if valid:
@@ -252,7 +258,6 @@ def check_base(root: Path, base: str) -> None:
         inserted = after[len(prefix) : tail] if valid else ""
         headings = list(HEADING.finditer(inserted))
         valid = valid and bool(headings) and headings[0].start() == 0
-        tags = set(released(root))
         for heading in headings:
             valid = (
                 valid
@@ -335,14 +340,24 @@ def main(root: Path, argv: list[str] | None = None) -> None:
         version = args.value.removeprefix("v")
         check(text, [])
         newest = HEADING.search(text)
+        # An untagged newest section is a release still being prepared: its notes stay and the fragments join them.
+        amend = newest is not None and newest["version"] == version and version not in released(root)
         if (
             not paths
-            or find(text, version) is not None
-            or (newest and _version_key(version) <= _version_key(newest["version"]))
+            or (find(text, version) is not None and not amend)
+            or (newest and not amend and _version_key(version) <= _version_key(newest["version"]))
         ):
-            raise SystemExit("release needs fragments and a version newer than every existing section")
+            raise SystemExit(
+                "release needs fragments and a version newer than every existing section, or the untagged newest one"
+            )
         offset = newest.start() if newest else len(text)
-        candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + text[offset:]
+        if amend:
+            following = HEADING.search(text, newest.end())
+            rest = text[following.start() :] if following else ""
+            body = f"{find(text, version)}\n\n{body}"
+            candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + rest
+        else:
+            candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + text[offset:]
         check(candidate, [version])
         check_image(root, candidate, version, [v for v in released(root) if _version_key(v) < _version_key(version)])
         path.write_text(candidate, encoding="utf-8")

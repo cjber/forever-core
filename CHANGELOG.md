@@ -30,6 +30,23 @@
 - **The simulator keeps native load-on-demand template initialization secure** while preserving the caller and addon template ownership. (#640)
 - **Native quest header clicks have a simulator regression** using the real tracker and chat utility; the quest-list scenario no longer replaces ChatFrameUtil. (#630)
 
+### Added
+
+- **Addon panels share opening refusals and journeys share one owner.** Addon authors can register an opener for `ForeverCore.Open` and claim, end or subscribe to `ForeverCore.Journey`. (#381)
+- **Settings pages can group controls beneath localized section headings.** Canvas pages share the native heading style and reserve room for wrapped labels without changing saved options. (#488)
+- **Simplified Chinese reads naturally throughout**, with ForeverCore's lines translated by hand by moshoutegong. (cjber/adventure-guide-forever#801)
+- **Traditional Chinese reads naturally throughout**, with ForeverCore's lines translated by hand by moshoutegong. (cjber/adventure-guide-forever#802)
+
+### Changed
+
+- **Change notes live in separate files.** Parallel addon changes can merge without conflicting over the changelog. Release tooling assembles their notes in section order. (#751)
+
+### Fixed
+
+- **Fixed an error when leveling with the Forever quest list on.** Thanks to TechnoHunter and user_efwsfml273dlvfm5 for the reports. (#608)
+- **The goal marker centres its gold diamond face in the ring**, keeping the drop shadow from shifting the face up and left. (#733)
+- **A tracker menu stays where it opened while its block moves**, so a click lands on the entry you aimed at, and block menus offer Hide this section too. The tracker menu builder's Primary slot returns its description so addons can attach warning tooltips. (#754, #717, #718)
+
 ## [1.14.2] - 2026-11-16
 
 - **The Forever quest list is now on by default and replaces the game's tracker.** Turn it off in settings, with `/fcore quests`, or from the section menu. A saved choice to turn it off is kept. (#693, refs cjber/adventure-guide-forever#468)

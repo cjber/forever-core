@@ -73,6 +73,25 @@ class FragmentsTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 changelog.check_base(root, "v1.0.0")
 
+    def test_release_joins_fragments_to_an_untagged_section_in_preparation(self):
+        root = self.repo()
+        prepared = BASE.replace("## [1.0.0]", "## [1.0.1] - 2026-11-16\n\n- Prepared.\n\n## [1.0.0]")
+        (root / "CHANGELOG.md").write_text(prepared)
+        self.commit(root)
+        self.git(root, "checkout", "-b", "late")
+        self.note(root, "late", "### Fixed\n\n- Late.\n")
+        changelog.main(root, ["release", "1.0.1", "--date", "2026-11-17"])
+        self.assertEqual(
+            (root / "CHANGELOG.md").read_text(),
+            BASE.replace("## [1.0.0]", "## [1.0.1] - 2026-11-17\n\n- Prepared.\n\n### Fixed\n\n- Late.\n\n## [1.0.0]"),
+        )
+        self.commit(root)
+        changelog.check_base(root, "main")
+        self.git(root, "tag", "v1.0.1")
+        self.note(root, "after", "### Fixed\n\n- After.\n")
+        with self.assertRaisesRegex(SystemExit, "newer than every existing section"):
+            changelog.main(root, ["release", "1.0.1"])
+
     def test_history_edits_rejected(self):
         for text in [
             BASE + "- Bad.\n",
