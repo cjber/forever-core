@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -23,6 +24,56 @@ from check_consumers import core_pin
 
 def listed(*names, archived=()):
     return [{"name": name, "archived": name in archived} for name in names]
+
+
+class RateLimitTest(unittest.TestCase):
+    @staticmethod
+    def response(status, headers="", body="{}", error=""):
+        return subprocess.CompletedProcess(
+            [], int(status >= 400), f"HTTP/2.0 {status} Test\r\n{headers}\r\n{body}", error
+        )
+
+    def test_reset_and_retry_after_are_honoured_and_json_has_no_headers(self):
+        for status, headers, delay in (
+            (403, "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 1121\r\n", 122),
+            (429, "Retry-After: 25\r\n", 25),
+        ):
+            with (
+                self.subTest(status=status),
+                mock.patch.object(
+                    sync, "run", side_effect=[self.response(status, headers), self.response(200, body='{"ok": true}')]
+                ) as run,
+                mock.patch.object(time, "time", return_value=1000),
+                mock.patch.object(time, "sleep") as sleep,
+            ):
+                self.assertEqual(sync.api_json("repos/cjber/test"), {"ok": True})
+                self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), delay)
+                self.assertEqual(run.call_count, 2)
+                self.assertIn("--include", run.call_args.args[0])
+
+    def test_permission_denied_and_excessive_reset_do_not_retry(self):
+        for headers in ("", "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 99999\r\n"):
+            with (
+                self.subTest(headers=headers),
+                mock.patch.object(
+                    sync, "run", return_value=self.response(403, headers, error="Forbidden (HTTP 403)")
+                ) as run,
+                mock.patch.object(time, "time", return_value=1000),
+                mock.patch.object(time, "sleep") as sleep,
+                self.assertRaises(sync.SyncError),
+            ):
+                sync.gh("api", "repos/cjber/test")
+            run.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_retries_are_bounded_even_with_check_false(self):
+        with (
+            mock.patch.object(sync, "run", return_value=self.response(429, "Retry-After: 1\r\n")) as run,
+            mock.patch.object(time, "sleep") as sleep,
+        ):
+            self.assertNotEqual(sync.gh("api", "repos/cjber/test", check=False).returncode, 0)
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
 
 
 class ConsumerTest(unittest.TestCase):
@@ -1090,9 +1141,23 @@ class BundleTest(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             sync.bump_pin(self.root, "v1.4.0", self.DAY)
-        self.assertEqual(self.changelog.read_text(encoding="utf-8"), "## [1.2.3] - 2026-11-01\n\n- An older entry.\n")
-        self.assertIn("has no `## [Unreleased]` heading", out.getvalue())
+        self.assertIn("## [1.2.4] - 2026-11-11", self.changelog.read_text(encoding="utf-8"))
+        self.assertNotIn("has no `## [Unreleased]` heading", out.getvalue())
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_pending_fragments_get_a_shared_sync_fragment(self):
+        self.changelog.write_text(
+            "# Changelog\n\n## [Unreleased]\n\n## [1.2.3] - 2026-11-01\n\n- An older entry.\n",
+            encoding="utf-8",
+        )
+        (self.root / "changes").mkdir()
+        (self.root / "changes" / "751.md").write_text("### Fixed\n\n- A fix.\n", encoding="utf-8")
+        self.assertEqual(self.bump(), "v1.3.2")
+        self.assertEqual(
+            (self.root / "changes" / "forever-core-sync.md").read_text(encoding="utf-8"),
+            f"### Changed\n\n{sync.SYNC_BULLET}\n",
+        )
+        self.assertNotIn(sync.SYNC_MARKER, self.changelog.read_text(encoding="utf-8"))
 
     def test_a_consumer_without_a_changelog_is_left_alone_with_a_notice(self):
         self.changelog.unlink()

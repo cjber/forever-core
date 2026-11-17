@@ -39,5 +39,8 @@ scenario(
 		if not ok then
 			error(result, 0)
 		end
+		-- Native boot and panel errors have no addon attribution and must fail this suite too (#714).
+		sim:expectNoErrors()
+		after:expectNoErrors()
 	end
 )

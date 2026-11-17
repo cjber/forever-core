@@ -1,22 +1,50 @@
 {
-  "input_digest": "d11e13b39529a6b1dd211ef69f1cdc1508e78d5a2952e3428e5d44bebfd4dde8",
-  "runtime_sha256": "d11e13b39529a6b1dd211ef69f1cdc1508e78d5a2952e3428e5d44bebfd4dde8",
-  "candidate": "1b584fe048a9fde4fc97c3ebeaa1fdf8ae85df07a8bf03185282ab0cb5178eec",
+  "input_digest": "eacbe9448173ba6061b7e2f0e96732b08c21079c904b500a90f5ae3d2801974b",
+  "runtime_sha256": "eacbe9448173ba6061b7e2f0e96732b08c21079c904b500a90f5ae3d2801974b",
+  "candidate": "e087421e338e5898af941e7e62504d7cb81f760efcbe990bf67f81fe1ca52211",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "4875ccfaa86641e9993ea30e28c4b2fb722233dd",
+  "source_commit": "b4dfeff735d36e0f31fc11bb74bfa9cb4e484daa",
   "flows": [
-    {
-      "name": "questie defers",
-      "steps": [
-        "sha256:e1664e27ce9e254b7fa26a7082716615097734b76a70e50dad193e7cb7bf756c questie_defers.lua"
-      ],
-      "result": "pass"
-    },
     {
       "name": "questie tracker off",
       "steps": [
         "sha256:0aaab1e6f667414beb8c5c63208c2a80bb97f7f536c2d19b3bbae1bea3e792bc questie_tracker_off.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list hint reset",
+      "steps": [
+        "sha256:c77efbe9ce763739009c57fb210f36cbad7cb737f6c3f6c469e90cf4d0350600 hint_reset.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest-list-on",
+      "steps": [
+        "sha256:279b9fdcbb4c8e28a411ed030f45e3df0dc0491dc1af28f52a924e821abd615d 608_quest_list_on.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list hint",
+      "steps": [
+        "sha256:9b50088932874daacf5a514dae9eee8d3cfc1fb1c74233827f466e3a424c341e hint_shown.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list hint keep",
+      "steps": [
+        "sha256:828a19e71504066e6d0e9a20aa0ca3cdfbfc47f556308f82deb0138dc35a8551 hint_keep.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "hint stays answered and quests header menu",
+      "steps": [
+        "sha256:5d7a786d99361881dad26c18ba6cbcbc60f5fb3254b088599bcde705f75fda67 hint_gone_menu.lua"
       ],
       "result": "pass"
     },
@@ -28,16 +56,72 @@
       "result": "pass"
     },
     {
-      "name": "suite mute defers",
+      "name": "open and journey api",
       "steps": [
-        "sha256:c0fc1c4c61f43bc2e3059e717a75f0211ddb103b7f11e915903ff418ed7d2ebb defer.lua"
+        "sha256:263c009a080570b61650d3c4fbb52fd1de58e217478cd476e0c918ac2f940a9f api759.lua"
       ],
       "result": "pass"
     },
     {
-      "name": "restore list",
+      "name": "goal diamond",
       "steps": [
-        "sha256:1e6c29b4b8d5e6b0d688701e1d29f1113384e78a96abf6e4ff222e64716beb61 restore.lua"
+        "sha256:f10b7cb777e1fde4975186574abdd0ba743b9d378c8086b57222d21eeeb7e0df diamond-flow.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "family page",
+      "steps": [
+        "/forever"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "short screen quest list (#720, 1920x803 scale 1.0)",
+      "steps": [
+        "sha256:8a77a72a36ed2f61c439eaa59f217d9c7f6f0df42acc2b25691bf9fc3db29765 core_short_screen.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "tall screen minimap clear (#720, scale 0.64)",
+      "steps": [
+        "sha256:f303b41d6fecf80b50d8fb174c8b3ff5ab3e6b0d36f1a919c1be1edab6a70338 core_tall_screen.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "canvas headers 0.64",
+      "steps": [
+        "sha256:b691c9ecd1bb45304fea65921e2831823e2e5cb6c8f814c697c34bb789c41083 canvas_064.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "canvas headers 1.0",
+      "steps": [
+        "sha256:8fe02e16c4c103caa11a23e6a35a59a20f014731bb5266314f13b95899be9f0a canvas_100.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "canvas headers 1.15",
+      "steps": [
+        "sha256:5cdcc6d349e543a137e2cdf85a7797f787d2e83fa21b84dcf30bb27875b4d021 canvas_115.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "native-tracker-restored",
+      "steps": [
+        "/fcore quests"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "quest list back on",
+      "steps": [
+        "/fcore quests"
       ],
       "result": "pass"
     },
@@ -51,28 +135,76 @@
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/1-questie-defers.png",
-      "sha256": "1e80744270a0567aca0fb5e20df2fe54651e4fce7b17503eae1af12ee21df388"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/1-questie-tracker-off.png",
+      "sha256": "a6bb5e6107408cab4c1b81c92f367fe8c0e5cc1dc5933158b3571292fbb4c6fa"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/2-questie-tracker-off.png",
-      "sha256": "237cfe0531e2e77cc5223ad5030b7a89116d3c2b1edb0fddb4cbb624e01bfb24"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/2-quest-list-hint-reset.png",
+      "sha256": "d5b6338bf25104191476d248cbbadd5fe138525882d69b0e8017e3f1493d4e18"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/3-tracker-menu-quest-list-switch.png",
-      "sha256": "9ca1a0c2c6c22f16b8963cad8675807ef77521c94e012208d0f1b46446535976"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/3-quest-list-on.png",
+      "sha256": "201e2222db40f494fb0fd546c9d0885359c98b1bea66258f3c64ebe58bab16b7"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/4-suite-mute-defers.png",
-      "sha256": "02fd9acd09681eb48eeae6a27c3950d72c73c020d570472034371dc599c74975"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/4-quest-list-hint.png",
+      "sha256": "19e0c1bb1615367996dbbc56938301de7750dd7e31b2e8bd198d6ddcd90197e2"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/5-restore-list.png",
-      "sha256": "b8c55248cbc51364cf21a789ee6ce1ca02e695a7787e72c63edc89cc4e2351b3"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/5-quest-list-hint-keep.png",
+      "sha256": "2a5fd889589369f39b5f8c462056860452533ea77a429b481a780b8292a2ffd6"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/6-questie-tracker-on.png",
-      "sha256": "e2018f5996ed54f34644ea79689417023f1a1574b7b10bee79a42d8f3a57996b"
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/6-hint-stays-answered-and-quests-header-menu.png",
+      "sha256": "1f3e3757880f74b7ea53de5c42ab63407bacbb92897010cbb78f3006d3d2eb77"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/7-tracker-menu-quest-list-switch.png",
+      "sha256": "a4f78ddc0a24fd7680e85b7a2d74c8f90cbb1532f9a32a8f08da8877a22321ed"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/8-open-and-journey-api.png",
+      "sha256": "c740372c9e52ca31a442892798545642977253dbd3e23de499e7f187fd21b053"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/9-goal-diamond.png",
+      "sha256": "79e6262562174c480eb0d41b87910b497ef2eff4203a4f0a1d52ca8ef5c8bf9d"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/10-family-page.png",
+      "sha256": "b1e021877f64dd8d017cc7fbee817d6692729ce78e1c672a79cbd837ccd8b7e2"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/11-short-screen-quest-list-720-1920x803-scale-1-0.png",
+      "sha256": "0a97ea29503a468c53cc47c3422258ea1f0355d8f170934aba37da1101f28dc7"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/12-tall-screen-minimap-clear-720-scale-0-64.png",
+      "sha256": "e1ae8628e269e586ecba2ca0747fa1c5af78925d920ea2c3d6ceeec52da9e857"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/13-canvas-headers-0-64.png",
+      "sha256": "4f4b994a361a1709b7907ccf8030cf967aeed1a4ddef0b084e9b78846855fda8"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/14-canvas-headers-1-0.png",
+      "sha256": "87073750125f1ec4c9d53a34b431b698e90d9119196b212551fb64927bf0d7e8"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/15-canvas-headers-1-15.png",
+      "sha256": "7bb8ebb65bd7ad574199d46e0448b6032c5a433e8daa026926a7ec3a70c3e9f8"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/16-native-tracker-restored.png",
+      "sha256": "ba7453424278f5ea435ec055472fb791d5861ca8315c9dc124a55b6fc8128d12"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/17-quest-list-back-on.png",
+      "sha256": "ca998573e828da9fd34733ba440f0ebb9650739393f3aea74c9820a947db877d"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/30ca17c118fe13f639e331a92b37f076/raw/219a44eef8d6fbbaccc4121d9a185bd1a1700340/18-questie-tracker-on.png",
+      "sha256": "2e98dbe9a44d8e7beb2ee1aab7f915cc5f0767ba6dfdaaca235f9d84f218bbaf"
     }
   ]
 }

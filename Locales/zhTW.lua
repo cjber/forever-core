@@ -1,4 +1,4 @@
--- Machine translated (2026-10-22); corrections welcome: https://github.com/cjber/forever-core/issues/new?template=translation.yml
+-- Translated by moshoutegong; lines ending -- mt are machine translated. Corrections welcome: https://github.com/cjber/forever-core/issues/new?template=translation.yml
 local _, ns = ...
 if GetLocale() ~= "zhTW" then
 	return
@@ -6,22 +6,23 @@ end
 local L = ns.L
 
 L["%s (%s)"] = "%s（%s）"
-L["%s and %s"] = "%s和%s"
-L["%s, %s and %s"] = "%s、%s和%s"
-L["%s, %s, %s and %d more"] = "%s、%s、%s以及另外 %d 位"
+L["%s and %s"] = "%s 和 %s"
+L["%s, %s and %s"] = "%s、%s 和 %s"
+L["%s, %s, %s and %d more"] = "%s、%s、%s 以及另外 %d 位"
 L["+%d more"] = "還有 %d 個"
-L[", "] = ", "
-L["%d yd"] = "%d碼"
+L[", "] = "、"
+L["%d contributions"] = "%d 項貢獻"
+L["%d yd"] = "%d 碼"
 L["%s (last %d):"] = "%s（最近 %d 筆）："
-L["%s: no lines yet."] = "%s：還沒有記錄行。"
+L["%s: no lines yet."] = "%s：目前沒有記錄。"
 L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
-	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
-L["All addons"] = "所有插件"
-L["Attach to quest tracker"] = "附著於任務追蹤器"
-L["Bug"] = "錯誤"
-L["Bug: "] = "錯誤："
+	"在同一視窗列出所有巨集，提供等寬字型編輯器、即時檢查和編輯記錄。"
+L["All addons"] = "所有附加元件"
+L["Attach to quest tracker"] = "停駐於任務追蹤器"
+L["Bug"] = "錯誤回報"
+L["Bug: "] = "錯誤回報："
 L["Close"] = "關閉"
-L["Copy issue link"] = "複製 Issue 連結"
+L["Copy issue link"] = "複製回報連結"
 L["Copy link"] = "複製連結"
 L["Copy report"] = "複製報告"
 L["Copy the address, then open it in your browser."] = "複製該網址，然後在瀏覽器中開啟。"
@@ -34,64 +35,69 @@ L["Debug log is on and pinned for this character."] = "此角色的偵錯記錄�
 L["Debug log is on for this session."] = "本次工作階段已開啟偵錯記錄。"
 L["Don't suggest this again"] = "不再推薦"
 L["Drag to move"] = "拖曳以移動"
-L["Feature request"] = "功能請求"
-L["Feature request: "] = "功能請求："
+L["Feature request"] = "功能建議"
+L["Feature request: "] = "功能建議："
 L["ForeverCore"] = "ForeverCore"
-L["Forever addons"] = "Forever插件"
-L["Forever quest list"] = "Forever quest list"
-L["Forever tracker"] = "Forever追蹤器"
-L["Hide this section"] = "Hide this section"
+L["Forever addons"] = "Forever 附加元件"
+L["Forever quest list"] = "Forever 任務清單"
+L["Forever tracker"] = "Forever 追蹤器"
+L["Hide this section"] = "隱藏此區塊"
 L["Inspired by"] = "靈感來自"
 L["Installed, turned off"] = "已安裝，已停用"
 L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
-	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
+	"依區域記錄你擊殺過的生物，供瀏覽收藏。"
 L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
-	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
+	"列出要交回的委託、背包裡的材料和下一位要拜訪的 NPC。"
 L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
+	"在 Forever 追蹤器中列出已追蹤的任務：先列出可交回的任務，再列出目前區域的任務，其餘任務依區域由近至遠排列。啟用後會隱藏遊戲內建的目標追蹤器。"
 L["Lock the tracker"] = "鎖定追蹤器"
-L["No addon has attached its log yet."] = "還沒有插件附加記錄。"
+L["No addon has attached its log yet."] = "還沒有附加元件附加記錄。"
 L["No one is listed yet."] = "還沒有列出任何人。"
 L["Not installed"] = "未安裝"
 L["On"] = "開啟"
 L["Open"] = "開啟"
 L["Picks quests for your level and plans them into one journey."] =
-	"挑選適合你等級的任務，並規劃成一段旅程。"
+	"推薦適合你等級的任務，並規劃成一條路線。"
 L["Plans the cheapest route to your next profession rank."] = "規劃升到下一個專業等級最省錢的路線。"
 L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
-	"規劃前往任何地點的最快路線並為你引路，附帶船隻與飛艇的即時時刻。"
+	"規劃到目的地的最快路線並提供導航，顯示船隻和飛艇的即時班次。"
 L["Players"] = "玩家"
 L["Quest automation, rare alerts and merchant handling for the default UI."] =
-	"為預設介面提供任務自動化、稀有怪提醒與商人處理。"
-L["Ready to turn in"] = "Ready to turn in"
-L["Report a bug or request a feature"] = "回報錯誤或請求功能"
+	"為遊戲原生介面提供任務自動處理、稀有生物提醒和商人交易輔助。"
+L["Ready to turn in"] = "可交回"
+L["Report a bug or request a feature"] = "回報錯誤或提出功能建議"
 L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
-	"在我的其他Forever插件能幫上忙的地方顯示一行不顯眼的提示。僅限你尚未安裝的插件。"
+	"適當時顯示一行提示，推薦尚未安裝的其他 Forever 附加元件。"
 L["Shows the Legacy challenges you can advance in each zone."] =
 	"顯示每個地區中你可以推進的傳承挑戰。"
-L["Suggest my other Forever addons"] = "推薦我的其他Forever插件"
+L["Suggest my other Forever addons"] = "推薦其他 Forever 附加元件"
 L["Thanks"] = "感謝"
 L["Thanks to %s"] = "感謝 %s"
 L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
-	"Forever 插件全部免費，沒有任何付費才能使用的內容。如果它們對你有幫助，可以請我喝杯咖啡。"
+	"Forever 附加元件全部免費，沒有任何付費才能使用的內容。如果它們對你有幫助，可以請我喝杯咖啡。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"連結已選取。按 Ctrl+C（Mac 上為 Cmd+C）複製，然後貼到瀏覽器中；GitHub 會開啟一個已填寫的問題。"
-L["The players who helped each Forever addon."] = "幫助過每個 Forever 插件的玩家。"
+L["The players who helped each Forever addon."] = "幫助過每個 Forever 附加元件的玩家。"
 L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."] =
-	"文字已選取。按Ctrl+C（Mac上為Cmd+C）複製，然後貼到你的錯誤回報中。"
+	"文字已選取。按 Ctrl+C（Mac 上為 Cmd+C）複製，然後貼到你的錯誤回報中。"
 L["The tracker is locked. Turn off Lock the tracker to move it."] =
 	"追蹤器已鎖定。關閉「鎖定追蹤器」即可移動它。"
-L["This addon"] = "本插件"
+L["This addon"] = "本附加元件"
 L["Title"] = "標題"
 L["Tracker background"] = "追蹤器背景"
 L["Tracker"] = "追蹤器"
-L["Click to %s"] = "點擊%s"
+L["Click to %s"] = "點擊 %s"
 L["Right-click for options"] = "右鍵查看選項"
 L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
-L["Use the game's quest list"] = "Use the game's quest list"
-L["What happened, or what you would like"] = "發生了什麼，或你想要的功能"
+L["Turn off the Forever quest list (use the game's tracker)"] =
+	"Turn off the Forever quest list (use the game's tracker)"
+L["Use the game's tracker"] = "Use the game's tracker"
+L["Keep this list"] = "Keep this list"
+L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
+	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
+L["What happened, or what you would like"] = "請描述遇到的問題或希望新增的功能"
 L.MINIMAP_UNAVAILABLE = "小地圖不可用，已略過自訂按鈕。"
 L["MENU_BACK"] = "返回"
 
@@ -100,17 +106,17 @@ L["5 ms"] = "5 毫秒"
 L["10 ms"] = "10 毫秒"
 L["50 ms"] = "50 毫秒"
 L["100 ms"] = "100 毫秒"
-L["Addon"] = "插件"
-L["Application"] = "應用程式"
-L["Last"] = "最後"
-L["Memory KB"] = "記憶體 KB"
-L["Memory: not available on this client."] = "記憶體：此用戶端無法使用。"
+L["Addon"] = "附加元件"
+L["Application"] = "用戶端"
+L["Last"] = "最近一次"
+L["Memory KB"] = "記憶體（KB）"
+L["Memory: not available on this client."] = "目前的用戶端無法讀取記憶體用量。"
 L["Peak"] = "峰值"
 L["Recent"] = "近期"
 L["Session"] = "工作階段"
 L["Performance (read when this window opened):"] = "效能（開啟此視窗時讀取）："
-L["Performance: not available on this client."] = "效能：此用戶端無法使用。"
-L["Performance: the client's add-on profiler is off."] = "效能：用戶端的插件效能分析器已關閉。"
+L["Performance: not available on this client."] = "目前的用戶端無法讀取效能資料。"
+L["Performance: the client's add-on profiler is off."] = "效能：用戶端的附加元件效能分析器已關閉。"
 L["%d more rows not shown."] = "另有 %d 行未顯示。"
 L["Debug capture is on: /forever debug off stops it."] = "除錯記錄已開啟：/forever debug off 可將其關閉。"
 L["Debug capture is on. Attach the files in the client's Logs folder to your report. Turn it off with /forever debug off."] =
@@ -122,24 +128,24 @@ L["Debug capture is off and the client's settings are back; the debug log is off
 L["Debug capture could not start because ForeverCore has not finished loading."] =
 	"無法啟動除錯擷取，因為 ForeverCore 尚未完成載入。"
 L["%s: the installed ForeverCore is another addon (%s). Remove it and install ForeverCore from CurseForge."] =
-	"%s：已安裝的 ForeverCore 是另一個插件（%s）。請移除它，並從 CurseForge 安裝 ForeverCore。" -- mt
+	"%s：已安裝的 ForeverCore 是另一個附加元件（%s）。請移除它，並從 CurseForge 安裝 ForeverCore。"
 L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on ForeverCore in the CurseForge app."] =
-	"%s 需要 ForeverCore。請從 CurseForge 安裝它，或在 CurseForge 應用程式中選擇 ForeverCore 的「重新安裝」。" -- mt
+	"%s 需要 ForeverCore。請從 CurseForge 安裝它，或在 CurseForge 應用程式中選擇 ForeverCore 的「重新安裝」。"
 L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
-	"%s：ForeverCore 已關閉。請在插件清單中啟用它。" -- mt
+	"%s：ForeverCore 已關閉。請在附加元件清單中啟用它。"
 L["No Forever addon has recorded anything for this character yet."] =
 	"還沒有任何 Forever 附加元件為這個角色記錄內容。"
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
 	"連結已選取。按 Ctrl+C（Mac 上為 Cmd+C），然後在瀏覽器中開啟。不會傳送任何內容。"
-L["Your Forever profile"] = "你的 Forever 個人檔案"
+L["Your Forever profile"] = "你的 Forever 檔案"
 L["%s (%d)"] = "%s (%d)"
 L["%s %d/%d"] = "%s %d/%d"
 L["Abandon"] = "放棄"
 L["Abandoning a quest is not available."] = "無法放棄任務。"
 L["Collapse"] = "摺疊"
 L["Expand"] = "展開"
-L["Focus"] = "聚焦"
-L["Stop focusing"] = "停止聚焦"
+L["Focus"] = "重點追蹤"
+L["Stop focusing"] = "取消重點追蹤"
 L["Objectives"] = "目標"
 L["Open Quest Details"] = "開啟任務詳細資料"
 L["Hide Quest Details"] = "隱藏任務詳細資料"
@@ -158,34 +164,34 @@ L["Share Quest"] = "分享任務"
 L["Share in Chat"] = "在聊天中分享"
 L["fold this zone"] = "摺疊此區域"
 L["unfold this zone"] = "展開此區域"
-L["focus this quest"] = "聚焦此任務"
+L["focus this quest"] = "重點追蹤此任務"
 
-L["ForeverCore startup report"] = "ForeverCore 啟動報告" -- mt
-L["Core: %s; API %s"] = "Core：%s；API %s" -- mt
-L["Runtime: %s copy %s"] = "執行階段：%s，副本 %s" -- mt
-L["Runtime error: %s"] = "執行階段錯誤：%s" -- mt
-L["Standalone runtime"] = "獨立執行階段" -- mt
-L["Core copies:"] = "Core 副本：" -- mt
-L["Rejected"] = "已拒絕" -- mt
-L["Sealed"] = "已完整載入" -- mt
-L["Unsealed"] = "載入不完整" -- mt
-L["%s: build %s, %s"] = "%s：組建 %s，%s" -- mt
-L['No installed Forever addon named "%s".'] = "沒有名為「%s」的已安裝 Forever 插件。" -- mt
-L["No installed Forever addons found."] = "找不到已安裝的 Forever 插件。" -- mt
+L["ForeverCore startup report"] = "ForeverCore 啟動報告"
+L["Core: %s; API %s"] = "核心版本：%s，API：%s"
+L["Runtime: %s copy %s"] = "執行階段：%s（副本 %s）"
+L["Runtime error: %s"] = "執行階段錯誤：%s"
+L["Standalone runtime"] = "獨立執行階段"
+L["Core copies:"] = "核心副本清單："
+L["Rejected"] = "已拒絕"
+L["Sealed"] = "已完整載入"
+L["Unsealed"] = "載入不完整"
+L["%s: build %s, %s"] = "%s：組建 %s，%s"
+L['No installed Forever addon named "%s".'] = "沒有名為「%s」的已安裝 Forever 附加元件。"
+L["No installed Forever addons found."] = "找不到已安裝的 Forever 附加元件。"
 L["Enable ForeverCore or a Forever addon in AddOns if /fcore is unavailable, then /reload and read Lua errors."] =
-	"若 /fcore 不是指令，請開啟 AddOns，啟用 ForeverCore 或任一 Forever 插件，然後在 /reload 後查看第一個 Lua 錯誤。" -- mt
-L["Installed Forever addons:"] = "已安裝的 Forever 插件：" -- mt
-L["Registered"] = "已註冊" -- mt
-L["Loaded but not registered"] = "已載入但未註冊" -- mt
-L["Not loaded"] = "未載入" -- mt
-L["Load: %s; enabled: %s; core pin: %s"] = "已載入：%s；已啟用：%s；Core 版本：%s" -- mt
-L["Requires: %s; optional: %s"] = "必要：%s；選用：%s" -- mt
-L["Loadable: %s; reason: %s"] = "可載入：%s；原因：%s" -- mt
-L["First error: %s"] = "第一個錯誤：%s" -- mt
+	"若 /fcore 不是指令，請開啟 AddOns，啟用 ForeverCore 或任一 Forever 附加元件，然後在 /reload 後查看第一個 Lua 錯誤。"
+L["Installed Forever addons:"] = "已安裝的 Forever 附加元件："
+L["Registered"] = "已註冊"
+L["Loaded but not registered"] = "已載入但未註冊"
+L["Not loaded"] = "未載入"
+L["Load: %s; enabled: %s; core pin: %s"] = "已載入：%s；已啟用：%s；Core 版本：%s"
+L["Requires: %s; optional: %s"] = "必要：%s；選用：%s"
+L["Loadable: %s; reason: %s"] = "可載入：%s；原因：%s"
+L["First error: %s"] = "第一個錯誤：%s"
 L["No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."] =
-	"未記錄錯誤。請用 /console scriptErrors 1 啟用 Lua 錯誤，再執行 /reload，查看第一個提及 %s 的錯誤。" -- mt
-L["Callback error: %s"] = "回呼錯誤：%s" -- mt
-L["Login error: %s"] = "登入錯誤：%s" -- mt
-L["Copy %s: %s"] = "副本 %s：%s" -- mt
+	"未記錄錯誤。請用 /console scriptErrors 1 啟用 Lua 錯誤，再執行 /reload，查看第一個提及 %s 的錯誤。"
+L["Callback error: %s"] = "回呼錯誤：%s"
+L["Login error: %s"] = "登入錯誤：%s"
+L["Copy %s: %s"] = "副本 %s：%s"
 
 L.MINIMAP_DRAG_HINT = "拖曳可沿小地圖移動按鈕。" -- mt

@@ -25,6 +25,9 @@ local function widget(kind, parent, template)
 			self.y = second
 		end
 	end
+	function methods:HookScript(name, callback)
+		self.scripts[name] = callback
+	end
 	function methods:SetScript(name, callback)
 		self.scripts[name] = callback
 	end
@@ -39,6 +42,19 @@ local function widget(kind, parent, template)
 	end
 	function methods:GetText()
 		return self.text
+	end
+	function methods:SetHeight(height)
+		self.height = height
+	end
+	function methods:SetWordWrap(wrap)
+		self.wordWrap = wrap
+	end
+	function methods:GetStringHeight()
+		return self.stringHeight or 20
+	end
+	function methods:Init(initializer)
+		self.initializer = initializer
+		self.Title:SetText(initializer.name)
 	end
 	function methods:SetWidth(width)
 		self.width = width
@@ -83,7 +99,14 @@ end
 -- The client's Settings API: every call is recorded so the spec can read the page back.
 local calls = { categories = {}, initializers = {} }
 _G.CreateFrame = function(kind, _, parent, template)
-	return widget(kind, parent, template)
+	local frame = widget(kind, parent, template)
+	if template == "SettingsListSectionHeaderTemplate" then
+		frame.Title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+	end
+	return frame
+end
+_G.CreateSettingsListSectionHeaderInitializer = function(name, tooltip)
+	return { name = name, tooltip = tooltip }
 end
 _G.Settings = {
 	RegisterCanvasLayoutCategory = function(panel, name)
@@ -211,6 +234,34 @@ equal(second.name, "Plain", "with its own name")
 equal(Children(secondPanel, "Button")[1].text, "Untranslated", "no ns.L at all: the phrase reads as English")
 equal(#Children(secondPanel, "CheckButton"), 0, "and it has none of the first page's rows")
 check(calls.categories[1] == second, "registered in its own right")
+
+-- A section uses the native heading and leaves space before the next saved-value control.
+local heading
+local _, grouped = Page.Register("Grouped", function(target, page)
+	heading = page.AddHeader(target, "Tick", "Wide")
+	page.AddCheck(target, "Tick", function()
+		return saved.enabled
+	end, function(value)
+		saved.enabled = value
+	end)
+end, pageNs.L)
+check(heading ~= nil, "the builder can add a heading")
+equal(heading.template, "SettingsListSectionHeaderTemplate", "the heading uses the client's template")
+equal(heading.Title.text, "Cocher", "heading text reads through the page's L")
+equal(heading.initializer.tooltip, "Large", "heading tooltip reads through the page's L")
+local following = Children(grouped, "CheckButton")[1]
+check(following.y <= heading.y - heading.height, "the next row clears the entire heading")
+check(following.checked, "a check after the heading reads its saved value")
+following.checked = false
+following.scripts.OnClick(following)
+equal(saved.enabled, false, "a check after the heading writes its saved value")
+
+heading.Title.stringHeight = 60
+local previousY = following.y
+grouped.scripts.OnSizeChanged(grouped)
+check(heading.height >= 86, "a wrapped heading reserves its full text height")
+check(following.y < previousY, "resizing moves the following row with the wrapped heading")
+check(following.y <= heading.y - heading.height, "wrapped text cannot overlap the next check")
 
 -- Every row callback runs in the addon's SafeCall when Register was given one, so a failure stays in its journal.
 local safeCalls = {}

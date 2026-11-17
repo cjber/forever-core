@@ -30,6 +30,7 @@ textures ship; `tools/marker_source/` holds the sources and `tools/export_marker
 | [FrameXML annotations](https://github.com/NumyAddon/FramexmlAnnotations) | FrameXML types, the Ketho checkout's `Annotations/FrameXML` submodule | The gitlink in that Ketho revision | MIT |
 | [wago.tools](https://wago.tools) | The listfile and backdrop art facts behind `tools/legacy_chrome.txt` | `BUILD` in `tools/gen_legacy_chrome.py` | Blizzard Entertainment's game data |
 | [Blizzard client fonts and font definitions](https://wago.tools) | Offline Unicode glyph coverage and exact FontObject member mappings in `font_glyphs.json`; no font binaries ship or are committed | `FONT_BUILD`, `UI_REVISION` and `XML_FILES` in `tools/gen_font_glyphs.py`; generated JSON records each XML and TTF sha256 and download URL | Blizzard Entertainment's game data; build only |
+| [websockets](https://github.com/python-websockets/websockets) | Local DevTools transport for the disposable manager lifecycle harness; never shipped | `tools/pyproject.toml` and `tools/uv.lock` | BSD-3-Clause |
 | [fontTools](https://github.com/fonttools/fonttools) | Reads Unicode cmap tables when regenerating font coverage; not needed by the offline gate | Generator dependency in `tools/gen_font_glyphs.py`; generator environment must supply fontTools | MIT; build only |
 
 CI tools (StyLua, ruff, luacheck, lua-language-server, actionlint, zizmor, gitleaks, the BigWigs packager) are pinned in
@@ -45,6 +46,10 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| [moshoutegong](https://github.com/moshoutegong) | Simplified Chinese translation | GitHub; cjber/adventure-guide-forever#801 |
+| [moshoutegong](https://github.com/moshoutegong) | Traditional Chinese translation | GitHub; cjber/adventure-guide-forever#802 |
+| TechnoHunter | Quest tracking stays safe when leveling | CurseForge; thread 8734322; #608 |
+| user_efwsfml273dlvfm5 | Quest tracking stays safe when leveling | CurseForge; threads 8730123, 8716634, 8724252; #608 |
 | serb1tar | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
 | tommyekholm | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
 | Crypa7 | Quest item icons and progress bars fit the quest list | CurseForge; #743 |

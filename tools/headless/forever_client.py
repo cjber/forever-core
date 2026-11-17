@@ -18,7 +18,10 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py status
     forever_client.py shot [PATH]         # PNG of what the client shows now
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
+    forever_client.py hover X Y           # move the pointer to a point in the frame (after a fresh shot)
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
+    forever_client.py click X Y --hold shift [--hold ctrl]
+                                          # hold shift, ctrl or alt through a click, hover or scroll; released after
     forever_client.py key Escape          # Return, Escape or BackSpace
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
@@ -142,7 +145,8 @@ import tarfile
 import time
 import uuid
 import zlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -260,6 +264,8 @@ FOREVER_ADDONS = (
 WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
+# The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
+MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -601,14 +607,67 @@ def mark(name: str) -> float:
         return 0.0
 
 
-def send(state: Mapping, *args: str, before_input=None) -> None:
-    """One input action, at least INPUT_GAP after the last one from any invocation."""
+def modifier_keys(hold: Sequence[str]) -> list[str]:
+    """The keysyms for `--hold` names, once each in the order given; any name but shift, ctrl or alt is refused."""
+    refused = [name for name in hold if name not in MODIFIER_KEYS]
+    if refused:
+        raise ClientError(f"--hold takes {', '.join(MODIFIER_KEYS)}; refused {', '.join(refused)}")
+    return list(dict.fromkeys(MODIFIER_KEYS[name] for name in hold))
+
+
+def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.values()) -> str | None:
+    """Send keyup for modifier keys on a display; the failure as text, or None. It never raises.
+
+    No safety check runs first: a key release is the one input that is always safe, and job end must send it even
+    when the client is somewhere a verb would be refused. The X server ignores a release for a key that is not down.
+    """
+    keys = list(keys)
+    if not display or not keys:
+        return None
+    try:
+        subprocess.run(
+            ["xdotool", "keyup", *keys],
+            env={**os.environ, "DISPLAY": display},
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return f"keyup {' '.join(keys)} on {display} failed: {error}"
+    return None
+
+
+def release_session_modifiers(state: Mapping | None) -> None:
+    """Release shift, ctrl and alt on the session's display, so no job inherits a key an ended one held."""
+    failure = release_modifiers((state or {}).get("display"))
+    if failure:
+        print(f"forever_client: {failure}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
+    """Hold modifier keys down for the body, releasing every key pressed even when the body raises."""
+    pressed: list[str] = []
+    try:
+        for key in keys:
+            x(state, "keydown", key)
+            pressed.append(key)
+        yield
+    finally:
+        failure = release_modifiers(state.get("display"), pressed)
+    if failure:
+        raise ClientError(failure)
+
+
+def send(state: Mapping, *args: str, before_input=None, hold: Sequence[str] = ()) -> None:
+    """One input action, at least INPUT_GAP after the last one from any invocation, with `hold` keys held down."""
     wait = INPUT_GAP - (time.time() - mark("last-input"))
     if wait > 0:
         time.sleep(wait)
     if before_input:
         before_input()
-    x(state, *args)
+    with held(state, hold):
+        x(state, *args)
     (STATE_DIR / "last-input").touch()
 
 
@@ -736,9 +795,10 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
 # here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
 # X position to the point and must never be used.
-def click(state: Mapping, px: int, py: int, button: str) -> None:
+def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
+    keys = modifier_keys(hold)
     if mark("last-shot") <= mark("last-input"):
         raise ClientError("take a `shot` and read it first: a click must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
@@ -752,10 +812,20 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
         if state.get("manual_launcher") and not state.get("ready") and client_pid():
             raise ClientError("the game has started: wait for READY before clicking")
 
-    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard)
+    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard, hold=keys)
 
 
-def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
+def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
+    """Move the pointer to a point in the current frame, for a tooltip or an OnEnter check; screenshot-bound."""
+    keys = modifier_keys(hold)
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a hover must aim at addon UI in the current frame")
+    if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+        raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    send(state, "mousemove", str(px), str(py), hold=keys)
+
+
+def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = ()) -> None:
     """Turn the mouse wheel at a point in the current frame: positive is up (zoom in), negative down.
 
     The world map's zoom lives on its ScrollContainer, which a click does not reach and `slash` refuses to open up as
@@ -763,6 +833,7 @@ def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
     """
     if ticks == 0:
         raise ClientError("scroll takes a non-zero number of wheel ticks: positive up, negative down")
+    keys = modifier_keys(hold)
     if mark("last-shot") <= mark("last-input"):
         raise ClientError("take a `shot` and read it first: a scroll must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
@@ -779,6 +850,7 @@ def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
         "--delay",
         WHEEL_DELAY_MS,
         button,
+        hold=keys,
     )
 
 
@@ -1314,7 +1386,21 @@ def git(repo_root: Path, *args: str) -> str:
 
 
 def resolve_commit(root: Path, ref: str) -> str:
-    """Resolve locally, fetching origin once for a missing full commit SHA."""
+    """Resolve a ref in the shared sibling checkout, whose local branches are not kept current.
+
+    A branch origin has resolves to origin's tip after one fetch (#771); a branch only this checkout has stays local.
+    Anything else resolves locally, fetching origin once for a missing full commit SHA.
+    """
+    branches = (f"refs/heads/{ref}", f"refs/remotes/origin/{ref}")
+    if any(
+        subprocess.run(["git", "-C", str(root), "show-ref", "--verify", "--quiet", name]).returncode == 0
+        for name in branches
+    ):
+        git(root, "fetch", "origin")
+        try:
+            return git(root, "rev-parse", "--verify", f"refs/remotes/origin/{ref}^{{commit}}")
+        except ClientError:
+            pass
     try:
         return git(root, "rev-parse", "--verify", f"{ref}^{{commit}}")
     except ClientError:
@@ -1469,6 +1555,14 @@ def process_start(pid: int) -> int | None:
         return None
 
 
+def process_exited(pid: int) -> bool:
+    """Whether a pid is a zombie (Z) or dead (X): it has exited and waits only for its parent to reap it."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] in ("Z", "X")
+    except (OSError, IndexError):
+        return False
+
+
 def boot_id() -> str | None:
     """Identify the kernel boot, since process start ticks restart after reboot."""
     try:
@@ -1492,6 +1586,8 @@ def owner_alive(owner: object) -> bool:
         return False
     except (OSError, OverflowError):
         pass  # another user's pid, or a number no process can have: the start time below decides
+    if process_exited(pid):
+        return False  # a zombie has exited, whoever reaps it: no caller may wait on it or treat it as an owner
     started = owner.get("started")
     return process_start(pid) == started if isinstance(started, int) else True
 
@@ -1848,6 +1944,9 @@ def acquire_job(timeout: float | None, label: str, *, session_end: bool = False)
                         f"queue position {position}"
                     ) from None
                 time.sleep(JOB_POLL)
+        # A verb that held a modifier and was killed before its own release left no process to send keyup, so the
+        # next holder of the lock sends it before any input of its own.
+        release_session_modifiers(current_session())
         token = uuid.uuid4().hex
         write_job_record(
             {
@@ -2009,6 +2108,39 @@ def post_status(repo: str, commit: str, ok: bool, description: str) -> None:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise ClientError(f"could not post {SMOKE_CONTEXT} on {SMOKE_OWNER}/{repo}@{commit[:7]}: {detail}")
+    if ok:
+        dispatch_consumer_release_check(repo, commit)
+
+
+def dispatch_consumer_release_check(repo: str, commit: str) -> None:
+    """Wake the release gate after its final smoke status, independently of GitHub's cron delivery."""
+    if repo == "forever-core":
+        return
+    tools = Path(__file__).resolve().parents[1]
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    sync = load_tool("sync_consumer_prs", tools / "sync_consumer_prs.py")
+    try:
+        if repo not in sync.consumer_repos():
+            return
+        head = sync.api_json(f"repos/{SMOKE_OWNER}/{repo}/git/ref/heads/main")["object"]["sha"]
+        if head != commit:
+            return
+        sync.gh(
+            "api",
+            f"repos/{SMOKE_OWNER}/forever-core/actions/workflows/release-consumers.yml/dispatches",
+            "--method",
+            "POST",
+            "-f",
+            "ref=main",
+        )
+    except (sync.SyncError, OSError, ValueError, KeyError, TypeError) as error:
+        # The status is already posted and the scheduled release check still picks the commit up, so the smoke
+        # result stands; the failed wake-up is only worth a warning.
+        print(
+            f"warning: smoke status posted, but could not dispatch consumer release check: {error}",
+            file=sys.stderr,
+        )
 
 
 def report_smoke(repo: str, commit: str, outcome: Mapping, *, post: bool = True) -> int:
@@ -2888,6 +3020,7 @@ def teardown(
     link: Path | None,
     state: dict | None,
 ) -> None:
+    release_session_modifiers(state)
     end_client(gamescope, wine, state)
     if link and link.is_symlink():
         link.unlink()
@@ -3116,10 +3249,16 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
     session_addon: Path | None = None
-    gamescope: subprocess.Popen | int | None = None
+    gamescope: subprocess.Popen | None = None
     state: dict | None = None
     job = None
     job_token = None
+
+    def adopt(handle: subprocess.Popen) -> None:
+        # Serve is the parent of every gamescope it starts, so teardown always stops it by this handle and reaps it,
+        # including one a failed launch or a failed Hyprland return started.
+        nonlocal gamescope
+        gamescope = handle
 
     def on_signal(_signum, _frame):
         raise KeyboardInterrupt
@@ -3162,7 +3301,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             "headless_addon_digest": headless_addon_digest(),
         }
         write_state(state)
-        gamescope = launch_gamescope(launch, env, log, state)
+        gamescope = launch_gamescope(launch, env, log, state, adopt)
         reach_world(state, before, args.timeout, args.manual_launcher, started)
         ready = time.monotonic()
         if after_ready:
@@ -3184,7 +3323,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                             "started": time.time(),
                         }
                     )
-                    gamescope = hyprland_job(request, gamescope, wine, env, launch, log, state)
+                    hyprland_job(request, gamescope, wine, env, launch, log, state, adopt)
                     ready = last_world_check = time.monotonic()
                 release_job(job, job_token)
                 job = job_token = None
@@ -3234,12 +3373,16 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         return 0
     except KeyboardInterrupt:
         return 0
+    except Exception as error:
+        if state is not None and not state.get("end_reason"):
+            # Leases read why the session ended, not only that it did.
+            state["end_reason"] = f"session ended because {error}"
+            write_state(state)
+        raise
     finally:
         for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
         try:
-            if state and state.get("gamescope") and getattr(gamescope, "pid", None) != state["gamescope"]:
-                gamescope = state["gamescope"]
             teardown(gamescope, wine, link, state)
         finally:
             # The job lock stays held through teardown, so no job starts against a client being stopped.
@@ -3260,8 +3403,13 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 up = serve
 
 
-def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) -> subprocess.Popen:
-    """Start the client under headless gamescope and record the display it gives its child."""
+def launch_gamescope(
+    launch: Mapping, env: Mapping[str, str], log, state: dict, adopt: Callable[[subprocess.Popen], None]
+) -> subprocess.Popen:
+    """Start the client under headless gamescope and record the display it gives its child.
+
+    `adopt` takes the handle before anything here can fail, so serve, its parent, stops and reaps it at teardown.
+    """
     gamescope = subprocess.Popen(
         [
             "gamescope",
@@ -3285,6 +3433,7 @@ def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) 
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    adopt(gamescope)
     state["mode"] = "gamescope"
     state["gamescope"] = gamescope.pid
     state["gamescope_start"] = process_start(gamescope.pid)
@@ -3299,6 +3448,10 @@ def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) 
 def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher: bool, started: float, nudge=None):
     """Press the launcher on and wait for the headless addon's world screenshot, then mark the state READY."""
     nudge = nudge or functools.partial(at_character_select, state, manual_launcher)
+    # MAX_PLAY_CLICKS bounds one launch. A Hyprland job launches twice more in the same session, and a count carried
+    # over from an earlier launch refused the new launcher's first Play click as the limit already reached.
+    for key in ("play_clicks", "last_play_click", "play_target_missing_reported"):
+        state.pop(key, None)
     try:
         ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True)
     except SignInRequired:
@@ -3418,6 +3571,10 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
     deadline = time.monotonic() + timeout
     child = None
     while True:
+        # A queued caller keeps its imported decoder while detached serve loads the current files. Do not
+        # let an old caller repeatedly reject sessions launched from a newer protocol implementation.
+        if launcher_sources(LAUNCHER_SOURCES) != LAUNCHER_SOURCES:
+            raise ClientError("launcher source changed while this command was waiting; rerun the command")
         require_launcher_available(manual_launcher)
         state = current_session()
         if state and (state.get("ready") or state.get("world_lost")):
@@ -3430,6 +3587,17 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
                     state.pop("world_lost", None)
                     write_state(state)
                 return state
+            if child is not None:
+                reason = (
+                    "headless addon source changed during startup"
+                    if not addon_matches
+                    else "live safety protocol unavailable or outdated"
+                    if not ui.get("safety")
+                    else "the client left the world"
+                )
+                # This invocation just launched this session. Repeating that launch cannot repair a waiter
+                # whose loaded decoder disagrees with the new addon, and used to bypass the timeout forever.
+                raise ClientError(f"fresh session reached READY but cannot be used: {reason}; rerun the command")
             holder = job_holder()
             if (
                 holder
@@ -3545,6 +3713,8 @@ def run_job_command(command, env, maximum, check=None) -> int:
         except ProcessLookupError:
             pass
         process.wait()
+        # Whatever ended the command, including a SIGKILL that skipped a verb's own release, no modifier stays held.
+        release_session_modifiers({"display": env.get("FOREVER_CLIENT_DISPLAY")})
 
 
 def read_hyprland_json(name: str) -> dict | None:
@@ -3605,6 +3775,8 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
         cancelled = False
         while True:
             try:
+                # Read the session before the result: serve writes the result before its teardown ends the session.
+                session_gone = current_session() is None
                 result = read_hyprland_json(f"{HYPRLAND_RESULT}-{token}.json")
                 if result and result.get("token") == token:
                     completed = True
@@ -3612,7 +3784,7 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
                     if result.get("error"):
                         raise ClientError(result["error"])
                     return 130 if cancelled else result["code"]
-                if current_session() is None:
+                if session_gone:
                     raise ClientError("the Hyprland job session ended; the next job starts fresh gamescope")
                 now = time.monotonic()
                 if deadline is None:
@@ -3633,16 +3805,28 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
         restore_handlers(previous)
 
 
-def hyprland_job(request: Mapping, gamescope, wine: Mapping, env: Mapping, launch: Mapping, log, state: dict):
+def hyprland_job(
+    request: Mapping,
+    gamescope,
+    wine: Mapping,
+    env: Mapping,
+    launch: Mapping,
+    log,
+    state: dict,
+    adopt: Callable[[subprocess.Popen], None],
+) -> None:
     """Serve owns the lock throughout both relaunches and the bounded command.
 
     The command's --max excludes the transitions: each world wait is at most 600 seconds, and the return has
     a 900-second caller allowance covering logout, owned-process teardown and compositor shutdown as well.
-    A failed return propagates to serve's full teardown rather than publishing a reusable broken session.
+    The result always reaches the requester, with the job's own error and any return error. A failed return still
+    propagates to serve's full teardown rather than publishing a reusable broken session, and the relaunched
+    gamescope is already serve's through `adopt`, so that teardown stops and reaps it.
     """
     (STATE_DIR / HYPRLAND_REQUEST).unlink(missing_ok=True)
     module = nested_hyprland()
-    result = {"token": request["token"], "code": 1}
+    result: dict = {"token": request["token"], "code": 1}
+    errors: list[str] = []
     client = None
 
     def check() -> None:
@@ -3694,29 +3878,35 @@ def hyprland_job(request: Mapping, gamescope, wine: Mapping, env: Mapping, launc
             }
             result["code"] = run_job_command(request["command"], command_env, request["maximum"], check)
         except (ClientError, module.NestedError, subprocess.SubprocessError, OSError) as error:
-            result["error"] = str(error)
-        end_client(None if state.get("mode") == "hyprland" else gamescope, wine, state)
-        if client is not None:
-            try:
-                client.wait(30)
-            except subprocess.TimeoutExpired:
-                raise ClientError(f"umu-run {client.pid} outlived the Wine session") from None
-        for key in ("display", "origin", "window", "ready"):
-            state.pop(key, None)
-        write_state(state)
-        before = screenshots()
-        returned = launch_gamescope(launch, env, log, state)
-        reach_world(state, before, HYPRLAND_WORLD_WAIT, bool(state.get("manual_launcher")), time.time())
+            errors.append(f"job: {error}")
+            print(f"forever_client: the Hyprland job failed: {error}", flush=True)
+        try:
+            end_client(None if state.get("mode") == "hyprland" else gamescope, wine, state)
+            if client is not None:
+                try:
+                    client.wait(30)
+                except subprocess.TimeoutExpired:
+                    raise ClientError(f"umu-run {client.pid} outlived the Wine session") from None
+            for key in ("display", "origin", "window", "ready"):
+                state.pop(key, None)
+            write_state(state)
+            before = screenshots()
+            launch_gamescope(launch, env, log, state, adopt)
+            reach_world(state, before, HYPRLAND_WORLD_WAIT, bool(state.get("manual_launcher")), time.time())
+        except Exception as error:
+            errors.append(f"return to gamescope: {error}")
+            print(f"forever_client: the return to gamescope failed: {error}", flush=True)
+            raise
     except KeyboardInterrupt:
-        result["error"] = "serve was interrupted during the Hyprland job"
-        atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
+        errors.append("serve was interrupted during the Hyprland job")
         raise
     finally:
+        if errors:
+            result["error"] = "; ".join(errors)
+        atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
         end = STATE_DIR / HYPRLAND_END
         if end.exists() and end.read_text() == request["token"]:
             end.unlink(missing_ok=True)
-    atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
-    return returned
 
 
 def lease_path(token: str) -> Path:
@@ -3951,7 +4141,7 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "scroll", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -3978,9 +4168,11 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     if args.verb == "shot":
         print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
     elif args.verb == "click":
-        click(state, args.x, args.y, args.button)
+        click(state, args.x, args.y, args.button, args.hold)
+    elif args.verb == "hover":
+        hover(state, args.x, args.y, args.hold)
     elif args.verb == "scroll":
-        scroll(state, args.x, args.y, args.ticks)
+        scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
         press(state, args.keys)
     elif args.verb == "slash":
@@ -4076,15 +4268,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "scroll", "key", "slash", "eval", "errors"):
+    for name in ("reload", "shot", "click", "hover", "scroll", "key", "slash", "eval", "errors"):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
+        if name in ("click", "hover", "scroll"):
+            p.add_argument(
+                "--hold",
+                action="append",
+                default=[],
+                choices=tuple(MODIFIER_KEYS),
+                help="a modifier to hold down through the action and release after it; repeat for more than one",
+            )
         if name == "shot":
             p.add_argument("path", nargs="?", type=Path)
         elif name == "click":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
             p.add_argument("--button", default="1", choices=("1", "3"))
+        elif name == "hover":
+            p.add_argument("x", type=int)
+            p.add_argument("y", type=int)
         elif name == "scroll":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)

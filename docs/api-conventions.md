@@ -140,7 +140,7 @@ shape.
 - `docs/api.md`: every published member with its arguments and result, the change keys, and the minor history.
 - `types/API.lua`: LuaLS declarations for the API table and the tables it returns.
 - A contract spec, `tests/api_spec.lua`, that loads the TOC and checks each documented answer.
-- A `### For addon authors` section under `## [Unreleased]` in `CHANGELOG.md` for every API change.
+- A `### For addon authors` section in a `changes/<slug>.md` fragment for every API change.
 - `APIKit.Publish(addonName, API)` once at load, so `APIKit.Addons()` finds the addon's own table.
 - `python3 tools/check_api_docs.py` in the gate: it fails when `Core/API.lua` publishes a name that `docs/api.md`
   does not mention as `Name(`, or a `minor` that the history does not mention.

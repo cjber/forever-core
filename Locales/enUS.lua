@@ -132,7 +132,12 @@ L["Right-click for options"] = "Right-click for options"
 L["Unavailable in combat"] = "Unavailable in combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
-L["Use the game's quest list"] = "Use the game's quest list"
+L["Turn off the Forever quest list (use the game's tracker)"] =
+	"Turn off the Forever quest list (use the game's tracker)"
+L["Use the game's tracker"] = "Use the game's tracker"
+L["Keep this list"] = "Keep this list"
+L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
+	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
 L["What happened, or what you would like"] = "What happened, or what you would like"
 L["Your Forever profile"] = "Your Forever profile"
 L.MINIMAP_UNAVAILABLE = "Minimap unavailable; skipping custom button."

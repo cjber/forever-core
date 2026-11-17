@@ -1,4 +1,5 @@
 -- luacheck: globals C_QuestInfoSystem CreateFramePool ObjectiveTrackerAnimBlockMixin
+-- luacheck: globals RegisterStateDriver UnregisterStateDriver
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
@@ -33,10 +34,18 @@ local function Database()
 	return ForeverCoreDB
 end
 
+-- The list was built for Adventure Guide, so with no stored choice it is on only where Adventure Guide is loaded; a
+-- player who installed core for another Forever addon keeps the game's tracker. A stored choice always wins (#776).
 ---@return boolean
 local function Enabled()
 	local db = Database()
-	return type(db) == "table" and db.questList ~= false
+	if type(db) ~= "table" then
+		return false
+	end
+	if db.questList ~= nil then
+		return db.questList ~= false
+	end
+	return C_AddOns.IsAddOnLoaded("AdventureGuideForever") == true
 end
 
 ---@param value boolean
@@ -45,6 +54,10 @@ local function SetEnabled(value)
 	local db = Database()
 	if type(db) ~= "table" then
 		return
+	end
+	-- A player who turns the list off has found the switch, so the one-time hint that points at it is answered too.
+	if not value then
+		db.questListHintDone = true
 	end
 	if db.questList == value then
 		return
@@ -106,6 +119,14 @@ local function OtherOwner()
 	if ns.TrackerEllesmere and ns.TrackerEllesmere.Owns() then
 		return true
 	end
+	-- Questie hides the native tracker itself (Hide plus an OnShow hook, Modules/QuestieCompat.lua) whenever its own
+	-- tracker setting is on, seconds before it builds Questie_BaseFrame. Its setting is known from Questie's
+	-- ADDON_LOADED, before core's first apply, so core never mutes the tracker and later hands it back with a Show.
+	local questieAddon = rawget(_G, "Questie")
+	local questieDB = type(questieAddon) == "table" and questieAddon.db
+	if type(questieDB) == "table" and type(questieDB.profile) == "table" and questieDB.profile.trackerEnabled then
+		return true
+	end
 	-- Before our own suppression, a muted tracker or a shown tracker under a hidden parent means another addon
 	-- replaced the visible list. A plain hidden tracker can just be Blizzard's empty list; UIParent can hide globally.
 	if
@@ -135,11 +156,12 @@ local ready = false
 local ownedByOther = false
 local section
 
--- Questie's Forever visibility pattern: keep suppression and restore ownership in private locals, never on the
--- native frame. Alpha keeps a protected native Show invisible in combat; the Hide and any restore wait for combat
--- to end and use the latest request.
+-- Native Show/Hide scripts update the shared managed-frame layout. Only the secure visibility driver may
+-- run them: an addon Hide taints that layout and the scenario tracker's subsequent secret aura reads (#608).
+-- Alpha covers native Show calls between driver ticks. Driver registration waits for combat to end.
 local hideNativeTracker = false
 local nativeTrackerAlpha = 1
+local nativeDriverRegistered = false
 local visibilityFrame = CreateFrame("Frame")
 local function ApplyNativeVisibility()
 	if hideNativeTracker then
@@ -152,13 +174,16 @@ local function ApplyNativeVisibility()
 		-- alpha is not: suppress that Show immediately rather than exposing the tracker until combat ends.
 		ObjectiveTrackerFrame:SetAlpha(0)
 	end
-	if InCombatLockdown() and (not hideNativeTracker or ObjectiveTrackerFrame:IsProtected()) then
+	if InCombatLockdown() then
 		visibilityFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
 	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 	if hideNativeTracker then
-		ObjectiveTrackerFrame:Hide()
+		if not nativeDriverRegistered then
+			nativeDriverRegistered = true
+			RegisterStateDriver(ObjectiveTrackerFrame, "visibility", "hide")
+		end
 	elseif hidNativeTracker or coreMutedNative then
 		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
 		local otherOwner = OtherOwner()
@@ -166,14 +191,19 @@ local function ApplyNativeVisibility()
 		if not otherOwner then
 			ObjectiveTrackerFrame:SetAlpha(nativeTrackerAlpha)
 			coreMutedNative = false
-			ObjectiveTrackerFrame:Show()
+			nativeDriverRegistered = true
+			RegisterStateDriver(ObjectiveTrackerFrame, "visibility", "show")
+		end
+		if nativeDriverRegistered then
+			UnregisterStateDriver(ObjectiveTrackerFrame, "visibility")
+			nativeDriverRegistered = false
 		end
 	end
 end
 visibilityFrame:SetScript("OnEvent", ApplyNativeVisibility)
 ObjectiveTrackerFrame:HookScript("OnShow", function()
 	if hideNativeTracker then
-		ApplyNativeVisibility()
+		ObjectiveTrackerFrame:SetAlpha(0)
 	end
 end)
 
@@ -431,7 +461,7 @@ end
 ---@param menu ForeverTrackerMenuBuilder
 local function QuestMenu(target, menu)
 	if target.kind == "section" then
-		menu:Action(L["Use the game's quest list"], function()
+		menu:Action(L["Turn off the Forever quest list (use the game's tracker)"], function()
 			TrackerQuests.SetEnabled(false)
 		end)
 		return
@@ -1503,6 +1533,116 @@ Mixin(section, Overrides)
 section.OnScrollChanged = Overrides.OnScrollChanged
 CreateItemPool(section)
 
+-- The one-time hint beside the Quests header: what the list is, where its switch lives, and one click back to the
+-- game's tracker. It is the client's own tutorial box (GlowBoxTemplate, art only, no Blizzard script) on a frame of
+-- ours. It shows while the list is drawn in place of the game's tracker, out of combat, until the player picks either
+-- button; `questListHintDone` records that choice for the account, and a missing key means not yet answered.
+local HINT_TEXT = "This is the Forever quest list, shown in place of the game's quest tracker. To switch it off "
+	.. "later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
+local HINT_WIDTH = 260
+local HINT_PAD = 14
+local HINT_GAP = 12
+---@type any
+local hint
+
+---@return boolean
+local function HintDone()
+	local db = Database()
+	return type(db) ~= "table" or db.questListHintDone == true
+end
+
+local function AnswerHint()
+	local db = Database()
+	if type(db) == "table" then
+		db.questListHintDone = true
+	end
+	if hint then
+		hint:Hide()
+	end
+end
+
+---@param button any
+local function FitHintButton(button)
+	button:SetWidth(math.max(90, math.ceil(button:GetTextWidth() or 0) + 24))
+end
+
+---@return any
+local function HintFrame()
+	if hint then
+		return hint
+	end
+	local frame = CreateFrame("Frame", nil, UIParent, "GlowBoxTemplate")
+	frame:SetFrameStrata("DIALOG")
+	frame:SetClampedToScreen(true)
+	frame:EnableMouse(true)
+	frame:SetWidth(HINT_WIDTH)
+
+	local text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLeft")
+	text:SetPoint("TOPLEFT", HINT_PAD, -HINT_PAD)
+	text:SetWidth(HINT_WIDTH - 2 * HINT_PAD)
+	text:SetJustifyH("LEFT")
+	text:SetJustifyV("TOP")
+	text:SetText(L[HINT_TEXT])
+
+	local off = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate")
+	off:SetHeight(22)
+	off:SetText(L["Use the game's tracker"])
+	FitHintButton(off)
+	off:SetPoint("BOTTOMLEFT", HINT_PAD, HINT_PAD)
+	off:SetScript("OnClick", function()
+		AnswerHint()
+		TrackerQuests.SetEnabled(false)
+	end)
+
+	local keep = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate")
+	keep:SetHeight(22)
+	keep:SetText(L["Keep this list"])
+	FitHintButton(keep)
+	keep:SetPoint("LEFT", off, "RIGHT", 8, 0)
+	keep:SetScript("OnClick", AnswerHint)
+
+	-- A long translation widens the box rather than letting a button leave it.
+	local buttons = off:GetWidth() + 8 + keep:GetWidth()
+	local width = math.max(HINT_WIDTH, buttons + 2 * HINT_PAD)
+	frame:SetWidth(width)
+	text:SetWidth(width - 2 * HINT_PAD)
+	frame:SetHeight((text:GetStringHeight() or 0) + 22 + 3 * HINT_PAD)
+
+	frame.Text, frame.Off, frame.Keep = text, off, keep
+	frame:Hide()
+	hint = frame
+	return frame
+end
+
+-- Show the hint beside the list on the side with room, or hide it. The list must be the one drawn (on, not stepped
+-- aside for another tracker, and visible), and a hint never opens in combat: PLAYER_REGEN_ENABLED runs apply again.
+local function RefreshHint()
+	local wanted = ready
+		and not HintDone()
+		and TrackerQuests.Enabled()
+		and not ownedByOther
+		and section:IsVisible()
+		and not InCombatLockdown()
+	if not wanted then
+		if hint then
+			hint:Hide()
+		end
+		return
+	end
+	local frame = HintFrame()
+	frame:ClearAllPoints()
+	local x = section:GetCenter()
+	local screen = UIParent:GetWidth()
+	if x and screen and x < screen / 2 then
+		frame:SetPoint("TOPLEFT", section, "TOPRIGHT", HINT_GAP, 0)
+	else
+		frame:SetPoint("TOPRIGHT", section, "TOPLEFT", -HINT_GAP, 0)
+	end
+	frame:Show()
+end
+section:HookScript("OnShow", RefreshHint)
+section:HookScript("OnHide", RefreshHint)
+
 apply = function()
 	if not ready then
 		return
@@ -1516,6 +1656,7 @@ apply = function()
 		HideItems(section)
 	end
 	section:MarkDirty()
+	RefreshHint()
 end
 
 EventUtil.ContinueAfterAllEvents(function()

@@ -185,7 +185,9 @@ contractModule.trackerMenu = function(target, builder)
 		builder:Submenu("Choices")
 		builder:Title("A block")
 	end
-	builder:Primary("Guide me", function() end)
+	builder:Primary("Guide me", function() end):SetTooltip(function(tooltip)
+		tooltip:SetText("Consumer warning")
+	end)
 	builder:Action("Refresh", function() end, { combat = true })
 	builder:Open("Open panel", function() end)
 end
@@ -206,6 +208,13 @@ sharedQuestList.setSelected()
 check(questListEnabled, "the shared Tracker submenu changes the quest list switch")
 check(contractTargets[1].kind == "section", "the declarative section target names its kind")
 check(contractMenu.title == "A block", "Title is the first fixed slot")
+local primaryTip
+Entry(contractMenu, "Guide me").tooltip({
+	SetText = function(_, text)
+		primaryTip = text
+	end,
+})
+check(primaryTip == "Consumer warning", "the drawn Primary description retains its consumer tooltip")
 local labels = {}
 for _, entry in ipairs(contractMenu.entries) do
 	labels[#labels + 1] = entry.text or entry.kind
@@ -225,6 +234,26 @@ host.HandleBlockHeaderClick(
 )
 local blockTarget = contractTargets[#contractTargets]
 check(blockTarget.kind == "block" and blockTarget.id == "journey", "the block target carries kind and id")
+
+-- Block and section targets share the same Tracker submenu, including the module's show switch.
+local blockShown = true
+contractModule.show = {
+	get = function()
+		return blockShown
+	end,
+	set = function(value)
+		blockShown = value
+	end,
+}
+local sectionTracker = Entry(Menu(contractModule), "Tracker")
+host.HandleBlockHeaderClick(contractModule, { id = "journey" }, "RightButton")
+local blockTracker = Entry(t.menus[#t.menus], "Tracker")
+check(#blockTracker.entries == #sectionTracker.entries, "block and section Tracker submenus have identical entries")
+for index, entry in ipairs(sectionTracker.entries) do
+	check(blockTracker.entries[index].text == entry.text, "block Tracker entry matches the section")
+end
+Entry(blockTracker, "Hide this section").callback()
+check(blockShown == false, "a block menu hides its section through the module switch")
 
 -- Construction uses the production description, so disabled state, callbacks and nested rows are real.
 local opens, clicks = 0, 0
@@ -296,3 +325,29 @@ check(contractModule.trackerClick == previousClick, "rejection preserves the pre
 check(contractModule.show == previousShow, "rejection preserves the previous show setting")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")
+
+-- Named openers use the core path, without a second refusal report.
+t.setCombat(false)
+setfenv(assert(loadfile("Core/APIKit.lua")), t.env)("Test", t.ns)
+t.ns.SafeCallFor = function()
+	return {
+		SafeCall = function(_, _, fn, ...)
+			return pcall(fn, ...)
+		end,
+	}
+end
+t.ns.RegisterOpener("PanelAddon", function(where)
+	check(where == "target", "named Open passes the opaque target")
+	return false, "collapsed sidebar"
+end, true)
+contractModule.trackerMenu = function(_, builder)
+	builder:Open("Named panel", "PanelAddon", "target")
+end
+local named = Menu(contractModule)
+local beforeMessages = #messages
+Entry(named, "Named panel").callback()
+check(#messages == beforeMessages + 1, "named Open reports a refusal once")
+t.setCombat(true)
+Entry(named, "Named panel").callback()
+check(#messages == beforeMessages + 2, "named Open reports combat once")
+t.setCombat(false)

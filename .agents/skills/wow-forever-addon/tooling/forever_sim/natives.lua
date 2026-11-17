@@ -611,7 +611,11 @@ function M.build(sim)
 		},
 		{
 			"SecureCmdOptionParse",
-			function()
+			function(options)
+				-- Unconditional macro options need no world state. Conditional clauses remain unmodelled.
+				if not options:find("[", 1, true) then
+					return options:match("^%s*(.-)%s*$")
+				end
 				return nil
 			end,
 		},
@@ -692,6 +696,8 @@ function M.build(sim)
 			G[entry[1]] = entry[2]
 		end
 	end
+	G.LE_UNIT_STAT_STRENGTH, G.LE_UNIT_STAT_AGILITY, G.LE_UNIT_STAT_STAMINA = 1, 2, 3
+	G.LE_UNIT_STAT_INTELLECT, G.LE_UNIT_STAT_SPIRIT = 4, 5
 	G.addframetext = function() end
 	-- FrameXML's movie frames are not booted; Blizzard_Gamepad's cinematic setup assigns handler methods to them.
 	G.MovieFrame = G.MovieFrame or {}

@@ -115,7 +115,12 @@ local watchedOwners = setmetatable({}, { __mode = "k" })
 ---@param owner Frame
 local function OwnerHidden(owner)
 	if popup and popup.owner == owner then
-		popup:Hide()
+		local menu = popup
+		C_Timer.After(0, function()
+			if menu.owner == owner and not owner:IsVisible() then
+				menu:Hide()
+			end
+		end)
 	end
 end
 
@@ -359,7 +364,14 @@ function ns.ContextMenu(owner, generator)
 		watchedOwners[ownerFrame] = true
 	end
 	frame:ClearAllPoints()
-	frame:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -2)
+	-- Snapshot the owner's screen position: a tracker re-plan can move or recycle it while this menu is open.
+	local right, bottom = owner:GetRight(), owner:GetBottom()
+	if right and bottom then
+		local scale = owner:GetEffectiveScale() / frame:GetEffectiveScale()
+		frame:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right * scale, bottom * scale - 2)
+	else
+		frame:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -2)
+	end
 	Draw(root)
 	frame:Show()
 	return root

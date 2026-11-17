@@ -1,8 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [1.14.5] - 2026-11-17
 
-- **Updates are published on CurseForge and GitHub.** Wago publishing has ended. (#649)
+### Changed
+
+- **The Forever quest list is off by default unless you use Adventure Guide.** Players who installed ForeverCore because SkillUp, Shortest Path or another Forever addon needs it keep the game's own quest tracker, with the Forever sections next to it. Adventure Guide players keep the list. Your own choice always wins: turn it on or off with `/fcore quests`, the Tracker menu, or Options > AddOns > Forever Core. Thanks to Dayliiiiight, cheeq, reirebecca, tommyekholm and serb1tar for the reports. (#776)
+
+## [1.14.4] - 2026-11-17
+
+### Fixed
+
+- **ForeverCore no longer touches the game's quest tracker when you use Questie's tracker.** With Questie's tracker on, the Forever quest list steps aside from the start, so the game's tracker no longer flashes at login or pops up over Questie's list when a quest updates. Players on the game's own tracker still get the Forever quest list, and the switch to turn it off is unchanged. Thanks to kirbs.xyz, anarchly, vladsnz, noenken and c0res1ash for the reports. (#774)
+- **The shared changelog tool passes a consumer's lint on a Python 3.11 target.** It reads the UTC release date with `time.gmtime()`, which every supported Python has, instead of `timezone.utc`, which ruff's UP017 flags there. (#751)
 
 ## [1.14.3] - 2026-11-17
 
@@ -33,6 +42,29 @@
 - **Headless startup stops when Battle.net needs a game update.** It reports the launcher frame instead of clicking Play until the timeout, and stops after two Play clicks that start no game. (#316)
 - **The simulator keeps native load-on-demand template initialization secure** while preserving the caller and addon template ownership. (#640)
 - **Native quest header clicks have a simulator regression** using the real tracker and chat utility; the quest-list scenario no longer replaces ChatFrameUtil. (#630)
+
+### Added
+
+- **Addon panels share opening refusals and journeys share one owner.** Addon authors can register an opener for `ForeverCore.Open` and claim, end or subscribe to `ForeverCore.Journey`. (#381)
+- **Settings pages can group controls beneath localized section headings.** Canvas pages share the native heading style and reserve room for wrapped labels without changing saved options. (#488)
+- **Simplified Chinese reads naturally throughout**, with ForeverCore's lines translated by hand by moshoutegong. (cjber/adventure-guide-forever#801)
+- **Traditional Chinese reads naturally throughout**, with ForeverCore's lines translated by hand by moshoutegong. (cjber/adventure-guide-forever#802)
+
+### Changed
+
+- **Change notes live in separate files.** Parallel addon changes can merge without conflicting over the changelog. Release tooling assembles their notes in section order. (#751)
+- **The Forever quest list tells you how to switch it off** the first time it replaces the game's tracker, and its Quests menu says so plainly. (#765)
+
+### Fixed
+
+- **Fixed an error when leveling with the Forever quest list on.** Thanks to TechnoHunter and user_efwsfml273dlvfm5 for the reports. (#608)
+- **The goal marker centres its gold diamond face in the ring**, keeping the drop shadow from shifting the face up and left. (#733)
+- **A tracker menu stays where it opened while its block moves**, so a click lands on the entry you aimed at, and block menus offer Hide this section too. The tracker menu builder's Primary slot returns its description so addons can attach warning tooltips. (#754, #717, #718)
+- **The attached tracker column starts below an enlarged minimap when they overlap** and the room there still shows every section, with its sections sized to that room. On a shorter screen it keeps its usual place. (#720)
+
+### For addon authors
+
+- **Simulator profession searches filter recipe names and refresh visible rows**, with case-insensitive matching, clearing and list-update events. (#762)
 
 ## [1.14.2] - 2026-11-16
 

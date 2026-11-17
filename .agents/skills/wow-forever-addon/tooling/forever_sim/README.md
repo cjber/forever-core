@@ -152,3 +152,29 @@ end)
 - `secret == x` is always false, and a secret used as a table key is not caught.
 - Units, recipes, items and maps are scenario data, not the game's databases.
 - A client boots in about 2-4 s of CPU time. A suite belongs in its own CI job, not the fast gate.
+
+## Profession recipe search
+
+`C_TradeSkillUI.GetRecipeItemNameFilter` returns the current text, initially `""`.
+`SetRecipeItemNameFilter(text)` sets it immediately; nil clears it. Changed text queues
+`TRADE_SKILL_LIST_UPDATE` for the next simulation tick, coalescing changes before that tick.
+Setting identical text does nothing. `GetFilteredRecipeIDs` preserves recipe order and returns
+literal, case-insensitive substrings of recipe names; an empty filter returns all recipes.
+`GetAllRecipeIDs` is unaffected.
+
+Evidence comes from the UI revision pinned by `fetch.py`, under the cache's `wow-ui-source/Interface/AddOns/`:
+`Blizzard_ProfessionsTemplates/Blizzard_Professions.lua`, `Professions.OnRecipeListSearchTextChanged`,
+compares text with `strcmputf8i`, passes ordinary text to the name setter and nil for a level search.
+`Blizzard_Professions/Blizzard_ProfessionsCrafting.lua` restores the search box from the getter.
+`Blizzard_Professions/Blizzard_ProfessionsFrame.lua` refreshes on the list update, and
+`Blizzard_APIDocumentationGenerated/TradeSkillUIDocumentation.lua` marks that event unique,
+without the synchronous flag present on adjacent events.
+
+The pinned generated documentation does not describe the name setter's native matching algorithm.
+The engine implementation is absent from the UI source, so matching output-item or reagent names
+cannot be established from these inputs. The simulator deliberately searches recipe names only,
+using Lua's case fold (ASCII case-insensitive; no full Unicode fold), consistent with its existing
+`strcmputf8i` model and SkillUp's local recipe-search fixture. Output-item/reagent matching,
+Unicode case folding and item-level filtering are not claimed as modeled. Next-tick delivery,
+coalescing and unchanged-text suppression are explicit simulator choices for the asynchronous,
+unique update, rather than measured native timing.

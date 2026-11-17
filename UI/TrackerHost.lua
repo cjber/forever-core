@@ -881,18 +881,6 @@ local function OverlapsMinimap()
 	return left < mr and right > ml and bottom < mt and top > mb
 end
 
-local function AvoidMinimap(point)
-	if not OverlapsMinimap() then
-		return
-	end
-	host:ClearAllPoints()
-	if point:find("LEFT", 1, true) then
-		host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
-	else
-		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-	end
-end
-
 local function SidePoint(point)
 	local left, right = ObjectiveTrackerFrame:GetLeft(), ObjectiveTrackerFrame:GetRight()
 	local screen = UIParent:GetWidth()
@@ -1003,9 +991,7 @@ local function RunSafe(safe, label, fn, ...)
 end
 
 local function ReportRefusal(reason)
-	if reason and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-		DEFAULT_CHAT_FRAME:AddMessage(tostring(reason))
-	end
+	ns.ReportRefusal(reason)
 end
 
 -- The cap a section gets from the column. A scrollable section never takes more than 200 units, except the one that
@@ -1181,7 +1167,7 @@ end
 -- column is the header, the game's quests, then the Forever sections. Only our frames move, and this runs only from
 -- Layout, which defers in combat so the protected item buttons and their ancestors stay put. A collapsed All
 -- Objectives hides the sections with it.
-local function LayoutAttached()
+local function LayoutAttached(keepPlacement)
 	-- Read the global each time, not once at load: Blizzard_EditMode is load-on-demand, so it may appear later. A
 	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
 	HookEditMode()
@@ -1249,11 +1235,9 @@ local function LayoutAttached()
 		else
 			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 		end
-		AvoidMinimap(point)
-		if above and host:GetPoint() == hostPoint then
+		if above then
 			return math.max(0, room / layoutScale)
 		end
-		-- Minimap avoidance can also move an above anchor to the side, starting at the native tracker's top.
 		return math.max(0, math.min(screenRoom, (host:GetTop() or 0) - layoutMargin))
 	end
 	-- A layout pass is not a measurement: Blizzard's EndLayout hides a section that fits nothing and its
@@ -1266,6 +1250,42 @@ local function LayoutAttached()
 		local roomAside = Aside()
 		if host:GetHeight() > roomAside and not LayoutModules(host:GetWidth(), roomAside, 0) then
 			host:Hide()
+			return false
+		end
+		return true
+	end
+	-- An enlarged minimap can cover any of those placements (#720), the native slot included, so every successful one
+	-- checks the whole column once its height is known. An overlapping column starts below the minimap's bottom at the
+	-- same x, and when it is taller than the room from there to the screen margin its sections lay out again in that
+	-- room, so a long section scrolls instead of being clamped back over the map. The move is the same on every pass
+	-- for the same geometry, so repeated layouts settle where the last one did.
+	-- The move stands only when the room below the map still shows every section the column shows now. A short screen
+	-- would lose one, the quest list included, so that pass lays out again in the placement it had, as 1.14.2 did.
+	local function ClearMinimap()
+		if keepPlacement or not OverlapsMinimap() then
+			return
+		end
+		local shown = {}
+		for _, module in ipairs(modules) do
+			shown[module] = (module:GetContentsHeight() or 0) > 0 and module:IsShown()
+		end
+		local minimap = _G.Minimap
+		local left = host:GetLeft() or 0
+		local top = (minimap:GetBottom() or 0) * minimap:GetEffectiveScale() / layoutScale
+		host:ClearAllPoints()
+		host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+		local room = math.max(0, top - layoutMargin)
+		if host:GetHeight() <= room then
+			return
+		end
+		local fits = LayoutModules(host:GetWidth(), room, 0)
+		for _, module in ipairs(modules) do
+			if shown[module] and not ((module:GetContentsHeight() or 0) > 0 and module:IsShown()) then
+				fits = false
+			end
+		end
+		if not fits then
+			LayoutAttached(true)
 		end
 	end
 	if aside then
@@ -1276,15 +1296,17 @@ local function LayoutAttached()
 		if (host:GetHeight() or 0) <= roomBelow then
 			Below()
 			aside = false
+		elseif not FitAside() then
 			return
 		end
-		FitAside()
+		ClearMinimap()
 		return
 	end
 	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
 	-- column elsewhere.
 	if LayoutModules(host:GetWidth(), roomBelow, 0) then
 		aside = false
+		ClearMinimap()
 		return
 	end
 	-- No section fits below at all (quests ending at the bottom of the screen). The one pass that shows them above or
@@ -1294,7 +1316,9 @@ local function LayoutAttached()
 		return
 	end
 	aside = true
-	FitAside()
+	if FitAside() then
+		ClearMinimap()
+	end
 end
 
 -- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
@@ -1511,7 +1535,7 @@ local function NewTrackerMenu(root, module, target)
 		end
 		entry.onClick = function()
 			local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
-			if ok and accepted == false then
+			if ok and accepted == false and not (opts and opts.reported) then
 				ReportRefusal(reason or text)
 			end
 			return accepted, reason
@@ -1525,7 +1549,7 @@ local function NewTrackerMenu(root, module, target)
 					return false, reason
 				end
 				local ok, accepted, reason = RunSafe(module.safeCall, "tracker menu action", fn)
-				if ok and accepted == false then
+				if ok and accepted == false and not (opts and opts.reported) then
 					ReportRefusal(reason or text)
 				end
 				return accepted, reason
@@ -1544,6 +1568,7 @@ local function NewTrackerMenu(root, module, target)
 	end
 	function menu.Primary(_, text, fn)
 		slots.primary = slots.primary or Entry(text, fn)
+		return slots.primary
 	end
 	function menu.Action(_, text, fn, opts)
 		local entry = Entry(text, fn, opts)
@@ -1553,7 +1578,15 @@ local function NewTrackerMenu(root, module, target)
 	function menu:Submenu(text)
 		return self:Action(text)
 	end
-	function menu.Open(_, text, fn)
+	function menu.Open(_, text, fn, where)
+		if type(fn) == "string" then
+			local addon = fn
+			slots.open = slots.open
+				or Entry(text, function()
+					return ns.Open(addon, where)
+				end, { reported = true })
+			return slots.open
+		end
 		slots.open = slots.open or Entry(text, fn, { combat = true })
 		return slots.open
 	end
@@ -1617,12 +1650,7 @@ local function NewTrackerMenu(root, module, target)
 			end)
 		end
 		local show = module.show
-		if
-			target.kind == "section"
-			and type(show) == "table"
-			and type(show.get) == "function"
-			and type(show.set) == "function"
-		then
+		if type(show) == "table" and type(show.get) == "function" and type(show.set) == "function" then
 			tracker:CreateButton(ns.L["Hide this section"], function()
 				if show.get() then
 					show.set(false)

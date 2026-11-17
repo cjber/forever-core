@@ -16,6 +16,8 @@ local trackerShown, trackerProtected, showHook, hookCount = true, false, nil, 0
 local trackerAlpha = 0.75
 local trackerVisible, uiVisible = true, true
 local nativeShows = 0
+local driver
+local driverDispatch = false
 function tracker.SetAlpha(_, alpha)
 	trackerAlpha = alpha
 end
@@ -23,6 +25,7 @@ function tracker.GetAlpha()
 	return trackerAlpha
 end
 function tracker.Hide()
+	assert(driverDispatch or not driver, "native hide must come from secure driver")
 	trackerShown = false
 end
 function tracker.Show()
@@ -95,13 +98,28 @@ end
 function section:IsShown()
 	return self.shown
 end
+-- The one-time hint is tracker_quests_hint_spec's: this section is never on screen, so it never opens here.
+function section.HookScript() end
+function section.IsVisible()
+	return false
+end
 
 local ready
 local function continueAfterAllEvents(fn)
 	ready = fn
 end
 local combat = false
-local addons = {}
+local function DriverTick()
+	driverDispatch = true
+	if driver == "hide" then
+		tracker:Hide()
+	elseif driver == "show" then
+		tracker:Show()
+	end
+	driverDispatch = false
+end
+-- Adventure Guide is loaded unless a case says otherwise, so a fresh database starts with the Forever list on (#776).
+local addons = { AdventureGuideForever = true }
 local ns = {
 	L = setmetatable({}, {
 		__index = function(_, key)
@@ -132,6 +150,17 @@ function visibility:SetScript(script, callback)
 end
 local tick
 local env = setmetatable({
+	RegisterStateDriver = function(frame, state, condition)
+		assert(not combat, "driver registration waits for combat")
+		assert(frame == tracker and state == "visibility")
+		driver = condition
+		DriverTick()
+	end,
+	UnregisterStateDriver = function(frame, state)
+		assert(not combat, "driver removal waits for combat")
+		assert(frame == tracker and state == "visibility")
+		driver = nil
+	end,
 	UIParent = {
 		IsVisible = function()
 			return uiVisible
@@ -188,6 +217,25 @@ for _, mode in ipairs({ "ellesmere", "alpha", "parent" }) do
 	tick()
 	check(trackerShown, mode .. " stays deferred on the ticker")
 end
+-- #774: Questie's tracker setting owns the quest list before Questie builds its list frame, so core never mutes the
+-- native tracker and never shows it back, at load or on a quest update, with the list on by default or switched off.
+for _, stored in ipairs({ "default", "off" }) do
+	env.ForeverCoreDB = stored == "off" and { questList = false } or {}
+	env.Questie = { db = { profile = { trackerEnabled = true } } }
+	trackerShown, trackerAlpha, trackerVisible, section.shown = false, 0.75, true, true
+	local shows = nativeShows
+	setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
+	ready()
+	section:OnEvent("PLAYER_ENTERING_WORLD")
+	section:OnEvent("QUEST_LOG_UPDATE")
+	tick()
+	check(trackerAlpha == 0.75, stored .. ": Questie's tracker setting keeps core off the native alpha")
+	check(driver == nil, stored .. ": Questie's tracker setting keeps core off the native visibility driver")
+	check(not trackerShown and nativeShows == shows, stored .. ": core never shows the tracker Questie hid")
+	check(section:LayoutContents() == nil, stored .. ": the Forever list steps aside for Questie's tracker")
+end
+env.Questie = nil
+env.ForeverCoreDB = {}
 ns.TrackerEllesmere = nil
 trackerShown, trackerAlpha, trackerVisible, section.shown = true, 0.75, true, true
 hookCount = 0
@@ -212,6 +260,20 @@ env.ForeverCoreDB = { questList = false }
 section:OnEvent("PLAYER_ENTERING_WORLD")
 check(not TrackerQuests.Enabled(), "stored_false_keeps_native_quest_list: Forever list is inactive")
 check(tracker:IsShown(), "stored_false_keeps_native_quest_list: native tracker stays shown")
+-- #776: without Adventure Guide a fresh database keeps the game's tracker, and a stored choice wins either way.
+addons.AdventureGuideForever = nil
+env.ForeverCoreDB = {}
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(not TrackerQuests.Enabled(), "no_adventure_guide: a fresh database leaves the Forever list off")
+check(tracker:IsShown(), "no_adventure_guide: native tracker stays shown")
+env.ForeverCoreDB = { questList = true }
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(TrackerQuests.Enabled(), "no_adventure_guide: a stored true turns the Forever list on")
+check(not tracker:IsShown(), "no_adventure_guide: the stored choice hides the native tracker")
+env.ForeverCoreDB = { questList = false }
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(tracker:IsShown(), "no_adventure_guide: a stored false gives the native tracker back")
+addons.AdventureGuideForever = true
 env.ForeverCoreDB = nil
 check(not TrackerQuests.Enabled(), "the list waits for the saved table")
 env.ForeverCoreDB = {}
@@ -237,7 +299,9 @@ check(section.marked > deferredMarked, "the ticker resumes the list when the oth
 check(not tracker:IsShown() and trackerAlpha == 0, "resuming the list keeps the native tracker suppressed")
 section.shown = true
 tracker:Show()
-check(not tracker:IsShown(), "native OnShow is suppressed")
+check(trackerAlpha == 0, "native OnShow stays invisible between driver ticks")
+DriverTick()
+check(not tracker:IsShown(), "secure driver suppresses native OnShow")
 check(hookCount == 1, "visibility hook is installed once")
 
 -- Blizzard_ObjectiveTrackerContainerMixin:Update calls Show whenever it has content. A combat quest update
@@ -246,9 +310,11 @@ trackerProtected = true
 combat = true
 tracker:Show()
 check(tracker:IsShown() and trackerAlpha == 0, "a protected native show in combat stays invisible")
+DriverTick()
+check(not tracker:IsShown(), "registered driver re-hides securely during combat")
 combat = false
 visibility.callback()
-check(not tracker:IsShown(), "combat ending applies the deferred hide")
+check(not tracker:IsShown(), "combat ending preserves the secure hide")
 trackerProtected = false
 
 -- Turning the list off and back on restores and hides the native frame; its modules stay where the client left them.
@@ -258,6 +324,7 @@ check(section.marked > marked, "turning the list off redraws the Forever section
 CheckNativeModulesUntouched("turning the list off")
 check(tracker:IsShown(), "disabling restores the native tracker")
 check(trackerAlpha == 0.75, "disabling restores the original native alpha")
+check(driver == nil, "disabling releases the visibility driver")
 TrackerQuests.SetEnabled(true)
 CheckNativeModulesUntouched("turning the list on again")
 
@@ -280,6 +347,7 @@ TrackerQuests.SetEnabled(false)
 combat = false
 visibility.callback()
 check(tracker:IsShown(), "latest disabled request cancels the protected hide")
+check(driver == nil, "cancelled combat hide leaves no show driver")
 TrackerQuests.SetEnabled(true)
 check(not tracker:IsShown(), "protected tracker hides after combat")
 CheckNativeModulesUntouched("a change asked for in combat")

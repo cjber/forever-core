@@ -80,6 +80,107 @@ function M.build(sim)
 		return M.unit(sim, u)
 	end
 
+	-- Empty equipment and no active pet or specialization in the default world.
+	impl.GetInventoryItemTexture = function()
+		return nil
+	end
+	G.GetInventoryItemTexture = impl.GetInventoryItemTexture
+	G.GetInventoryItemLink = function()
+		return nil
+	end
+	G.GetInventoryItemQuality = function()
+		return nil
+	end
+	G.GetInventoryItemID = function()
+		return nil
+	end
+	impl["C_ClassColor.GetClassColor"] = function()
+		return sim.api.zero({ Type = "colorRGB", Mixin = "ColorMixin" })
+	end
+	G.GetShapeshiftFormID = function()
+		return nil
+	end
+	G.IsWatchingHonorAsXP = function()
+		return false
+	end
+	G.IsInActiveWorldPVP = function()
+		return false
+	end
+	G.HasArtifactEquipped = function()
+		return false
+	end
+	G.GetSpellBonusDamage = function()
+		return 0
+	end
+	G.GetSpellBonusHealing = function()
+		return 0
+	end
+	G.IsInventoryItemLocked = function()
+		return false
+	end
+	G.GetHitModifier = function()
+		return 0
+	end
+	G.GetOffhandHitModifier = function()
+		return 0
+	end
+	G.GetRangedHitModifier = function()
+		return 0
+	end
+	G.GetSpellHitModifier = function()
+		return 0
+	end
+	G.GetCombatRatingBonus = function()
+		return 0
+	end
+	G.GetPetExperience = function()
+		return 0, 0
+	end
+	impl["C_SpecializationInfo.GetSpecialization"] = function()
+		return nil
+	end
+	-- Native inventory slot IDs are stable client constants, including the legacy ammo and ranged slots.
+	local inventorySlots = {
+		AmmoSlot = 0,
+		HeadSlot = 1,
+		NeckSlot = 2,
+		ShoulderSlot = 3,
+		ShirtSlot = 4,
+		ChestSlot = 5,
+		WaistSlot = 6,
+		LegsSlot = 7,
+		FeetSlot = 8,
+		WristSlot = 9,
+		HandsSlot = 10,
+		Finger0Slot = 11,
+		Finger1Slot = 12,
+		Trinket0Slot = 13,
+		Trinket1Slot = 14,
+		BackSlot = 15,
+		MainHandSlot = 16,
+		SecondaryHandSlot = 17,
+		RangedSlot = 18,
+		TabardSlot = 19,
+		Bag0Slot = 31,
+		Bag1Slot = 32,
+		Bag2Slot = 33,
+		Bag3Slot = 34,
+		Prof0ToolSlot = 20,
+		Prof0Gear0Slot = 21,
+		Prof0Gear1Slot = 22,
+		Prof1ToolSlot = 23,
+		Prof1Gear0Slot = 24,
+		Prof1Gear1Slot = 25,
+		CookingToolSlot = 26,
+		CookingGear0Slot = 27,
+		FishingToolSlot = 28,
+		FishingGear0Slot = 29,
+		FishingGear1Slot = 30,
+	}
+	impl["C_PaperDollInfo.GetInventorySlotInfo"] = function(name)
+		return inventorySlots[name], nil, false
+	end
+
 	impl.UnitName = function(u)
 		local x = unit(u)
 		if x then
@@ -367,7 +468,36 @@ function M.build(sim)
 		end
 		return ids
 	end
-	impl["C_TradeSkillUI.GetFilteredRecipeIDs"] = impl["C_TradeSkillUI.GetAllRecipeIDs"]
+	-- See README.md's profession search contract and pinned-source evidence.
+	local recipeNameFilter = ""
+	local recipeListUpdatePending = false
+	impl["C_TradeSkillUI.GetRecipeItemNameFilter"] = function()
+		return recipeNameFilter
+	end
+	impl["C_TradeSkillUI.SetRecipeItemNameFilter"] = function(text)
+		text = text or ""
+		if text == recipeNameFilter then
+			return
+		end
+		recipeNameFilter = text
+		if not recipeListUpdatePending then
+			recipeListUpdatePending = true
+			sim.impl["C_Timer.After"](0, function()
+				recipeListUpdatePending = false
+				sim.events.fire("TRADE_SKILL_LIST_UPDATE")
+			end)
+		end
+	end
+	impl["C_TradeSkillUI.GetFilteredRecipeIDs"] = function()
+		local ids = {}
+		local filter = recipeNameFilter:lower()
+		for _, r in ipairs((open() or {}).recipes or {}) do
+			if r.name:lower():find(filter, 1, true) then
+				ids[#ids + 1] = r.id
+			end
+		end
+		return ids
+	end
 	impl["C_TradeSkillUI.GetRecipeInfo"] = function(id)
 		local r = recipe(id)
 		return r and recipeInfo(r)
@@ -803,7 +933,8 @@ function M.build(sim)
 		if e then
 			return e.loaded == true, e.loaded == true
 		end
-		return sim.loader.loaded[name] ~= nil, sim.loader.loaded[name] ~= nil
+		local loaded = sim.loader.loaded[name] ~= nil or sim.loader.partialLoaded[name] == true
+		return loaded, loaded
 	end
 	impl["C_AddOns.LoadAddOn"] = function(name)
 		name = addonName(name)

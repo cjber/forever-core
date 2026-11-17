@@ -60,8 +60,16 @@ jobs:
       - run: uv run --project tools --frozen --group dev ruff format --check tools
       # The tools' tests run in the dev group too: the step marker export's spec draws with Pillow.
       - run: uv run --project tools --frozen --group dev python -m unittest discover -s tools -p "test_*.py"
-      # A merge that edits a section whose v* tag already shipped fails here: new notes belong under Unreleased.
-      - run: python3 tools/changelog.py --check
+      # Changelog fragments are checked on every push, and direct changelog edits are checked on pull requests.
+      - name: Check changelog
+        env:
+          CHANGELOG_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$CHANGELOG_BASE" ]; then
+            python3 tools/changelog.py --check --base "origin/$CHANGELOG_BASE"
+          else
+            python3 tools/changelog.py --check
+          fi
       # The wowmock renderer's tests draw images, so they run with Pillow from the dev group.
       - run: uv run --project tools --frozen --group dev python -m unittest discover -s tools/wowmock -p "test_*.py"
       - run: python3 tools/check_assets.py

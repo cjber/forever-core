@@ -154,7 +154,7 @@ function M.parseToc(text)
 end
 
 function M.build(sim)
-	local L = { loaded = {}, loading = {}, addons = {}, order = {} }
+	local L = { loaded = {}, partialLoaded = {}, loading = {}, addons = {}, order = {} }
 	sim.loader = L
 	local bootstrapped = {}
 
@@ -247,6 +247,12 @@ function M.build(sim)
 			end
 			loadFiles(dir, subset, { files = files, bootstrap = toc.bootstrap }, {})
 			L.loaded[name] = { blizzard = true, seconds = 0, partial = true }
+			-- A selected TOC still completes an addon load. Its deferred setup callbacks need the base name.
+			if not L.partialLoaded[subset] then
+				L.partialLoaded[subset] = true
+				sim.events.queue("ADDON_LOADED", subset, false)
+				sim.events.flush()
+			end
 			return true
 		end
 		local addon, rel = name:match("^([^/]+)/(.+)$")

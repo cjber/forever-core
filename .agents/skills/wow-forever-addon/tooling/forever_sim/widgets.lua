@@ -415,6 +415,9 @@ function M.build(sim)
 			local _ = i
 		end
 		local w, h = Secret.unwrap(s.width), Secret.unwrap(s.height)
+		-- One point on an axis places the region only with an extent there: a size it was given, or a font string's
+		-- text. Without one the client resolves no rect, so the getters return nil and regions anchored to it get none.
+		local sizedX, sizedY = w ~= nil or s.kind == "FontString", h ~= nil or s.kind == "FontString"
 		if s.kind == "FontString" and (not w or w == 0 or not h or h == 0) then
 			local tw, th = textSize(s)
 			if not w or w == 0 then
@@ -435,11 +438,11 @@ function M.build(sim)
 			left, width = L, (CX - L) * 2
 		elseif R and CX then
 			left, width = CX - (R - CX), (R - CX) * 2
-		elseif L then
+		elseif sizedX and L then
 			left, width = L, w
-		elseif R then
+		elseif sizedX and R then
 			left, width = R - w, w
-		elseif CX then
+		elseif sizedX and CX then
 			left, width = CX - w / 2, w
 		end
 		-- Side anchors position a sized region without stretching it on the other axis.
@@ -453,11 +456,11 @@ function M.build(sim)
 			bottom, height = B, (CY - B) * 2
 		elseif T and CY then
 			bottom, height = CY - (T - CY), (T - CY) * 2
-		elseif B then
+		elseif sizedY and B then
 			bottom, height = B, h
-		elseif T then
+		elseif sizedY and T then
 			bottom, height = T - h, h
-		elseif CY then
+		elseif sizedY and CY then
 			bottom, height = CY - h / 2, h
 		end
 		if left and bottom then
@@ -1710,8 +1713,8 @@ function M.build(sim)
 	function W.flushEditText()
 		local pending = pendingEditText
 		pendingEditText = {}
-		for _, edit in ipairs(pending) do
-			W.dispatch(edit, "OnTextChanged", false)
+		for _, entry in ipairs(pending) do
+			W.dispatch(entry[1], "OnTextChanged", entry[2])
 		end
 	end
 	local function setEditText(self, text)
@@ -1727,9 +1730,11 @@ function M.build(sim)
 			return
 		end
 		s.text = text
+		s.cursor = Secret.is(text) and 0 or #text
+		s.highlightStart, s.highlightEnd = nil, nil
 		-- Live client probe 2026-11-17: OnTextSet is synchronous, OnTextChanged is next-frame.
 		-- Keep notification scheduling here so same-text and coalescing rules have one producer.
-		pendingEditText[#pendingEditText + 1] = self
+		pendingEditText[#pendingEditText + 1] = { self, false }
 		fire(self, "OnTextSet")
 	end
 	impl.EditBox.SetText = function(self, text)
@@ -1740,8 +1745,34 @@ function M.build(sim)
 	end
 	impl.EditBox.Insert = function(self, text)
 		local s = st(self)
-		s.text = (s.text or "") .. tostring(text)
-		fire(self, "OnTextChanged", true)
+		local value = s.text or ""
+		local first = s.highlightStart or s.cursor or #value
+		local last = s.highlightEnd or first
+		text = tostring(text)
+		if s.maxLetters and s.maxLetters > 0 then
+			text = text:sub(1, math.max(0, s.maxLetters - (#value - (last - first))))
+		end
+		s.text = value:sub(1, first) .. text .. value:sub(last + 1)
+		s.cursor = first + #text
+		s.highlightStart, s.highlightEnd = nil, nil
+		-- Live client probe (#755): the text and caret change at once, OnTextChanged(self, true) fires once next frame.
+		pendingEditText[#pendingEditText + 1] = { self, true }
+	end
+	impl.EditBox.SetCursorPosition = function(self, position)
+		local s = st(self)
+		s.cursor = math.max(0, math.min(position, #(s.text or "")))
+		s.highlightStart, s.highlightEnd = nil, nil
+	end
+	impl.EditBox.GetCursorPosition = function(self)
+		return st(self).cursor or 0
+	end
+	impl.EditBox.HighlightText = function(self, first, last)
+		local s = st(self)
+		local length = #(s.text or "")
+		first = math.max(0, math.min(first or 0, length))
+		last = (last == nil or last < 0) and length or last
+		last = math.max(0, math.min(last, length))
+		s.highlightStart, s.highlightEnd = math.min(first, last), math.max(first, last)
 	end
 	impl.EditBox.GetNumber = function(self)
 		return tonumber(st(self).text) or 0

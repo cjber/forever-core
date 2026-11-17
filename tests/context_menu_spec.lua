@@ -35,6 +35,18 @@ local function region(kind, parent)
 		self.point = { ... }
 		self.points[#self.points + 1] = { ... }
 	end
+	function methods:GetEffectiveScale()
+		return (rawget(self, "scale") or 1) * (self:GetParent() and self:GetParent():GetEffectiveScale() or 1)
+	end
+	function methods:GetRight()
+		if rawget(self, "point") then
+			return self.point[2]:GetRight() + self.point[4]
+		end
+		return rawget(self, "right") or 0
+	end
+	function methods:GetBottom()
+		return rawget(self, "bottom") or 0
+	end
 	function methods:ClearAllPoints()
 		self.point = nil
 		self.points = {}
@@ -182,7 +194,21 @@ local function region(kind, parent)
 	return widget
 end
 
+local pending = {}
+local function drain()
+	local callbacks = pending
+	pending = {}
+	for _, fn in ipairs(callbacks) do
+		fn()
+	end
+end
+
 local env = {
+	C_Timer = {
+		After = function(_, fn)
+			pending[#pending + 1] = fn
+		end,
+	},
 	UIParent = region("Frame"),
 	UISpecialFrames = {},
 	menu = {},
@@ -288,6 +314,42 @@ popup.rows[2].scripts.OnClick(popup.rows[2])
 equal(calls, 1, "leaf executes once")
 equal(popup:IsShown(), false, "leaf closes menu")
 
+-- An owner without a rect keeps the relative anchor until the client places it.
+local unplaced = env.CreateFrame("Button", nil, env.UIParent)
+unplaced.GetRight = function() end
+unplaced.GetBottom = function() end
+ns.ContextMenu(unplaced, function(_, root)
+	root:CreateButton("Unplaced")
+end)
+equal(popup.point[2], unplaced, "an owner without a rect uses the relative anchor")
+equal(popup.point[3], "BOTTOMRIGHT", "an unplaced owner keeps the bottom-right anchor")
+
+-- A re-plan moves and briefly hides its owner, but the open menu stays under the cursor.
+owner.right, owner.bottom, owner.scale = 300, 200, 0.625
+env.UIParent.scale = 0.8
+ns.ContextMenu(owner, function(_, root)
+	root:CreateButton("Re-plan action", function()
+		calls = calls + 1
+	end)
+end)
+equal(popup.point[2], env.UIParent, "menu anchors to the screen instead of its moving owner")
+equal(popup.point[3], "BOTTOMLEFT", "menu snapshots coordinates from the screen origin")
+equal(popup.point[4], 187.5, "owner right is converted to popup effective scale")
+equal(popup.point[5], 123, "owner bottom is converted with the menu gap")
+local openedRight = popup:GetRight()
+owner.right, owner.bottom = 500, 400
+owner:Hide()
+owner:Show()
+drain()
+equal(popup:IsShown(), true, "a layout hide and reshow keeps the menu open")
+equal(popup:GetRight(), openedRight, "owner movement leaves the popup position unchanged")
+popup.mouseOver = true
+popup.scripts.OnEvent(popup)
+equal(popup:IsShown(), true, "a click inside the stationary popup keeps its action reachable")
+popup.rows[1].scripts.OnClick(popup.rows[1])
+equal(calls, 2, "the stationary menu entry still executes")
+popup.mouseOver = false
+
 -- The tracker's background choice is a set of radios with Blizzard's MenuUtil contract.
 local picked = 0.5
 ns.ContextMenu(owner, function(_, root)
@@ -357,6 +419,7 @@ equal(popup.scroll.ScrollBar:IsShown(), true, "and shows its scroll bar")
 
 -- An owner that hides closes its menu; a card under the map hears the panel manager instead.
 owner:Hide()
+drain()
 equal(popup:IsVisible(), false, "owner hide closes visible menu")
 owner:Show()
 equal(popup:IsShown(), false, "owner reshow does not reopen menu")

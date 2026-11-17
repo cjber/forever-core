@@ -53,6 +53,7 @@ Sim.CORE = {
 	"Blizzard_FrameXML/SecureTemplatesBase.xml",
 	"Blizzard_FrameXML/SecureTemplates.lua",
 	"Blizzard_FrameXML/SecureTemplates.xml",
+	"Blizzard_RestrictedAddOnEnvironment/SecureStateDriver.lua",
 	"Blizzard_FrameXML/DeprecatedTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",
@@ -99,9 +100,15 @@ Sim.CORE = {
 	-- The map, quest log and fog-of-war pieces of Blizzard_UIPanels_Game, in its TOC order, plus the quest frame
 	-- the quest log's OnHide closes the quest portrait through.
 	-- ContainerFrame bag positioning reads BankFrame even when the bank is closed.
+	"Blizzard_SharedXML/ClassColors.lua",
+	"Blizzard_FrameXML/EquipmentFlyout.lua",
+	"Blizzard_FrameXML/EquipmentFlyout.xml",
+	"Blizzard_TextStatusBar",
+	"Blizzard_StatusTrackingBar",
 	"Blizzard_UIPanels_Game:PlayerInteractionFrameManager|ScrollingFlatPanel|WarCampaignTemplates|WorldMap"
 		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame|Bank"
-		.. "|QuestFrameTemplates|QuestFrame|QuestInfo|CharacterFrame|MerchantFrame|SkillsFrame",
+		.. "|QuestFrameTemplates|QuestFrame|QuestInfo|DressUpFrames|CharacterFrame|AzeritePaperDoll|PaperDoll"
+		.. "|ReputationFrame|MerchantFrame|SkillsFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	-- EncounterBar lives in Blizzard_UnitFrame's UnitPowerBarAlt files; UIWidgets' power-bar layout anchors to it.
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.lua",
@@ -212,6 +219,18 @@ function Sim.new(opts)
 	end
 	for _, name in ipairs(opts.blizzard or Sim.CORE) do
 		sim:loadBlizzard(name)
+	end
+	-- Unit frames are omitted from this boot, but the character panel uses their text-status-bar contract.
+	if sim.G.TextStatusBarMixin then
+		for _, bar in ipairs({
+			sim.G.PlayerFrameHealthBar,
+			sim.G.PlayerFrameManaBar,
+			sim.G.PlayerFrameAlternatePowerBar,
+			sim.G.PetFrameHealthBar,
+			sim.G.PetFrameManaBar,
+		}) do
+			sim.G.Mixin(bar, sim.G.TextStatusBarMixin)
+		end
 	end
 	sim.loader.bootstrap()
 	sim.createChat()

@@ -34,6 +34,64 @@ local function eq(a, b, label)
 	end
 end
 
+test("widgets: EditBox inserts at the caret, replaces selection and respects maxLetters", function()
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local edit = widgets.new("EditBox")
+	edit:SetText("ab")
+	edit:SetCursorPosition(1)
+	edit:Insert("X")
+	eq(edit:GetText(), "aXb", "caret insertion")
+	eq(edit:GetCursorPosition(), 2, "caret follows inserted text")
+	edit:HighlightText(1, 2)
+	edit:Insert("YZ")
+	eq(edit:GetText(), "aYZb", "selection replacement")
+	edit:SetMaxLetters(5)
+	edit:HighlightText(1, 3)
+	edit:Insert("12345")
+	eq(edit:GetText(), "a123b", "limit preserves unselected suffix")
+	eq(edit:GetCursorPosition(), 4)
+	edit:Insert("ignored")
+	eq(edit:GetText(), "a123b", "full box accepts no more text")
+	edit:SetMaxLetters(0)
+	edit:HighlightText()
+	edit:Insert("new")
+	eq(edit:GetText(), "new", "default highlight replaces all text")
+	edit:Insert("!")
+	eq(edit:GetText(), "new!", "insertion clears selection")
+	widgets.flushEditText()
+	local changes = {}
+	edit:SetScript("OnTextChanged", function(_, userInput)
+		changes[#changes + 1] = userInput
+	end)
+	edit:Insert("?")
+	eq(#changes, 0, "Insert notifies on a later frame")
+	widgets.flushEditText()
+	eq(#changes, 1, "one notification after the frame")
+	eq(changes[1], true, "Insert notifies as user input")
+end)
+
+test("stubgen: MayReturnNothing defaults to no results but preserves implementations", function()
+	local sim, G = freshClient()
+	sim.dataDir = here .. "../../forever_sim/no-data"
+	sim.docs = {
+		enums = {},
+		constants = {},
+		events = {},
+		widgets = {},
+		structures = {},
+		systems = {
+			{ Functions = { { Name = "OptionalResult", MayReturnNothing = true, Returns = { { Type = "number" } } } } },
+		},
+	}
+	require("stubgen").build(sim)
+	eq(select("#", G.OptionalResult()), 0, "absent optional result")
+	sim.impl.OptionalResult = function()
+		return 7
+	end
+	eq(G.OptionalResult(), 7, "explicit implementation")
+end)
+
 test("widgets: GetAttribute reads the secure prefix and suffix form", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
@@ -173,6 +231,44 @@ test("widgets: side anchors do not stretch a sized tracker block vertically", fu
 	eq(second:GetTop(), 740, "second block follows first bottom")
 	eq(second:GetHeight(), 60, "second explicit height")
 	eq(first:GetWidth(), 1000, "opposite horizontal edges stretch width")
+end)
+
+test("widgets: a single-point region with no size has no rect, nor do regions anchored to it", function()
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	root:SetSize(1000, 800)
+	root:SetPoint("BOTTOMLEFT", nil, "BOTTOMLEFT", 0, 0)
+	-- An AlertContainerTemplate frame: one anchor and no <Size>, as Field Guide's toast anchor was.
+	local anchor = widgets.new("Frame", nil, root)
+	anchor:SetPoint("BOTTOM", root, "BOTTOM", 0, 128)
+	local mover = widgets.new("Frame", nil, root)
+	mover:SetSize(300, 101)
+	mover:SetPoint("BOTTOM", anchor, "TOP")
+	eq(anchor:IsRectValid(), false, "unsized anchor rect")
+	eq(anchor:GetBottom(), nil, "unsized anchor bottom")
+	eq(anchor:GetCenter(), nil, "unsized anchor center")
+	eq(anchor:GetWidth(), 0, "unsized anchor width")
+	eq(mover:IsRectValid(), false, "dependent rect")
+	eq(mover:GetBottom(), nil, "dependent bottom")
+	-- An extent on each axis, or a second point on it, places it.
+	anchor:SetSize(10, 10)
+	eq(mover:GetBottom(), 138, "dependent bottom once the anchor is sized")
+	local stretched = widgets.new("Frame", nil, root)
+	stretched:SetPoint("LEFT", root, "LEFT")
+	stretched:SetPoint("RIGHT", root, "RIGHT")
+	eq(stretched:IsRectValid(), false, "two horizontal points and no vertical extent")
+	stretched:SetHeight(20)
+	eq(stretched:GetLeft(), 0, "two horizontal points place it on that axis")
+	eq(stretched:GetTop(), 410, "a height completes it")
 end)
 
 test("widgets: intrinsic text height agrees with its screen rectangle and header button", function()

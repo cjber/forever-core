@@ -246,7 +246,11 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 		end
 		return nativeCanShowPOIs(manager, module)
 	end
-	sim:login({ savedVariables = { ForeverCoreDB = { questList = true } } })
+	-- Start with no Forever list drawn: enabling must also work before its first populated layout (#753).
+	sim:login({ savedVariables = { ForeverCoreDB = { questList = false } } })
+	sim:advance(0.5)
+	assert(not sim.G.ForeverCoreQuestTracker:IsVisible(), "the quest list starts off at login")
+	sim.G.ForeverCore.TrackerQuests.SetEnabled(true)
 	sim:advance(0.5)
 	sim:expectNoErrors(ADDON)
 	assert(privateSharedPoolCalls == 0, "private POI acquisition entered the native shared pool")
@@ -254,6 +258,7 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 
 	local section = sim.G.ForeverCoreQuestTracker
 	assert(section ~= nil, "the Forever quest section exists")
+	assert(section:IsVisible(), "enabling after an off login shows the watched quests")
 	assert(section.trackerOverflow == false and section.scrollRange == 0, "a short list does not scroll")
 	assert(section.scrollBar:IsShown() == false, "a short list shows no scrollbar")
 
