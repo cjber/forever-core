@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Release tooling:** `changelog.py --check` fails on a bullet that appears twice in one section, an addon PR's package check no longer fails while a new ForeverCore awaits CurseForge moderation (the release workflow still requires the latest core), and a proof records a Lua flow as `sha256:<digest> <file>` so a file named with `api` or `key` no longer trips gitleaks. (#660, #661, #656)
 - **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
 - **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
