@@ -2,7 +2,7 @@
 
 <h1 align="center">ForeverCore</h1>
 
-<p align="center">A library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any Forever addon, and there is nothing to set up.</p>
+<p align="center">A library for my own addons only (Adventure Guide, Shortest Path, SkillUp and the rest). CurseForge and Wago install it alongside them, and there is nothing to set up.</p>
 
 <p align="center">
   <a href="https://github.com/cjber/forever-core/actions/workflows/ci.yml"><img src="https://github.com/cjber/forever-core/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -19,9 +19,9 @@ loads when core is missing, and then says on screen how to install it. It has no
 Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows. The column lists your watched quests by default, with progress, folds,
-  item buttons and scrolling, and steps aside for a UI suite's own tracker. Turn it off in settings, with
-  `/fcore quests`, or from the section menu.
+  drag it once, and every addon follows. The quest list, with progress, folds, item buttons and
+  scrolling, is on by default only with Adventure Guide, and never touches Questie or any other tracker addon. Turn
+  it on or off in settings, with `/fcore quests`, or from the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
