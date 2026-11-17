@@ -1,34 +1,45 @@
 {
-  "input_digest": "39599609eadf738567ed6d5648e12f17d0b99347fcbaa6bf7d562cc92d165dc9",
-  "runtime_sha256": "39599609eadf738567ed6d5648e12f17d0b99347fcbaa6bf7d562cc92d165dc9",
-  "candidate": "e620418c2b927c070e856f0c877976a493e15ca1ccdad2364da8de0b6c282669",
+  "input_digest": "e609d629f4de729b11e42ac688164f7abdd0f4fc53e552689892834ce4549352",
+  "runtime_sha256": "e609d629f4de729b11e42ac688164f7abdd0f4fc53e552689892834ce4549352",
+  "candidate": "47e50f36d3baf7879312d56ca1282bf9b2890ed0867723958530cbedc9375a9e",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "35dd0906216af607490b094cb9fa66d9e6dcbd7a",
+  "source_commit": "e737b997a15ba71662f2985f8dcf555b003e2045",
   "flows": [
     {
-      "name": "constrained-section",
+      "name": "questie tracker off",
       "steps": [
-        "sha256:1bb0b7d0599020aa0ee30419cac2a323ea6bac58c12d4581566f8641774d8fdc flow-cap.lua"
+        "sha256:0aaab1e6f667414beb8c5c63208c2a80bb97f7f536c2d19b3bbae1bea3e792bc questie_tracker_off.lua"
       ],
       "result": "pass"
     },
     {
-      "name": "content-wheel",
+      "name": "items fit on screen",
       "steps": [
-        "sha256:b751ded15b5e68553e5fe9d1c4ecc0e328ac2348ccf32426f91a7707081a09a8 flow-wheel.lua"
+        "sha256:de1dcdabb18e2ff8c5aacfaa6105cc74061540b626893ed34b9f9dbfc56bbe4b items_fit_watched.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "questie tracker on",
+      "steps": [
+        "sha256:e2f89b6a99ebbf292620d6d05110588ed9963c7fcd635c4a9556ba0f77bf969b questie_tracker_on.lua"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/764d04aa633e70e161f6c6f3e402e356/raw/9f50605f837e6ed3e8d0a0ea30e2190c6d7a4250/1-constrained-section.png",
-      "sha256": "52e7e1fda5f706f6386522b9d96e2c8ed849bf667f75eff240d87a89057a3080"
+      "url": "https://gist.githubusercontent.com/cjber/15eeba649840e00282587289859cedee/raw/263419c33620c45dc46db96e0dd78a23434ea6f4/1-questie-tracker-off.png",
+      "sha256": "b19033c4cc10a0c65f3cccfe4a4ad493045036b601987ae9cb26abd940c348c3"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/764d04aa633e70e161f6c6f3e402e356/raw/9f50605f837e6ed3e8d0a0ea30e2190c6d7a4250/2-content-wheel.png",
-      "sha256": "e9c850dd4926024d95980d5940783721d360d66186ef06a9ffeb7b08b357a0d2"
+      "url": "https://gist.githubusercontent.com/cjber/15eeba649840e00282587289859cedee/raw/263419c33620c45dc46db96e0dd78a23434ea6f4/2-items-fit-on-screen.png",
+      "sha256": "9ef28f24ac7907d408ed3607f5a1a90f52f9e75c9a394c29d84b173f21d7cb63"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/15eeba649840e00282587289859cedee/raw/263419c33620c45dc46db96e0dd78a23434ea6f4/3-questie-tracker-on.png",
+      "sha256": "f8fd36b56d863ab6ac1fd6e975364a391e5888b4c58d2c7da02c126cd4d883e3"
     }
   ]
 }
