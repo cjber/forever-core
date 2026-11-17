@@ -20,6 +20,7 @@ timer, so the queue never queues behind the player. It reads the same repository
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -47,7 +48,9 @@ def next_release(repo: str) -> str:
 def smoke(repo: str, commit: str) -> int:
     """One smoke session through the client tool, which builds, tests and posts; 3 means the client is in use."""
     return subprocess.run(
-        [sys.executable, str(CLIENT), "smoke", "--repo", repo, "--ref", commit], check=False
+        [sys.executable, str(CLIENT), "smoke", "--repo", repo, "--ref", commit],
+        check=False,
+        env={**os.environ, "FOREVER_CLIENT_CALLER": "smoke-queue"},
     ).returncode
 
 

@@ -127,3 +127,9 @@ uses that session until the job ends; serve handles source changes afterward.
 
 For smoke, proof and build-dev, a missing full 40-hex commit SHA triggers one `git fetch origin`
 and a resolution retry. A missing branch name or abbreviated SHA does not trigger a fetch.
+
+Battle.net sign-in blocks automatic starts until the player runs
+`FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py up --manual-launcher`,
+signs in and reaches READY. That clears `launcher-sign-in.txt` under the session state directory.
+Client commands require `FOREVER_CLIENT_CALLER`; send the shared in-game agent an INGAME request
+([request format](../../.agents/skills/wow-forever-addon/in-game.md#requesting-a-check)).
