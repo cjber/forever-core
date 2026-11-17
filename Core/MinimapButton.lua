@@ -8,6 +8,7 @@ ns.MinimapButton = MinimapButton
 
 -- One ring of buttons for every Forever addon. The registry is module state: nothing of Blizzard's reads it.
 local shared = { buttons = {} }
+local launchers = {}
 
 local ANGLE_KEY = "minimapButtonAngle"
 local HIDDEN_KEY = "minimapButtonHidden"
@@ -117,11 +118,26 @@ local function Visible(button)
 	return not (spec.settings and spec.settings[spec.hiddenKey or HIDDEN_KEY] == true)
 end
 
+local function Tooltip(spec, tooltip)
+	tooltip:SetText(spec.title)
+	if spec.binding then
+		tooltip:AddLine("(" .. spec.binding .. ")", NORMAL_FONT_COLOR:GetRGB())
+	end
+	if spec.subtext then
+		tooltip:AddLine(spec.subtext, GRAY_FONT_COLOR:GetRGB())
+	end
+	tooltip:AddLine(ns.L.MINIMAP_DRAG_HINT, GRAY_FONT_COLOR:GetRGB())
+end
+
 local function Apply(button)
 	local spec = button.minimapButtonSpec
 	local stored = Normalize(spec.settings and spec.settings[spec.angleKey or ANGLE_KEY])
 	if stored then
 		button.angle = stored
+	end
+	if button.libDBIcon then
+		button.libDBIcon:Refresh(spec.libDBIcon, button.libDBIconDB)
+		return
 	end
 	button:SetShown(Visible(button))
 	Place(button)
@@ -144,6 +160,19 @@ local function StopDrag(button)
 	SaveAngle(button, AngleFromCursor() or button.angle)
 end
 
+-- Binds a button, ours or LibDBIcon's, to its spec and puts it on the shared ring.
+---@return ForeverMinimapButton
+local function Adopt(button, spec, angle)
+	button.minimapButtonSpec = spec
+	button.safeCall = type(spec.safeCall) == "function" and spec.safeCall or nil
+	button.angle = angle
+	if spec.host then
+		spec.host.minimapButton = button
+	end
+	shared.buttons[#shared.buttons + 1] = button
+	return button
+end
+
 ---@param spec ForeverMinimapButtonSpec
 ---@return ForeverMinimapButton?
 function MinimapButton.Create(spec)
@@ -153,12 +182,88 @@ function MinimapButton.Create(spec)
 		end
 		return nil
 	end
-	local button = CreateFrame("Button", spec.name, Minimap) --[[@as ForeverMinimapButton]]
-	button.minimapButtonSpec = spec
-	button.safeCall = type(spec.safeCall) == "function" and spec.safeCall or nil
-	if spec.host then
-		spec.host.minimapButton = button
+	local angle = Normalize(spec.settings and spec.settings[spec.angleKey or ANGLE_KEY]) or FreeAngle()
+	local libStub = spec.libDBIcon and _G.LibStub
+	if spec.libDBIcon and libStub then
+		local broker = libStub("LibDataBroker-1.1", true)
+		local lib = libStub("LibDBIcon-1.0", true)
+		if broker and lib then
+			local owned = launchers[spec.libDBIcon]
+			if lib:IsRegistered(spec.libDBIcon) then
+				if owned and broker:GetDataObjectByName(spec.libDBIcon) == owned.object then
+					owned.bind(spec, angle)
+					local button = Adopt(lib:GetMinimapButton(spec.libDBIcon), spec, angle)
+					button.libDBIcon, button.libDBIconDB = lib, owned.proxy
+					lib:Refresh(spec.libDBIcon, owned.proxy)
+					return button
+				end
+			else
+				local button
+				local object = broker:NewDataObject(spec.libDBIcon, {
+					type = "launcher",
+					icon = spec.icon --[[@as string]], -- LibDBIcon also accepts a numeric texture ID.
+					OnClick = function(self, mouseButton)
+						if spec.onClick then
+							Safe(button, "minimap button click", spec.onClick, self, mouseButton)
+						end
+					end,
+					OnTooltipShow = function(tooltip)
+						Tooltip(spec, tooltip)
+					end,
+				})
+				if object then
+					if spec.settings then
+						spec.settings[spec.angleKey or ANGLE_KEY] = angle
+					end
+					local proxy = setmetatable({}, {
+						__index = function(_, key)
+							if key == "hide" then
+								if spec.getShown then
+									return not spec.getShown()
+								end
+								return spec.settings and spec.settings[spec.hiddenKey or HIDDEN_KEY] == true or false
+							elseif key == "minimapPos" then
+								return spec.settings and spec.settings[spec.angleKey or ANGLE_KEY] or angle
+							end
+						end,
+						__newindex = function(self, key, value)
+							if key == "hide" then
+								if spec.settings then
+									spec.settings[spec.hiddenKey or HIDDEN_KEY] = value
+								end
+							elseif key == "minimapPos" then
+								angle = value
+								if button then
+									button.angle = value
+								end
+								if spec.settings then
+									spec.settings[spec.angleKey or ANGLE_KEY] = value
+								end
+							else
+								rawset(self, key, value)
+							end
+						end,
+					})
+					launchers[spec.libDBIcon] = {
+						object = object,
+						proxy = proxy,
+						bind = function(currentSpec, currentAngle)
+							spec, angle = currentSpec, currentAngle
+							object.icon = spec.icon --[[@as string]]
+							if spec.settings then
+								spec.settings[spec.angleKey or ANGLE_KEY] = angle
+							end
+						end,
+					}
+					lib:Register(spec.libDBIcon, object, proxy --[[@as LibDBIcon.button.DB]])
+					button = Adopt(lib:GetMinimapButton(spec.libDBIcon), spec, angle)
+					button.libDBIcon, button.libDBIconDB = lib, proxy
+					return button
+				end
+			end
+		end
 	end
+	local button = CreateFrame("Button", spec.name, Minimap) --[[@as ForeverMinimapButton]]
 	button:SetSize(BUTTON_SIZE, BUTTON_SIZE)
 	-- LibDBIcon's layering: above the Minimap and its border, pinned so a parent change never drops it back behind.
 	button:SetFrameStrata("MEDIUM")
@@ -198,13 +303,7 @@ function MinimapButton.Create(spec)
 	end)
 	button:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText(spec.title)
-		if spec.binding then
-			GameTooltip:AddLine("(" .. spec.binding .. ")", NORMAL_FONT_COLOR:GetRGB())
-		end
-		if spec.subtext then
-			GameTooltip:AddLine(spec.subtext, GRAY_FONT_COLOR:GetRGB())
-		end
+		Tooltip(spec, GameTooltip)
 		GameTooltip:Show()
 	end)
 	button:SetScript("OnLeave", function()
@@ -217,15 +316,10 @@ function MinimapButton.Create(spec)
 		StopDrag(self)
 	end)
 
-	local angle = Normalize(spec.settings and spec.settings[spec.angleKey or ANGLE_KEY])
-	if not angle then
-		angle = FreeAngle()
-		if spec.settings then
-			spec.settings[spec.angleKey or ANGLE_KEY] = angle
-		end
+	if spec.settings then
+		spec.settings[spec.angleKey or ANGLE_KEY] = angle
 	end
-	button.angle = angle
-	shared.buttons[#shared.buttons + 1] = button
+	Adopt(button, spec, angle)
 	Safe(button, "minimap button create", Apply, button)
 	return button
 end
@@ -238,8 +332,12 @@ function MinimapButton.Destroy(button)
 		end
 	end
 	if button then
-		button:Hide()
-		button:ClearAllPoints()
+		if button.libDBIcon then
+			button.libDBIcon:Hide(button.minimapButtonSpec.libDBIcon)
+		else
+			button:Hide()
+			button:ClearAllPoints()
+		end
 		local spec = button.minimapButtonSpec
 		if spec and spec.host and spec.host.minimapButton == button then
 			spec.host.minimapButton = nil
@@ -262,6 +360,14 @@ end
 
 function MinimapButton.SetShown(button, shown)
 	if button then
+		if button.libDBIcon then
+			if shown == true then
+				button.libDBIcon:Show(button.minimapButtonSpec.libDBIcon)
+			else
+				button.libDBIcon:Hide(button.minimapButtonSpec.libDBIcon)
+			end
+			return
+		end
 		button:SetShown(shown == true)
 		Place(button)
 	end

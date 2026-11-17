@@ -190,3 +190,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Callback-Fehler: %s" -- mt
 L["Login error: %s"] = "Anmeldefehler: %s" -- mt
 L["Copy %s: %s"] = "Kopie %s: %s" -- mt
+
+L.MINIMAP_DRAG_HINT = "Ziehen, um die Schaltfläche um die Minikarte zu bewegen." -- mt

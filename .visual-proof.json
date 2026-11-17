@@ -1,23 +1,23 @@
 {
-  "input_digest": "63ed76a2f7d1e9ffd2b4de7a627df52b587a3cb97c45e3fc2aad014c6006b5c2",
-  "runtime_sha256": "63ed76a2f7d1e9ffd2b4de7a627df52b587a3cb97c45e3fc2aad014c6006b5c2",
-  "candidate": "77e2f80516c2abba2463ec91b4d99e010ed10114b666c9facf2477140ef55e65",
+  "input_digest": "765e28b3cc4c1e19096d35485f1ed9b4a48d20a8420ba5ba1ec2c08041b4a8fa",
+  "runtime_sha256": "765e28b3cc4c1e19096d35485f1ed9b4a48d20a8420ba5ba1ec2c08041b4a8fa",
+  "candidate": "ffda3fbb987d85ae4d273798658ad7c3df2e2b8651b45f42978e9a2c2e8fb1fa",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "4599c2fab6ad46ff4df81fe42c43436d0252c011",
+  "source_commit": "dd9644c6b9cbb247e550d67b36db0a34d4c6bd2e",
   "flows": [
     {
-      "name": "fresh profile quest list",
+      "name": "minimap-tooltip",
       "steps": [
-        "fresh.lua sha256:14f427cd6b414ee36fd9535c453f401b8a769382dc87738e4341e3c143f74afb"
+        "sha256:f6ab2a40064f0fc8506dfce0db1222adbfa3d66052b1aacf3c2ff19698355bb5 tooltip.lua"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/9e5d0fd90288df84382293b21aec3f81/raw/9d47d1dbff5179d43b3517e7cb709b76909199bc/1-fresh-profile-quest-list.png",
-      "sha256": "920742ca14cd59dfcda113f319a069257c029a6b14e6bab4ec6567e247af5ea1"
+      "url": "https://gist.githubusercontent.com/cjber/fdcd9f141e41190c46e6a840a3b428e8/raw/7b99bcb91ce1e1ed30cadbdeaafa66c55a69bd72/1-minimap-tooltip.png",
+      "sha256": "e1db87a78ed19377045a58a538e6400268d29626d64699d96451e563a7be5a4b"
     }
   ]
 }
