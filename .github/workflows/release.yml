@@ -108,11 +108,14 @@ jobs:
           from tools.release_check import main
           main()'
       # The release notes are this version's CHANGELOG entry, not the whole file;
-      # a tag without one fails here rather than shipping empty notes.
+      # a tag without one fails here rather than shipping empty notes, and so does a commit that still holds
+      # changes/ fragments, which the package would otherwise ship.
       - name: Release notes
         env:
           RELEASE_TAG: ${{ steps.target.outputs.tag }}
-        run: python3 tools/changelog.py "$RELEASE_TAG" > .release-notes.md
+        run: |
+          python3 tools/changelog.py --check "$RELEASE_TAG"
+          python3 tools/changelog.py "$RELEASE_TAG" > .release-notes.md
       - name: Tag a manual release
         if: github.event_name == 'workflow_dispatch'
         env:

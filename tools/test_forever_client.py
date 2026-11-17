@@ -794,11 +794,11 @@ class ForeverClientTest(unittest.TestCase):
                 fc.client_ui({})
                 self.assertEqual(list(self.state.glob("client-state-*.png")), [])
 
-    def test_unreleased_changelog_is_one_bullet_list(self):
-        changelog = (Path(__file__).resolve().parents[1] / "CHANGELOG.md").read_text()
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0].strip()
-        self.assertNotIn("\n\n- ", unreleased)
-        self.assertNotRegex(unreleased, "[\u2013\u2014]")
+    def test_pending_change_notes_have_no_en_or_em_dashes(self):
+        fragments = sorted((Path(__file__).resolve().parents[1] / "changes").glob("*.md"))
+        for fragment in fragments:
+            with self.subTest(fragment=fragment):
+                self.assertNotRegex(fragment.read_text(), "[\u2013\u2014]")
 
     def test_resident_world_check_waits_for_interval_and_job_release_without_changing_ready(self):
         state = {"ready": 1}

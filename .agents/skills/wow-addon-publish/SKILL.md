@@ -21,7 +21,7 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
 - `.github/workflows/release.yml` on `push: tags: ["v*"]` running `BigWigsMods/packager` (pinned by SHA)
   with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}`, and
   `permissions: contents: write`. Copy it from `cjber/skillup-forever` rather than writing one.
-- Release notes = this version's CHANGELOG entry only (`tools/changelog.py <tag>`, also in skillup-forever),
+- Release notes = this version's rendered changelog entry (`tools/changelog.py <tag>`, also in skillup-forever),
   prose style, `## [x.y.z] - YYYY-MM-DD` headings. API changes go under an optional `### For addon authors`
   subsection after the player bullets; the notes carry it to GitHub, CurseForge and Wago as written.
 - A `package` CI job builds with the packager's `-d -z` and runs `tools/check_package.py`
@@ -83,12 +83,14 @@ copy its runtime files into the addon.
 
 Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
 release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC
-field. When `CHANGELOG.md` has an empty `## [Unreleased]` section it adds a release entry above the newest version: the
+field. When the consumer has no pending `changes/*.md`, sync adds a release entry above the newest version: the
 next patch, dated today, with the marker `<!-- forever-core-sync -->` and the plain bullet about the shared code. When
-that section already has notes it adds no entry and the same bullet joins those notes, so the core ships in the addon's
-own next release rather than under a maintenance line. `tools/release_consumers.py` then dispatches the addon's own
-`release.yml` once full CI on main is green, skipping it while the tag exists, a release is queued or running, or notes
-sit under `## [Unreleased]`. Do not delete or edit a marked entry by hand; a release published without the new core
+fragments already exist, it adds `changes/forever-core-sync.md` under `### Changed`, so the core ships in the addon's
+own next release. `tools/release_consumers.py` then dispatches the addon's own
+`release.yml` once full CI on main is green, skipping it while the tag exists, a release is queued or running,
+or pending fragments remain in `changes/`. A consumer whose `CHANGELOG.md` still has notes under
+`## [Unreleased]` also defers the release; the shared bullet joins those notes. Do not delete or edit a marked entry
+by hand; a release published without the new core
 leaves that addon's zip with an old copy. The `CONSUMER_SYNC_TOKEN` secret needs Actions write on the consumers, because
 dispatching their release is a workflow run.
 
@@ -243,12 +245,12 @@ By hand, in a session, the same checks are:
 
 After merging main into a release branch, re-read the version section; `changelog.py --check` catches a bullet that appears twice.
 
-Before the tag, check the changelog entry: a feature release (major or minor bump) names its hero, one of
-the repo's own rendered screenshots showing the new feature at its native size, at the top of its section
-with `<!-- discord-image: docs/screenshots/<file>.png -->`; `tools/changelog.py --check X.Y.Z` fails without
-one.
+A feature release (major or minor bump) names its hero, one of the repo's own rendered screenshots showing
+the new feature at its native size, at the top of a fragment with
+`<!-- discord-image: docs/screenshots/<file>.png -->`. `tools/changelog.py release X.Y.Z` puts the comment
+at the top of the release section and fails a feature release without one.
 
-Then move `## [Unreleased]` to `## [x.y.z] - <today UTC>`, signed commit (personal email for these
+Then run `python3 tools/changelog.py release x.y.z`, signed commit (personal email for these
 repos), push, `git tag -s vX.Y.Z -m vX.Y.Z`, push the tag, and watch the run:
 
 ```sh

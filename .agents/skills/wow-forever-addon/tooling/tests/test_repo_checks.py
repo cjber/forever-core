@@ -11,8 +11,6 @@ from forever_tools import changelog, release_check, toc
 
 LOG = """# Changelog
 
-## [Unreleased]
-
 ## [1.0.0] - 2026-01-01
 - first
 """
@@ -21,7 +19,11 @@ LOG = """# Changelog
 class ChangelogTest(unittest.TestCase):
     def test_duplicate_bullets_fail_in_every_section_and_check_mode(self):
         for heading, name in (("## [Unreleased]", "Unreleased"), ("## [1.0.0] - 2026-01-01", "1.0.0")):
-            text = LOG.replace(heading, heading + "\n- repeated\n- repeated\n")
+            text = (
+                heading + "\n- repeated\n- repeated\n"
+                if name == "Unreleased"
+                else LOG.replace(heading, heading + "\n- repeated\n- repeated\n")
+            )
             for argv in (["--check"], ["--check", "1.0.0"]):
                 with self.subTest(heading=heading, argv=argv), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
@@ -34,8 +36,8 @@ class ChangelogTest(unittest.TestCase):
         self.assertEqual(changelog.section(LOG, "1.0.0"), "- first")
         with self.assertRaises(SystemExit):
             changelog.section(LOG, "2.0.0")
-        with self.assertRaises(SystemExit):
-            changelog.check("## [1.0.0] - 2026-01-01\n- x\n", ["1.0.0"])
+        with self.assertRaisesRegex(SystemExit, "change notes now live"):
+            changelog.check("## [Unreleased]\n", [])
         changelog.check(LOG, ["1.0.0"])
 
     def test_duplicate_headings_are_rejected_before_release_selection(self):
@@ -44,7 +46,7 @@ class ChangelogTest(unittest.TestCase):
             changelog.check(duplicate_release, ["1.0.0"])
         with self.assertRaisesRegex(SystemExit, "duplicate sections for 1.0.0"):
             changelog.section(duplicate_release, "1.0.0")
-        duplicate_unreleased = LOG.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [Unreleased]\n")
+        duplicate_unreleased = "## [Unreleased]\n\n## [Unreleased]\n" + LOG
         with self.assertRaisesRegex(SystemExit, "duplicate sections for Unreleased"):
             changelog.check(duplicate_unreleased, ["1.0.0"])
         duplicate_older = LOG + "\n## [0.9.0] - 2025-01-01\n- repeated\n## [0.9.0] - 2025-02-01\n- repeated\n"
@@ -71,7 +73,7 @@ class ChangelogTest(unittest.TestCase):
         changelog.check(LOG, ["1.0.0"], {"1.0.0": "## [Unreleased]\n"}.get)
         with self.assertRaisesRegex(SystemExit, r"1\.0\.0.*differs from its v1\.0\.0 tag"):
             changelog.check(moved, ["1.0.0"], {"1.0.0": LOG}.get)
-        reworded = moved.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [1.1.0] - 2026-02-01\n- next\n")
+        reworded = "## [1.1.0] - 2026-02-01\n- next\n" + moved
         changelog.check(reworded, ["1.0.0", "1.1.0"], {"1.0.0": LOG, "1.1.0": reworded}.get)
 
     def test_released_sections_are_read_at_their_tags(self):
@@ -95,7 +97,7 @@ class ChangelogTest(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        (root / "CHANGELOG.md").write_text(f"# Changelog\n\n## [Unreleased]\n\n{body}")
+        (root / "CHANGELOG.md").write_text(f"# Changelog\n\n{body}")
         for name in files:
             (root / name).parent.mkdir(parents=True, exist_ok=True)
             (root / name).write_bytes(b"\x89PNG\r\n\x1a\n")

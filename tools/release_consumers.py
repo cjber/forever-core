@@ -3,13 +3,13 @@
 Every consumer's release zip carries ForeverCore in the same `ForeverCore` folder, so all of the addons' latest releases
 must ship the same core: a core release has to re-release every consumer. `tools/sync_consumer_prs.py` moves each
 consumer's pin to the new core release, rewrites its bundle and, when its latest released tag bundles a different core
-than that pin and its `## [Unreleased]` section is empty, adds a release entry to `CHANGELOG.md` carrying the
+than that pin and has no pending fragments, adds a release entry to `CHANGELOG.md` carrying the
 `<!-- forever-core-sync -->` marker above a marked entry whose own tag is already released. This script, run every 20
 minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `main` and dispatches that consumer's own
 `release.yml` for the marked entry once all of these hold:
 
 - the newest `## [X.Y.Z]` entry carries the marker, so it is the sync's, not a hand-written release;
-- nothing sits under `## [Unreleased]`: notes merged above the marked entry after the sync PR opened are that addon's
+- no pending fragments sit in `changes/`: notes merged after the sync PR opened are that addon's
   own release notes, and this release would ship them under a maintenance line;
 - the tag `vX.Y.Z` does not exist yet;
 - no `release.yml` run is queued or in progress;
@@ -139,6 +139,7 @@ def decide(
     ci_state: str,
     release_failed: bool = False,
     smoke: str = "success",
+    changes_pending: bool = False,
 ) -> Decision:
     """The release decision for one consumer, from what main holds and what its workflows report.
 
@@ -158,6 +159,8 @@ def decide(
     if (unreleased_notes(changelog) or "").strip():
         # The addon's own next release carries those notes; this one would publish them under a maintenance line.
         return Decision(reason=f"unreleased notes sit above v{version}; its own release ships them")
+    if changes_pending:
+        return Decision(reason=f"change notes in changes/ sit above v{version}; its own release ships them")
     if release_pending:
         return Decision(reason=f"{RELEASE_WORKFLOW} is queued or running")
     if release_failed and head is not None:
@@ -192,6 +195,24 @@ def read_changelog(repo: str, ref: str) -> str | None:
     if "404" in detail or "Not Found" in detail:
         return None
     raise SyncError(f"could not read {repo}'s {CHANGELOG}: {detail}")
+
+
+def has_change_fragments(repo: str, ref: str) -> bool:
+    """Whether `changes/` at `ref` contains markdown fragments."""
+    result = gh("api", f"repos/{OWNER}/{repo}/contents/changes?ref={ref}", check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        if "404" in detail or "Not Found" in detail:
+            return False
+        raise SyncError(f"could not read {repo}'s changes/: {detail}")
+    try:
+        entries = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise SyncError(f"could not read {repo}'s changes/: invalid response") from error
+    return any(
+        isinstance(entry, dict) and entry.get("type") == "file" and str(entry.get("name", "")).endswith(".md")
+        for entry in entries
+    )
 
 
 def tag_exists(repo: str, tag: str) -> bool:
@@ -245,6 +266,8 @@ def plan(repo: str) -> Decision:
     entry = newest_entry(changelog) if changelog else None
     if entry is None or MARKER not in entry[1]:
         return decide(changelog, None, False, False, "none")
+    if has_change_fragments(repo, head):
+        return decide(changelog, None, False, False, "none", changes_pending=True)
     version = entry[0]
     runs = release_runs(repo)
     if has_pending_release(runs):

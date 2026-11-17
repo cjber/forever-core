@@ -162,14 +162,17 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   image, or row of images in one `<p>`, gets a line under it saying what to look at in plain words,
   not a copy of its alt text. `check_copy.py` flags a stacked pair. Two things that belong side by side
   are one image, composed in `tools/screenshots.py` as one `scene()` with both widgets as layers.
-- **WFA-12** `CHANGELOG.md` follows Keep a Changelog with prose: `## [Unreleased]` on top,
-  `## [x.y.z] - YYYY-MM-DD`, bullets led by a bold sentence then why it matters, in player terms.
+- **WFA-12** Changelog notes live in `changes/<slug>.md`, with `### Added`, `### Changed`, `### Fixed`,
+  `### Removed`, or `### For addon authors` sections. `tools/changelog.py unreleased` renders pending notes;
+  `tools/changelog.py release x.y.z` writes the dated `CHANGELOG.md` section and consumes the fragments.
+  No PR edits `CHANGELOG.md` directly except release preparation; CI's `--check --base` fails it.
+  Bullets use a bold lead sentence then why it matters, in player terms.
   A version that changes a public API puts those notes under an optional `### For addon authors` subsection
   after the player bullets, so players read their changes first; the release notes carry it as written.
   A feature release, one that raises the major or minor over the newest tag, names its hero at the top of
-  its section with `<!-- discord-image: docs/screenshots/<file>.png -->`: one of the repo's own rendered
-  screenshots that shows the new feature, at its native size. `tools/changelog.py --check x.y.z` fails a
-  feature release without one.
+  the PR's fragment with `<!-- discord-image: docs/screenshots/<file>.png -->`: one of the repo's own rendered
+  screenshots that shows the new feature, at its native size. `release` puts it at the top of the section
+  and fails a feature release without one, as does `tools/changelog.py --check x.y.z`.
 
 ### Code and performance
 

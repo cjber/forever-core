@@ -6,5 +6,3 @@ Nav/*.lua linguist-generated=true
 
 # Rewritten by tools/check_screenshots.py --record after a render.
 docs/screenshots/scenes.sha256 linguist-generated=true
-# Parallel PRs each add a bullet under [Unreleased]: keep both sides when they meet.
-CHANGELOG.md merge=union

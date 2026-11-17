@@ -264,8 +264,10 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   pin to core's latest release when it lags (one API read per run, and a failed read leaves the pins alone). Every run
   also rewrites that consumer's `.pkgmeta` ForeverCore external and `## X-Forever-Core:`, moves a TOC that still names
   ForeverCore in `## Dependencies` to `## OptionalDeps` beside its other names, and, when the consumer ships
-  core and its latest released tag bundles a core different from the pin, adds a marked `CHANGELOG.md` release entry
-  (above a marked entry whose own tag is already released), then the run creates the signed commit through the GraphQL
+  core and its latest released tag bundles a core different from the pin, adds a marked `changes/forever-core-sync.md`
+  fragment when pending fragments exist. With none, it adds a marked release entry above the newest release;
+  for a consumer still carrying notes under `## [Unreleased]`, the shared bullet joins those notes instead.
+  A marked entry whose tag is already released gets a new entry above it. The run creates the signed commit through the GraphQL
   `createCommitOnBranch` mutation and opens or updates an auto-merging PR in each consumer. An open sync PR is updated
   in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
   branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
@@ -274,7 +276,8 @@ and run anywhere. `tests/api_spec.lua` loads the TOC in order, registers two fak
   request for that PR's head; the release session sends it to the in-game agent and commits `.visual-proof.json`.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
-  20-minute schedule. For each consumer it reads main's head and that commit's `CHANGELOG.md`; when the newest
+  20-minute schedule. For each consumer it reads main's head, that commit's `CHANGELOG.md`, and its `changes/`
+  directory; pending fragments skip dispatch because their own release ships them. When the newest
   `## [X.Y.Z]` entry carries `<!-- forever-core-sync -->`, its tag does not exist, no `release.yml` run is queued or
   running, no `release.yml` run at that head has already failed, `ci.yml` on that head is green and the newest
   `headless-smoke` status on that head is `success`, it dispatches the consumer's `release.yml` with the version and
@@ -377,15 +380,18 @@ consumers' `tools/`; edit it here, then run `sync.py update --source <this check
 
 ## Versions and releases
 
-Every version needs a `CHANGELOG.md` entry before its `v*` tag. `.github/workflows/release.yml` waits for full CI on
-the commit, checks it with `tools/release_check.py`, writes the version's notes with `tools/changelog.py`, and runs the
-packager with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so the GitHub release, CurseForge and Wago all get the
-same words. A release preparation that edits the update notice or a locale records the visual proof its runtime change
-needs through an `INGAME ... kind: proof` request to the in-game agent with `flows: update notice=<slash command or
-Lua file>`, and commits the `.visual-proof.json` it writes, so the required `visual-proof` check passes without an
-admin merge; a sync PR that moves the ForeverCore pin sends the request its own run prints. See `wow-forever-addon/in-game.md`. CurseForge is the published description and gallery; Wago is an upload
-mirror with a fixed stub pointing at CurseForge. A core version bump reaches consumers through the stores, since they
-require it; nothing is copied into them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
+Every version needs changelog fragments consumed into a `CHANGELOG.md` entry before its `v*` tag. Run
+`python3 tools/changelog.py release X.Y.Z` in the release preparation commit. No PR edits `CHANGELOG.md` otherwise:
+CI's `--check --base` fails it. `.github/workflows/release.yml` waits for full CI on the commit, checks it with
+`tools/release_check.py`, prints the version's notes with `tools/changelog.py <version>`, and runs the packager with
+`CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so GitHub, CurseForge and Wago all get the same words. A release
+preparation that edits the update notice or a locale records the visual proof its runtime change needs through an
+`INGAME ... kind: proof` request to the in-game agent with `flows: update notice=<slash command or Lua file>`, and
+commits the `.visual-proof.json` it writes, so the required `visual-proof` check passes without an admin merge. A sync
+PR that moves the ForeverCore pin sends the request its own run prints. See `wow-forever-addon/in-game.md`.
+CurseForge is the published description and gallery; Wago is an upload mirror with a fixed stub pointing at
+CurseForge. A core version bump reaches consumers through the stores, since they require it; nothing is copied into
+them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
 
 ## Load order
 

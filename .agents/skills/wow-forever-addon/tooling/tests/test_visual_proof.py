@@ -793,6 +793,9 @@ class VisualProofTest(unittest.TestCase):
         problems = visual_proof.verify(root, ["UI/Main.lua"], root / ".visual-proof.json")
         self.assertIn("missing", problems[0])
 
+    def test_changelog_fragment_does_not_require_visual_proof(self):
+        self.assertFalse(visual_proof.requires_proof(self.root(), ["changes/751.md"]))
+
     def test_rejects_stale_and_failed_proof(self):
         root = self.root()
         proof = {

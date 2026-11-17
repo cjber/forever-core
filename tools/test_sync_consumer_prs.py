@@ -1090,9 +1090,23 @@ class BundleTest(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             sync.bump_pin(self.root, "v1.4.0", self.DAY)
-        self.assertEqual(self.changelog.read_text(encoding="utf-8"), "## [1.2.3] - 2026-11-01\n\n- An older entry.\n")
-        self.assertIn("has no `## [Unreleased]` heading", out.getvalue())
+        self.assertIn("## [1.2.4] - 2026-11-11", self.changelog.read_text(encoding="utf-8"))
+        self.assertNotIn("has no `## [Unreleased]` heading", out.getvalue())
         self.assertEqual(self.pin.read_text(encoding="utf-8"), "v1.4.0\n")
+
+    def test_pending_fragments_get_a_shared_sync_fragment(self):
+        self.changelog.write_text(
+            "# Changelog\n\n## [Unreleased]\n\n## [1.2.3] - 2026-11-01\n\n- An older entry.\n",
+            encoding="utf-8",
+        )
+        (self.root / "changes").mkdir()
+        (self.root / "changes" / "751.md").write_text("### Fixed\n\n- A fix.\n", encoding="utf-8")
+        self.assertEqual(self.bump(), "v1.3.2")
+        self.assertEqual(
+            (self.root / "changes" / "forever-core-sync.md").read_text(encoding="utf-8"),
+            f"### Changed\n\n{sync.SYNC_BULLET}\n",
+        )
+        self.assertNotIn(sync.SYNC_MARKER, self.changelog.read_text(encoding="utf-8"))
 
     def test_a_consumer_without_a_changelog_is_left_alone_with_a_notice(self):
         self.changelog.unlink()

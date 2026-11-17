@@ -200,7 +200,7 @@ later XML file need no special case in the loader.
 ## Changing a shared file
 
 1. Change it here. Both specs, `luacheck` and `stylua` must pass.
-2. Bump `CHANGELOG.md`; raise `ForeverCore.API` only for a breaking change to the table or `Register`.
+2. Add a `changes/<slug>.md` fragment; raise `ForeverCore.API` only for a breaking change to the table or `Register`.
 3. Release ForeverCore. The stores carry it to players with the addons that require it.
 4. Consumers pick up behaviour changes with no file copy. `tools/sync_consumers.py` copies only the development
    tooling in `tools/check_core_shared.py`'s `VENDORED`.

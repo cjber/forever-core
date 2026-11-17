@@ -124,8 +124,9 @@ class DecideTest(unittest.TestCase):
         state="completed/success",
         failed=False,
         smoke="success",
+        changes_pending=False,
     ):
-        return release.decide(changelog, head, tag_exists, pending, state, failed, smoke)
+        return release.decide(changelog, head, tag_exists, pending, state, failed, smoke, changes_pending)
 
     def test_a_marked_entry_with_a_missing_tag_idle_release_and_green_ci_is_released(self):
         decision = self.decide()
@@ -144,6 +145,11 @@ class DecideTest(unittest.TestCase):
     def test_a_blank_unreleased_section_still_releases_the_marked_entry(self):
         text = SYNC_ENTRY.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n\n")
         self.assertTrue(self.decide(changelog=text).release)
+
+    def test_pending_fragments_wait_for_their_own_release(self):
+        decision = self.decide(changes_pending=True)
+        self.assertFalse(decision.release)
+        self.assertEqual(decision.reason, "change notes in changes/ sit above v1.4.3; its own release ships them")
 
     def test_a_changelog_is_required(self):
         self.assertEqual(self.decide(changelog=None).reason, "main has no CHANGELOG.md")
@@ -223,6 +229,24 @@ class SmokeStatusTest(unittest.TestCase):
 
 
 class PlanTest(unittest.TestCase):
+    def setUp(self):
+        fragments = mock.patch.object(release, "has_change_fragments", return_value=False)
+        self.fragments = fragments.start()
+        self.addCleanup(fragments.stop)
+
+    def test_pending_fragments_skip_a_marked_entry_before_any_workflow_read(self):
+        self.fragments.return_value = True
+        with (
+            mock.patch.object(release, "main_head", return_value=SHA),
+            mock.patch.object(release, "read_changelog", return_value=SYNC_ENTRY),
+            mock.patch.object(release, "release_runs") as runs_read,
+        ):
+            decision = release.plan("legacy-forever")
+        self.fragments.assert_called_once_with("legacy-forever", SHA)
+        runs_read.assert_not_called()
+        self.assertFalse(decision.release)
+        self.assertIn("changes/", decision.reason)
+
     def test_the_changelog_is_read_at_the_head_that_is_released(self):
         with (
             mock.patch.object(release, "main_head", return_value=SHA),
@@ -276,6 +300,7 @@ class PlanTest(unittest.TestCase):
         ):
             decision = release.plan("legacy-forever")
         self.assertFalse(decision.release)
+        self.fragments.assert_not_called()
         tag.assert_not_called()
         pending.assert_not_called()
         ci.assert_not_called()
@@ -458,6 +483,27 @@ class ApiTest(unittest.TestCase):
         with mock.patch.object(release, "gh", side_effect=fake_gh):
             self.assertEqual(release.read_changelog("legacy-forever", SHA), "# Changelog\n")
         self.assertIn(f"repos/cjber/legacy-forever/contents/CHANGELOG.md?ref={SHA}", calls[0])
+
+    def test_missing_changes_directory_has_no_pending_fragments(self):
+        missing = subprocess.CompletedProcess([], 1, "", "gh: Not Found (HTTP 404)")
+        with mock.patch.object(release, "gh", return_value=missing):
+            self.assertFalse(release.has_change_fragments("legacy-forever", SHA))
+
+    def test_changes_directory_counts_markdown_files_only(self):
+        listing = '[{"name":"751.md","type":"file"},{"name":"README.txt","type":"file"}]'
+        with mock.patch.object(
+            release,
+            "gh",
+            return_value=subprocess.CompletedProcess([], 0, listing, ""),
+        ):
+            self.assertTrue(release.has_change_fragments("legacy-forever", SHA))
+        listing = '[{"name":"README.txt","type":"file"}]'
+        with mock.patch.object(
+            release,
+            "gh",
+            return_value=subprocess.CompletedProcess([], 0, listing, ""),
+        ):
+            self.assertFalse(release.has_change_fragments("legacy-forever", SHA))
 
     def test_a_missing_tag_is_absent_and_another_failure_is_an_error(self):
         missing = subprocess.CompletedProcess([], 1, "", "gh: Not Found (HTTP 404)")

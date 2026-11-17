@@ -46,13 +46,14 @@ ForeverCore external, or its root TOC's `## X-Forever-Core:` field) and adds a r
 the pin, so a re-run repairs a consumer whose `main` already pins the new core while its last release still ships an
 older one. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
 and TOC field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release
-entry: the plain shared-code bullet joins those notes, so the core ships in that addon's own next release, whose notes
-the maintainer wrote. A consumer whose `## [Unreleased]` section is empty gets a release entry above the newest released
-version, that patch raised by one and carrying the `<!-- forever-core-sync -->` marker, and
+entry: the plain shared-code bullet joins those notes, so the core ships in that addon's own next release. Pending
+`changes/*.md` fragments instead get a `changes/forever-core-sync.md` fragment. With no pending fragments or
+Unreleased notes, the consumer gets a marked release entry above the newest release, that patch raised by one
+and carrying the `<!-- forever-core-sync -->` marker, and
 `tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
 already carries the marker gets no second entry only while its own `vX.Y.Z` tag is missing from the consumer's remote;
 once that entry is released, a newer core gets a new entry above it, the patch raised by one. A consumer with no
-`CHANGELOG.md`, no release entry or no `## [Unreleased]` heading gets a notice and no entry.
+`CHANGELOG.md` or no release entry gets a notice and no entry.
 
     python3 tools/sync_consumer_prs.py
 
@@ -290,9 +291,10 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
     Every run also points the bundle at the pin, moved or not: the `.pkgmeta` external and the root TOC's
     `## X-Forever-Core:` field name the release the pin ships, so a consumer that pins v1.5.0 while its zip still
     downloads v1.4.1 is repaired. `CHANGELOG.md` is touched when the consumer's latest released tag bundles a core
-    other than `pinned`, whether this run moved the pin or a re-run found it already moved: an empty `## [Unreleased]`
-    gets a marked release entry, and one with notes gets the shared bullet and no entry. A consumer that has never
-    released falls back to whether this run changed its local bundle.
+    other than `pinned`, whether this run moved the pin or a re-run found it already moved. Pending fragments get
+    `changes/forever-core-sync.md`; with none, a marked release entry goes above the newest release. Notes still under
+    `## [Unreleased]` get the shared bullet and no entry. A consumer that has never released falls back to whether
+    this run changed its local bundle.
     """
     path = root / consumer_path(root.name, PIN_PATH)
     if not path.is_file():
@@ -518,19 +520,33 @@ def with_sync_note(text: str) -> str | None:
 
 
 def with_sync_entry(text: str, version: str, day: str) -> str | None:
-    """`text` with a marked release entry for `version` at the top, for an empty `## [Unreleased]` section."""
-    unreleased = UNRELEASED.search(text)
-    if not unreleased:
+    """`text` with a marked release entry immediately above its newest released section."""
+    release = RELEASED.search(text)
+    if not release:
         return None
-    after = text[unreleased.end() :]
-    following = re.search(r"^## ", after, re.MULTILINE)
-    rest = after[following.start() :] if following else ""
     entry = f"## [{version}] - {day}\n\n{SYNC_MARKER}\n\n{SYNC_BULLET}\n"
-    return f"{text[: unreleased.end()]}\n\n{entry}\n{rest}".rstrip("\n") + "\n"
+    return f"{text[: release.start()]}{entry}\n{text[release.start() :]}".rstrip("\n") + "\n"
+
+
+def fragment_paths(root: Path) -> list[Path]:
+    """Pending changelog fragments, in stable filename order."""
+    directory = root / "changes"
+    return sorted((path for path in directory.glob("*.md") if path.is_file()), key=lambda path: path.name)
+
+
+def with_sync_fragment(root: Path) -> bool:
+    """Write the idempotent shared-code fragment for a consumer with pending fragments."""
+    path = root / "changes" / "forever-core-sync.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = f"### Changed\n\n{SYNC_BULLET}\n"
+    if path.is_file() and path.read_text(encoding="utf-8") == content:
+        return False
+    path.write_text(content, encoding="utf-8")
+    return True
 
 
 def add_changelog_entry(root: Path, today: date | None = None) -> bool:
-    """Give a consumer whose bundled core changed a release entry, or the shared bullet under its unreleased notes."""
+    """Record a bundled core change as a fragment, or as a release-shaped entry during rollout."""
     path = root / CHANGELOG
     if not path.is_file():
         print(f"{root.name}: no {CHANGELOG}; no release entry added for the core sync.")
@@ -548,6 +564,11 @@ def add_changelog_entry(root: Path, today: date | None = None) -> bool:
             path.write_text(updated, encoding="utf-8")
         print(f"{root.name}: {CHANGELOG} has unreleased notes; the core ships in its next release")
         return False
+    pending = fragment_paths(root)
+    if pending:
+        changed = with_sync_fragment(root)
+        print(f"{root.name}: change notes in changes/; {'wrote' if changed else 'kept'} the ForeverCore sync fragment")
+        return changed
     version = next_version(text)
     if version is None:
         print(f"{root.name}: {CHANGELOG} has no `## [X.Y.Z]` release to raise; no release entry added.")
@@ -555,7 +576,7 @@ def add_changelog_entry(root: Path, today: date | None = None) -> bool:
     day = (today or datetime.now(timezone.utc).date()).isoformat()
     updated = with_sync_entry(text, version, day)
     if updated is None:
-        print(f"{root.name}: {CHANGELOG} has no `## [Unreleased]` heading; no release entry added.")
+        print(f"{root.name}: {CHANGELOG} has no `## [X.Y.Z]` release; no release entry added.")
         return False
     path.write_text(updated, encoding="utf-8")
     return True
