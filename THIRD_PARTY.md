@@ -45,6 +45,10 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| serb1tar | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| tommyekholm | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| Crypa7 | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| [Shuro](https://github.com/Shuro) | Quest objective bars stay aligned inside the column | #735 |
 | dokiz | Quest list steps aside for a UI suite's tracker | CurseForge; thread 8733295 under 8732171; #736 |
 | user_vyffn82yvmu3bflh | Quest list steps aside for EllesmereUI | CurseForge; thread 8733334; #736 |
 | user_8vheexbirr5v6h4a | Quest list switch in every section's Tracker menu | CurseForge; thread 8734900; cjber/shortest-path-forever#949 |

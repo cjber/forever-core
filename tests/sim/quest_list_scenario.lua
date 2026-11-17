@@ -678,13 +678,19 @@ scenario("the Forever quest list scrolls one block and freezes in combat", funct
 		return nil
 	end
 	sim.impl["C_QuestLog.GetQuestObjectives"] = function()
-		return {}
+		return {
+			{ text = "1/8 A short objective", numFulfilled = 1, numRequired = 8, finished = false },
+			{ text = "2/7 Another objective", numFulfilled = 2, numRequired = 7, finished = false },
+		}
+	end
+	sim.impl["GetQuestLogLeaderBoard"] = function(index)
+		return index == 1 and "1/8 A short objective" or "2/7 Another objective", "monster", false
 	end
 	sim.impl["C_QuestInfoSystem.GetQuestClassification"] = function()
 		return NORMAL
 	end
 	sim.impl["GetNumQuestLeaderBoards"] = function()
-		return 0
+		return 2
 	end
 	sim.impl["C_SuperTrack.GetSuperTrackedQuestID"] = function()
 		return 0
@@ -723,6 +729,36 @@ scenario("the Forever quest list scrolls one block and freezes in combat", funct
 		"the bar shows the viewport's fraction of the list"
 	)
 	assert(section.ContentsFrame:GetWidth() < section:GetWidth(), "the blocks give the bar its gutter")
+
+	sim:expectOnScreen(sim.G.ForeverTrackerCompanion)
+	local function CheckQuestGeometry()
+		local block = section.firstBlock
+		while block do
+			if block.hasItem then
+				local first = block:GetExistingLine(1)
+				local second = block:GetExistingLine(2)
+				for _, bar in pairs(block.thinBars) do
+					assert(
+						bar:GetRight() <= block:GetRight() + block.rightEdgeOffset + 0.5,
+						"progress bars fit the block's item reservation"
+					)
+				end
+				assert(math.abs(first:GetLeft() - second:GetLeft()) < 0.5, "objective lines share the same left edge")
+			end
+			block = block.nextBlock
+		end
+	end
+	CheckQuestGeometry()
+	-- A smaller display must shrink the viewport, leaving the complete list in the scroll child.
+	local screenWidth, screenHeight = sim.G.UIParent:GetSize()
+	sim.G.UIParent:SetSize(1280, 720)
+	sim:event("DISPLAY_SIZE_CHANGED")
+	sim:advance(0.5)
+	sim:expectOnScreen(sim.G.ForeverTrackerCompanion)
+	CheckQuestGeometry()
+	sim.G.UIParent:SetSize(screenWidth, screenHeight)
+	sim:event("DISPLAY_SIZE_CHANGED")
+	sim:advance(0.5)
 
 	local starts = section:BlockStarts()
 	assert(#starts > 40, "the list laid every block out for the scroll child")
@@ -777,6 +813,12 @@ scenario("the Forever quest list scrolls one block and freezes in combat", funct
 	end
 	assert(#shown > 0 and #shown <= 40, "the fixed pool covers the visible item quests")
 	for _, button in ipairs(shown) do
+		assert(
+			button.icon:GetWidth() == button:GetWidth() and button.icon:GetHeight() == button:GetHeight(),
+			"quest item art fills its secure button"
+		)
+	end
+	for _, button in ipairs(shown) do
 		local block = button:GetParent()
 		assert(block.hasItem == true, "a shown button belongs to an item quest")
 		assert(
@@ -816,6 +858,29 @@ scenario("the Forever quest list scrolls one block and freezes in combat", funct
 	section:OnTrackerWheel(-1)
 	sim:advance(0.1)
 	assert(section.scrollOffset > before, "the wheel moves again after combat")
+
+	-- Giving quests back to the game must leave another Forever section usable.
+	local companion = sim.G.ForeverCore.TrackerSection.Create("ForeverQuestFitCompanion", {
+		LayoutContents = function(module)
+			module:SetHeader("Companion")
+			local block = module:GetBlock("row")
+			block:SetHeader("Companion row")
+			block:AddObjective(1, "Still available")
+			module:LayoutBlock(block)
+		end,
+	}, { order = -1 })
+	sim.G.ForeverCore.TrackerHost.Attach(companion)
+	sim:advance(0.5)
+	sim:slash("/fcore quests")
+	sim:advance(0.5)
+	assert(sim.G.ObjectiveTrackerFrame:IsShown(), "disabling the long list restores the game's tracker")
+	sim:expectNoErrors(ADDON)
+	assert(companion:IsShown() and companion.firstBlock, "another Forever section survives disabling the list")
+	sim:slash("/fcore quests")
+	sim:advance(0.5)
+	assert(section:IsShown() and section.scrollRange > 0, "reenabling restores the scrolling quest list")
+	assert(companion:IsShown() and companion.firstBlock, "another Forever section survives reenabling the list")
+	sim:expectOnScreen(sim.G.ForeverTrackerCompanion)
 
 	sim:setGamepad(true)
 	sim:gamepadNavigate()

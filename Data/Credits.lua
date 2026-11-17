@@ -4,6 +4,10 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "serb1tar", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "tommyekholm", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "Crypa7", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "Shuro", what = "Quest objective bars stay aligned inside the column" },
 		{ name = "dokiz", what = "Quest list steps aside for a UI suite's tracker" },
 		{ name = "user_vyffn82yvmu3bflh", what = "Quest list steps aside for EllesmereUI" },
 		{ name = "user_8vheexbirr5v6h4a", what = "Quest list switch in every section's Tracker menu" },

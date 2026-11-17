@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - **The Forever quest list steps aside for your UI suite's tracker**, including EllesmereUI. Turn the list off or on from the Tracker menu on any Forever section. (#736, cjber/shortest-path-forever#949) Thanks to dokiz, user_vyffn82yvmu3bflh and user_8vheexbirr5v6h4a for the reports.
+- **Quest item icons are visible and the quest list fits the screen.** Consecutive objectives and progress bars stay aligned inside the column, and a column placed beside the game's tracker scrolls within the room below its anchor. Thanks to serb1tar, tommyekholm, Crypa7, Shuro and xh43k for the reports. (#743, #735, #603)
 - **The mouse wheel scrolls a tracker section over its text.** A quest taller than its space now scrolls a page at a time with overlap, so every objective stays reachable even in a short column. Stacked sections keep a readable row when space allows and show only their header otherwise. (#616, #615)
 - **Headless jobs wait in arrival order**, with live queue positions and dead-waiter cleanup. Ended leases fail with their reason and cannot carry over to a replacement session. (#734, #719, #730)
 - **Headless proofs check their candidate links at capture and teardown**, and link recovery runs only under the exclusive job lock. Recovery specs use isolated client folders. (#723, #724)

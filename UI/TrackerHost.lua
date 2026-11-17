@@ -1241,7 +1241,8 @@ local function LayoutAttached()
 		local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
 		local screenTop = UIParent:GetHeight() or nativeTop
 		local room = screenTop * layoutScreenScale - nativeTop * nativeScale
-		if room >= math.max(host:GetHeight() or 0, 1) * layoutScale then
+		local above = room >= math.max(host:GetHeight() or 0, 1) * layoutScale
+		if above then
 			host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
 		elseif SidePoint(point) == "LEFT" then
 			host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
@@ -1249,12 +1250,24 @@ local function LayoutAttached()
 			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 		end
 		AvoidMinimap(point)
+		if above and host:GetPoint() == hostPoint then
+			return math.max(0, room / layoutScale)
+		end
+		-- Minimap avoidance can also move an above anchor to the side, starting at the native tracker's top.
+		return math.max(0, math.min(screenRoom, (host:GetTop() or 0) - layoutMargin))
 	end
 	-- A layout pass is not a measurement: Blizzard's EndLayout hides a section that fits nothing and its
 	-- FreeUnusedBlocks releases every block, so laying the sections out below just to probe the room replays each
 	-- header's add animation and rebuilds every block. `aside` remembers that the column went above or beside the
 	-- tracker last time, so only the real move off the room below pays that replay. A column already aside lays out
-	-- once in the screen's room, and moves back below when the whole laid-out column fits there, with no second pass.
+	-- in the screen's room, then caps it to the chosen anchor if it has less room. It moves back below when the
+	-- whole laid-out column fits there.
+	local function FitAside()
+		local roomAside = Aside()
+		if host:GetHeight() > roomAside and not LayoutModules(host:GetWidth(), roomAside, 0) then
+			host:Hide()
+		end
+	end
 	if aside then
 		if not LayoutModules(host:GetWidth(), screenRoom, 0) then
 			host:Hide()
@@ -1265,7 +1278,7 @@ local function LayoutAttached()
 			aside = false
 			return
 		end
-		Aside()
+		FitAside()
 		return
 	end
 	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
@@ -1281,7 +1294,7 @@ local function LayoutAttached()
 		return
 	end
 	aside = true
-	Aside()
+	FitAside()
 end
 
 -- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
