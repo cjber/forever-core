@@ -24,10 +24,28 @@ local function Entry(menu, text)
 	end
 end
 
+local questListEnabled = true
+t.ns.TrackerQuests = {
+	Enabled = function()
+		return questListEnabled
+	end,
+	SetEnabled = function(value)
+		questListEnabled = value
+	end,
+}
 check(first.Header.mouse == true, "a section header takes a right click")
 local opened = #t.menus
 local menu = Menu(first)
 check(#t.menus == opened + 1 and menu.owner == t.host, "the section's menu opens on the shared column")
+local questList = Entry(menu, "Forever quest list")
+check(questList and questList.isSelected(), "every section offers the shared quest list switch")
+questList.setSelected()
+check(not questListEnabled, "the quest list switch writes through core")
+t.ns.TrackerHostForeign = true
+check(Entry(Menu(second), "Forever quest list") == nil, "a foreign host has no quest list switch")
+t.ns.TrackerHostForeign = nil
+t.ns.TrackerQuests = nil
+check(Entry(Menu(second), "Forever quest list") == nil, "a missing quest list has no switch")
 local attach = Entry(menu, "Attach to quest tracker")
 check(attach ~= nil, "the section menu offers the attach switch")
 check(attach.isSelected() == true, "the attach switch reads the saved setting")
@@ -172,7 +190,20 @@ contractModule.trackerMenu = function(target, builder)
 	builder:Open("Open panel", function() end)
 end
 contractTargets = {}
+t.ns.TrackerQuests = {
+	Enabled = function()
+		return questListEnabled
+	end,
+	SetEnabled = function(value)
+		questListEnabled = value
+	end,
+}
 local contractMenu = Menu(contractModule)
+local trackerMenu = Entry(contractMenu, "Tracker")
+local sharedQuestList = Entry(trackerMenu.submenu, "Forever quest list")
+check(sharedQuestList and not sharedQuestList.isSelected(), "the shared Tracker submenu reads the quest list switch")
+sharedQuestList.setSelected()
+check(questListEnabled, "the shared Tracker submenu changes the quest list switch")
 check(contractTargets[1].kind == "section", "the declarative section target names its kind")
 check(contractMenu.title == "A block", "Title is the first fixed slot")
 local labels = {}

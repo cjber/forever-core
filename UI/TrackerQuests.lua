@@ -95,11 +95,28 @@ if not host then
 	return
 end
 
--- Another tracker owns the quest list: Questie's, EQOT's, or Kaliel's Tracker. Their names are the compatibility
+-- Another tracker owns the quest list: Questie's, EQOT's, EllesmereUI's, or Kaliel's Tracker. Their names form the
 -- matrix, so detecting them by name is deliberate. The list modules read the host frame, the same one the host itself
 -- passes, not the published API table.
+local hidNativeTracker = false
+local coreMutedNative = false
+
 ---@return boolean
 local function OtherOwner()
+	if ns.TrackerEllesmere and ns.TrackerEllesmere.Owns() then
+		return true
+	end
+	-- Before our own suppression, a muted tracker or a shown tracker under a hidden parent means another addon
+	-- replaced the visible list. A plain hidden tracker can just be Blizzard's empty list; UIParent can hide globally.
+	if
+		not coreMutedNative
+		and (
+			ObjectiveTrackerFrame:GetAlpha() == 0
+			or (ObjectiveTrackerFrame:IsShown() and not ObjectiveTrackerFrame:IsVisible() and UIParent:IsVisible())
+		)
+	then
+		return true
+	end
 	local companion = rawget(_G, "ForeverTrackerCompanion")
 	if companion then
 		local eqot = ns.TrackerEqot
@@ -122,15 +139,15 @@ local section
 -- native frame. Alpha keeps a protected native Show invisible in combat; the Hide and any restore wait for combat
 -- to end and use the latest request.
 local hideNativeTracker = false
-local hidNativeTracker = false
 local nativeTrackerAlpha = 1
 local visibilityFrame = CreateFrame("Frame")
 local function ApplyNativeVisibility()
 	if hideNativeTracker then
-		if not hidNativeTracker then
+		if not coreMutedNative then
 			nativeTrackerAlpha = ObjectiveTrackerFrame:GetAlpha()
-			hidNativeTracker = true
+			coreMutedNative = true
 		end
+		hidNativeTracker = true
 		-- Blizzard's container layout can Show again on a combat quest update. Hide may be protected then, but
 		-- alpha is not: suppress that Show immediately rather than exposing the tracker until combat ends.
 		ObjectiveTrackerFrame:SetAlpha(0)
@@ -142,11 +159,13 @@ local function ApplyNativeVisibility()
 	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 	if hideNativeTracker then
 		ObjectiveTrackerFrame:Hide()
-	elseif hidNativeTracker then
+	elseif hidNativeTracker or coreMutedNative then
 		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
+		local otherOwner = OtherOwner()
 		hidNativeTracker = false
-		if not OtherOwner() then
+		if not otherOwner then
 			ObjectiveTrackerFrame:SetAlpha(nativeTrackerAlpha)
+			coreMutedNative = false
 			ObjectiveTrackerFrame:Show()
 		end
 	end
@@ -1502,7 +1521,10 @@ EventUtil.ContinueAfterAllEvents(function()
 			if InCombatLockdown() or not TrackerQuests.Enabled() then
 				return
 			end
-			if host.IsAttached(section) ~= true or section:IsShown() then
+			if
+				OtherOwner() ~= ownedByOther
+				or (not ownedByOther and (host.IsAttached(section) ~= true or section:IsShown()))
+			then
 				apply()
 			end
 		end)

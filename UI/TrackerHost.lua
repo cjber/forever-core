@@ -1517,6 +1517,11 @@ local function NewTrackerMenu(root, module, target)
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
+		if not ns.TrackerHostForeign and ns.TrackerQuests then
+			tracker:CreateCheckbox(ns.L["Forever quest list"], ns.TrackerQuests.Enabled, function()
+				ns.TrackerQuests.SetEnabled(not ns.TrackerQuests.Enabled())
+			end)
+		end
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
 			return api.GetBackdropOpacity() == 0
@@ -1615,6 +1620,11 @@ local function AddHeaderMenu(module)
 			if api.IsLocked and api.SetLocked then
 				root:CreateCheckbox(lock, api.IsLocked, function()
 					api.SetLocked(not api.IsLocked())
+				end)
+			end
+			if not ns.TrackerHostForeign and ns.TrackerQuests then
+				root:CreateCheckbox(L["Forever quest list"], ns.TrackerQuests.Enabled, function()
+					ns.TrackerQuests.SetEnabled(not ns.TrackerQuests.Enabled())
 				end)
 			end
 			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its

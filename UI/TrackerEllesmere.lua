@@ -37,6 +37,12 @@ local function Installed()
 	return rawget(_G, "EllesmereUIQuestTracker") ~= nil or CustomFrame() ~= nil
 end
 
+-- Ownership starts when the module loads, before PLAYER_LOGIN builds its custom frame.
+---@return boolean
+function TrackerEllesmere.Owns()
+	return Installed()
+end
+
 -- Where the list says it is, as one string, so a move, a resize or a filter change shows up as a different one.
 ---@param frame Frame
 ---@return string

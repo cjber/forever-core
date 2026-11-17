@@ -45,6 +45,9 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| dokiz | Quest list steps aside for a UI suite's tracker | CurseForge; thread 8733295 under 8732171; #736 |
+| user_vyffn82yvmu3bflh | Quest list steps aside for EllesmereUI | CurseForge; thread 8733334; #736 |
+| user_8vheexbirr5v6h4a | Quest list switch in every section's Tracker menu | CurseForge; thread 8734900; cjber/shortest-path-forever#949 |
 | Laddylucks | Minimap button under SexyMap's control | CurseForge; thread 8729503; #685 |
 | thirex | Minimap button under SexyMap's control | CurseForge; thread 8729648; #685 |
 | axejess | Minimap button under SexyMap's control | CurseForge; thread 8729935; #685 |

@@ -4,6 +4,9 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "dokiz", what = "Quest list steps aside for a UI suite's tracker" },
+		{ name = "user_vyffn82yvmu3bflh", what = "Quest list steps aside for EllesmereUI" },
+		{ name = "user_8vheexbirr5v6h4a", what = "Quest list switch in every section's Tracker menu" },
 		{ name = "Laddylucks", what = "Minimap button under SexyMap's control" },
 		{ name = "thirex", what = "Minimap button under SexyMap's control" },
 		{ name = "axejess", what = "Minimap button under SexyMap's control" },

@@ -4,7 +4,8 @@ for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
   drag it once, and every addon follows. The Forever quest list is on by default and replaces the game's
-  objective tracker. Turn it off in settings, with `/fcore quests`, or from the section menu.
+  objective tracker, stepping aside for a UI suite's own tracker. Turn it off in settings, with `/fcore quests`, or from
+  the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -22,7 +23,7 @@ Free, with nothing locked behind it. If it saves you time, you can [sponsor me o
 
 <!-- forever-credits:start -->
 
-Thanks to Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
+Thanks to dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

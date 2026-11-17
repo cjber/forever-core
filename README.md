@@ -20,7 +20,8 @@ Forever addons use it for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
   drag it once, and every addon follows. The column lists your watched quests by default, with progress, folds,
-  item buttons and scrolling. Turn it off in settings, with `/fcore quests`, or from the section menu.
+  item buttons and scrolling, and steps aside for a UI suite's own tracker. Turn it off in settings, with
+  `/fcore quests`, or from the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -35,11 +36,12 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps, enabled by default:
-it lists watched quests in the Forever column and hides the game's whole objective tracker while on, including
-scenarios and bonus objectives, as Questie does. The game's tracker comes back when the list is off. Every other section
-belongs to the addon that owns the feature: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its
-shared code is added to an addon through `ForeverCore.Register` and the modules on the `ForeverCore` table; see
+It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps. Enabled
+by default unless a UI suite owns the tracker, it lists watched quests in the Forever column and hides the game's whole
+objective tracker while on, including scenarios and bonus objectives, as Questie does. The game's tracker comes back
+when the list is off. Every other section belongs to the addon that owns the feature: see the suite's ownership
+boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
+modules on the `ForeverCore` table; see
 [`docs/adoption.md`](docs/adoption.md). The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).
 A third-party addon reads the members it may rely on, and the suite's published APIs, in [`docs/api.md`](docs/api.md).
@@ -65,7 +67,7 @@ ForeverCore is built on the game's own UI and the work of other addon authors, l
 
 <!-- forever-credits:start -->
 
-Thanks to Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
+Thanks to dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

@@ -14,6 +14,7 @@ end
 local tracker = { modules = {} }
 local trackerShown, trackerProtected, showHook, hookCount = true, false, nil, 0
 local trackerAlpha = 0.75
+local trackerVisible, uiVisible = true, true
 local nativeShows = 0
 function tracker.SetAlpha(_, alpha)
 	trackerAlpha = alpha
@@ -33,6 +34,9 @@ function tracker.Show()
 end
 function tracker.IsShown()
 	return trackerShown
+end
+function tracker.IsVisible()
+	return trackerShown and trackerVisible
 end
 function tracker.IsProtected()
 	return trackerProtected
@@ -126,7 +130,13 @@ function visibility:SetScript(script, callback)
 	assert(script == "OnEvent")
 	self.callback = callback
 end
+local tick
 local env = setmetatable({
+	UIParent = {
+		IsVisible = function()
+			return uiVisible
+		end,
+	},
 	CreateFrame = function()
 		return visibility
 	end,
@@ -144,7 +154,11 @@ local env = setmetatable({
 			return addons[name] == true
 		end,
 	},
-	C_Timer = {},
+	C_Timer = {
+		NewTicker = function(_, fn)
+			tick = fn
+		end,
+	},
 	Mixin = function(target, mixin)
 		for key, value in pairs(mixin) do
 			target[key] = value
@@ -155,6 +169,28 @@ local env = setmetatable({
 	end,
 }, { __index = _G })
 env._G = env
+-- Each first apply starts from settings with no questList key, before core owns native suppression.
+for _, mode in ipairs({ "ellesmere", "alpha", "parent" }) do
+	trackerShown, trackerAlpha, trackerVisible = true, mode == "alpha" and 0 or 0.75, mode ~= "parent"
+	ns.TrackerEllesmere = {
+		Owns = function()
+			return mode == "ellesmere"
+		end,
+	}
+	setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
+	ready()
+	check(
+		trackerShown and trackerAlpha == (mode == "alpha" and 0 or 0.75),
+		mode .. " leaves native visibility untouched"
+	)
+	check(section:LayoutContents() == nil, mode .. " defers the Forever list")
+	section.shown = false
+	tick()
+	check(trackerShown, mode .. " stays deferred on the ticker")
+end
+ns.TrackerEllesmere = nil
+trackerShown, trackerAlpha, trackerVisible, section.shown = true, 0.75, true, true
+hookCount = 0
 setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
 local TrackerQuests = assert(ns.TrackerQuests, "the list registers itself on the namespace")
 check(type(ready) == "function", "the list waits for the client's own load events")
@@ -168,6 +204,9 @@ end
 -- Fresh saved settings enable the Forever list; a stored false remains a player opt-out.
 check(TrackerQuests.Enabled(), "fresh_database_enables_forever_quest_list: missing key enables the list")
 ready()
+tick()
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(trackerAlpha == 0 and not tracker:IsShown(), "core suppression is not another owner across applies and ticker")
 check(not tracker:IsShown(), "fresh_database_enables_forever_quest_list: native tracker is hidden")
 env.ForeverCoreDB = { questList = false }
 section:OnEvent("PLAYER_ENTERING_WORLD")
@@ -180,6 +219,23 @@ section:OnEvent("PLAYER_ENTERING_WORLD")
 check(section.marked ~= nil, "the Forever list is laid out")
 CheckNativeModulesUntouched("turning the list on")
 check(not tracker:IsShown(), "enabling hides the whole native tracker")
+ns.TrackerEllesmere = {
+	Owns = function()
+		return true
+	end,
+}
+tick()
+check(not tracker:IsShown(), "late Ellesmere ownership leaves the native tracker untouched")
+check(section:LayoutContents() == nil, "the ticker defers to late Ellesmere ownership")
+section.shown = false
+local deferredMarked = section.marked
+tick()
+check(section.marked == deferredMarked, "a deferred ticker does not dirty the section")
+ns.TrackerEllesmere = nil
+tick()
+check(section.marked > deferredMarked, "the ticker resumes the list when the other owner leaves")
+check(not tracker:IsShown() and trackerAlpha == 0, "resuming the list keeps the native tracker suppressed")
+section.shown = true
 tracker:Show()
 check(not tracker:IsShown(), "native OnShow is suppressed")
 check(hookCount == 1, "visibility hook is installed once")
@@ -262,6 +318,7 @@ check(not tracker:IsShown() and trackerAlpha == 0, "combat ending leaves Questie
 check(nativeShows == showsBeforeQuestieCombat, "core never shows the native frame over Questie across combat")
 trackerProtected = false
 ns.TrackerQuestie = nil
+trackerAlpha = 0.75
 TrackerQuests.SetEnabled(true)
 
 -- Private records and rendering must not populate Blizzard's shared lazy QuestCache.

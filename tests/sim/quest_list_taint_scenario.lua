@@ -9,7 +9,7 @@ local function ExpectAuraReadIsUntainted(sim, reads, before)
 	sim:expectNoErrors(ADDON)
 end
 
-scenario("the Forever quest list leaves the native scenario tracker's aura read untainted", function(sim)
+local function Run(sim, mode)
 	-- Keep one watched quest so Blizzard has content to show when suppression is released.
 	local quest = {
 		questID = 101,
@@ -57,14 +57,31 @@ scenario("the Forever quest list leaves the native scenario tracker's aura read 
 	sim.G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", 0, -100)
 	sim.G.ObjectiveTrackerFrame:SetHeight(400)
 
-	sim:login({ savedVariables = { ForeverCoreDB = { questList = true } } })
+	local tracker = sim.G.ObjectiveTrackerFrame
+	local db = mode == "disabled" and { questList = false } or mode == "enabled" and { questList = true } or {}
+	if mode == "ellesmere" then
+		sim.G.EllesmereUIQuestTracker = {}
+		local custom = sim.G.CreateFrame("Frame", "EUI_CustomQuestTracker", sim.G.UIParent)
+		custom:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", -40, -100)
+		custom:SetSize(250, 300)
+		tracker:SetAlpha(0)
+		tracker:Show()
+	end
+	local nativeAlpha, nativeShown = tracker:GetAlpha(), tracker:IsShown()
+	sim:login({ savedVariables = { ForeverCoreDB = db } })
 	sim:advance(0.5)
 	-- A scenario update makes the client's own scenario module lay out, which reaches the Maw buff check. With the
 	-- list on, nothing the list did may have tainted that pass.
-	local tracker = sim.G.ObjectiveTrackerFrame
 	local function NativeUpdate()
 		assert(sim.taint.current == nil, "native container update starts secure")
 		tracker:Update()
+	end
+	if mode == "ellesmere" then
+		assert(
+			tracker:GetAlpha() == nativeAlpha and tracker:IsShown() == nativeShown,
+			"core leaves Ellesmere's native tracker untouched at login"
+		)
+		assert(not sim.G.ForeverCoreQuestTracker:IsShown(), "the Forever section defers to Ellesmere")
 	end
 	local before = reads
 	sim:event("QUEST_LOG_UPDATE")
@@ -72,6 +89,14 @@ scenario("the Forever quest list leaves the native scenario tracker's aura read 
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	if mode == "disabled" or mode == "ellesmere" then
+		assert(tracker:IsShown(), "native tracker stays shown with the column attached")
+		assert(sim.G.ForeverCore.TrackerHost.IsAttachedToQuestTracker(), "the column stays attached")
+		if mode == "ellesmere" then
+			assert(tracker:GetAlpha() == 0, "Ellesmere's native alpha stays untouched")
+		end
+		return
+	end
 	assert(not tracker:IsShown(), "login with the Forever list hides the whole native tracker")
 
 	-- Turning the list off and on changes only native frame visibility, leaving every module untouched.
@@ -130,4 +155,10 @@ scenario("the Forever quest list leaves the native scenario tracker's aura read 
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
-end)
+end
+
+for _, mode in ipairs({ "enabled", "fresh", "disabled", "ellesmere" }) do
+	scenario("native scenario aura reads stay untainted with quest list " .. mode, function(sim)
+		Run(sim, mode)
+	end)
+end
