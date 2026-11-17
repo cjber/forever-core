@@ -29,7 +29,7 @@ local opened = #t.menus
 local menu = Menu(first)
 check(#t.menus == opened + 1 and menu.owner == t.host, "the section's menu opens on the shared column")
 check(Entry(menu, "Attach to quest tracker") == nil, "the column offers no attach switch")
-check(Entry(menu, "Forever quest list") == nil, "the quest list switch moved out of core")
+check(Entry(menu, "Forever quest list") == nil, "core offers no quest list switch")
 local lock = Entry(menu, "Lock the tracker")
 check(lock ~= nil, "the section menu offers Lock")
 check(lock.isSelected() == false, "the Lock switch reads the saved setting")

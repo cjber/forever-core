@@ -174,3 +174,4 @@ Rules that keep this file honest:
 | 2026-11-01 | Atlas Forever retired before any store release: its painted maps moved to Tweaks, and OpenMap covers the rest | owner request |
 | 2026-11-04 | Hoard Forever retired and archived: Baganator covers bag, bank and alt search (cjber/hoard-forever#50) | owner decision |
 | 2026-11-06 | The shared micro-menu button is replaced by a minimap button: one draggable rim button per addon, sharing one registry and saving its angle and hide flag in the addon's settings (cjber/forever-core#152) | owner decision |
+| 2026-11-17 | The Forever quest list is removed from the suite and moves nowhere: no addon hides, replaces, reorders or changes the game's quest tracker or quest watching. ForeverCore's column pins beside the game's tracker by naming it as an anchor only (cjber/forever-core#792) | owner decision |

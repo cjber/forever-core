@@ -37,6 +37,7 @@ L["Forever tracker"] = "Отслеживание Forever"
 L["Hide this section"] = "Hide this section"
 L["Inspired by"] = "Вдохновили"
 L["Lock the tracker"] = "Закрепить трекер"
+L["Reset position"] = "Сбросить положение"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
 L["No one is listed yet."] = "Пока никого нет в списке."

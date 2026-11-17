@@ -3,7 +3,8 @@
 ForeverCore is the shared library under the WoW: Forever addon suite (Interface 16001). It is its own addon,
 `ForeverCore`, and every Forever addon declares it with `## OptionalDeps: ForeverCore`, so the client loads it first
 when it is installed and the addon still loads when it is not. It owns the one tracker
-column the suite docks into, a free frame that never anchors to another tracker, the grip and Lock switch that move it,
+column the suite docks into, pinned beside the game's quest tracker until the player drags it, the grip and Lock switch
+that move it,
 the section order that stacks them, the report and issue windows, the error journal and debug log, the minimap button,
 the world map quest log tabs and the settings-page chrome. It is GPL-3.0-or-later.
 
@@ -63,8 +64,10 @@ uv run --project tools --frozen --group dev python -m unittest discover -s tools
 
 `tests/tracker_host_spec.lua` is the native integration spec: it runs Blizzard's real objective-tracker source, fetched
 at a pinned revision by `tools/fetch_tracker_ui.py`, against this host. `tests/tracker_reflow_spec.lua` runs the same
-source to check that a client event or another frame moving never moves the column, and that only a dirty section
-rebuilds. The other tracker specs stub everything and run anywhere. `tests/api_spec.lua` loads the TOC in order,
+source to check that a client event or another frame moving never moves the column, that an Edit Mode move of the game
+tracker carries it through the anchor alone, and that only a dirty section rebuilds. `tests/sim/jitter795_scenario.lua`
+is the #795 loop under forever_sim (`luajit .agents/skills/wow-forever-addon/tooling/forever_sim/run.lua -v
+--only=jitter795`): 0 column moves while the section heights swing. The other tracker specs stub everything and run anywhere. `tests/api_spec.lua` loads the TOC in order,
 registers two fake addons and checks the public API.
 
 ## Layout
@@ -100,9 +103,15 @@ registers two fake addons and checks the public API.
   `Expose.lua` registers it under **ForeverCore**. `THIRD_PARTY.md` also feeds the one-sentence thanks between the
   `forever-credits` markers in README.md's `## Credits` and in `docs/curseforge.md`.
 - `UI/TrackerHost.lua`: the private tracker column, one frame on `UIParent` the player drags and locks, its optional
-  tooltip-art backdrop and opacity, its layout and combat handling, the one-time move of an old attached placement to
-  the default spot under the minimap, and the one-time migration from a consumer's old tracker settings. Nothing in it
-  reads another tracker's frames or the native tracker's visibility.
+  tooltip-art backdrop and opacity, its layout and combat handling, the one-time move of an old attached or beside
+  placement to the pin, and the one-time migration from a consumer's old tracker settings. By default its `TOPRIGHT`
+  is anchored to `ObjectiveTrackerFrame`'s `TOPLEFT`, one `SetPoint` the engine keeps through Edit Mode moves and
+  while that tracker is hidden; a drag saves a free position and releases the pin, and Reset position pins it again.
+  The anchor is the only use of the native tracker: nothing in core reads its contents, visibility or geometry, or
+  writes to it (no alpha, state driver, hook, Show, Hide or SetPoint), and placement never reads the column's own
+  height. `tests/tracker_host_harness.lua`'s native tracker fails any read or write, and `tests/tracker_host_spec.lua`
+  scans the TOC's files for one. There is no Forever quest list: quests show in the game's tracker or a quest
+  addon's.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on
   this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
 - `UI/TrackerLock.lua`: the grip and the Lock switch, which load before the host.

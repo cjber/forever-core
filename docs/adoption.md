@@ -135,8 +135,9 @@ says whether the host handled the click. A legacy `OnBlockHeaderClick` is wrappe
 `AddHeaderMenuEntries` stays supported for migrating consumers, but cannot be combined with a
 new menu contract. A rejected combination leaves the attached module unchanged.
 
-The column is one frame of its own on `UIParent`, which the player drags and locks; it never anchors to the game's
-quest tracker or another tracker addon. Its settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale,
+The column is one frame of its own on `UIParent`. Its top right corner is pinned to the game's quest tracker's top left
+corner until the player drags it, and Reset position pins it again; it never reads or changes that tracker, and never
+anchors to another tracker addon. Its settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale,
 lock, background opacity and position. A consumer whose old version kept its own tracker table offers it once so
 players keep the layout they chose:
 

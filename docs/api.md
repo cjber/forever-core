@@ -258,6 +258,11 @@ minimum when room allows; short or collapsed sections reserve only their content
 applies it, after combat ends when necessary. Width remains shared across the column and follows the host's scale and
 responsive bounds. The setter neither changes saved variables nor creates a new scroll child; the consumer saves its
 setting and reapplies it after attachment.
+The column's top right corner is pinned to the top left corner of the game's quest tracker, `ObjectiveTrackerFrame`,
+through one anchor, so it follows that tracker through Edit Mode whether it is shown or hidden. ForeverCore only names
+that frame as the anchor: it never reads its contents and never writes to it. `TrackerHost.SavePosition(x, y)`, which
+the grip's drag calls, gives the column a free position and releases the pin; `TrackerHost.ResetPosition()`, which
+every section's right-click menu offers as Reset position, pins it again.
 [`docs/adoption.md`](adoption.md) describes them for the
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
 instead.

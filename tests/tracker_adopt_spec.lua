@@ -547,13 +547,6 @@ local function Section(order)
 	return section
 end
 
--- Core's own quest list builds a section from Blizzard's template. The tracker specs load it with the mixins stubbed,
--- and the host it belongs to is what this spec is about, not its test list.
-local function QuestMixes()
-	env.QuestObjectiveTrackerMixin = {}
-	env.CampaignQuestObjectiveTrackerMixin = {}
-end
-
 local function LoadCore()
 	local ns = {}
 	for _, path in ipairs(tocFiles()) do
@@ -595,7 +588,6 @@ end
 
 -- ForeverCore loads first: it publishes the global, and the later vendored copy reuses core's host.
 Client()
-QuestMixes()
 local coreNs = LoadCore()
 local coreHost = coreNs.TrackerHost
 check(coreHost ~= nil, "ForeverCore builds its host")
@@ -612,7 +604,6 @@ check(coreHost.IsAttached(vendoredSection), "the vendored addon's section attach
 
 -- A vendored host loads first: core adopts it, forwards every call the old API has, and draws no second frame.
 Client()
-QuestMixes()
 vendoredNs = LoadVendored()
 local oldHost = env.ForeverTrackerHost
 check(oldHost ~= nil, "the vendored copy builds the first host")

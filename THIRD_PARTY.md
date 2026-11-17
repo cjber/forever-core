@@ -1,15 +1,7 @@
 # Third-party inputs
 
-ForeverCore ships no embedded library and copies no other addon's code. What it reads from another addon in game is
-listed here, with the build-only sources, then the players who helped. The addon itself is GPL-3.0-or-later
-([LICENSE](LICENSE)).
-
-## Read in game, never bundled
-
-| Input | Used for | Licence |
-|---|---|---|
-| Questie, if installed | The quest list the shared tracker column steps beside | QuestieDB carries no licence; nothing is copied |
-| EQ Objective Tracker, if installed | Its quest list and layout API, which the shared column also steps beside | Read only through its public API and frames; nothing is copied |
+ForeverCore ships no embedded library, copies no other addon's code and reads no other addon in game. Its build-only
+sources are listed here, then the players who helped. The addon itself is GPL-3.0-or-later ([LICENSE](LICENSE)).
 
 ## Made for these addons
 

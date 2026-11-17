@@ -198,17 +198,17 @@ for _, entry in ipairs(journalResult.errors) do
 	end
 end
 
--- Saved quest folds use numeric quest IDs and character/realm keys, not dotted paths.
+-- Saved per-character folds use numeric IDs and character/realm keys, not dotted paths.
 local keyed = ns.ReconcileStore({
 	Head("A", 10, {
-		questListFold = {
+		sectionFolds = {
 			["Player-Realm.With.Dot"] = { quests = { [123] = true, ["123"] = false }, zones = { ["A.B"] = true } },
 		},
 		["literal.key"] = "kept",
 		["~2:123"] = "literal prefix",
 	}),
 }, { NextNode = Node })
-local character = keyed.questListFold["Player-Realm.With.Dot"]
+local character = keyed.sectionFolds["Player-Realm.With.Dot"]
 check(character ~= nil, "realm names containing periods remain one key")
 equal(character.quests[123], true, "numeric quest IDs stay numeric")
 equal(character.quests["123"], false, "string and numeric keys remain distinct")

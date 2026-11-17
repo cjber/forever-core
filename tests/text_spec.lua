@@ -49,7 +49,7 @@ equal(Tier("Straße", "strasse"), 1, "the fold applies to the search as well as 
 equal(Tier("Ægir", "aeg"), 2, "a folded ligature is a prefix")
 
 -- The ordering a caller sorts by: rank first, then whatever tie-break it likes. This is the shape Hoard's item list
--- and Adventure Guide's quest list both sort with.
+-- sorts with.
 local names =
 	{ "The Shattered Halls", "Hall of Legends", "Thrallmar", "Shattrath", "Auchindoun Halls", "Marshall's Post" }
 local query = Fold("hall")

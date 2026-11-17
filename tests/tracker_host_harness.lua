@@ -1,4 +1,5 @@
--- Shared stubs for the tracker host specs: one private host on a stubbed UIParent, and a native tracker it never reads.
+-- Shared stubs for the tracker host specs: one private host on a stubbed UIParent, and a native tracker it only names
+-- as an anchor.
 local harness = {}
 
 function harness.new(options)
@@ -15,6 +16,33 @@ function harness.new(options)
 	local initializationEvents
 	local combat = false
 	local parent
+	-- The native tracker's geometry, which only the spec reads and moves. A frame anchored to the native tracker
+	-- resolves through it, as the engine resolves an anchor, so the host never has to read the tracker itself.
+	local native
+	local nativeRect = { left = 1200 - 260, top = 880, width = 260, height = 300 }
+	local function Along(name, low, size)
+		if name:find("LEFT") or name:find("BOTTOM") then
+			return low
+		elseif name:find("RIGHT") or name:find("TOP") then
+			return low + size
+		end
+		return low + size / 2
+	end
+	-- The frame's left and top when its one point names the native tracker, nil otherwise.
+	local function Anchored(self)
+		local p = self.point
+		if not p or p[2] ~= native then
+			return nil
+		end
+		local x = Along(p[3]:gsub("TOP", ""):gsub("BOTTOM", ""), nativeRect.left, nativeRect.width) + (p[4] or 0)
+		local y = Along(p[3]:gsub("LEFT", ""):gsub("RIGHT", ""), nativeRect.top - nativeRect.height, nativeRect.height)
+			+ (p[5] or 0)
+		local horizontal = p[1]:gsub("TOP", ""):gsub("BOTTOM", "")
+		local vertical = p[1]:gsub("LEFT", ""):gsub("RIGHT", "")
+		local left = x - (Along(horizontal, 0, self:GetWidth()))
+		local top = y + self:GetHeight() - Along(vertical, 0, self:GetHeight())
+		return left, top
+	end
 	local function frame()
 		local f = { width = 250, height = 0, scripts = {} }
 		function f:SetPoint(...)
@@ -48,10 +76,11 @@ function harness.new(options)
 			self.scale = value
 		end
 		function f.GetTop(self)
-			return self.top or 640
+			local _, top = Anchored(self)
+			return self.top or top or 640
 		end
 		function f.GetLeft(self)
-			return self.left or 0
+			return self.left or Anchored(self) or 0
 		end
 		function f.GetRight(self)
 			return self.right or self:GetLeft() + self:GetWidth()
@@ -224,9 +253,9 @@ function harness.new(options)
 		frames[#frames + 1] = f
 		return f
 	end
-	-- The client's tracker only has to exist, which says its section template loaded: the column never reads, writes
-	-- or hooks it, so any access fails the spec.
-	local native = setmetatable({}, {
+	-- The client's tracker exists, which says its section template loaded, and the column may name it as an anchor. It
+	-- never reads, writes or hooks it, so any field access fails the spec.
+	native = setmetatable({}, {
 		__index = function(_, key)
 			error("the host read the native tracker: " .. tostring(key))
 		end,
@@ -234,8 +263,6 @@ function harness.new(options)
 			error("the host wrote the native tracker: " .. tostring(key))
 		end,
 	})
-	local minimap = frame()
-	minimap.left, minimap.right, minimap.top, minimap.bottom, minimap.shown = 900, 1100, 700, 500, false
 	parent = frame()
 	parent.width = 1200
 	parent:SetHeight(1080)
@@ -291,7 +318,6 @@ function harness.new(options)
 			return combat
 		end,
 		ObjectiveTrackerFrame = native,
-		Minimap = minimap,
 		UIParent = parent,
 		CreateFrame = function(kind, _, _, template)
 			local f = frame()
@@ -409,8 +435,8 @@ function harness.new(options)
 		textures = textures,
 		releases = releases,
 		native = native,
+		nativeRect = nativeRect,
 		parent = parent,
-		minimap = minimap,
 		menus = menus,
 		check = check,
 		checks = function()
@@ -523,6 +549,10 @@ function harness.new(options)
 	function ctx.blocksReleased()
 		return released
 	end
+	-- Where the frame's top right corner resolves, with its anchors.
+	function ctx.topRight(target)
+		return target:GetRight(), target:GetTop()
+	end
 	-- Saves a dragged position that leaves exactly `room` units for the sections under the column's grip.
 	function ctx.room(room)
 		hostSettings.x, hostSettings.y = 0, room + 24 - parent:GetHeight()
@@ -586,7 +616,7 @@ function harness.new(options)
 		return m
 	end
 	ctx.loadHost(ns)
-	ctx.host, ctx.grip = frames[3], frames[4]
+	ctx.host, ctx.grip = frames[2], frames[3]
 	ctx.first, ctx.second = ctx.module(1), ctx.module(2)
 	if not options.deferReady then
 		ctx.ready()

@@ -19,8 +19,9 @@ local _, ns = ...
 ---@field trackerBlockMenuWrapped? boolean
 ---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
--- The client's own objective tracker. The column never anchors to it or reads its geometry: its presence only says
--- Blizzard_ObjectiveTracker loaded, which defines the section template every Forever section is built from.
+-- The client's own objective tracker. Its presence says Blizzard_ObjectiveTracker loaded, which defines the section
+-- template every Forever section is built from, and it is the frame the column pins to by default. The column only
+-- names it as an anchor: it never reads its contents, visibility or geometry, and never writes to it.
 ---@class ForeverNativeTrackerFrame : Frame
 
 -- Keep our sections and their frame pools entirely outside the native module collection and its Edit Mode path.
@@ -151,9 +152,10 @@ local function Opacity(value)
 	end
 	return math.max(0, math.min(1, value))
 end
--- The column used to attach to the quest tracker or sit beside another addon's list. It is now always a free frame:
--- a saved attached or beside placement moves once to the default spot, and the player's Lock choice stays. A saved free
--- position (attached false with x and y) is kept as it is. `attached = false` marks the settings as migrated.
+-- The column is pinned beside the game's quest tracker until the player drags it, and saved x and y mean a dragged
+-- position. An old attached placement (`attached` true or missing) drops its saved spot once, so it becomes the pin;
+-- an old beside placement already has none. A free position the player dragged (attached false with x and y) is kept.
+-- `attached = false` marks the settings as migrated, and the player's Lock choice stays either way.
 ---@return ForeverTrackerSettings
 local function Settings()
 	local settings = ns.TrackerHostSettings and ns.TrackerHostSettings() or fallbackSettings
@@ -301,8 +303,8 @@ local function OnAnimFinished(block)
 	end
 end
 
--- Every section but the one that fills the rest of the column caps at this many UI units. The Quests section asks for
--- the room the others leave, so a long quest list scrolls while Legacy's zone and SkillUp's reagents stay in view.
+-- Every section but the one that fills the rest of the column caps at this many UI units. A section that asks for the
+-- room the others leave scrolls in it, while Legacy's zone and SkillUp's reagents stay in view.
 local SECTION_MAX_HEIGHT = 200
 -- The bar's track plus the item frame's overhang and its spacing. Every section keeps it whether or not it scrolls,
 -- so its text width never depends on how tall its blocks turn out: a list that starts or stops scrolling keeps its
@@ -825,19 +827,6 @@ function Module:BeginLayout()
 	end
 end
 
--- Where the column sits until the player drags it: at the screen's right edge, its top just under the minimap. A
--- hidden or missing minimap leaves it at the screen's top. Offsets are from UIParent's top left corner in the host's
--- own units; the caller keeps them on screen.
-local function DefaultPosition(width, screenWidth, screenHeight)
-	local x, y = screenWidth - width, 0
-	local minimap = _G.Minimap
-	local bottom = minimap and minimap:IsShown() and minimap:GetBottom()
-	if bottom then
-		y = math.min(0, bottom * minimap:GetEffectiveScale() / host:GetEffectiveScale() - screenHeight)
-	end
-	return x, y
-end
-
 -- The space under each section that draws.
 local GAP = 10
 
@@ -857,7 +846,7 @@ local function ReportRefusal(reason)
 end
 
 -- The cap a section gets from the column. A scrollable section never takes more than 200 units, except the one that
--- asks for the rest of the column (the quest list), which is measured after the others have laid themselves out.
+-- asks for the rest of the column, which is measured after the others have laid themselves out.
 ---@param module ForeverTrackerModule
 ---@param available number
 ---@return number
@@ -877,8 +866,8 @@ end
 -- column never runs past `available`. Returns whether any section drew. One section's layout error is recorded in its
 -- own journal and leaves the sections below it to lay out, instead of breaking the whole column.
 --
--- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so the
--- quest list is the one that scrolls. It is laid out after the others so their real heights are known first.
+-- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so that
+-- long section is the one that scrolls. It is laid out after the others so their real heights are known first.
 local function LayoutPass(width, available, reserve)
 	local restIndex
 	for index, module in ipairs(modules) do
@@ -994,7 +983,9 @@ local function LayoutModules(width, available, reserve)
 	host:MarkDirty()
 	return hasSections
 end
--- The private column sits wherever the player dragged it, or at its default spot, and never anchors to another frame.
+-- The private column sits wherever the player dragged it. Until then its top right corner is pinned to the game's quest
+-- tracker's top left corner, one anchor the engine keeps, so an Edit Mode move carries the column along, and the pin
+-- holds whether that tracker is shown or hidden. Placement never reads the tracker or the column's own height.
 local function Place(settings)
 	host:Show()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
@@ -1006,29 +997,21 @@ local function Place(settings)
 		host:SetShown(LayoutModules(width, math.max(24, (host:GetTop() or screenHeight) - 24), 24))
 		return
 	end
-	local x, y
+	local top
+	host:ClearAllPoints()
 	if settings.x and settings.y then
-		x, y = settings.x / scale, settings.y / scale
+		local x = math.max(0, math.min(settings.x / scale, math.max(0, screenWidth - width)))
+		local y = math.min(0, math.max(settings.y / scale, 24 - screenHeight))
+		host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+		top = screenHeight + y
 	else
-		x, y = DefaultPosition(width, screenWidth, screenHeight)
+		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+		top = host:GetTop() or screenHeight
 	end
-	x = math.max(0, math.min(x, math.max(0, screenWidth - width)))
-	y = math.min(0, math.max(y, 24 - screenHeight))
-	-- The default spot is computed once, when the world has loaded, and then kept as the saved position: the column
-	-- moves only when the player drags it, never because the minimap or any other frame showed, hid or moved.
-	if ready and not (settings.x and settings.y) then
-		settings.x, settings.y = x * scale, y * scale
-	end
-	host:ClearAllPoints()
-	host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 	-- With no section to show, the column hides entirely, its title too; the next layout with content shows it again.
-	if not LayoutModules(width, math.max(24, screenHeight + y - 24), 24) then
+	if not LayoutModules(width, math.max(24, top - 24), 24) then
 		host:Hide()
-		return
 	end
-	y = math.min(0, math.max(y, math.min(host:GetHeight(), screenHeight) - screenHeight))
-	host:ClearAllPoints()
-	host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 end
 
 local function Layout()
@@ -1118,12 +1101,19 @@ function api.IsAttachedToQuestTracker()
 end
 function api.SetAttached(_) end
 function api.OnAttachmentChanged(_) end
+-- A drag saves a free position, which releases the pin.
 function api.SavePosition(x, y)
 	if type(x) ~= "number" or type(y) ~= "number" then
 		return
 	end
 	local settings = Settings()
 	settings.x, settings.y = x, y
+	host:MarkDirty()
+end
+-- Forgets the dragged position, so the column pins beside the game's quest tracker again.
+function api.ResetPosition()
+	local settings = Settings()
+	settings.x, settings.y = nil, nil
 	host:MarkDirty()
 end
 
@@ -1238,6 +1228,7 @@ local function NewTrackerMenu(root, module, target)
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
+		tracker:CreateButton(ns.L["Reset position"], api.ResetPosition)
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
 			return api.GetBackdropOpacity() == 0
@@ -1300,6 +1291,7 @@ local function AddHeaderMenu(module)
 	module.headerMenu = true
 	local L = ns.L
 	local lock = L["Lock the tracker"]
+	local reset = L["Reset position"]
 	local background = L["Tracker background"]
 	local hide = L["Hide this section"]
 	header:EnableMouse(true)
@@ -1329,6 +1321,7 @@ local function AddHeaderMenu(module)
 					api.SetLocked(not api.IsLocked())
 				end)
 			end
+			root:CreateButton(reset, api.ResetPosition)
 			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its
 			-- own. The values are the saved fractions the host draws, and picking one only recolours the texture.
 			local backgroundMenu = root:CreateButton(background)

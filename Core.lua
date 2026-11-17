@@ -912,11 +912,12 @@ end
 -- tracker migration. Converted copies call it through ns.Start(); the unwrapped standalone path reaches it through its
 -- ADDON_LOADED frame.
 local function InitializeStore()
-	-- Forever Leaderboards and peer stats are gone, so drop the one saved choice core kept for them: the window's
-	-- reach. Nothing else in ForeverCoreDB belonged to them.
+	-- Forever Leaderboards, peer stats and the Forever quest list are gone, and nothing migrates their saved data, so
+	-- drop it: the leaderboard window's reach, and the list's switch, hint answer and per-character folds.
 	local store = ns.Store()
 	if type(store) == "table" then
 		store.leaderboards = nil
+		store.questList, store.questListHintDone, store.questListFold = nil, nil, nil
 	end
 	-- Building the host's table here is also the normalisation the host reads on every access.
 	ns.TrackerHostSettings()

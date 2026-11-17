@@ -1,9 +1,9 @@
 -- The host must never enter Blizzard's tracker manager, including through pooled lines, and never touch the native
--- tracker: the harness's ObjectiveTrackerFrame fails any read or write.
+-- tracker: the harness's ObjectiveTrackerFrame fails any read or write, so the column may only name it as an anchor.
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ deferReady = true })
 local check, drain = t.check, t.drain
-local host, grip, parent = t.host, t.grip, t.parent
+local host, grip = t.host, t.grip
 local first, second = t.first, t.second
 
 check(t.pending() == 0, "must not render before player and saved data are ready")
@@ -18,15 +18,24 @@ check(t.pending() == 1, "first layout is deferred")
 drain()
 check(first.point[5] == -24 and second.point[5] == -114, "sections follow uiOrder under the grip")
 check(host.width == 260, "the column takes the section template's width")
--- With the minimap hidden the column's default spot is the screen's top right corner.
-check(
-	host.point[1] == "TOPLEFT" and host.point[2] == parent and host.point[3] == "TOPLEFT",
-	"the column is a free frame on UIParent"
-)
-check(host.point[4] == 1200 - 260 and host.point[5] == 0, "the default spot is the top right of the screen")
+-- By default the column's top right corner is pinned to the game tracker's top left corner.
+local function Pinned(ctx)
+	local point = ctx.host.point
+	return point[1] == "TOPRIGHT"
+		and point[2] == ctx.native
+		and point[3] == "TOPLEFT"
+		and point[4] == 0
+		and point[5] == 0
+end
+local function CornersTouch(ctx)
+	local right, top = ctx.host:GetRight(), ctx.host:GetTop()
+	return right == ctx.nativeRect.left and top == ctx.nativeRect.top
+end
+check(Pinned(t), "the column pins its top right corner to the game tracker's top left corner")
+check(CornersTouch(t), "the two top corners touch")
 check(grip.shown == true, "the grip is always shown")
 -- The first section's 80 and the gap under it, then the gap the second section leaves under itself.
-check(second.available == 1080 - 24 - 90 - 10, "remaining space runs to the screen's bottom, less each gap")
+check(second.available == 880 - 24 - 90 - 10, "remaining space runs from the pin to the screen's bottom, less each gap")
 
 -- A section created just before combat may reach Attach from its deferred timer after combat starts. SetParent is
 -- protected for the quest descendants, so the host keeps the request and applies it on the first safe event.
@@ -55,37 +64,68 @@ drain()
 check(host.shown == false, "host hides when no section draws")
 check(first.point[5] == 0 and second.point[5] == 0, "no grip gap is reserved without section content")
 
--- The column's default spot sits under a shown minimap, in the minimap's own scale.
-local under = harness.new({ deferReady = true })
-under.minimap.shown, under.minimap.effectiveScale = true, 1.25
-under.ready()
-under.drain()
-under.check(under.host.point[5] == 500 * 1.25 - 1080, "the default spot starts under the minimap")
-under.check(under.host.point[4] == 1200 - 260, "the default spot keeps to the right edge")
+-- An Edit Mode move of the game tracker carries the column with it: the engine keeps the anchor, so the host runs no
+-- layout and sets no point of its own.
+local pinned = harness.new()
+local pinPoint = pinned.host.point
+local nativeRect = pinned.nativeRect
+nativeRect.left, nativeRect.top = 400, 700
+pinned.check(pinned.pending() == 0, "a move of the game tracker queues no layout")
+pinned.check(pinned.host.point == pinPoint, "and sets no point")
+pinned.check(CornersTouch(pinned), "the corners stay together after an Edit Mode move")
+-- The pin holds whether the game tracker is shown or hidden: the host never asks which, and the harness's tracker
+-- would fail the spec if it did. A layout after the tracker hides keeps the same anchor.
+pinned.host:MarkDirty()
+pinned.drain()
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "a later layout keeps the pin")
 
--- A saved attached or beside placement moves once to the default spot and keeps the player's Lock choice.
-local migrated = harness.new({
-	deferReady = true,
-	hostSettings = { attached = true, locked = true, x = 10, y = -20 },
-})
-migrated.minimap.shown = true
-migrated.ready()
-migrated.drain()
-local settings = migrated.hostSettings
-migrated.check(settings.attached == false, "an attached placement migrates to a free one")
-migrated.check(settings.x == 1200 - 260 and settings.y == 500 - 1080, "the old placement gives way to the default spot")
+-- A drag gives the column a free position and releases the pin; Reset pins it again.
+local settings = pinned.hostSettings
+pinned.grip.scripts.OnDragStart(pinned.grip)
+pinned.host.left, pinned.host.top = 100, 1080 - 200
+pinned.grip.scripts.OnDragStop(pinned.grip)
+pinned.host.left, pinned.host.top = nil, nil
+pinned.drain()
+pinned.check(settings.x == 100 and settings.y == -200, "a drag saves a free position")
+local point = pinned.host.point
+pinned.check(
+	point[1] == "TOPLEFT" and point[2] == pinned.parent and point[4] == 100 and point[5] == -200,
+	"a dragged column sits where it was dropped, on UIParent"
+)
+nativeRect.left = 300
+pinned.host:MarkDirty()
+pinned.drain()
+pinned.check(pinned.host.point[2] == pinned.parent, "a dragged column no longer follows the game tracker")
+local function Entry(entries, text)
+	for _, entry in ipairs(entries) do
+		if entry.text == text then
+			return entry
+		end
+	end
+end
+pinned.host.shown = true
+pinned.first.Header.scripts.OnMouseUp(pinned.first.Header, "RightButton")
+local reset = Entry(pinned.menus[#pinned.menus].entries, "Reset position")
+pinned.check(reset ~= nil, "the section menu offers Reset position")
+reset.callback()
+pinned.drain()
+pinned.check(settings.x == nil and settings.y == nil, "Reset forgets the dragged position")
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "Reset pins the column to the game tracker again")
+pinned.check(settings.locked == false, "Reset leaves the Lock switch alone")
+
+-- Old placements migrate once to the pin and keep the player's Lock choice: an attached one drops its saved spot, and
+-- a beside one never had one.
+local migrated = harness.new({ hostSettings = { attached = true, locked = true, x = 10, y = -20 } })
+settings = migrated.hostSettings
+migrated.check(settings.attached == false, "an attached placement is marked migrated")
+migrated.check(settings.x == nil and settings.y == nil, "the attached placement's old spot is dropped")
 migrated.check(settings.locked == true, "the player's Lock choice survives the migration")
-migrated.check(
-	migrated.host.point[4] == 1200 - 260 and migrated.host.point[5] == 500 - 1080,
-	"a migrated column sits at the default spot"
-)
--- A missing attached flag was the old default, so it migrates too.
+migrated.check(Pinned(migrated), "a migrated attached column is pinned")
 local unset = harness.new({ hostSettings = { x = 30, y = -40 } })
-unset.check(
-	unset.hostSettings.attached == false and unset.hostSettings.x == 1200 - 260 and unset.hostSettings.y == 0,
-	"an unset flag migrates as attached"
-)
--- The move is one-time: a position saved afterwards sticks.
+unset.check(unset.hostSettings.x == nil and Pinned(unset), "a missing attached flag was the old default and migrates")
+local beside = harness.new({ hostSettings = { attached = false, locked = true } })
+beside.check(Pinned(beside) and beside.hostSettings.locked == true, "a beside placement migrates to the pin")
+-- The migration is one-time: a position saved afterwards sticks.
 migrated.ns.TrackerHost.SavePosition(50, -60)
 migrated.drain()
 migrated.check(settings.x == 50 and settings.y == -60, "a position saved after the migration is kept")
@@ -103,13 +143,6 @@ end)
 migrated.ns.TrackerHost.SetAttached(false)
 migrated.check(not notified, "an attachment callback is never called")
 
--- The default spot is saved once, so the column never follows the minimap, another tracker or the native tracker
--- showing, hiding or moving afterwards (#795).
-under.minimap.shown = false
-under.host:MarkDirty()
-under.drain()
-under.check(under.host.point[5] == 500 * 1.25 - 1080, "a minimap hidden later moves nothing")
-
 -- A layout during a drag leaves the column where the drag holds it.
 local dragged = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
 dragged.grip.scripts.OnDragStart(dragged.grip)
@@ -118,17 +151,42 @@ dragged.host:MarkDirty()
 dragged.drain()
 dragged.check(dragged.host.point[4] == 300 and dragged.host.point[5] == -300, "a layout mid-drag moves nothing")
 
--- A saved free position is kept as it is.
+-- An explicit free position the player dragged is kept as it is.
 local free = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
 free.check(free.host.point[4] == 100 and free.host.point[5] == -200, "a saved free position is kept")
 
--- The column's scale is only the player's own.
+-- The column's scale is only the player's own, and the pin keeps its corner whatever the scale.
 local userScaled = harness.new({ hostSettings = { attached = false, scale = 1.5 } })
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's scale sets the column's scale")
-userScaled.check(
-	math.abs(userScaled.host.point[4] - (1200 / 1.5 - 260)) < 1e-9,
-	"a scaled column's default spot keeps its right edge on screen"
-)
+userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
+
+-- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
+-- a presence check or an anchor argument, never a field, a method call or an assignment.
+local writes = {}
+for line in io.lines("ForeverCore.toc") do
+	local path = line:match("^([%w_\\/]+%.lua)%s*$")
+	if path then
+		path = path:gsub("\\", "/")
+		local number = 0
+		for source in io.lines(path) do
+			number = number + 1
+			local code = source:gsub("%-%-.*$", "")
+			local init = 1
+			while true do
+				local _, finish = code:find("ObjectiveTrackerFrame", init, true)
+				if not finish then
+					break
+				end
+				local after = code:sub(finish + 1)
+				if after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")) then
+					writes[#writes + 1] = path .. ":" .. number
+				end
+				init = finish + 1
+			end
+		end
+	end
+end
+check(#writes == 0, "nothing in core touches ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks
 -- releases every block, so a second layout would replay each header's add animation and rebuild every block. Issue
@@ -441,7 +499,8 @@ ContentWheel(-1)
 paging.check(oversized.scrollOffset == heldOffset, "a section without overflow ignores content wheels")
 
 local total = stackedChecks
-for _, run in ipairs({ t, under, migrated, unset, dragged, free, userScaled, scroll, floors, cramped, paging }) do
+local runs = { t, pinned, migrated, unset, beside, dragged, free, userScaled, scroll, floors, cramped, paging }
+for _, run in ipairs(runs) do
 	total = total + run.checks()
 end
 print("tracker_host_spec: " .. total .. " checks passed")

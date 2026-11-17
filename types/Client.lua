@@ -46,8 +46,10 @@ function GameTooltip_SetTitle(tooltip, text) end
 -- ForeverCore's own saved variables, from ForeverCore.toc.
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
----@field questList? boolean the retired Forever quest list's switch, left for Adventure Guide's one-time migration
----@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
+---@field leaderboards? table Retired Forever Leaderboards saved data, cleared at load.
+---@field questList? boolean The retired Forever quest list's switch, cleared at load.
+---@field questListHintDone? boolean The retired quest list hint's answer, cleared at load.
+---@field questListFold? table The retired quest list's per-character folds, cleared at load.
 ---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
 ---@field _store? ForeverCoreStoreMeta the reconciled store node and any retained setting conflicts.
 ---@field ForeverCoreStore? table the reserved mirror key inside a consumer's account table.

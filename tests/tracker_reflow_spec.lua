@@ -32,7 +32,7 @@ setfenv(assert(loadfile("UI/TrackerSection.lua")), t.env)("Test", t.ns)
 local TrackerSection = t.ns.TrackerSection
 t.first.contentHeight, t.second.contentHeight = 0, 0
 
--- Two capped sections above the quest list, which takes the rest of the column and overflows it.
+-- Two capped sections above the long list, which takes the rest of the column and overflows it.
 local sections = {}
 for order = 3, 5 do
 	local m = t.nativeModule(order)
@@ -55,10 +55,11 @@ for order = 3, 5 do
 end
 local list = sections[3]
 
--- The host's offset from UIParent's top left, as its one TOPLEFT point records it.
+-- Where the host sits: its one point and the top right corner that point resolves to.
 local function Where()
 	local point = t.host.point
-	return point[4], point[5]
+	return table.concat({ point[1], tostring(point[2]), point[3], point[4], point[5] }, " "),
+		("%s,%s"):format(t.host:GetRight(), t.host:GetTop())
 end
 
 -- Runs every queued frame until nothing is pending. Returns the frames that ran and how often the host's position
@@ -100,7 +101,7 @@ check(frames == 1, "a /reload settles in one frame")
 for index, m in ipairs(sections) do
 	check(m.rebuilds == 1, "a /reload builds section " .. index .. " once")
 end
-check(list.trackerOverflow == true, "the quest list overflows and scrolls")
+check(list.trackerOverflow == true, "the long list overflows and scrolls")
 local x0, y0 = Where()
 
 -- Zone and subzone changes, a quest log update and a taxi flight's control events reach nothing in the host.
@@ -130,7 +131,9 @@ do
 	Untouched(before, animations, "a clean host pass")
 end
 
--- The client's tracker and the right action bars moving or resizing: the host never reads them, so nothing follows.
+-- The right action bars moving or resizing: the host never reads them, so nothing follows. An Edit Mode move of the
+-- game's tracker carries the pinned column through the engine's anchor alone: the host sets no point and rebuilds
+-- nothing, and the two top corners stay together.
 do
 	local frame = t.parent
 	local function Bar()
@@ -142,7 +145,7 @@ do
 		return bar
 	end
 	local before, animations = Rebuilds(), t.headerAnimations()
-	for _, name in ipairs({ "ObjectiveTrackerFrame", "MultiBarRight", "MultiBarLeft" }) do
+	for _, name in ipairs({ "MultiBarRight", "MultiBarLeft" }) do
 		local moved = Bar()
 		moved:SetPoint("TOPRIGHT", t.parent, "TOPRIGHT", -300, -50)
 		moved:SetHeight(900)
@@ -151,8 +154,14 @@ do
 	end
 	t.fire("UI_SCALE_CHANGED")
 	local _, moves = Settle()
-	check(moves == 0, "the native tracker and the action bars moving move the column 0 px")
-	Untouched(before, animations, "the native tracker and the action bars moving")
+	check(moves == 0, "the action bars moving move the column 0 px")
+	Untouched(before, animations, "the action bars moving")
+	local point = t.host.point
+	t.nativeRect.left, t.nativeRect.top = 600, 700
+	check(t.pending() == 0 and t.host.point == point, "an Edit Mode move of the game tracker runs nothing in the host")
+	check(t.host:GetRight() == 600 and t.host:GetTop() == 700, "the corners stay together after the move")
+	Untouched(before, animations, "an Edit Mode move of the game tracker")
+	t.nativeRect.left, t.nativeRect.top = 940, 880
 end
 
 -- One section's change rebuilds that section alone, in one frame.
@@ -165,7 +174,7 @@ do
 	check(sections[1].rebuilds == before[1] and list.rebuilds == before[3], "the other sections keep their blocks")
 end
 
--- A section above the quest list growing, as a journey does when its route arrives, moves the list once and leaves
+-- A section above the long list growing, as a journey does when its route arrives, moves the list once and leaves
 -- its blocks alone: the list only gets a smaller viewport.
 do
 	local listTop = list.point[5]
@@ -174,9 +183,9 @@ do
 	sections[1]:MarkDirty()
 	local passes, moves = Settle()
 	check(passes == 1 and moves == 0, "a section above growing lays the column out once")
-	check(list.point[5] < listTop, "the quest list moves down under the taller section")
+	check(list.point[5] < listTop, "the long list moves down under the taller section")
 	check(list.rebuilds == before[3] and sections[2].rebuilds == before[2], "the sections below keep their blocks")
-	check(list.trackerOverflow == true, "the quest list still scrolls in its smaller room")
+	check(list.trackerOverflow == true, "the long list still scrolls in its smaller room")
 end
 
 -- Shortest Path's guidance while the player walks: the section rewrites its text through UpdateText on every

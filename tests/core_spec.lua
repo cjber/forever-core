@@ -161,10 +161,18 @@ check(saved.locked == false, "a broken Lock switch falls back to off")
 check(saved.backdropOpacity == 0, "a broken backdrop opacity falls back to off")
 check(env.ForeverCoreDB.trackerHost == saved, "the saved table is the one kept")
 
--- The retired leaderboards choice is cleared when core loads, so no dead data lingers.
+-- The retired leaderboards choice and quest list data are cleared when core loads, so no dead data lingers.
 env.ForeverCoreDB.leaderboards = { reach = "met" }
+env.ForeverCoreDB.questList, env.ForeverCoreDB.questListHintDone = false, true
+env.ForeverCoreDB.questListFold = { ["Player-Realm"] = { quests = { [1] = true } } }
 coreFrames[1].scripts.OnEvent(coreFrames[1], "ADDON_LOADED", "ForeverCore")
 check(env.ForeverCoreDB.leaderboards == nil, "the old leaderboards choice is cleared on load")
+check(
+	env.ForeverCoreDB.questList == nil
+		and env.ForeverCoreDB.questListHintDone == nil
+		and env.ForeverCoreDB.questListFold == nil,
+	"the retired quest list's switch, hint answer and folds are cleared on load"
+)
 
 -- A first install has no ForeverCoreDB at ForeverCore's ADDON_LOADED: Core.lua's one handler makes the table, then runs
 -- core's attach and the tracker migration through the hooks those files register, in that order.

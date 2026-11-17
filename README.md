@@ -18,9 +18,10 @@ so the game loads it first when it is installed and exactly one copy of each sha
 loads when core is missing, and then says on screen how to install it. It has no settings page of its own. Your
 Forever addons use it for:
 
-- **One tracker column.** Every Forever addon adds its section to the same column, a frame of its own that starts at
-  the right edge under the minimap. Scale it, lock it or drag it once, and every addon follows. It never moves with
-  the game's quest tracker or another tracker addon.
+- **One tracker column.** Every Forever addon adds its section to the same column, a frame of its own that sits to
+  the left of the game's quest tracker, top edges level, and follows it when you move that tracker in Edit Mode. Drag
+  it anywhere and it stays there; Reset position in any section's right-click menu puts it back. Scale or lock it
+  once, and every addon follows. It never changes the game's quest tracker.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -35,8 +36,9 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no sections of its own, and it leaves the game's quest tracker alone. Every section belongs to the addon that
-owns the feature, the Forever quest list included, which is Adventure Guide's: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
+It draws no sections of its own and no quest list, and it leaves the game's quest tracker alone: your quests show in
+the game's own tracker or your quest addon's. Every section belongs to the addon that owns the feature: see the suite's
+ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
 modules on the `ForeverCore` table; see
 [`docs/adoption.md`](docs/adoption.md). The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).
