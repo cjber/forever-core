@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import check_consumers
 import sync_consumers as sync
 
 DEADCODE = b"# deadcode\n"
@@ -262,6 +263,57 @@ class ReleaseGateTest(unittest.TestCase):
         code, out = self.run_sync("--only", "tools/deadcode.py")
         self.assertEqual(code, 0, out)
         self.assertEqual(self.release(), RELEASE_WORKFLOW)
+
+
+STALE_TAG_STEP = """name: Release
+
+jobs:
+  release:
+    steps:
+      - name: Tag a manual release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT"
+
+          git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      # The packager uploads.
+      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+"""
+
+
+class TagStepTest(unittest.TestCase):
+    """A consumer's manual-release tag step is core's own, carried by the sync and checked by the drift gate."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.root = self.checkouts / "legacy-forever"
+        self.workflow = self.root / sync.RELEASE_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+        self.workflow.write_text(STALE_TAG_STEP, encoding="utf-8")
+
+    def check(self):
+        return check_consumers.check_tag_step("legacy-forever", "main", self.checkouts)
+
+    def test_the_sync_replaces_a_stale_step_with_cores_and_the_gate_passes(self):
+        self.assertIn("differs from core's", self.check()[0])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(sync.sync_tag_step(self.root, "legacy-forever", dry_run=False), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        core = (check_consumers.CORE_ROOT / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8")
+        start, end, _ = check_consumers.workflow_step(core, check_consumers.TAG_STEP)
+        self.assertIn(core[start:end], text)
+        # The comment and step after it survive, and nothing of the stale step is left.
+        self.assertIn("      # The packager uploads.\n      - uses: BigWigsMods/packager@", text)
+        self.assertEqual(text.count("- name: Tag a manual release"), 1)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(sync.sync_tag_step(self.root, "legacy-forever", dry_run=False), 0)
+
+    def test_a_workflow_without_the_step_is_left_alone(self):
+        self.workflow.write_text(KILN_RELEASE_WORKFLOW, encoding="utf-8")
+        self.assertEqual(sync.sync_tag_step(self.root, "legacy-forever", dry_run=False), 0)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)
 
 
 if __name__ == "__main__":

@@ -1386,7 +1386,21 @@ def git(repo_root: Path, *args: str) -> str:
 
 
 def resolve_commit(root: Path, ref: str) -> str:
-    """Resolve locally, fetching origin once for a missing full commit SHA."""
+    """Resolve a ref in the shared sibling checkout, whose local branches are not kept current.
+
+    A branch origin has resolves to origin's tip after one fetch (#771); a branch only this checkout has stays local.
+    Anything else resolves locally, fetching origin once for a missing full commit SHA.
+    """
+    branches = (f"refs/heads/{ref}", f"refs/remotes/origin/{ref}")
+    if any(
+        subprocess.run(["git", "-C", str(root), "show-ref", "--verify", "--quiet", name]).returncode == 0
+        for name in branches
+    ):
+        git(root, "fetch", "origin")
+        try:
+            return git(root, "rev-parse", "--verify", f"refs/remotes/origin/{ref}^{{commit}}")
+        except ClientError:
+            pass
     try:
         return git(root, "rev-parse", "--verify", f"{ref}^{{commit}}")
     except ClientError:

@@ -233,6 +233,44 @@ test("widgets: side anchors do not stretch a sized tracker block vertically", fu
 	eq(first:GetWidth(), 1000, "opposite horizontal edges stretch width")
 end)
 
+test("widgets: a single-point region with no size has no rect, nor do regions anchored to it", function()
+	local widgets = require("widgets").build({
+		G = {},
+		env = {},
+		taint = Taint,
+		screenWidth = 1000,
+		screenHeight = 800,
+		docs = { enums = {}, widgets = {} },
+	})
+	widgets.finalize()
+	local root = widgets.new("Frame")
+	widgets.setRoot(root)
+	root:SetSize(1000, 800)
+	root:SetPoint("BOTTOMLEFT", nil, "BOTTOMLEFT", 0, 0)
+	-- An AlertContainerTemplate frame: one anchor and no <Size>, as Field Guide's toast anchor was.
+	local anchor = widgets.new("Frame", nil, root)
+	anchor:SetPoint("BOTTOM", root, "BOTTOM", 0, 128)
+	local mover = widgets.new("Frame", nil, root)
+	mover:SetSize(300, 101)
+	mover:SetPoint("BOTTOM", anchor, "TOP")
+	eq(anchor:IsRectValid(), false, "unsized anchor rect")
+	eq(anchor:GetBottom(), nil, "unsized anchor bottom")
+	eq(anchor:GetCenter(), nil, "unsized anchor center")
+	eq(anchor:GetWidth(), 0, "unsized anchor width")
+	eq(mover:IsRectValid(), false, "dependent rect")
+	eq(mover:GetBottom(), nil, "dependent bottom")
+	-- An extent on each axis, or a second point on it, places it.
+	anchor:SetSize(10, 10)
+	eq(mover:GetBottom(), 138, "dependent bottom once the anchor is sized")
+	local stretched = widgets.new("Frame", nil, root)
+	stretched:SetPoint("LEFT", root, "LEFT")
+	stretched:SetPoint("RIGHT", root, "RIGHT")
+	eq(stretched:IsRectValid(), false, "two horizontal points and no vertical extent")
+	stretched:SetHeight(20)
+	eq(stretched:GetLeft(), 0, "two horizontal points place it on that axis")
+	eq(stretched:GetTop(), 410, "a height completes it")
+end)
+
 test("widgets: intrinsic text height agrees with its screen rectangle and header button", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({

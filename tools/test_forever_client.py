@@ -5444,6 +5444,12 @@ class FetchCommitRegressionTest(unittest.TestCase):
             with self.assertRaisesRegex(fc.ClientError, "commit .* is not on origin"):
                 fc.resolve_commit(reader, "f" * 40)
             self.assertEqual(sum(call.args[1:] == ("fetch", "origin") for call in calls.call_args_list), 1)
+        # A branch name resolves to origin's tip, never to the reader's stale local branch (#771).
+        branch = git("-C", reader, "rev-parse", "--abbrev-ref", "HEAD")
+        self.assertNotEqual(git("-C", reader, "rev-parse", branch), sha)
+        self.assertEqual(fc.resolve_commit(reader, branch), sha)
+        git("-C", reader, "branch", "local-only")
+        self.assertEqual(fc.resolve_commit(reader, "local-only"), git("-C", reader, "rev-parse", "local-only"))
 
 
 if __name__ == "__main__":
