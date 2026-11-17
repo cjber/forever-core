@@ -59,6 +59,16 @@ test("widgets: EditBox inserts at the caret, replaces selection and respects max
 	eq(edit:GetText(), "new", "default highlight replaces all text")
 	edit:Insert("!")
 	eq(edit:GetText(), "new!", "insertion clears selection")
+	widgets.flushEditText()
+	local changes = {}
+	edit:SetScript("OnTextChanged", function(_, userInput)
+		changes[#changes + 1] = userInput
+	end)
+	edit:Insert("?")
+	eq(#changes, 0, "Insert notifies on a later frame")
+	widgets.flushEditText()
+	eq(#changes, 1, "one notification after the frame")
+	eq(changes[1], true, "Insert notifies as user input")
 end)
 
 test("stubgen: MayReturnNothing defaults to no results but preserves implementations", function()

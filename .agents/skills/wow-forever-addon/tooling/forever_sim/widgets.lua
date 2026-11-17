@@ -1710,8 +1710,8 @@ function M.build(sim)
 	function W.flushEditText()
 		local pending = pendingEditText
 		pendingEditText = {}
-		for _, edit in ipairs(pending) do
-			W.dispatch(edit, "OnTextChanged", false)
+		for _, entry in ipairs(pending) do
+			W.dispatch(entry[1], "OnTextChanged", entry[2])
 		end
 	end
 	local function setEditText(self, text)
@@ -1731,7 +1731,7 @@ function M.build(sim)
 		s.highlightStart, s.highlightEnd = nil, nil
 		-- Live client probe 2026-11-17: OnTextSet is synchronous, OnTextChanged is next-frame.
 		-- Keep notification scheduling here so same-text and coalescing rules have one producer.
-		pendingEditText[#pendingEditText + 1] = self
+		pendingEditText[#pendingEditText + 1] = { self, false }
 		fire(self, "OnTextSet")
 	end
 	impl.EditBox.SetText = function(self, text)
@@ -1752,7 +1752,8 @@ function M.build(sim)
 		s.text = value:sub(1, first) .. text .. value:sub(last + 1)
 		s.cursor = first + #text
 		s.highlightStart, s.highlightEnd = nil, nil
-		fire(self, "OnTextChanged", true)
+		-- Live client probe (#755): the text and caret change at once, OnTextChanged(self, true) fires once next frame.
+		pendingEditText[#pendingEditText + 1] = { self, true }
 	end
 	impl.EditBox.SetCursorPosition = function(self, position)
 		local s = st(self)
