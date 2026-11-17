@@ -703,8 +703,15 @@ local function AddThinBar(module, block, line, objectiveIndex, fraction)
 	bar:SetHeight(THIN_BAR_HEIGHT)
 	block:AddCustomRegion(bar, 0, -THIN_BAR_GAP)
 	bar:ClearAllPoints()
-	bar:SetPoint("TOPLEFT", line.Text, "BOTTOMLEFT", 0, -THIN_BAR_GAP)
-	bar:SetPoint("TOPRIGHT", line.Text, "BOTTOMRIGHT", 0, -THIN_BAR_GAP)
+	-- The region is also the next objective's anchor, so keep its left edge on the line, not its indented text.
+	bar:SetPoint("TOPLEFT", line, "BOTTOMLEFT", 0, -THIN_BAR_GAP)
+	bar:SetPoint("TOPRIGHT", line, "BOTTOMRIGHT", 0, -THIN_BAR_GAP)
+	bar.background:ClearAllPoints()
+	bar.background:SetPoint("TOPLEFT", line.Text, "BOTTOMLEFT", 0, -THIN_BAR_GAP)
+	bar.background:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+	bar.fill:ClearAllPoints()
+	bar.fill:SetPoint("TOPLEFT", bar.background, "TOPLEFT", 0, 0)
+	bar.fill:SetPoint("BOTTOMLEFT", bar.background, "BOTTOMLEFT", 0, 0)
 	bar.fraction = fraction
 	block.thinBars = block.thinBars or {}
 	block.thinBars[objectiveIndex] = bar
@@ -715,7 +722,7 @@ end
 ---@param module ForeverQuestTrackerModule
 local function FitThinBars(module)
 	for _, bar in ipairs(type(module.activeThinBars) == "table" and module.activeThinBars or {}) do
-		local width = bar:GetWidth() or 0
+		local width = bar.background:GetWidth() or 0
 		bar.fill:SetWidth(math.max(0, width * (bar.fraction or 0)))
 	end
 end
@@ -898,6 +905,7 @@ local function CreateItemButton(parent, index)
 	button.HotKey = hotKey
 
 	local icon = button:CreateTexture(nil, "BORDER")
+	icon:SetAllPoints(button)
 	button.icon = icon
 
 	local count = button:CreateFontString(nil, "BORDER", "NumberFontNormal")

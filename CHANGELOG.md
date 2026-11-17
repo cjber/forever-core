@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Quest item icons are visible and the quest list fits the screen.** Consecutive objectives and progress bars stay aligned inside the column, and a column placed beside the game's tracker scrolls within the room below its anchor. Thanks to serb1tar, tommyekholm, Crypa7, Shuro and xh43k for the reports. (#743, #735, #603)
 - **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)
 - **Headless jobs can run in a private nested Hyprland for deskpilot**, with a bounded command and a return to gamescope before the slot is released. (#662)

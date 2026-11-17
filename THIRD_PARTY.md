@@ -45,6 +45,10 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| serb1tar | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| tommyekholm | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| Crypa7 | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
+| [Shuro](https://github.com/Shuro) | Quest objective bars stay aligned inside the column | #735 |
 | Laddylucks | Minimap button under SexyMap's control | CurseForge; thread 8729503; #685 |
 | thirex | Minimap button under SexyMap's control | CurseForge; thread 8729648; #685 |
 | axejess | Minimap button under SexyMap's control | CurseForge; thread 8729935; #685 |

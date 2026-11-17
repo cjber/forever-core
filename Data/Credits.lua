@@ -4,6 +4,10 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "serb1tar", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "tommyekholm", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "Crypa7", what = "Quest item icons and progress bars fit the quest list" },
+		{ name = "Shuro", what = "Quest objective bars stay aligned inside the column" },
 		{ name = "Laddylucks", what = "Minimap button under SexyMap's control" },
 		{ name = "thirex", what = "Minimap button under SexyMap's control" },
 		{ name = "axejess", what = "Minimap button under SexyMap's control" },
