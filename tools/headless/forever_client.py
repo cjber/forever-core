@@ -1456,6 +1456,58 @@ def unpack(archive: Path, destination: Path) -> None:
             tree.extractall(destination)
 
 
+def embed_core(staging: Path, core_root: Path | None = None) -> None:
+    """Run the build's own `forever_tools.embed` when its TOC opts in, as the consumer's release does.
+
+    The core it embeds is a git archive of the `forever-core` checkout at the tag `tools/forever-core.txt` pins, so the
+    dev build carries the same `Libs/ForeverCore/` bytes the release zip will.
+    """
+    tool = staging / "tools" / "forever_tools" / "embed.py"
+    pin = staging / "tools" / "forever-core.txt"
+    if not tool.is_file() or not pin.is_file():
+        return
+    core_root = core_root or WORKSPACE / "forever-core"
+    core = staging.with_name(f"{staging.name}.core")
+    archive = staging.with_name(f"{staging.name}.core.tar")
+    shutil.rmtree(core, ignore_errors=True)
+    core.mkdir()
+    try:
+        try:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(core_root),
+                    "archive",
+                    "--format=tar",
+                    f"--output={archive}",
+                    pin.read_text().strip(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", "") or str(error)
+            raise ClientError(
+                f"git archive of ForeverCore {pin.read_text().strip()} failed: {detail.strip()}"
+            ) from None
+        unpack(archive, core)
+        done = subprocess.run(
+            [sys.executable, "-m", "tools.forever_tools.embed", "--core", str(core), str(staging)],
+            cwd=staging,
+            capture_output=True,
+            text=True,
+        )
+        if done.returncode != 0:
+            raise ClientError(f"embedding ForeverCore failed: {(done.stderr or done.stdout).strip()}")
+        if "nothing to do" not in done.stdout:
+            print(done.stdout.strip(), flush=True)
+    finally:
+        archive.unlink(missing_ok=True)
+        shutil.rmtree(core, ignore_errors=True)
+
+
 def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root: Path | None = None) -> Path:
     """Write the dev build of `commit` to `test-artifacts/<repo>-dev`, as `rebuild-dev.sh` did.
 
@@ -1493,6 +1545,11 @@ def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root
         raise
     finally:
         archive.unlink(missing_ok=True)
+    try:
+        embed_core(staging)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     for name in DEV_FOLDERS:
         victim = staging / name
         if victim.is_dir() and not victim.is_symlink():

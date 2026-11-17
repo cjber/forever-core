@@ -223,6 +223,111 @@ for _, order in ipairs({
 	check(env.ConsumerStarts == 2, "both consumers initialize against real legacy public facade")
 	check(#env.ForeverCoreLoader.Rejections() == 0, "legacy wrappers seal without false assertion")
 end
+-- The bridge release carries ForeverCoreDB across the switch: the tracker column's position, its Lock and its
+-- options survive installing an embedded consumer beside the standalone, then removing either one, in every order.
+-- The real unwrapped source is the standalone; its login writes the mirror into each offered consumer table, and a
+-- later session reconciles whichever tables the client still loads.
+local function bridgeSession(order, saved)
+	local env, frames = FakeClient.new()
+	env.ObjectiveTrackerFrame = nil
+	local function event(name, addon)
+		local listeners = {}
+		for _, frame in ipairs(frames) do
+			if frame.events[name] then
+				listeners[#listeners + 1] = frame
+			end
+		end
+		for _, frame in ipairs(listeners) do
+			frame.scripts.OnEvent(frame, name, addon)
+		end
+	end
+	for _, item in ipairs(order) do
+		local legacy = item == "Legacy"
+		local folder = legacy and "ForeverCore" or item
+		local host = {}
+		for _, file in ipairs(Toc.files(legacy and "." or root .. "/" .. folder, folder .. ".toc")) do
+			if file.kind == "lua" then
+				setfenv(assert(loadfile(file.path)), env)(folder, host)
+			end
+		end
+		env[folder .. "DB"] = saved and clone(saved[folder .. "DB"]) or nil
+		event("ADDON_LOADED", folder)
+	end
+	event("VARIABLES_LOADED")
+	event("PLAYER_LOGIN")
+	local loader = env.ForeverCoreLoader
+	check(loader.Error() == nil and loader.CallbackError() == nil, "bridge session boots cleanly")
+	return env, loader
+end
+local function snapshot(env)
+	local out = {}
+	for _, name in ipairs({ "ForeverCoreDB", "ConsumerADB", "ConsumerBDB" }) do
+		out[name] = clone(rawget(env, name))
+	end
+	return out
+end
+local function trackerHost(env, loader)
+	-- The standalone alone never meets the loader: no consumer begins a copy, so nothing is selected.
+	local selected = loader.Selected()
+	if selected == nil or selected.mode == "legacy" then
+		return env.ForeverCoreDB.trackerHost
+	end
+	return loader.Namespace().Store().trackerHost
+end
+local function sameColumn(settings, expected, label)
+	for key, value in pairs(expected) do
+		check(settings[key] == value, label .. ": trackerHost." .. key .. " carried over")
+	end
+end
+local column = { attached = false, x = 412, y = -230, locked = true, scale = 1.2, backdropOpacity = 0.4 }
+for _, order in ipairs({
+	{ "Legacy", "ConsumerA", "ConsumerB" },
+	{ "ConsumerA", "Legacy", "ConsumerB" },
+	{ "ConsumerA", "ConsumerB", "Legacy" },
+}) do
+	-- Before the update: the standalone alone, with the player's column saved.
+	local before = bridgeSession({ "Legacy" }, { ForeverCoreDB = { trackerHost = clone(column) } })
+	-- Update: the bridge consumers install beside the standalone.
+	local env, loader = bridgeSession(order, snapshot(before))
+	check(loader.Selected().mode == "legacy", "the installed standalone keeps running during the bridge")
+	sameColumn(trackerHost(env, loader), column, "update")
+	for _, consumer in ipairs({ "ConsumerA", "ConsumerB" }) do
+		sameColumn(env[consumer .. "DB"].ForeverCoreStore.trackerHost, column, consumer .. " mirror")
+	end
+	local bridged = snapshot(env)
+	-- Uninstall the standalone: the embedded runtime reads the mirrors.
+	for _, consumers in ipairs({ { "ConsumerA", "ConsumerB" }, { "ConsumerB", "ConsumerA" }, { "ConsumerA" } }) do
+		local embedded, elected = bridgeSession(consumers, bridged)
+		check(elected.Selected().mode == "elected", "an embedded copy runs once the standalone is gone")
+		sameColumn(trackerHost(embedded, elected), column, "standalone removed")
+	end
+	-- Uninstall the consumers instead: the standalone keeps its own table.
+	local alone, standalone = bridgeSession({ "Legacy" }, bridged)
+	sameColumn(trackerHost(alone, standalone), column, "consumers removed")
+	-- A change made while embedded survives the standalone coming back with its older, unchanged table.
+	local embedded, elected = bridgeSession({ "ConsumerA", "ConsumerB" }, bridged)
+	trackerHost(embedded, elected).scale = 1.5
+	trackerHost(embedded, elected).locked = false
+	local changed = snapshot(embedded)
+	changed.ForeverCoreDB = bridged.ForeverCoreDB
+	local back, reinstalled = bridgeSession(order, changed)
+	sameColumn(
+		trackerHost(back, reinstalled),
+		{ scale = 1.5, locked = false, x = 412, y = -230 },
+		"standalone reinstalled"
+	)
+end
+-- A first install of the embedded consumer, then the standalone added later with no saved table of its own, keeps the
+-- column the consumer saved.
+do
+	local embedded, elected = bridgeSession({ "ConsumerA" })
+	for key, value in pairs(column) do
+		trackerHost(embedded, elected)[key] = value
+	end
+	local saved = snapshot(embedded)
+	local env, loader = bridgeSession({ "Legacy", "ConsumerA" }, saved)
+	sameColumn(trackerHost(env, loader), column, "standalone added later")
+end
 -- Actual canonical files with only deDE moved before enUS must conflict before
 -- any runtime chunk executes, regardless of which same-version copy loads first.
 for _, order in ipairs({ { "ConsumerA", "ConsumerB" }, { "ConsumerB", "ConsumerA" } }) do

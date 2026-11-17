@@ -26,6 +26,9 @@ drifts the same way:
 - The same `release.yml` must carry core's own "Tag a manual release" step unchanged, the one that peels a signed tag
   and tags a workflow-changing commit with the PAT; `tools/sync_consumers.py` copies it in.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
+- A consumer whose root TOC opts in with `## X-Forever-Core-Embed: 1` must run `python3 -m tools.forever_tools.embed`
+  before every BigWigs packager step in its `release.yml` and `ci.yml`, so the zip it uploads and the package CI
+  checks both carry `Libs/ForeverCore/` (docs/dependency-transition.md).
 
 
 Those shared copies are compared by `forever_tools.core_pin`, the same function the vendored package check runs in each
@@ -352,6 +355,43 @@ def check_release_gate(repo, branch, local):
     return []
 
 
+EMBED_COMMAND = "tools.forever_tools.embed"
+CI_WORKFLOW = ".github/workflows/ci.yml"
+
+
+def check_embed(repo, branch, local):
+    """An opted-in consumer embeds core before each packager step, in its release and in its CI package check.
+
+    The embed step rewrites the checkout the packager zips. A packager step with no embed before it uploads, or checks,
+    an addon that cannot run without the standalone ForeverCore, which is the case the embedded copy exists for.
+    """
+    data, error = read_consumer(repo, consumer_path(repo, PKGMETA), branch, local)
+    if error or data is None:
+        return []
+    toc = root_toc(repo, data.decode("utf-8", "replace"), branch, local)
+    if toc is None or toc_names(toc, "X-Forever-Core-Embed") != {"1"}:
+        return []
+    failures = []
+    for workflow in (RELEASE_WORKFLOW, CI_WORKFLOW):
+        path = consumer_path(repo, workflow)
+        data, error = read_consumer(repo, path, branch, local)
+        if error:
+            failures.append(f"{repo}: {path}: {error}")
+            continue
+        text = "" if data is None else data.decode("utf-8", "replace")
+        packagers = [match.start() for match in re.finditer(r"BigWigsMods/packager@", text)]
+        if not packagers:
+            failures.append(f"{repo}: {path}: opts in to the embedded ForeverCore but runs no BigWigs packager")
+        embeds = [match.start() for match in re.finditer(re.escape(f"python3 -m {EMBED_COMMAND}"), text)]
+        for packager in packagers:
+            if not any(embed < packager for embed in embeds):
+                failures.append(
+                    f"{repo}: {path}: a packager step with no `python3 -m {EMBED_COMMAND}` before it; the TOC sets"
+                    " `## X-Forever-Core-Embed: 1`, so embed the pinned core first"
+                )
+    return failures
+
+
 def workflow_step(text, name):
     """`(start, end, indent)` of the step `- name: <name>` in a workflow's text, or None when it has none.
 
@@ -584,6 +624,7 @@ def main(argv=None):
     # publishes a visual-proof workflow.
     for repo in repos:
         failures += check_consumer_gates(repo, arguments.branch, arguments.local)
+        failures += check_embed(repo, arguments.branch, arguments.local)
 
     if failures:
         print("Consumers differ from this repo:")

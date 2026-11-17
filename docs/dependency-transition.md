@@ -131,6 +131,33 @@ self-contained fallback for channels that cannot resolve dependencies, including
 automatic migration exists. Explain the installation behavior on each store page without asking existing users to
 reinstall. Do not publish one globally unbundled ZIP on the assumption that every manager resolves dependencies.
 
+## 4. Embed core inside each addon
+
+Each consumer also carries its own copy of core at `Libs/ForeverCore/`, so it runs whether or not the standalone folder
+is installed ([#801](https://github.com/cjber/forever-core/issues/801)). Nothing is committed for it: a consumer opts in
+with `## X-Forever-Core-Embed: 1` in its root TOC, and `python3 -m tools.forever_tools.embed` rewrites the disposable
+checkout right before the packager, in the release workflow, the CI package job and `forever_client.py build-dev`.
+`tools/check_consumers.py` fails an opted-in consumer whose workflow runs a packager with no embed step before it.
+
+The step plans the copy with `tools/build_embedded_core.py` from a ForeverCore checkout at the consumer's pin (`--core`,
+else `$FOREVER_CORE`), so every addon on one pin ships byte-equal copies and one digest. It wraps each Lua file the TOC
+loads, directly or through an XML `Script`, as a deferred chunk on the file's first line, so error line numbers stay
+the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's files, `ForeverCoreRun.lua` and
+`ForeverCoreReady.lua`.
+
+- With the standalone folder installed, the loader is already active and the addon's files run inline during its own
+  file load, exactly as before. Every release up to 1.14.5 is an unwrapped standalone, so it wins the session.
+- Without it, the highest sealed copy is elected at PLAYER_LOGIN. The addon's files run then, and each frame they
+  registered receives the addon's `ADDON_LOADED` and the `PLAYER_LOGIN` it missed.
+- `ForeverCoreDB` carries over in both directions: the standalone mirrors its store into every offered consumer table,
+  and an elected copy reads those mirrors, keeping a newer embedded change over a stale standalone table.
+  `tests/generated_bundle_spec.lua` covers install, update and removal in either order.
+
+The bridge release ships the embedded copy and keeps the top-level `ForeverCore/` folder from the same pin, so a partial
+switch is safe: any mix of bridged and unbridged addons runs one core. Within a session a pre-loader standalone cannot
+be outranked by a newer embedded copy; the converted standalone (`plan(..., standalone=True)`), which elects by build,
+ships once every consumer's bridge release is live, before any bundle is dropped.
+
 ## Rollback
 
 Stop expansion at the first failing lifecycle check. Publish a higher patch version restoring the pinned bundle

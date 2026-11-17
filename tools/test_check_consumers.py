@@ -411,5 +411,57 @@ class ReleaseGateCheckTest(unittest.TestCase):
         self.assertEqual(self.check(), [])
 
 
+class EmbedCheckTest(unittest.TestCase):
+    """A consumer that opts in to the embedded core runs the embed step before every packager."""
+
+    PACKAGER = "      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0\n"
+    EMBED = "      - name: Embed ForeverCore\n        run: python3 -m tools.forever_tools.embed\n"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.repo = self.checkouts / "legacy-forever"
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".pkgmeta").write_text("package-as: LegacyForever\n", encoding="utf-8")
+
+    def write(self, embed_field=True, release=True, ci=True):
+        field = "## X-Forever-Core-Embed: 1\n" if embed_field else ""
+        (self.repo / "LegacyForever.toc").write_text(
+            f"## Interface: 16001\n## OptionalDeps: ForeverCore\n{field}\nMain.lua\n", encoding="utf-8"
+        )
+        for name, embedded in (("release.yml", release), ("ci.yml", ci)):
+            steps = (self.EMBED if embedded else "") + self.PACKAGER
+            (self.repo / ".github" / "workflows" / name).write_text(
+                f"jobs:\n  a:\n    steps:\n{steps}", encoding="utf-8"
+            )
+
+    def check(self):
+        return check_consumers.check_embed("legacy-forever", "main", self.checkouts)
+
+    def test_embed_before_each_packager_passes(self):
+        self.write()
+        self.assertEqual(self.check(), [])
+
+    def test_a_consumer_that_does_not_opt_in_is_left_alone(self):
+        self.write(embed_field=False, release=False, ci=False)
+        self.assertEqual(self.check(), [])
+
+    def test_a_release_without_the_embed_step_fails(self):
+        self.write(release=False)
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("release.yml: a packager step with no", failures[0])
+
+    def test_an_embed_after_the_packager_fails(self):
+        self.write()
+        (self.repo / ".github" / "workflows" / "ci.yml").write_text(
+            f"jobs:\n  a:\n    steps:\n{self.PACKAGER}{self.EMBED}", encoding="utf-8"
+        )
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("ci.yml: a packager step with no", failures[0])
+
+
 if __name__ == "__main__":
     unittest.main()
