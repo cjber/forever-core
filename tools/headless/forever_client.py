@@ -142,7 +142,7 @@ import tarfile
 import time
 import uuid
 import zlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1469,6 +1469,14 @@ def process_start(pid: int) -> int | None:
         return None
 
 
+def process_exited(pid: int) -> bool:
+    """Whether a pid is a zombie (Z) or dead (X): it has exited and waits only for its parent to reap it."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] in ("Z", "X")
+    except (OSError, IndexError):
+        return False
+
+
 def boot_id() -> str | None:
     """Identify the kernel boot, since process start ticks restart after reboot."""
     try:
@@ -1492,6 +1500,8 @@ def owner_alive(owner: object) -> bool:
         return False
     except (OSError, OverflowError):
         pass  # another user's pid, or a number no process can have: the start time below decides
+    if process_exited(pid):
+        return False  # a zombie has exited, whoever reaps it: no caller may wait on it or treat it as an owner
     started = owner.get("started")
     return process_start(pid) == started if isinstance(started, int) else True
 
@@ -3149,10 +3159,16 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 
     link = CLIENT / "Interface/AddOns" / ADDON.name
     session_addon: Path | None = None
-    gamescope: subprocess.Popen | int | None = None
+    gamescope: subprocess.Popen | None = None
     state: dict | None = None
     job = None
     job_token = None
+
+    def adopt(handle: subprocess.Popen) -> None:
+        # Serve is the parent of every gamescope it starts, so teardown always stops it by this handle and reaps it,
+        # including one a failed launch or a failed Hyprland return started.
+        nonlocal gamescope
+        gamescope = handle
 
     def on_signal(_signum, _frame):
         raise KeyboardInterrupt
@@ -3195,7 +3211,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             "headless_addon_digest": headless_addon_digest(),
         }
         write_state(state)
-        gamescope = launch_gamescope(launch, env, log, state)
+        gamescope = launch_gamescope(launch, env, log, state, adopt)
         reach_world(state, before, args.timeout, args.manual_launcher, started)
         ready = time.monotonic()
         if after_ready:
@@ -3217,7 +3233,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                             "started": time.time(),
                         }
                     )
-                    gamescope = hyprland_job(request, gamescope, wine, env, launch, log, state)
+                    hyprland_job(request, gamescope, wine, env, launch, log, state, adopt)
                     ready = last_world_check = time.monotonic()
                 release_job(job, job_token)
                 job = job_token = None
@@ -3267,12 +3283,16 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         return 0
     except KeyboardInterrupt:
         return 0
+    except Exception as error:
+        if state is not None and not state.get("end_reason"):
+            # Leases read why the session ended, not only that it did.
+            state["end_reason"] = f"session ended because {error}"
+            write_state(state)
+        raise
     finally:
         for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
         try:
-            if state and state.get("gamescope") and getattr(gamescope, "pid", None) != state["gamescope"]:
-                gamescope = state["gamescope"]
             teardown(gamescope, wine, link, state)
         finally:
             # The job lock stays held through teardown, so no job starts against a client being stopped.
@@ -3293,8 +3313,13 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 up = serve
 
 
-def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) -> subprocess.Popen:
-    """Start the client under headless gamescope and record the display it gives its child."""
+def launch_gamescope(
+    launch: Mapping, env: Mapping[str, str], log, state: dict, adopt: Callable[[subprocess.Popen], None]
+) -> subprocess.Popen:
+    """Start the client under headless gamescope and record the display it gives its child.
+
+    `adopt` takes the handle before anything here can fail, so serve, its parent, stops and reaps it at teardown.
+    """
     gamescope = subprocess.Popen(
         [
             "gamescope",
@@ -3318,6 +3343,7 @@ def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) 
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    adopt(gamescope)
     state["mode"] = "gamescope"
     state["gamescope"] = gamescope.pid
     state["gamescope_start"] = process_start(gamescope.pid)
@@ -3332,6 +3358,10 @@ def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) 
 def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher: bool, started: float, nudge=None):
     """Press the launcher on and wait for the headless addon's world screenshot, then mark the state READY."""
     nudge = nudge or functools.partial(at_character_select, state, manual_launcher)
+    # MAX_PLAY_CLICKS bounds one launch. A Hyprland job launches twice more in the same session, and a count carried
+    # over from an earlier launch refused the new launcher's first Play click as the limit already reached.
+    for key in ("play_clicks", "last_play_click", "play_target_missing_reported"):
+        state.pop(key, None)
     try:
         ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True)
     except SignInRequired:
@@ -3653,6 +3683,8 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
         cancelled = False
         while True:
             try:
+                # Read the session before the result: serve writes the result before its teardown ends the session.
+                session_gone = current_session() is None
                 result = read_hyprland_json(f"{HYPRLAND_RESULT}-{token}.json")
                 if result and result.get("token") == token:
                     completed = True
@@ -3660,7 +3692,7 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
                     if result.get("error"):
                         raise ClientError(result["error"])
                     return 130 if cancelled else result["code"]
-                if current_session() is None:
+                if session_gone:
                     raise ClientError("the Hyprland job session ended; the next job starts fresh gamescope")
                 now = time.monotonic()
                 if deadline is None:
@@ -3681,16 +3713,28 @@ def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: 
         restore_handlers(previous)
 
 
-def hyprland_job(request: Mapping, gamescope, wine: Mapping, env: Mapping, launch: Mapping, log, state: dict):
+def hyprland_job(
+    request: Mapping,
+    gamescope,
+    wine: Mapping,
+    env: Mapping,
+    launch: Mapping,
+    log,
+    state: dict,
+    adopt: Callable[[subprocess.Popen], None],
+) -> None:
     """Serve owns the lock throughout both relaunches and the bounded command.
 
     The command's --max excludes the transitions: each world wait is at most 600 seconds, and the return has
     a 900-second caller allowance covering logout, owned-process teardown and compositor shutdown as well.
-    A failed return propagates to serve's full teardown rather than publishing a reusable broken session.
+    The result always reaches the requester, with the job's own error and any return error. A failed return still
+    propagates to serve's full teardown rather than publishing a reusable broken session, and the relaunched
+    gamescope is already serve's through `adopt`, so that teardown stops and reaps it.
     """
     (STATE_DIR / HYPRLAND_REQUEST).unlink(missing_ok=True)
     module = nested_hyprland()
-    result = {"token": request["token"], "code": 1}
+    result: dict = {"token": request["token"], "code": 1}
+    errors: list[str] = []
     client = None
 
     def check() -> None:
@@ -3742,29 +3786,35 @@ def hyprland_job(request: Mapping, gamescope, wine: Mapping, env: Mapping, launc
             }
             result["code"] = run_job_command(request["command"], command_env, request["maximum"], check)
         except (ClientError, module.NestedError, subprocess.SubprocessError, OSError) as error:
-            result["error"] = str(error)
-        end_client(None if state.get("mode") == "hyprland" else gamescope, wine, state)
-        if client is not None:
-            try:
-                client.wait(30)
-            except subprocess.TimeoutExpired:
-                raise ClientError(f"umu-run {client.pid} outlived the Wine session") from None
-        for key in ("display", "origin", "window", "ready"):
-            state.pop(key, None)
-        write_state(state)
-        before = screenshots()
-        returned = launch_gamescope(launch, env, log, state)
-        reach_world(state, before, HYPRLAND_WORLD_WAIT, bool(state.get("manual_launcher")), time.time())
+            errors.append(f"job: {error}")
+            print(f"forever_client: the Hyprland job failed: {error}", flush=True)
+        try:
+            end_client(None if state.get("mode") == "hyprland" else gamescope, wine, state)
+            if client is not None:
+                try:
+                    client.wait(30)
+                except subprocess.TimeoutExpired:
+                    raise ClientError(f"umu-run {client.pid} outlived the Wine session") from None
+            for key in ("display", "origin", "window", "ready"):
+                state.pop(key, None)
+            write_state(state)
+            before = screenshots()
+            launch_gamescope(launch, env, log, state, adopt)
+            reach_world(state, before, HYPRLAND_WORLD_WAIT, bool(state.get("manual_launcher")), time.time())
+        except Exception as error:
+            errors.append(f"return to gamescope: {error}")
+            print(f"forever_client: the return to gamescope failed: {error}", flush=True)
+            raise
     except KeyboardInterrupt:
-        result["error"] = "serve was interrupted during the Hyprland job"
-        atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
+        errors.append("serve was interrupted during the Hyprland job")
         raise
     finally:
+        if errors:
+            result["error"] = "; ".join(errors)
+        atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
         end = STATE_DIR / HYPRLAND_END
         if end.exists() and end.read_text() == request["token"]:
             end.unlink(missing_ok=True)
-    atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
-    return returned
 
 
 def lease_path(token: str) -> Path:

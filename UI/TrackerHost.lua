@@ -881,18 +881,6 @@ local function OverlapsMinimap()
 	return left < mr and right > ml and bottom < mt and top > mb
 end
 
-local function AvoidMinimap(point)
-	if not OverlapsMinimap() then
-		return
-	end
-	host:ClearAllPoints()
-	if point:find("LEFT", 1, true) then
-		host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
-	else
-		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-	end
-end
-
 local function SidePoint(point)
 	local left, right = ObjectiveTrackerFrame:GetLeft(), ObjectiveTrackerFrame:GetRight()
 	local screen = UIParent:GetWidth()
@@ -1247,11 +1235,9 @@ local function LayoutAttached()
 		else
 			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 		end
-		AvoidMinimap(point)
-		if above and host:GetPoint() == hostPoint then
+		if above then
 			return math.max(0, room / layoutScale)
 		end
-		-- Minimap avoidance can also move an above anchor to the side, starting at the native tracker's top.
 		return math.max(0, math.min(screenRoom, (host:GetTop() or 0) - layoutMargin))
 	end
 	-- A layout pass is not a measurement: Blizzard's EndLayout hides a section that fits nothing and its
@@ -1264,6 +1250,27 @@ local function LayoutAttached()
 		local roomAside = Aside()
 		if host:GetHeight() > roomAside and not LayoutModules(host:GetWidth(), roomAside, 0) then
 			host:Hide()
+			return false
+		end
+		return true
+	end
+	-- An enlarged minimap can cover any of those placements (#720), the native slot included, so every successful one
+	-- checks the whole column once its height is known. An overlapping column starts below the minimap's bottom at the
+	-- same x, and when it is taller than the room from there to the screen margin its sections lay out again in that
+	-- room, so a long section scrolls instead of being clamped back over the map. The move is the same on every pass
+	-- for the same geometry, so repeated layouts settle where the last one did.
+	local function ClearMinimap()
+		if not OverlapsMinimap() then
+			return
+		end
+		local minimap = _G.Minimap
+		local left = host:GetLeft() or 0
+		local top = (minimap:GetBottom() or 0) * minimap:GetEffectiveScale() / layoutScale
+		host:ClearAllPoints()
+		host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+		local room = math.max(0, top - layoutMargin)
+		if host:GetHeight() > room and not LayoutModules(host:GetWidth(), room, 0) then
+			host:Hide()
 		end
 	end
 	if aside then
@@ -1274,15 +1281,17 @@ local function LayoutAttached()
 		if (host:GetHeight() or 0) <= roomBelow then
 			Below()
 			aside = false
+		elseif not FitAside() then
 			return
 		end
-		FitAside()
+		ClearMinimap()
 		return
 	end
 	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
 	-- column elsewhere.
 	if LayoutModules(host:GetWidth(), roomBelow, 0) then
 		aside = false
+		ClearMinimap()
 		return
 	end
 	-- No section fits below at all (quests ending at the bottom of the screen). The one pass that shows them above or
@@ -1292,7 +1301,9 @@ local function LayoutAttached()
 		return
 	end
 	aside = true
-	FitAside()
+	if FitAside() then
+		ClearMinimap()
+	end
 end
 
 -- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the

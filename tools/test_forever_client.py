@@ -1435,6 +1435,18 @@ class ForeverClientTest(unittest.TestCase):
             fc.teardown(game, {}, None, {"display": ":1", "ready": 1.0})
             log_out.assert_called_once()
 
+    def test_an_exited_child_not_yet_reaped_is_not_alive(self):
+        child = subprocess.Popen(["true"])
+        started = fc.process_start(child.pid)
+        try:
+            os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT)  # wait for its exit, leaving it a zombie
+            self.assertIsNotNone(fc.process_start(child.pid), "the zombie still has its /proc start time")
+            self.assertFalse(fc.owner_alive({"pid": child.pid, "started": started}))
+            self.assertFalse(fc.owner_alive({"pid": child.pid}))
+            self.assertFalse(fc.gamescope_running(child.pid, {"gamescope_start": started}))
+        finally:
+            child.wait()
+
     def test_a_dead_owners_gamescope_is_stopped_by_its_recorded_pid(self):
         with (
             mock.patch.object(fc, "gamescope_running", side_effect=[True, False]),
@@ -4467,7 +4479,7 @@ class HyprlandJobTest(unittest.TestCase):
         module.window.return_value = {"address": "0xabc", "title": fc.GAME_WINDOW}
         return module
 
-    def serve_with(self, hyprland_job):
+    def serve_with(self, hyprland_job, teardown=None):
         """Run serve with one Hyprland request waiting; returns the order of lock and job steps."""
         config = self.state / "env.json"
         config.write_text(
@@ -4510,7 +4522,9 @@ class HyprlandJobTest(unittest.TestCase):
                 )
             )
             stack.enter_context(mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")))
-            stack.enter_context(mock.patch.object(fc, "teardown", side_effect=lambda *a: order.append("teardown")))
+            stack.enter_context(
+                mock.patch.object(fc, "teardown", side_effect=teardown or (lambda *a: order.append("teardown")))
+            )
             stack.enter_context(mock.patch.object(fc, "acquire_job", side_effect=acquire))
             stack.enter_context(mock.patch.object(fc, "release_job", side_effect=release))
             stack.enter_context(mock.patch.object(fc, "hyprland_job", side_effect=lease))
@@ -4537,23 +4551,58 @@ class HyprlandJobTest(unittest.TestCase):
         self.assertEqual(order[-2:], ["teardown", ("release", "job-token", order[-1][2])])
         self.assertFalse(fc.session_lock_held(), "serve released the session lock, so a job can start a new one")
 
-    def run_hyprland(self, failure=None, return_failure=False, cancelled=False, crashed=False, start_error=None):
+    def test_serve_teardown_stops_and_reaps_the_gamescope_a_failed_return_started(self):
+        relaunched = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(lambda: relaunched.poll() is None and (relaunched.kill(), relaunched.wait()))
+        handed = []
+
+        def failed_return(*args):
+            state, adopt = args[6], args[7]
+            state.update(gamescope=relaunched.pid, gamescope_start=fc.process_start(relaunched.pid))
+            adopt(relaunched)
+            raise fc.ClientError("the world did not load within 600 s")
+
+        result, _order = self.serve_with(failed_return, teardown=lambda *a: handed.append(a))
+        self.assertIsInstance(result, fc.ClientError)
+        gamescope, _wine, _link, state = handed[0]
+        self.assertIs(gamescope, relaunched, "serve tears down by the live handle, never the bare pid")
+        self.assertIn("the world did not load", state["end_reason"])
+        fc.stop_gamescope(gamescope, state)  # no "cannot safely stop"
+        self.assertEqual(relaunched.returncode, -signal.SIGTERM, "stopped and reaped by its parent")
+        self.assertFalse(fc.gamescope_running(relaunched.pid, state))
+
+    def run_hyprland(
+        self,
+        failure=None,
+        return_failure=False,
+        world_failure=False,
+        cancelled=False,
+        crashed=False,
+        start_error=None,
+    ):
         module = self.nested(start_error=start_error)
         state = live_state(mode="gamescope", display=":2", ready=1, token="session", runtime_dir="/run/user/1")
         order = []
         client = mock.Mock(pid=555, poll=mock.Mock(return_value=None))
         returned = mock.Mock(pid=777)
+        adopted = []
 
         def end(_display, _wine, state):
             order.append(("end", state["mode"]))
             fc.stop_nested(state)
 
-        def launch(*_args):
+        def launch(*args):
             order.append("gamescope")
             if return_failure:
                 raise fc.ClientError("return failed")
+            args[-1](returned)
             state.update(mode="gamescope", display=":2")
             return returned
+
+        def world(state, *_args, **_kwargs):
+            order.append(("world", state["mode"]))
+            if world_failure and state["mode"] == "gamescope":
+                raise fc.ClientError("no game process appeared after 2 Play clicks in Battle.net")
 
         def run(command, env, maximum, check):
             order.append("command")
@@ -4577,19 +4626,22 @@ class HyprlandJobTest(unittest.TestCase):
             mock.patch.object(fc, "nested_hyprland", return_value=module),
             mock.patch.object(fc, "end_client", side_effect=end),
             mock.patch.object(fc, "launch_gamescope", side_effect=launch),
-            mock.patch.object(fc, "reach_world", side_effect=lambda *a, **kw: order.append(("world", a[0]["mode"]))),
+            mock.patch.object(fc, "reach_world", side_effect=world),
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "recover_links"),
             mock.patch.object(fc, "run_job_command", side_effect=run),
             mock.patch.object(fc.subprocess, "Popen", return_value=client),
         ):
             try:
-                result = fc.hyprland_job(self.request(), mock.Mock(), {}, {}, {"umu_run": "umu"}, None, state)
+                fc.hyprland_job(self.request(), mock.Mock(), {}, {}, {"umu_run": "umu"}, None, state, adopted.append)
+            except fc.ClientError:
+                self.assertEqual(adopted, [] if return_failure else [returned], "serve holds any relaunched gamescope")
+                raise
             except KeyboardInterrupt:
                 self.assertNotIn("gamescope", order)
                 self.assertEqual(order.count(("world", "hyprland")), 1)
                 raise
-        self.assertIs(result, returned)
+        self.assertEqual(adopted, [returned], "serve holds the relaunched gamescope")
         self.assertEqual(
             order,
             [
@@ -4623,10 +4675,26 @@ class HyprlandJobTest(unittest.TestCase):
     def test_failed_nested_start_returns_and_reports_the_error(self):
         self.assertIn("no XWayland", self.run_hyprland(start_error="no XWayland")["error"])
 
-    def test_failed_return_does_not_publish_completion(self):
+    def test_failed_return_publishes_the_return_error_and_still_ends_the_session(self):
         with self.assertRaisesRegex(fc.ClientError, "return failed"):
             self.run_hyprland(return_failure=True)
-        self.assertIsNone(fc.read_hyprland_json(f"{fc.HYPRLAND_RESULT}-job-token.json"))
+        result = fc.read_hyprland_json(f"{fc.HYPRLAND_RESULT}-job-token.json")
+        self.assertEqual(result["error"], "return to gamescope: return failed")
+
+    def test_failed_job_and_failed_return_reach_the_requester_and_serve_keeps_the_new_gamescope(self):
+        log = io.StringIO()
+        with (
+            contextlib.redirect_stdout(log),
+            self.assertRaisesRegex(fc.ClientError, "Play clicks"),
+        ):
+            self.run_hyprland(start_error="no XWayland", world_failure=True)
+        result = fc.read_hyprland_json(f"{fc.HYPRLAND_RESULT}-job-token.json")
+        self.assertEqual(
+            result["error"],
+            "job: no XWayland; return to gamescope: no game process appeared after 2 Play clicks in Battle.net",
+        )
+        self.assertIn("the Hyprland job failed: no XWayland", log.getvalue())
+        self.assertIn("the return to gamescope failed: no game process", log.getvalue())
 
     def test_hyprland_is_a_job_option_and_lease_rejects_it(self):
         with mock.patch.object(fc, "job", return_value=0) as job:
@@ -4752,6 +4820,23 @@ class HyprlandJobTest(unittest.TestCase):
             fc.request_hyprland_job(argparse.Namespace(timeout=2, label=None, manual_launcher=False), ["probe"], 2)
         self.assertFalse(result_path.exists())
         self.assertFalse((self.state / fc.HYPRLAND_END).exists())
+
+    def test_each_launch_counts_its_own_play_clicks(self):
+        # The session's first launch used both Play clicks; the Hyprland job's launch must start from none.
+        state = {"play_clicks": fc.MAX_PLAY_CLICKS, "last_play_click": 0.0, "play_target_missing_reported": True}
+        seen = []
+
+        def wait(*_args, **_kwargs):
+            seen.append({key: state.get(key) for key in ("play_clicks", "play_target_missing_reported")})
+            return Path("ready.png")
+
+        with (
+            mock.patch.object(fc, "wait_for_world", side_effect=wait),
+            mock.patch.object(fc, "write_state"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            fc.reach_world(state, set(), 600, False, 0.0)
+        self.assertEqual(seen, [{"play_clicks": None, "play_target_missing_reported": None}])
 
     def test_completed_job_removes_its_end_marker(self):
         self.run_hyprland(cancelled=True)
