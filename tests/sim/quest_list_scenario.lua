@@ -228,12 +228,6 @@ scenario("the Forever quest list groups, sorts and collapses the game's quests",
 	sim.G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", 0, -100)
 	sim.G.ObjectiveTrackerFrame:SetHeight(400)
 
-	-- Chat UI is outside this fixture; a normal click does not insert a chat link.
-	sim.G.ChatFrameUtil = {
-		TryInsertQuestLinkForQuestID = function()
-			return false
-		end,
-	}
 	sim.cvars.questPOI = "1"
 	local nativeGetPOIButton = sim.G.ObjectiveTrackerQuestPOIBlockMixin.GetPOIButton
 	local privateSharedPoolCalls = 0

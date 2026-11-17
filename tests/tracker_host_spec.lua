@@ -377,7 +377,10 @@ scroll.check(capped.scrollChanges > scrollChanges, "the shrunken list redraws it
 scroll.native.NineSlice.bottom = 100
 scroll.host:MarkDirty()
 scroll.drain()
-scroll.check(capped.available > 0 and rest.available == 0, "constrained layout gives the remaining section no sliver")
+scroll.check(
+	capped.available > 0 and rest.trackerViewport == 0,
+	"constrained layout gives the remaining section no sliver"
+)
 scroll.check(capped:GetHeight() + rest:GetHeight() <= 100, "constrained layout keeps section geometry within the room")
 
 -- Two overflowing sections must reserve the later section's measured first block before spending the remaining room.
@@ -397,4 +400,142 @@ floors.drain()
 floors.check(tall.available >= 75 and later.available >= 75, "measured floors fit across multiple sections")
 floors.check(tall:GetHeight() + later:GetHeight() + 10 <= 220, "floor allocation keeps the constrained column bounded")
 
-print("tracker_host_spec: " .. (t.checks() + asideChecks + scroll.checks()) .. " checks passed")
+-- Three sections cannot all keep their first block in 166 units. Keep complete viewports or headers.
+local cramped = harness.new({ headerShown = true })
+cramped.first.contentHeight, cramped.second.contentHeight = 0, 0
+local sections = {
+	cramped.scrollModule(3, 10, 40),
+	cramped.scrollModule(4, 1, 20),
+	cramped.scrollModule(5, 1, 90),
+}
+cramped.host:MarkDirty()
+cramped.drain()
+cramped.drain()
+for _, room in ipairs({ 166, 120, 105, 220 }) do
+	cramped.native.NineSlice.bottom = room + 24 / cramped.host:GetEffectiveScale()
+	cramped.host:MarkDirty()
+	cramped.drain()
+	local used = 0
+	for _, section in ipairs(sections) do
+		local viewport = section.trackerViewport
+		cramped.check(viewport == 0 or viewport >= section:GetMinimumHeight() - 25, "no unusable section sliver")
+		cramped.check(section:GetContentsHeight() >= 25, "each section retains its header")
+		if viewport == 0 then
+			cramped.check(not section.scrollFrame:IsShown(), "header-only section hides its content")
+			cramped.check(not section.scrollBar:IsShown(), "header-only section hides its arrows")
+		end
+		used = used + section:GetContentsHeight() + 10
+	end
+	cramped.check(used <= room, "three-section column stays within available room")
+end
+
+-- Real blocks can contain many objective rows. Their first row, rather than the whole block, is the fallback floor.
+for _, section in ipairs(sections) do
+	local baseHeight = section.baseUpdateHeight
+	section.baseUpdateHeight = function(self)
+		local line = cramped.env.CreateFrame("Frame")
+		line:SetHeight(10)
+		line:SetPoint("TOPLEFT", self.firstBlock, "TOPLEFT", 0, 0)
+		self.firstBlock.usedLines = { line }
+		baseHeight(self)
+	end
+end
+cramped.native.NineSlice.bottom = 166 + 24 / cramped.host:GetEffectiveScale()
+cramped.host:MarkDirty()
+cramped.drain()
+cramped.host:MarkDirty()
+cramped.drain()
+local rowTotal = 0
+for _, section in ipairs(sections) do
+	cramped.check(section.trackerViewport >= 20, "every section gets its first row when row floors fit")
+	cramped.check(section.scrollFrame:IsShown(), "header-only content returns when a readable row fits")
+	rowTotal = rowTotal + section:GetContentsHeight() + 10
+end
+cramped.check(rowTotal <= 166, "row floors keep the column bounded")
+
+-- A constrained column can clip even its first block: content wheels must traverse that block in both directions.
+local paging = harness.new({ headerShown = true })
+paging.first.contentHeight, paging.second.contentHeight = 0, 0
+local oversized = paging.scrollModule(3, 1, 500)
+-- Model the real block's first objective independently of its many later rows.
+local baseHeight = oversized.baseUpdateHeight
+oversized.baseUpdateHeight = function(self)
+	local line = paging.env.CreateFrame("Frame")
+	line:SetHeight(20)
+	line:SetPoint("TOPLEFT", self.firstBlock, "TOPLEFT", 0, 0)
+	self.firstBlock.usedLines = { line }
+	baseHeight(self)
+end
+local objective = paging.env.CreateFrame("Button")
+local clicks = 0
+objective:SetScript("OnClick", function()
+	clicks = clicks + 1
+end)
+oversized.ContentsFrame.GetChildren = function()
+	return objective
+end
+paging.native.NineSlice.bottom = 200
+paging.host:MarkDirty()
+paging.drain()
+paging.drain()
+paging.check(oversized.trackerOverflow and oversized.trackerViewport < 500, "one tall block overflows its viewport")
+local function ContentWheel(delta)
+	objective.scripts.OnMouseWheel(objective, delta)
+end
+ContentWheel(-1)
+paging.check(oversized.scrollOffset > 0, "content wheel moves within a single overflowing block")
+paging.check(oversized.scrollOffset < oversized.trackerViewport, "a tall block scrolls with visible overlap")
+for _ = 1, 20 do
+	local before = oversized.scrollOffset
+	ContentWheel(-1)
+	paging.check(
+		oversized.scrollOffset >= before and oversized.scrollOffset - before < oversized.trackerViewport,
+		"downward ticks preserve overlap through a tall block and at its end"
+	)
+end
+paging.check(oversized.scrollOffset == oversized.scrollRange, "repeated wheels reach the end of one tall block")
+for _ = 1, 20 do
+	local before = oversized.scrollOffset
+	ContentWheel(1)
+	paging.check(
+		oversized.scrollOffset <= before and before - oversized.scrollOffset < oversized.trackerViewport,
+		"upward ticks preserve overlap through a tall block and at its start"
+	)
+end
+paging.check(oversized.scrollOffset == 0, "repeated upward wheels return through the tall block to the top")
+objective.scripts.OnClick(objective)
+paging.check(clicks == 1, "content wheel binding preserves child click actions")
+
+-- Keep the first block tall and append a short block without asking layout to rebuild the fixture.
+local short = paging.env.CreateFrame("Frame")
+short.id, short.height = 2, 40
+oversized.firstBlock.nextBlock = short
+oversized.scrollRange = oversized.scrollRange + 50
+ContentWheel(-1)
+paging.check(oversized.scrollOffset < oversized.trackerViewport, "a next block does not skip unseen tall-block rows")
+local previous = oversized.scrollOffset
+ContentWheel(-1)
+paging.check(oversized.scrollOffset > previous, "successive ticks continue through the tall first block")
+ContentWheel(1)
+paging.check(
+	oversized.scrollOffset < previous + oversized.trackerViewport and oversized.scrollOffset > 0,
+	"upward paging within a tall block preserves overlap instead of jumping to its top"
+)
+oversized:SetScrollOffset(oversized:BlockStarts()[2].start)
+ContentWheel(1)
+paging.check(oversized.scrollOffset > 0, "upward wheel from the next block pages through the tall first block")
+paging.setCombat(true)
+local heldOffset = oversized.scrollOffset
+ContentWheel(-1)
+ContentWheel(1)
+paging.check(oversized.scrollOffset == heldOffset, "combat freezes tall-block content wheels in both directions")
+paging.setCombat(false)
+oversized.trackerOverflow = false
+ContentWheel(-1)
+paging.check(oversized.scrollOffset == heldOffset, "a section without overflow ignores content wheels")
+
+print(
+	"tracker_host_spec: "
+		.. (t.checks() + asideChecks + scroll.checks() + floors.checks() + cramped.checks() + paging.checks())
+		.. " checks passed"
+)

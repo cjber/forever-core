@@ -1134,7 +1134,9 @@ function M.build(sim)
 			else
 				local kind = kindOf(node)
 				if Widgets.TYPES[kind] then
-					local entry = { node = node, file = path, chunk = chunk, taint = Taint.current, kind = kind }
+					-- XML ownership follows its source, never the caller requesting a native addon.
+					local entry =
+						{ node = node, file = path, chunk = chunk, taint = Taint.addonFolders[folder], kind = kind }
 					if node.attr.intrinsic == "true" then
 						entry.name = node.attr.name
 						T.intrinsics[node.attr.name] = entry

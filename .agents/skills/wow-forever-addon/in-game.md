@@ -153,6 +153,9 @@ Play itself. While that job holds the job lock and waits for READY, `shot` and a
 without the lock, so they never queue behind the job they are unblocking; `key` and `slash` still refuse until READY.
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
+- Exit 2 means the checks never ran: the session could not reach the world (a start that timed out) or the client
+  refused the selftest. Nothing is posted, so a caller runs it again later. A Game Menu an earlier job left open is
+  closed first, so it no longer stops a smoke.
 - Exit 3 also covers a persisted Battle.net sign-in block. The player clears it with `up --manual-launcher`,
   signs in and reaches READY. Nothing is posted while blocked.
 - Exit 3 means the player's own client is running: the Wine prefix is used by processes this tool does not own.

@@ -31,13 +31,33 @@ SPEC.loader.exec_module(fc)
 REAL_REQUIRE_SAFE = fc.require_safe
 
 
+def setUpModule():
+    """Unmocked discovery must fail instead of inspecting the shared client or process table."""
+    temporary = tempfile.TemporaryDirectory()
+    unittest.addModuleCleanup(temporary.cleanup)
+    root = Path(temporary.name)
+    for name, value in (("STATE_DIR", root / "state"), ("CLIENT", root / "client"), ("CONFIG", root / "env.json")):
+        patch = mock.patch.object(fc, name, value)
+        patch.start()
+        unittest.addModuleCleanup(patch.stop)
+    for target, name in ((fc, "pids"), (fc.socket, "create_connection")):
+        patch = mock.patch.object(target, name, side_effect=AssertionError(f"unit test must mock {name}"))
+        patch.start()
+        unittest.addModuleCleanup(patch.stop)
+
+
 def args() -> argparse.Namespace:
     return argparse.Namespace(wait=False, timeout=5, manual_launcher=False)
 
 
 def live_state(**extra) -> dict:
     """A session.json a live process wrote, for the verbs that re-check the session after taking the job lock."""
-    return {"pid": os.getpid(), "start_ticks": fc.process_start(os.getpid()), **extra}
+    return {
+        "pid": os.getpid(),
+        "start_ticks": fc.process_start(os.getpid()),
+        "headless_addon_digest": fc.headless_addon_digest(),
+        **extra,
+    }
 
 
 def dead_pid() -> int:
@@ -115,8 +135,9 @@ class ForeverClientTest(unittest.TestCase):
     def test_manual_start_keeps_block_until_ready(self):
         block = self.state / fc.SIGN_IN_BLOCK
         block.write_text(fc.SIGN_IN_MESSAGE)
+        session = {"ready": 1, "headless_addon_digest": fc.headless_addon_digest()}
         with (
-            mock.patch.object(fc, "current_session", return_value={"ready": 1}),
+            mock.patch.object(fc, "current_session", return_value=session),
             mock.patch.object(fc, "client_ui", return_value={"safety": True, "world": True}),
         ):
             fc.ensure_session(5, manual_launcher=True)
@@ -595,7 +616,11 @@ class ForeverClientTest(unittest.TestCase):
         fc.link_record_path().write_text(
             json.dumps({"owner": {"pid": dead_pid(), "started": 1}, "links": [{"slot": str(slot), "was": None}]})
         )
-        with mock.patch.object(fc, "prefix_users", return_value=[42]), contextlib.redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(fc, "prefix_users", return_value=[42]),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             with self.assertRaisesRegex(fc.ClientError, "in use"):
                 fc.up(args())
         self.assertFalse(slot.is_symlink())
@@ -622,7 +647,7 @@ class ForeverClientTest(unittest.TestCase):
         with (
             mock.patch.object(fc.time, "monotonic", clock.monotonic),
             mock.patch.object(fc.time, "sleep", clock.sleep),
-            mock.patch.object(fc.fcntl, "flock", side_effect=[BlockingIOError(), None]),
+            mock.patch.object(fc.fcntl, "flock", side_effect=[None, BlockingIOError(), None]),
             mock.patch.object(fc, "prefix_users", return_value=[]),
             mock.patch.object(fc.socket, "create_connection", side_effect=OSError("Network is unreachable")),
             self.assertRaisesRegex(fc.ClientError, "cannot reach Battle.net"),
@@ -818,6 +843,7 @@ class ForeverClientTest(unittest.TestCase):
                 "client_ui",
                 side_effect=[
                     {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
                     {"world": True, "menu": False, "chat": True},
                 ],
             ),
@@ -832,14 +858,51 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
 
-    def test_slash_refuses_menu_without_typing(self):
+    def test_slash_refuses_a_menu_that_will_not_close_without_typing(self):
         with (
             mock.patch.object(fc, "send") as send,
             mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc.time, "sleep"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True, "chat": False}),
         ):
             with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
                 fc.slash({}, "/reload")
+        self.assertEqual(send.call_args_list, [mock.call({}, "key", "Escape")] * fc.MENU_CLOSE_TRIES)
+
+    def test_slash_closes_a_game_menu_an_earlier_job_left_open(self):
+        # #727: a job that ended at the Game Menu must not make the next job's slash refuse.
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(
+                fc,
+                "client_ui",
+                side_effect=[
+                    {"world": True, "menu": True, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": True},
+                ],
+            ),
+        ):
+            fc.slash({}, "/forever selftest")
+        self.assertEqual(
+            send.call_args_list,
+            [
+                mock.call({}, "key", "Escape"),
+                mock.call({}, "key", "Return"),
+                mock.call({}, "type", "--delay", fc.TYPE_DELAY_MS, "/forever selftest"),
+                mock.call({}, "key", "Return"),
+            ],
+        )
+
+    def test_closing_the_menu_sends_nothing_outside_the_world(self):
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "client_ui", return_value={"world": False, "menu": True, "chat": False}),
+        ):
+            fc.close_game_menu({})
         send.assert_not_called()
 
     def test_reload_waits_only_for_a_screenshot_taken_after_the_command_was_sent(self):
@@ -1776,6 +1839,7 @@ class BuildDevTest(unittest.TestCase):
     """The dev build rebuild-dev.sh made, now one function: the commit's tree, stripped and stamped."""
 
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "prefix_users", return_value=[]))
         self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.workspace = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
@@ -1910,6 +1974,7 @@ class LinkBuildTest(unittest.TestCase):
         self.build.mkdir()
         self.folders = [("LegacyForever", self.build)]
         self.enterContext(mock.patch.object(fc, "prefix_users", return_value=[]))
+        self.enterContext(mock.patch.object(fc, "client_in_use", return_value=None))
 
     def test_a_link_is_put_back_at_the_very_target_it_had(self):
         store = self.state / "store/LegacyForever"
@@ -2104,40 +2169,19 @@ class LinkBuildTest(unittest.TestCase):
         self.assertFalse(slot.is_symlink())
         self.assertTrue((slot / "LegacyForever.toc").exists())
 
-    def test_an_ownerless_record_is_left_alone_while_a_session_holds_the_client(self):
-        # An older version's live smoke writes this record too, so it may not be stale while the client is held.
+    def test_an_ownerless_record_is_left_alone_while_a_job_holds_the_lock(self):
         slot = self.older_record()
-        err = io.StringIO()
-        with (
-            mock.patch.object(fc, "client_in_use", return_value="another session holds the client"),
-            contextlib.redirect_stderr(err),
-        ):
+        with open(fc.job_lock_path(), "a+") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX)
             self.assertEqual(fc.recover_links(), 0)
         self.assertTrue(slot.is_symlink())
         self.assertTrue(fc.link_record_path().exists())
-        self.assertIn("belongs to a running session", err.getvalue())
 
-    def test_the_session_that_wrote_a_record_leaves_its_own_links_alone(self):
-        # The smoke reads the record back when its own `up` starts: it must not undo the links it has just made.
+    def test_live_pid_without_job_lock_does_not_prevent_recovery(self):
         fc.link_build(self.folders, self.addons)
-        self.assertEqual(fc.recover_links(), 0)
-        self.assertTrue((self.addons / "LegacyForever").is_symlink())
-        self.assertTrue(fc.link_record_path().exists())
-
-    def test_a_record_from_a_session_that_still_runs_is_left_alone(self):
-        slot = self.killed_session()
-        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-        self.addCleanup(sleeper.wait)
-        self.addCleanup(sleeper.kill)
-        record = json.loads(fc.link_record_path().read_text())
-        record["owner"] = {"pid": sleeper.pid, "started": fc.process_start(sleeper.pid)}
-        fc.link_record_path().write_text(json.dumps(record))
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err):
-            self.assertEqual(fc.recover_links(), 0)
-        self.assertTrue(slot.is_symlink())
-        self.assertTrue(fc.link_record_path().exists())
-        self.assertIn("belongs to a running session", err.getvalue())
+        with mock.patch.object(fc, "owner_alive", return_value=True):
+            self.assertEqual(fc.recover_links(), 1)
+        self.assertFalse(fc.link_record_path().exists())
 
     def test_a_reused_pid_does_not_keep_a_dead_sessions_links_in_place(self):
         slot = self.killed_session()
@@ -2260,6 +2304,7 @@ class SmokeTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "prefix_users", return_value=[]))
         self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -2314,6 +2359,7 @@ class SmokeTest(unittest.TestCase):
         folders=None,
         registrations=None,
         startup=None,
+        slash=None,
     ):
         folders = folders or [("LegacyForever", self.build)]
         startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
@@ -2328,7 +2374,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job", self.released),
             mock.patch.object(fc, "reload", self.reload),
             mock.patch.object(fc, "job_started", return_value=3.0),
-            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "slash", slash or mock.Mock()),
             mock.patch.object(fc, "post_status", self.posted),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
@@ -2399,14 +2445,23 @@ class SmokeTest(unittest.TestCase):
         self.posted.assert_not_called()
         self.assertFalse((self.addons / "LegacyForever").exists())
 
-    def test_a_session_that_cannot_start_posts_failure(self):
+    def test_a_session_that_cannot_start_posts_nothing(self):
+        # #727: a sign-in or a start that timed out says nothing about the commit, so no status is posted.
         def start(_timeout, _manual_launcher=False):
             raise fc.ClientError("the world did not load within 600 s")
 
-        code, _printed, _build = self.run_smoke(ensure=start)
-        self.assertEqual(code, 1)
-        self.assertEqual(self.posted.call_args.args[2], False)
-        self.assertIn("no result: the world did not load", self.posted.call_args.args[3])
+        code, printed, _build = self.run_smoke(ensure=start)
+        self.assertEqual(code, 2)
+        self.posted.assert_not_called()
+        self.assertIn("no result, nothing posted: the world did not load", printed)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_refused_selftest_posts_nothing(self):
+        refused = mock.Mock(side_effect=fc.ClientError("slash refused: outside the world or Game Menu is shown"))
+        code, printed, _build = self.run_smoke(slash=refused)
+        self.assertEqual(code, 2)
+        self.posted.assert_not_called()
+        self.assertIn("nothing posted: slash refused", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
     def test_a_client_that_is_not_in_use_smokes(self):
@@ -2644,9 +2699,9 @@ class SmokeTest(unittest.TestCase):
             contextlib.redirect_stderr(io.StringIO()),
         ):
             code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": "boom"}, post=False)
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.posted.assert_not_called()
-        self.assertIn("no result: boom (not posted)", out.getvalue())
+        self.assertIn("no result, nothing posted: boom", out.getvalue())
 
     def leftover(self) -> Path:
         """What a SIGKILLed smoke leaves: the store install aside, its link in the slot, and the record."""
@@ -2738,7 +2793,7 @@ class SmokeTest(unittest.TestCase):
         with self.assertRaisesRegex(fc.ClientError, "no checkout of other-repo"):
             self.smoke({"repo": "other-repo"})
 
-    def test_an_errors_read_that_prints_no_json_fails_the_smoke(self):
+    def test_an_errors_read_that_prints_no_json_posts_nothing(self):
         with (
             mock.patch.object(fc, "git", return_value="a" * 40),
             mock.patch.object(fc, "foreign_client", return_value=None),
@@ -2754,11 +2809,13 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "post_status") as posted,
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
-            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stdout(io.StringIO()) as out,
         ):
             code = self.smoke()
-        self.assertEqual(code, 1)
-        self.assertIn("printed no JSON", posted.call_args.args[3])
+        # An unreadable error log says nothing about the commit, so nothing is posted and it is smoked again (#727).
+        self.assertEqual(code, 2)
+        posted.assert_not_called()
+        self.assertIn("printed no JSON", out.getvalue())
 
     def test_a_description_stays_under_the_status_limit(self):
         counts = {f"Addon{index}": 9 for index in range(20)}
@@ -3247,6 +3304,7 @@ class ProofTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def setUp(self):
+        self.enterContext(mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": False}))
         self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -3380,6 +3438,33 @@ class ProofTest(unittest.TestCase):
             err = stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
             code = fc.proof(self.options(**overrides))
         return code, out.getvalue(), err.getvalue()
+
+    def test_a_proof_refuses_a_slot_changed_before_capture_or_teardown(self):
+        for phase in ("before capture", "teardown"):
+            with self.subTest(phase=phase):
+                slot = self.addons / "LegacyForever"
+
+                def replace_slot(*_args, slot=slot):
+                    slot.unlink()
+                    slot.mkdir()
+
+                if phase == "before capture":
+                    self.reload.side_effect = replace_slot
+                else:
+                    self.compare.reset_mock()
+                    # run_flow's eval check happens after the screenshot, before teardown.
+                patch = (
+                    mock.patch.object(fc, "check_flow_eval", side_effect=replace_slot)
+                    if phase == "teardown"
+                    else contextlib.nullcontext()
+                )
+                with patch, self.assertRaisesRegex(fc.ClientError, "no longer points at the candidate"):
+                    self.run_proof()
+                self.assertFalse((self.checkout / fc.PROOF_FILE).exists())
+                self.create_gist.assert_not_called()
+                slot.rmdir()
+                fc.link_record_path().unlink(missing_ok=True)
+                self.reload.side_effect = None
 
     def test_the_manual_launcher_flag_reaches_the_session(self):
         code, _printed, _err = self.run_proof(manual_launcher=True)
@@ -3900,6 +3985,10 @@ class BrokerTest(unittest.TestCase):
         calls = {"count": 0}
 
         def flock(_handle, _operation):
+            if Path(_handle.name).name != "job.lock":
+                if _operation == fcntl.LOCK_SH | fcntl.LOCK_NB:
+                    raise BlockingIOError
+                return
             calls["count"] += 1
             if calls["count"] == 1:
                 raise BlockingIOError
@@ -3941,7 +4030,7 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(fc.describe_job(), "another job")
         with (
             mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "old"}),
-            self.assertRaisesRegex(fc.ClientError, "lease expired: run lease again"),
+            self.assertRaisesRegex(fc.ClientError, "lease ended: unknown token"),
         ):
             fc.with_job("shot", 5, mock.Mock())
 
@@ -3987,6 +4076,7 @@ class BrokerTest(unittest.TestCase):
 
     def make_lease(self, ttl=600):
         out = io.StringIO()
+        fc.write_state(live_state(ready=1.0))
         with (
             mock.patch.object(fc, "ensure_session", return_value=live_state(ready=1.0)),
             contextlib.redirect_stdout(out),
@@ -4054,10 +4144,11 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual(fc.down(), 0)
         self.assertTrue((self.state / fc.STOP).exists())
 
-    def test_release_removes_the_lease_record(self):
+    def test_release_leaves_a_reason_for_the_lease_holder(self):
         token = self.make_lease()
         self.assertEqual(fc.release(token), 0)
-        self.assertFalse((self.state / "leases" / f"{token}.json").exists())
+        with self.assertRaisesRegex(fc.ClientError, "released by caller"):
+            fc.live_lease(token)
 
     def test_a_job_timeout_escalates_to_kill(self):
         clock = FakeClock()
@@ -4139,7 +4230,7 @@ class BrokerTest(unittest.TestCase):
         self.assertTrue(completed.exists(), "the child must finish its TERM handler before SIGKILL")
 
     def test_teardown_clears_lease_records(self):
-        self.make_lease()
+        token = self.make_lease()
         clock = FakeClock()
         with (
             mock.patch.object(fc, "require_owned_prefix"),
@@ -4149,7 +4240,8 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc.time, "sleep", clock.sleep),
         ):
             fc.teardown(None, {}, None, {})
-        self.assertEqual(list((self.state / "leases").iterdir()), [])
+        with self.assertRaisesRegex(fc.ClientError, "session ended because"):
+            fc.live_lease(token)
 
     def test_a_lease_ttl_is_capped(self):
         options = argparse.Namespace(ttl=fc.LEASE_MAX + 1, timeout=5, manual_launcher=False, label=None)
@@ -4691,6 +4783,332 @@ class NestedHyprlandTest(unittest.TestCase):
         kill.assert_not_called()
 
 
+class HeadlessQueueRegressionTest(unittest.TestCase):
+    def setUp(self):
+        self.ticket_handles = {}
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.root))
+        self.enterContext(mock.patch.object(fc, "process_start", return_value=123))
+        self.enterContext(mock.patch.object(fc, "boot_id", return_value="boot"))
+        self.enterContext(
+            mock.patch.object(
+                fc,
+                "owner_alive",
+                side_effect=lambda record: bool(
+                    record and record.get("started") == 123 and record.get("boot_id") == "boot"
+                ),
+            )
+        )
+        self.session = {"pid": 42, "started": 7, "start_ticks": 123, "boot_id": "boot", "ready": 1}
+        self.enterContext(mock.patch.object(fc, "current_session", return_value=self.session))
+        self.clock = FakeClock()
+        self.enterContext(mock.patch.object(fc.time, "monotonic", self.clock.monotonic))
+        self.enterContext(mock.patch.object(fc.time, "sleep", self.clock.sleep))
+
+    def enqueue(self):
+        path, handle = fc.enqueue_job()
+        self.addCleanup(handle.close)
+        self.ticket_handles[path] = handle
+        return path
+
+    def test_waiter_a_arrives_before_b_and_acquires_first(self):
+        first = self.enqueue()
+        order = []
+
+        def let_a_run(seconds):
+            self.clock.sleep(seconds)
+            with mock.patch.object(fc, "enqueue_job", return_value=(first, self.ticket_handles[first])):
+                handle, token = fc.acquire_job(0, "A")
+            order.append("A")
+            fc.release_job(handle, token)
+
+        with mock.patch.object(fc.time, "sleep", side_effect=let_a_run):
+            handle, token = fc.acquire_job(5, "B")
+        order.append("B")
+        fc.release_job(handle, token)
+        self.assertEqual(order, ["A", "B"])
+        self.assertEqual(fc.job_queue(), [])
+
+    def test_abandoned_ticket_is_removed(self):
+        ticket = self.enqueue()
+        self.ticket_handles[ticket].close()
+        handle, token = fc.acquire_job(0, "next")
+        fc.release_job(handle, token)
+        self.assertFalse(ticket.exists())
+
+    def test_teardown_overtakes_tickets_without_removing_them(self):
+        first = self.enqueue()
+        handle, token = fc.acquire_job(0, "serve end", session_end=True)
+        self.assertTrue(first.exists())
+        fc.release_job(handle, token)
+        self.assertEqual(fc.job_queue(), [first])
+
+    def test_ticket_publication_exception_cleans_up_and_keeps_counter_monotonic(self):
+        write = fc.atomic_write
+
+        def fail_after_publish(path, contents):
+            write(path, contents)
+            if path.suffix == ".json":
+                raise OSError("interrupted directory sync")
+
+        with mock.patch.object(fc, "atomic_write", side_effect=fail_after_publish), self.assertRaises(OSError):
+            self.enqueue()
+        self.assertEqual(fc.job_queue(), [])
+        ticket = self.enqueue()
+        self.assertEqual(int(ticket.stem), 2)
+
+    def test_timeout_and_exception_remove_the_waiters_ticket(self):
+        first = self.enqueue()
+        with self.assertRaisesRegex(fc.ClientError, "queue position 2"):
+            fc.acquire_job(0, "timeout")
+        self.assertEqual(fc.job_queue(), [first])
+        with mock.patch.object(fc.time, "sleep", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            fc.acquire_job(5, "interrupted")
+        self.assertEqual(fc.job_queue(), [first])
+
+    def test_waiting_line_changes_with_holder_and_reports_position(self):
+        first = self.enqueue()
+
+        def tick(seconds):
+            self.clock.sleep(seconds)
+
+        with (
+            mock.patch.object(fc, "describe_job", side_effect=["holder A", "holder B", "holder B"]),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+            mock.patch.object(fc.time, "sleep", side_effect=tick),
+            self.assertRaises(fc.ClientError),
+        ):
+            fc.acquire_job(fc.JOB_POLL * 2, "queued")
+        self.assertEqual(err.getvalue().count("waiting for"), 2)
+        self.assertIn("holder B; queue position 2", err.getvalue())
+        self.assertEqual(fc.job_queue(), [first])
+
+    def make_lease(self):
+        token = "lease-token"
+        path = fc.lease_path(token)
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "token": token,
+                    "label": "test",
+                    "expires": time.time() + 100,
+                    "session": fc.session_identity(self.session),
+                }
+            )
+        )
+        return token
+
+    def test_session_end_replaced_expired_and_released_leases_never_queue(self):
+        for reason in ("session ended because world lost", "replaced", "expired", "released"):
+            with self.subTest(reason=reason):
+                token = self.make_lease()
+                if reason == "replaced":
+                    self.session["started"] += 1
+                elif reason == "expired":
+                    record = json.loads(fc.lease_path(token).read_text())
+                    record["expires"] = 0
+                    fc.lease_path(token).write_text(json.dumps(record))
+                elif reason == "released":
+                    fc.release(token)
+                else:
+                    fc.clear_leases(reason)
+                with (
+                    mock.patch.dict(os.environ, FOREVER_CLIENT_JOB=token),
+                    mock.patch.object(fc, "acquire_job") as acquire,
+                    self.assertRaisesRegex(fc.ClientError, "lease (ended|expired)"),
+                ):
+                    fc.with_job("shot", 5, mock.Mock())
+                acquire.assert_not_called()
+
+    def test_lease_is_rechecked_after_waiting_for_the_lock(self):
+        token = self.make_lease()
+
+        def acquire(*_args):
+            fc.clear_leases("session ended because source changed")
+            return mock.Mock(), "job"
+
+        with (
+            mock.patch.dict(os.environ, FOREVER_CLIENT_JOB=token),
+            mock.patch.object(fc, "acquire_job", side_effect=acquire),
+            mock.patch.object(fc, "release_job") as release,
+            self.assertRaisesRegex(fc.ClientError, "source changed"),
+        ):
+            fc.with_job("shot", 5, mock.Mock())
+        release.assert_called_once()
+
+    def test_headless_addon_files_are_launcher_sources_and_change_digest(self):
+        addon = self.root / "addon"
+        addon.mkdir()
+        lua = addon / "ForeverHeadless.lua"
+        lua.write_text("old protocol")
+        with mock.patch.object(fc, "ADDON", addon):
+            baseline = fc.launcher_sources()
+            digest = fc.headless_addon_digest()
+            self.assertIn(lua, baseline)
+            lua.write_text("new protocol")
+            self.assertNotEqual(fc.launcher_sources(baseline), baseline)
+            self.assertNotEqual(fc.headless_addon_digest(), digest)
+
+    def test_resident_source_check_detects_added_headless_addon_files(self):
+        addon = self.root / "addon"
+        addon.mkdir()
+        (addon / "ForeverHeadless.lua").write_text("protocol")
+        with mock.patch.object(fc, "ADDON", addon):
+            baseline = fc.launcher_sources()
+            (addon / "NewProtocol.lua").write_text("new protocol")
+            self.assertNotEqual(fc.launcher_sources(baseline), baseline)
+
+    def test_changed_addon_at_same_protocol_is_torn_down_under_the_job_lock(self):
+        old = {**self.session, "headless_addon_digest": "old"}
+        fresh = {**self.session, "headless_addon_digest": fc.headless_addon_digest()}
+        handle, token = fc.acquire_job(0, "new caller")
+
+        def stop():
+            self.assertEqual(fc.job_holder()["token"], token)
+            self.assertNotIn("ready", old)
+            self.assertIn("headless addon source changed", old["end_reason"])
+
+        try:
+            with (
+                mock.patch.object(fc, "current_session", side_effect=[old, fresh]),
+                mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}) as ui,
+                mock.patch.object(fc, "write_state"),
+                mock.patch.object(fc, "down", side_effect=stop) as down,
+            ):
+                self.assertEqual(fc.ensure_session(5), fresh)
+            down.assert_called_once()
+            ui.assert_called_once_with(fresh)
+        finally:
+            fc.release_job(handle, token)
+
+    def test_newer_verb_requests_locked_restart_for_old_protocol(self):
+        state = {**self.session, "headless_addon_digest": "old"}
+        with (
+            mock.patch.dict(os.environ, FOREVER_CLIENT_JOB=""),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "ensure_session", return_value=self.session) as ensure,
+            mock.patch.object(fc, "session_alive", return_value=True),
+        ):
+            self.assertEqual(fc.with_job("shot", 5, lambda state: state["pid"]), 42)
+        ensure.assert_called_once_with(5)
+
+    def test_token_inside_job_does_not_restart_session(self):
+        action = mock.Mock(return_value=0)
+        with (
+            mock.patch.dict(os.environ, FOREVER_CLIENT_JOB="held"),
+            mock.patch.object(fc, "job_holder", return_value={"token": "held"}),
+            mock.patch.object(fc, "load_state", return_value=self.session),
+            mock.patch.object(fc, "compatible_session", side_effect=AssertionError("restart inside job")),
+        ):
+            self.assertEqual(fc.with_job("shot", 5, action), 0)
+        action.assert_called_once_with(self.session)
+
+    def test_missing_own_ticket_fails_clearly(self):
+        with mock.patch.object(fc, "job_queue", return_value=[]):
+            with self.assertRaisesRegex(fc.ClientError, "ticket.*disappeared"):
+                fc.acquire_job(0, "lost")
+
+    def test_locked_ticket_survives_invisible_owner(self):
+        ticket = self.enqueue()
+        with mock.patch.object(fc, "owner_alive", return_value=False):
+            self.assertEqual(fc.job_queue(), [ticket])
+        self.ticket_handles[ticket].close()
+        self.assertEqual(fc.job_queue(), [])
+
+    def test_issuing_lease_prunes_expired_records(self):
+        token = self.make_lease()
+        path = fc.lease_path(token)
+        record = json.loads(path.read_text())
+        record["expires"] = 0
+        record["ended"] = "released"
+        path.write_text(json.dumps(record))
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=self.session),
+            mock.patch.object(fc, "require_safe") as safety,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            fc.lease(argparse.Namespace(ttl=100, label="new", timeout=0, manual_launcher=False))
+        safety.assert_called_once_with(self.session)
+        self.assertFalse(path.exists())
+
+    def test_recover_links_leaves_another_live_owners_record_untouched(self):
+        addons = self.root / "AddOns"
+        addons.mkdir()
+        target = self.root / "build"
+        target.mkdir()
+        with (
+            mock.patch.object(fc, "addons_dir", return_value=addons),
+            mock.patch.object(fc, "client_in_use", return_value=None),
+        ):
+            records = fc.link_build([("Addon", target)], addons)
+            record = json.loads(fc.link_record_path().read_text())
+            record["owner"]["pid"] = 42
+            fc.link_record_path().write_text(json.dumps(record))
+            with (
+                open(fc.job_lock_path(), "a+") as holder,
+                mock.patch.object(fc, "owner_alive", return_value=False),
+                mock.patch.object(fc, "restore_links") as restore,
+            ):
+                fc.fcntl.flock(holder, fc.fcntl.LOCK_EX | fc.fcntl.LOCK_NB)
+                self.assertEqual(fc.recover_links(), 0)
+            restore.assert_not_called()
+            fc.verify_links(records)
+
+
+class FetchCommitRegressionTest(unittest.TestCase):
+    def test_a_missing_full_sha_fetches_origin_once_and_retries(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        origin, writer, reader = (root / name for name in ("origin", "writer", "reader"))
+
+        def git(*args):
+            return subprocess.check_output(["git", *map(str, args)], stderr=subprocess.PIPE, text=True).strip()
+
+        git("init", "--bare", origin)
+        git("clone", origin, writer)
+        git(
+            "-C",
+            writer,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "first",
+        )
+        git("-C", writer, "push", "origin", "HEAD")
+        git("clone", origin, reader)
+        git(
+            "-C",
+            writer,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "second",
+        )
+        sha = git("-C", writer, "rev-parse", "HEAD")
+        git("-C", writer, "push", "origin", "HEAD")
+        with mock.patch.object(fc, "git", wraps=fc.git) as calls:
+            self.assertEqual(fc.resolve_commit(reader, sha), sha)
+            self.assertEqual(sum(call.args[1:] == ("fetch", "origin") for call in calls.call_args_list), 1)
+            calls.reset_mock()
+            self.assertEqual(fc.resolve_commit(reader, sha), sha)
+            self.assertFalse(any(call.args[1] == "fetch" for call in calls.call_args_list))
+            with self.assertRaisesRegex(fc.ClientError, "commit .* is not on origin"):
+                fc.resolve_commit(reader, "f" * 40)
+            self.assertEqual(sum(call.args[1:] == ("fetch", "origin") for call in calls.call_args_list), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -4786,7 +5204,8 @@ class LiveSafetyTest(unittest.TestCase):
             ({"ready": True}, "00000000"),
         ]:
             with self.subTest(stale=stale, header=header):
-                fresh = {"ready": True}
+                stale = live_state(**stale)
+                fresh = live_state(ready=True)
                 # A v1 capture is only 44 pixels wide, with no safety cells.
                 row = b"".join(bytes([255 if bit == "1" else 0]) * 12 for bit in header + "100")
                 with (
