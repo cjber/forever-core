@@ -10,7 +10,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
 
     forever_client.py serve               # the resident session: start, wait for the world, stay up while jobs arrive
     forever_client.py up                  # the same lifecycle in the foreground
-    forever_client.py job [--max S] -- <command>  # exclusive job, with a hard command limit
+    forever_client.py job [--hyprland] [--max S] -- <command>  # exclusive job, with a hard command limit
     forever_client.py run -- <command>    # alias for job
     forever_client.py lease [--ttl S]     # ensure the session; print a token for commands that each take the lock
     forever_client.py release TOKEN       # end that lease now
@@ -77,6 +77,9 @@ ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none ha
 is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
 Each verb using that token takes and releases the lock itself; `release TOKEN` deletes the lease record.
 Use `job --max S -- COMMAND` for exclusive work, limited to 600 s by default and at most 1800 s.
+`job --hyprland` has serve relaunch into a private nested Hyprland for deskpilot, then back into gamescope before
+releasing the lock. The command limit excludes relaunches: each world wait is bounded to 600 s; the return allowance
+is 900 s including shutdown. Cancellation and command failure also return (tools/headless/README.md).
 A source digest change in the launcher or its loaded repository modules also ends serve through the same locked
 teardown; the next job starts a fresh serve with the updated code.
 
@@ -215,6 +218,11 @@ STOP = "stop"
 SERVE_LOG = "serve.log"
 LEASE_TTL = 10 * 60
 LEASE_MAX = 30 * 60
+HYPRLAND_REQUEST = "hyprland-request.json"
+HYPRLAND_RESULT = "hyprland-result"
+HYPRLAND_END = "hyprland-end"
+HYPRLAND_WORLD_WAIT = 600
+HYPRLAND_RETURN_WAIT = 900
 FOREVER_ADDONS = (
     # The dev addon behind /devsmoke: its commands are the suite's own test surface.
     "!!DevSmoke",
@@ -526,6 +534,11 @@ def wait_for_world(before: set[Path], timeout: float, nudge=None, *, require_mar
 
 
 def x(state: Mapping, *args: str) -> None:
+    # Under a nested Hyprland, XWayland puts the client's output at its own root offset; a point is in the output's
+    # pixels, the same pixels a screenshot of it shows, so the offset is added here, once, for every absolute move.
+    origin = state.get("origin")
+    if origin and args and args[0] == "mousemove":
+        args = ("mousemove", str(int(args[1]) + origin[0]), str(int(args[2]) + origin[1]), *args[3:])
     subprocess.run(["xdotool", *args], env={**os.environ, "DISPLAY": state["display"]}, check=True)
 
 
@@ -665,8 +678,13 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
-    env = {**os.environ, "XDG_RUNTIME_DIR": str(runtime), "GAMESCOPE_WAYLAND_DISPLAY": state["gamescope_socket"]}
-    subprocess.run(["gamescopectl", "screenshot", str(path)], env=env, check=True, capture_output=True)
+    nested = state.get("nested")
+    if state.get("mode") == "hyprland" and nested:
+        env = {**os.environ, "XDG_RUNTIME_DIR": str(runtime), "WAYLAND_DISPLAY": nested["wayland"]}
+        subprocess.run(["grim", "-o", nested["output"], str(path)], env=env, check=True, capture_output=True)
+    else:
+        env = {**os.environ, "XDG_RUNTIME_DIR": str(runtime), "GAMESCOPE_WAYLAND_DISPLAY": state["gamescope_socket"]}
+        subprocess.run(["gamescopectl", "screenshot", str(path)], env=env, check=True, capture_output=True)
     for _ in range(50):
         if _complete_png(path):
             if mark_read:
@@ -2586,16 +2604,40 @@ def stop_gamescope(gamescope: subprocess.Popen | int | None, state: Mapping | No
         raise ClientError(f"cannot safely stop gamescope {pid}: session state retained")
 
 
-def teardown(
-    gamescope: subprocess.Popen | int | None,
-    wine: Mapping[str, str],
-    link: Path | None,
-    state: Mapping | None,
-) -> None:
+def nested_hyprland():
+    """tools/headless/nested_hyprland.py: the private nested Hyprland a Hyprland job runs the client in."""
+    return load_tool("nested_hyprland", Path(__file__).resolve().parent / "nested_hyprland.py")
+
+
+def nested_running(state: Mapping | None) -> bool:
+    record = state.get("nested") if state else None
+    return bool(record) and nested_hyprland().running(record)
+
+
+def stop_nested(state: dict | None) -> None:
+    """Stop the nested Hyprland the state records, if any, and forget it."""
+    record = state.get("nested") if state else None
+    if not record:
+        return
+    module = nested_hyprland()
+    try:
+        module.stop(record)
+    except module.NestedError as error:
+        raise ClientError(f"cannot stop the nested Hyprland: {error}") from None
+    state["nested"] = None
+
+
+def end_client(gamescope: subprocess.Popen | int | None, wine: Mapping[str, str], state: dict | None) -> None:
+    """Log the character out, end the session's Wine processes, then stop the display they ran on.
+
+    The display is gamescope or, during a Hyprland job, the nested Hyprland; the state keeps the session's link,
+    headless addon and record, so the next launch reuses them.
+    """
     token = state.get("token") if state else None
     require_owned_prefix(token)
     # Only a session in the world types /quit: at the character list Enter would enter the world instead.
-    if state and state.get("ready") and gamescope_running(gamescope, state) and client_pid():
+    display_up = gamescope_running(gamescope, state) or nested_running(state)
+    if state and state.get("ready") and display_up and client_pid():
         log_out(state)
     server = wineserver(wine)
     # Never use prefix-wide wineserver shutdown: another client can appear between ownership checks. Keep checking
@@ -2625,6 +2667,16 @@ def teardown(
     # Do not trigger gamescope's child reaper while a shared Wine server could still serve another client.
     # Display processes do not inherit WINEPREFIX, so they remain alive until all Wine processes exit naturally.
     stop_gamescope(gamescope, state)
+    stop_nested(state)
+
+
+def teardown(
+    gamescope: subprocess.Popen | int | None,
+    wine: Mapping[str, str],
+    link: Path | None,
+    state: dict | None,
+) -> None:
+    end_client(gamescope, wine, state)
     if link and link.is_symlink():
         link.unlink()
     if state and state.get("headless_addon"):
@@ -2632,6 +2684,8 @@ def teardown(
         if generated.is_dir() and generated.parent == STATE_DIR:
             shutil.rmtree(generated)
     clear_leases()
+    for path in [STATE_DIR / HYPRLAND_REQUEST, STATE_DIR / HYPRLAND_END, *STATE_DIR.glob(f"{HYPRLAND_RESULT}-*.json")]:
+        path.unlink(missing_ok=True)
     state_file().unlink(missing_ok=True)
 
 
@@ -2884,54 +2938,33 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
             "headless_addon": str(session_addon),
         }
         write_state(state)
-        gamescope = subprocess.Popen(
-            [
-                "gamescope",
-                "--backend",
-                "headless",
-                "-W",
-                str(WIDTH),
-                "-H",
-                str(HEIGHT),
-                "--",
-                # Gamescope's reaper ends every process once its child exits, and Battle.net exits as the game
-                # starts. umu-run's Proton `waitforexitandrun` returns only once the prefix's wineserver has, so the
-                # child lasts the whole Wine session: the launcher, then the game.
-                launch["umu_run"],
-                str(LAUNCHER),
-                *LAUNCH_ARGS,
-            ],
-            cwd=LAUNCHER.parent,
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        state["gamescope"] = gamescope.pid
-        state["gamescope_start"] = process_start(gamescope.pid)
-        write_state(state)
-        genv = child_env(token)
-        state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
-        write_state(state)
-        print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
-
-        nudge = functools.partial(at_character_select, state, args.manual_launcher)
-        try:
-            ready_shot = wait_for_world(before, args.timeout, nudge=nudge, require_marker=True)
-        except ClientError as error:
-            frame = shot(state, STATE_DIR / "failed.png")
-            raise ClientError(f"{error}; last frame: {frame}") from None
-        state["ready"] = time.time()
-        write_state(state)
+        gamescope = launch_gamescope(launch, env, log, state)
+        reach_world(state, before, args.timeout, args.manual_launcher, started)
         ready = time.monotonic()
-        print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
-        # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
-        # No eval or reload is needed here: wait_for_world only returns after that handshake succeeds.
-        print("CHARACTER_PREFLIGHT passed", flush=True)
         if after_ready:
             return after_ready(state)
         last_world_check = ready
         while gamescope.poll() is None:
+            request = hyprland_request()
+            if request is not None:
+                job, job_token = acquire_job(None, request["label"])
+                # Recheck after waiting: a cancelled requester must not move the client.
+                if hyprland_request() == request:
+                    job_token = request["token"]
+                    write_job_record(
+                        {
+                            "pid": os.getpid(),
+                            "start_ticks": process_start(os.getpid()),
+                            "token": job_token,
+                            "label": request["label"],
+                            "started": time.time(),
+                        }
+                    )
+                    gamescope = hyprland_job(request, gamescope, wine, env, launch, log, state)
+                    ready = last_world_check = time.monotonic()
+                release_job(job, job_token)
+                job = job_token = None
+                continue
             last_world_check, reason = resident_world_check(state, last_world_check)
             reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
             if reason is None and launcher_sources(sources) != sources:
@@ -2980,6 +3013,8 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
         for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
         try:
+            if state and state.get("gamescope") and getattr(gamescope, "pid", None) != state["gamescope"]:
+                gamescope = state["gamescope"]
             teardown(gamescope, wine, link, state)
         finally:
             # The job lock stays held through teardown, so no job starts against a client being stopped.
@@ -2998,6 +3033,58 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
 
 # `up` is the same lifecycle in the foreground: the verb an agent already knows keeps working unchanged.
 up = serve
+
+
+def launch_gamescope(launch: Mapping, env: Mapping[str, str], log, state: dict) -> subprocess.Popen:
+    """Start the client under headless gamescope and record the display it gives its child."""
+    gamescope = subprocess.Popen(
+        [
+            "gamescope",
+            "--backend",
+            "headless",
+            "-W",
+            str(WIDTH),
+            "-H",
+            str(HEIGHT),
+            "--",
+            # Gamescope's reaper ends every process once its child exits, and Battle.net exits as the game
+            # starts. umu-run's Proton `waitforexitandrun` returns only once the prefix's wineserver has, so the
+            # child lasts the whole Wine session: the launcher, then the game.
+            launch["umu_run"],
+            str(LAUNCHER),
+            *LAUNCH_ARGS,
+        ],
+        cwd=LAUNCHER.parent,
+        env=env,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    state["mode"] = "gamescope"
+    state["gamescope"] = gamescope.pid
+    state["gamescope_start"] = process_start(gamescope.pid)
+    write_state(state)
+    genv = child_env(state["token"])
+    state.update(display=genv["DISPLAY"], gamescope_socket=genv["GAMESCOPE_WAYLAND_DISPLAY"])
+    write_state(state)
+    print(f"starting: display {state['display']}, log {STATE_DIR / 'session.log'}", flush=True)
+    return gamescope
+
+
+def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher: bool, started: float, nudge=None):
+    """Press the launcher on and wait for the headless addon's world screenshot, then mark the state READY."""
+    nudge = nudge or functools.partial(at_character_select, state, manual_launcher)
+    try:
+        ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True)
+    except ClientError as error:
+        frame = shot(state, STATE_DIR / "failed.png")
+        raise ClientError(f"{error}; last frame: {frame}") from None
+    state["ready"] = time.time()
+    write_state(state)
+    print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
+    # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
+    # No eval or reload is needed here: wait_for_world only returns after that handshake succeeds.
+    print("CHARACTER_PREFLIGHT passed", flush=True)
 
 
 def down() -> int:
@@ -3159,6 +3246,8 @@ def job(args: argparse.Namespace) -> int:
     maximum = getattr(args, "max", LEASE_TTL)
     if not 0 < maximum <= LEASE_MAX:
         raise ClientError(f"--max takes 1 to {LEASE_MAX} s")
+    if getattr(args, "hyprland", False):
+        return request_hyprland_job(args, command, maximum)
     label = (args.label or Path(command[0]).name)[:80]
     handle, token = acquire_job(args.timeout, label)
     try:
@@ -3170,35 +3259,222 @@ def job(args: argparse.Namespace) -> int:
             "FOREVER_CLIENT_DISPLAY": state["display"],
             "FOREVER_CLIENT_JOB": token,
         }
-        process = subprocess.Popen(command, env=env, start_new_session=True)
-        try:
-            return process.wait(timeout=maximum)
-        except subprocess.TimeoutExpired:
-            raise ClientError(f"job exceeded its {maximum:g} s limit") from None
-        finally:
-            # End the whole group, including children left behind by an exited command.
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            grace_end = time.monotonic() + 2
-            while True:
-                process.poll()  # Reap the leader so it does not keep an otherwise empty group alive.
-                try:
-                    os.killpg(process.pid, 0)
-                except ProcessLookupError:
-                    break
-                remaining = grace_end - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(0.05, remaining))
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
+        return run_job_command(command, env, maximum)
     finally:
         release_job(handle, token)
+
+
+def run_job_command(command, env, maximum, check=None) -> int:
+    process = subprocess.Popen(command, env=env, start_new_session=True)
+    try:
+        if check is None:
+            return process.wait(timeout=maximum)
+        deadline = time.monotonic() + maximum
+        while True:
+            check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, maximum)
+            try:
+                return process.wait(timeout=min(0.2, remaining))
+            except subprocess.TimeoutExpired:
+                continue
+    except subprocess.TimeoutExpired:
+        raise ClientError(f"job exceeded its {maximum:g} s limit") from None
+    finally:
+        # End the whole group, including children left behind by an exited command.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        grace_end = time.monotonic() + 2
+        while True:
+            process.poll()  # Reap the leader so it does not keep an otherwise empty group alive.
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            remaining = grace_end - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.05, remaining))
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def read_hyprland_json(name: str) -> dict | None:
+    try:
+        value = json.loads((STATE_DIR / name).read_text())
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def hyprland_request() -> dict | None:
+    request = read_hyprland_json(HYPRLAND_REQUEST)
+    if request and owner_alive({"pid": request.get("pid"), "started": request.get("start_ticks")}):
+        return request
+    return None
+
+
+def hyprland_cancelled(request: Mapping) -> bool:
+    try:
+        ended = (STATE_DIR / HYPRLAND_END).read_text() == request["token"]
+    except OSError:
+        ended = False
+    return ended or not owner_alive({"pid": request.get("pid"), "started": request.get("start_ticks")})
+
+
+def request_hyprland_job(args: argparse.Namespace, command: list[str], maximum: float) -> int:
+    """Queue one command for serve, then wait through the return to gamescope, including on cancellation."""
+    module = nested_hyprland()
+    try:
+        parent = module.user_instance()
+    except module.NestedError as error:
+        raise ClientError(str(error)) from None
+    previous = stop_handlers()
+    token = None
+    submitted = False
+    completed = False
+    try:
+        handle, token = acquire_job(args.timeout, args.label or "Hyprland job")
+        try:
+            ensure_session(args.timeout, args.manual_launcher)
+            if hyprland_request():
+                raise ClientError("another Hyprland job is waiting for serve")
+            request = {
+                "token": token,
+                "pid": os.getpid(),
+                "start_ticks": process_start(os.getpid()),
+                "label": (args.label or Path(command[0]).name)[:80],
+                "command": command,
+                "maximum": maximum,
+                "parent": parent,
+            }
+            atomic_write(STATE_DIR / HYPRLAND_REQUEST, json.dumps(request))
+            submitted = True
+        finally:
+            release_job(handle, token, ended=False)
+        queue_deadline = time.monotonic() + args.timeout
+        deadline = None
+        cancelled = False
+        while True:
+            try:
+                result = read_hyprland_json(f"{HYPRLAND_RESULT}-{token}.json")
+                if result and result.get("token") == token:
+                    completed = True
+                    (STATE_DIR / f"{HYPRLAND_RESULT}-{token}.json").unlink(missing_ok=True)
+                    if result.get("error"):
+                        raise ClientError(result["error"])
+                    return 130 if cancelled else result["code"]
+                if current_session() is None:
+                    raise ClientError("the Hyprland job session ended; the next job starts fresh gamescope")
+                now = time.monotonic()
+                if deadline is None:
+                    holder = job_holder()
+                    if holder and holder.get("token") == token:
+                        deadline = now + HYPRLAND_WORLD_WAIT + maximum + HYPRLAND_RETURN_WAIT + 60
+                    elif now >= queue_deadline:
+                        raise ClientError("serve did not take the Hyprland job within --timeout")
+                if deadline is not None and now >= deadline:
+                    raise ClientError("the Hyprland job did not finish within its bounded transition waits")
+                time.sleep(JOB_POLL)
+            except KeyboardInterrupt:
+                cancelled = True
+                atomic_write(STATE_DIR / HYPRLAND_END, token)
+    finally:
+        if submitted and not completed:
+            atomic_write(STATE_DIR / HYPRLAND_END, token)
+        restore_handlers(previous)
+
+
+def hyprland_job(request: Mapping, gamescope, wine: Mapping, env: Mapping, launch: Mapping, log, state: dict):
+    """Serve owns the lock throughout both relaunches and the bounded command.
+
+    The command's --max excludes the transitions: each world wait is at most 600 seconds, and the return has
+    a 900-second caller allowance covering logout, owned-process teardown and compositor shutdown as well.
+    A failed return propagates to serve's full teardown rather than publishing a reusable broken session.
+    """
+    (STATE_DIR / HYPRLAND_REQUEST).unlink(missing_ok=True)
+    module = nested_hyprland()
+    result = {"token": request["token"], "code": 1}
+    client = None
+
+    def check() -> None:
+        if hyprland_cancelled(request):
+            raise ClientError("the Hyprland job was cancelled")
+        if state.get("nested") and (not module.running(state["nested"]) or (client and client.poll() is not None)):
+            raise ClientError("the client or nested Hyprland exited during the job")
+
+    def nudge() -> None:
+        check()
+        at_character_select(state, False)
+
+    try:
+        try:
+            end_client(gamescope, wine, state)
+            for key in ("gamescope", "gamescope_start", "gamescope_socket", "display", "ready"):
+                state[key] = None
+            state["mode"] = "hyprland"
+            write_state(state)
+            check()
+            state["nested"] = module.start(request["parent"], STATE_DIR / "nested", WIDTH, HEIGHT)
+            nested = state["nested"]
+            state.update(display=nested["display"], origin=nested["origin"])
+            write_state(state)
+            before = screenshots()
+            client = subprocess.Popen(
+                [launch["umu_run"], str(LAUNCHER), *LAUNCH_ARGS],
+                cwd=LAUNCHER.parent,
+                env={**env, "DISPLAY": nested["display"]},
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            reach_world(state, before, HYPRLAND_WORLD_WAIT, False, time.time(), nudge=nudge)
+            state["window"] = module.window(nested, GAME_WINDOW)
+            if not state["window"]:
+                raise ClientError("the nested Hyprland has no client window")
+            write_state(state)
+            recover_links()
+            command_env = {
+                **read_environ(request["pid"]),
+                "FOREVER_CLIENT_JOB": request["token"],
+                "FOREVER_CLIENT_DISPLAY": nested["display"],
+                "DISPLAY": nested["display"],
+                "XDG_RUNTIME_DIR": state["runtime_dir"],
+                "WAYLAND_DISPLAY": nested["wayland"],
+                "HYPRLAND_INSTANCE_SIGNATURE": nested["signature"],
+                "FOREVER_CLIENT_WINDOW": state["window"]["address"],
+            }
+            result["code"] = run_job_command(request["command"], command_env, request["maximum"], check)
+        except (ClientError, module.NestedError, subprocess.SubprocessError, OSError) as error:
+            result["error"] = str(error)
+        end_client(None if state.get("mode") == "hyprland" else gamescope, wine, state)
+        if client is not None:
+            try:
+                client.wait(30)
+            except subprocess.TimeoutExpired:
+                raise ClientError(f"umu-run {client.pid} outlived the Wine session") from None
+        for key in ("display", "origin", "window", "ready"):
+            state.pop(key, None)
+        write_state(state)
+        before = screenshots()
+        returned = launch_gamescope(launch, env, log, state)
+        reach_world(state, before, HYPRLAND_WORLD_WAIT, bool(state.get("manual_launcher")), time.time())
+    except KeyboardInterrupt:
+        result["error"] = "serve was interrupted during the Hyprland job"
+        atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
+        raise
+    finally:
+        end = STATE_DIR / HYPRLAND_END
+        if end.exists() and end.read_text() == request["token"]:
+            end.unlink(missing_ok=True)
+    atomic_write(STATE_DIR / f"{HYPRLAND_RESULT}-{request['token']}.json", json.dumps(result))
+    return returned
 
 
 def lease_path(token: str) -> Path:
@@ -3504,6 +3780,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             default=1800,
             help="seconds to reach the world and to wait for the job in flight",
         )
+        p.add_argument("--hyprland", action="store_true", help="run in a private nested Hyprland for deskpilot")
         p.add_argument("--max", type=float, default=LEASE_TTL, help=f"command limit in seconds, at most {LEASE_MAX}")
         p.add_argument("command", nargs=argparse.REMAINDER)
     p = sub.add_parser("lease", help="ensure the session and print a per-command lease token")

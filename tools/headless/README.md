@@ -46,3 +46,43 @@ requests a stop and returns immediately; the session stops when the job ends.
 `job` and `lease` reuse the resident session without `--wait`.
 `serve --wait` queues for a separate session and reports the current holder,
 its launch lifetime deadline and its idle deadline before waiting.
+
+
+## Hyprland job
+
+Run an occasional exclusive deskpilot test from your Hyprland session:
+
+```sh
+python3 tools/headless/forever_client.py job --hyprland --max 600 --label deskpilot-95 -- bash /path/to/reproduce.sh
+```
+
+Serve holds the job lock while it logs out, replaces gamescope with a private nested
+Hyprland, waits for the parked character in the world, runs the script, then logs out
+and restores gamescope. The nested compositor opens only on the hidden
+`special:forever-client` workspace. Its minimal configuration runs no user autostarts.
+Install `Hyprland`, `hyprctl`, `grim`, `xdotool`, `xrandr` and deskpilot first.
+
+The script receives `FOREVER_CLIENT_JOB`, `FOREVER_CLIENT_DISPLAY`, `DISPLAY`,
+`XDG_RUNTIME_DIR`, `HYPRLAND_INSTANCE_SIGNATURE`, `WAYLAND_DISPLAY` and
+`FOREVER_CLIENT_WINDOW` (the game window's Hyprland address). Deskpilot uses that
+signature to load its plugin only in the nested compositor on its first input action.
+You can run `deskpilot plugin load` first inside the script; a first build counts
+against the command limit. Keep these environment values for every deskpilot call.
+
+For deskpilot#95, the script can log out to character select, capture the window with
+`deskpilot shot "$FOREVER_CLIENT_WINDOW"`, locate the Characters button, and
+compare `deskpilot click` with and without `--take-pointer` using each fresh shot's
+coordinates and shot ID. Use `--show` inside the nested compositor for XWayland keys
+and text. Log the parked character back in before the script exits. The runner then
+performs the return login under gamescope. `forever_client.py shot`, `click` and other
+verbs inside the script use its job token; screenshots use grim and click coordinates
+include the nested output's XWayland origin.
+
+`--max` bounds the command, default 600 seconds, maximum 1800 seconds. It excludes
+both relaunches: each world wait has a fixed 600-second limit, and the return allows
+900 seconds including logout and process shutdown. Command exit, timeout, SIGINT or
+SIGTERM to the waiting job all trigger the return. Timeout and cancellation end the
+command's entire process group, with SIGKILL after the SIGTERM grace period. The lock
+is released only after return or full teardown. If the return fails, the session ends
+and the next job starts fresh gamescope. This is an occasional job with two extra
+logins; `lease` remains a token for individual commands.

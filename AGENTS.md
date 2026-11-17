@@ -42,6 +42,7 @@ python3 tools/gen_forever_api.py          # regenerate forever_tools/client_name
 python3 tools/lint_client_calls.py        # refuse a call of a client function the Forever client does not have
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
+python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
 python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
 python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
 python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
