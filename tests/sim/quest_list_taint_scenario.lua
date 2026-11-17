@@ -52,6 +52,11 @@ local function Run(sim, mode)
 	end
 	local tracker = sim.G.ObjectiveTrackerFrame
 	local db = mode == "disabled" and { questList = false } or mode == "enabled" and { questList = true } or {}
+	-- A fresh database draws the Forever list only with Adventure Guide loaded (#776), so this player has it.
+	local loaded = sim.impl["C_AddOns.IsAddOnLoaded"]
+	sim.impl["C_AddOns.IsAddOnLoaded"] = function(name)
+		return name == "AdventureGuideForever" or loaded(name)
+	end
 	if mode == "ellesmere" then
 		sim.G.EllesmereUIQuestTracker = {}
 		local custom = sim.G.CreateFrame("Frame", "EUI_CustomQuestTracker", sim.G.UIParent)
