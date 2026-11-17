@@ -57,7 +57,7 @@
 
 ---@class ForeverTrackerMenuBuilder
 ---@field Title fun(self: ForeverTrackerMenuBuilder, text: string)
----@field Primary fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun())
+---@field Primary fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun()): ForeverMenuDescription
 ---@field Action fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(), opts?: { combat?: boolean }): any
 ---@field Open fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun(): boolean?, string?): any invokes a callback that may return false and a visible refusal reason
 ---@field End fun(self: ForeverTrackerMenuBuilder, text: string, fn: fun()): any

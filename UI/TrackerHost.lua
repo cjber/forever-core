@@ -1544,6 +1544,7 @@ local function NewTrackerMenu(root, module, target)
 	end
 	function menu.Primary(_, text, fn)
 		slots.primary = slots.primary or Entry(text, fn)
+		return slots.primary
 	end
 	function menu.Action(_, text, fn, opts)
 		local entry = Entry(text, fn, opts)
@@ -1617,12 +1618,7 @@ local function NewTrackerMenu(root, module, target)
 			end)
 		end
 		local show = module.show
-		if
-			target.kind == "section"
-			and type(show) == "table"
-			and type(show.get) == "function"
-			and type(show.set) == "function"
-		then
+		if type(show) == "table" and type(show.get) == "function" and type(show.set) == "function" then
 			tracker:CreateButton(ns.L["Hide this section"], function()
 				if show.get() then
 					show.set(false)
