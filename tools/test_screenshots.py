@@ -61,7 +61,7 @@ class CreditRowTests(unittest.TestCase):
             order = self.player_order if header == "Players" else self.name_order
             self.assertEqual(sorted(rows, key=order), rows)
             for row in rows:
-                self.assertEqual([TITLE], [item["addon"] for item in row["helped"]])
+                self.assertEqual({TITLE}, {item["addon"] for item in row["helped"]})
 
     def test_a_row_reads_the_addons_that_credit_it(self):
         for _header, rows in self.sections([(TITLE, self.data)]):
@@ -71,7 +71,8 @@ class CreditRowTests(unittest.TestCase):
     def test_a_filtered_row_reads_that_addon_s_what(self):
         for _header, rows in self.sections([(TITLE, self.data)], TITLE):
             for row in rows:
-                self.assertEqual(row["helped"][0]["what"], self.detail(row, TITLE))
+                whats = dict.fromkeys(item["what"] for item in row["helped"] if item["what"])
+                self.assertEqual(phrase(", ").join(whats), self.detail(row, TITLE))
 
     def test_the_filtered_inspired_group_keeps_only_that_addon(self):
         data = {

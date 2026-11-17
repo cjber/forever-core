@@ -46,6 +46,8 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| [moshoutegong](https://github.com/moshoutegong) | Simplified Chinese translation | GitHub; cjber/adventure-guide-forever#801 |
+| [moshoutegong](https://github.com/moshoutegong) | Traditional Chinese translation | GitHub; cjber/adventure-guide-forever#802 |
 | TechnoHunter | Quest tracking stays safe when leveling | CurseForge; thread 8734322; #608 |
 | user_efwsfml273dlvfm5 | Quest tracking stays safe when leveling | CurseForge; threads 8730123, 8716634, 8724252; #608 |
 | serb1tar | Quest item icons and progress bars fit the quest list | CurseForge; #743 |
