@@ -46,9 +46,11 @@ checks, puts the links back and releases the lock. `--no-post` runs exactly the 
 without posting a commit status, for a local demonstration. `--manual-launcher` starts a session that way while
 launcher OCR is not finding Play (cjber/forever-core#547), so an agent runs `smoke --manual-launcher` in the
 background, takes `shot` and clicks Play itself; those two launcher verbs run without the job lock, so they cannot
-queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded failure, 3 means the player's
-own client is running (the Wine prefix is used by processes this tool does not own), so nothing is posted and a caller
-retries later; another agent's job is waited for, up to `--timeout`. The AddOns folder is shared: every slot the smoke
+queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded failure, 2 a smoke whose
+checks never ran (the session could not reach the world, or the client refused the selftest), and 3 means the player's
+own client is running (the Wine prefix is used by processes this tool does not own); after 2 and 3 nothing is posted
+and a caller retries later. Another agent's job is waited for, up to `--timeout`. A Game Menu an earlier job left
+open is closed before the selftest is typed. The AddOns folder is shared: every slot the smoke
 borrows is put back exactly as it was, including a store install it moved aside. A stop that never reaches Python's
 handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`, `smoke`, `proof` or `build-dev` replays
 it before it touches AddOns.
@@ -240,6 +242,7 @@ FOREVER_ADDONS = (
 WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
+MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
 GAME_WINDOW = "World of Warcraft"
@@ -832,8 +835,23 @@ def resident_world_check(state: Mapping, last_check: float) -> tuple[float, str 
     return now, None if client_ui(state)["world"] else "the client left the world"
 
 
+def close_game_menu(state: Mapping) -> None:
+    """Close a Game Menu an earlier job left open, so this job starts in the world it expects (#727).
+
+    The menu is the client's own pause screen and Escape closes it without changing anything a job set up. Only the
+    menu is closed: outside the world nothing is sent, and the callers' own checks refuse as before.
+    """
+    for _ in range(MENU_CLOSE_TRIES):
+        ui = client_ui(state)
+        if not (ui["world"] and ui["menu"]):
+            return
+        send(state, "key", "Escape")
+        time.sleep(0.1)
+
+
 def focus_chat(state: Mapping) -> None:
     """Type only after the client reports that a chat edit box has keyboard focus."""
+    close_game_menu(state)
     for key in (None, "Return", "Escape", "Return"):
         if key:
             send(state, "key", key)
@@ -1883,13 +1901,10 @@ def report_smoke(repo: str, commit: str, outcome: Mapping, *, post: bool = True)
         print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
         return 1
     if not counts:
-        description = f"no result: {outcome['error'] or 'the session ended before the checks ran'}"
-        if not post:
-            print(f"{repo}@{commit[:7]}: {description} (not posted)", flush=True)
-            return 1
-        post_status(repo, commit, False, description)
-        print(f"{repo}@{commit[:7]}: {description} ({SMOKE_CONTEXT} posted)", flush=True)
-        return 1
+        # The checks never ran, so there is no verdict on the commit to post: a failure status here would be read as
+        # one by release_check.py and stop smoke_queue.py from trying the commit again (#727).
+        print(f"{repo}@{commit[:7]}: no result, nothing posted: {outcome['error']}", flush=True)
+        return 2
     ok = not any(counts.values()) and not not_started and not outcome["error"]
     description = smoke_description(counts, not_started, outcome["error"])
     if not post:
@@ -2000,8 +2015,9 @@ def smoke(args: argparse.Namespace) -> int:
     to start on this core fails even though it raised no Lua error. A released build that cannot be fetched is a
     `ClientError` before anything is linked, so nothing is posted and the commit is smoked again later. Exit 0 is a
     clean commit and 1 a failure that was recorded; 3 means the player's own client is running, so nothing is posted and
-    a caller retries later. Another agent's job is waited for. A smoke that could not run at all (no checkout, no such
-    ref) raises ClientError and posts nothing either. `--manual-launcher` starts the session that way, so the caller can
+    a caller retries later. Another agent's job is waited for. A smoke whose checks never ran (no checkout, no such
+    ref, a session that could not reach the world, a client that refused the selftest) exits 2 and posts nothing
+    either, so the commit is smoked again later. `--manual-launcher` starts the session that way, so the caller can
     take `shot` and click Play itself, and `--no-post` prints the result without posting a commit status.
     """
     repo = args.repo

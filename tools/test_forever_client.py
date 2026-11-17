@@ -725,6 +725,7 @@ class ForeverClientTest(unittest.TestCase):
                 "client_ui",
                 side_effect=[
                     {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
                     {"world": True, "menu": False, "chat": True},
                 ],
             ),
@@ -739,14 +740,51 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
 
-    def test_slash_refuses_menu_without_typing(self):
+    def test_slash_refuses_a_menu_that_will_not_close_without_typing(self):
         with (
             mock.patch.object(fc, "send") as send,
             mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc.time, "sleep"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True, "chat": False}),
         ):
             with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
                 fc.slash({}, "/reload")
+        self.assertEqual(send.call_args_list, [mock.call({}, "key", "Escape")] * fc.MENU_CLOSE_TRIES)
+
+    def test_slash_closes_a_game_menu_an_earlier_job_left_open(self):
+        # #727: a job that ended at the Game Menu must not make the next job's slash refuse.
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(
+                fc,
+                "client_ui",
+                side_effect=[
+                    {"world": True, "menu": True, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": False},
+                    {"world": True, "menu": False, "chat": True},
+                ],
+            ),
+        ):
+            fc.slash({}, "/forever selftest")
+        self.assertEqual(
+            send.call_args_list,
+            [
+                mock.call({}, "key", "Escape"),
+                mock.call({}, "key", "Return"),
+                mock.call({}, "type", "--delay", fc.TYPE_DELAY_MS, "/forever selftest"),
+                mock.call({}, "key", "Return"),
+            ],
+        )
+
+    def test_closing_the_menu_sends_nothing_outside_the_world(self):
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "client_ui", return_value={"world": False, "menu": True, "chat": False}),
+        ):
+            fc.close_game_menu({})
         send.assert_not_called()
 
     def test_reload_waits_only_for_a_screenshot_taken_after_the_command_was_sent(self):
@@ -2217,6 +2255,7 @@ class SmokeTest(unittest.TestCase):
         folders=None,
         registrations=None,
         startup=None,
+        slash=None,
     ):
         folders = folders or [("LegacyForever", self.build)]
         startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
@@ -2231,7 +2270,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job", self.released),
             mock.patch.object(fc, "reload", self.reload),
             mock.patch.object(fc, "job_started", return_value=3.0),
-            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "slash", slash or mock.Mock()),
             mock.patch.object(fc, "post_status", self.posted),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
@@ -2294,14 +2333,23 @@ class SmokeTest(unittest.TestCase):
         self.posted.assert_not_called()
         self.assertFalse((self.addons / "LegacyForever").exists())
 
-    def test_a_session_that_cannot_start_posts_failure(self):
+    def test_a_session_that_cannot_start_posts_nothing(self):
+        # #727: a sign-in or a start that timed out says nothing about the commit, so no status is posted.
         def start(_timeout, _manual_launcher=False):
             raise fc.ClientError("the world did not load within 600 s")
 
-        code, _printed, _build = self.run_smoke(ensure=start)
-        self.assertEqual(code, 1)
-        self.assertEqual(self.posted.call_args.args[2], False)
-        self.assertIn("no result: the world did not load", self.posted.call_args.args[3])
+        code, printed, _build = self.run_smoke(ensure=start)
+        self.assertEqual(code, 2)
+        self.posted.assert_not_called()
+        self.assertIn("no result, nothing posted: the world did not load", printed)
+        self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_refused_selftest_posts_nothing(self):
+        refused = mock.Mock(side_effect=fc.ClientError("slash refused: outside the world or Game Menu is shown"))
+        code, printed, _build = self.run_smoke(slash=refused)
+        self.assertEqual(code, 2)
+        self.posted.assert_not_called()
+        self.assertIn("nothing posted: slash refused", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
     def test_a_client_that_is_not_in_use_smokes(self):
@@ -2539,9 +2587,9 @@ class SmokeTest(unittest.TestCase):
             contextlib.redirect_stderr(io.StringIO()),
         ):
             code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": "boom"}, post=False)
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.posted.assert_not_called()
-        self.assertIn("no result: boom (not posted)", out.getvalue())
+        self.assertIn("no result, nothing posted: boom", out.getvalue())
 
     def leftover(self) -> Path:
         """What a SIGKILLed smoke leaves: the store install aside, its link in the slot, and the record."""
@@ -2633,7 +2681,7 @@ class SmokeTest(unittest.TestCase):
         with self.assertRaisesRegex(fc.ClientError, "no checkout of other-repo"):
             self.smoke({"repo": "other-repo"})
 
-    def test_an_errors_read_that_prints_no_json_fails_the_smoke(self):
+    def test_an_errors_read_that_prints_no_json_posts_nothing(self):
         with (
             mock.patch.object(fc, "git", return_value="a" * 40),
             mock.patch.object(fc, "foreign_client", return_value=None),
@@ -2649,11 +2697,13 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "post_status") as posted,
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
-            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stdout(io.StringIO()) as out,
         ):
             code = self.smoke()
-        self.assertEqual(code, 1)
-        self.assertIn("printed no JSON", posted.call_args.args[3])
+        # An unreadable error log says nothing about the commit, so nothing is posted and it is smoked again (#727).
+        self.assertEqual(code, 2)
+        posted.assert_not_called()
+        self.assertIn("printed no JSON", out.getvalue())
 
     def test_a_description_stays_under_the_status_limit(self):
         counts = {f"Addon{index}": 9 for index in range(20)}
