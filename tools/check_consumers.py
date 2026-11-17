@@ -22,6 +22,8 @@ drifts the same way:
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
   its BigWigs packager, so a core release that lands after CI is caught before the upload.
+- The same `release.yml` must carry core's own "Tag a manual release" step unchanged, the one that peels a signed tag
+  and tags a workflow-changing commit with the PAT; `tools/sync_consumers.py` copies it in.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
 
 
@@ -33,6 +35,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -69,6 +72,9 @@ RELEASE_WORKFLOW = ".github/workflows/release.yml"
 # verifies the step is still there and still last before the upload rather than comparing its bytes.
 RELEASE_GATE = "Verify the ForeverCore pin is core's latest release"
 RELEASE_GATE_COMMAND = "tools.forever_tools.core_pin --latest"
+# The step a manual release tags its commit with. It is the same shell in every repo, so core's own release.yml is its
+# source and each consumer's copy must match it once reindented.
+TAG_STEP = "Tag a manual release"
 
 
 def digest(data):
@@ -341,6 +347,51 @@ def check_release_gate(repo, branch, local):
     return []
 
 
+def workflow_step(text, name):
+    """`(start, end, indent)` of the step `- name: <name>` in a workflow's text, or None when it has none.
+
+    The step runs from its `- name:` line to the line before the next one at its indent or less: the next step, or
+    the comment above it.
+    """
+    match = re.search(rf"^(?P<indent>[ \t]*)- name: {re.escape(name)}\n", text, re.MULTILINE)
+    if match is None:
+        return None
+    indent = match["indent"]
+    end = match.end()
+    for line in text[end:].splitlines(keepends=True):
+        body = line.lstrip(" \t")
+        if body.strip() and len(line) - len(body) <= len(indent):
+            break
+        end += len(line)
+    return match.start(), end, indent
+
+
+def tag_step(indent):
+    """Core's own manual-release tag step, reindented to `indent`."""
+    text = (CORE_ROOT / RELEASE_WORKFLOW).read_text(encoding="utf-8")
+    start, end, own = workflow_step(text, TAG_STEP)
+    lines = text[start:end].splitlines(keepends=True)
+    return "".join(indent + line[len(own) :] if line.startswith(own) else line for line in lines)
+
+
+def check_tag_step(repo, branch, local):
+    """A consumer's manual release tags its commit with core's own step, byte for byte once reindented."""
+    path = consumer_path(repo, RELEASE_WORKFLOW)
+    data, error = read_consumer(repo, path, branch, local)
+    if error:
+        return [f"{repo}: {path}: {error}"]
+    if data is None:
+        return []
+    text = data.decode("utf-8", "replace")
+    found = workflow_step(text, TAG_STEP)
+    if found is None:
+        return [f"{repo}: {path}: no `- name: {TAG_STEP}` step; run tools/sync_consumers.py"]
+    start, end, indent = found
+    if text[start:end] != tag_step(indent):
+        return [f"{repo}: {path}: `{TAG_STEP}` differs from core's; run tools/sync_consumers.py"]
+    return []
+
+
 def canonical_visual_workflow():
     """Failures in this repository's own visual-proof template, the file every consumer copies."""
     path = CORE_ROOT / source(VISUAL_WORKFLOW)
@@ -523,6 +574,7 @@ def main(argv=None):
     # Kiln Forever's own tar build has no packager to gate, so it is not in this list.
     for repo in VENDORED.get(VISUAL_WORKFLOW, ()):
         failures += check_release_gate(repo, arguments.branch, arguments.local)
+        failures += check_tag_step(repo, arguments.branch, arguments.local)
     # Any consumer's own CI may run the package check; each such step must be authenticated, whether or not the addon
     # publishes a visual-proof workflow.
     for repo in repos:

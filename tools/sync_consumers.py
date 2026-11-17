@@ -26,7 +26,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from check_consumers import pkgmeta_field
+from check_consumers import TAG_STEP, pkgmeta_field, tag_step, workflow_step
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -124,6 +124,28 @@ def sync_release_gate(root, repo, dry_run):
     return 1
 
 
+def sync_tag_step(root, repo, dry_run):
+    """Replace `repo`'s manual-release tag step with core's own, returning whether it changed.
+
+    A workflow without the step (Kiln Forever's own build) is left alone: it has no manual release to tag.
+    """
+    path = root / RELEASE_WORKFLOW
+    if not path.is_file():
+        return 0
+    text = path.read_text(encoding="utf-8")
+    found = workflow_step(text, TAG_STEP)
+    if found is None:
+        return 0
+    start, end, indent = found
+    step = tag_step(indent)
+    if text[start:end] == step:
+        return 0
+    print(f"{repo}: {RELEASE_WORKFLOW}: {TAG_STEP}")
+    if not dry_run:
+        path.write_text(text[:start] + step + text[end:], encoding="utf-8")
+    return 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkouts", type=Path, help="the directory holding the consumer checkouts")
@@ -169,6 +191,7 @@ def main(argv=None):
                 continue
             try:
                 changed += sync_release_gate(root, repo, arguments.dry_run)
+                changed += sync_tag_step(root, repo, arguments.dry_run)
             except OSError as error:
                 print(f"{repo}: {RELEASE_WORKFLOW}: {error}", file=sys.stderr)
                 return 1

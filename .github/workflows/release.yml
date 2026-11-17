@@ -136,17 +136,36 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN cannot create a ref that brings in .github/workflows changes since the last tag (HTTP 403).
+          # CONSUMER_SYNC_TOKEN, the fine-grained PAT with Contents, Workflows and Actions write, can.
+          SYNC_TOKEN: ${{ secrets.CONSUMER_SYNC_TOKEN }}
           RELEASE_TAG: ${{ steps.target.outputs.tag }}
           RELEASE_COMMIT: ${{ steps.target.outputs.commit }}
         run: |
           # A missing tag answers 404 with its error body on stdout, so branch on the exit status, not the output.
-          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null); then
+          if found=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null); then
+            read -r kind existing <<< "$found"
+            # A signed or annotated tag names a tag object, not the commit: peel it to the commit it tags.
+            while [ "$kind" = tag ]; do
+              found=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$existing" --jq '"\(.object.type) \(.object.sha)"')
+              read -r kind existing <<< "$found"
+            done
             if [ "$existing" != "$RELEASE_COMMIT" ]; then
               echo "::error::$RELEASE_TAG already names $existing."
               exit 1
             fi
+          elif gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null 2>&1; then
+            : # A tag GITHUB_TOKEN creates starts no run, so this run publishes it.
+          elif [ -n "$SYNC_TOKEN" ] && GH_TOKEN=$SYNC_TOKEN gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null; then
+            # A tag the PAT creates starts its own Release run, which publishes it; this run stops so nothing ships twice.
+            echo "::notice::Tagged $RELEASE_TAG with CONSUMER_SYNC_TOKEN; its tag push run publishes the release."
+            GH_TOKEN=$SYNC_TOKEN gh run cancel "$GITHUB_RUN_ID" || true
+            sleep 60
+            echo "::error::Tagged $RELEASE_TAG, but this run could not cancel itself; the tag push run publishes the release."
+            exit 1
           else
-            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null
+            echo "::error::Could not create $RELEASE_TAG: GITHUB_TOKEN cannot tag a commit that brings in .github/workflows changes. Set the CONSUMER_SYNC_TOKEN secret, or push a signed $RELEASE_TAG on $RELEASE_COMMIT by hand: its tag push run publishes the release."
+            exit 1
           fi
           # The packager reads the version from the tag on the checked-out commit. The full-history checkout
           # already holds a tag that existed before this run, so only a new one is created here.

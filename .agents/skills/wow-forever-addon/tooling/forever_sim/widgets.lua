@@ -415,6 +415,9 @@ function M.build(sim)
 			local _ = i
 		end
 		local w, h = Secret.unwrap(s.width), Secret.unwrap(s.height)
+		-- One point on an axis places the region only with an extent there: a size it was given, or a font string's
+		-- text. Without one the client resolves no rect, so the getters return nil and regions anchored to it get none.
+		local sizedX, sizedY = w ~= nil or s.kind == "FontString", h ~= nil or s.kind == "FontString"
 		if s.kind == "FontString" and (not w or w == 0 or not h or h == 0) then
 			local tw, th = textSize(s)
 			if not w or w == 0 then
@@ -435,11 +438,11 @@ function M.build(sim)
 			left, width = L, (CX - L) * 2
 		elseif R and CX then
 			left, width = CX - (R - CX), (R - CX) * 2
-		elseif L then
+		elseif sizedX and L then
 			left, width = L, w
-		elseif R then
+		elseif sizedX and R then
 			left, width = R - w, w
-		elseif CX then
+		elseif sizedX and CX then
 			left, width = CX - w / 2, w
 		end
 		-- Side anchors position a sized region without stretching it on the other axis.
@@ -453,11 +456,11 @@ function M.build(sim)
 			bottom, height = B, (CY - B) * 2
 		elseif T and CY then
 			bottom, height = CY - (T - CY), (T - CY) * 2
-		elseif B then
+		elseif sizedY and B then
 			bottom, height = B, h
-		elseif T then
+		elseif sizedY and T then
 			bottom, height = T - h, h
-		elseif CY then
+		elseif sizedY and CY then
 			bottom, height = CY - h / 2, h
 		end
 		if left and bottom then
