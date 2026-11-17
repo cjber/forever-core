@@ -1,7 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
 ## [1.14.3] - 2026-11-17
 
 - **The Forever quest list steps aside for your UI suite's tracker**, including EllesmereUI. Turn the list off or on from the Tracker menu on any Forever section. (#736, cjber/shortest-path-forever#949) Thanks to dokiz, user_vyffn82yvmu3bflh and user_8vheexbirr5v6h4a for the reports.
