@@ -16,6 +16,14 @@ local MARKER = {
 	"00011101",
 }
 
+local function unsafe(api, ...)
+	return type(api) ~= "function" or api(...) ~= false
+end
+
+local function safety()
+	return unsafe(_G.UnitIsDeadOrGhost, "player"), unsafe(UnitAffectingCombat, "player") or unsafe(_G.InCombatLockdown)
+end
+
 local function safeCharacter()
 	if type(SAFE_CHARACTER) ~= "table" then
 		return false, "no safe parked character configured"
@@ -31,14 +39,12 @@ local function safeCharacter()
 	if name ~= SAFE_CHARACTER.name or guid ~= SAFE_CHARACTER.guid then
 		return false, "unexpected player identity"
 	end
-	if type(UnitIsDeadOrGhost("player")) ~= "boolean" or UnitIsDeadOrGhost("player") then
+	local dead, combat = safety()
+	if dead then
 		return false, "player is dead or a ghost"
 	end
-	if type(UnitAffectingCombat("player")) ~= "boolean" or UnitAffectingCombat("player") then
+	if combat then
 		return false, "player is in combat"
-	end
-	if type(InCombatLockdown()) ~= "boolean" or InCombatLockdown() then
-		return false, "combat lockdown is active"
 	end
 	if SAFE_CHARACTER.require_resting then
 		if type(IsResting) ~= "function" or type(IsResting()) ~= "boolean" then
@@ -58,10 +64,10 @@ local inWorld = false
 local status = CreateFrame("Frame", nil, UIParent)
 status:SetIgnoreParentScale(true)
 status:SetFrameStrata("TOOLTIP")
-status:SetSize(44, 4)
+status:SetSize(52, 4)
 status:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
 local cells = {}
-for column = 1, 11 do
+for column = 1, 13 do
 	local texture = status:CreateTexture(nil, "OVERLAY")
 	texture:SetSize(4, 4)
 	texture:SetPoint("TOPLEFT", (column - 1) * 4, 0)
@@ -69,9 +75,10 @@ for column = 1, 11 do
 end
 status:SetScript("OnUpdate", function()
 	local box = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow()
+	local dead, combat = safety()
 	local bits = {
-		true,
 		false,
+		true,
 		true,
 		true,
 		false,
@@ -81,8 +88,10 @@ status:SetScript("OnUpdate", function()
 		inWorld,
 		_G.GameMenuFrame and _G.GameMenuFrame:IsShown(),
 		box and box:HasFocus(),
+		dead,
+		combat,
 	}
-	for column = 1, 11 do
+	for column = 1, 13 do
 		local value = bits[column] and 1 or 0
 		cells[column]:SetColorTexture(value, value, value, 1)
 	end

@@ -5,6 +5,8 @@
 - **Headless jobs wait in arrival order**, with live queue positions and dead-waiter cleanup. Ended leases fail with their reason and cannot carry over to a replacement session. (#734, #719, #730)
 - **Headless proofs check their candidate links at capture and teardown**, and link recovery runs only under the exclusive job lock. Recovery specs use isolated client folders. (#723, #724)
 - **Headless sessions restart when their helper addon changes**, and smoke, proof and dev builds fetch origin once for a missing full commit SHA. (#715, #692)
+- **Package diagnostics name the exclusion source**, distinguishing a matching `.pkgmeta` ignore rule from an untracked or Git-ignored runtime file. (#732)
+- **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)
 - **Headless jobs can run in a private nested Hyprland for deskpilot**, with a bounded command and a return to gamescope before the slot is released. (#662)
 - **Headless leases lock one command at a time**, exclusive jobs have a hard timeout, and a job can request session shutdown without waiting on its own lock. (#671)

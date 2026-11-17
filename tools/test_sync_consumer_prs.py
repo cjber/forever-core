@@ -1421,11 +1421,12 @@ class VisualProofHintTest(unittest.TestCase):
         (self.root / ".visual-proof.json").write_text(json.dumps({"input_digest": "0" * 64}))
         self.assertTrue(sync.proof_needed(self.root, ["UI/WhatsNew.lua"]))
 
-    def test_the_hint_names_the_exact_command_and_head(self):
+    def test_the_hint_names_the_exact_request_and_head(self):
         hint = sync.proof_hint("legacy-forever", "f" * 40)
-        self.assertIn(f"proof --repo legacy-forever --ref {'f' * 40}", hint)
-        self.assertIn("--checkout", hint)
-        self.assertIn("--flow", hint)
+        self.assertIn(f"INGAME legacy-forever {'f' * 40}", hint)
+        self.assertIn("kind: proof", hint)
+        self.assertIn("checkout:", hint)
+        self.assertIn("flows:", hint)
         self.assertIn(".visual-proof.json", hint)
         self.assertIn("visual-proof", hint)
 
@@ -1463,7 +1464,7 @@ class VisualProofHintTest(unittest.TestCase):
         ):
             result = sync.sync_consumer("legacy-forever", self.root, self.root, "a" * 40)
         self.assertEqual(result.status, "opened")
-        self.assertIn(f"proof --repo legacy-forever --ref {'f' * 40}", out.getvalue())
+        self.assertIn(f"INGAME legacy-forever {'f' * 40}", out.getvalue())
 
 
 if __name__ == "__main__":

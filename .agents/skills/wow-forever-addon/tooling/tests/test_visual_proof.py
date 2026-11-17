@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import shutil
@@ -7,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+from urllib.error import HTTPError
 
 from forever_tools import pkgmeta, visual_proof
 
@@ -131,6 +133,72 @@ class VisualProofTest(unittest.TestCase):
         path = root / ".visual-proof.json"
         path.write_text(json.dumps(proof), encoding="utf-8")
         return path
+
+    def test_missing_or_blank_client_build_is_rejected(self):
+        root = self.root()
+        for value in (None, "", "  "):
+            proof = self.proof(root, client_build=value)
+            if value is None:
+                proof.pop("client_build")
+            with self.subTest(value=value), mock.patch.object(visual_proof, "image_hash", return_value=IMAGE["sha256"]):
+                problems = visual_proof.verify(root, ["Core.lua"], self.written(root, proof))
+            self.assertIn("visual proof needs client_build", problems)
+
+    def test_malformed_image_entries_are_problems(self):
+        root = self.root()
+        for image in (
+            None,
+            "image",
+            {},
+            {"sha256": "a" * 64},
+            {"url": IMAGE["url"]},
+            {"url": IMAGE["url"], "sha256": "z" * 64},
+        ):
+            with self.subTest(image=image), mock.patch.object(visual_proof, "urlopen") as network:
+                problems = visual_proof.verify(root, ["Core.lua"], self.written(root, self.proof(root, images=[image])))
+            self.assertIn("visual proof has malformed image evidence", problems)
+            network.assert_not_called()
+
+    def test_image_url_requires_full_commit_sha_without_network(self):
+        root = self.root()
+        for url in ("https://example.com/main/image.png", "https://example.com/abc123/image.png"):
+            with self.subTest(url=url), mock.patch.object(visual_proof, "urlopen") as network:
+                with self.assertRaisesRegex(ValueError, "not pinned to a full commit SHA"):
+                    visual_proof.image_hash(url)
+                image = {**IMAGE, "url": url}
+                problems = visual_proof.verify(root, ["Core.lua"], self.written(root, self.proof(root, images=[image])))
+                self.assertTrue(any("not pinned to a full commit SHA" in p for p in problems), problems)
+            network.assert_not_called()
+
+    def test_unavailable_images_are_problems_not_crashes(self):
+        root = self.root()
+        for error in (OSError("image unavailable"), HTTPError(IMAGE["url"], 404, "Not Found", None, None)):
+            with self.subTest(error=error), mock.patch.object(visual_proof, "urlopen", side_effect=error):
+                problems = visual_proof.verify(root, ["Core.lua"], self.written(root, self.proof(root)))
+            self.assertIn(str(error), problems)
+
+    def test_image_response_and_hash_are_validated(self):
+        root = self.root()
+        png = b"\x89PNG\r\n\x1a\nfixture"
+        for status, body, digest, expected in [
+            (200, b"not PNG", IMAGE["sha256"], "not a successful PNG"),
+            (503, png, IMAGE["sha256"], "not a successful PNG"),
+            (200, png, IMAGE["sha256"], "hash mismatch"),
+            (200, png, hashlib.sha256(png).hexdigest(), None),
+        ]:
+            with self.subTest(status=status, body=body, digest=digest):
+                response = mock.MagicMock(status=status)
+                response.read.return_value = body
+                response.__enter__.return_value = response
+                with mock.patch.object(visual_proof, "urlopen", return_value=response):
+                    image = {**IMAGE, "sha256": digest}
+                    problems = visual_proof.verify(
+                        root, ["Core.lua"], self.written(root, self.proof(root, images=[image]))
+                    )
+                if expected:
+                    self.assertTrue(any(expected in p for p in problems), problems)
+                else:
+                    self.assertEqual(problems, [])
 
     def test_auto_loaded_bindings_and_their_script_graph_are_runtime(self):
         root = self.checkout()
@@ -945,7 +1013,10 @@ class VisualProofTest(unittest.TestCase):
         root = self.checkout("package-as: ForeverCore\n\nignore:\n  - UI/Main.lua\n")
         self.assertEqual(
             visual_proof.unsupported(root),
-            ["UI/Main.lua: .pkgmeta ignore excludes this TOC/XML-loaded runtime file from the package"],
+            [
+                "UI/Main.lua: .pkgmeta ignore rule 'UI/Main.lua' excludes this TOC/XML-loaded "
+                "runtime file from the package"
+            ],
         )
         with self.assertRaisesRegex(ValueError, "UI/Main.lua"):
             visual_proof.packaged_runtime_files(root)
@@ -996,10 +1067,26 @@ class VisualProofTest(unittest.TestCase):
             subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
         (root / "Generated.lua").write_text("generated", encoding="utf-8")
         self.assertFalse(pkgmeta.read(root).keeps("Generated.lua"))
-        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+        with self.assertRaisesRegex(ValueError, "Generated.lua: untracked or ignored by Git"):
             visual_proof.packaged_runtime_files(root)
-        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+        with self.assertRaisesRegex(ValueError, "Generated.lua: untracked or ignored by Git"):
             visual_proof.candidate_digest(root)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_loaded_untracked_and_gitignored_scripts_name_git_with_a_policy(self):
+        for ignored in (False, True):
+            with self.subTest(ignored=ignored):
+                root = self.checkout()
+                if ignored:
+                    (root / ".gitignore").write_text("Generated.lua\n", encoding="utf-8")
+                (root / "ForeverCore.toc").write_text("Core.lua\nGenerated.lua\n", encoding="utf-8")
+                for command in (("init", "-q"), ("add", ".")):
+                    subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
+                (root / "Generated.lua").write_text("generated", encoding="utf-8")
+                with self.assertRaises(ValueError) as raised:
+                    visual_proof.packaged_runtime_files(root)
+                self.assertIn("Generated.lua: untracked or ignored by Git", str(raised.exception))
+                self.assertNotIn(".pkgmeta", str(raised.exception))
 
     @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
     def test_an_extraction_nested_in_a_checkout_is_still_an_extraction(self):

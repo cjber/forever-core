@@ -341,8 +341,9 @@ class Layout:
 class Manifest:
     """A checkout's package selection: `keeps` is the shipped set, `unchanged` the bytes-kept files.
 
-    `ignored` is `.pkgmeta`'s list plus the paths git reports as untracked or ignored, as the packager combines
-    them. `package`, `moved` and `externals` are `package-as`, `move-folders` and `externals`; `relocates` says
+    `ignored` holds policy globs; `ignore_rules` preserves their original entries, and `git_ignored` holds
+    the paths git reports as untracked or ignored. `package`, `moved` and `externals` are `package-as`,
+    `move-folders` and `externals`; `relocates` says
     whether a checkout path leaves the addon folder the proof names, and `layout` resolves every move.
     """
 
@@ -352,9 +353,26 @@ class Manifest:
     moved: tuple[tuple[str, str], ...] = ()
     externals: tuple[str, ...] = ()
 
+    git_ignored: tuple[str, ...] = ()
+    ignore_rules: tuple[tuple[str, str], ...] = ()
+
+    def exclusion_reason(self, name: str) -> str | None:
+        """The package selection rule that excludes this checkout-relative path."""
+        if any(part.startswith(".") for part in PurePosixPath(name).parts):
+            return "dot-prefixed path"
+        for pattern, rule in self.ignore_rules:
+            if fnmatch.fnmatchcase(name, pattern):
+                return f".pkgmeta ignore rule {rule!r}"
+        if _matches(name, self.git_ignored):
+            return "untracked or ignored by Git"
+        for pattern in self.ignored:
+            if fnmatch.fnmatchcase(name, pattern):
+                return f".pkgmeta ignore rule {pattern!r}"
+        return None
+
     def keeps(self, name: str) -> bool:
         """Whether a checkout-relative path ships, dot paths excepted."""
-        return not any(part.startswith(".") for part in PurePosixPath(name).parts) and not _matches(name, self.ignored)
+        return self.exclusion_reason(name) is None
 
     def kept_bytes(self, name: str) -> bool:
         """Whether the packager copies `name` without its line-ending and keyword filters."""
@@ -385,15 +403,18 @@ def read(root: Path) -> Manifest | None:
     if not path.is_file():
         path = root / FALLBACK
         if not path.is_file():
-            return Manifest(_untracked(root)) if _checkout_root(root) else None
+            return Manifest(git_ignored=_untracked(root)) if _checkout_root(root) else None
     text = path.read_text(encoding="utf-8", errors="replace")
-    ignored = _globs(root, _entries(text, "ignore")) + _untracked(root)
+    entries = _entries(text, "ignore")
+    ignored = _globs(root, entries)
     return Manifest(
         ignored,
         _globs(root, _entries(text, "plain-copy")),
         _value(text, "package-as"),
         _mapping(text, "move-folders"),
         _external_keys(text),
+        _untracked(root),
+        tuple((pattern, entry) for entry in entries for pattern in _globs(root, [entry])),
     )
 
 
