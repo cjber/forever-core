@@ -43,11 +43,11 @@ python3 tools/lint_client_calls.py        # refuse a call of a client function t
 python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
 # The forever_client.py lines below are for the `wow in-game` agent only; every other agent sends it an INGAME
 # request (wow-forever-addon/in-game.md#requesting-a-check).
-python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
-python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
-python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
-python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
-python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim

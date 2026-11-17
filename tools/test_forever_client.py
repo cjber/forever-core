@@ -67,15 +67,108 @@ class FakeClock:
 
 class ForeverClientTest(unittest.TestCase):
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.runtime = self.state / "runtime"
         self.runtime.mkdir(mode=0o700)
-        self.enterContext(mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime)}))
+        self.enterContext(
+            mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.runtime), "FOREVER_CLIENT_CALLER": "in-game"})
+        )
         # The host GPU is not part of a unit test; the driver-mismatch check has its own tests below.
         self.real_nvidia_mismatch = fc.nvidia_mismatch
         self.enterContext(mock.patch.object(fc, "nvidia_mismatch", return_value=None))
+
+    def test_sign_in_labels_persist_and_block_later_starts(self):
+        for label in ("Welcome back", "Email a code", "Use password", "Use passkey"):
+            with (
+                self.subTest(label=label),
+                mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
+                mock.patch.object(fc.shutil, "which", return_value="tesseract"),
+                mock.patch.object(fc, "client_pid", return_value=None),
+                mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+                mock.patch.object(fc, "ocr_words", return_value=[(word, 95, 0, 0, 20, 20) for word in label.split()]),
+                mock.patch.object(fc, "x") as send,
+                mock.patch.object(fc, "start_serve") as start,
+            ):
+                with self.assertRaisesRegex(fc.ClientError, "needs the player's sign-in"):
+                    fc.press_play({"display": ":1"})
+                self.assertTrue((self.state / fc.SIGN_IN_BLOCK).exists())
+                with self.assertRaisesRegex(fc.ClientError, "needs the player's sign-in"):
+                    fc.ensure_session(5)
+                with self.assertRaisesRegex(fc.ClientError, "needs the player's sign-in"):
+                    fc.serve(args())
+                start.assert_not_called()
+                send.assert_not_called()
+
+    def test_detached_serve_preserves_caller_and_drops_job_token(self):
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game", "FOREVER_CLIENT_JOB": "token"}),
+            mock.patch.object(fc.subprocess, "Popen") as spawn,
+        ):
+            fc.start_serve(False)
+        env = spawn.call_args.kwargs["env"]
+        self.assertEqual(env["FOREVER_CLIENT_CALLER"], "in-game")
+        self.assertNotIn("FOREVER_CLIENT_JOB", env)
+
+    def test_manual_start_keeps_block_until_ready(self):
+        block = self.state / fc.SIGN_IN_BLOCK
+        block.write_text(fc.SIGN_IN_MESSAGE)
+        with (
+            mock.patch.object(fc, "current_session", return_value={"ready": 1}),
+            mock.patch.object(fc, "client_ui", return_value={"safety": True, "world": True}),
+        ):
+            fc.ensure_session(5, manual_launcher=True)
+        self.assertTrue(block.exists())
+        with (
+            mock.patch.object(fc, "wait_for_world", side_effect=fc.ClientError("timeout")),
+            mock.patch.object(fc, "shot"),
+        ):
+            with self.assertRaises(fc.ClientError):
+                fc.reach_world({}, set(), 1, True, time.time())
+        self.assertTrue(block.exists())
+        with mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")):
+            fc.reach_world({}, set(), 1, True, time.time())
+        self.assertFalse(block.exists())
+
+    def test_client_verbs_require_caller_before_dispatch(self):
+        commands = [
+            ["up"],
+            ["serve"],
+            ["job", "--", "true"],
+            ["run", "--", "true"],
+            ["lease"],
+            ["smoke", "--repo", "x", "--ref", "main"],
+            ["proof", "--repo", "x", "--ref", "main", "--checkout", "."],
+            ["down"],
+            ["shot"],
+            ["click", "1", "2"],
+            ["scroll", "1", "2", "3"],
+            ["key", "Escape"],
+            ["slash", "/fgf"],
+            ["reload"],
+            ["eval", "probe.lua"],
+            ["errors"],
+            ["release", "token"],
+        ]
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(fc, "load_state") as load:
+            for command in commands:
+                with self.subTest(command=command), contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertEqual(fc.main(command), 2)
+                    self.assertIn("INGAME request", err.getvalue())
+                    self.assertIn("in-game.md#requesting-a-check", err.getvalue())
+            load.assert_not_called()
+
+    def test_job_token_and_caller_allow_dispatch_and_status_is_open(self):
+        for marker in ("FOREVER_CLIENT_CALLER", "FOREVER_CLIENT_JOB"):
+            with (
+                mock.patch.dict(os.environ, {marker: "test"}, clear=True),
+                mock.patch.object(fc, "down", return_value=0),
+            ):
+                self.assertEqual(fc.main(["down"]), 0)
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(fc, "load_state", return_value={}):
+            self.assertEqual(fc.main(["status"]), 0)
 
     def test_character_config_requires_explicit_identity_and_resting(self):
         valid = {"character": {"name": "Barry", "guid": "Player-1", "require_resting": True}}
@@ -187,10 +280,10 @@ class ForeverClientTest(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(fc.ClientError):
                 fc.runtime_dir({"XDG_RUNTIME_DIR": str(path)}, os.getuid())
         with self.assertRaises(fc.ClientError):
-            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime)}, os.getuid() + 1)
+            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime), "FOREVER_CLIENT_CALLER": "in-game"}, os.getuid() + 1)
         self.runtime.chmod(0o755)
         with self.assertRaises(fc.ClientError):
-            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime)}, os.getuid())
+            fc.runtime_dir({"XDG_RUNTIME_DIR": str(self.runtime), "FOREVER_CLIENT_CALLER": "in-game"}, os.getuid())
         self.assertEqual(self.runtime.stat().st_mode & 0o777, 0o755)
 
     def test_nvidia_mismatch_names_the_loaded_module_and_the_userspace(self):
@@ -1683,6 +1776,7 @@ class BuildDevTest(unittest.TestCase):
     """The dev build rebuild-dev.sh made, now one function: the commit's tree, stripped and stamped."""
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.workspace = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
         self.enterContext(mock.patch.object(fc, "BUILD_ROOT", self.workspace / "test-artifacts"))
@@ -1806,6 +1900,7 @@ class LinkBuildTest(unittest.TestCase):
     """The AddOns folder is shared, so every borrowed slot goes back exactly as it was."""
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.addons = self.state / "AddOns"
@@ -2071,6 +2166,7 @@ class LinkBuildTest(unittest.TestCase):
 
 class ClientInUseTest(unittest.TestCase):
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
 
@@ -2164,6 +2260,7 @@ class SmokeTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
@@ -2241,6 +2338,14 @@ class SmokeTest(unittest.TestCase):
         ):
             code = fc.main(main_argv) if main_argv else self.smoke({"repo": repo} if repo else None)
         return code, out.getvalue(), build
+
+    def test_sign_in_unavailable_posts_nothing(self):
+        code, printed, build = self.run_smoke(ensure=mock.Mock(side_effect=fc.SignInRequired(fc.SIGN_IN_MESSAGE)))
+        self.assertEqual(code, 3)
+        self.assertIn("needs the player's sign-in", printed)
+        self.posted.assert_not_called()
+        build.assert_not_called()
+        self.released.assert_called_once()
 
     def test_a_clean_commit_posts_success_and_exits_zero(self):
         code, printed, _build = self.run_smoke()
@@ -2688,6 +2793,7 @@ class ProofHelpersTest(unittest.TestCase):
     """The pieces of `proof` that hold without a client or a network."""
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "PROOF_SCRATCH", self.state / "scratch"))
@@ -3141,6 +3247,7 @@ class ProofTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state / "state"))
@@ -3545,6 +3652,7 @@ class BrokerTest(unittest.TestCase):
     """The resident session and the short job lock: one client, several agents, no login per test."""
 
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
@@ -3780,6 +3888,7 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(code, 7)
         self.assertEqual(run.call_args.args[0], ["probe.sh"])
         env = run.call_args.kwargs["env"]
+        self.assertEqual(env["FOREVER_CLIENT_CALLER"], "in-game")
         self.assertEqual(env["FOREVER_CLIENT_JOB"], "job-token")
         self.assertEqual(env["FOREVER_CLIENT_DISPLAY"], ":3")
         released.assert_called_once_with(mock.ANY, "job-token")
@@ -4131,6 +4240,7 @@ class BrokerTest(unittest.TestCase):
 
 class HyprlandJobTest(unittest.TestCase):
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         # These cover the queue and the return; LiveSafetyTest covers the Hyprland job's refusal.
@@ -4515,6 +4625,7 @@ class HyprlandJobTest(unittest.TestCase):
 
 class NestedHyprlandTest(unittest.TestCase):
     def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
         self.module = fc.nested_hyprland()
 
     def test_config_has_only_the_private_outputs_and_no_autostarts(self):
@@ -4585,6 +4696,9 @@ if __name__ == "__main__":
 
 
 class LiveSafetyTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))
+
     def test_decode_version_old_header_and_unsafe_bits(self):
         for header, dead, combat in [
             ("01110010", False, False),

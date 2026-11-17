@@ -40,7 +40,8 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    - `INGAME BLOCKED`: the client cannot reach the world (the player is on, sign-in needs the user). Report it as
      your blocker.
 
-The rest of this file is the in-game agent's reference for running requests.
+The rest of this file is the in-game agent's reference for running requests. Its commands set
+`FOREVER_CLIENT_CALLER=in-game`; jobs and detached sessions preserve the marker.
 
 ## The tool
 
@@ -92,17 +93,17 @@ as does its `--ttl` (10 minutes by default, 30 at most) or the session ending.
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC job -- ./my-test.sh   # start or reuse the session, wait for the job lock, run the script
-python3 $FC shot                  # prints the PNG path; read it to see the frame
-python3 $FC click 960 540         # points in the 1920x1080 frame, on UI from the last shot
-python3 $FC scroll 960 540 3      # wheel-up ticks (zoom in) or -N down, at UI from the last shot
-python3 $FC key Escape            # Return, Escape or BackSpace
-python3 $FC slash "/fgf"          # a Forever addon's own command
-python3 $FC reload                # /reload, returns once the world is back
-python3 $FC errors --addon FieldGuideForever   # reload, then this job's Lua errors (exit 1 when any)
-python3 $FC sv FieldGuideForever               # SavedVariables as of the last reload
-python3 $FC eval /tmp/probe.lua                # write a snippet through !!DevSmoke, reload, print DevSmokeDB.eval
-python3 $FC down                  # stop the session once the job in flight, if any, has finished
+FOREVER_CLIENT_CALLER=in-game python3 $FC job -- ./my-test.sh   # start or reuse the session, wait for the job lock, run the script
+FOREVER_CLIENT_CALLER=in-game python3 $FC shot                  # prints the PNG path; read it to see the frame
+FOREVER_CLIENT_CALLER=in-game python3 $FC click 960 540         # points in the 1920x1080 frame, on UI from the last shot
+FOREVER_CLIENT_CALLER=in-game python3 $FC scroll 960 540 3      # wheel-up ticks (zoom in) or -N down, at UI from the last shot
+FOREVER_CLIENT_CALLER=in-game python3 $FC key Escape            # Return, Escape or BackSpace
+FOREVER_CLIENT_CALLER=in-game python3 $FC slash "/fgf"          # a Forever addon's own command
+FOREVER_CLIENT_CALLER=in-game python3 $FC reload                # /reload, returns once the world is back
+FOREVER_CLIENT_CALLER=in-game python3 $FC errors --addon FieldGuideForever   # reload, then this job's Lua errors (exit 1 when any)
+FOREVER_CLIENT_CALLER=in-game python3 $FC sv FieldGuideForever               # SavedVariables as of the last reload
+FOREVER_CLIENT_CALLER=in-game python3 $FC eval /tmp/probe.lua                # write a snippet through !!DevSmoke, reload, print DevSmokeDB.eval
+FOREVER_CLIENT_CALLER=in-game python3 $FC down                  # stop the session once the job in flight, if any, has finished
 ```
 
 `job -- <command>` runs the command with `FOREVER_CLIENT_DISPLAY` and `FOREVER_CLIENT_JOB` set, so the verbs the
@@ -118,10 +119,10 @@ takes the job lock for its own invocation.
 Driving the client across several tool calls, use a lease:
 
 ```sh
-TOKEN=$(python3 $FC lease)        # starts or reuses the session, prints the token
-FOREVER_CLIENT_JOB=$TOKEN python3 $FC shot
-FOREVER_CLIENT_JOB=$TOKEN python3 $FC click 960 540
-python3 $FC release $TOKEN
+TOKEN=$(FOREVER_CLIENT_CALLER=in-game python3 $FC lease)        # starts or reuses the session, prints the token
+FOREVER_CLIENT_JOB=$TOKEN FOREVER_CLIENT_CALLER=in-game python3 $FC shot
+FOREVER_CLIENT_JOB=$TOKEN FOREVER_CLIENT_CALLER=in-game python3 $FC click 960 540
+FOREVER_CLIENT_CALLER=in-game python3 $FC release $TOKEN
 ```
 
 A session ends 10 minutes after the last job ended (or after READY when none has run) and never later than 3 hours
@@ -136,7 +137,7 @@ written to a local file:
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC smoke --repo legacy-forever --ref <sha>   # build, link, reload, selftest, errors, restore, post status
+FOREVER_CLIENT_CALLER=in-game python3 $FC smoke --repo legacy-forever --ref <sha>   # build, link, reload, selftest, errors, restore, post status
 ```
 
 `smoke` runs as one job. It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way
@@ -152,6 +153,8 @@ Play itself. While that job holds the job lock and waits for READY, `shot` and a
 without the lock, so they never queue behind the job they are unblocking; `key` and `slash` still refuse until READY.
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
+- Exit 3 also covers a persisted Battle.net sign-in block. The player clears it with `up --manual-launcher`,
+  signs in and reaches READY. Nothing is posted while blocked.
 - Exit 3 means the player's own client is running: the Wine prefix is used by processes this tool does not own.
   Nothing is posted then, so a caller runs it again later. Another job (the smoke timer's) is waited for, up to `--timeout`.
 - The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
@@ -193,7 +196,7 @@ command records it in the headless client and writes the file into the checkout 
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC proof --repo legacy-forever --ref <sha> --checkout ~/drive/proj/wow/legacy-forever \
+FOREVER_CLIENT_CALLER=in-game python3 $FC proof --repo legacy-forever --ref <sha> --checkout ~/drive/proj/wow/legacy-forever \
   --flow "update notice=/lf"
 ```
 
@@ -238,7 +241,7 @@ A flow whose window only a real click opens names that click with `--flow-click 
 screenshot coordinates `click` takes:
 
 ```sh
-python3 $FC proof --repo skillup-forever --ref <sha> --checkout ~/drive/proj/wow/skillup-forever \
+FOREVER_CLIENT_CALLER=in-game python3 $FC proof --repo skillup-forever --ref <sha> --checkout ~/drive/proj/wow/skillup-forever \
   --flow "professions=professions.lua" --flow-click "professions=960,540"
 ```
 
@@ -279,16 +282,16 @@ for. Write the snippet to a file and run it as an eval instead:
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
-python3 $FC eval /tmp/probe.lua   # in a session: writes it, /reloads, prints DevSmokeDB.eval (exit 1 on failure)
+FOREVER_CLIENT_CALLER=in-game python3 $FC eval /tmp/probe.lua   # in a session: writes it, /reloads, prints DevSmokeDB.eval (exit 1 on failure)
 ```
 
 With a session already running, the steps by hand are:
 
 ```sh
 python3 tools/devsmoke/eval.py /tmp/probe.lua   # compile and write the inbox
-python3 $FC slash "/devsmoke eval"              # the first eval this session loads and runs the inbox chunk
-python3 $FC reload                              # saves DevSmokeDB.eval; a snippet written later needs this
-python3 $FC sv '!!DevSmoke'                     # DevSmokeDB.eval: run, ran, ok, out, err
+FOREVER_CLIENT_CALLER=in-game python3 $FC slash "/devsmoke eval"              # the first eval this session loads and runs the inbox chunk
+FOREVER_CLIENT_CALLER=in-game python3 $FC reload                              # saves DevSmokeDB.eval; a snippet written later needs this
+FOREVER_CLIENT_CALLER=in-game python3 $FC sv '!!DevSmoke'                     # DevSmokeDB.eval: run, ran, ok, out, err
 ```
 
 `eval.py` compiles the file with `luajit -bl` (and `luac5.1 -p` when it is installed) and refuses a parse error
