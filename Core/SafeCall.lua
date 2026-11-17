@@ -265,6 +265,7 @@ end
 ---@class ForeverSafeCallContext
 ---@field name string
 ---@field own string this addon's folder as it appears in a stack, "AddOns/<name>/"
+---@field core? string core's folder when it lives inside this addon's, "AddOns/<name>/Libs/ForeverCore/"
 ---@field caught ForeverCaughtError[]
 ---@field session table<string, boolean>
 ---@field journal ForeverCaughtError[]
@@ -275,10 +276,13 @@ Context.__index = Context
 ---@return ForeverSafeCallContext
 local function NewContext(name)
 	name = tostring(name)
+	local coreOwn = ns.root and ((ns.root:gsub("\\", "/"):match("AddOns/.+")) .. "/")
+	local own = name == coreName and coreOwn or ("AddOns/" .. name .. "/")
 	return setmetatable({
 		name = name,
-		own = name == coreName and ns.root and ((ns.root:gsub("\\", "/"):match("AddOns/.+")) .. "/")
-			or ("AddOns/" .. name .. "/"),
+		own = own,
+		-- The embedded runtime runs from its host's folder (Loader.lua Root); its files are core's, not the host's.
+		core = name ~= coreName and coreOwn and coreOwn ~= own and coreOwn:sub(1, #own) == own and coreOwn or nil,
 		caught = {},
 		session = {},
 		journal = {},
@@ -288,7 +292,18 @@ end
 ---@param text? string
 ---@return boolean
 function Context:Own(text)
-	return type(text) == "string" and text:gsub("\\", "/"):find(self.own, 1, true) ~= nil
+	if type(text) ~= "string" then
+		return false
+	end
+	text = text:gsub("\\", "/")
+	local at = text:find(self.own, 1, true)
+	while at do
+		if not self.core or text:sub(at, at + #self.core - 1) ~= self.core then
+			return true
+		end
+		at = text:find(self.own, at + 1, true)
+	end
+	return false
 end
 
 -- The first stack frame in this addon's folder separates two errors with the same message.
