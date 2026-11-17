@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.14.5] - 2026-11-17
+
+### Changed
+
+- **The Forever quest list is off by default unless you use Adventure Guide.** Players who installed ForeverCore because SkillUp, Shortest Path or another Forever addon needs it keep the game's own quest tracker, with the Forever sections next to it. Adventure Guide players keep the list. Your own choice always wins: turn it on or off with `/fcore quests`, the Tracker menu, or Options > AddOns > Forever Core. Thanks to Dayliiiiight, cheeq, reirebecca, tommyekholm and serb1tar for the reports. (#776)
+
 ## [1.14.4] - 2026-11-17
 
 ### Fixed
