@@ -75,15 +75,21 @@ class FragmentsTest(unittest.TestCase):
 
     def test_release_joins_fragments_to_an_untagged_section_in_preparation(self):
         root = self.repo()
-        prepared = BASE.replace("## [1.0.0]", "## [1.0.1] - 2026-11-16\n\n- Prepared.\n\n## [1.0.0]")
+        prepared = BASE.replace(
+            "## [1.0.0]", "## [1.0.1] - 2026-11-16\n\n- Prepared.\n\n### Fixed\n\n- Earlier.\n\n## [1.0.0]"
+        )
         (root / "CHANGELOG.md").write_text(prepared)
         self.commit(root)
         self.git(root, "checkout", "-b", "late")
-        self.note(root, "late", "### Fixed\n\n- Late.\n")
+        self.note(root, "late", "### Added\n\n- New.\n\n### Fixed\n\n- Late.\n")
         changelog.main(root, ["release", "1.0.1", "--date", "2026-11-17"])
         self.assertEqual(
             (root / "CHANGELOG.md").read_text(),
-            BASE.replace("## [1.0.0]", "## [1.0.1] - 2026-11-17\n\n- Prepared.\n\n### Fixed\n\n- Late.\n\n## [1.0.0]"),
+            BASE.replace(
+                "## [1.0.0]",
+                "## [1.0.1] - 2026-11-17\n\n- Prepared.\n\n### Added\n\n- New.\n\n"
+                "### Fixed\n\n- Earlier.\n- Late.\n\n## [1.0.0]",
+            ),
         )
         self.commit(root)
         changelog.check_base(root, "main")

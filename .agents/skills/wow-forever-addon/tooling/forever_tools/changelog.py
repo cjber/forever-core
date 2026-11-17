@@ -209,6 +209,22 @@ def parse_fragment(path: Path, text: str) -> tuple[list[str], dict[str, str]]:
     return images, sections
 
 
+def _join_sections(existing: str, added: str) -> str:
+    """Add `added`'s lead lines and ### sections to the matching parts of `existing`, in SECTIONS order."""
+
+    def split(body: str) -> tuple[str, dict[str, str]]:
+        parts = re.split(r"^### (.+)$", body, flags=re.MULTILINE)
+        return parts[0].strip(), {parts[i]: parts[i + 1].strip() for i in range(1, len(parts), 2)}
+
+    old_lead, old = split(existing)
+    new_lead, new = split(added)
+    names = [name for name in SECTIONS if name in old or name in new]
+    names += [name for name in old if name not in names]
+    bodies = {name: "\n".join(part for part in (old.get(name), new.get(name)) if part) for name in names}
+    lead = "\n\n".join(part for part in (old_lead, new_lead) if part)
+    return "\n\n".join(([lead] if lead else []) + [f"### {name}\n\n{bodies[name]}" for name in names])
+
+
 def pending(root: Path) -> tuple[list[Path], str]:
     paths = sorted((root / "changes").glob("*.md"))
     images: list[str] = []
@@ -354,8 +370,8 @@ def main(root: Path, argv: list[str] | None = None) -> None:
         if amend:
             following = HEADING.search(text, newest.end())
             rest = text[following.start() :] if following else ""
-            body = f"{find(text, version)}\n\n{body}"
-            candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + rest
+            body = _join_sections(find(text, version) or "", body)
+            candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n\n" + rest
         else:
             candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + text[offset:]
         check(candidate, [version])
