@@ -177,7 +177,8 @@ end
 -- The column's width in its own units: the 260 of the client's ObjectiveTrackerContainer header template, so a Forever
 -- section reads at the width its template was drawn for.
 local WIDTH = 260
-host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
+-- The column starts at its pin, so it never shows anywhere else before the store's anchor below (#795).
+host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 -- The column is a child of UIParent, so its scale is only the player's own tracker scale.
 local function MatchScale()
 	-- Saved variables, and with them the user's scale, are not ready while the files load.
@@ -322,6 +323,10 @@ local Module = {}
 function Module:SetContainer(container)
 	self.parentContainer = container
 	self:SetParent(container)
+	-- A section needs a place before its first build: the client wraps and measures each line at the width its anchors
+	-- resolve to, and a clean section keeps that build. The layout pass moves it to its slot.
+	self:ClearAllPoints()
+	self:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
 	if self.trackerScrollable then
 		self:CreateTrackerScroll()
 	end
@@ -984,33 +989,35 @@ local function LayoutModules(width, available)
 end
 -- The private column sits wherever the player dragged it. Until then its top right corner is pinned to the game's quest
 -- tracker's top left corner, one anchor the engine keeps, so an Edit Mode move carries the column along, and the pin
--- holds whether that tracker is shown or hidden. Placement never reads the tracker or the column's own height.
-local function Place(settings)
-	host:Show()
+-- holds whether that tracker is shown or hidden. Placement never reads the tracker or the column's own height. Returns
+-- the column's width and top, both in its own units.
+---@param settings ForeverTrackerSettings
+---@return number width, number top
+local function Anchor(settings)
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(WIDTH, screenWidth)
 	host:SetWidth(width)
 	-- A drag in progress owns the column's position: a header's StartMoving placed it, and its OnDragStop saves it.
 	if Drag.Dragging() then
-		host:SetShown(LayoutModules(width, math.max(24, host:GetTop() or screenHeight)))
-		return
+		return width, host:GetTop() or screenHeight
 	end
-	local top
 	host:ClearAllPoints()
 	if settings.x and settings.y then
 		local x = math.max(0, math.min(settings.x / scale, math.max(0, screenWidth - width)))
 		local y = math.min(0, math.max(settings.y / scale, 24 - screenHeight))
 		host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
-		top = screenHeight + y
-	else
-		host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-		top = host:GetTop() or screenHeight
+		return width, screenHeight + y
 	end
-	-- With no section to show, the column hides entirely, its title too; the next layout with content shows it again.
-	if not LayoutModules(width, math.max(24, top)) then
-		host:Hide()
-	end
+	host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+	return width, host:GetTop() or screenHeight
+end
+
+-- With no section to show, the column hides entirely; the next layout with content shows it again.
+local function Place(settings)
+	host:Show()
+	local width, top = Anchor(settings)
+	host:SetShown(LayoutModules(width, math.max(24, top)))
 end
 
 local function Layout()
@@ -1360,12 +1367,17 @@ local function AddHeaderMenu(module)
 	end)
 end
 
+-- The store exists from here on, before any section attaches, so the column takes its saved scale and place now. The
+-- first layout pass only lays the sections out, and a reload never moves the column (#795).
 local function Migrate()
-	if CopyLegacy() then
-		-- The host's own repair settles a bad scale, opacity or coordinate the way every other read does.
-		Settings()
-		host:MarkDirty()
+	CopyLegacy()
+	-- The host's own repair settles a bad scale, opacity or coordinate the way every other read does.
+	local settings = Settings()
+	if not InCombatLockdown() then
+		host:SetScale(settings.scale)
+		Anchor(settings)
 	end
+	host:MarkDirty()
 end
 
 -- Core.lua's Start (converted copies) or its one ADDON_LOADED handler (transitional unwrapped standalone) calls this

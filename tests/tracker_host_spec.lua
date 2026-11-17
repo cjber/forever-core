@@ -13,6 +13,13 @@ check(
 		and #t.initializationEvents() == 2,
 	"first rendering waits for both native load events"
 )
+-- Before its first layout the column already sits at its pin and each section in it, so a reload's first pass moves
+-- nothing and a section's first build measures its lines at the width it draws at (#795).
+check(
+	host.point[1] == "TOPRIGHT" and host.point[2] == t.native and host.point[3] == "TOPLEFT",
+	"the column starts pinned"
+)
+check(first.point[2] == host and second.point[2] == host, "a section is placed in the column when it attaches")
 t.ready()
 check(t.pending() == 1, "first layout is deferred")
 drain()
@@ -129,6 +136,14 @@ local unset = harness.new({ hostSettings = { x = 30, y = -40 } })
 unset.check(unset.hostSettings.x == nil and Pinned(unset), "a missing attached flag was the old default and migrates")
 local beside = harness.new({ hostSettings = { attached = false, locked = true } })
 beside.check(Pinned(beside) and beside.hostSettings.locked == true, "a beside placement migrates to the pin")
+-- Once the store exists, a dragged column goes straight to its saved spot, before any layout pass could move it.
+local early = harness.new({ deferReady = true, hostSettings = { attached = false, x = 50, y = -60 } })
+early.ns.MigrateTrackerSettings()
+early.check(early.pending() == 0, "placing from the store queues no layout before ready")
+early.check(
+	early.host.point[1] == "TOPLEFT" and early.host.point[4] == 50 and early.host.point[5] == -60,
+	"the store's dragged spot is the column's place before its first layout"
+)
 -- The migration is one-time: a position saved afterwards sticks.
 migrated.ns.TrackerHost.SavePosition(50, -60)
 migrated.drain()
