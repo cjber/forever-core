@@ -59,6 +59,7 @@ means something; the walk still covers only the repository's own widgets.
 | `sim:enterCombat()`, `sim:leaveCombat()` | PLAYER_REGEN_*; combat lockdown and in-combat secrets |
 | `sim:joinGroup{ ... }`, `sim:leaveGroup()` | party members and GROUP_ROSTER_UPDATE |
 | `sim:hover(frame)`, `sim:leave()`, `sim:click(frame)`, `sim:hoverUnit(unit)` | input, as fresh secure dispatches; a click is a hardware input |
+| `sim:pressBinding(key)` | dispatches a CLICK override as hardware input; priority overrides win, and the latest set wins within one priority class (the simulator's choice for ordering between owners) |
 | `sim:pressEscape()` | Escape through the client's `ToggleGameMenu` as a hardware input, so its registered handlers run |
 | `sim:event(name, ...)`, `sim:advance(seconds)` | client events; timers, animations, OnUpdate, OnSizeChanged |
 | `sim:setGamepad(true)`, `sim:gamepadNavigate()`, `sim:bindingSetChange()` | the gamepad interface (with `INPUT_DEVICE_INTERFACE_TRANSITION` on a change), one secure pass of its navigation, and a binding-set change through the client's `InputBindingManager` |

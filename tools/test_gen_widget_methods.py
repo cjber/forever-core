@@ -4,6 +4,7 @@ Skipped when the annotations are not checked out: `tools/typecheck.sh` fetches t
 that. The tooling's own tests cover the generator on a fixture either way.
 """
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -14,16 +15,16 @@ sys.path.insert(0, str(TOOLING))
 
 from forever_tools import widget_handlers  # noqa: E402
 
+from tools.gen_widget_methods import pinned_revision  # noqa: E402
+
 ANNOTATIONS = ROOT / ".types/vscode-wow-api"
-TYPECHECK = ROOT / "tools/typecheck.sh"
 DATA = TOOLING / "forever_tools" / widget_handlers.METHODS
 
 
-def pinned_revision():
-    for line in TYPECHECK.read_text(encoding="utf-8").splitlines():
-        if line.startswith("revision="):
-            return line.removeprefix("revision=").strip()
-    raise AssertionError(f"{TYPECHECK} names no pinned annotation revision")
+class AnnotationPinTest(unittest.TestCase):
+    def test_revision_matches_toolchain(self):
+        toolchain = json.loads((ROOT / "tools/toolchain.json").read_text(encoding="utf-8"))
+        self.assertEqual(pinned_revision(), toolchain["tools"]["annotations"]["commit"])
 
 
 @unittest.skipUnless(ANNOTATIONS.is_dir(), "the pinned API annotations are not checked out")

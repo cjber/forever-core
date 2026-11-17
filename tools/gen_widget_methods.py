@@ -2,7 +2,7 @@
 
 The lint in `forever_tools/widget_handlers.py` refuses a widget method that takes parameters passed straight as a
 script handler, so it needs the set of such methods the client declares on its widgets. That set comes from the
-Ketho/vscode-wow-api checkout `tools/typecheck.sh` pins (`revision=`, `.types/vscode-wow-api`,
+Ketho/vscode-wow-api checkout `tools/toolchain.json` pins (`tools.annotations`, `.types/vscode-wow-api`,
 `Annotations/Core/Widget/**`), never a hand list. A method that declares no parameters ignores the handler's
 arguments, so it is not part of the set.
 
@@ -14,7 +14,7 @@ commit the data with the pin.
 """
 
 import argparse
-import re
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,15 +25,12 @@ from forever_tools import fsio, widget_handlers  # noqa: E402
 
 ANNOTATIONS = ROOT / ".types/vscode-wow-api"
 DATA = ROOT / ".agents/skills/wow-forever-addon/tooling/forever_tools" / widget_handlers.METHODS
-TYPECHECK = ROOT / "tools/typecheck.sh"
+TOOLCHAIN = ROOT / "tools/toolchain.json"
 
 
 def pinned_revision() -> str:
-    """The annotation revision tools/typecheck.sh pins, the commit the data must come from."""
-    match = re.search(r"^revision=([0-9a-f]{40})$", TYPECHECK.read_text(encoding="utf-8"), re.MULTILINE)
-    if match is None:
-        raise SystemExit(f"{TYPECHECK} names no pinned annotation revision")
-    return match.group(1)
+    """The annotation revision shared with tools/typecheck.sh."""
+    return json.loads(TOOLCHAIN.read_text(encoding="utf-8"))["tools"]["annotations"]["commit"]
 
 
 def git(directory: Path, *args: str) -> str:

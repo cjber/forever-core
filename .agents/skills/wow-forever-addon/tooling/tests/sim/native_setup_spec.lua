@@ -1,5 +1,4 @@
 -- Native Friends, mail and denomination setup with no addon or an optional full SkillUp checkout.
--- Full combined inventory still has the separate, unresolved CurrencyTransfer SetNumber callback timing gap.
 local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
 local Sim = dofile(here .. "../../forever_sim/sim.lua")
 local skillup = os.getenv("FOREVER_SIM_SKILLUP")

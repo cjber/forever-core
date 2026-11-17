@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)
 - **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
 - **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
 - **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)
