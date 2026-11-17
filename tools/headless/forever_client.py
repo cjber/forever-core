@@ -104,6 +104,12 @@ The client is for testing the Forever addons' interface, never for playing, and 
 - One client, one job. The session ends 10 minutes after the last job and 3 hours at most, and every ending logs the
   character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
+
+Client verbs require FOREVER_CLIENT_CALLER (in-game or smoke-queue), or FOREVER_CLIENT_JOB inside a job.
+Send the shared in-game agent an INGAME request as described in
+.agents/skills/wow-forever-addon/in-game.md#requesting-a-check.
+Battle.net sign-in labels persist a launcher-sign-in.txt block under STATE_DIR. Automatic starts refuse until
+the player starts with --manual-launcher, signs in and reaches READY, which removes the record.
 """
 
 from __future__ import annotations
@@ -179,8 +185,13 @@ LAUNCH_ARGS = ["--exec=launch_uid wowf"]
 # page that --exec opens. The target is read from the private gamescope screenshot, in its own pixel coordinates.
 # The account's Battle.net region: the launcher logs in here before it can start the game.
 BATTLE_NET = ("eu.actual.battle.net", 1119)
-# Battle.net's modal title when the game must install or update first (#316). The page's "Upgrade Available" banner
-# is not one: it advertises an account upgrade and shows beside a working Play button.
+SIGN_IN_BLOCK = "launcher-sign-in.txt"
+SIGN_IN_MESSAGE = (
+    "Battle.net needs the player's sign-in; start with --manual-launcher while the player is present, "
+    "sign in, and reach READY to clear the block"
+)
+LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
+# Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
@@ -277,6 +288,15 @@ def silenced(env: Mapping[str, str]) -> dict[str, str]:
 
 class ClientError(Exception):
     """A failure the agent should read: printed without a traceback, exit status 2."""
+
+
+class SignInRequired(ClientError):
+    """Battle.net is unavailable until the player signs in."""
+
+
+def require_launcher_available(manual_launcher: bool = False) -> None:
+    if not manual_launcher and (STATE_DIR / SIGN_IN_BLOCK).exists():
+        raise SignInRequired(SIGN_IN_MESSAGE)
 
 
 class SafetyRefusal(ClientError):
@@ -1165,6 +1185,13 @@ def press_play(state: dict) -> None:
         return
     image = shot(state, STATE_DIR / "launcher.png")
     words = [word[0].casefold() for word in ocr_words(image) if word[0]]
+    if any(
+        words[index : index + len(phrase)] == list(phrase)
+        for phrase in LAUNCHER_SIGN_IN_LABELS
+        for index in range(len(words))
+    ):
+        atomic_write(STATE_DIR / SIGN_IN_BLOCK, SIGN_IN_MESSAGE)
+        raise SignInRequired(SIGN_IN_MESSAGE)
     # These exact Battle.net UI labels name the blocked launch state; unrelated prose is not an update signal.
     if any(
         words[index : index + len(phrase)] == list(phrase)
@@ -2023,6 +2050,9 @@ def smoke(args: argparse.Namespace) -> int:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
             require_safe(state)
+        except SignInRequired as error:
+            print(f"client unavailable: {error}; nothing posted on {repo}@{commit[:7]}", flush=True)
+            return 3
         except SafetyRefusal:
             raise
         except ClientError as error:
@@ -2877,6 +2907,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
     `job` starts this detached when no session runs, and `up` is the same verb in the foreground. After a source
     change the next job starts a fresh process.
     """
+    require_launcher_available(getattr(args, "manual_launcher", False))
     sources = LAUNCHER_SOURCES
     recover_links()
     mismatch = nvidia_mismatch()
@@ -3134,11 +3165,14 @@ def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher:
     nudge = nudge or functools.partial(at_character_select, state, manual_launcher)
     try:
         ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True)
+    except SignInRequired:
+        raise
     except ClientError as error:
         frame = shot(state, STATE_DIR / "failed.png")
         raise ClientError(f"{error}; last frame: {frame}") from None
     state["ready"] = time.time()
     write_state(state)
+    (STATE_DIR / SIGN_IN_BLOCK).unlink(missing_ok=True)
     print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
     # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
     # No eval or reload is needed here: wait_for_world only returns after that handshake succeeds.
@@ -3216,6 +3250,7 @@ def start_serve(manual_launcher: bool) -> subprocess.Popen:
     """Start the resident session detached, its lines in serve.log, and hand back the process to watch."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if k != "FOREVER_CLIENT_JOB"}
+    env["FOREVER_CLIENT_CALLER"] = os.environ.get("FOREVER_CLIENT_CALLER") or "job"
     log = open(STATE_DIR / SERVE_LOG, "a")
     command = [sys.executable, str(Path(__file__).resolve()), "serve"]
     if manual_launcher:
@@ -3247,6 +3282,7 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
     deadline = time.monotonic() + timeout
     child = None
     while True:
+        require_launcher_available(manual_launcher)
         state = current_session()
         if state and (state.get("ready") or state.get("world_lost")):
             ui = client_ui(state)
@@ -3284,6 +3320,7 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
         if child is not None and child.poll() is not None:
             # Our serve exited before READY. Another agent's serve may hold the lock now: wait for that one instead.
             if not session_lock_held():
+                require_launcher_available(manual_launcher)
                 raise ClientError(f"the headless session did not start: {serve_tail()}")
             child = None
         if time.monotonic() >= deadline:
@@ -3318,6 +3355,7 @@ def job(args: argparse.Namespace) -> int:
             "XDG_RUNTIME_DIR": state["runtime_dir"],
             "FOREVER_CLIENT_DISPLAY": state["display"],
             "FOREVER_CLIENT_JOB": token,
+            "FOREVER_CLIENT_CALLER": os.environ.get("FOREVER_CLIENT_CALLER") or "job",
         }
         return run_job_command(command, env, maximum)
     finally:
@@ -3942,6 +3980,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.verb in {"up", "serve", "job", "run", "lease", "smoke", "proof", "down", "release", *JOB_VERBS}:
+            if not (os.environ.get("FOREVER_CLIENT_CALLER") or os.environ.get("FOREVER_CLIENT_JOB")):
+                raise ClientError(
+                    "send the shared in-game agent an INGAME request: "
+                    ".agents/skills/wow-forever-addon/in-game.md#requesting-a-check; "
+                    "client verbs require FOREVER_CLIENT_CALLER"
+                )
         if args.verb in ("up", "serve"):
             return up(args)
         if args.verb in ("job", "run"):

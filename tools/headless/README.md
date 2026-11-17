@@ -102,3 +102,9 @@ command's entire process group, with SIGKILL after the SIGTERM grace period. The
 is released only after return or full teardown. If the return fails, the session ends
 and the next job starts fresh gamescope. This is an occasional job with two extra
 logins; `lease` remains a token for individual commands.
+
+Battle.net sign-in blocks automatic starts until the player runs
+`FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py up --manual-launcher`,
+signs in and reaches READY. That clears `launcher-sign-in.txt` under the session state directory.
+Client commands require `FOREVER_CLIENT_CALLER`; send the shared in-game agent an INGAME request
+([request format](../../.agents/skills/wow-forever-addon/in-game.md#requesting-a-check)).
