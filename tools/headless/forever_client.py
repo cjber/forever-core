@@ -2022,7 +2022,8 @@ def flow_step(action: str) -> str:
     """What a proof records for one flow: a slash command as typed, or a Lua snippet by name and content digest.
 
     A caller's path names a machine, a user and a scratch folder in a public proof, and the file it names is gone with
-    that folder, so a Lua step is the snippet's file name and sha256 instead (#591).
+    that folder, so a Lua step is its sha256 followed by the snippet's file name (#591). Putting the digest first keeps
+    keyword file names from looking like credentials to secret scanners (#656).
     """
     if not lua_flow(action):
         return action
@@ -2031,7 +2032,7 @@ def flow_step(action: str) -> str:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
         raise ClientError(f"cannot read the flow's snippet {action}: {error}") from None
-    return f"{path.name} sha256:{digest}"
+    return f"sha256:{digest} {path.name}"
 
 
 def flow_ready_failure(token: str | None) -> str | None:

@@ -2692,7 +2692,7 @@ class ProofHelpersTest(unittest.TestCase):
         lua = self.state / "westfall-map.lua"
         lua.write_text("print('map')\n")
         digest = fc.hashlib.sha256(lua.read_bytes()).hexdigest()
-        self.assertEqual(fc.flow_step(str(lua)), f"westfall-map.lua sha256:{digest}")
+        self.assertEqual(fc.flow_step(str(lua)), f"sha256:{digest} westfall-map.lua")
         self.assertEqual(fc.flow_step("/wait 25"), "/wait 25")
 
     def test_clear_eval_inbox_asks_the_writer_for_the_client_addons(self):
@@ -3418,7 +3418,7 @@ class ProofTest(unittest.TestCase):
         proof = json.loads(target.read_text())
         self.assertEqual(
             proof["flows"],
-            [{"name": "map", "steps": [f"westfall-map.lua sha256:{digest}"], "result": "pass"}],
+            [{"name": "map", "steps": [f"sha256:{digest} westfall-map.lua"], "result": "pass"}],
         )
         self.assertNotIn(str(lua), target.read_text(), "the caller's scratch path is not in the public proof")
 

@@ -19,6 +19,17 @@ LOG = """# Changelog
 
 
 class ChangelogTest(unittest.TestCase):
+    def test_duplicate_bullets_fail_in_every_section_and_check_mode(self):
+        for heading, name in (("## [Unreleased]", "Unreleased"), ("## [1.0.0] - 2026-01-01", "1.0.0")):
+            text = LOG.replace(heading, heading + "\n- repeated\n- repeated\n")
+            for argv in (["--check"], ["--check", "1.0.0"]):
+                with self.subTest(heading=heading, argv=argv), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    (root / "CHANGELOG.md").write_text(text)
+                    with patch.object(changelog, "released", return_value=[]):
+                        with self.assertRaisesRegex(SystemExit, f"{name} has duplicate bullet: repeated"):
+                            changelog.main(root, argv)
+
     def test_section_and_check(self):
         self.assertEqual(changelog.section(LOG, "1.0.0"), "- first")
         with self.assertRaises(SystemExit):
