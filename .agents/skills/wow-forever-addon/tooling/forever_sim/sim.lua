@@ -98,13 +98,16 @@ Sim.CORE = {
 	"Blizzard_ChatFrameBase/Shared/SlashCommands.lua",
 	-- The map, quest log and fog-of-war pieces of Blizzard_UIPanels_Game, in its TOC order, plus the quest frame
 	-- the quest log's OnHide closes the quest portrait through.
+	-- ContainerFrame bag positioning reads BankFrame even when the bank is closed.
 	"Blizzard_UIPanels_Game:PlayerInteractionFrameManager|ScrollingFlatPanel|WarCampaignTemplates|WorldMap"
-		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame"
+		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame|Bank"
 		.. "|QuestFrameTemplates|QuestFrame|QuestInfo|CharacterFrame|MerchantFrame|SkillsFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	-- EncounterBar lives in Blizzard_UnitFrame's UnitPowerBarAlt files; UIWidgets' power-bar layout anchors to it.
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.lua",
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.xml",
+	-- Non-LoadOnDemand startup addon: ContainerFrame initializes its token tracker on this ADDON_LOADED.
+	"Blizzard_TokenUI",
 	"Blizzard_WorldMap",
 	-- Bonus objective QUEST_ACCEPTED events display banners through this native manager.
 	"Blizzard_FrameXML/Mainline/ZoneText.lua",

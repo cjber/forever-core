@@ -130,6 +130,7 @@ function CreateFramePoolCollection() end
 
 -- The saved table a consumer hands the shared minimap button: the angle and the hide flag live in it.
 ---@class ForeverMinimapButtonSpec
+---@field libDBIcon? string launcher name in minimap managers; opt in and Create at PLAYER_LOGIN or later
 ---@field name string the frame name, unique in the addon
 ---@field icon string|number the addon's own content icon
 ---@field title string the tooltip title
@@ -153,6 +154,8 @@ function CreateFramePoolCollection() end
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall, when it gave one
 ---@field icon Texture the addon's icon drawn inside LibDBIcon's border
 ---@field angle number the angle around the Minimap, in degrees
+---@field libDBIcon? table optional LibDBIcon library owning this button
+---@field libDBIconDB? table settings proxy passed to LibDBIcon
 ---@field dragging boolean? true while the player drags the button around the rim
 
 ---@class ForeverMinimapButtonAPI

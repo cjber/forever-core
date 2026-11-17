@@ -320,3 +320,174 @@ _G.Minimap = nil
 assert(first.Create(spec("MissingMinimapButton", {})) == nil, "made a button with no Minimap")
 assert(messages[#messages] == "MINIMAP_UNAVAILABLE", messages[#messages])
 _G.Minimap = saved
+
+-- Opted-in launchers use LibDBIcon without constructing a private frame.
+local privateCreate = CreateFrame
+local ownFrames, lookups = 0, 0
+_G.CreateFrame = function(...)
+	ownFrames = ownFrames + 1
+	return privateCreate(...)
+end
+local objects, registered = {}, {}
+local broker = {}
+function broker.NewDataObject(_, name, object)
+	if objects[name] then
+		return nil
+	end
+	objects[name] = object
+	return object
+end
+function broker.GetDataObjectByName(_, name)
+	return objects[name]
+end
+local lib = {}
+function lib.IsRegistered(_, name)
+	return registered[name] ~= nil
+end
+function lib:Register(name, object, db)
+	registered[name] = { object = object, db = db, button = frame("LibDBIcon10_" .. name) }
+	self:Refresh(name, db)
+end
+function lib.GetMinimapButton(_, name)
+	return registered[name].button
+end
+function lib.Show(_, name)
+	registered[name].button:Show()
+end
+function lib.Hide(_, name)
+	registered[name].button:Hide()
+end
+function lib:Refresh(name, db)
+	registered[name].button.position = db.minimapPos
+	if db.hide then
+		self:Hide(name)
+	else
+		self:Show(name)
+	end
+end
+_G.LibStub = function(name, silent)
+	assert(silent == true, "library lookup must be silent")
+	lookups = lookups + 1
+	if name == "LibDataBroker-1.1" then
+		return broker
+	end
+	if name == "LibDBIcon-1.0" then
+		return lib
+	end
+end
+local managed = load()
+local db = { angle = 123, hidden = true }
+local managedSpec = spec("Managed", db)
+managedSpec.libDBIcon = "SkillUp Forever"
+managedSpec.angleKey, managedSpec.hiddenKey = "angle", "hidden"
+local managedButton = managed.Create(managedSpec)
+assert(registered[managedSpec.libDBIcon], "opted-in button did not register with LibDBIcon")
+assert(ownFrames == 0, "managed launcher created a private frame")
+local registration = registered[managedSpec.libDBIcon]
+local proxy = registration.db
+assert(managedButton == registration.button and managedSpec.host.minimapButton == managedButton, "managed host")
+assert(managed.Buttons()[1] == managedButton, "managed registry")
+assert(managedButton.position == 123 and not managedButton:IsShown(), "saved position and visibility")
+proxy.minimapPos = 42
+assert(db.angle == 42 and proxy.minimapPos == 42, "drag did not update saved angle")
+proxy.hide = false
+assert(db.hidden == false and proxy.hide == false, "hide proxy write")
+proxy.lock = true
+assert(proxy.lock and db.lock == nil, "extra proxy field was saved")
+db.hidden = true
+managed.Refresh()
+assert(not managedButton:IsShown() and managedButton.position == 42, "refresh hide and position")
+db.hidden = false
+managed.Refresh()
+assert(managedButton:IsShown(), "refresh show")
+managed.SetShown(managedButton, false)
+assert(not managedButton:IsShown(), "managed SetShown hide")
+managed.SetShown(managedButton, true)
+assert(managedButton:IsShown(), "managed SetShown show")
+registration.object.OnClick(managedButton, "LeftButton")
+assert(clicked[#clicked].button == managedButton, "launcher click")
+GameTooltip:SetOwner(managedButton)
+registration.object.OnTooltipShow(GameTooltip)
+assert(GameTooltip.title == managedSpec.title and GameTooltip.lines[3] == "MINIMAP_DRAG_HINT", "launcher tooltip hint")
+a.scripts.OnEnter(a)
+assert(GameTooltip.lines[3] == "MINIMAP_DRAG_HINT", "private tooltip hint")
+local shown = false
+managedSpec.getShown = function()
+	return shown
+end
+assert(proxy.hide == true, "getShown hide proxy")
+shown = true
+assert(proxy.hide == false, "getShown show proxy")
+managed.Destroy(managedButton)
+assert(
+	not managedButton:IsShown() and #managed.Buttons() == 0 and not managedSpec.host.minimapButton,
+	"managed destroy"
+)
+-- Recreating a destroyed launcher reuses its registration and binds the new owner's state.
+local replacementDB = { angle = 77, hidden = false }
+local replacementSpec = spec("Replacement", replacementDB)
+replacementSpec.libDBIcon = managedSpec.libDBIcon
+replacementSpec.angleKey, replacementSpec.hiddenKey = "angle", "hidden"
+local replacementClicked = false
+replacementSpec.onClick = function()
+	replacementClicked = true
+end
+local framesBeforeReuse = ownFrames
+local replacement = managed.Create(replacementSpec)
+assert(replacement == managedButton, "destroy then create did not reuse LibDBIcon button")
+assert(ownFrames == framesBeforeReuse, "recreated launcher made a private frame")
+assert(replacement:IsShown() and replacement.position == 77, "recreated launcher ignored new settings")
+assert(managed.Buttons()[1] == replacement and #managed.Buttons() == 1, "recreated launcher registry")
+assert(replacementSpec.host.minimapButton == replacement, "recreated launcher host")
+assert(registration.object.icon == replacementSpec.icon, "recreated launcher icon")
+registration.object.OnClick(replacement, "LeftButton")
+assert(replacementClicked, "recreated launcher kept old click callback")
+GameTooltip:SetOwner(replacement)
+registration.object.OnTooltipShow(GameTooltip)
+assert(GameTooltip.title == replacementSpec.title, "recreated launcher kept old tooltip")
+proxy.minimapPos = 88
+assert(replacementDB.angle == 88 and db.angle == 42, "recreated proxy kept old settings")
+replacementDB.hidden = true
+managed.Refresh()
+assert(not replacement:IsShown(), "recreated launcher ignored new hide setting")
+managed.Destroy(replacement)
+local before = lookups
+managed.Create(spec("Legacy", {}))
+assert(lookups == before, "legacy spec looked up libraries")
+local takenSpec = spec("Taken", {})
+takenSpec.libDBIcon = "Another addon"
+objects[takenSpec.libDBIcon] = {}
+assert(managed.Create(takenSpec).name == "Taken", "taken name did not fall back")
+-- Default settings keys and a new launcher's free angle use the same proxy contract.
+local defaultSettings = {}
+local defaultSpec = spec("DefaultManaged", defaultSettings)
+defaultSpec.libDBIcon = "Default managed launcher"
+local defaultButton = managed.Create(defaultSpec)
+local defaultProxy = registered[defaultSpec.libDBIcon].db
+assert(defaultProxy.minimapPos == defaultSettings.minimapButtonAngle, "default angle not seeded")
+assert(defaultSettings.minimapButtonAngle == 255, "default managed angle")
+defaultSettings.minimapButtonHidden = true
+managed.Refresh()
+assert(not defaultButton:IsShown(), "default hide key ignored")
+defaultProxy.hide = false
+assert(defaultSettings.minimapButtonHidden == false, "default hide write")
+managed.Refresh()
+assert(defaultButton:IsShown(), "default show ignored")
+-- Either missing library falls back, without creating a broker object.
+for _, missing in ipairs({ "LibDataBroker-1.1", "LibDBIcon-1.0" }) do
+	_G.LibStub = function(name)
+		if name == missing then
+			return nil
+		end
+		return name == "LibDataBroker-1.1" and broker or lib
+	end
+	local partialSpec = spec("Partial" .. missing, {})
+	partialSpec.libDBIcon = "Partial launcher " .. missing
+	assert(managed.Create(partialSpec).name == partialSpec.name, "partial libraries did not fall back")
+	assert(not objects[partialSpec.libDBIcon], "partial libraries created broker object")
+end
+_G.LibStub = nil
+local missingSpec = spec("MissingLibraries", {})
+missingSpec.libDBIcon = "Missing"
+assert(managed.Create(missingSpec).name == "MissingLibraries", "missing libraries did not fall back")
+_G.CreateFrame = privateCreate

@@ -1706,7 +1706,15 @@ function M.build(sim)
 	end
 
 	-- EditBox.
-	impl.EditBox.SetText = function(self, text)
+	local pendingEditText = {}
+	function W.flushEditText()
+		local pending = pendingEditText
+		pendingEditText = {}
+		for _, edit in ipairs(pending) do
+			W.dispatch(edit, "OnTextChanged", false)
+		end
+	end
+	local function setEditText(self, text)
 		local s = st(self)
 		text = text == nil and "" or text
 		if not Secret.is(text) then
@@ -1719,7 +1727,13 @@ function M.build(sim)
 			return
 		end
 		s.text = text
-		fire(self, "OnTextChanged", false)
+		-- Live client probe 2026-11-17: OnTextSet is synchronous, OnTextChanged is next-frame.
+		-- Keep notification scheduling here so same-text and coalescing rules have one producer.
+		pendingEditText[#pendingEditText + 1] = self
+		fire(self, "OnTextSet")
+	end
+	impl.EditBox.SetText = function(self, text)
+		setEditText(self, text)
 	end
 	impl.EditBox.GetText = function(self)
 		return st(self).text or ""
@@ -1733,7 +1747,7 @@ function M.build(sim)
 		return tonumber(st(self).text) or 0
 	end
 	impl.EditBox.SetNumber = function(self, n)
-		impl.EditBox.SetText(self, tostring(n))
+		setEditText(self, tostring(n))
 	end
 	impl.EditBox.SetMaxLetters = function(self, n)
 		st(self).maxLetters = n

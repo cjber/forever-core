@@ -39,7 +39,12 @@ function M.build(sim)
 		openProfession = nil,
 		items = {},
 		knownSpells = {}, -- learned spell IDs; cached spell data in spells does not imply knowledge
-		maps = {},
+		-- WorldMapMixin:OnShow selects the player's map through MapUtil.GetDisplayableMapForPlayer.
+		-- Both that default map and the native fallback must exist before a scenario supplies map fixtures.
+		maps = {
+			[1454] = { name = "Orgrimmar", mapType = 3 },
+			[947] = { name = "Azeroth", mapType = 1 },
+		},
 		addons = {},
 		achievements = { categories = {} },
 	}

@@ -4,6 +4,11 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "Laddylucks", what = "Minimap button under SexyMap's control" },
+		{ name = "thirex", what = "Minimap button under SexyMap's control" },
+		{ name = "axejess", what = "Minimap button under SexyMap's control" },
+		{ name = "p1tu", what = "Minimap button under SexyMap's control" },
+		{ name = "Mirades96", what = "Minimap button under SexyMap's control" },
 		{ name = "silhouetteone", what = "The game's tracker stays hidden in combat" },
 		{ name = "kowakowa93", what = "Forever sections follow Kaliel's Tracker" },
 		{ name = "xh43k", what = "Reported clipped tracker rows and quest item art" },

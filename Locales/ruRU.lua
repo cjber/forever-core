@@ -202,3 +202,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- mt
 L["Login error: %s"] = "Ошибка входа: %s" -- mt
 L["Copy %s: %s"] = "Копия %s: %s" -- mt
+
+L.MINIMAP_DRAG_HINT = "Перетащите кнопку вдоль края мини-карты." -- mt
