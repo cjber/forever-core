@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - **The mouse wheel scrolls a tracker section over its text.** A quest taller than its space now scrolls a page at a time with overlap, so every objective stays reachable even in a short column. Stacked sections keep a readable row when space allows and show only their header otherwise. (#616, #615)
+- **Headless startup stops when Battle.net needs the player to sign in.** Queued starts stay blocked until a manual launcher session reaches READY, and smoke posts nothing while blocked. (#731)
+- **Client commands require the shared in-game caller marker.** Jobs preserve it and the smoke queue sets its own marker. (#741)
 - **Package diagnostics name the exclusion source**, distinguishing a matching `.pkgmeta` ignore rule from an untracked or Git-ignored runtime file. (#732)
 - **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)

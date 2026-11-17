@@ -6,6 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=FOREVER_CLIENT_CALLER=smoke-queue
 # A client session renders on the GPU for minutes, so the queue stays out of the way of the desktop meanwhile.
 Nice=10
 # The checkout that holds core's own tools and the addon workspaces beside it. Edit this line if they live elsewhere.
