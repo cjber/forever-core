@@ -680,6 +680,7 @@ end
 
 -- Sizes the viewport to the cap the column gave this section, shows the bar only when the blocks pass it, and holds
 -- the view on the quest at the top. `headerHeight` and `contentsHeight` are Blizzard's own numbers.
+local UsableHeight
 function Module:LayoutTrackerScroll()
 	if not self.scrollFrame or InCombatLockdown() then
 		return
@@ -688,7 +689,12 @@ function Module:LayoutTrackerScroll()
 	local body = math.max(0, (self.contentsHeight or 0) - header)
 	local cap = self.trackerCap or body
 	local viewport = math.min(body, math.max(0, cap - header))
-	local range = math.max(0, body - viewport)
+	local usable = UsableHeight(self)
+	if header + viewport < usable then
+		viewport = 0
+	end
+	self.scrollFrame:SetShown(viewport > 0)
+	local range = viewport > 0 and math.max(0, body - viewport) or 0
 	self.trackerBody, self.trackerViewport, self.scrollRange = body, viewport, range
 	self.trackerOverflow = range > 0
 
@@ -748,7 +754,7 @@ function Module:LayoutTrackerScroll()
 	if range > 0 then
 		local offset = math.min(self:ApplyScrollAnchor(self:BlockStarts()), range)
 		self:SetScrollOffset(offset)
-	elseif not collapsed and body > 0 then
+	elseif not collapsed and body > 0 and viewport > 0 then
 		self.scrollAnchorID = nil
 		self.scrollAnchorIndex = nil
 		self:SetScrollOffset(0)
@@ -785,6 +791,26 @@ function Module:GetMinimumHeight()
 	local header = self.headerHeight or 0
 	local offset = tonumber(self.fromHeaderOffsetY) or -10
 	return header + math.max(0, (block.height or block:GetHeight() or 0) - offset)
+end
+
+-- Prefer a whole first block, but under screen pressure a title and its first objective still make a readable page.
+UsableHeight = function(module)
+	local minimum = module:GetMinimumHeight()
+	local block = module.firstBlock
+	if minimum == 0 or not block then
+		return minimum
+	end
+	for _, line in pairs(block.usedLines or {}) do
+		local _, anchor, _, _, y = line:GetPoint(1)
+		if block.HeaderText and anchor == block.HeaderText or anchor == block then
+			local title = block.HeaderText and block.HeaderText:GetHeight() or 0
+			return math.min(
+				minimum,
+				(module.headerHeight or 0) - (module.fromHeaderOffsetY or -10) + title - (y or 0) + line:GetHeight()
+			)
+		end
+	end
+	return minimum
 end
 
 -- A scrollable section lays every block out, even the ones past the cap: they live in the scroll child, not in the
@@ -1019,24 +1045,33 @@ local function LayoutModules(width, available, reserve)
 		end
 	end
 	local heights, total = {}, 0
-	local minimums = {}
+	local minimums, headers = {}, {}
+	local preferred, usable = 0, 0
 	for index, module in ipairs(modules) do
-		if type(module.GetMinimumHeight) == "function" then
-			minimums[index] = module:GetMinimumHeight()
-		else
-			minimums[index] = 0
+		local minimum = type(module.GetMinimumHeight) == "function" and module:GetMinimumHeight() or 0
+		minimums[index] = minimum
+		headers[index] = minimum > 0 and (module.headerHeight or 0) or 0
+		if minimum > 0 then
+			preferred = preferred + minimum + GAP
+			usable = usable + UsableHeight(module) + GAP
+		end
+	end
+	if preferred > available then
+		for index, module in ipairs(modules) do
+			if minimums[index] > 0 then
+				minimums[index] = usable <= available and UsableHeight(module) or headers[index]
+			end
 		end
 	end
 	local function LayOut(index, cap)
 		local module = modules[index]
 		local laterMinimum = 0
 		for later = index + 1, #modules do
-			laterMinimum = laterMinimum + (minimums[later] or 0)
+			laterMinimum = laterMinimum + (minimums[later] or 0) + ((minimums[later] or 0) > 0 and GAP or 0)
 		end
 		local room = math.max(0, available - total - GAP)
 		if laterMinimum > 0 then
-			local gap = math.min(GAP, room)
-			cap = math.min(cap, math.max(minimums[index] or 0, room - math.min(room, laterMinimum + gap)))
+			cap = math.min(cap, math.max(0, room - laterMinimum))
 		end
 		module:SetWidth(width)
 		-- The native header template starts at 260 units; it does not stretch with its module. The viewport
@@ -1044,10 +1079,19 @@ local function LayoutModules(width, available, reserve)
 		if module.Header then
 			module.Header:SetWidth(width)
 		end
+		local previousMinimum = type(module.GetMinimumHeight) == "function" and module:GetMinimumHeight() or 0
+		local previousUsable = module.trackerScrollable and UsableHeight(module) or 0
 		local ok = RunSafe(module.safeCall, "tracker section update", module.Update, module, cap)
 		local minimum = 0
 		if ok and type(module.GetMinimumHeight) == "function" then
 			minimum = module:GetMinimumHeight()
+		end
+		if
+			ok
+			and module.trackerScrollable
+			and (minimum ~= previousMinimum or UsableHeight(module) ~= previousUsable)
+		then
+			host:MarkDirty()
 		end
 		if cap > 0 and minimum > cap then
 			-- The cap is the room left after sections above this one. Never borrow from their accounting or make the
@@ -1056,8 +1100,11 @@ local function LayoutModules(width, available, reserve)
 			module:UpdateHeight()
 		end
 		local used = ok and module:GetContentsHeight() or 0
-		if cap <= 0 and module.trackerScrollable then
-			used = 0
+		if module.trackerScrollable then
+			if cap < (module.headerHeight or 0) then
+				used = 0
+			end
+			module:SetShown(used > 0)
 		end
 		heights[index] = used
 		if used > 0 then
