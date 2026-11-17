@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)
+- **Headless jobs can run in a private nested Hyprland for deskpilot**, with a bounded command and a return to gamescope before the slot is released. (#662)
+- **Headless leases lock one command at a time**, exclusive jobs have a hard timeout, and a job can request session shutdown without waiting on its own lock. (#671)
+- **A Forever addon's minimap button can register with LibDBIcon** so SexyMap and other minimap managers can show it on hover, move and hide it. The tooltip says it can be dragged. Thanks to Laddylucks, thirex, axejess, p1tu and Mirades96 for the reports. (#685)
+- **Release tooling:** `changelog.py --check` fails on a bullet that appears twice in one section, an addon PR's package check no longer fails while a new ForeverCore awaits CurseForge moderation (the release workflow still requires the latest core), and a proof records a Lua flow as `sha256:<digest> <file>` so a file named with `api` or `key` no longer trips gitleaks. (#660, #661, #656)
 - **Headless sessions check live world state before reuse** and replace sessions that reached the login screen. (#705)
 - **Headless slash input requires confirmed chat focus**, and clicks refuse the Game Menu. (#703)
 - **Headless state writes survive reboot**, with automatic recovery of stale addon links and store backups. (#688)

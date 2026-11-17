@@ -187,3 +187,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "回呼錯誤：%s" -- mt
 L["Login error: %s"] = "登入錯誤：%s" -- mt
 L["Copy %s: %s"] = "副本 %s：%s" -- mt
+
+L.MINIMAP_DRAG_HINT = "拖曳可沿小地圖移動按鈕。" -- mt

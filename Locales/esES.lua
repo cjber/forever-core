@@ -192,3 +192,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "Error de callback: %s" -- mt
 L["Login error: %s"] = "Error de inicio de sesión: %s" -- mt
 L["Copy %s: %s"] = "Copia %s: %s" -- mt
+
+L.MINIMAP_DRAG_HINT = "Arrastra para moverlo alrededor del minimapa." -- mt

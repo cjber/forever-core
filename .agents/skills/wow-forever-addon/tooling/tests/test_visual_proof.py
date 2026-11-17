@@ -759,11 +759,18 @@ class VisualProofTest(unittest.TestCase):
             [],
             "an existing proof stays valid until the change records a new one",
         )
-        relative = "westfall-map.lua sha256:" + "a" * 64
-        self.written(root, self.proof(root, flows=[{"name": "map", "steps": [relative], "result": "pass"}]))
-        self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
+        for relative in ("westfall-map.lua sha256:" + "a" * 64, "sha256:" + "a" * 64 + " westfall-map.lua"):
+            self.written(root, self.proof(root, flows=[{"name": "map", "steps": [relative], "result": "pass"}]))
+            self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
         self.written(root, self.proof(root, flows=[{"name": "map", "steps": ["/wait 25"], "result": "pass"}]))
         self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
+
+    def test_absolute_lua_steps_are_rejected_in_both_digest_orders(self):
+        digest = "sha256:" + "a" * 64
+        for name in ("/home/me/map.lua", "C:\\Users\\me\\map.lua"):
+            for step in (name, f"{name} {digest}", f"{digest} {name}"):
+                with self.subTest(step=step):
+                    self.assertTrue(visual_proof.absolute_lua_step(step), step)
 
     @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
     def test_arbitrary_candidate_hash_is_rejected(self, _image_hash):

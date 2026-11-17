@@ -645,6 +645,8 @@ def absolute_lua_step(step: str) -> bool:
 
     A step is normally a Forever addon's slash command, which also starts with "/", so only a `.lua` step is a file.
     """
+    # Accept both the digest-first format and existing name-first proofs.
+    step = re.sub(r"^sha256:[0-9a-f]{64}\s+|\s+sha256:[0-9a-f]{64}$", "", step)
     if not step.endswith(".lua"):
         return False
     return PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute()
@@ -720,8 +722,8 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         )
         if absolute:
             problems.append(
-                "visual proof may not record a Lua flow by an absolute path; use its file name and sha256: "
-                + ", ".join(absolute)
+                "visual proof may not record a Lua flow by an absolute path; "
+                "use sha256:<digest> followed by its file name: " + ", ".join(absolute)
             )
     images = proof.get("images")
     if not isinstance(images, list) or not images:

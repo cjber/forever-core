@@ -1784,6 +1784,7 @@ class LinkBuildTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.addons = self.state / "AddOns"
         self.addons.mkdir()
+        self.enterContext(mock.patch.object(fc, "addons_dir", return_value=self.addons))
         self.build = self.state / "build"
         self.build.mkdir()
         self.folders = [("LegacyForever", self.build)]
@@ -2692,7 +2693,7 @@ class ProofHelpersTest(unittest.TestCase):
         lua = self.state / "westfall-map.lua"
         lua.write_text("print('map')\n")
         digest = fc.hashlib.sha256(lua.read_bytes()).hexdigest()
-        self.assertEqual(fc.flow_step(str(lua)), f"westfall-map.lua sha256:{digest}")
+        self.assertEqual(fc.flow_step(str(lua)), f"sha256:{digest} westfall-map.lua")
         self.assertEqual(fc.flow_step("/wait 25"), "/wait 25")
 
     def test_clear_eval_inbox_asks_the_writer_for_the_client_addons(self):
@@ -3418,7 +3419,7 @@ class ProofTest(unittest.TestCase):
         proof = json.loads(target.read_text())
         self.assertEqual(
             proof["flows"],
-            [{"name": "map", "steps": [f"westfall-map.lua sha256:{digest}"], "result": "pass"}],
+            [{"name": "map", "steps": [f"sha256:{digest} westfall-map.lua"], "result": "pass"}],
         )
         self.assertNotIn(str(lua), target.read_text(), "the caller's scratch path is not in the public proof")
 
@@ -3716,7 +3717,10 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc, "ensure_session", return_value=state),
             mock.patch.object(fc, "recover_links"),
             mock.patch.object(fc, "release_job") as released,
-            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=7)) as run,
+            mock.patch.object(
+                fc.subprocess, "Popen", return_value=mock.Mock(pid=123, wait=mock.Mock(return_value=7))
+            ) as run,
+            mock.patch.object(fc.os, "killpg"),
         ):
             code = fc.job(argparse.Namespace(command=["--", "probe.sh"], label=None, timeout=5, manual_launcher=False))
         self.assertEqual(code, 7)
@@ -3774,35 +3778,19 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(fc.describe_job(), "another job")
         with (
             mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "old"}),
-            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "new")) as acquire,
-            mock.patch.object(fc, "release_job"),
+            self.assertRaisesRegex(fc.ClientError, "lease expired: run lease again"),
         ):
-            self.assertEqual(fc.with_job("shot", 5, lambda _state: 0), 0)
-        acquire.assert_called_once_with(5, "shot")
+            fc.with_job("shot", 5, mock.Mock())
 
-    def test_a_lease_token_is_accepted_and_a_foreign_token_queues(self):
-        self.holder(token="lease-token")
-        state = live_state(ready=1.0)
-        action = mock.Mock(return_value=0)
+    def test_a_job_token_proceeds_without_taking_the_lock(self):
+        self.holder(token="job-token")
         with (
-            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "lease-token"}),
-            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "job-token"}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
             mock.patch.object(fc, "acquire_job") as acquire,
         ):
-            self.assertEqual(fc.with_job("shot", 600, action), 0)
+            self.assertEqual(fc.with_job("shot", 0, lambda _state: 0), 0)
         acquire.assert_not_called()
-        action.assert_called_once_with(state)
-
-        action.reset_mock()
-        with (
-            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "another-job"}),
-            mock.patch.object(fc, "load_state", return_value=state),
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")) as acquire,
-            mock.patch.object(fc, "release_job"),
-        ):
-            self.assertEqual(fc.with_job("shot", 600, action), 0)
-        acquire.assert_called_once_with(600, "shot")
 
     def test_a_scroll_without_a_token_takes_the_job_lock(self):
         """A wheel verb run on its own is a job: job.lock is held, and job.json names it, for that invocation."""
@@ -3834,24 +3822,171 @@ class BrokerTest(unittest.TestCase):
         self.assertFalse(fc.job_record_path().exists(), "the lock is the invocation's, not the session's")
         self.assertTrue((self.state / "last-job").exists(), "the job's end is recorded for the idle limit")
 
-    def test_a_lease_prints_its_token_and_names_the_holder(self):
-        holder = mock.Mock(pid=os.getpid())
+    def make_lease(self, ttl=600):
         out = io.StringIO()
         with (
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "lease-token")),
             mock.patch.object(fc, "ensure_session", return_value=live_state(ready=1.0)),
-            mock.patch.object(fc, "start_holder", return_value=holder) as start,
             contextlib.redirect_stdout(out),
         ):
-            options = argparse.Namespace(ttl=600, timeout=5, manual_launcher=False, label="interactive")
-            self.assertEqual(fc.lease(options), 0)
-        self.assertEqual(out.getvalue().strip(), "lease-token")
-        record = json.loads(fc.job_record_path().read_text())
-        self.assertEqual(record["token"], "lease-token")
-        self.assertEqual(record["pid"], os.getpid())
+            fc.lease(argparse.Namespace(ttl=ttl, timeout=0, manual_launcher=False, label="interactive"))
+        return out.getvalue().strip()
+
+    def test_a_lease_leaves_the_job_lock_free(self):
+        token = self.make_lease()
+        record = json.loads((self.state / "leases" / f"{token}.json").read_text())
         self.assertEqual(record["label"], "interactive")
-        self.assertIn("expires", record)
-        start.assert_called_once()
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_a_lease_verb_holds_and_releases_its_own_lock(self):
+        token = self.make_lease()
+
+        def action(_state):
+            self.assertEqual(fc.job_holder()["label"], "interactive: shot")
+            with self.assertRaises(fc.ClientError):
+                fc.acquire_job(0, "another agent")
+            return 7
+
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": token}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+        ):
+            self.assertEqual(fc.with_job("shot", 0, action), 7)
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_an_expired_lease_errors(self):
+        token = self.make_lease()
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": token}),
+            mock.patch.object(fc.time, "time", return_value=time.time() + 601),
+            self.assertRaisesRegex(fc.ClientError, "lease expired: run lease again"),
+        ):
+            fc.with_job("shot", 0, mock.Mock())
+
+    def test_a_job_limit_kills_the_command_and_frees_the_lock(self):
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+            self.assertRaisesRegex(fc.ClientError, "0.1 s"),
+        ):
+            fc.job(
+                argparse.Namespace(
+                    command=[sys.executable, "-c", "import time; time.sleep(30)"],
+                    label=None,
+                    timeout=0,
+                    manual_launcher=False,
+                    max=0.1,
+                )
+            )
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_down_inside_a_job_requests_stop_without_waiting(self):
+        self.holder(token="own")
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "own"}),
+            mock.patch.object(fc, "load_state", side_effect=AssertionError("must not wait")),
+        ):
+            self.assertEqual(fc.down(), 0)
+        self.assertTrue((self.state / fc.STOP).exists())
+
+    def test_release_removes_the_lease_record(self):
+        token = self.make_lease()
+        self.assertEqual(fc.release(token), 0)
+        self.assertFalse((self.state / "leases" / f"{token}.json").exists())
+
+    def test_a_job_timeout_escalates_to_kill(self):
+        clock = FakeClock()
+        process = mock.Mock(pid=123)
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("probe", 1),
+            -signal.SIGKILL,
+        ]
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc.subprocess, "Popen", return_value=process) as spawn,
+            mock.patch.object(fc.os, "killpg") as kill,
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "1 s limit"),
+        ):
+            fc.job(argparse.Namespace(command=["probe"], label=None, timeout=0, manual_launcher=False, max=1))
+        self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+        self.assertEqual(
+            [call for call in kill.call_args_list if call.args[1] != 0],
+            [
+                mock.call(123, signal.SIGTERM),
+                mock.call(123, signal.SIGKILL),
+            ],
+        )
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_waiting_for_a_session_reports_its_deadlines_and_reuse(self):
+        for holder, expected in (
+            (None, "session pid 42"),
+            ({"pid": 73, "label": "smoke legacy-forever", "token": "abc"}, "smoke legacy-forever (pid 73"),
+        ):
+            with (
+                self.subTest(holder=holder),
+                mock.patch.object(fc, "recover_links"),
+                mock.patch.object(fc, "current_session", return_value={"pid": 42, "started": 100, "ready": 200}),
+                mock.patch.object(fc, "job_holder", return_value=holder),
+                mock.patch.object(fc.time, "time", return_value=300),
+                mock.patch.object(fc, "wait_for_session", side_effect=fc.ClientError("stop test")),
+                contextlib.redirect_stderr(io.StringIO()) as out,
+                self.assertRaisesRegex(fc.ClientError, "stop test"),
+            ):
+                fc.serve(argparse.Namespace(wait=True, timeout=0))
+            self.assertIn(expected, out.getvalue())
+            self.assertIn("latest end 1970-01-01T03:01:40Z (177 min remaining)", out.getvalue())
+            self.assertIn("idle end 1970-01-01T00:13:20Z (8 min remaining)", out.getvalue())
+            self.assertIn("job/lease run inside the resident session now without --wait", out.getvalue())
+
+    def test_exited_job_leader_gives_its_child_time_to_handle_term(self):
+        completed = self.state / "child-finished"
+        ready = self.state / "child-ready"
+        child_code = (
+            "import signal, time; from pathlib import Path; "
+            f"signal.signal(signal.SIGTERM, lambda *_: (time.sleep(0.2), Path({str(completed)!r}).touch(), exit(0))); "
+            f"Path({str(ready)!r}).touch(); time.sleep(30)"
+        )
+        leader_code = (
+            "import subprocess, sys, time; from pathlib import Path; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            f"ready = Path({str(ready)!r}); "
+            "exec('while not ready.exists(): time.sleep(0.01)')"
+        )
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+        ):
+            result = fc.job(
+                argparse.Namespace(
+                    command=[sys.executable, "-c", leader_code],
+                    label=None,
+                    timeout=0,
+                    manual_launcher=False,
+                    max=5,
+                )
+            )
+        self.assertEqual(result, 0)
+        self.assertTrue(completed.exists(), "the child must finish its TERM handler before SIGKILL")
+
+    def test_teardown_clears_lease_records(self):
+        self.make_lease()
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc, "require_owned_prefix"),
+            mock.patch.object(fc, "stop_gamescope"),
+            mock.patch.object(fc, "prefix_snapshot", return_value={}),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+        ):
+            fc.teardown(None, {}, None, {})
+        self.assertEqual(list((self.state / "leases").iterdir()), [])
 
     def test_a_lease_ttl_is_capped(self):
         options = argparse.Namespace(ttl=fc.LEASE_MAX + 1, timeout=5, manual_launcher=False, label=None)
@@ -3860,12 +3995,12 @@ class BrokerTest(unittest.TestCase):
 
     def test_release_ends_only_the_lease_that_owns_the_token(self):
         self.holder(token="lease-token", label="a lease")
-        with self.assertRaisesRegex(fc.ClientError, "not the holder's"):
+        with self.assertRaisesRegex(fc.ClientError, "unknown lease"):
             fc.release("another-token")
 
     def test_release_refuses_a_job_that_is_not_a_lease(self):
         self.holder(token="job-token", label="smoke legacy-forever")
-        with self.assertRaisesRegex(fc.ClientError, "not a lease's"):
+        with self.assertRaisesRegex(fc.ClientError, "unknown lease"):
             fc.release("job-token")
 
     def test_a_resident_sessions_processes_are_not_a_busy_client(self):
@@ -3938,6 +4073,455 @@ class BrokerTest(unittest.TestCase):
             self.assertEqual(fc.down(), 0)
         stop.assert_called_once_with(state["pid"], state["start_ticks"], signal.SIGTERM)
         self.assertFalse((self.state / "stop").exists(), "a starting session has no resident loop to read the marker")
+
+
+class HyprlandJobTest(unittest.TestCase):
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+
+    def request(self, **extra) -> dict:
+        return {
+            "token": "job-token",
+            "pid": os.getpid(),
+            "start_ticks": fc.process_start(os.getpid()),
+            "maximum": 2,
+            "command": ["probe"],
+            "environ": {},
+            "label": "deskpilot#95",
+            "parent": "parent-signature",
+            **extra,
+        }
+
+    def test_an_absolute_point_gets_the_xwayland_offset_of_the_nested_output(self):
+        with mock.patch.object(fc.subprocess, "run") as run:
+            fc.x({"display": ":3", "origin": [1280, 0]}, "mousemove", "10", "20", "click", "1")
+            fc.x({"display": ":2"}, "mousemove", "10", "20")
+        self.assertEqual(run.call_args_list[0].args[0], ["xdotool", "mousemove", "1290", "20", "click", "1"])
+        self.assertEqual(run.call_args_list[1].args[0], ["xdotool", "mousemove", "10", "20"])
+
+    def nested(self, *, start_error=None):
+        module = mock.Mock()
+        module.NestedError = type("NestedError", (Exception,), {})
+        record = {
+            "signature": "nested-sig",
+            "wayland": "wayland-9",
+            "display": ":7",
+            "origin": [1280, 0],
+            "output": "FOREVER",
+            "pid": 1,
+            "birth": "1",
+            "run": "/nowhere",
+        }
+        if start_error:
+            module.start.side_effect = module.NestedError(start_error)
+        else:
+            module.start.return_value = record
+        module.running.return_value = True
+        module.window.return_value = {"address": "0xabc", "title": fc.GAME_WINDOW}
+        return module
+
+    def serve_with(self, hyprland_job):
+        """Run serve with one Hyprland request waiting; returns the order of lock and job steps."""
+        config = self.state / "env.json"
+        config.write_text(
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},'
+            '"character":{"name":"Parked","guid":"1","require_resting":true}}'
+        )
+        client = self.state / "client"
+        (client / "Interface/AddOns").mkdir(parents=True)
+        fc.atomic_write(self.state / fc.HYPRLAND_REQUEST, json.dumps(self.request()))
+        clock = FakeClock()
+        order = []
+
+        def acquire(timeout, label, **_kwargs):
+            self.assertIsNone(timeout)
+            order.append(("acquire", label))
+            return mock.Mock(), "own-token"
+
+        def release(_handle, token, ended=True):
+            order.append(("release", token, fc.read_job_record()))
+
+        def lease(*args):
+            order.append(("job", fc.read_job_record()["token"], True))
+            (self.state / fc.HYPRLAND_REQUEST).unlink()
+            return hyprland_job(*args)
+
+        gamescope = mock.Mock(pid=123)
+        gamescope.poll.return_value = None
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(fc, "CONFIG", config))
+            stack.enter_context(mock.patch.object(fc, "CLIENT", client))
+            stack.enter_context(mock.patch.object(fc, "nvidia_mismatch", return_value=None))
+            stack.enter_context(mock.patch.object(fc, "prefix_users", return_value=[]))
+            stack.enter_context(mock.patch.object(fc.socket, "create_connection"))
+            stack.enter_context(mock.patch.object(fc.signal, "signal"))
+            stack.enter_context(mock.patch.object(fc, "runtime_dir", return_value=self.state / "runtime"))
+            stack.enter_context(mock.patch.object(fc, "screenshots", return_value=set()))
+            stack.enter_context(
+                mock.patch.object(
+                    fc, "child_env", return_value={"DISPLAY": ":3", "GAMESCOPE_WAYLAND_DISPLAY": "private"}
+                )
+            )
+            stack.enter_context(mock.patch.object(fc, "wait_for_world", return_value=Path("ready.png")))
+            stack.enter_context(mock.patch.object(fc, "teardown", side_effect=lambda *a: order.append("teardown")))
+            stack.enter_context(mock.patch.object(fc, "acquire_job", side_effect=acquire))
+            stack.enter_context(mock.patch.object(fc, "release_job", side_effect=release))
+            stack.enter_context(mock.patch.object(fc, "hyprland_job", side_effect=lease))
+            stack.enter_context(mock.patch.object(fc, "client_ui", return_value={"world": True}))
+            stack.enter_context(mock.patch.object(fc, "MAX_SESSION", 10))
+            stack.enter_context(mock.patch.object(fc, "IDLE_LIMIT", 10**9))
+            stack.enter_context(mock.patch.object(fc.time, "monotonic", clock.monotonic))
+            stack.enter_context(mock.patch.object(fc.time, "sleep", clock.sleep))
+            stack.enter_context(mock.patch.object(fc.time, "time", return_value=1000.0))
+            stack.enter_context(mock.patch.object(fc.subprocess, "Popen", return_value=gamescope))
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            try:
+                result = fc.up(args())
+            except fc.ClientError as error:
+                result = error
+        return result, order
+
+    def test_a_failed_return_ends_the_session_so_the_next_job_starts_fresh(self):
+        def failed(*_args):
+            raise fc.ClientError("the world did not load within 600 s")
+
+        result, order = self.serve_with(failed)
+        self.assertIsInstance(result, fc.ClientError)
+        self.assertEqual(order[-2:], ["teardown", ("release", "job-token", order[-1][2])])
+        self.assertFalse(fc.session_lock_held(), "serve released the session lock, so a job can start a new one")
+
+    def run_hyprland(self, failure=None, return_failure=False, cancelled=False, crashed=False, start_error=None):
+        module = self.nested(start_error=start_error)
+        state = live_state(mode="gamescope", display=":2", ready=1, token="session", runtime_dir="/run/user/1")
+        order = []
+        client = mock.Mock(pid=555, poll=mock.Mock(return_value=None))
+        returned = mock.Mock(pid=777)
+
+        def end(_display, _wine, state):
+            order.append(("end", state["mode"]))
+            fc.stop_nested(state)
+
+        def launch(*_args):
+            order.append("gamescope")
+            if return_failure:
+                raise fc.ClientError("return failed")
+            state.update(mode="gamescope", display=":2")
+            return returned
+
+        def run(command, env, maximum, check):
+            order.append("command")
+            self.assertEqual(command, ["probe"])
+            self.assertEqual(maximum, 2)
+            self.assertEqual(env["FOREVER_CLIENT_JOB"], "job-token")
+            self.assertEqual(env["HYPRLAND_INSTANCE_SIGNATURE"], "nested-sig")
+            self.assertEqual(env["WAYLAND_DISPLAY"], "wayland-9")
+            self.assertEqual(env["DISPLAY"], ":7")
+            self.assertEqual(env["FOREVER_CLIENT_WINDOW"], "0xabc")
+            if cancelled:
+                (self.state / fc.HYPRLAND_END).write_text("job-token")
+            if crashed:
+                module.running.return_value = False
+            check()
+            if failure:
+                raise failure
+            return 7
+
+        with (
+            mock.patch.object(fc, "nested_hyprland", return_value=module),
+            mock.patch.object(fc, "end_client", side_effect=end),
+            mock.patch.object(fc, "launch_gamescope", side_effect=launch),
+            mock.patch.object(fc, "reach_world", side_effect=lambda *a, **kw: order.append(("world", a[0]["mode"]))),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc, "run_job_command", side_effect=run),
+            mock.patch.object(fc.subprocess, "Popen", return_value=client),
+        ):
+            try:
+                result = fc.hyprland_job(self.request(), mock.Mock(), {}, {}, {"umu_run": "umu"}, None, state)
+            except KeyboardInterrupt:
+                self.assertNotIn("gamescope", order)
+                self.assertEqual(order.count(("world", "hyprland")), 1)
+                raise
+        self.assertIs(result, returned)
+        self.assertEqual(
+            order,
+            [
+                ("end", "gamescope"),
+                *([] if start_error else [("world", "hyprland"), "command"]),
+                ("end", "hyprland"),
+                "gamescope",
+                ("world", "gamescope"),
+            ],
+        )
+        if start_error:
+            module.stop.assert_not_called()
+        else:
+            module.stop.assert_called_once()
+        self.assertNotIn("origin", state)
+        return fc.read_hyprland_json(f"{fc.HYPRLAND_RESULT}-job-token.json")
+
+    def test_command_runs_with_nested_environment_and_returns_before_result(self):
+        self.assertEqual(self.run_hyprland()["code"], 7)
+
+    def test_timeout_cancel_and_nested_crash_all_return(self):
+        for options, message in [
+            ({"failure": fc.ClientError("job exceeded its 2 s limit")}, "exceeded"),
+            ({"cancelled": True}, "cancelled"),
+            ({"crashed": True}, "exited"),
+        ]:
+            with self.subTest(options=options):
+                (self.state / fc.HYPRLAND_END).unlink(missing_ok=True)
+                self.assertIn(message, self.run_hyprland(**options)["error"])
+
+    def test_failed_nested_start_returns_and_reports_the_error(self):
+        self.assertIn("no XWayland", self.run_hyprland(start_error="no XWayland")["error"])
+
+    def test_failed_return_does_not_publish_completion(self):
+        with self.assertRaisesRegex(fc.ClientError, "return failed"):
+            self.run_hyprland(return_failure=True)
+        self.assertIsNone(fc.read_hyprland_json(f"{fc.HYPRLAND_RESULT}-job-token.json"))
+
+    def test_hyprland_is_a_job_option_and_lease_rejects_it(self):
+        with mock.patch.object(fc, "job", return_value=0) as job:
+            self.assertEqual(fc.main(["job", "--hyprland", "--max", "20", "--", "probe"]), 0)
+        self.assertTrue(job.call_args.args[0].hyprland)
+        self.assertEqual(job.call_args.args[0].max, 20)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            fc.main(["lease", "--hyprland"])
+
+    def test_dead_request_is_not_run(self):
+        fc.atomic_write(self.state / fc.HYPRLAND_REQUEST, json.dumps(self.request(pid=-1)))
+        self.assertIsNone(fc.hyprland_request())
+
+    def test_nested_screenshot_uses_grim_on_its_output(self):
+        state = {"mode": "hyprland", "runtime_dir": str(self.state), "nested": self.nested().start.return_value}
+        with (
+            mock.patch.object(fc.subprocess, "run") as run,
+            mock.patch.object(fc, "_complete_png", return_value=True),
+            mock.patch.object(fc, "mark"),
+        ):
+            fc.shot(state, self.state / "frame.png")
+        self.assertEqual(run.call_args.args[0][:3], ["grim", "-o", "FOREVER"])
+        self.assertEqual(run.call_args.kwargs["env"]["WAYLAND_DISPLAY"], "wayland-9")
+
+    def test_requester_cancellation_waits_until_return_result(self):
+        module = self.nested()
+        module.user_instance.return_value = "parent-signature"
+        clock = FakeClock()
+        ticks = []
+
+        def tick(seconds):
+            ticks.append(seconds)
+            request = fc.hyprland_request()
+            if len(ticks) == 1:
+                raise KeyboardInterrupt
+            self.assertTrue(fc.hyprland_cancelled(request))
+            fc.atomic_write(
+                self.state / f"{fc.HYPRLAND_RESULT}-{request['token']}.json",
+                json.dumps({"token": request["token"], "code": 0}),
+            )
+            clock.sleep(seconds)
+
+        with (
+            mock.patch.object(fc, "nested_hyprland", return_value=module),
+            mock.patch.object(fc, "ensure_session"),
+            mock.patch.object(fc, "current_session", return_value=live_state()),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", side_effect=tick),
+        ):
+            code = fc.request_hyprland_job(
+                argparse.Namespace(timeout=10, label=None, manual_launcher=False), ["probe"], 2
+            )
+        self.assertEqual(code, 130)
+        self.assertEqual(len(ticks), 2)
+
+    def test_queue_time_does_not_consume_transition_budget_and_result_is_removed(self):
+        clock = FakeClock()
+        holder = {}
+        module = self.nested()
+        module.user_instance.return_value = "parent-signature"
+        result_path = self.state / f"{fc.HYPRLAND_RESULT}-job-token.json"
+        ticks = []
+
+        def tick(seconds):
+            ticks.append(seconds)
+            if len(ticks) == 1:
+                clock.sleep(fc.HYPRLAND_WORLD_WAIT + fc.HYPRLAND_RETURN_WAIT + 100)
+            elif len(ticks) == 2:
+                holder["token"] = "job-token"
+                (self.state / fc.HYPRLAND_REQUEST).unlink()
+            else:
+                result_path.write_text(json.dumps({"token": "job-token", "code": 7}))
+
+        with (
+            mock.patch.object(fc, "nested_hyprland", return_value=module),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "ensure_session"),
+            mock.patch.object(fc, "job_holder", side_effect=lambda: holder),
+            mock.patch.object(fc, "current_session", return_value=live_state()),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", side_effect=tick),
+        ):
+            self.assertEqual(
+                fc.request_hyprland_job(
+                    argparse.Namespace(timeout=5000, label=None, manual_launcher=False), ["probe"], 2
+                ),
+                7,
+            )
+        self.assertFalse(result_path.exists())
+        self.assertFalse((self.state / fc.HYPRLAND_END).exists())
+
+    def test_pending_request_wait_is_bounded_by_timeout(self):
+        clock = FakeClock()
+        module = self.nested()
+        module.user_instance.return_value = "parent-signature"
+        with (
+            mock.patch.object(fc, "nested_hyprland", return_value=module),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "ensure_session"),
+            mock.patch.object(fc, "job_holder", return_value={"token": "other-job"}),
+            mock.patch.object(fc, "current_session", return_value=live_state()),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", side_effect=clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "within --timeout"),
+        ):
+            fc.request_hyprland_job(argparse.Namespace(timeout=2, label=None, manual_launcher=False), ["probe"], 2)
+        self.assertLess(clock.now, 2 + fc.JOB_POLL + 0.01)
+
+    def test_requester_removes_error_result_without_writing_end_marker(self):
+        module = self.nested()
+        module.user_instance.return_value = "parent-signature"
+        result_path = self.state / f"{fc.HYPRLAND_RESULT}-job-token.json"
+        result_path.write_text(json.dumps({"token": "job-token", "code": 1, "error": "job failed"}))
+        with (
+            mock.patch.object(fc, "nested_hyprland", return_value=module),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "job-token")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "ensure_session"),
+            self.assertRaisesRegex(fc.ClientError, "job failed"),
+        ):
+            fc.request_hyprland_job(argparse.Namespace(timeout=2, label=None, manual_launcher=False), ["probe"], 2)
+        self.assertFalse(result_path.exists())
+        self.assertFalse((self.state / fc.HYPRLAND_END).exists())
+
+    def test_completed_job_removes_its_end_marker(self):
+        self.run_hyprland(cancelled=True)
+        self.assertFalse((self.state / fc.HYPRLAND_END).exists())
+
+    def test_teardown_clears_hyprland_leftovers(self):
+        names = [fc.HYPRLAND_END, fc.HYPRLAND_REQUEST, f"{fc.HYPRLAND_RESULT}-old.json"]
+        for name in names:
+            (self.state / name).write_text("leftover")
+        with mock.patch.object(fc, "end_client"):
+            fc.teardown(None, {}, None, {})
+        for name in names:
+            self.assertFalse((self.state / name).exists())
+
+    def test_serve_interrupt_publishes_error_without_returning_to_gamescope(self):
+        result_path = self.state / f"{fc.HYPRLAND_RESULT}-job-token.json"
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_hyprland(failure=KeyboardInterrupt())
+        self.assertIn("interrupted", json.loads(result_path.read_text())["error"])
+
+    def test_serve_releases_only_after_successful_return(self):
+        result, order = self.serve_with(lambda *_args: mock.Mock(pid=124, poll=mock.Mock(return_value=None)))
+        self.assertEqual(result, 0)
+        self.assertEqual(order[0], ("acquire", "deskpilot#95"))
+        self.assertEqual(order[1], ("job", "job-token", True))
+        self.assertEqual(order[2][:2], ("release", "job-token"))
+
+    def test_monitored_command_limit_uses_the_group_cleanup(self):
+        clock = FakeClock()
+        process = mock.Mock(pid=4242)
+
+        def wait(timeout=None):
+            if timeout is None:
+                return 0
+            clock.sleep(timeout)
+            raise subprocess.TimeoutExpired("probe", timeout)
+
+        process.wait.side_effect = wait
+        check = mock.Mock()
+        with (
+            mock.patch.object(fc.subprocess, "Popen", return_value=process),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.os, "killpg", side_effect=ProcessLookupError) as kill,
+            self.assertRaisesRegex(fc.ClientError, "0.3 s limit"),
+        ):
+            fc.run_job_command(["probe"], {}, 0.3, check)
+        self.assertGreaterEqual(check.call_count, 2)
+        self.assertEqual(kill.call_args_list[0].args, (4242, signal.SIGTERM))
+        self.assertEqual(kill.call_args_list[-1].args, (4242, signal.SIGKILL))
+
+
+class NestedHyprlandTest(unittest.TestCase):
+    def setUp(self):
+        self.module = fc.nested_hyprland()
+
+    def test_config_has_only_the_private_outputs_and_no_autostarts(self):
+        config = self.module.config(1920, 1080)
+        self.assertIn('output = "FOREVER", mode = "1920x1080", position = "0x0"', config)
+        self.assertNotIn("exec", config)
+        self.assertNotIn("plugin", config)
+        self.assertEqual(self.module.WORKSPACE, "special:forever-client")
+
+    def test_xwayland_origin_comes_from_the_named_output(self):
+        with mock.patch.object(
+            self.module.subprocess,
+            "run",
+            return_value=mock.Mock(
+                stdout="Monitors: 2\n 0: +OTHER 1280/1x800/1+0+0 OTHER\n 1: +FOREVER 1920/1x1080/1+1280+0 FOREVER\n"
+            ),
+        ) as run:
+            self.assertEqual(self.module.xwayland_origin(":7"), [1280, 0])
+        self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":7")
+
+    def test_discovery_matches_the_pid_and_checks_its_hidden_workspace(self):
+        run = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (run / "pid").write_text("42")
+        runtime = run / "runtime"
+        (runtime / "ours").mkdir(parents=True)
+        (runtime / "other").mkdir()
+        events = mock.Mock()
+        events.recv.return_value = b"openwindow>>abc,special:forever-client,aquamarine,Nested\n"
+        workspace = {"name": self.module.WORKSPACE}
+
+        def ctl(signature, *args):
+            if args == ("-j", "instances"):
+                return json.dumps(
+                    [{"instance": "other", "pid": 99}, {"instance": "ours", "pid": 42, "wl_socket": "wayland-9"}]
+                )
+            if args == ("-j", "clients"):
+                return json.dumps([{"pid": 42, "workspace": workspace}])
+            if args == ("-j", "monitors"):
+                return '[{"name": "FOREVER"}]'
+            return "ok"
+
+        with (
+            mock.patch.object(self.module, "RUNTIME", runtime),
+            mock.patch.object(self.module, "alive", return_value=True),
+            mock.patch.object(self.module, "hyprctl", side_effect=ctl),
+            mock.patch.object(self.module, "process_birth", return_value="birth"),
+            mock.patch.object(self.module, "xwayland_display", return_value=":7"),
+            mock.patch.object(self.module, "xwayland_origin", return_value=[1280, 0]),
+        ):
+            record = self.module.started(events, run, set(), 1920, 1080, "parent")
+            self.assertEqual(record["signature"], "ours")
+            workspace["name"] = "1"
+            with self.assertRaisesRegex(self.module.NestedError, "not on special"):
+                self.module.started(events, run, set(), 1920, 1080, "parent")
+
+    def test_stop_never_signals_a_reused_pid(self):
+        with (
+            mock.patch.object(self.module, "alive", return_value=False),
+            mock.patch.object(self.module, "process_birth", return_value="new-birth"),
+            mock.patch.object(self.module.os, "kill") as kill,
+        ):
+            self.module.stop({"pid": 42, "birth": "old-birth", "signature": "old", "run": "/nonexistent"})
+        kill.assert_not_called()
 
 
 if __name__ == "__main__":
