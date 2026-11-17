@@ -1,10 +1,10 @@
 {
-  "input_digest": "2c4496a66a4ad56bc96728c93b09dac92fa0e2f6c7003cbdc740c269e780974a",
-  "runtime_sha256": "2c4496a66a4ad56bc96728c93b09dac92fa0e2f6c7003cbdc740c269e780974a",
-  "candidate": "6ace6719908c2f4a29e14ea3d289f9f00dfea5a6914dd96604a80e118a981974",
+  "input_digest": "d11e13b39529a6b1dd211ef69f1cdc1508e78d5a2952e3428e5d44bebfd4dde8",
+  "runtime_sha256": "d11e13b39529a6b1dd211ef69f1cdc1508e78d5a2952e3428e5d44bebfd4dde8",
+  "candidate": "1b584fe048a9fde4fc97c3ebeaa1fdf8ae85df07a8bf03185282ab0cb5178eec",
   "client_build": "1.60.1.70938 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "633ae88adc23303e1a92d42e907d2233bab4eeee",
+  "source_commit": "4875ccfaa86641e9993ea30e28c4b2fb722233dd",
   "flows": [
     {
       "name": "questie defers",
@@ -51,28 +51,28 @@
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/1-questie-defers.png",
-      "sha256": "6da0b018666d6c5a9fbb8699a01fba6b37e78097f01b3665065b28af35ef2b43"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/1-questie-defers.png",
+      "sha256": "1e80744270a0567aca0fb5e20df2fe54651e4fce7b17503eae1af12ee21df388"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/2-questie-tracker-off.png",
-      "sha256": "1d0244c85c2992d935ebb14fbae6a9634c2fe708aee49ea46c767882873bd36d"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/2-questie-tracker-off.png",
+      "sha256": "237cfe0531e2e77cc5223ad5030b7a89116d3c2b1edb0fddb4cbb624e01bfb24"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/3-tracker-menu-quest-list-switch.png",
-      "sha256": "d906d4daf04ee7794258e4e9b89b82d612da2426a5535b2b602c06941118b1d2"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/3-tracker-menu-quest-list-switch.png",
+      "sha256": "9ca1a0c2c6c22f16b8963cad8675807ef77521c94e012208d0f1b46446535976"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/4-suite-mute-defers.png",
-      "sha256": "700786c608ce7a5f07cd5724202ea4f6c44fc7ff9305d5cd480ecebde0670604"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/4-suite-mute-defers.png",
+      "sha256": "02fd9acd09681eb48eeae6a27c3950d72c73c020d570472034371dc599c74975"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/5-restore-list.png",
-      "sha256": "6e71d179898f0fc9ef80cb08df4cb253282a7d71dc8a1c8dfe2755e0335f1a6f"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/5-restore-list.png",
+      "sha256": "b8c55248cbc51364cf21a789ee6ce1ca02e695a7787e72c63edc89cc4e2351b3"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/7a651a03ac06863c4e7eb395bfbe7f6b/raw/79fa50aa337c865b6e8d4a32da601c3078de71e2/6-questie-tracker-on.png",
-      "sha256": "bbcf0632b79e90a32b3818f6e53bff51b42ed2d115ebf753c68bd8d58c5c9489"
+      "url": "https://gist.githubusercontent.com/cjber/2bd68c6ca9238a79fcca10365cca7410/raw/72048bdca566ba0fdaf5bb20206777c36af16973/6-questie-tracker-on.png",
+      "sha256": "e2018f5996ed54f34644ea79689417023f1a1574b7b10bee79a42d8f3a57996b"
     }
   ]
 }
