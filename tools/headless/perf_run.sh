@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Profile one headless session. Link !!DevPerf and !!DevSmoke in the client's Interface/AddOns first.
-# The /forever command belongs to a consumer addon; forever_client.py checks its SLASH_ registration before sending.
+# The /forever command belongs to a consumer addon, which must be installed for the command to run.
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

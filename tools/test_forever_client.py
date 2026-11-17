@@ -196,10 +196,13 @@ class ForeverClientTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(fc, "load_state", return_value={}):
             self.assertEqual(fc.main(["status"]), 0)
 
-    def test_character_config_requires_explicit_identity_and_resting(self):
-        valid = {"character": {"name": "Barry", "guid": "Player-1", "require_resting": True}}
-        self.assertEqual(fc.character_config(valid)["guid"], "Player-1")
-        for value in ({}, {"character": {}}, {"character": {"name": "Barry", "guid": "Player-1"}}):
+    def test_character_config_requires_explicit_identity_only(self):
+        valid = {"character": {"name": "Barry", "guid": "Player-1"}}
+        self.assertEqual(fc.character_config(valid), {"name": "Barry", "guid": "Player-1"})
+        # An older record's resting flag is ignored: nothing gates where the character stands (#809).
+        older = {"character": {"name": "Barry", "guid": "Player-1"}}
+        self.assertEqual(fc.character_config(older), {"name": "Barry", "guid": "Player-1"})
+        for value in ({}, {"character": {}}, {"character": {"name": "Barry"}}):
             with self.assertRaises(fc.ClientError):
                 fc.character_config(value)
 
@@ -215,7 +218,7 @@ class ForeverClientTest(unittest.TestCase):
         (source / "ForeverHeadless.lua").write_text("-- fixture\n")
         with mock.patch.object(fc, "ADDON", source):
             with self.assertRaises(fc.ClientError):
-                fc.prepare_headless_addon({"name": "Bad\x00", "guid": "Player-1", "require_resting": True})
+                fc.prepare_headless_addon({"name": "Bad\x00", "guid": "Player-1"})
         self.assertFalse((self.state / "headless-addon").exists())
 
     def test_readiness_marker_accepts_native_jpeg_and_rejects_incomplete_png(self):
@@ -389,7 +392,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_up_releases_its_lock_before_reporting_a_startup_failure(self):
         config = self.state / "env.json"
         config.write_text(
-            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -417,7 +420,7 @@ class ForeverClientTest(unittest.TestCase):
         config = self.state / "env.json"
         config.write_text(
             '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner","GAMEID":"umu-x","DISPLAY":":host",'
-            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
+            '"WAYLAND_DISPLAY":"host","XDG_RUNTIME_DIR":"/stale/runtime"},"character":{"name":"Tester","guid":"Player-1"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -474,7 +477,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_an_interrupt_right_after_spawn_still_gives_teardown_the_session_token(self):
         config = self.state / "env.json"
         config.write_text(
-            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1","require_resting":true}}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Tester","guid":"Player-1"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -713,46 +716,12 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("after waiting 5 s", err.getvalue())
         self.assertIn("smoke legacy-forever", err.getvalue())
 
-    def test_slash_sends_only_the_addons_commands_and_ui_ones(self):
-        addons = self.state / "AddOns"
-        (addons / "!!DevSmoke").mkdir(parents=True)
-        (addons / "!!DevSmoke/Core.lua").write_text('SLASH_DEVSMOKE1 = "/devsmoke"\n')
-        (addons / "FieldGuideForever").mkdir(parents=True)
-        (addons / "FieldGuideForever/Core.lua").write_text('SLASH_FIELDGUIDEFOREVER1 = "/fgf"\n')
-        (addons / "ForeverCore").mkdir()
-        (addons / "ForeverCore/Expose.lua").write_text('SLASH_FOREVERCORE1 = "/fcore"\n')
-        (addons / "SomeoneElse").mkdir()
-        (addons / "SomeoneElse/Core.lua").write_text('SLASH_OTHER1 = "/other"\n')
-        for ok in ("/fgf", "/FGF reset", "/fcore", "/reload", "/devsmoke eval"):
-            fc.allowed_command(ok, addons)
-        for refused in (
-            "/other",
-            "/s hello",
-            "/run print(1)",
-            "/dump x",
-            "/follow",
-            "/cast Fireball",
-            "/fgf\n/s hi",
-            "hello",
-            "",
-        ):
+    def test_slash_sends_any_one_line_slash_command(self):
+        for ok in ("/fgf", "/use Hearthstone", "/run print(1)", "/cast Fireball", "/reload"):
+            fc.one_line_slash(ok)
+        for refused in ("/fgf\n/s hi", "hello", "", "  "):
             with self.subTest(refused), self.assertRaises(fc.ClientError):
-                fc.allowed_command(refused, addons)
-
-    def test_slash_reads_a_conditional_and_a_plain_slash_assignment(self):
-        addons = self.state / "AddOns"
-        (addons / "TweaksForever").mkdir(parents=True)
-        (addons / "TweaksForever/UI").mkdir()
-        (addons / "TweaksForever/UI/Leaderboards.lua").write_text(
-            'local foreverTaken = false\nSLASH_FOREVERLEADERBOARDS1 = not foreverTaken and "/forever" or nil\n'
-        )
-        (addons / "SkillUpForever").mkdir()
-        (addons / "SkillUpForever/Core.lua").write_text('SLASH_SKILLUPFOREVER1 = "/path"\n')
-        for ok in ("/forever", "/forever selftest", "/path", "/path reset"):
-            fc.allowed_command(ok, addons)
-        for refused in ("/run print(1)", "/dump x", "/fgf"):
-            with self.subTest(refused), self.assertRaises(fc.ClientError):
-                fc.allowed_command(refused, addons)
+                fc.one_line_slash(refused)
 
     def test_live_protocol_decodes_exact_bits_without_authorizing_a_click(self):
         row = bytearray(52 * 3)
@@ -819,15 +788,25 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.resident_world_check(state, 100 - fc.WORLD_CHECK), (100, "the client left the world"))
             self.assertEqual(state, {"ready": 1})
 
-    def test_game_menu_click_is_refused_before_any_mouse_input(self):
+    def test_click_closes_a_game_menu_before_the_mouse_input(self):
         with (
             mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 0),
-            mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True}),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(
+                fc,
+                "client_ui",
+                side_effect=[{"world": True, "menu": True}, {"world": True, "menu": False}],
+            ),
             mock.patch.object(fc, "x") as x,
         ):
-            with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
-                fc.click({"ready": True}, 960, 540, "1")
-        x.assert_not_called()
+            fc.click({"ready": True}, 960, 540, "1")
+        self.assertEqual(
+            x.call_args_list,
+            [
+                mock.call({"ready": True}, "key", "Escape"),
+                mock.call({"ready": True}, "mousemove", "960", "540", "click", "1"),
+            ],
+        )
 
     def test_logout_never_types_into_a_login_screen(self):
         with (
@@ -841,7 +820,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_slash_requires_confirmed_chat_focus(self):
         with (
             mock.patch.object(fc, "send") as send,
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc.time, "sleep"),
             mock.patch.object(
                 fc,
@@ -863,22 +842,26 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
 
-    def test_slash_refuses_a_menu_that_will_not_close_without_typing(self):
+    def test_slash_types_nothing_while_a_menu_will_not_close(self):
         with (
             mock.patch.object(fc, "send") as send,
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc.time, "sleep"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": True, "chat": False}),
         ):
-            with self.assertRaisesRegex(fc.ClientError, "Game Menu"):
+            with self.assertRaisesRegex(fc.ClientError, "did not acquire focus"):
                 fc.slash({}, "/reload")
-        self.assertEqual(send.call_args_list, [mock.call({}, "key", "Escape")] * fc.MENU_CLOSE_TRIES)
+        self.assertEqual(
+            send.call_args_list,
+            [mock.call({}, "key", "Escape")] * fc.MENU_CLOSE_TRIES
+            + [mock.call({}, "key", key) for key in ("Return", "Escape", "Return")],
+        )
 
     def test_slash_closes_a_game_menu_an_earlier_job_left_open(self):
         # #727: a job that ended at the Game Menu must not make the next job's slash refuse.
         with (
             mock.patch.object(fc, "send") as send,
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc.time, "sleep"),
             mock.patch.object(
                 fc,
@@ -925,10 +908,10 @@ class ForeverClientTest(unittest.TestCase):
             fc.reload({})
         self.assertIn(earlier, wait.call_args.args[0], "it cannot pass as this reload's world load")
 
-    def test_key_sends_only_ui_keys(self):
-        with mock.patch.object(fc, "x") as x, self.assertRaisesRegex(fc.ClientError, "refused w"):
-            fc.press({}, ["Escape", "w"])
-        x.assert_not_called()
+    def test_key_sends_any_key(self):
+        with mock.patch.object(fc, "x") as x, mock.patch.object(fc.time, "sleep"):
+            fc.press({}, ["w", "Escape"])
+        self.assertEqual(x.call_args_list, [mock.call({}, "key", "w"), mock.call({}, "key", "Escape")])
 
     def test_press_play_clicks_the_screenshot_bound_play_label(self):
         state = {"display": ":1"}
@@ -1384,27 +1367,6 @@ class ForeverClientTest(unittest.TestCase):
         ):
             self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
         scroll.assert_called_once_with(state, 960, 540, -4, [])
-
-    def test_manual_launcher_click_refuses_when_game_process_has_started(self):
-        (self.state / "last-input").touch()
-        (self.state / "last-shot").touch()
-        started = False
-
-        def start_game(unused):
-            nonlocal started
-            started = True
-
-        with (
-            mock.patch.object(
-                fc, "mark", side_effect=lambda name: fc.time.time() + (0.1 if name == "last-shot" else 0)
-            ),
-            mock.patch.object(fc.time, "sleep", side_effect=start_game),
-            mock.patch.object(fc, "client_pid", side_effect=lambda: 456 if started else None),
-            mock.patch.object(fc, "x") as x,
-            self.assertRaisesRegex(fc.ClientError, "game has started"),
-        ):
-            fc.click({"manual_launcher": True}, 100, 100, "1")
-        x.assert_not_called()
 
     def test_inputs_are_spaced_out(self):
         sleeps = []
@@ -2478,7 +2440,7 @@ class SmokeTest(unittest.TestCase):
         self.assertFalse((self.addons / "LegacyForever").exists())
 
     def test_a_refused_selftest_posts_nothing(self):
-        refused = mock.Mock(side_effect=fc.ClientError("slash refused: outside the world or Game Menu is shown"))
+        refused = mock.Mock(side_effect=fc.ClientError("slash refused: the chat edit box did not acquire focus"))
         code, printed, _build = self.run_smoke(slash=refused)
         self.assertEqual(code, 2)
         self.posted.assert_not_called()
@@ -3023,7 +2985,7 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc, "CLIENT", client),
             mock.patch.object(fc, "STATE_DIR", state_dir),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc, "reload", side_effect=fake_reload),
             mock.patch.object(fc, "clear_eval_inbox"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": False}),
@@ -3047,7 +3009,7 @@ class ProofHelpersTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "reload"),
             mock.patch.object(fc, "clear_eval_inbox"),
@@ -3073,7 +3035,7 @@ class ProofHelpersTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
-            mock.patch.object(fc, "allowed_command") as allowed,
+            mock.patch.object(fc, "one_line_slash") as allowed,
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "reload") as reload,
             mock.patch.object(fc, "clear_eval_inbox") as clear,
@@ -3102,7 +3064,7 @@ class ProofHelpersTest(unittest.TestCase):
         with (
             mock.patch.object(fc, "CLIENT", self.state / "client"),
             mock.patch.object(fc, "devsmoke_eval", return_value=tool),
-            mock.patch.object(fc, "allowed_command"),
+            mock.patch.object(fc, "one_line_slash"),
             mock.patch.object(fc, "screenshots", return_value=set()),
             mock.patch.object(fc, "reload"),
             mock.patch.object(fc, "clear_eval_inbox"),
@@ -3393,7 +3355,7 @@ class ProofTest(unittest.TestCase):
         self.addons = self.client / "Interface/AddOns"
         self.addons.mkdir(parents=True)
         self.enterContext(mock.patch.object(fc, "CLIENT", self.client))
-        self.enterContext(mock.patch.object(fc, "allowed_command"))
+        self.enterContext(mock.patch.object(fc, "one_line_slash"))
         self.workspace = self.state / "workspace"
         (self.workspace / "legacy-forever").mkdir(parents=True)
         self.enterContext(mock.patch.object(fc, "WORKSPACE", self.workspace))
@@ -3910,9 +3872,7 @@ class BrokerTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "LAUNCHER_SOURCES", {}))
         config = self.state / "env.json"
         config.write_text(
-            '{"umu_run":"/faugus/umu-run",'
-            '"env":{"PROTONPATH":"/runner"},'
-            '"character":{"name":"Parked","guid":"1","require_resting":true}}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Parked","guid":"1"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)
@@ -4492,8 +4452,7 @@ class HyprlandJobTest(unittest.TestCase):
         """Run serve with one Hyprland request waiting; returns the order of lock and job steps."""
         config = self.state / "env.json"
         config.write_text(
-            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},'
-            '"character":{"name":"Parked","guid":"1","require_resting":true}}'
+            '{"umu_run":"/faugus/umu-run","env":{"PROTONPATH":"/runner"},"character":{"name":"Parked","guid":"1"}}'
         )
         client = self.state / "client"
         (client / "Interface/AddOns").mkdir(parents=True)

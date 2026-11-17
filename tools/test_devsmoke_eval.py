@@ -142,10 +142,6 @@ assert(snippet()(), 'cached parser commands work')
         self.assertLess(ev.SLASH_READY_LIMIT, limit)
         self.assertIn(f"GetTime() - started >= {ev.SLASH_READY_LIMIT}", ev.slash_source("/lf"))
 
-    def test_generated_builtin_commands_match_client_allowlist(self):
-        commands = set(re.findall(r"word == '([^']+)'", ev.slash_source("/lf")))
-        self.assertEqual(commands, ev.client().UI_COMMANDS)
-
     def test_builtin_proof_commands_do_not_wait_for_addon_registration(self):
         script = (
             "SlashCmdList = {}; GetTime=function() return 0 end; "

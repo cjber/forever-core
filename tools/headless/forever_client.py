@@ -22,7 +22,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
     forever_client.py click X Y --hold shift [--hold ctrl]
                                           # hold shift, ctrl or alt through a click, hover or scroll; released after
-    forever_client.py key Escape          # Return, Escape or BackSpace
+    forever_client.py key Escape          # any key xdotool names
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
@@ -61,7 +61,7 @@ A missing full commit SHA fetches origin once and retries resolution for smoke, 
 
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
-`!!DevSmoke` (a Forever addon's own slash command, or a Lua file), takes a screenshot after each, uploads the PNGs to a
+`!!DevSmoke` (a slash command, or a Lua file), takes a screenshot after each, uploads the PNGs to a
 new secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
 each image's sha256, then checks the installed folder with `visual_proof --compare`. It never commits or pushes the
 checkout. A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
@@ -106,13 +106,13 @@ agent's session is reused and its job is waited for up to `--timeout`; only the 
 
 The client is for testing the Forever addons' interface, never for playing, and the verbs hold to that:
 
-- Interface only. There is no free typing: `slash` sends only the Forever addons' own commands (read from their
-  `SLASH_` globals) and the UI debugging ones in UI_COMMANDS, `key` sends only UI_KEYS, and `click` and `scroll` need
-  a screenshot taken since the last input, so every input aims at UI the agent has just seen. `slash` puts the
-  keyboard back in the chat box first, so a focused addon EditBox cannot swallow the command.
+- Any input. `slash` sends any one-line slash command and `key` any key, so a check can use the character's own
+  items and keybinds or move it where the check needs it. `click` and `scroll` need a screenshot taken since the
+  last input, so every input aims at what the agent has just seen. `slash` puts the keyboard back in the chat box
+  first, so a focused addon EditBox cannot swallow the command, and `click` and `slash` close a Game Menu left open.
 - `--manual-launcher` (`serve`, `up`, `job`, `run`, `lease`, `smoke`, `proof`) disables OCR clicks and permits shots
-  and left clicks before READY, only while the game process is absent. Inspect each private screenshot before
-  clicking. Never click Uninstall or change credentials.
+  and left clicks before READY. Inspect each private screenshot before clicking. Never click Uninstall or change
+  credentials.
 - One client, one job. The session ends 10 minutes after the last job and 3 hours at most, and every ending logs the
   character out and stops the client.
 - Human pace. Inputs are at least INPUT_GAP apart, across invocations, and slash commands type at TYPE_DELAY_MS.
@@ -247,31 +247,13 @@ HYPRLAND_RESULT = "hyprland-result"
 HYPRLAND_END = "hyprland-end"
 HYPRLAND_WORLD_WAIT = 600
 HYPRLAND_RETURN_WAIT = 900
-FOREVER_ADDONS = (
-    # The dev addon behind /devsmoke: its commands are the suite's own test surface.
-    "!!DevSmoke",
-    "AdventureGuideForever",
-    "CommissionsForever",
-    "FieldGuideForever",
-    "ForeverCore",
-    "KilnForever",
-    "LegacyForever",
-    "MacroAssistForever",
-    "ShortestPathForever",
-    "SkillUpForever",
-    "TweaksForever",
-)
 WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
-UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
-UI_KEYS = {"Return", "Escape", "BackSpace"}
 # The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
 MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
 GAME_WINDOW = "World of Warcraft"
-SLASH_ASSIGN = re.compile(r"SLASH_\w+\s*=(.*)$", re.MULTILINE)
-SLASH_WORD = re.compile(r'"(/[^"\s]+)"')
 
 # The player's client is a Faugus Launcher game: Faugus runs its `umu-run`, which starts Battle.net under the game's
 # Proton runner in the Steam runtime. `capture-env` records that launch from the running `umu-run` process: the
@@ -426,19 +408,15 @@ def client_pid() -> int | None:
     return next((p for p in pids() if "Wow.exe" in cmdline(p) and in_prefix(read_environ(p))), None)
 
 
-def character_config(launch: Mapping) -> dict[str, str | bool]:
-    """Validate the owner-approved parked character before starting any client process."""
+def character_config(launch: Mapping) -> dict[str, str]:
+    """Validate the owner-approved character's identity before starting any client process."""
     character = launch.get("character")
     if not isinstance(character, dict):
-        raise ClientError(
-            f"{CONFIG} has no approved character: add character.name, character.guid and character.require_resting=true"
-        )
+        raise ClientError(f"{CONFIG} has no approved character: add character.name and character.guid")
     name, guid = character.get("name"), character.get("guid")
     if not isinstance(name, str) or not name.strip() or not isinstance(guid, str) or not guid.strip():
         raise ClientError(f"{CONFIG} has an invalid character identity: name and guid are required")
-    if character.get("require_resting") is not True:
-        raise ClientError(f"{CONFIG} must set character.require_resting=true for automatic proofs")
-    return {"name": name, "guid": guid, "require_resting": True}
+    return {"name": name, "guid": guid}
 
 
 def lua_string(value: str) -> str:
@@ -448,7 +426,7 @@ def lua_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
-def prepare_headless_addon(character: Mapping[str, str | bool]) -> Path:
+def prepare_headless_addon(character: Mapping[str, str]) -> Path:
     """Create an isolated headless addon copy with immutable session configuration."""
     target = STATE_DIR / "headless-addon"
     if target.exists() or target.is_symlink():
@@ -460,7 +438,7 @@ def prepare_headless_addon(character: Mapping[str, str | bool]) -> Path:
             + lua_string(str(character["name"]))
             + ", guid="
             + lua_string(str(character["guid"]))
-            + ", require_resting=true}\n",
+            + "}\n",
             encoding="utf-8",
         )
         toc = target / "!!ForeverHeadless.toc"
@@ -659,13 +637,11 @@ def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
         raise ClientError(failure)
 
 
-def send(state: Mapping, *args: str, before_input=None, hold: Sequence[str] = ()) -> None:
+def send(state: Mapping, *args: str, hold: Sequence[str] = ()) -> None:
     """One input action, at least INPUT_GAP after the last one from any invocation, with `hold` keys held down."""
     wait = INPUT_GAP - (time.time() - mark("last-input"))
     if wait > 0:
         time.sleep(wait)
-    if before_input:
-        before_input()
     with held(state, hold):
         x(state, *args)
     (STATE_DIR / "last-input").touch()
@@ -803,16 +779,9 @@ def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = (
         raise ClientError("take a `shot` and read it first: a click must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
-
-    def launcher_guard():
-        if state.get("ready"):
-            ui = client_ui(state)
-            if not ui["world"] or ui["menu"]:
-                raise ClientError("click refused: outside the world or Game Menu is shown")
-        if state.get("manual_launcher") and not state.get("ready") and client_pid():
-            raise ClientError("the game has started: wait for READY before clicking")
-
-    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard, hold=keys)
+    if state.get("ready"):
+        close_game_menu(state)
+    send(state, "mousemove", str(px), str(py), "click", button, hold=keys)
 
 
 def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
@@ -855,37 +824,16 @@ def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = (
 
 
 def press(state: Mapping, keys: Sequence[str]) -> None:
-    refused = [k for k in keys if k not in UI_KEYS]
-    if refused:
-        raise ClientError(f"key sends only {', '.join(sorted(UI_KEYS))}; refused {', '.join(refused)}")
     for k in keys:
         send(state, "key", k)
 
 
-def addon_commands(addons: Path | None = None) -> set[str]:
-    """The slash commands the Forever addons register, read from the `SLASH_` globals in their installed files.
-
-    Every `"/word"` literal on the right-hand side of a `SLASH_<KEY><n> =` assignment counts, so a plain
-    `SLASH_X = "/x"` and the `SLASH_X = cond and "/x" or nil` form both register their command."""
-    addons = addons or CLIENT / "Interface/AddOns"
-    found: set[str] = set()
-    for name in FOREVER_ADDONS:
-        for lua in (addons / name).rglob("*.lua"):
-            text = lua.read_text(errors="replace")
-            for assignment in SLASH_ASSIGN.finditer(text):
-                found.update(c.lower() for c in SLASH_WORD.findall(assignment.group(1)))
-    return found
-
-
-def allowed_command(command: str, addons: Path | None = None) -> None:
+def one_line_slash(command: str) -> None:
+    """A slash command is one chat line starting with `/`: a newline would send a second line, plain text a chat."""
     if not command.isprintable():
         raise ClientError("slash sends one line: a newline would send a second chat line")
-    word = command.split(maxsplit=1)[0].lower() if command.strip() else ""
-    if word not in UI_COMMANDS | addon_commands(addons):
-        raise ClientError(
-            f"slash sends only the Forever addons' own commands and {', '.join(sorted(UI_COMMANDS))}: "
-            f"refused {word or 'an empty command'}"
-        )
+    if not command.strip().startswith("/"):
+        raise ClientError(f"slash sends a slash command, not chat text: refused {command.strip() or 'an empty line'!r}")
 
 
 def client_ui(state: Mapping) -> dict[str, bool]:
@@ -938,7 +886,7 @@ def close_game_menu(state: Mapping) -> None:
     """Close a Game Menu an earlier job left open, so this job starts in the world it expects (#727).
 
     The menu is the client's own pause screen and Escape closes it without changing anything a job set up. Only the
-    menu is closed: outside the world nothing is sent, and the callers' own checks refuse as before.
+    menu is closed: outside the world nothing is sent.
     """
     for _ in range(MENU_CLOSE_TRIES):
         ui = client_ui(state)
@@ -949,22 +897,26 @@ def close_game_menu(state: Mapping) -> None:
 
 
 def focus_chat(state: Mapping) -> None:
-    """Type only after the client reports that a chat edit box has keyboard focus."""
+    """Type only after the client reports that a chat edit box has keyboard focus.
+
+    Outside the world there is no chat box, and the Return that would open one presses Enter World or Login instead,
+    so nothing is sent there: `log_out` relies on this to never type into a login screen.
+    """
     close_game_menu(state)
     for key in (None, "Return", "Escape", "Return"):
         if key:
             send(state, "key", key)
             time.sleep(0.1)
         ui = client_ui(state)
-        if not ui["world"] or ui["menu"]:
-            raise ClientError("slash refused: outside the world or Game Menu is shown")
+        if not ui["world"]:
+            raise ClientError("slash needs the world: there is no chat box at the login or character screen")
         if ui["chat"]:
             return
     raise ClientError("slash refused: the chat edit box did not acquire focus")
 
 
 def slash(state: Mapping, command: str) -> None:
-    allowed_command(command)
+    one_line_slash(command)
     focus_chat(state)
     send(state, "type", "--delay", TYPE_DELAY_MS, command)
     send(state, "key", "Return")
@@ -2538,7 +2490,7 @@ def flow_capture_failure(state: Mapping, action: str, token: str, timeout: Clien
 
 
 def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
-    """Run one proof flow through !!DevSmoke: a Forever addon's own slash command, or a Lua file.
+    """Run one proof flow through !!DevSmoke: a slash command, or a Lua file.
 
     Both routes write a snippet whose own run token `check_flow_eval` reads once the screenshot is taken: the reload
     that saves the result to disk would close the window the flow just opened (#580). A slash command runs through
@@ -2553,7 +2505,7 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
         if lua_flow(action):
             written = tool.write_snippet(Path(action), addons=CLIENT / "Interface/AddOns", capture=True)
         else:
-            allowed_command(action)
+            one_line_slash(action)
             written = tool.write_slash(action, addons=CLIENT / "Interface/AddOns", capture=True)
     except tool.EvalError as error:
         raise ClientError(str(error)) from None
@@ -3463,7 +3415,7 @@ def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher:
     write_state(state)
     (STATE_DIR / SIGN_IN_BLOCK).unlink(missing_ok=True)
     print(f"READY in the world after {time.time() - started:.0f} s ({ready_shot.name})", flush=True)
-    # !!ForeverHeadless performs the parked-character preflight before its ordinary readiness screenshot.
+    # !!ForeverHeadless performs the character identity preflight before its ordinary readiness screenshot.
     # No eval or reload is needed here: wait_for_world only returns after that handshake succeeds.
     print("CHARACTER_PREFLIGHT passed", flush=True)
 
