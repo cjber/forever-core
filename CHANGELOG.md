@@ -47,7 +47,7 @@
 - **Fixed an error when leveling with the Forever quest list on.** Thanks to TechnoHunter and user_efwsfml273dlvfm5 for the reports. (#608)
 - **The goal marker centres its gold diamond face in the ring**, keeping the drop shadow from shifting the face up and left. (#733)
 - **A tracker menu stays where it opened while its block moves**, so a click lands on the entry you aimed at, and block menus offer Hide this section too. The tracker menu builder's Primary slot returns its description so addons can attach warning tooltips. (#754, #717, #718)
-- **The attached tracker column starts below an enlarged minimap when they overlap**, with its sections sized to the space left on screen. (#720)
+- **The attached tracker column starts below an enlarged minimap when they overlap** and the room there still shows every section, with its sections sized to that room. On a shorter screen it keeps its usual place. (#720)
 
 ### For addon authors
 

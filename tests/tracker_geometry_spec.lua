@@ -77,7 +77,9 @@ end
 -- whole when it fits and skipped when it does not, as Blizzard's modules lay out blocks. `enlargedMinimap`: the #720
 -- layout, a full-height native tracker in its right-side slot at alpha 0 behind the Forever quest list, beside a
 -- minimap another addon scaled to 1.24.
-local function scenario(anchor, scale, uiScale, userScale, fill, enlargedMinimap)
+-- `screenHeight` and `blockHeight` model a short screen whose room below that minimap cannot hold the block.
+local function scenario(anchor, scale, uiScale, userScale, fill, enlargedMinimap, screenHeight, blockHeight)
+	blockHeight = blockHeight or 227
 	local frames, timers, ready, combat = {}, {}, nil, false
 	local screen
 	local function frame(_, name, parent)
@@ -177,7 +179,7 @@ local function scenario(anchor, scale, uiScale, userScale, fill, enlargedMinimap
 		return f
 	end
 	screen = frame()
-	screen.root, screen.width, screen.height, screen.scale = true, 1200, 1080, uiScale
+	screen.root, screen.width, screen.height, screen.scale = true, 1200, screenHeight or 1080, uiScale
 	local native = frame(nil, "native", screen)
 	native.scale, native.height = scale, 300
 	native:SetClampedToScreen(true)
@@ -262,7 +264,7 @@ local function scenario(anchor, scale, uiScale, userScale, fill, enlargedMinimap
 	module.SetContainer = noop
 	module.Update = function(_, available)
 		updates = updates + 1
-		used = fill and math.max(0, math.floor(available)) or (available >= 227 and 227 or 0)
+		used = fill and math.max(0, math.floor(available)) or (available >= blockHeight and blockHeight or 0)
 	end
 	module.SetParent = function(self, parent)
 		self.parent = parent
@@ -282,6 +284,16 @@ local function scenario(anchor, scale, uiScale, userScale, fill, enlargedMinimap
 	local slot = { native:GetPoint() }
 	ready()
 	drain()
+	if minimap and screenHeight then
+		-- Below the map there is less room than the block: the column keeps the 1.14.2 placement, block shown whole.
+		check(host:IsShown(), "a short screen keeps the column shown: " .. label)
+		check(used == blockHeight, "a short screen keeps the block whole: " .. label)
+		check(
+			host:GetTop() * host:GetEffectiveScale() > minimap:GetBottom() * minimap:GetEffectiveScale(),
+			"a short screen keeps the placement instead of moving below the map: " .. label
+		)
+		return
+	end
 	if minimap then
 		local function clearMap(height)
 			local where = label .. " content " .. height
@@ -421,4 +433,5 @@ for _, uiScale in ipairs({ 1, 0.8 }) do
 end
 scenario("TOPLEFT", 1, 1, 1, false, true)
 scenario("TOPRIGHT", 1, 1, 1, true, true)
+scenario("TOPRIGHT", 1, 1, 1, false, true, 803, 500)
 print("tracker_geometry_spec: " .. checks .. " checks passed")

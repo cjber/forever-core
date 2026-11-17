@@ -1167,7 +1167,7 @@ end
 -- column is the header, the game's quests, then the Forever sections. Only our frames move, and this runs only from
 -- Layout, which defers in combat so the protected item buttons and their ancestors stay put. A collapsed All
 -- Objectives hides the sections with it.
-local function LayoutAttached()
+local function LayoutAttached(keepPlacement)
 	-- Read the global each time, not once at load: Blizzard_EditMode is load-on-demand, so it may appear later. A
 	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
 	HookEditMode()
@@ -1259,9 +1259,15 @@ local function LayoutAttached()
 	-- same x, and when it is taller than the room from there to the screen margin its sections lay out again in that
 	-- room, so a long section scrolls instead of being clamped back over the map. The move is the same on every pass
 	-- for the same geometry, so repeated layouts settle where the last one did.
+	-- The move stands only when the room below the map still shows every section the column shows now. A short screen
+	-- would lose one, the quest list included, so that pass lays out again in the placement it had, as 1.14.2 did.
 	local function ClearMinimap()
-		if not OverlapsMinimap() then
+		if keepPlacement or not OverlapsMinimap() then
 			return
+		end
+		local shown = {}
+		for _, module in ipairs(modules) do
+			shown[module] = (module:GetContentsHeight() or 0) > 0 and module:IsShown()
 		end
 		local minimap = _G.Minimap
 		local left = host:GetLeft() or 0
@@ -1269,8 +1275,17 @@ local function LayoutAttached()
 		host:ClearAllPoints()
 		host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 		local room = math.max(0, top - layoutMargin)
-		if host:GetHeight() > room and not LayoutModules(host:GetWidth(), room, 0) then
-			host:Hide()
+		if host:GetHeight() <= room then
+			return
+		end
+		local fits = LayoutModules(host:GetWidth(), room, 0)
+		for _, module in ipairs(modules) do
+			if shown[module] and not ((module:GetContentsHeight() or 0) > 0 and module:IsShown()) then
+				fits = false
+			end
+		end
+		if not fits then
+			LayoutAttached(true)
 		end
 	end
 	if aside then
