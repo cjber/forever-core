@@ -169,6 +169,8 @@ def _builder(core: Path):
     if not path.is_file():
         raise EmbedError(f"{path}: missing; the pinned ForeverCore checkout has no embedded producer")
     spec = importlib.util.spec_from_file_location("forever_core_build_embedded", path)
+    if spec is None or spec.loader is None:
+        raise EmbedError(f"{path}: cannot be loaded as a module")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
