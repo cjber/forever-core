@@ -115,55 +115,15 @@ end
 local screenshot = { count = 0 }
 run(nil, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 0, "missing parked-character configuration refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3" },
-	"Tester",
-	"Player-1-2-3",
-	false,
-	false,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "approved character signals readiness")
-run(
-	{ name = "Other", guid = "Player-1-2-3" },
-	"Tester",
-	"Player-1-2-3",
-	false,
-	false,
-	false,
-	screenshot
-)
+run({ name = "Other", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "unexpected identity refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3" },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	false,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, false, false, screenshot)
 assert(screenshot.count == 1, "dead character refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3" },
-	"Tester",
-	"Player-1-2-3",
-	false,
-	true,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, true, false, screenshot)
 assert(screenshot.count == 1, "combat character refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3" },
-	"Tester",
-	"Player-1-2-3",
-	false,
-	false,
-	true,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, true, screenshot)
 assert(screenshot.count == 1, "lockdown character refuses readiness")
 print("forever headless: identity handshake pass")
 
