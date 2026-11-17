@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.14.3] - 2026-11-17
+
 - **The Forever quest list steps aside for your UI suite's tracker**, including EllesmereUI. Turn the list off or on from the Tracker menu on any Forever section. (#736, cjber/shortest-path-forever#949) Thanks to dokiz, user_vyffn82yvmu3bflh and user_8vheexbirr5v6h4a for the reports.
 - **Quest item icons are visible and the quest list fits the screen.** Consecutive objectives and progress bars stay aligned inside the column, and a column placed beside the game's tracker scrolls within the room below its anchor. Thanks to serb1tar, tommyekholm, Crypa7, Shuro and xh43k for the reports. (#743, #735, #603)
 - **The mouse wheel scrolls a tracker section over its text.** A quest taller than its space now scrolls a page at a time with overlap, so every objective stays reachable even in a short column. Stacked sections keep a readable row when space allows and show only their header otherwise. (#616, #615)
