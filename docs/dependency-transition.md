@@ -17,16 +17,13 @@ BigWigs packager v2.7.0 automatically overrides relations for an external with a
 GitHub release ZIP without `curse-slug`, so retain that form and inspect the actual uploaded relation.
 
 Sources: [CurseForge pkgmeta](https://support.curseforge.com/support/solutions/articles/9000197952-preparing-the-packagemeta-file),
-[packager v2.7.0 source](https://github.com/BigWigsMods/packager/blob/v2.7.0/release.sh),
-[Wago upload metadata](https://docs.wago.io/#prepare-the-metadata).
-Wago documents no dependency field in its upload metadata. Do not claim automatic installation there without
-independent verification of its manager and project settings.
+[packager v2.7.0 source](https://github.com/BigWigsMods/packager/blob/v2.7.0/release.sh).
 
 ## 2. Prove manager ownership with a canary
 
 Use disposable addon installations with saved variables backed up. Record manager version, provider, old and new
 file IDs, archive hashes, actions taken, resulting folder ownership and the exact in-game smoke commit. Test each
-supported path independently: CurseForge app, WowUp with CurseForge provider, WowUp with Wago provider, wowaddon and
+supported path independently: CurseForge app, WowUp with CurseForge provider, wowaddon and
 manual ZIP installation. Keep a channel bundled if it cannot establish standalone ownership automatically.
 
 For each manager/provider, prove:

@@ -147,7 +147,6 @@ _HEADING = re.compile(r"^##\s+\[([^\]]+)\]")
 _IMAGE_COMMENT = re.compile(r"^\s*<!--\s*discord-image:\s*(\S+)\s*-->\s*$")
 _PLAYER_BULLET = re.compile(r"^-\s+\*\*(.+?)\*\*")
 _CURSE_ID = re.compile(r"^##\s*X-Curse-Project-ID\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
-_WAGO_ID = re.compile(r"^##\s*X-Wago-ID\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
 
 
 def version_key(version):
@@ -243,9 +242,6 @@ def parse_store_links(text):
     curse = _CURSE_ID.search(text)
     if curse:
         links["curseforge"] = f"https://www.curseforge.com/projects/{curse.group(1)}"
-    wago = _WAGO_ID.search(text)
-    if wago:
-        links["wago"] = f"https://addons.wago.io/addons/{wago.group(1)}"
     return links
 
 
@@ -253,8 +249,6 @@ def links_line(store, notes):
     parts = []
     if store.get("curseforge"):
         parts.append(f"[CurseForge]({store['curseforge']})")
-    if store.get("wago"):
-        parts.append(f"[Wago]({store['wago']})")
     parts.append(f"[Full notes]({notes})")
     return " · ".join(parts)
 

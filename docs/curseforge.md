@@ -1,4 +1,4 @@
-ForeverCore is a library: the shared code every Forever addon needs. CurseForge and Wago install it alongside any
+ForeverCore is a library: the shared code every Forever addon needs. CurseForge installs it alongside any
 Forever addon, so there is nothing to set up, and it has no settings page of its own. Your Forever addons use it
 for:
 
@@ -14,7 +14,7 @@ for:
 - **The common chrome.** The minimap button, the quest log side tabs, the settings page drawing, the error journal and
   the debug log are shared once.
 
-You never install or configure ForeverCore by hand. CurseForge and Wago install it as a required dependency of every
+You never install or configure ForeverCore by hand. CurseForge installs it as a required dependency of every
 Forever addon, and the game loads it first.
 
 Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help and each day's release notes, [join me on Discord](https://discord.gg/FpHugGxRJY).

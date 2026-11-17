@@ -29,7 +29,7 @@ and `## X-Forever-Core:` must continue to name the same release. The runtime loa
 `AddOns/ForeverCore` folder; consumers never copy individual runtime files into their own folder.
 
 A store relation does not prove that an existing installation acquires an independently managed dependency.
-Wago's documented upload metadata has no dependency field. Keep the fallback on every channel until that channel
+Keep the fallback on every channel until that channel
 passes the [dependency transition](dependency-transition.md) upgrade and uninstall checks.
 
 ## Asking for per-addon services
@@ -206,4 +206,4 @@ later XML file need no special case in the loader.
    tooling in `tools/check_core_shared.py`'s `VENDORED`.
 5. A changed store description in an addon's `docs/curseforge.md` reaches CurseForge through
    `tools/sync_curseforge.py`, which skips descriptions that did not change and checks every word, link and image URL it
-   publishes. Wago keeps its fixed stub and is not described again.
+   publishes.

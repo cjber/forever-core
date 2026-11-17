@@ -22,6 +22,7 @@ drifts the same way:
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
   its BigWigs packager, so a core release that lands after CI is caught before the upload.
+- TOCs and release workflows must not retain the retired Wago store ID or upload credential.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
 
 
@@ -272,6 +273,8 @@ def check_packaging(repo, pin, branch, local):
     ships = bool(core_pin.external_line(pkgmeta))
     declares = "forevercore" in block_entries(blocks.get("required-dependencies", []))
     failures = []
+    if toc_names(toc, "X-Wago-ID"):
+        failures.append(f"{repo}: {toc_path}: retired X-Wago-ID; run the core sync")
     if required:
         failures.append(
             f"{repo}: {toc_path}: lists ForeverCore in `## Dependencies`, so the client skips the addon when core is"
@@ -322,6 +325,8 @@ def check_release_gate(repo, branch, local):
     if data is None:
         return []
     text = data.decode("utf-8", "replace")
+    if "WAGO_API_TOKEN" in text:
+        return [f"{repo}: {path}: retired WAGO_API_TOKEN; run the core sync"]
     packager = text.find("BigWigsMods/packager@")
     if packager < 0:
         return []

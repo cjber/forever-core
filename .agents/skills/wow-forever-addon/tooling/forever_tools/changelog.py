@@ -1,6 +1,6 @@
 """Print one version's section of CHANGELOG.md, or check that every release has one.
 
-The release workflow hands what this prints to the packager, so GitHub, CurseForge and Wago show the same
+The release workflow hands what this prints to the packager, so GitHub and CurseForge show the same
 words as the changelog in the repository. A tag with no entry, or an empty one, fails here rather than
 publishing notes nobody wrote. CI runs `--check`, so a released version the changelog forgot fails on the
 next push instead of going unnoticed, and so does a newest release whose section no longer reads as it did at its

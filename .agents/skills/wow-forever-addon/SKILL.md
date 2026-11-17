@@ -30,9 +30,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   `required-dependencies` while retaining that pinned bundle during standalone dependency adoption. Existing installs
   must acquire manager-owned core through ordinary updates, including a direct jump that skips bridge releases, before
   any channel drops its fallback. Verify mixed-addon updates and uninstalling either consumer, especially the last
-  writer of the shared folder. Wago upload metadata has no dependency field, so prove its manager path separately;
-  channels without automatic dependency resolution keep a bundled artifact. Follow core's `docs/dependency-transition.md`
-  for the canary evidence and rollback gates. The store relation alone does not fix shared-folder ownership. It is
+  writer of the shared folder. Channels without automatic dependency resolution keep a bundled artifact. Follow core's
+  `docs/dependency-transition.md` for the canary evidence and rollback gates. The store relation alone does not fix shared-folder ownership. It is
   the suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
   `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. Every core
   release re-releases every addon automatically: the core sync PR moves the pin, rewrites the external and the TOC
@@ -148,7 +147,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-11** `docs/curseforge.md` is the store description and follows [store-page.md](store-page.md): the pitch,
   the sponsor sentence with the Discord, Sponsors and Ko-fi button row under it, three to six captioned
   screenshots, Features, Usage, the source and AI lines; under 1,000 words; no Install or Development sections. `forever_tools.store_page` fails CI on a page
-  that leaves a part out. It is pasted into CurseForge by hand after it changes; Wago carries a fixed stub (`wow-addon-publish`). The WFA-32 block and
+  that leaves a part out. It is pasted into CurseForge by hand after it changes. The WFA-32 block and
   the WFA-31 generated credits block are not counted here either.
 - **WFA-23** The addon fits the game's own UI. Show this in the lead image, against the stock UI
   where the change is subtle. Copy leads with what the addon does and how to use it; it does not
@@ -239,8 +238,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   (`forever_tools.doctor`) checks a machine against every pin in the vendored `tools/toolchain.json` and
   `tools/pyproject.toml` and prints a fix for each problem; AGENTS.md lists it under Commands.
 - **WFA-16** Releases: a signed `v*` tag runs `release.yml` (BigWigs packager, pinned) with this
-  version's CHANGELOG entry as notes (`tools/changelog.py`), uploading to GitHub, CurseForge and
-  Wago; the TOC carries `X-Curse-Project-ID` and `X-Wago-ID`. Setup is in `wow-addon-publish`.
+  version's CHANGELOG entry as notes (`tools/changelog.py`), uploading to GitHub and
+  CurseForge; the TOC carries `X-Curse-Project-ID`. Setup is in `wow-addon-publish`.
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the

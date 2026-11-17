@@ -91,6 +91,15 @@ class CheckConsumersTest(unittest.TestCase):
             + ("\nrequired-dependencies:\n  - forevercore\n" if declares_required else "")
         )
 
+    def test_retired_wago_toc_field_fails(self):
+        self.write_core_pkgmeta()
+        self.write_core_toc()
+        with (self.repo / "LegacyForever.toc").open("a") as stream:
+            stream.write("## X-Wago-ID: old\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 1, out)
+        self.assertIn("retired X-Wago-ID", out)
+
     def test_an_equal_pin_passes(self):
         code, out = self.run_main()
         self.assertEqual(code, 0, out)
@@ -361,6 +370,12 @@ class ReleaseGateCheckTest(unittest.TestCase):
 
     def check(self):
         return check_consumers.check_release_gate("legacy-forever", "main", self.checkouts)
+
+    def test_retired_wago_token_fails(self):
+        self.write()
+        with self.workflow.open("a") as stream:
+            stream.write("          WAGO_API_TOKEN: token\n")
+        self.assertTrue(any("retired WAGO_API_TOKEN" in failure for failure in self.check()))
 
     def test_the_gate_above_the_packager_passes(self):
         self.write()

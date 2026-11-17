@@ -102,6 +102,13 @@ class DigestTest(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload
 
+    def test_retired_wago_metadata_does_not_make_a_link(self):
+        self.assertEqual(
+            digest.parse_store_links("## X-Wago-ID: old\n## X-Curse-Project-ID: 1\n"),
+            {"curseforge": "https://www.curseforge.com/projects/1"},
+        )
+        self.assertNotIn("Wago", digest.links_line({"wago": "https://addons.wago.io/addons/old"}, "https://notes.test"))
+
     def test_range_order_and_feature_fold(self):
         data = dataset(
             [
@@ -129,6 +136,7 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(lines[1], "• The patch fix.")
         self.assertEqual(lines[2], "• Another patch fix.")
         self.assertNotIn("The big feature.", embed["description"])
+        self.assertNotIn("Wago", embed["description"])
         self.assertIn("[Full notes](https://github.com/cjber/shortest-path-forever/releases/tag/v1.1.0)", lines[-1])
 
     def test_an_addon_without_player_lines_is_left_out(self):
