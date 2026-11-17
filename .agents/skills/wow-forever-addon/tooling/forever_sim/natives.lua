@@ -611,7 +611,11 @@ function M.build(sim)
 		},
 		{
 			"SecureCmdOptionParse",
-			function()
+			function(options)
+				-- Unconditional macro options need no world state. Conditional clauses remain unmodelled.
+				if not options:find("[", 1, true) then
+					return options:match("^%s*(.-)%s*$")
+				end
 				return nil
 			end,
 		},

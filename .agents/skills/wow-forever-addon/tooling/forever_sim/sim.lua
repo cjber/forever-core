@@ -53,6 +53,7 @@ Sim.CORE = {
 	"Blizzard_FrameXML/SecureTemplatesBase.xml",
 	"Blizzard_FrameXML/SecureTemplates.lua",
 	"Blizzard_FrameXML/SecureTemplates.xml",
+	"Blizzard_RestrictedAddOnEnvironment/SecureStateDriver.lua",
 	"Blizzard_FrameXML/DeprecatedTemplates.xml",
 	"Blizzard_FrameXML/Mainline/AlertFrames.lua",
 	"Blizzard_FrameXML/Mainline/AlertFrames.xml",

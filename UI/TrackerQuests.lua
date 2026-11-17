@@ -1,4 +1,5 @@
 -- luacheck: globals C_QuestInfoSystem CreateFramePool ObjectiveTrackerAnimBlockMixin
+-- luacheck: globals RegisterStateDriver UnregisterStateDriver
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
@@ -135,11 +136,12 @@ local ready = false
 local ownedByOther = false
 local section
 
--- Questie's Forever visibility pattern: keep suppression and restore ownership in private locals, never on the
--- native frame. Alpha keeps a protected native Show invisible in combat; the Hide and any restore wait for combat
--- to end and use the latest request.
+-- Native Show/Hide scripts update the shared managed-frame layout. Only the secure visibility driver may
+-- run them: an addon Hide taints that layout and the scenario tracker's subsequent secret aura reads (#608).
+-- Alpha covers native Show calls between driver ticks. Driver registration waits for combat to end.
 local hideNativeTracker = false
 local nativeTrackerAlpha = 1
+local nativeDriverRegistered = false
 local visibilityFrame = CreateFrame("Frame")
 local function ApplyNativeVisibility()
 	if hideNativeTracker then
@@ -152,13 +154,16 @@ local function ApplyNativeVisibility()
 		-- alpha is not: suppress that Show immediately rather than exposing the tracker until combat ends.
 		ObjectiveTrackerFrame:SetAlpha(0)
 	end
-	if InCombatLockdown() and (not hideNativeTracker or ObjectiveTrackerFrame:IsProtected()) then
+	if InCombatLockdown() then
 		visibilityFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		return
 	end
 	visibilityFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 	if hideNativeTracker then
-		ObjectiveTrackerFrame:Hide()
+		if not nativeDriverRegistered then
+			nativeDriverRegistered = true
+			RegisterStateDriver(ObjectiveTrackerFrame, "visibility", "hide")
+		end
 	elseif hidNativeTracker or coreMutedNative then
 		-- Another tracker may have taken over while ours was on. Release our ownership without showing its tracker.
 		local otherOwner = OtherOwner()
@@ -166,14 +171,19 @@ local function ApplyNativeVisibility()
 		if not otherOwner then
 			ObjectiveTrackerFrame:SetAlpha(nativeTrackerAlpha)
 			coreMutedNative = false
-			ObjectiveTrackerFrame:Show()
+			nativeDriverRegistered = true
+			RegisterStateDriver(ObjectiveTrackerFrame, "visibility", "show")
+		end
+		if nativeDriverRegistered then
+			UnregisterStateDriver(ObjectiveTrackerFrame, "visibility")
+			nativeDriverRegistered = false
 		end
 	end
 end
 visibilityFrame:SetScript("OnEvent", ApplyNativeVisibility)
 ObjectiveTrackerFrame:HookScript("OnShow", function()
 	if hideNativeTracker then
-		ApplyNativeVisibility()
+		ObjectiveTrackerFrame:SetAlpha(0)
 	end
 end)
 

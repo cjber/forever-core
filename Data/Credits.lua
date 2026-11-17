@@ -4,6 +4,8 @@ local _, ns = ...
 
 ns.Credits = {
 	players = {
+		{ name = "TechnoHunter", what = "Quest tracking stays safe when leveling" },
+		{ name = "user_efwsfml273dlvfm5", what = "Quest tracking stays safe when leveling" },
 		{ name = "serb1tar", what = "Quest item icons and progress bars fit the quest list" },
 		{ name = "tommyekholm", what = "Quest item icons and progress bars fit the quest list" },
 		{ name = "Crypa7", what = "Quest item icons and progress bars fit the quest list" },

@@ -1,9 +1,7 @@
 -- luacheck: read globals scenario ADDON
--- Issue #608: the Forever quest list used to take the game's own Quests and Campaign modules out of the client's
--- objective tracker. That wrote the container's dirty flag and module list from addon code, so the client's next
--- layout ran tainted and Blizzard_ScenarioObjectiveTracker's aura read for the Maw buffs raised "Auras cannot be
--- accessed when secret while tainted by 'ForeverCore'". The list now leaves the client's own modules alone, so the
--- whole native frame is hidden without changing its modules, and its aura reads stay secure across visibility changes.
+-- Issue #608: native Show/Hide scripts also update the shared managed-frame layout. With Edit Mode initialised,
+-- hiding the native tracker from addon code taints that layout and the next secure pass reaches the scenario
+-- tracker's secret Maw aura read under ForeverCore's taint. Exercise the real managed-frame and driver scripts.
 local function ExpectAuraReadIsUntainted(sim, reads, before)
 	assert(reads > before, "the client's scenario tracker reached the aura reader")
 	sim:expectNoErrors(ADDON)
@@ -52,11 +50,6 @@ local function Run(sim, mode)
 		assert(sim.taint.current == nil, "aura reader tainted by " .. tostring(sim.taint.current))
 		return nil
 	end
-	-- The client places the native tracker in its Edit Mode slot; the sim's managed-frame layout leaves it unplaced
-	-- until a UI addon or Edit Mode does, so give it the slot and the height its own modules lay their blocks out in.
-	sim.G.ObjectiveTrackerFrame:SetPoint("TOPRIGHT", sim.G.UIParent, "TOPRIGHT", 0, -100)
-	sim.G.ObjectiveTrackerFrame:SetHeight(400)
-
 	local tracker = sim.G.ObjectiveTrackerFrame
 	local db = mode == "disabled" and { questList = false } or mode == "enabled" and { questList = true } or {}
 	if mode == "ellesmere" then
@@ -69,7 +62,45 @@ local function Run(sim, mode)
 	end
 	local nativeAlpha, nativeShown = tracker:GetAlpha(), tracker:IsShown()
 	sim:login({ savedVariables = { ForeverCoreDB = db } })
+	local layouts = { layouts = {}, activeLayout = 1 }
+	sim.impl["C_EditMode.GetLayouts"] = function()
+		return layouts
+	end
+	sim:event("EDIT_MODE_LAYOUTS_UPDATED", layouts, false)
+	-- Discard only the known missing player-frame and layout-dialog pieces of the simulated Edit Mode UI.
+	for _, err in ipairs(sim:takeErrors()) do
+		local trace = tostring(err.traceback)
+		assert(
+			trace:find("Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:2453", 1, true)
+				or trace:find("Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:1844", 1, true)
+				or trace:find("Blizzard_EditMode/Shared/EditModeManager.lua:729", 1, true),
+			err.message
+		)
+	end
 	sim:advance(0.5)
+	assert(sim.G.ObjectiveTrackerFrame:IsInDefaultPosition(), "tracker participates in managed layout")
+	local function ExpectManagedLayoutSecure()
+		for _, object in ipairs({
+			sim.G.RightManagedFrameContainer,
+			sim.G.RightManagedFrameContainer.showingFrames,
+			sim.G.ObjectiveTrackerFrame,
+		}) do
+			for key, info in pairs(sim.taint.slots[object] or {}) do
+				assert(info.addon ~= ADDON, "managed slot tainted: " .. tostring(key))
+			end
+		end
+		local frame = sim.G.CreateFrame("Frame", nil, sim.G.UIParent, "RightManagedFrameTemplate")
+		frame:SetSize(50, 50)
+		frame:Hide()
+		frame:Show()
+		sim:advance(0.5)
+		for _, hit in ipairs(sim.taint.hits) do
+			local managed = hit.table == sim.G.RightManagedFrameContainer
+				or hit.table == sim.G.RightManagedFrameContainer.showingFrames
+				or hit.table == sim.G.ObjectiveTrackerFrame
+			assert(not managed or hit.addon ~= ADDON, "secure layout read a ForeverCore-tainted slot")
+		end
+	end
 	-- A scenario update makes the client's own scenario module lay out, which reaches the Maw buff check. With the
 	-- list on, nothing the list did may have tainted that pass.
 	local function NativeUpdate()
@@ -89,6 +120,7 @@ local function Run(sim, mode)
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	ExpectManagedLayoutSecure()
 	if mode == "disabled" or mode == "ellesmere" then
 		assert(tracker:IsShown(), "native tracker stays shown with the column attached")
 		assert(sim.G.ForeverCore.TrackerHost.IsAttachedToQuestTracker(), "the column stays attached")
@@ -109,6 +141,7 @@ local function Run(sim, mode)
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	ExpectManagedLayoutSecure()
 
 	before = reads
 	sim:slash("/fcore quests")
@@ -119,20 +152,27 @@ local function Run(sim, mode)
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	ExpectManagedLayoutSecure()
 	tracker:Show()
-	assert(not tracker:IsShown(), "a native OnShow attempt is hidden again")
+	assert(tracker:GetAlpha() == 0, "a native OnShow attempt stays invisible")
+	sim:advance(0.3)
+	assert(not tracker:IsShown(), "the secure driver re-hides a native OnShow")
 	before = reads
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	ExpectManagedLayoutSecure()
 
 	-- #686: Blizzard's container Update calls Show when it has content, including when a quest progresses in
-	-- combat. Exercise that real producer with the native frame protected, so core cannot re-hide it until regen.
+	-- combat. The registered driver must re-hide it securely even while the frame is protected.
 	local protectedChild = sim.G.CreateFrame("Button", nil, tracker, "SecureActionButtonTemplate")
 	assert(protectedChild:IsProtected() and tracker:IsProtected(), "the native tracker is protected")
 	sim:enterCombat()
 	NativeUpdate()
 	assert(tracker:IsShown() and tracker:GetAlpha() == 0, "a protected native combat layout stays invisible")
+	sim:advance(0.3)
+	assert(not tracker:IsShown(), "the secure driver re-hides the protected tracker during combat")
+	ExpectManagedLayoutSecure()
 	sim:leaveCombat()
 	sim:advance(0.5)
 	assert(not tracker:IsShown(), "combat ending finishes the native hide")
@@ -155,6 +195,7 @@ local function Run(sim, mode)
 	NativeUpdate()
 	sim:advance(0.5)
 	ExpectAuraReadIsUntainted(sim, reads, before)
+	ExpectManagedLayoutSecure()
 end
 
 for _, mode in ipairs({ "enabled", "fresh", "disabled", "ellesmere" }) do
