@@ -29,6 +29,7 @@ fc = importlib.util.module_from_spec(SPEC)
 sys.modules["forever_client"] = fc
 SPEC.loader.exec_module(fc)
 REAL_REQUIRE_SAFE = fc.require_safe
+REAL_RELEASE_MODIFIERS = fc.release_modifiers
 
 
 def setUpModule():
@@ -44,6 +45,10 @@ def setUpModule():
         patch = mock.patch.object(target, name, side_effect=AssertionError(f"unit test must mock {name}"))
         patch.start()
         unittest.addModuleCleanup(patch.stop)
+    # Job start and end release the modifiers on the session display; a test's display may name a real one.
+    patch = mock.patch.object(fc, "release_modifiers", return_value=None)
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
 
 
 def args() -> argparse.Namespace:
@@ -1049,7 +1054,7 @@ class ForeverClientTest(unittest.TestCase):
             for command in (["click", "100", "200", "--button", "3"], ["key", "Return"], ["slash", "/fgf"]):
                 self.assertEqual(fc.main(command), 2)
             shot.assert_called_once()
-            click.assert_called_once_with(state, 100, 200, "1")
+            click.assert_called_once_with(state, 100, 200, "1", [])
             press.assert_not_called()
             slash.assert_not_called()
 
@@ -1074,7 +1079,7 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.main(["shot", "--timeout", "0"]), 0)
             self.assertEqual(fc.main(["click", "100", "200", "--timeout", "0"]), 0)
             shot.assert_called_once()
-            click.assert_called_once_with(state, 100, 200, "1")
+            click.assert_called_once_with(state, 100, 200, "1", [])
             # Every other verb refuses before READY, as it did, and says why rather than naming the lock.
             fcntl.flock(holder, fcntl.LOCK_UN)
             for command in (["key", "Return"], ["slash", "/fgf"], ["click", "100", "200", "--button", "3"]):
@@ -1082,7 +1087,7 @@ class ForeverClientTest(unittest.TestCase):
             self.assertIn("not in the world yet", err.getvalue())
             press.assert_not_called()
             slash.assert_not_called()
-            self.assertEqual(click.call_args_list, [mock.call(state, 100, 200, "1")])
+            self.assertEqual(click.call_args_list, [mock.call(state, 100, 200, "1", [])])
 
     def test_default_launcher_still_blocks_actions_before_ready(self):
         with (
@@ -1336,8 +1341,12 @@ class ForeverClientTest(unittest.TestCase):
         self.assertEqual(
             send.call_args_list,
             [
-                mock.call({}, "mousemove", "960", "540", "click", "--repeat", "3", "--delay", fc.WHEEL_DELAY_MS, "4"),
-                mock.call({}, "mousemove", "960", "540", "click", "--repeat", "2", "--delay", fc.WHEEL_DELAY_MS, "5"),
+                mock.call(
+                    {}, "mousemove", "960", "540", "click", "--repeat", "3", "--delay", fc.WHEEL_DELAY_MS, "4", hold=[]
+                ),
+                mock.call(
+                    {}, "mousemove", "960", "540", "click", "--repeat", "2", "--delay", fc.WHEEL_DELAY_MS, "5", hold=[]
+                ),
             ],
         )
 
@@ -1374,7 +1383,7 @@ class ForeverClientTest(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
-        scroll.assert_called_once_with(state, 960, 540, -4)
+        scroll.assert_called_once_with(state, 960, 540, -4, [])
 
     def test_manual_launcher_click_refuses_when_game_process_has_started(self):
         (self.state / "last-input").touch()
@@ -4149,7 +4158,7 @@ class BrokerTest(unittest.TestCase):
         state = live_state(ready=1.0)
         seen = {}
 
-        def scroll(_state, _x, _y, ticks):
+        def scroll(_state, _x, _y, ticks, _hold):
             handle = open(fc.job_lock_path(), "w")
             try:
                 with self.assertRaises(
@@ -4168,7 +4177,7 @@ class BrokerTest(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
-        scroll_verb.assert_called_once_with(state, 960, 540, -4)
+        scroll_verb.assert_called_once_with(state, 960, 540, -4, [])
         self.assertEqual((seen["pid"], seen["label"]), (os.getpid(), "scroll"))
         self.assertEqual(seen["ticks"], -4)
         self.assertFalse(fc.job_record_path().exists(), "the lock is the invocation's, not the session's")
@@ -4886,6 +4895,161 @@ class HyprlandJobTest(unittest.TestCase):
         self.assertGreaterEqual(check.call_count, 2)
         self.assertEqual(kill.call_args_list[0].args, (4242, signal.SIGTERM))
         self.assertEqual(kill.call_args_list[-1].args, (4242, signal.SIGKILL))
+
+
+class ModifierHoldTest(unittest.TestCase):
+    """`--hold` presses a modifier only around one action, and job end releases every modifier (#766)."""
+
+    RELEASE_ALL = ["xdotool", "keyup", "Shift_L", "Control_L", "Alt_L"]
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.enterContext(mock.patch.object(fc, "require_safe"))
+        self.enterContext(mock.patch.object(fc, "INPUT_GAP", 0))
+        self.enterContext(mock.patch.object(fc, "release_modifiers", REAL_RELEASE_MODIFIERS))
+        self.sent: list[list[str]] = []
+        self.displays: list[str] = []
+
+    def record(self, fail_on: str | None = None):
+        def run(argv, *, env, **_kwargs):
+            self.sent.append(list(argv))
+            self.displays.append(env["DISPLAY"])
+            if argv[1] == fail_on:
+                raise subprocess.CalledProcessError(1, argv)
+            return mock.Mock(returncode=0)
+
+        return self.enterContext(mock.patch.object(fc.subprocess, "run", side_effect=run))
+
+    def test_hold_wraps_the_action_in_keydown_and_keyup_in_order(self):
+        self.record()
+        for verb, act, action in (
+            ("click", lambda hold: fc.click({"display": ":9"}, 10, 20, "3", hold), ["mousemove", "10", "20"]),
+            ("hover", lambda hold: fc.hover({"display": ":9"}, 10, 20, hold), ["mousemove", "10", "20"]),
+            ("scroll", lambda hold: fc.scroll({"display": ":9"}, 10, 20, 2, hold), ["mousemove", "10", "20"]),
+        ):
+            with self.subTest(verb=verb):
+                self.sent.clear()
+                (self.state / "last-shot").touch()
+                os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+                act(["shift", "ctrl", "shift"])
+                self.assertEqual(
+                    [argv[:4] for argv in self.sent],
+                    [
+                        ["xdotool", "keydown", "Shift_L"],
+                        ["xdotool", "keydown", "Control_L"],
+                        ["xdotool", *action],
+                        ["xdotool", "keyup", "Shift_L", "Control_L"],
+                    ],
+                )
+        self.assertEqual(set(self.displays), {":9"})
+
+    def test_keyup_still_runs_when_the_action_raises(self):
+        self.record(fail_on="mousemove")
+        (self.state / "last-shot").touch()
+        with self.assertRaises(subprocess.CalledProcessError):
+            fc.click({"display": ":9"}, 10, 20, "3", ["shift"])
+        self.assertEqual(self.sent[-1], ["xdotool", "keyup", "Shift_L"])
+
+    def test_a_failed_keydown_releases_the_keys_already_down(self):
+        run = self.record()
+
+        def fail_alt(argv, env=None, **_kwargs):
+            self.sent.append(list(argv))
+            if argv[1:3] == ["keydown", "Alt_L"]:
+                raise subprocess.CalledProcessError(1, argv)
+            return mock.Mock(returncode=0)
+
+        run.side_effect = fail_alt
+        (self.state / "last-shot").touch()
+        with self.assertRaises(subprocess.CalledProcessError):
+            fc.click({"display": ":9"}, 10, 20, "1", ["shift", "alt"])
+        self.assertNotIn("mousemove", [argv[1] for argv in self.sent])
+        self.assertEqual(self.sent[-1], ["xdotool", "keyup", "Shift_L"])
+
+    def test_an_unknown_modifier_is_refused_before_any_input(self):
+        run = self.record()
+        (self.state / "last-shot").touch()
+        with self.assertRaisesRegex(fc.ClientError, "--hold takes shift, ctrl, alt; refused super"):
+            fc.click({"display": ":9"}, 10, 20, "1", ["super"])
+        with self.assertRaisesRegex(fc.ClientError, "refused meta"):
+            fc.hover({"display": ":9"}, 10, 20, ["meta"])
+        with self.assertRaisesRegex(fc.ClientError, "refused Shift_L"):
+            fc.scroll({"display": ":9"}, 10, 20, 1, ["Shift_L"])
+        run.assert_not_called()
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}),
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+            self.assertRaises(SystemExit),
+        ):
+            fc.main(["click", "10", "20", "--hold", "super"])
+        self.assertIn("invalid choice: 'super'", stderr.getvalue())
+        run.assert_not_called()
+
+    def run_job(self, wait):
+        process = mock.Mock(pid=4242)
+        process.wait.side_effect = wait
+        with (
+            mock.patch.object(fc.subprocess, "Popen", return_value=process),
+            mock.patch.object(fc.os, "killpg", side_effect=ProcessLookupError),
+        ):
+            return fc.run_job_command(["probe"], {"FOREVER_CLIENT_DISPLAY": ":7"}, 0.3)
+
+    def test_job_end_releases_every_modifier_whatever_ended_the_command(self):
+        self.record()
+        self.assertEqual(self.run_job(lambda timeout=None: 1), 1)
+        self.assertEqual(self.sent, [self.RELEASE_ALL])
+
+        self.sent.clear()
+
+        def killed(timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("probe", timeout)
+            return -signal.SIGKILL
+
+        with self.assertRaisesRegex(fc.ClientError, "0.3 s limit"):
+            self.run_job(killed)
+        self.assertEqual(self.sent, [self.RELEASE_ALL])
+
+        self.sent.clear()
+
+        def interrupted(timeout=None):
+            if timeout is not None:
+                raise KeyboardInterrupt
+            return -signal.SIGTERM
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_job(interrupted)
+        self.assertEqual(self.sent, [self.RELEASE_ALL])
+        self.assertEqual(set(self.displays), {":7"})
+
+    def test_job_end_survives_a_failed_release(self):
+        self.record(fail_on="keyup")
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(self.run_job(lambda timeout=None: 0), 0)
+        self.assertIn("keyup Shift_L Control_L Alt_L on :7 failed", stderr.getvalue())
+
+    def test_the_next_holder_releases_what_a_killed_verb_left_held(self):
+        self.record()
+        session = {"display": ":5", "pid": os.getpid()}
+        with (
+            mock.patch.object(fc, "current_session", return_value=session),
+            mock.patch.object(fc, "process_start", return_value=1),
+            mock.patch.object(fc, "boot_id", return_value="boot"),
+        ):
+            handle, token = fc.acquire_job(0, "next")
+            fc.release_job(handle, token)
+        self.assertEqual(self.sent, [self.RELEASE_ALL])
+        self.assertEqual(self.displays, [":5"])
+
+    def test_serve_teardown_releases_every_modifier_before_the_client_stops(self):
+        self.record()
+        with (
+            mock.patch.object(fc, "end_client", side_effect=lambda *_args: self.sent.append(["end_client"])),
+            mock.patch.object(fc, "clear_leases"),
+        ):
+            fc.teardown(None, {}, None, {"display": ":3"})
+        self.assertEqual(self.sent, [self.RELEASE_ALL, ["end_client"]])
 
 
 class NestedHyprlandTest(unittest.TestCase):

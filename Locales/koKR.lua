@@ -93,7 +93,12 @@ L["Right-click for options"] = "우클릭하여 옵션 보기"
 L["Unavailable in combat"] = "전투 중에는 사용할 수 없음"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"사용법: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
-L["Use the game's quest list"] = "Use the game's quest list"
+L["Turn off the Forever quest list (use the game's tracker)"] =
+	"Turn off the Forever quest list (use the game's tracker)"
+L["Use the game's tracker"] = "Use the game's tracker"
+L["Keep this list"] = "Keep this list"
+L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
+	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
 L["What happened, or what you would like"] = "무슨 일이 있었는지 또는 원하는 기능"
 L.MINIMAP_UNAVAILABLE = "미니맵을 사용할 수 없어 사용자 지정 버튼을 건너뜁니다."
 L["MENU_BACK"] = "뒤로"

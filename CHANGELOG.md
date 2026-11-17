@@ -40,6 +40,7 @@
 ### Changed
 
 - **Change notes live in separate files.** Parallel addon changes can merge without conflicting over the changelog. Release tooling assembles their notes in section order. (#751)
+- **The Forever quest list tells you how to switch it off** the first time it replaces the game's tracker, and its Quests menu says so plainly. (#765)
 
 ### Fixed
 

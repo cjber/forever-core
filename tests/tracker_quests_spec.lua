@@ -98,6 +98,11 @@ end
 function section:IsShown()
 	return self.shown
 end
+-- The one-time hint is tracker_quests_hint_spec's: this section is never on screen, so it never opens here.
+function section.HookScript() end
+function section.IsVisible()
+	return false
+end
 
 local ready
 local function continueAfterAllEvents(fn)

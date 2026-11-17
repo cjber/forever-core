@@ -91,7 +91,12 @@ L["Right-click for options"] = "右鍵查看選項"
 L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
-L["Use the game's quest list"] = "使用遊戲內建的任務清單"
+L["Turn off the Forever quest list (use the game's tracker)"] =
+	"Turn off the Forever quest list (use the game's tracker)"
+L["Use the game's tracker"] = "Use the game's tracker"
+L["Keep this list"] = "Keep this list"
+L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
+	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
 L["What happened, or what you would like"] = "請描述遇到的問題或希望新增的功能"
 L.MINIMAP_UNAVAILABLE = "小地圖不可用，已略過自訂按鈕。"
 L["MENU_BACK"] = "返回"

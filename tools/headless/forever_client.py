@@ -18,7 +18,10 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py status
     forever_client.py shot [PATH]         # PNG of what the client shows now
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
+    forever_client.py hover X Y           # move the pointer to a point in the frame (after a fresh shot)
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
+    forever_client.py click X Y --hold shift [--hold ctrl]
+                                          # hold shift, ctrl or alt through a click, hover or scroll; released after
     forever_client.py key Escape          # Return, Escape or BackSpace
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
@@ -142,7 +145,8 @@ import tarfile
 import time
 import uuid
 import zlib
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -260,6 +264,8 @@ FOREVER_ADDONS = (
 WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
 UI_COMMANDS = {"/reload", "/rl", "/fstack", "/framestack", "/etrace", "/eventtrace"}
 UI_KEYS = {"Return", "Escape", "BackSpace"}
+# The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
+MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -601,14 +607,67 @@ def mark(name: str) -> float:
         return 0.0
 
 
-def send(state: Mapping, *args: str, before_input=None) -> None:
-    """One input action, at least INPUT_GAP after the last one from any invocation."""
+def modifier_keys(hold: Sequence[str]) -> list[str]:
+    """The keysyms for `--hold` names, once each in the order given; any name but shift, ctrl or alt is refused."""
+    refused = [name for name in hold if name not in MODIFIER_KEYS]
+    if refused:
+        raise ClientError(f"--hold takes {', '.join(MODIFIER_KEYS)}; refused {', '.join(refused)}")
+    return list(dict.fromkeys(MODIFIER_KEYS[name] for name in hold))
+
+
+def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.values()) -> str | None:
+    """Send keyup for modifier keys on a display; the failure as text, or None. It never raises.
+
+    No safety check runs first: a key release is the one input that is always safe, and job end must send it even
+    when the client is somewhere a verb would be refused. The X server ignores a release for a key that is not down.
+    """
+    keys = list(keys)
+    if not display or not keys:
+        return None
+    try:
+        subprocess.run(
+            ["xdotool", "keyup", *keys],
+            env={**os.environ, "DISPLAY": display},
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return f"keyup {' '.join(keys)} on {display} failed: {error}"
+    return None
+
+
+def release_session_modifiers(state: Mapping | None) -> None:
+    """Release shift, ctrl and alt on the session's display, so no job inherits a key an ended one held."""
+    failure = release_modifiers((state or {}).get("display"))
+    if failure:
+        print(f"forever_client: {failure}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
+    """Hold modifier keys down for the body, releasing every key pressed even when the body raises."""
+    pressed: list[str] = []
+    try:
+        for key in keys:
+            x(state, "keydown", key)
+            pressed.append(key)
+        yield
+    finally:
+        failure = release_modifiers(state.get("display"), pressed)
+    if failure:
+        raise ClientError(failure)
+
+
+def send(state: Mapping, *args: str, before_input=None, hold: Sequence[str] = ()) -> None:
+    """One input action, at least INPUT_GAP after the last one from any invocation, with `hold` keys held down."""
     wait = INPUT_GAP - (time.time() - mark("last-input"))
     if wait > 0:
         time.sleep(wait)
     if before_input:
         before_input()
-    x(state, *args)
+    with held(state, hold):
+        x(state, *args)
     (STATE_DIR / "last-input").touch()
 
 
@@ -736,9 +795,10 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
 # here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
 # X position to the point and must never be used.
-def click(state: Mapping, px: int, py: int, button: str) -> None:
+def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
+    keys = modifier_keys(hold)
     if mark("last-shot") <= mark("last-input"):
         raise ClientError("take a `shot` and read it first: a click must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
@@ -752,10 +812,20 @@ def click(state: Mapping, px: int, py: int, button: str) -> None:
         if state.get("manual_launcher") and not state.get("ready") and client_pid():
             raise ClientError("the game has started: wait for READY before clicking")
 
-    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard)
+    send(state, "mousemove", str(px), str(py), "click", button, before_input=launcher_guard, hold=keys)
 
 
-def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
+def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
+    """Move the pointer to a point in the current frame, for a tooltip or an OnEnter check; screenshot-bound."""
+    keys = modifier_keys(hold)
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a hover must aim at addon UI in the current frame")
+    if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+        raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    send(state, "mousemove", str(px), str(py), hold=keys)
+
+
+def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = ()) -> None:
     """Turn the mouse wheel at a point in the current frame: positive is up (zoom in), negative down.
 
     The world map's zoom lives on its ScrollContainer, which a click does not reach and `slash` refuses to open up as
@@ -763,6 +833,7 @@ def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
     """
     if ticks == 0:
         raise ClientError("scroll takes a non-zero number of wheel ticks: positive up, negative down")
+    keys = modifier_keys(hold)
     if mark("last-shot") <= mark("last-input"):
         raise ClientError("take a `shot` and read it first: a scroll must aim at addon UI in the current frame")
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
@@ -779,6 +850,7 @@ def scroll(state: Mapping, px: int, py: int, ticks: int) -> None:
         "--delay",
         WHEEL_DELAY_MS,
         button,
+        hold=keys,
     )
 
 
@@ -1858,6 +1930,9 @@ def acquire_job(timeout: float | None, label: str, *, session_end: bool = False)
                         f"queue position {position}"
                     ) from None
                 time.sleep(JOB_POLL)
+        # A verb that held a modifier and was killed before its own release left no process to send keyup, so the
+        # next holder of the lock sends it before any input of its own.
+        release_session_modifiers(current_session())
         token = uuid.uuid4().hex
         write_job_record(
             {
@@ -2931,6 +3006,7 @@ def teardown(
     link: Path | None,
     state: dict | None,
 ) -> None:
+    release_session_modifiers(state)
     end_client(gamescope, wine, state)
     if link and link.is_symlink():
         link.unlink()
@@ -3623,6 +3699,8 @@ def run_job_command(command, env, maximum, check=None) -> int:
         except ProcessLookupError:
             pass
         process.wait()
+        # Whatever ended the command, including a SIGKILL that skipped a verb's own release, no modifier stays held.
+        release_session_modifiers({"display": env.get("FOREVER_CLIENT_DISPLAY")})
 
 
 def read_hyprland_json(name: str) -> dict | None:
@@ -4049,7 +4127,7 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "scroll", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -4076,9 +4154,11 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     if args.verb == "shot":
         print(shot(state, args.path or STATE_DIR / f"shot-{int(time.time())}.png"))
     elif args.verb == "click":
-        click(state, args.x, args.y, args.button)
+        click(state, args.x, args.y, args.button, args.hold)
+    elif args.verb == "hover":
+        hover(state, args.x, args.y, args.hold)
     elif args.verb == "scroll":
-        scroll(state, args.x, args.y, args.ticks)
+        scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
         press(state, args.keys)
     elif args.verb == "slash":
@@ -4174,15 +4254,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "scroll", "key", "slash", "eval", "errors"):
+    for name in ("reload", "shot", "click", "hover", "scroll", "key", "slash", "eval", "errors"):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
+        if name in ("click", "hover", "scroll"):
+            p.add_argument(
+                "--hold",
+                action="append",
+                default=[],
+                choices=tuple(MODIFIER_KEYS),
+                help="a modifier to hold down through the action and release after it; repeat for more than one",
+            )
         if name == "shot":
             p.add_argument("path", nargs="?", type=Path)
         elif name == "click":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
             p.add_argument("--button", default="1", choices=("1", "3"))
+        elif name == "hover":
+            p.add_argument("x", type=int)
+            p.add_argument("y", type=int)
         elif name == "scroll":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)

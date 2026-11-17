@@ -47,6 +47,10 @@ local function SetEnabled(value)
 	if type(db) ~= "table" then
 		return
 	end
+	-- A player who turns the list off has found the switch, so the one-time hint that points at it is answered too.
+	if not value then
+		db.questListHintDone = true
+	end
 	if db.questList == value then
 		return
 	end
@@ -441,7 +445,7 @@ end
 ---@param menu ForeverTrackerMenuBuilder
 local function QuestMenu(target, menu)
 	if target.kind == "section" then
-		menu:Action(L["Use the game's quest list"], function()
+		menu:Action(L["Turn off the Forever quest list (use the game's tracker)"], function()
 			TrackerQuests.SetEnabled(false)
 		end)
 		return
@@ -1513,6 +1517,116 @@ Mixin(section, Overrides)
 section.OnScrollChanged = Overrides.OnScrollChanged
 CreateItemPool(section)
 
+-- The one-time hint beside the Quests header: what the list is, where its switch lives, and one click back to the
+-- game's tracker. It is the client's own tutorial box (GlowBoxTemplate, art only, no Blizzard script) on a frame of
+-- ours. It shows while the list is drawn in place of the game's tracker, out of combat, until the player picks either
+-- button; `questListHintDone` records that choice for the account, and a missing key means not yet answered.
+local HINT_TEXT = "This is the Forever quest list, shown in place of the game's quest tracker. To switch it off "
+	.. "later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
+local HINT_WIDTH = 260
+local HINT_PAD = 14
+local HINT_GAP = 12
+---@type any
+local hint
+
+---@return boolean
+local function HintDone()
+	local db = Database()
+	return type(db) ~= "table" or db.questListHintDone == true
+end
+
+local function AnswerHint()
+	local db = Database()
+	if type(db) == "table" then
+		db.questListHintDone = true
+	end
+	if hint then
+		hint:Hide()
+	end
+end
+
+---@param button any
+local function FitHintButton(button)
+	button:SetWidth(math.max(90, math.ceil(button:GetTextWidth() or 0) + 24))
+end
+
+---@return any
+local function HintFrame()
+	if hint then
+		return hint
+	end
+	local frame = CreateFrame("Frame", nil, UIParent, "GlowBoxTemplate")
+	frame:SetFrameStrata("DIALOG")
+	frame:SetClampedToScreen(true)
+	frame:EnableMouse(true)
+	frame:SetWidth(HINT_WIDTH)
+
+	local text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLeft")
+	text:SetPoint("TOPLEFT", HINT_PAD, -HINT_PAD)
+	text:SetWidth(HINT_WIDTH - 2 * HINT_PAD)
+	text:SetJustifyH("LEFT")
+	text:SetJustifyV("TOP")
+	text:SetText(L[HINT_TEXT])
+
+	local off = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate")
+	off:SetHeight(22)
+	off:SetText(L["Use the game's tracker"])
+	FitHintButton(off)
+	off:SetPoint("BOTTOMLEFT", HINT_PAD, HINT_PAD)
+	off:SetScript("OnClick", function()
+		AnswerHint()
+		TrackerQuests.SetEnabled(false)
+	end)
+
+	local keep = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate")
+	keep:SetHeight(22)
+	keep:SetText(L["Keep this list"])
+	FitHintButton(keep)
+	keep:SetPoint("LEFT", off, "RIGHT", 8, 0)
+	keep:SetScript("OnClick", AnswerHint)
+
+	-- A long translation widens the box rather than letting a button leave it.
+	local buttons = off:GetWidth() + 8 + keep:GetWidth()
+	local width = math.max(HINT_WIDTH, buttons + 2 * HINT_PAD)
+	frame:SetWidth(width)
+	text:SetWidth(width - 2 * HINT_PAD)
+	frame:SetHeight((text:GetStringHeight() or 0) + 22 + 3 * HINT_PAD)
+
+	frame.Text, frame.Off, frame.Keep = text, off, keep
+	frame:Hide()
+	hint = frame
+	return frame
+end
+
+-- Show the hint beside the list on the side with room, or hide it. The list must be the one drawn (on, not stepped
+-- aside for another tracker, and visible), and a hint never opens in combat: PLAYER_REGEN_ENABLED runs apply again.
+local function RefreshHint()
+	local wanted = ready
+		and not HintDone()
+		and TrackerQuests.Enabled()
+		and not ownedByOther
+		and section:IsVisible()
+		and not InCombatLockdown()
+	if not wanted then
+		if hint then
+			hint:Hide()
+		end
+		return
+	end
+	local frame = HintFrame()
+	frame:ClearAllPoints()
+	local x = section:GetCenter()
+	local screen = UIParent:GetWidth()
+	if x and screen and x < screen / 2 then
+		frame:SetPoint("TOPLEFT", section, "TOPRIGHT", HINT_GAP, 0)
+	else
+		frame:SetPoint("TOPRIGHT", section, "TOPLEFT", -HINT_GAP, 0)
+	end
+	frame:Show()
+end
+section:HookScript("OnShow", RefreshHint)
+section:HookScript("OnHide", RefreshHint)
+
 apply = function()
 	if not ready then
 		return
@@ -1526,6 +1640,7 @@ apply = function()
 		HideItems(section)
 	end
 	section:MarkDirty()
+	RefreshHint()
 end
 
 EventUtil.ContinueAfterAllEvents(function()
