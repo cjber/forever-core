@@ -1784,6 +1784,7 @@ class LinkBuildTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
         self.addons = self.state / "AddOns"
         self.addons.mkdir()
+        self.enterContext(mock.patch.object(fc, "addons_dir", return_value=self.addons))
         self.build = self.state / "build"
         self.build.mkdir()
         self.folders = [("LegacyForever", self.build)]
@@ -3716,7 +3717,10 @@ class BrokerTest(unittest.TestCase):
             mock.patch.object(fc, "ensure_session", return_value=state),
             mock.patch.object(fc, "recover_links"),
             mock.patch.object(fc, "release_job") as released,
-            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=7)) as run,
+            mock.patch.object(
+                fc.subprocess, "Popen", return_value=mock.Mock(pid=123, wait=mock.Mock(return_value=7))
+            ) as run,
+            mock.patch.object(fc.os, "killpg"),
         ):
             code = fc.job(argparse.Namespace(command=["--", "probe.sh"], label=None, timeout=5, manual_launcher=False))
         self.assertEqual(code, 7)
@@ -3774,35 +3778,19 @@ class BrokerTest(unittest.TestCase):
         self.assertEqual(fc.describe_job(), "another job")
         with (
             mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "old"}),
-            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "new")) as acquire,
-            mock.patch.object(fc, "release_job"),
+            self.assertRaisesRegex(fc.ClientError, "lease expired: run lease again"),
         ):
-            self.assertEqual(fc.with_job("shot", 5, lambda _state: 0), 0)
-        acquire.assert_called_once_with(5, "shot")
+            fc.with_job("shot", 5, mock.Mock())
 
-    def test_a_lease_token_is_accepted_and_a_foreign_token_queues(self):
-        self.holder(token="lease-token")
-        state = live_state(ready=1.0)
-        action = mock.Mock(return_value=0)
+    def test_a_job_token_proceeds_without_taking_the_lock(self):
+        self.holder(token="job-token")
         with (
-            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "lease-token"}),
-            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "job-token"}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
             mock.patch.object(fc, "acquire_job") as acquire,
         ):
-            self.assertEqual(fc.with_job("shot", 600, action), 0)
+            self.assertEqual(fc.with_job("shot", 0, lambda _state: 0), 0)
         acquire.assert_not_called()
-        action.assert_called_once_with(state)
-
-        action.reset_mock()
-        with (
-            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "another-job"}),
-            mock.patch.object(fc, "load_state", return_value=state),
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")) as acquire,
-            mock.patch.object(fc, "release_job"),
-        ):
-            self.assertEqual(fc.with_job("shot", 600, action), 0)
-        acquire.assert_called_once_with(600, "shot")
 
     def test_a_scroll_without_a_token_takes_the_job_lock(self):
         """A wheel verb run on its own is a job: job.lock is held, and job.json names it, for that invocation."""
@@ -3834,24 +3822,171 @@ class BrokerTest(unittest.TestCase):
         self.assertFalse(fc.job_record_path().exists(), "the lock is the invocation's, not the session's")
         self.assertTrue((self.state / "last-job").exists(), "the job's end is recorded for the idle limit")
 
-    def test_a_lease_prints_its_token_and_names_the_holder(self):
-        holder = mock.Mock(pid=os.getpid())
+    def make_lease(self, ttl=600):
         out = io.StringIO()
         with (
-            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "lease-token")),
             mock.patch.object(fc, "ensure_session", return_value=live_state(ready=1.0)),
-            mock.patch.object(fc, "start_holder", return_value=holder) as start,
             contextlib.redirect_stdout(out),
         ):
-            options = argparse.Namespace(ttl=600, timeout=5, manual_launcher=False, label="interactive")
-            self.assertEqual(fc.lease(options), 0)
-        self.assertEqual(out.getvalue().strip(), "lease-token")
-        record = json.loads(fc.job_record_path().read_text())
-        self.assertEqual(record["token"], "lease-token")
-        self.assertEqual(record["pid"], os.getpid())
+            fc.lease(argparse.Namespace(ttl=ttl, timeout=0, manual_launcher=False, label="interactive"))
+        return out.getvalue().strip()
+
+    def test_a_lease_leaves_the_job_lock_free(self):
+        token = self.make_lease()
+        record = json.loads((self.state / "leases" / f"{token}.json").read_text())
         self.assertEqual(record["label"], "interactive")
-        self.assertIn("expires", record)
-        start.assert_called_once()
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_a_lease_verb_holds_and_releases_its_own_lock(self):
+        token = self.make_lease()
+
+        def action(_state):
+            self.assertEqual(fc.job_holder()["label"], "interactive: shot")
+            with self.assertRaises(fc.ClientError):
+                fc.acquire_job(0, "another agent")
+            return 7
+
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": token}),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+        ):
+            self.assertEqual(fc.with_job("shot", 0, action), 7)
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_an_expired_lease_errors(self):
+        token = self.make_lease()
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": token}),
+            mock.patch.object(fc.time, "time", return_value=time.time() + 601),
+            self.assertRaisesRegex(fc.ClientError, "lease expired: run lease again"),
+        ):
+            fc.with_job("shot", 0, mock.Mock())
+
+    def test_a_job_limit_kills_the_command_and_frees_the_lock(self):
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+            self.assertRaisesRegex(fc.ClientError, "0.1 s"),
+        ):
+            fc.job(
+                argparse.Namespace(
+                    command=[sys.executable, "-c", "import time; time.sleep(30)"],
+                    label=None,
+                    timeout=0,
+                    manual_launcher=False,
+                    max=0.1,
+                )
+            )
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_down_inside_a_job_requests_stop_without_waiting(self):
+        self.holder(token="own")
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_JOB": "own"}),
+            mock.patch.object(fc, "load_state", side_effect=AssertionError("must not wait")),
+        ):
+            self.assertEqual(fc.down(), 0)
+        self.assertTrue((self.state / fc.STOP).exists())
+
+    def test_release_removes_the_lease_record(self):
+        token = self.make_lease()
+        self.assertEqual(fc.release(token), 0)
+        self.assertFalse((self.state / "leases" / f"{token}.json").exists())
+
+    def test_a_job_timeout_escalates_to_kill(self):
+        clock = FakeClock()
+        process = mock.Mock(pid=123)
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("probe", 1),
+            -signal.SIGKILL,
+        ]
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(fc.subprocess, "Popen", return_value=process) as spawn,
+            mock.patch.object(fc.os, "killpg") as kill,
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            self.assertRaisesRegex(fc.ClientError, "1 s limit"),
+        ):
+            fc.job(argparse.Namespace(command=["probe"], label=None, timeout=0, manual_launcher=False, max=1))
+        self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+        self.assertEqual(
+            [call for call in kill.call_args_list if call.args[1] != 0],
+            [
+                mock.call(123, signal.SIGTERM),
+                mock.call(123, signal.SIGKILL),
+            ],
+        )
+        handle, own = fc.acquire_job(0, "another agent")
+        fc.release_job(handle, own)
+
+    def test_waiting_for_a_session_reports_its_deadlines_and_reuse(self):
+        for holder, expected in (
+            (None, "session pid 42"),
+            ({"pid": 73, "label": "smoke legacy-forever", "token": "abc"}, "smoke legacy-forever (pid 73"),
+        ):
+            with (
+                self.subTest(holder=holder),
+                mock.patch.object(fc, "recover_links"),
+                mock.patch.object(fc, "current_session", return_value={"pid": 42, "started": 100, "ready": 200}),
+                mock.patch.object(fc, "job_holder", return_value=holder),
+                mock.patch.object(fc.time, "time", return_value=300),
+                mock.patch.object(fc, "wait_for_session", side_effect=fc.ClientError("stop test")),
+                contextlib.redirect_stderr(io.StringIO()) as out,
+                self.assertRaisesRegex(fc.ClientError, "stop test"),
+            ):
+                fc.serve(argparse.Namespace(wait=True, timeout=0))
+            self.assertIn(expected, out.getvalue())
+            self.assertIn("latest end 1970-01-01T03:01:40Z (177 min remaining)", out.getvalue())
+            self.assertIn("idle end 1970-01-01T00:13:20Z (8 min remaining)", out.getvalue())
+            self.assertIn("job/lease run inside the resident session now without --wait", out.getvalue())
+
+    def test_exited_job_leader_gives_its_child_time_to_handle_term(self):
+        completed = self.state / "child-finished"
+        ready = self.state / "child-ready"
+        child_code = (
+            "import signal, time; from pathlib import Path; "
+            f"signal.signal(signal.SIGTERM, lambda *_: (time.sleep(0.2), Path({str(completed)!r}).touch(), exit(0))); "
+            f"Path({str(ready)!r}).touch(); time.sleep(30)"
+        )
+        leader_code = (
+            "import subprocess, sys, time; from pathlib import Path; "
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+            f"ready = Path({str(ready)!r}); "
+            "exec('while not ready.exists(): time.sleep(0.01)')"
+        )
+        with (
+            mock.patch.object(fc, "ensure_session", return_value=live_state(display=":3", runtime_dir="/run/user/1")),
+            mock.patch.object(fc, "recover_links"),
+        ):
+            result = fc.job(
+                argparse.Namespace(
+                    command=[sys.executable, "-c", leader_code],
+                    label=None,
+                    timeout=0,
+                    manual_launcher=False,
+                    max=5,
+                )
+            )
+        self.assertEqual(result, 0)
+        self.assertTrue(completed.exists(), "the child must finish its TERM handler before SIGKILL")
+
+    def test_teardown_clears_lease_records(self):
+        self.make_lease()
+        clock = FakeClock()
+        with (
+            mock.patch.object(fc, "require_owned_prefix"),
+            mock.patch.object(fc, "stop_gamescope"),
+            mock.patch.object(fc, "prefix_snapshot", return_value={}),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+        ):
+            fc.teardown(None, {}, None, {})
+        self.assertEqual(list((self.state / "leases").iterdir()), [])
 
     def test_a_lease_ttl_is_capped(self):
         options = argparse.Namespace(ttl=fc.LEASE_MAX + 1, timeout=5, manual_launcher=False, label=None)
@@ -3860,12 +3995,12 @@ class BrokerTest(unittest.TestCase):
 
     def test_release_ends_only_the_lease_that_owns_the_token(self):
         self.holder(token="lease-token", label="a lease")
-        with self.assertRaisesRegex(fc.ClientError, "not the holder's"):
+        with self.assertRaisesRegex(fc.ClientError, "unknown lease"):
             fc.release("another-token")
 
     def test_release_refuses_a_job_that_is_not_a_lease(self):
         self.holder(token="job-token", label="smoke legacy-forever")
-        with self.assertRaisesRegex(fc.ClientError, "not a lease's"):
+        with self.assertRaisesRegex(fc.ClientError, "unknown lease"):
             fc.release("job-token")
 
     def test_a_resident_sessions_processes_are_not_a_busy_client(self):

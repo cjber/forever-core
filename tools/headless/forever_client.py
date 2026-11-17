@@ -10,9 +10,9 @@ attempts produce no game process. Update the game in Battle.net before retrying 
 
     forever_client.py serve               # the resident session: start, wait for the world, stay up while jobs arrive
     forever_client.py up                  # the same lifecycle in the foreground
-    forever_client.py job -- <command>    # run one job in the session, holding the job lock for its length
-    forever_client.py run -- <command>    # the same verb under the name it had before
-    forever_client.py lease [--ttl S]     # hold the job lock for an interactive agent; prints a token
+    forever_client.py job [--max S] -- <command>  # exclusive job, with a hard command limit
+    forever_client.py run -- <command>    # alias for job
+    forever_client.py lease [--ttl S]     # ensure the session; print a token for commands that each take the lock
     forever_client.py release TOKEN       # end that lease now
     forever_client.py down                # stop the session once the job in flight, if any, has finished
     forever_client.py status
@@ -74,9 +74,11 @@ the login once rather than once per test. A job holds `STATE_DIR/job.lock` only 
 ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
-is `job` under its old name. `lease` holds the job lock for an agent that drives the client across several tool
-calls, and `release TOKEN` ends it. A source digest change in the launcher or its loaded repository modules also
-ends serve through the same locked teardown; the next job starts a fresh serve with the updated code.
+is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
+Each verb using that token takes and releases the lock itself; `release TOKEN` deletes the lease record.
+Use `job --max S -- COMMAND` for exclusive work, limited to 600 s by default and at most 1800 s.
+A source digest change in the launcher or its loaded repository modules also ends serve through the same locked
+teardown; the next job starts a fresh serve with the updated code.
 
 Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs as a
 job: it proceeds when `FOREVER_CLIENT_JOB` names the token in `job.json`, and otherwise takes the job lock itself for
@@ -123,6 +125,7 @@ import time
 import uuid
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PIL import Image
@@ -1641,9 +1644,7 @@ def job_started() -> float:
     return float(started) if isinstance(started, (int, float)) else time.time()
 
 
-def acquire_job(
-    timeout: float | None, label: str, *, ttl: float | None = None, session_end: bool = False
-) -> tuple[object, str]:
+def acquire_job(timeout: float | None, label: str, *, session_end: bool = False) -> tuple[object, str]:
     """Take the job lock for this process, waiting up to `timeout` (None: until it is free) for its holder.
 
     The holder is printed once while the wait runs, so an agent knows which job it queues behind. The record names
@@ -1682,8 +1683,6 @@ def acquire_job(
         "label": label,
         "started": time.time(),
     }
-    if ttl is not None:
-        record["expires"] = time.time() + ttl
     write_job_record(record)
     return handle, token
 
@@ -1711,14 +1710,18 @@ def with_job(label: str, timeout: float, action) -> int:
 
     A verb invoked by a `job` command carries `FOREVER_CLIENT_JOB`, and proceeds without taking the lock again. A
     verb run on its own takes the job lock for this one invocation, waiting for the job in flight, and releases it
-    afterwards. A token that is not the holder's queues like any other caller.
+    afterwards. A lease token labels one invocation; expired or unknown tokens fail before queuing.
     """
     token = os.environ.get("FOREVER_CLIENT_JOB")
     holder = job_holder()
     if token and holder is not None and holder.get("token") == token:
         return action(load_state())
+    if token:
+        label = f"{live_lease(token)['label']}: {label}"
     handle, own = acquire_job(timeout, label)
     try:
+        if token:
+            live_lease(token)
         state = load_state()
         if not session_alive(state):
             raise ClientError("the session ended while this verb waited for the client: run it again")
@@ -2628,6 +2631,7 @@ def teardown(
         generated = Path(state["headless_addon"])
         if generated.is_dir() and generated.parent == STATE_DIR:
             shutil.rmtree(generated)
+    clear_leases()
     state_file().unlink(missing_ok=True)
 
 
@@ -2771,6 +2775,29 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
     lock = open(STATE_DIR / "lock", "w")
     try:
         if args.wait:
+            resident = current_session()
+            if resident:
+                latest = resident.get("started", time.time()) + MAX_SESSION
+                ready = resident.get("ready", resident.get("started", time.time()))
+                try:
+                    ended = (STATE_DIR / LAST_JOB).stat().st_mtime
+                except FileNotFoundError:
+                    ended = ready
+                idle = max(ready, ended) + IDLE_LIMIT
+                holder = describe_job() if job_holder() else f"session pid {resident.get('pid')}"
+                now = time.time()
+
+                def deadline(end: float) -> str:
+                    stamp = datetime.fromtimestamp(end, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    return f"{stamp} ({max(0, (end - now) / 60):.0f} min remaining)"
+
+                print(
+                    f"forever_client: session holder {holder}; latest end {deadline(latest)}, "
+                    f"idle end {deadline(idle)}; job/lease run inside the resident session "
+                    "now without --wait",
+                    file=sys.stderr,
+                    flush=True,
+                )
             wait_for_session(lock, args.timeout)
         else:
             try:
@@ -2982,6 +3009,14 @@ def down() -> int:
     teardown, so `down` does the same work itself: the token-owned Wine processes, gamescope from `state["gamescope"]`,
     the dev addon link and the state file (#578). A pid that no longer exists must not crash `down`.
     """
+    token = os.environ.get("FOREVER_CLIENT_JOB")
+    holder = job_holder()
+    if token and holder and holder.get("token") == token:
+        (STATE_DIR / STOP).touch()
+        print("forever_client: the session stops when this job ends")
+        return 0
+    if token:
+        live_lease(token)
     state = load_state()
     started = state.get("owner_start", state.get("start_ticks"))
     owner = {"pid": state.get("pid"), "started": started, "boot_id": state.get("boot_id")}
@@ -3023,6 +3058,7 @@ def down() -> int:
             raise ClientError("the headless session changed: stale cleanup deferred")
         recover_links()
         if state.get("boot_id") and boot_id() and state["boot_id"] != boot_id():
+            clear_leases()
             state_file().unlink(missing_ok=True)
             return 0
         link = Path(state["link"]) if state.get("link") else CLIENT / "Interface/AddOns" / ADDON.name
@@ -3120,6 +3156,9 @@ def job(args: argparse.Namespace) -> int:
     command = [word for word in args.command if word != "--"]
     if not command:
         raise ClientError("job needs a command after --")
+    maximum = getattr(args, "max", LEASE_TTL)
+    if not 0 < maximum <= LEASE_MAX:
+        raise ClientError(f"--max takes 1 to {LEASE_MAX} s")
     label = (args.label or Path(command[0]).name)[:80]
     handle, token = acquire_job(args.timeout, label)
     try:
@@ -3131,113 +3170,95 @@ def job(args: argparse.Namespace) -> int:
             "FOREVER_CLIENT_DISPLAY": state["display"],
             "FOREVER_CLIENT_JOB": token,
         }
-        return subprocess.run(command, env=env, check=False).returncode
+        process = subprocess.Popen(command, env=env, start_new_session=True)
+        try:
+            return process.wait(timeout=maximum)
+        except subprocess.TimeoutExpired:
+            raise ClientError(f"job exceeded its {maximum:g} s limit") from None
+        finally:
+            # End the whole group, including children left behind by an exited command.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            grace_end = time.monotonic() + 2
+            while True:
+                process.poll()  # Reap the leader so it does not keep an otherwise empty group alive.
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                remaining = grace_end - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(0.05, remaining))
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
     finally:
         release_job(handle, token)
 
 
-def start_holder(handle, token: str, ttl: float) -> subprocess.Popen:
-    """Start the detached process that keeps the job lock until release, the ttl, or the session's end.
+def lease_path(token: str) -> Path:
+    if not token or Path(token).name != token or token in (".", ".."):
+        raise ClientError("lease expired: run lease again")
+    return STATE_DIR / "leases" / f"{token}.json"
 
-    The lock's open file description is handed to the child, so it stays held after this process exits: flock is
-    released only when every descriptor of that description is closed.
-    """
-    env = {k: v for k, v in os.environ.items() if k != "FOREVER_CLIENT_JOB"}
-    log = open(STATE_DIR / SERVE_LOG, "a")
-    command = [sys.executable, str(Path(__file__).resolve()), "lease-hold", str(handle.fileno()), token, str(ttl)]
+
+def live_lease(token: str) -> dict:
     try:
-        return subprocess.Popen(
-            command,
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            pass_fds=(handle.fileno(),),
-        )
-    finally:
-        log.close()
+        record = json.loads(lease_path(token).read_text())
+        if record["token"] == token and record["expires"] > time.time():
+            return record
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    raise ClientError("lease expired: run lease again")
+
+
+def clear_leases() -> None:
+    directory = STATE_DIR / "leases"
+    if directory.exists():
+        for path in directory.glob("*.json"):
+            path.unlink(missing_ok=True)
 
 
 def lease(args: argparse.Namespace) -> int:
-    """Hold the job lock for an interactive agent and print its token, leaving a detached holder to keep it.
-
-    The holder releases the lock at `release TOKEN`, at the ttl, or when the session ends. The record names the
-    holder, not this short-lived process, so a waiter reports a live pid and the expiry.
-    """
+    """Ensure the shared session and print a lease token; each verb takes its own job lock."""
     if not 0 < args.ttl <= LEASE_MAX:
         raise ClientError(f"--ttl takes 1 to {LEASE_MAX} s")
     label = (args.label or "a lease")[:80]
-    handle, token = acquire_job(args.timeout, label, ttl=args.ttl)
+    handle, token = acquire_job(args.timeout, label)
     try:
         ensure_session(args.timeout, args.manual_launcher)
-        holder = start_holder(handle, token, args.ttl)
-    except BaseException:
-        release_job(handle, token, ended=False)
-        raise
-    write_job_record(
-        {
-            "pid": holder.pid,
-            "boot_id": boot_id(),
-            "start_ticks": process_start(holder.pid),
-            "token": token,
-            "label": label,
-            "started": time.time(),
-            "expires": time.time() + args.ttl,
-            "lease": True,
-        }
-    )
-    handle.close()
+        path = lease_path(token)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        started = time.time()
+        atomic_write(
+            path,
+            json.dumps(
+                {
+                    "token": token,
+                    "label": label,
+                    "started": started,
+                    "expires": started + args.ttl,
+                }
+            ),
+        )
+    finally:
+        release_job(handle, token)
     print(token, flush=True)
     return 0
 
 
-def lease_hold(fd: int, token: str, ttl: float) -> int:
-    """Keep the inherited job lock until `release TOKEN`, the ttl, or the session's end.
-
-    The lock arrives as an open file description, so this process holds it without taking it again; the flock is
-    released when the process exits and every descriptor of that description is closed.
-    """
-    handle = os.fdopen(fd, "a+")
-    expires = time.monotonic() + ttl
-    stopped = {"stop": False}
-
-    def on_signal(_signum, _frame):
-        stopped["stop"] = True
-
-    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
-    for signum in previous:
-        signal.signal(signum, on_signal)
-    try:
-        while not stopped["stop"] and time.monotonic() < expires and current_session() is not None:
-            time.sleep(1)
-    finally:
-        restore_handlers(previous)
-        release_job(handle, token)
-    return 0
-
-
 def release(token: str) -> int:
-    """End a lease: signal its holder, which releases the job lock and its record on the way out."""
-    record = job_holder()
-    if record is None:
-        raise ClientError("no job or lease holds the client")
-    if record.get("token") != token:
-        raise ClientError(f"that token is not the holder's: {describe_job()}")
-    if not record.get("lease"):
-        raise ClientError(f"that token is a job's, not a lease's: {describe_job()}")
+    """Delete a lease record without stopping the shared session."""
     try:
-        os.kill(record["pid"], signal.SIGTERM)
-    except (ProcessLookupError, KeyError, TypeError):
-        raise ClientError("the lease's holder is already gone") from None
-    # The holder removes its record before it releases the lock, so the record going away is the lease ending. A
-    # holder whose pid lingers as a zombie (its parent has not reaped it) has already done both.
-    deadline = time.monotonic() + LOGOUT_WAIT
-    while time.monotonic() < deadline:
-        current = read_job_record()
-        if current is None or current.get("token") != token:
-            return 0
-        time.sleep(0.2)
-    raise ClientError(f"the lease's holder {record['pid']} did not release the client within {LOGOUT_WAIT} s")
+        lease_path(token).unlink()
+    except FileNotFoundError:
+        raise ClientError("unknown lease token") from None
+    return 0
 
 
 def wineserver(wine: Mapping[str, str]) -> Path:
@@ -3483,9 +3504,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             default=1800,
             help="seconds to reach the world and to wait for the job in flight",
         )
+        p.add_argument("--max", type=float, default=LEASE_TTL, help=f"command limit in seconds, at most {LEASE_MAX}")
         p.add_argument("command", nargs=argparse.REMAINDER)
-    p = sub.add_parser("lease", help="hold the job lock for an interactive agent and print its token")
-    p.add_argument("--ttl", type=float, default=LEASE_TTL, help=f"seconds to hold it, at most {LEASE_MAX}")
+    p = sub.add_parser("lease", help="ensure the session and print a per-command lease token")
+    p.add_argument("--ttl", type=float, default=LEASE_TTL, help=f"seconds the token is valid, at most {LEASE_MAX}")
     p.add_argument("--label", default=None, help="what a waiter is told this lease is")
     p.add_argument(
         "--manual-launcher",
@@ -3500,10 +3522,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     p = sub.add_parser("release", help="end a lease now")
     p.add_argument("token")
-    p = sub.add_parser("lease-hold")
-    p.add_argument("fd", type=int)
-    p.add_argument("token")
-    p.add_argument("ttl", type=float)
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
@@ -3593,8 +3611,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return lease(args)
         if args.verb == "release":
             return release(args.token)
-        if args.verb == "lease-hold":
-            return lease_hold(args.fd, args.token, args.ttl)
         if args.verb == "down":
             return down()
         if args.verb == "capture-env":
