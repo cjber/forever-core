@@ -3,8 +3,8 @@ Forever addon, so there is nothing to set up, and it has no settings page of its
 for:
 
 - **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows. The Forever quest list is on by default and replaces the game's
-  objective tracker, stepping aside for a UI suite's own tracker. Turn it off in settings, with `/fcore quests`, or from
+  drag it once, and every addon follows. The Forever quest list replaces the game's objective
+  tracker, on by default with Adventure Guide and off otherwise, and steps aside for any other quest tracker. Turn it off in settings, with `/fcore quests`, or from
   the section menu.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.

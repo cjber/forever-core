@@ -69,7 +69,8 @@ local function Widget(kind, template)
 end
 
 local env, ns, section, menuContract, ready, tracker, created
-local combat, addons, uiWidth = false, {}, 1920
+-- Adventure Guide is loaded, so a fresh database draws the Forever list the hint points at (#776).
+local combat, addons, uiWidth = false, { AdventureGuideForever = true }, 1920
 
 local function Load(db)
 	created = {}

@@ -36,8 +36,8 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps. Enabled
-by default unless a UI suite owns the tracker, it lists watched quests in the Forever column and hides the game's whole
+It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps. On by
+default with Adventure Guide Forever loaded (off otherwise, and always off while another tracker owns the quests), it lists watched quests in the Forever column and hides the game's whole
 objective tracker while on, including scenarios and bonus objectives, as Questie does. The game's tracker comes back
 when the list is off. Every other section belongs to the addon that owns the feature: see the suite's ownership
 boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the

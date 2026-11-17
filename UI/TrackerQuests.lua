@@ -34,10 +34,18 @@ local function Database()
 	return ForeverCoreDB
 end
 
+-- The list was built for Adventure Guide, so with no stored choice it is on only where Adventure Guide is loaded; a
+-- player who installed core for another Forever addon keeps the game's tracker. A stored choice always wins (#776).
 ---@return boolean
 local function Enabled()
 	local db = Database()
-	return type(db) == "table" and db.questList ~= false
+	if type(db) ~= "table" then
+		return false
+	end
+	if db.questList ~= nil then
+		return db.questList ~= false
+	end
+	return C_AddOns.IsAddOnLoaded("AdventureGuideForever") == true
 end
 
 ---@param value boolean

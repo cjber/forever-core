@@ -118,7 +118,8 @@ local function DriverTick()
 	end
 	driverDispatch = false
 end
-local addons = {}
+-- Adventure Guide is loaded unless a case says otherwise, so a fresh database starts with the Forever list on (#776).
+local addons = { AdventureGuideForever = true }
 local ns = {
 	L = setmetatable({}, {
 		__index = function(_, key)
@@ -259,6 +260,20 @@ env.ForeverCoreDB = { questList = false }
 section:OnEvent("PLAYER_ENTERING_WORLD")
 check(not TrackerQuests.Enabled(), "stored_false_keeps_native_quest_list: Forever list is inactive")
 check(tracker:IsShown(), "stored_false_keeps_native_quest_list: native tracker stays shown")
+-- #776: without Adventure Guide a fresh database keeps the game's tracker, and a stored choice wins either way.
+addons.AdventureGuideForever = nil
+env.ForeverCoreDB = {}
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(not TrackerQuests.Enabled(), "no_adventure_guide: a fresh database leaves the Forever list off")
+check(tracker:IsShown(), "no_adventure_guide: native tracker stays shown")
+env.ForeverCoreDB = { questList = true }
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(TrackerQuests.Enabled(), "no_adventure_guide: a stored true turns the Forever list on")
+check(not tracker:IsShown(), "no_adventure_guide: the stored choice hides the native tracker")
+env.ForeverCoreDB = { questList = false }
+section:OnEvent("PLAYER_ENTERING_WORLD")
+check(tracker:IsShown(), "no_adventure_guide: a stored false gives the native tracker back")
+addons.AdventureGuideForever = true
 env.ForeverCoreDB = nil
 check(not TrackerQuests.Enabled(), "the list waits for the saved table")
 env.ForeverCoreDB = {}
