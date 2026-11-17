@@ -1013,7 +1013,10 @@ class VisualProofTest(unittest.TestCase):
         root = self.checkout("package-as: ForeverCore\n\nignore:\n  - UI/Main.lua\n")
         self.assertEqual(
             visual_proof.unsupported(root),
-            ["UI/Main.lua: .pkgmeta ignore excludes this TOC/XML-loaded runtime file from the package"],
+            [
+                "UI/Main.lua: .pkgmeta ignore rule 'UI/Main.lua' excludes this TOC/XML-loaded "
+                "runtime file from the package"
+            ],
         )
         with self.assertRaisesRegex(ValueError, "UI/Main.lua"):
             visual_proof.packaged_runtime_files(root)
@@ -1064,10 +1067,26 @@ class VisualProofTest(unittest.TestCase):
             subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
         (root / "Generated.lua").write_text("generated", encoding="utf-8")
         self.assertFalse(pkgmeta.read(root).keeps("Generated.lua"))
-        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+        with self.assertRaisesRegex(ValueError, "Generated.lua: untracked or ignored by Git"):
             visual_proof.packaged_runtime_files(root)
-        with self.assertRaisesRegex(ValueError, "Generated.lua"):
+        with self.assertRaisesRegex(ValueError, "Generated.lua: untracked or ignored by Git"):
             visual_proof.candidate_digest(root)
+
+    @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
+    def test_loaded_untracked_and_gitignored_scripts_name_git_with_a_policy(self):
+        for ignored in (False, True):
+            with self.subTest(ignored=ignored):
+                root = self.checkout()
+                if ignored:
+                    (root / ".gitignore").write_text("Generated.lua\n", encoding="utf-8")
+                (root / "ForeverCore.toc").write_text("Core.lua\nGenerated.lua\n", encoding="utf-8")
+                for command in (("init", "-q"), ("add", ".")):
+                    subprocess.run(["git", "-C", str(root), *command], check=True, capture_output=True)
+                (root / "Generated.lua").write_text("generated", encoding="utf-8")
+                with self.assertRaises(ValueError) as raised:
+                    visual_proof.packaged_runtime_files(root)
+                self.assertIn("Generated.lua: untracked or ignored by Git", str(raised.exception))
+                self.assertNotIn(".pkgmeta", str(raised.exception))
 
     @unittest.skipUnless(shutil.which("git"), "git mirrors the packager's untracked rule")
     def test_an_extraction_nested_in_a_checkout_is_still_an_extraction(self):

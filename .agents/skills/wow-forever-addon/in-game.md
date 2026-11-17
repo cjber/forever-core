@@ -1,9 +1,52 @@
 # Testing an addon in the real client
 
-Agents test in game with `tools/headless/forever_client.py` from the `forever-core` checkout. It runs the
-WoW: Forever client under gamescope's headless backend: the game renders on the GPU into a display of its own, so
-nothing appears on the player's desktop and their mouse and keyboard are never touched. Every verb acts on that
-display only.
+## Requesting a check
+
+One agent session drives the client: the long-lived kiln session titled `wow in-game`. Every other agent, whatever
+the repo or task, gets its proofs, smokes and in-game checks by sending that session a request and waiting for the
+reply. Only the in-game agent runs `forever_client.py` or anything that starts the game, so requests run one after
+another from one queue instead of racing for the job lock, the sign-in and the AddOns folder. The unattended
+`forever-smoke` timer is the one other caller, and it takes the same job lock.
+
+1. Find it with `kiln msg list`. If none runs, check again, then start the one session (a second would compete for
+   the client):
+
+   ```sh
+   kiln msg spawn claude --interactive --dir ~/drive/proj/wow --title "wow in-game" -- \
+     "Read ~/.agents/skills/sweep/profiles/wow-ingame.md and follow it. Resume ~/.local/state/sweep/wow/ingame-queue.md."
+   ```
+
+2. Push the candidate commit, then send one request:
+
+   ```
+   INGAME <repo> <full sha> from <your kiln id>
+   kind: proof | smoke | check
+   checkout: <worktree path>                       (proof and check)
+   flows: <name>=<slash or lua file>; ...          (proof)
+   check: <what to verify, steps, expected result> (check)
+   needs: <third-party addons, character, place>   (optional)
+   ```
+
+   The ref is the full 40-character SHA of a pushed commit. Every check one commit needs goes in one message, as
+   several `kind:` blocks one after another, so the in-game agent loads that build once. A `check` names
+   everything the in-game agent needs to judge it without asking back: the steps, the expected result, and the frame
+   or text that shows it.
+
+3. Wait for the reply as a kiln message, in the background: it arrives in your session on its own, so carry on
+   with other work and leave the queue, the client and the commit statuses unpolled.
+   - `INGAME PASS`: carries the capture paths, gist URLs and, for a proof, the `.visual-proof.json` it wrote into
+     your checkout. Commit that file and embed the captures.
+   - `INGAME FAIL`: observed against expected, with captures and Lua errors. Fix the defect and request again.
+   - `INGAME BLOCKED`: the client cannot reach the world (the player is on, sign-in needs the user). Report it as
+     your blocker.
+
+The rest of this file is the in-game agent's reference for running requests.
+
+## The tool
+
+`tools/headless/forever_client.py` in the `forever-core` checkout runs the WoW: Forever client under gamescope's
+headless backend: the game renders on the GPU into a display of its own, so nothing appears on the player's desktop
+and their mouse and keyboard are never touched. Every verb acts on that display only.
 
 ## Hard rules
 
@@ -37,7 +80,7 @@ the same lock for that one invocation. `job.json` in `~/.local/state/forever-cli
 prints what it waits for.
 
 A job exits 3 only when the player's own client is running, because the Wine prefix is used by processes this tool
-does not own. Another agent's job is waited for, up to `--timeout` (1800 s for `job`, `lease`, `smoke` and `proof`,
+does not own. Another job (the smoke timer's) is waited for, up to `--timeout` (1800 s for `job`, `lease`, `smoke` and `proof`,
 600 s for a single verb or for `up`/`serve` to reach the world). When the player is in game, the test waits for them;
 a PR then lists its `/reload` steps for the player instead.
 
@@ -110,7 +153,7 @@ without the lock, so they never queue behind the job they are unblocking; `key` 
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
 - Exit 3 means the player's own client is running: the Wine prefix is used by processes this tool does not own.
-  Nothing is posted then, so a caller runs it again later. Another agent's job is waited for, up to `--timeout`.
+  Nothing is posted then, so a caller runs it again later. Another job (the smoke timer's) is waited for, up to `--timeout`.
 - The AddOns folder is shared, so each slot is put back exactly as it was: a link at its own target, a store install
   moved back from `<folder>.smoke-backup`. The record of what it borrowed is `~/.local/state/forever-client/smoke-links.json`
   while the job runs, kept only if a restore could not finish. A stop that never reaches Python's own handlers
@@ -169,7 +212,7 @@ chat line at login, and a dev build's stamped version does not equal the addon's
 does not fire on its own in a proof session. Name the flow that shows the changed text: the addon's own slash command
 (the `SLASH_` globals in its files, such as `/lf` or `/fgf`), or a Lua file through `!!DevSmoke` for anything a chat
 command cannot reach, written as the eval section below shows. Exit 3 means the player's own client is running, so
-nothing was recorded and a later run tries again; another agent's job is waited for. Exit 1 is a job that stopped
+nothing was recorded and a later run tries again; another job is waited for. Exit 1 is a job that stopped
 before its flows ran, and exit 2 is a failure the tool names. `--manual-launcher` starts the session that way while
 launcher OCR is not finding Play.
 

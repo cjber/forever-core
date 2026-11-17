@@ -29,8 +29,8 @@ release leaves every pin alone rather than failing the tooling sync.
 
 A sync PR that changes runtime files or moves the pin cannot record the visual proof the consumer's `visual-proof` job
 needs, because this script never drives the client. When the tree the PR now carries has no proof for its own input
-digest, the run prints the `python3 tools/headless/forever_client.py proof ...` command for that PR's head, and the
-release session runs it and commits the `.visual-proof.json` it writes.
+digest, the run prints the `INGAME ... kind: proof` request for that PR's head, and the release session sends it to
+the in-game agent and commits the `.visual-proof.json` it writes.
 
 The sync also adds the standalone `forevercore` required store dependency to bundled consumers, retaining their
 pinned external and move rule. See docs/dependency-transition.md for the gates before any bundle removal.
@@ -830,13 +830,15 @@ def proof_needed(root: Path, files: list[str]) -> bool:
 
 
 def proof_hint(repo: str, ref: str) -> str:
-    """The command that records the proof a sync PR needs, with its flow named by hand."""
+    """The in-game request that records the proof a sync PR needs, with its flow named by hand."""
     return (
         f"{repo}: this PR changes runtime files, so `visual-proof` needs a proof recorded on its head. Fetch\n"
-        f"`{BRANCH}` and check it out, then run:\n"
-        f"  python3 tools/headless/forever_client.py proof --repo {repo} --ref {ref} "
-        f'--checkout <the checkout of {ref}> --flow "update notice=<slash command or Lua file>"\n'
-        f"Commit the {VISUAL_PROOF} it writes to the PR."
+        f"`{BRANCH}` and check it out, then send the `wow in-game` session (wow-forever-addon/in-game.md):\n"
+        f"  INGAME {repo} {ref} from <your kiln id>\n"
+        f"  kind: proof\n"
+        f"  checkout: <the checkout of {ref}>\n"
+        f"  flows: update notice=<slash command or Lua file>\n"
+        f"Commit the {VISUAL_PROOF} its reply names to the PR."
     )
 
 
