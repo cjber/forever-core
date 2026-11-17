@@ -50,8 +50,9 @@ Use `FOREVER_CLIENT_JOB=TOKEN forever_client.py shot` (or `click`, `key`, `slash
 `eval`, `reload`, `scroll` or `errors`) for each command. Each invocation takes
 the job lock and releases it when it returns, allowing agents to interleave commands.
 The client stays logged in between commands. Lease tokens last 600 seconds by default,
-at most 1800 seconds. `release TOKEN` deletes the record, and session teardown clears
-all leases. An expired token requires a new `lease`.
+at most 1800 seconds. `release TOKEN` ends the lease, and session teardown ends all leases with a recorded
+reason. Tokens are bound to the session that issued them. Expired, released or replaced
+leases fail before queuing and require a new `lease`. Issuing a lease removes expired records.
 
 Use `job --max S -- COMMAND` for work that needs exclusive access. The default limit
 is 600 seconds and the maximum is 1800 seconds. At the limit the command's process
@@ -102,6 +103,30 @@ command's entire process group, with SIGKILL after the SIGTERM grace period. The
 is released only after return or full teardown. If the return fails, the session ends
 and the next job starts fresh gamescope. This is an occasional job with two extra
 logins; `lease` remains a token for individual commands.
+
+## Queue and recovery
+
+Job waiters take numbered tickets under the state directory and run in arrival order.
+Each waiter holds an exclusive lock on its ticket until it acquires the job or stops waiting.
+A ticket whose lock is available is abandoned and removed. PID metadata is diagnostic only.
+A timeout or interrupted wait removes its ticket. Waiting messages update when the holder
+or queue position changes. The timeout bounds the wait and does not guarantee acquisition.
+Serve teardown has priority over waiting tickets, but waits for the active job to finish.
+This lets a pending reload finish while ordinary waiters yield to it.
+
+Proof verifies every borrowed slot before each capture and at teardown. A slot that no
+longer points to the candidate fails the proof before any proof record is written.
+Recovery replays a link record only while holding the job lock. If another job holds it,
+recovery leaves the record untouched, even when its owner PID is invisible to the caller.
+
+The resident source digest includes `!!ForeverHeadless` files. Session state records that
+addon's digest too: newer verbs replace an obsolete session through teardown while holding
+the job lock, including helper changes that keep the same pixel protocol version. The live
+safety strip separately triggers replacement when its protocol is missing or outdated. A verb inside an active job
+uses that session until the job ends; serve handles source changes afterward.
+
+For smoke, proof and build-dev, a missing full 40-hex commit SHA triggers one `git fetch origin`
+and a resolution retry. A missing branch name or abbreviated SHA does not trigger a fetch.
 
 Battle.net sign-in blocks automatic starts until the player runs
 `FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py up --manual-launcher`,
