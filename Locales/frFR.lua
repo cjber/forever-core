@@ -11,20 +11,14 @@ L["%s, %s and %s"] = "%s, %s et %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s et %d de plus"
 L["+%d more"] = "+%d de plus"
 L[", "] = ", "
-L["%d yd"] = "%d m"
 L["%s (last %d):"] = "%s (dernières %d) :"
 L["%s: no lines yet."] = "%s : aucune ligne pour l'instant."
-L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
-	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 L["All addons"] = "Tous les addons"
-L["Attach to quest tracker"] = "Attacher au suivi des quêtes"
 L["Bug"] = "Bug"
 L["Bug: "] = "Bug : "
 L["Close"] = "Fermer"
 L["Copy issue link"] = "Copier le lien de l’issue"
-L["Copy link"] = "Copier le lien"
 L["Copy report"] = "Copier le rapport"
-L["Copy the address, then open it in your browser."] = "Copiez l'adresse, puis ouvrez-la dans votre navigateur."
 L["Debug log is already on and pinned for this character."] =
 	"Le journal de débogage est déjà activé et épinglé pour ce personnage."
 L["Debug log is off and unpinned."] = "Le journal de débogage est désactivé et désépinglé."
@@ -34,49 +28,22 @@ L["Debug log is off."] = "Le journal de débogage est désactivé."
 L["Debug log is on and pinned for this character."] =
 	"Le journal de débogage est activé et épinglé pour ce personnage."
 L["Debug log is on for this session."] = "Le journal de débogage est activé pour cette session."
-L["Don't suggest this again"] = "Ne plus me le suggérer"
 L["Drag to move"] = "Glisser pour déplacer"
 L["Feature request"] = "Demande de fonctionnalité"
 L["Feature request: "] = "Demande de fonctionnalité : "
 L["ForeverCore"] = "ForeverCore"
 L["Forever addons"] = "Addons Forever"
-L["Forever quest list"] = "Forever quest list"
 L["Forever tracker"] = "Suivi Forever"
 L["Hide this section"] = "Hide this section"
 L["Inspired by"] = "Inspiré par"
-L["Installed, turned off"] = "Installé, désactivé"
-L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
-	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
-L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
-	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "Verrouiller le suivi"
 L["No addon has attached its log yet."] = "Aucun addon n'a encore joint son journal."
 L["No one is listed yet."] = "Personne n'est encore listé."
-L["Not installed"] = "Non installé"
 L["On"] = "Activé"
-L["Open"] = "Ouvrir"
-L["Picks quests for your level and plans them into one journey."] =
-	"Choisit des quêtes de votre niveau et les enchaîne en un seul trajet."
-L["Plans the cheapest route to your next profession rank."] =
-	"Prévoit le chemin le moins cher vers votre prochain rang de métier."
-L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
-	"Trouve le chemin le plus rapide vers n'importe où et vous y guide, avec les horaires des bateaux et zeppelins."
 L["Players"] = "Joueurs"
-L["Quest automation, rare alerts and merchant handling for the default UI."] =
-	"Automatisation des quêtes, alertes de rares et gestion des marchands pour l'interface par défaut."
-L["Ready to turn in"] = "Ready to turn in"
 L["Report a bug or request a feature"] = "Signaler un bug ou demander une fonctionnalité"
-L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
-	"Une ligne discrète là où l'un de mes autres addons Forever vous aiderait. Seulement pour ceux que vous n'avez pas."
-L["Shows the Legacy challenges you can advance in each zone."] =
-	"Affiche les défis d'héritage que vous pouvez faire avancer dans chaque région."
-L["Suggest my other Forever addons"] = "Suggérer mes autres addons Forever"
 L["Thanks"] = "Merci"
 L["Thanks to %s"] = "Merci à %s"
-L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
-	"Les addons Forever sont gratuits et rien n'est réservé aux donateurs. S'ils vous aident, vous pouvez m'offrir un café."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"Le lien est sélectionné. Appuyez sur Ctrl+C (Cmd+C sur Mac), puis collez-le dans un navigateur ; GitHub ouvre un ticket déjà rempli."
 L["The players who helped each Forever addon."] = "Les joueurs qui ont aidé chaque module Forever."
@@ -84,7 +51,6 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"Le texte est sélectionné. Appuyez sur Ctrl+C (Cmd+C sur Mac) pour le copier, puis collez-le dans votre rapport de bug."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =
 	"Le suivi est verrouillé. Désactivez Verrouiller le suivi pour le déplacer."
-L["This addon"] = "Cet addon"
 L["Title"] = "Titre"
 L["Tracker background"] = "Fond du suivi"
 L["Tracker"] = "Suivi"
@@ -93,12 +59,6 @@ L["Right-click for options"] = "Cliquez droit pour les options"
 L["Unavailable in combat"] = "Indisponible en combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Utilisation : /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
-L["Turn off the Forever quest list (use the game's tracker)"] =
-	"Turn off the Forever quest list (use the game's tracker)"
-L["Use the game's tracker"] = "Use the game's tracker"
-L["Keep this list"] = "Keep this list"
-L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
-	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
 L["What happened, or what you would like"] = "Ce qui s’est passé, ou ce que vous souhaitez"
 L.MINIMAP_UNAVAILABLE = "Mini-carte indisponible ; le bouton personnalisé est ignoré."
 L["MENU_BACK"] = "Retour"
@@ -137,38 +97,7 @@ L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on Fore
 	"%s a besoin de ForeverCore. Installez-le depuis CurseForge ou choisissez Réinstaller sur ForeverCore dans l'application CurseForge." -- mt
 L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
 	"%s : ForeverCore est désactivé. Activez-le dans la liste des addons pour corriger cela." -- mt
-L["No Forever addon has recorded anything for this character yet."] =
-	"Aucun addon Forever n'a encore enregistré quoi que ce soit pour ce personnage."
-L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
-	"Le lien est sélectionné. Appuyez sur Ctrl+C (Cmd+C sur un Mac), puis ouvrez-le dans un navigateur. Rien n'est envoyé."
-L["Your Forever profile"] = "Votre profil Forever"
-L["%s (%d)"] = "%s (%d)"
-L["%s %d/%d"] = "%s %d/%d"
-L["Abandon"] = "Abandonner"
-L["Abandoning a quest is not available."] = "Impossible d'abandonner une quête."
-L["Collapse"] = "Replier"
-L["Expand"] = "Déplier"
-L["Focus"] = "Suivre"
-L["Stop focusing"] = "Ne plus suivre"
-L["Objectives"] = "Objectifs"
-L["Open Quest Details"] = "Ouvrir les détails de la quête"
-L["Hide Quest Details"] = "Masquer les détails de la quête"
-L["Open Quest Map"] = "Ouvrir la carte de la quête"
-L["Quest"] = "Quête"
 L["Quests"] = "Quêtes"
-L["Route with Shortest Path"] = "Itinéraire avec Shortest Path"
-L["Shortest Path is not loaded."] = "Shortest Path n'est pas chargé."
-L["Shortest Path could not plan this route."] = "Shortest Path n'a pas pu planifier cet itinéraire."
-L["There is no map pin for this quest."] = "Il n'y a pas de repère de carte pour cette quête."
-L["There is no quest link to share."] = "Il n'y a pas de lien de quête à partager."
-L["The world map is not available."] = "La carte du monde n'est pas disponible."
-L["The quest log is not available."] = "Le journal des quêtes n'est pas disponible."
-L["Untrack"] = "Ne plus suivre"
-L["Share Quest"] = "Partager la quête"
-L["Share in Chat"] = "Partager dans le chat"
-L["fold this zone"] = "replier cette zone"
-L["unfold this zone"] = "déplier cette zone"
-L["focus this quest"] = "suivre cette quête"
 
 L["ForeverCore startup report"] = "Rapport de démarrage ForeverCore" -- mt
 L["Core: %s; API %s"] = "Core : %s ; API %s" -- mt

@@ -57,7 +57,7 @@ check(ns.Store() == nil, "a converted copy starts with no placeholder store")
 ns.Start()
 check(type(ns.Store()) == "table", "Start reconciles an elected store")
 check(env.ForeverCoreDB == nil, "an elected start creates no ForeverCoreDB")
-check(ns.Store().trackerHost.attached == true, "and normalizes the tracker defaults")
+check(ns.Store().trackerHost.attached == false, "and normalizes the tracker defaults")
 
 -- Stub the module surface Expose publishes, so the converted chunk is the only code under test.
 ns.TrackerHost = { Debug = function() end }

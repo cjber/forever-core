@@ -34,16 +34,9 @@ check(subset[#subset] == "Expose.lua", "Expose.lua still loads last")
 local env = FakeClient.new()
 local ns = {}
 for _, path in ipairs(subset) do
-	-- Core's own quest list needs the full native tracker template, which this fake client does not build. The tracker
-	-- host has already captured its native frame, so hiding it here only skips that optional section.
-	local native = env.ObjectiveTrackerFrame
-	if path == "UI/TrackerQuests.lua" then
-		env.ObjectiveTrackerFrame = nil
-	end
 	local chunk = assert(loadfile(path), path)
 	setfenv(chunk, env)
 	chunk("ForeverCore", ns)
-	env.ObjectiveTrackerFrame = native
 end
 
 local ForeverCore = env.ForeverCore

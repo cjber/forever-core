@@ -46,9 +46,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 -- ForeverCore's own saved variables, from ForeverCore.toc.
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
----@field questList? boolean enabled by default, false preserves the player opt-out
----@field questListHintDone? boolean true once the player answered the quest list's one-time hint, or turned the list off
----@field questListFold? table<string, {quests?: table<number, boolean>, zones?: table<string, boolean>}>
+---@field questList? boolean the retired Forever quest list's switch, left for Adventure Guide's one-time migration
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared once at load.
 ---@field debugCapture? ForeverDebugCaptureState the client's values before /forever debug on, kept across a reload.
 ---@field _store? ForeverCoreStoreMeta the reconciled store node and any retained setting conflicts.
@@ -74,52 +72,6 @@ ObjectiveTrackerFrame = nil
 ---@type ForeverTrackerHostAPI?
 ForeverTrackerHost = nil
 
--- Blizzard's own quest tracker mixins, read by UI/TrackerQuests.lua so its section behaves like the game's.
----@class ForeverQuestObjectiveTrackerMixin
----@field ShouldDisplayQuest fun(self: any, quest: any): boolean
----@field OnBlockHeaderClick fun(self: any, block: any, mouseButton: string)
----@type ForeverQuestObjectiveTrackerMixin
-QuestObjectiveTrackerMixin = nil
----@type ForeverQuestObjectiveTrackerMixin
-CampaignQuestObjectiveTrackerMixin = nil
----@class ForeverQuestCache
----@field Get fun(self: ForeverQuestCache, questID: number): any
----@type ForeverQuestCache
-QuestCache = nil
-
----@type string
-TRACKER_HEADER_QUESTS = nil
----@type string
-QUEST_WATCH_QUEST_COMPLETE = nil
----@type string
-QUEST_WATCH_CLICK_TO_COMPLETE = nil
----@type string
-QUEST_WATCH_QUEST_READY = nil
----@type string
-FAILED = nil
----@type string
-WAYPOINT_OBJECTIVE_FORMAT_OPTIONAL = nil
----@type number
-OBJECTIVE_DASH_STYLE_HIDE = nil
----@class ForeverObjectiveTrackerColor
----@field r number
----@field g number
----@field b number
----@type table<string, ForeverObjectiveTrackerColor>
-OBJECTIVE_TRACKER_COLOR = nil
----@param questID number
----@param title string
----@return string
-function SetQuestTitleLevelAndDifficultyColor(questID, title) end
----@param questLogIndex number
----@return string?
-function GetQuestLogCompletionText(questLogIndex) end
----@param questID number
----@return boolean
-function IsQuestSequenced(questID) end
----@return number?
-function QuestMapFrame_GetFocusedQuestID() end
-
 -- Blizzard_SharedXML/Pool.lua; addon-owned instances, never ObjectiveTrackerManager's pool.
 ---@class ForeverPrivateFramePool
 ---@field Acquire fun(self: ForeverPrivateFramePool, template: string): Frame, boolean
@@ -140,7 +92,7 @@ function CreateFramePoolCollection() end
 ---@field onClick? fun(button: Frame, mouseButton: string) what a left click runs
 ---@field settings? table the saved table holding the angle and hide flag
 ---@field angleKey? string the settings key holding the angle, default "minimapButtonAngle"
----@field hiddenKey? string the settings key whose true value hides the button, default "minimapButtonHidden"
+---@field hiddenKey? string the settings key holding the hide flag, default "minimapButtonHidden"; only false shows the button
 ---@field getShown? fun(): boolean an addon-owned visibility rule, which wins over the hide flag
 ---@field safeCall? fun(label: string, fn: function, ...: any): boolean, any the addon's SafeCall for its own callbacks
 ---@field host? table receives the frame as its minimapButton
@@ -201,10 +153,9 @@ QUESTS_LABEL = nil
 ---@class OptionsSliderTemplate : Slider
 ---@class UIPanelButtonTemplate : Button
 
--- Settings: the settings page's canvas category and the Forever addons page's subcategory.
+-- Settings: the settings page's canvas category.
 ---@class ForeverSettings
 ---@field RegisterCanvasLayoutCategory fun(frame: Frame, name: string): table
----@field RegisterCanvasLayoutSubcategory fun(parent: table, frame: Frame, name: string): table
 ---@field RegisterAddOnCategory fun(category: table)
 ---@field RegisterVerticalLayoutSubcategory fun(parent: table, name: string): table
 ---@field RegisterProxySetting fun(category: table, variable: string, varType: string, name: string, default: any, get: (fun(): any), set: (fun(value: any))): table
@@ -220,19 +171,9 @@ Settings = nil
 ---@type ForeverSettingsPanel?
 SettingsPanel = nil
 
--- The client's initializer for a settings row with a button, which the Forever addons page registers.
----@type fun(name: string, buttonText: string, buttonClick: fun(), tooltip?: string, addSearchTags?: boolean): table
-CreateSettingsButtonInitializer = nil
-
 -- The client's native vertical-list section heading initializer.
 ---@type fun(name: string, tooltip?: string, newTagID?: number): table
 CreateSettingsListSectionHeaderInitializer = nil
-
--- The client's gamepad switch: the Forever addons page is a canvas page without it.
----@class ForeverInputUtil
----@field IsGamepadUIEnabled fun(): boolean
----@type ForeverInputUtil?
-InputUtil = nil
 
 -- The settings page keeps one cursor down its canvas, so every row claims its height.
 ---@class Frame

@@ -261,7 +261,7 @@ check(ns.TrackerHost.IsLocked() == false, "a saved lock that is not a boolean re
 hostSettings.locked = nil
 check(ns.TrackerHost.IsLocked() == false, "a missing lock reads as off")
 
--- Detached and unlocked: the drag Cillian has today.
+-- Unlocked: the grip drags the column.
 hover()
 check(tooltipText == "Drag to move", "an unlocked grip offers to be dragged")
 check(label.text == "Forever tracker", "an unlocked grip keeps the tracker's title")
@@ -331,11 +331,9 @@ host.SetPoint, host.SetHeight, host.ClearAllPoints = setPoint, setHeight, clearP
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "the drag works again after combat")
 
--- A locked tracker that the player attaches still shows no grip, and locking does not re-attach it.
+-- The retired attach switch leaves the grip shown and the column free.
 ns.TrackerHost.SetAttached(true)
 drain()
-check(grip.shown == false, "an attached tracker shows no grip to lock")
-ns.TrackerHost.SetLocked(true)
-check(ns.TrackerHost.IsAttachedToQuestTracker() and grip.shown == false, "locking leaves the attachment alone")
+check(grip.shown == true and not ns.TrackerHost.IsAttachedToQuestTracker(), "attaching is a no-op that keeps the grip")
 
 print("tracker_host_lock_spec: " .. checks .. " checks passed")

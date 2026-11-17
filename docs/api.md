@@ -17,9 +17,8 @@ ForeverCore.minor -- integer
 
 The interface version of the table below. It is `2` today. It changes only when a member a third-party addon may
 rely on breaks: its arguments, the shape of its result or its meaning. Additions keep it and raise a member's own
-`minor` instead. Version 2 retired Forever Leaderboards and peer stats: `ForeverCore.Leaderboards` and
-`ForeverCore.PeerStats` remain only as no-op answers for older addon releases, and they store, register and send
-nothing. Refuse to run against a core older than the members you call:
+`minor` instead. Version 2 retired Forever Leaderboards and peer stats. Refuse to run against a core older than the
+members you call:
 
 ```lua
 if ForeverCore == nil or (ForeverCore.API or 0) < 1 then
@@ -151,10 +150,7 @@ ForeverCore.Credits.Open(addonTitle?) --> boolean
 
 - `Register(addonTitle, credits)` hands core one addon's credits, the table its generated `Data/Credits.lua` sets as
   `ns.Credits`: `{ players = { { name, what }, ... }, inspired = { ... } }`. `addonTitle` is the name players see in
-  game; registering the same title again replaces that addon's list. An addon registers under its `Family.ADDONS`
-  name (the row whose `folder` is its own), the same string the shared page filters to, so its Thanks row and its
-  lines name it the same way. `ForeverCore.Family.ADDONS` is the exposed list of `{ name, folder, url, line }` rows
-  if an addon needs to look its own up, though passing the literal title is enough. A missing or malformed entry is
+  game; registering the same title again replaces that addon's list, and it is the name the page filters to. A missing or malformed entry is
   left out rather than raised. It returns false for a title that is not a non-empty string.
 - `Line(addonTitle)` is the short line an addon's own settings page shows: its top three players by their number of
   contributions to that addon, then a count of the rest, such as `Thanks to Brainc3ll, Alex and 2 more`. It returns nil
@@ -169,9 +165,7 @@ ForeverCore.Credits.Open(addonTitle?) --> boolean
   of the page filters to one registered addon, where each row shows that addon's `what` after the name and **Inspired
   by** lists only that addon's entries. Called with no argument it reopens on the filter the page already shows, so a
   choice survives closing and reopening; called with an addon title it filters to that addon; called with an explicit
-  nil it shows every addon. An addon's own Forever addons page has a Thanks row that passes its `Family.ADDONS` name,
-  so it opens filtered to that addon; ForeverCore's own page, and any folder with no row, pass nil and open **All
-  addons**. It returns false only when the client cannot build the window.
+  nil it shows every addon. It returns false only when the client cannot build the window.
 
 Every Forever addon writes its `Data/Credits.lua` from `THIRD_PARTY.md`'s `## Players` and `## Inspired by` tables
 with `python3 tools/forever_tools/credits.py`; the same run keeps the one-sentence thanks in README.md's `## Credits`
@@ -252,8 +246,9 @@ reading any other, with the answers `docs/api-conventions.md` describes.
 
 These are on the `ForeverCore` table for the Forever addons themselves. They are not a contract for a third-party
 addon and may change between releases without raising `ForeverCore.API`: `Register`, `name`, `TrackerHost`,
-`TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `TrackerQuestie`, `TrackerEqot`, `TrackerQuests`,
-`QuestLogTabs`, `MinimapButton`, `SettingsPage`, `SettingsSections`, `Text`, `QuestOrder`, `Family` and `Credits`.
+`TrackerSection`, `TrackerLine`, `TrackerLock`, `TrackerOrder`, `QuestLogTabs`, `MinimapButton`, `SettingsPage`,
+`SettingsSections`, `Text`, `Family` and `Credits`. `Family` answers without drawing anything: the Forever addons page
+it drew is gone, and it stays only so an older addon release still loads.
 A section created through `TrackerSection.Create` takes `maxHeight` (`200` units when omitted, or `"remaining"` for
 the column's spare room); the shared host scrolls a taller section under its own header and freezes it in combat.
 After attachment, `TrackerHost.SetSectionMaxHeight(module, height)` changes that section's cap, including its header,
@@ -263,8 +258,7 @@ minimum when room allows; short or collapsed sections reserve only their content
 applies it, after combat ends when necessary. Width remains shared across the column and follows the host's scale and
 responsive bounds. The setter neither changes saved variables nor creates a new scroll child; the consumer saves its
 setting and reapplies it after attachment.
-`Leaderboards` and `PeerStats` are retired no-op shims kept only so an older addon release still loads; they are not
-a contract and go once no supported release calls them. [`docs/adoption.md`](adoption.md) describes them for the
+[`docs/adoption.md`](adoption.md) describes them for the
 addons that own a tracker section or a window; a third-party addon builds its own from `APIKit` and `ContextMenu`
 instead.
 

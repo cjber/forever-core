@@ -110,12 +110,17 @@ local function SaveAngle(button, angle)
 	Place(button)
 end
 
-local function Visible(button)
-	local spec = button.minimapButtonSpec
+-- Every button starts hidden. Only the player's explicit saved choice, a hide flag of false, shows it; an addon's own
+-- getShown rule wins over the flag.
+local function Hidden(spec)
 	if spec.getShown then
-		return spec.getShown() == true
+		return spec.getShown() ~= true
 	end
-	return not (spec.settings and spec.settings[spec.hiddenKey or HIDDEN_KEY] == true)
+	return not (spec.settings and spec.settings[spec.hiddenKey or HIDDEN_KEY] == false)
+end
+
+local function Visible(button)
+	return not Hidden(button.minimapButtonSpec)
 end
 
 local function Tooltip(spec, tooltip)
@@ -218,10 +223,7 @@ function MinimapButton.Create(spec)
 					local proxy = setmetatable({}, {
 						__index = function(_, key)
 							if key == "hide" then
-								if spec.getShown then
-									return not spec.getShown()
-								end
-								return spec.settings and spec.settings[spec.hiddenKey or HIDDEN_KEY] == true or false
+								return Hidden(spec)
 							elseif key == "minimapPos" then
 								return spec.settings and spec.settings[spec.angleKey or ANGLE_KEY] or angle
 							end

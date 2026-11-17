@@ -20,15 +20,9 @@ local env = FakeClient.new()
 local ns = {}
 for _, entry in ipairs(Toc.files(".", "ForeverCore.toc")) do
 	if entry.kind == "lua" then
-		-- Core's own quest list needs the full native tracker template this fake client does not build.
-		local native = env.ObjectiveTrackerFrame
-		if entry.path == "UI/TrackerQuests.lua" then
-			env.ObjectiveTrackerFrame = nil
-		end
 		local chunk = assert(loadfile(entry.path), entry.path)
 		setfenv(chunk, env)
 		chunk("ForeverCore", ns)
-		env.ObjectiveTrackerFrame = native
 	end
 end
 local ForeverCore = assert(env.ForeverCore, "the TOC publishes ForeverCore")
@@ -179,13 +173,9 @@ output = run("report")
 check(output:find("/fcore is unavailable", 1, true) ~= nil, "the no-addon report describes the core-missing evidence")
 check(output:find("ForeverCore or a Forever addon in AddOns", 1, true) ~= nil, "and names the AddOns check")
 
--- Existing command behaviour: quests toggles the list, an unknown word still prints the tracker diagnostic.
-local toggled = 0
-ForeverCore.TrackerQuests.Toggle = function()
-	toggled = toggled + 1
-end
-run("quests")
-equal(toggled, 1, "/fcore quests still toggles the quest list")
+-- The quest list is gone, so "quests" is an unknown word, and an unknown word prints the tracker diagnostic.
+check(ForeverCore.TrackerQuests == nil, "the retired quest list is not published")
+equal(run("quests"), "tracker debug", "/fcore quests falls through to the tracker diagnostic")
 equal(run("other"), "tracker debug", "an unknown command keeps the tracker debug fallthrough")
 
 print(("startup_diagnostic_spec: %d checks passed"):format(checks))

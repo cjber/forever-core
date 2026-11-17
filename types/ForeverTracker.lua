@@ -3,11 +3,11 @@
 -- The tracker contract's classes, declared once here for core's own UI/Tracker*.lua files.
 
 ---@class ForeverTrackerSettings
----@field attached boolean the column follows the native quest tracker
+---@field attached boolean false once the host has moved a retired attached or beside placement to the default spot
 ---@field locked? boolean the Lock switch, which suppresses the grip's drag
 ---@field scale? number the player's tracker scale, 0.5 to 2; the host reads a missing one as 1
 ---@field backdropOpacity? number the optional backdrop's opacity, 0 (off) to 1
----@field x? number the detached position, from UIParent's top left corner
+---@field x? number the column's dragged position, from UIParent's top left corner; nil sits it under the minimap
 ---@field y? number
 ---@field migrated? boolean the one-time copy from a consumer's old tracker settings is done
 
@@ -22,8 +22,9 @@
 ---@field y? number
 
 ---@class ForeverTrackerGrip
----@field Show fun(value: boolean) shows or hides the grip, which the host keeps hidden while attached
+---@field Show fun(value: boolean) shows or hides the grip, which the host always shows
 ---@field SetLabel fun(value: boolean) redraws the label from the switch, without waiting for a hover
+---@field Dragging fun(): boolean whether a drag the grip started is still moving the column
 
 ---@class ForeverTrackerShowSetting
 ---@field get fun(): boolean whether the section is currently shown
@@ -43,9 +44,9 @@
 ---@field SetBackdropOpacity fun(value: number)
 ---@field IsLocked fun(): boolean
 ---@field SetLocked fun(value: boolean)
----@field IsAttachedToQuestTracker fun(): boolean
----@field SetAttached fun(value: boolean)
----@field OnAttachmentChanged fun(callback: fun(attached: boolean))
+---@field IsAttachedToQuestTracker fun(): boolean compatibility: always false, the column never attaches
+---@field SetAttached fun(value: boolean) compatibility: does nothing
+---@field OnAttachmentChanged fun(callback: fun(attached: boolean)) compatibility: the callback is never called
 ---@field SavePosition fun(x: number, y: number)
 ---@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for an addon's debug command
 
@@ -171,10 +172,6 @@
 ---@field TrackerHostForeign? boolean true when a vendored host loaded first and core forwarded to it
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI
----@field TrackerQuestie? ForeverTrackerQuestie
----@field TrackerEllesmere? ForeverTrackerEllesmere
----@field TrackerKaliels? ForeverTrackerKaliels
----@field TrackerEqot? ForeverTrackerEqot
 ---@field TrackerHostSettings? fun(): ForeverTrackerSettings
 ---@field AttachCoreDb? fun()
 ---@field MigrateTrackerSettings? fun()

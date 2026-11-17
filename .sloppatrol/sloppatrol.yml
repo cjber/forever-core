@@ -12,6 +12,6 @@ checks:
   - { name: typecheck, run: "bash tools/typecheck.sh" }
   - { name: tools, run: "ruff format --check tools && ruff check tools && python3 -m unittest discover -s tools -p 'test_*.py'", tests: true }
   - { name: rules, run: "python3 tools/check_client_load.py && python3 tools/check_menu_scroll.py" }
-focus: [Core.lua, Expose.lua, UI/TrackerHost.lua, UI/Report.lua, UI/ForeverFamily.lua]
+focus: [Core.lua, Expose.lua, UI/TrackerHost.lua, UI/Report.lua]
 ignore: [docs/**]
 guards: { maxFiles: 6, maxLines: 300 }

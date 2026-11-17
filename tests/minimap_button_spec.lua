@@ -213,7 +213,12 @@ assert(aSpec.host.minimapButton == a, "host not published")
 assert(a.clicks and a.clicks[1] == "LeftButtonUp", "clicks")
 assert(a.drags and a.drags[1] == "LeftButton", "drag button")
 assert(settingsA.minimapButtonAngle == 225, settingsA.minimapButtonAngle)
-assert(a.shown, "hidden on create")
+-- Every button starts hidden; only the player's explicit saved choice shows it, and that choice is kept.
+assert(not a.shown, "a fresh button starts hidden")
+assert(settingsA.minimapButtonHidden == nil, "the default writes no choice for the player")
+settingsA.minimapButtonHidden = false
+first.Refresh()
+assert(a:IsShown(), "an explicit saved show is kept")
 
 -- Holding the mouse nudges the icon down-right, as LibDBIcon does, and letting go puts it back.
 a.scripts.OnMouseDown(a)
@@ -466,6 +471,7 @@ local defaultButton = managed.Create(defaultSpec)
 local defaultProxy = registered[defaultSpec.libDBIcon].db
 assert(defaultProxy.minimapPos == defaultSettings.minimapButtonAngle, "default angle not seeded")
 assert(defaultSettings.minimapButtonAngle == 255, "default managed angle")
+assert(defaultProxy.hide == true, "a managed launcher with no saved choice starts hidden")
 defaultSettings.minimapButtonHidden = true
 managed.Refresh()
 assert(not defaultButton:IsShown(), "default hide key ignored")

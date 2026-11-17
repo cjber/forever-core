@@ -19,20 +19,11 @@ local _, ns = ...
 ---@field trackerBlockMenuWrapped? boolean
 ---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
----@class ForeverNativeTrackerHeader : Frame
----@field Text FontString
----@field MinimizeButton Button
-
--- The client's own objective tracker: the module container its Quests and Campaign sections belong to. ForeverCore
--- reads the frame, and never adds or removes one of the client's own modules.
+-- The client's own objective tracker. The column never anchors to it or reads its geometry: its presence only says
+-- Blizzard_ObjectiveTracker loaded, which defines the section template every Forever section is built from.
 ---@class ForeverNativeTrackerFrame : Frame
----@field Header ForeverNativeTrackerHeader
----@field NineSlice Frame?
----@field isCollapsed? boolean
----@field HasModule fun(self: ForeverNativeTrackerFrame, module: any): boolean
 
--- Sharing the native tracker collection also shares its Edit Mode execution path.
--- Keep our sections and their frame pools entirely outside that collection.
+-- Keep our sections and their frame pools entirely outside the native module collection and its Edit Mode path.
 if not ObjectiveTrackerFrame then
 	return
 end
@@ -136,7 +127,7 @@ if type(existing) == "table" then
 	end
 	---@cast api ForeverTrackerHostAPI
 	ns.TrackerHost = api
-	-- Core's own tracker files must not run against a column core did not build; UI/TrackerQuests.lua reads this.
+	-- Core's own tracker files must not run against a column core did not build.
 	ns.TrackerHostForeign = true
 	return
 end
@@ -145,7 +136,7 @@ local host = CreateFrame("Frame", "ForeverTrackerCompanion", UIParent)
 ---@class ForeverTrackerHostAPI
 local api = {}
 local MIN_SCALE, MAX_SCALE = 0.5, 2
-local fallbackSettings = { attached = true, scale = 1, backdropOpacity = 0 }
+local fallbackSettings = { attached = false, scale = 1, backdropOpacity = 0 }
 local ready = false
 local function Coordinate(value)
 	if type(value) == "number" and value == value and math.abs(value) ~= math.huge then
@@ -160,11 +151,15 @@ local function Opacity(value)
 	end
 	return math.max(0, math.min(1, value))
 end
+-- The column used to attach to the quest tracker or sit beside another addon's list. It is now always a free frame:
+-- a saved attached or beside placement moves once to the default spot, and the player's Lock choice stays. A saved free
+-- position (attached false with x and y) is kept as it is. `attached = false` marks the settings as migrated.
 ---@return ForeverTrackerSettings
 local function Settings()
 	local settings = ns.TrackerHostSettings and ns.TrackerHostSettings() or fallbackSettings
-	if type(settings.attached) ~= "boolean" then
-		settings.attached = true
+	if settings.attached ~= false then
+		settings.attached = false
+		settings.x, settings.y = nil, nil
 	end
 	settings.locked = settings.locked == true
 	local scale = settings.scale
@@ -177,67 +172,22 @@ local function Settings()
 	settings.x, settings.y = Coordinate(settings.x), Coordinate(settings.y)
 	return settings
 end
-local attached
-local dragging = false
-local attachmentCallbacks = {}
--- The native tracker is protected and keeps the slot Blizzard, Edit Mode or a UI addon gave it: this host never moves
--- it, in combat or out. The private column reads below it, so the header and the game's quests come first and the
--- Forever sections follow, and the same placement runs in and out of combat, so entering or leaving combat moves
--- nothing. The sections stay outside Blizzard's secure module collection.
-local function StackPoints(point)
-	if point == "CENTER" or point == "TOP" or point == "BOTTOM" then
-		return "TOP", "BOTTOM"
-	end
-	local horizontal = point:find("RIGHT", 1, true) and "RIGHT" or "LEFT"
-	return "TOP" .. horizontal, "BOTTOM" .. horizontal
-end
+-- The column's width in its own units: the 260 of the client's ObjectiveTrackerContainer header template, so a Forever
+-- section reads at the width its template was drawn for.
+local WIDTH = 260
 host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
--- The column's scale follows the frame it sits beside: the native tracker when it is really visible, another
--- tracker's list frame, or UIParent when detached or the native tracker is hidden or transparent, as a replacement UI
--- may leave it.
-local function NativeScaleSource()
-	local frame = ObjectiveTrackerFrame
-	if not frame then
-		return UIParent
-	end
-	-- IsVisible is effective visibility: the frame and every ancestor shown. A shown tracker under a hidden parent
-	-- is not visible, so it must not be the scale source. IsShown is only a fallback for a stub with no IsVisible.
-	local shown
-	if frame.IsVisible then
-		shown = frame:IsVisible()
-	elseif frame.IsShown then
-		shown = frame:IsShown()
-	end
-	local alpha = 1
-	if frame.GetEffectiveAlpha then
-		alpha = frame:GetEffectiveAlpha()
-	elseif frame.GetAlpha then
-		alpha = frame:GetAlpha()
-	end
-	if shown and (alpha or 0) > 0 then
-		return frame
-	end
-	return UIParent
+-- The column is a child of UIParent, so its scale is only the player's own tracker scale.
+local function MatchScale()
+	-- Saved variables, and with them the user's scale, are not ready while the files load.
+	host:SetScale(ready and Settings().scale or 1)
 end
-local function MatchScale(source)
-	if not (source and source.GetEffectiveScale) then
-		source = UIParent
-	end
-	local parentScale = UIParent:GetEffectiveScale()
-	local sourceScale = source:GetEffectiveScale()
-	if parentScale and sourceScale and parentScale > 0 then
-		-- Saved variables, and with them the user's scale, are not ready while the files load.
-		local userScale = ready and Settings().scale or 1
-		host:SetScale(sourceScale / parentScale * userScale)
-	end
-end
-MatchScale(UIParent)
-host:SetWidth(ObjectiveTrackerFrame:GetWidth())
+MatchScale()
+host:SetWidth(WIDTH)
 host:SetHeight(1)
 host:SetMovable(true)
 host:SetClampedToScreen(true)
 -- The grip and the Lock switch that suppresses its drag live in their own file (UI/TrackerLock.lua), which the TOC
--- loads before this one. It hands back the label redraw for a Lock change and the show switch for the attachment.
+-- loads before this one. It hands back the label redraw for a Lock change and the grip's show switch.
 local Grip = ns.TrackerLock.Grip(host, api)
 -- The optional backdrop spans the whole private column, so every Forever section sits on it at once. It is one
 -- texture on the host rather than chrome each addon draws, and it uses the game's own tooltip background art, tinted
@@ -248,8 +198,7 @@ local BACKDROP_INSET = 6
 local backdrop = host:CreateTexture(nil, "BACKGROUND")
 -- art-ok: the tooltip's own centre fill, a tiling texture stretched to the column by design
 backdrop:SetAtlas(BACKDROP_ATLAS)
--- No inset at the top: the attached column starts at the native quests' bottom edge, so the backdrop must not reach
--- up over the last quest line. It pads the sides and the bottom instead.
+-- No inset at the top: the grip sits there. The backdrop pads the sides and the bottom instead.
 backdrop:SetPoint("TOPLEFT", host, "TOPLEFT", -BACKDROP_INSET, 0)
 backdrop:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", BACKDROP_INSET, -BACKDROP_INSET)
 backdrop:Hide()
@@ -286,12 +235,6 @@ end
 local modules, queued = {}, false
 local pendingAttachments = {}
 local pools = CreateFramePoolCollection()
-
-local function NotifyAttachment(value)
-	for _, callback in ipairs(attachmentCallbacks) do
-		callback(value)
-	end
-end
 
 local function Acquire(parent, template)
 	local info = C_XMLUtil.GetTemplateInfo(template)
@@ -862,118 +805,17 @@ function Module:BeginLayout()
 	end
 end
 
-local function OverlapsMinimap()
+-- Where the column sits until the player drags it: at the screen's right edge, its top just under the minimap. A
+-- hidden or missing minimap leaves it at the screen's top. Offsets are from UIParent's top left corner in the host's
+-- own units; the caller keeps them on screen.
+local function DefaultPosition(width, screenWidth, screenHeight)
+	local x, y = screenWidth - width, 0
 	local minimap = _G.Minimap
-	if not minimap or not minimap:IsShown() then
-		return false
+	local bottom = minimap and minimap:IsShown() and minimap:GetBottom()
+	if bottom then
+		y = math.min(0, bottom * minimap:GetEffectiveScale() / host:GetEffectiveScale() - screenHeight)
 	end
-	local left, right, top, bottom = host:GetLeft(), host:GetRight(), host:GetTop(), host:GetBottom()
-	local ml, mr, mt, mb = minimap:GetLeft(), minimap:GetRight(), minimap:GetTop(), minimap:GetBottom()
-	local hostScale = host:GetEffectiveScale()
-	local mapScale = minimap:GetEffectiveScale()
-	local screen = UIParent:GetEffectiveScale()
-	if not (left and right and top and bottom and ml and mr and mt and mb) then
-		return false
-	end
-	left, right, top, bottom =
-		left * hostScale / screen, right * hostScale / screen, top * hostScale / screen, bottom * hostScale / screen
-	ml, mr, mt, mb = ml * mapScale / screen, mr * mapScale / screen, mt * mapScale / screen, mb * mapScale / screen
-	return left < mr and right > ml and bottom < mt and top > mb
-end
-
-local function SidePoint(point)
-	local left, right = ObjectiveTrackerFrame:GetLeft(), ObjectiveTrackerFrame:GetRight()
-	local screen = UIParent:GetWidth()
-	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-	local screenScale = UIParent:GetEffectiveScale()
-	if left and right and screen and nativeScale > 0 and screenScale > 0 then
-		local nativeCenter = (left + right) * nativeScale / (2 * screenScale)
-		return nativeCenter <= screen / 2 and "LEFT" or "RIGHT"
-	end
-	return point:find("LEFT", 1, true) and "LEFT" or "RIGHT"
-end
-
--- The list's left, right and top in the host's own scale, whether it is a real frame (Questie) or the normalised
--- bounds table UI/TrackerEqot.lua returns.
-local function ListEdges(list)
-	if list.left then
-		return list.left, list.right, list.top
-	end
-	-- A frame the client has not placed yet answers nil, and multiplying that would throw inside the layout.
-	local left, right, top = list:GetLeft(), list:GetRight(), list:GetTop()
-	if not (left and right and top) then
-		return nil
-	end
-	local toHost = list:GetEffectiveScale() / host:GetEffectiveScale()
-	return left * toHost, right * toHost, top * toHost
-end
-
--- Where a detached column sits until the player drags it: beside the quest list (the native tracker, Questie's or
--- EQOT's) and level with its top, so neither draws over the other. To its left when the column fits there, otherwise
--- to its right. Offsets are from UIParent's top left corner in the host's own scale; the caller keeps them on screen.
-local function Beside(list, width, screenHeight)
-	local left, right, top = ListEdges(list)
-	if not (left and right and top) then
-		return 0, -40
-	end
-	local x = left - 8 - width
-	if x < 0 then
-		x = right + 8
-	end
-	return x, top - screenHeight
-end
-
--- UI/TrackerEqot.lua and UI/TrackerQuestie.lua, loaded first, find the quest list another tracker draws over the
--- native slot (a host loaded without either ignores that addon). EQOT is the more specific cover, since it hides the
--- native frame, so its list is consulted before Questie's.
-local TrackerEqot = ns.TrackerEqot
-	or {
-		List = function() end,
-		Await = function() end,
-		Room = function()
-			return 0
-		end,
-		Places = function()
-			return {}
-		end,
-	}
-local TrackerQuestie = ns.TrackerQuestie or { List = function() end, Await = function() end }
--- EllesmereUI's custom quest tracker, consulted after EQOT and before Questie: its list is the one a player who chose
--- it sees, even while its own visibility rules hide the frame.
-local TrackerEllesmere = ns.TrackerEllesmere or { List = function() end, Await = function() end }
----@type ForeverTrackerKaliels
-local TrackerKaliels = ns.TrackerKaliels or { List = function() end, SetEnabled = function() end }
-local besideKaliels = false
--- Whether the last attached layout went round another addon's list, which one, and the room it gave the sections.
----@type boolean, boolean, boolean, boolean, number
-local besideList, besideQuestie, besideEqot, besideEllesmere, displacedRoom = false, false, false, false, 0
--- Whether the last attached layout put the column above or beside the tracker instead of below the quests.
-local aside = false
-
--- Blizzard's Edit Mode owns the native slot while its manager is on screen. The manager can also be hidden and locked
--- without exiting (CheckHideAndLockEditMode), which leaves editModeActive true with no EditMode.Exit: a hidden manager
--- is not editing, and its own show and hide reflow, or the column would stay hidden after the lock.
-local managerHooked = false
-local function HookEditMode()
-	local manager = EditModeManagerFrame
-	if managerHooked or not manager then
-		return
-	end
-	managerHooked = true
-	manager:HookScript("OnShow", host.MarkDirty)
-	manager:HookScript("OnHide", host.MarkDirty)
-end
-
-local function Editing()
-	local manager = EditModeManagerFrame
-	return not not (manager and manager:IsEditModeActive() and manager:IsShown())
-end
-
--- Native methods remain untouched so controller and combat paths retain their secure execution.
-local nativeHeader = ObjectiveTrackerFrame.Header --[[@as ForeverNativeTrackerHeader?]]
-
-local function NativeCollapsed()
-	return ObjectiveTrackerFrame.isCollapsed == true
+	return x, y
 end
 
 -- The space under each section that draws.
@@ -1018,11 +860,6 @@ end
 -- A section with `trackerMaxHeight == "remaining"` gets what the capped sections above and below it leave, so the
 -- quest list is the one that scrolls. It is laid out after the others so their real heights are known first.
 local function LayoutModules(width, available, reserve)
-	for _, module in ipairs(modules) do
-		if TrackerKaliels.Style then
-			TrackerKaliels.Style(module, besideKaliels)
-		end
-	end
 	ns.TrackerOrder.Sort(modules)
 	local restIndex
 	for index, module in ipairs(modules) do
@@ -1118,39 +955,31 @@ local function LayoutModules(width, available, reserve)
 	host:SetHeight(math.max(1, height))
 	return hasSections
 end
--- Switches the host between attached and detached when the settings or combat state allow, and returns the settings
--- that chose the mode.
-local function ApplyAttachment()
-	local settings = Settings()
-	local desired = settings.attached ~= false
-	if attached == nil or not InCombatLockdown() then
-		attached = desired
-	end
-	return settings
-end
-
--- Detached: the private column sits wherever the player dragged it, independent of the native tracker.
-local function LayoutDetached(settings)
-	aside = false
+-- The private column sits wherever the player dragged it, or at its default spot, and never anchors to another frame.
+local function Place(settings)
 	host:Show()
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
-	local width = math.min(ObjectiveTrackerFrame:GetWidth(), screenWidth)
+	local width = math.min(WIDTH, screenWidth)
 	host:SetWidth(width)
-	if dragging then
+	-- A drag in progress owns the column's position: the grip's StartMoving placed it, and its OnDragStop saves it.
+	if Grip.Dragging() then
+		host:SetShown(LayoutModules(width, math.max(24, (host:GetTop() or screenHeight) - 24), 24))
 		return
 	end
 	local x, y
 	if settings.x and settings.y then
 		x, y = settings.x / scale, settings.y / scale
 	else
-		local list = TrackerEqot.List(host, host.MarkDirty)
-			or TrackerEllesmere.List(host, host.MarkDirty)
-			or TrackerQuestie.List(host, host.MarkDirty)
-		x, y = Beside(list or ObjectiveTrackerFrame, width, screenHeight)
+		x, y = DefaultPosition(width, screenWidth, screenHeight)
 	end
 	x = math.max(0, math.min(x, math.max(0, screenWidth - width)))
 	y = math.min(0, math.max(y, 24 - screenHeight))
+	-- The default spot is computed once, when the world has loaded, and then kept as the saved position: the column
+	-- moves only when the player drags it, never because the minimap or any other frame showed, hid or moved.
+	if ready and not (settings.x and settings.y) then
+		settings.x, settings.y = x * scale, y * scale
+	end
 	host:ClearAllPoints()
 	host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 	-- With no section to show, the column hides entirely, its title too; the next layout with content shows it again.
@@ -1163,267 +992,19 @@ local function LayoutDetached(settings)
 	host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 end
 
--- Attached: the column reads below the native tracker's visible content, measured from its own content region, so the
--- column is the header, the game's quests, then the Forever sections. Only our frames move, and this runs only from
--- Layout, which defers in combat so the protected item buttons and their ancestors stay put. A collapsed All
--- Objectives hides the sections with it.
-local function LayoutAttached(keepPlacement)
-	-- Read the global each time, not once at load: Blizzard_EditMode is load-on-demand, so it may appear later. A
-	-- manager hidden while still active is a locked Edit Mode, which owns nothing on screen, so the column shows.
-	HookEditMode()
-	if Editing() then
-		return
-	end
-	local point = ObjectiveTrackerFrame:GetPoint()
-	if not point then
-		-- The native frame is between anchors (an Edit Mode or managed-frame transition): hold the column where it is
-		-- until the move that follows reflows it.
-		return
-	end
-	if ObjectiveTrackerFrame:IsShown() and NativeCollapsed() then
-		host:Hide()
-		aside = false
-		return
-	end
-	host:Show()
-	local layoutScale = host:GetEffectiveScale()
-	local layoutScreenScale = UIParent:GetEffectiveScale()
-	local nativeScale = ObjectiveTrackerFrame:GetEffectiveScale()
-	-- The column takes the native tracker's own left and right edges, converted into the host's units, so every
-	-- Forever section lines up with the game's sections at any scale. The width is clamped to the screen the way the
-	-- detached column's already is.
-	local width = ObjectiveTrackerFrame:GetWidth() * nativeScale / layoutScale
-	host:SetWidth(math.min(width, UIParent:GetWidth() * layoutScreenScale / layoutScale))
-	host:ClearAllPoints()
-	-- The column hangs from the bottom of the native content region (NineSlice, which Blizzard anchors to its last
-	-- module), so it follows the quests as they grow or shrink with no reflow of ours. A native tracker with nothing to
-	-- show hides itself; Questie and the Forever quest list hide it too. Then the column takes its slot from the top.
-	-- Blizzard anchors the NineSlice's top corners asymmetrically, so its centre is not the tracker's: the anchor's
-	-- x offset is the measured gap between the two centres, in host units, placing the column on the tracker's edges.
-	---@type Frame, FramePoint
-	local edge, edgePoint = ObjectiveTrackerFrame, "TOP"
-	if ObjectiveTrackerFrame:IsShown() then
-		edge, edgePoint = ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOM"
-	end
-	local nativeCentre = ObjectiveTrackerFrame:GetCenter() or 0
-	local edgeCentre = edge:GetCenter() or 0
-	local offsetX = (nativeCentre * nativeScale - edgeCentre * edge:GetEffectiveScale()) / layoutScale
-	local function Below()
-		host:ClearAllPoints()
-		host:SetPoint("TOP", edge, edgePoint, offsetX, 0)
-	end
-	Below()
-	local contentBottom = edgePoint == "TOP" and edge:GetTop() or edge:GetBottom()
-	local layoutMargin = 24 * layoutScreenScale / layoutScale
-	contentBottom = (contentBottom or 0) * edge:GetEffectiveScale() / layoutScale
-	local roomBelow = math.max(0, contentBottom - layoutMargin)
-	local screenHeight = (UIParent:GetHeight() or 0) * layoutScreenScale / layoutScale
-	local screenRoom = math.max(0, screenHeight - layoutMargin)
-	-- Puts the column above the tracker when there is room there, otherwise to the side away from the tracker's
-	-- anchored edge, so it stays visible without overlapping the protected frame.
-	local function Aside()
-		local nativePoint, hostPoint = StackPoints(point)
-		host:ClearAllPoints()
-		local nativeTop = ObjectiveTrackerFrame:GetTop() or 0
-		local screenTop = UIParent:GetHeight() or nativeTop
-		local room = screenTop * layoutScreenScale - nativeTop * nativeScale
-		local above = room >= math.max(host:GetHeight() or 0, 1) * layoutScale
-		if above then
-			host:SetPoint(hostPoint, ObjectiveTrackerFrame, nativePoint, 0, 0)
-		elseif SidePoint(point) == "LEFT" then
-			host:SetPoint("TOPLEFT", ObjectiveTrackerFrame, "TOPRIGHT", 0, 0)
-		else
-			host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-		end
-		if above then
-			return math.max(0, room / layoutScale)
-		end
-		return math.max(0, math.min(screenRoom, (host:GetTop() or 0) - layoutMargin))
-	end
-	-- A layout pass is not a measurement: Blizzard's EndLayout hides a section that fits nothing and its
-	-- FreeUnusedBlocks releases every block, so laying the sections out below just to probe the room replays each
-	-- header's add animation and rebuilds every block. `aside` remembers that the column went above or beside the
-	-- tracker last time, so only the real move off the room below pays that replay. A column already aside lays out
-	-- in the screen's room, then caps it to the chosen anchor if it has less room. It moves back below when the
-	-- whole laid-out column fits there.
-	local function FitAside()
-		local roomAside = Aside()
-		if host:GetHeight() > roomAside and not LayoutModules(host:GetWidth(), roomAside, 0) then
-			host:Hide()
-			return false
-		end
-		return true
-	end
-	-- An enlarged minimap can cover any of those placements (#720), the native slot included, so every successful one
-	-- checks the whole column once its height is known. An overlapping column starts below the minimap's bottom at the
-	-- same x, and when it is taller than the room from there to the screen margin its sections lay out again in that
-	-- room, so a long section scrolls instead of being clamped back over the map. The move is the same on every pass
-	-- for the same geometry, so repeated layouts settle where the last one did.
-	-- The move stands only when the room below the map still shows every section the column shows now. A short screen
-	-- would lose one, the quest list included, so that pass lays out again in the placement it had, as 1.14.2 did.
-	local function ClearMinimap()
-		if keepPlacement or not OverlapsMinimap() then
-			return
-		end
-		local shown = {}
-		for _, module in ipairs(modules) do
-			shown[module] = (module:GetContentsHeight() or 0) > 0 and module:IsShown()
-		end
-		local minimap = _G.Minimap
-		local left = host:GetLeft() or 0
-		local top = (minimap:GetBottom() or 0) * minimap:GetEffectiveScale() / layoutScale
-		host:ClearAllPoints()
-		host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
-		local room = math.max(0, top - layoutMargin)
-		if host:GetHeight() <= room then
-			return
-		end
-		local fits = LayoutModules(host:GetWidth(), room, 0)
-		for _, module in ipairs(modules) do
-			if shown[module] and not ((module:GetContentsHeight() or 0) > 0 and module:IsShown()) then
-				fits = false
-			end
-		end
-		if not fits then
-			LayoutAttached(true)
-		end
-	end
-	if aside then
-		if not LayoutModules(host:GetWidth(), screenRoom, 0) then
-			host:Hide()
-			return
-		end
-		if (host:GetHeight() or 0) <= roomBelow then
-			Below()
-			aside = false
-		elseif not FitAside() then
-			return
-		end
-		ClearMinimap()
-		return
-	end
-	-- The sections shrink to the room below the quests: a tall section shows what fits there and never sends the
-	-- column elsewhere.
-	if LayoutModules(host:GetWidth(), roomBelow, 0) then
-		aside = false
-		ClearMinimap()
-		return
-	end
-	-- No section fits below at all (quests ending at the bottom of the screen). The one pass that shows them above or
-	-- beside the tracker is a real move, so it pays the replay once; the next layout stays there without one.
-	if not LayoutModules(host:GetWidth(), screenRoom, 0) then
-		host:Hide()
-		return
-	end
-	aside = true
-	if FitAside() then
-		ClearMinimap()
-	end
-end
-
--- Attached while another addon's list covers the native slot: the column goes below, above or beside it and the
--- native tracker keeps its slot. Only our frames move, and this runs only from Layout, which defers in combat; with
--- `list` nil (the addon hid its list in combat) the column keeps its last place until the next out-of-combat pass.
----@param list ForeverTrackerEqotList|Frame?
----@param kind "eqot"|"ellesmere"|"questie"|"kaliels"?
-local function LayoutBesideList(list, kind)
-	if Editing() then
-		return
-	end
-	besideList = true
-	aside = false
-	besideEqot, besideEllesmere, besideQuestie = kind == "eqot", kind == "ellesmere", kind == "questie"
-	if not list then
-		host:SetShown(LayoutModules(host:GetWidth(), displacedRoom, 0))
-		return
-	end
-	local module = TrackerQuestie
-	if kind == "eqot" then
-		module = TrackerEqot
-	elseif kind == "ellesmere" then
-		module = TrackerEllesmere
-	elseif kind == "kaliels" then
-		module = TrackerKaliels
-	end
-	host:Show()
-	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
-	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
-	local width = math.min(
-		kind == "kaliels" and TrackerKaliels.Width(list, host) or ObjectiveTrackerFrame:GetWidth(),
-		screenWidth
-	)
-	host:SetWidth(width)
-	displacedRoom = module.Room(list, host)
-	if not LayoutModules(width, displacedRoom, 0) then
-		host:Hide()
-		return
-	end
-	local besideX = Beside(list, width, screenHeight)
-	local places = module.Places(list, host, besideX, screenWidth, screenHeight)
-	for index, place in ipairs(places) do
-		host:ClearAllPoints()
-		host:SetPoint(place[1], UIParent, place[1], place[2], place[3])
-		if index == #places or not OverlapsMinimap() then
-			return
-		end
-	end
-end
-
 local function Layout()
 	queued = false
 	-- A queued pass that found combat holds the whole column exactly as it was. The client marks every item button
 	-- protected, and their ancestors up to the host are protected with them, so no layout may move or show anything.
 	-- PLAYER_REGEN_ENABLED marks the host dirty again for the pass this one could not run.
-	if InCombatLockdown() or Editing() then
+	if InCombatLockdown() then
 		return
 	end
-	local settings = ApplyAttachment()
-	besideKaliels = false
-	TrackerKaliels.SetEnabled(attached)
+	local settings = Settings()
 	ApplyBackdrop(settings)
-	Grip.Show(not attached)
-	-- Settle the host's scale before a list is normalised into it. EQOT's list is always in host units, and its
-	-- source is UIParent, so this is also its final scale; the native tracker's and a Questie frame's are set below.
-	MatchScale(UIParent)
-	if not attached then
-		besideList, besideQuestie, besideEqot, besideEllesmere = false, false, false, false
-		LayoutDetached(settings)
-		return
-	end
-	local kaliels, kalielsActive = TrackerKaliels.List(host, host.MarkDirty)
-	if kalielsActive then
-		besideKaliels, besideList = true, true
-		besideQuestie, besideEqot, besideEllesmere = false, false, false
-		if kaliels then
-			MatchScale(kaliels)
-			LayoutBesideList(kaliels, "kaliels")
-		else
-			host:Hide()
-		end
-		return
-	end
-	local eqot = TrackerEqot.List(host, host.MarkDirty)
-	if eqot then
-		LayoutBesideList(eqot, "eqot")
-		return
-	end
-	local ellesmere = TrackerEllesmere.List(host, host.MarkDirty)
-	if ellesmere then
-		MatchScale(ellesmere)
-		LayoutBesideList(ellesmere, "ellesmere")
-		return
-	end
-	local questie = TrackerQuestie.List(host, host.MarkDirty)
-	if questie then
-		MatchScale(questie)
-		LayoutBesideList(questie, "questie")
-		return
-	end
-	-- Both lists are away, so the column lays itself out below the native tracker again.
-	besideList, besideQuestie, besideEqot, besideEllesmere = false, false, false, false
-	-- A hidden or transparent native tracker, as a replacement UI leaves it, is not the frame the column sits beside.
-	MatchScale(NativeScaleSource())
-	LayoutAttached()
+	Grip.Show(true)
+	MatchScale()
+	Place(settings)
 end
 
 function host.MarkDirty(_)
@@ -1434,9 +1015,9 @@ function host.MarkDirty(_)
 		C_Timer.After(0, Layout)
 	end
 end
--- A hidden native tracker has no visible collapse control, so its saved collapse does not hide the Forever sections.
+-- The column has no collapse of its own; each section folds itself.
 function host.IsCollapsed(_)
-	return attached == true and not besideList and ObjectiveTrackerFrame:IsShown() and NativeCollapsed()
+	return false
 end
 function host:ForceExpand()
 	self:MarkDirty()
@@ -1491,24 +1072,15 @@ function api.SetLocked(value)
 	Settings().locked = not not value
 	Grip.SetLabel(value)
 end
+-- Compatibility for consumers written when the column could attach to the quest tracker: it never does now, so these
+-- answer false, change nothing and never call back.
 function api.IsAttachedToQuestTracker()
-	return Settings().attached ~= false
+	return false
 end
-function api.SetAttached(value)
-	value = not not value
-	local settings = Settings()
-	if settings.attached == value then
-		return
-	end
-	settings.attached = value
-	NotifyAttachment(value)
-	host:MarkDirty()
-end
-function api.OnAttachmentChanged(callback)
-	attachmentCallbacks[#attachmentCallbacks + 1] = callback
-end
+function api.SetAttached(_) end
+function api.OnAttachmentChanged(_) end
 function api.SavePosition(x, y)
-	if attached or type(x) ~= "number" or type(y) ~= "number" then
+	if type(x) ~= "number" or type(y) ~= "number" then
 		return
 	end
 	local settings = Settings()
@@ -1622,17 +1194,9 @@ local function NewTrackerMenu(root, module, target)
 		Append(slots.ending)
 		root:CreateDivider()
 		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
-		tracker:CreateCheckbox(ns.L["Attach to quest tracker"], api.IsAttachedToQuestTracker, function()
-			api.SetAttached(not api.IsAttachedToQuestTracker())
-		end)
 		if api.IsLocked and api.SetLocked then
 			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
 				api.SetLocked(not api.IsLocked())
-			end)
-		end
-		if not ns.TrackerHostForeign and ns.TrackerQuests then
-			tracker:CreateCheckbox(ns.L["Forever quest list"], ns.TrackerQuests.Enabled, function()
-				ns.TrackerQuests.SetEnabled(not ns.TrackerQuests.Enabled())
 			end)
 		end
 		local background = tracker:CreateButton(ns.L["Tracker background"])
@@ -1696,7 +1260,6 @@ local function AddHeaderMenu(module)
 	end
 	module.headerMenu = true
 	local L = ns.L
-	local attach = L["Attach to quest tracker"]
 	local lock = L["Lock the tracker"]
 	local background = L["Tracker background"]
 	local hide = L["Hide this section"]
@@ -1722,17 +1285,9 @@ local function AddHeaderMenu(module)
 				finish()
 				return
 			end
-			root:CreateCheckbox(attach, api.IsAttachedToQuestTracker, function()
-				api.SetAttached(not api.IsAttachedToQuestTracker())
-			end)
 			if api.IsLocked and api.SetLocked then
 				root:CreateCheckbox(lock, api.IsLocked, function()
 					api.SetLocked(not api.IsLocked())
-				end)
-			end
-			if not ns.TrackerHostForeign and ns.TrackerQuests then
-				root:CreateCheckbox(L["Forever quest list"], ns.TrackerQuests.Enabled, function()
-					ns.TrackerQuests.SetEnabled(not ns.TrackerQuests.Enabled())
 				end)
 			end
 			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its
@@ -1868,25 +1423,12 @@ function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
 end
--- Combat ending applies an attachment change combat held back. Combat starting freezes every section's scrollbar, so
+-- Combat ending attaches the sections combat held back. Combat starting freezes every section's scrollbar, so
 -- each secure item button stays beside its quest.
 host:RegisterEvent("PLAYER_REGEN_ENABLED")
 host:RegisterEvent("PLAYER_REGEN_DISABLED")
 host:RegisterEvent("DISPLAY_SIZE_CHANGED")
 host:RegisterEvent("UI_SCALE_CHANGED")
--- Native objective changes and managed-frame transitions can restore the tracker anchor.
--- Observe their events; wrapping its methods taints controller and secure layout paths.
-for _, event in ipairs({
-	"QUEST_LOG_UPDATE",
-	"QUEST_WATCH_UPDATE",
-	"QUEST_WATCH_LIST_CHANGED",
-	"PLAYER_ALIVE",
-	"PLAYER_DEAD",
-	"PLAYER_UNGHOST",
-	"ZONE_CHANGED_NEW_AREA",
-}) do
-	host:RegisterEvent(event)
-end
 host:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_ENABLED" then
 		for module, attachment in pairs(pendingAttachments) do
@@ -1904,64 +1446,6 @@ host:SetScript("OnEvent", function(_, event)
 	end
 	host:MarkDirty()
 end)
-ObjectiveTrackerFrame:HookScript("OnSizeChanged", function()
-	host:MarkDirty()
-end)
--- The layout takes the native tracker's top while it is hidden and its NineSlice's bottom while it is shown, so showing
--- or hiding it moves the column even when Edit Mode's fixed height means its size never changes and OnSizeChanged never
--- fires. Hooking the frame's own scripts leaves its Show and Hide methods, and the module layout they run, untouched.
--- MarkDirty's deferred pass runs after that layout, so the NineSlice already reads the new bottom when it is anchored.
-ObjectiveTrackerFrame:HookScript("OnShow", host.MarkDirty)
-ObjectiveTrackerFrame:HookScript("OnHide", host.MarkDirty)
--- The game's managed frame layout, Edit Mode and UI addons such as EllesmereUI move the native frame with no event of
--- their own. An addon-owned probe spans from the screen's bottom left corner to the native frame's top left corner, so
--- any move of the native frame resizes the probe and its OnSizeChanged reflows the column.
-local probe = CreateFrame("Frame", nil, UIParent)
-local probeEnabled = false
-local function SetProbeEnabled(enabled)
-	if probeEnabled == enabled then
-		return
-	end
-	probeEnabled = enabled
-	probe:ClearAllPoints()
-	if enabled then
-		probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-		probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
-	end
-end
-probe:SetScript("OnSizeChanged", function()
-	if probeEnabled then
-		host:MarkDirty()
-	end
-end)
-SetProbeEnabled(not Editing())
--- Collapsing "All Objectives" hides the shared sections too. Mark the host dirty on the click that flips it; the
--- native collapse method itself stays unhooked and untouched, and the native header keeps its parent so its button
--- resolves the native container normally.
-if nativeHeader and nativeHeader.MinimizeButton then
-	nativeHeader.MinimizeButton:HookScript("OnClick", function()
-		host:MarkDirty()
-	end)
-end
--- Edit Mode restores Blizzard's saved anchor through its public callbacks. Reflow
--- on those events instead of polling the native frame every frame.
-local function OnEditModeChanged()
-	HookEditMode()
-	local editing = Editing()
-	SetProbeEnabled(not editing)
-	if editing and attached then
-		host:Hide()
-		-- Hidden frames still participate in anchor dependencies; detach our column too.
-		host:ClearAllPoints()
-		host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
-	else
-		host:Show()
-	end
-	host:MarkDirty()
-end
-EventRegistry:RegisterCallback("EditMode.Enter", OnEditModeChanged, host)
-EventRegistry:RegisterCallback("EditMode.Exit", OnEditModeChanged, host)
-EventRegistry:RegisterCallback("EditMode.SavedLayouts", OnEditModeChanged, host)
 -- A developer diagnostic for the tracker stack (/agf tracker). The combat overlap is otherwise invisible headlessly: it
 -- prints both frames' anchors, heights and who each is anchored to.
 ---@return string
@@ -1988,29 +1472,19 @@ function api.Debug()
 			frame:GetEffectiveScale()
 		)
 	end
-	local form = "combat=%s shown=%s hostH=%.1f host[%s] g[%s] nativeH=%.1f native[%s] g[%s] uiS%.2f"
-	return (form .. " questie=%s eqot=%s ellesmere=%s"):format(
+	return ("combat=%s shown=%s hostH=%.1f host[%s] g[%s] uiS%.2f"):format(
 		tostring(InCombatLockdown()),
 		tostring(host:IsShown()),
 		host:GetHeight() or -1,
 		point(host),
 		geometry(host),
-		ObjectiveTrackerFrame:GetHeight() or -1,
-		point(ObjectiveTrackerFrame),
-		geometry(ObjectiveTrackerFrame),
-		UIParent:GetEffectiveScale(),
-		tostring(besideQuestie),
-		tostring(besideEqot),
-		tostring(besideEllesmere)
+		UIParent:GetEffectiveScale()
 	)
 end
 
 EventUtil.ContinueAfterAllEvents(function()
 	ready = true
 	host:MarkDirty()
-	TrackerEqot.Await(host.MarkDirty)
-	TrackerEllesmere.Await(host.MarkDirty)
-	TrackerQuestie.Await(host.MarkDirty)
 end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
 
 ForeverTrackerHost = api -- taint-ok: addon-owned companion tracker registry

@@ -118,22 +118,6 @@ for _, combatAtLoad in ipairs({ false, true }) do
 	t.check(parents == 1, "a later combat end does not repeat the attachment")
 end
 
--- Both docking directions can be requested out of combat and reach their queued layout during combat.
-for _, attached in ipairs({ false, true }) do
-	local t = harness.new({ hostSettings = { attached = attached }, headerShown = true })
-	local host = t.ns.TrackerHost
-	local before = t.host.point[2]
-	host.SetAttached(not attached)
-	t.setCombat(true)
-	t.drain()
-	t.check(t.host.point[2] == before, "a queued attach or detach holds its anchor when combat starts")
-	t.setCombat(false)
-	t.fire("PLAYER_REGEN_ENABLED")
-	t.drain()
-	local expected = attached and t.parent or t.native.NineSlice
-	t.check(t.host.point[2] == expected, "combat ending applies the queued attach or detach")
-end
-
 -- No host: the section is refused and the reason is in core's journal.
 do
 	local t = harness.new({ deferReady = true })

@@ -29,20 +29,18 @@ end
 
 -- One defaults constructor, used both for a throwaway table before the store exists and for the table kept in the
 -- runtime store (ForeverCoreDB in the transitional standalone). The tracker scale, the Lock switch, the background
--- opacity and the detach position live in the host's own settings rather than an addon's defaults table, because the
+-- opacity and the column's position live in the host's own settings rather than an addon's defaults table, because the
 -- host outlives whichever addon happened to load first.
 ---@return ForeverTrackerSettings
 local function DefaultTrackerSettings()
-	return { attached = true, locked = false, scale = 1, backdropOpacity = 0 }
+	-- `attached = false` marks a fresh table as already past the host's one-time move off the quest tracker.
+	return { attached = false, locked = false, scale = 1, backdropOpacity = 0 }
 end
 
 -- Repair one settings table, so a hand-edited or older value cannot break the host's layout.
 ---@param settings ForeverTrackerSettings
 ---@return ForeverTrackerSettings
 local function NormalizeTrackerSettings(settings)
-	if type(settings.attached) ~= "boolean" then
-		settings.attached = true
-	end
 	if type(settings.scale) ~= "number" or settings.scale ~= settings.scale then
 		settings.scale = 1
 	end

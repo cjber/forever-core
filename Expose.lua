@@ -7,7 +7,7 @@ local _, ns = ...
 local core = {}
 core.name = "ForeverCore"
 -- Raised when a change breaks the interface below, so an addon can refuse to run against an older core. Version 2
--- retired Forever Leaderboards and peer stats; theirs are the no-op answers in Core/RetiredLeaderboards.lua.
+-- retired Forever Leaderboards and peer stats.
 core.API = 2
 -- The core table's own minor, raised with each member added here outside a module. `Registered` arrived in minor 1;
 -- a caller that needs it checks this first, the way a module member checks that module's minor.
@@ -18,24 +18,61 @@ core.TrackerSection = ns.TrackerSection
 core.TrackerLine = ns.TrackerLine
 core.TrackerLock = ns.TrackerLock
 core.TrackerOrder = ns.TrackerOrder
-core.TrackerQuestie = ns.TrackerQuestie
-core.TrackerEqot = ns.TrackerEqot
-core.TrackerQuests = ns.TrackerQuests
 core.QuestLogTabs = ns.QuestLogTabs
 core.ProfessionTabs = ns.ProfessionTabs
-core.PeerStats = ns.RetiredPeerStats
-core.Leaderboards = ns.RetiredLeaderboards
 core.MinimapButton = ns.MinimapButton
 core.SettingsPage = ns.SettingsPage
 core.SettingsSections = ns.SettingsSections
 core.Text = ns.Text
-core.QuestOrder = ns.QuestOrder
 core.APIKit = ns.APIKit
 core.Open = ns.Open
 core.Journey = ns.Journey
 core.OpenMap = ns.OpenMap
 core.OpenSettingsPanel = ns.OpenSettingsPanel
-core.Family = ns.Family
+-- The Forever addons page is gone. An addon release from before that still calls these members while it loads, so
+-- they stay for one release as answers that draw nothing: no hint shows, no link window opens, and Register hands
+-- back the addon's own category, so an older "Forever addons" button opens the addon's own page. State still answers
+-- from the client, because an addon decides what it offers from whether a sibling is running. Remove the table once
+-- no supported release calls it.
+---@type ForeverFamilyAPI
+core.Family = {
+	---@param folder string
+	---@return "on"|"off"|"missing"
+	State = function(folder)
+		local addons = rawget(_G, "C_AddOns")
+		if type(addons) ~= "table" or type(addons.IsAddOnLoaded) ~= "function" then
+			return "off"
+		end
+		local ok, loaded = pcall(addons.IsAddOnLoaded, folder)
+		if ok and loaded then
+			return "on"
+		end
+		if type(addons.DoesAddOnExist) == "function" then
+			local known, exists = pcall(addons.DoesAddOnExist, folder)
+			return known and exists == false and "missing" or "off"
+		end
+		if type(addons.GetAddOnInfo) == "function" then
+			local known, _, _, _, _, reason = pcall(addons.GetAddOnInfo, folder)
+			return known and reason == "MISSING" and "missing" or "off"
+		end
+		return "off"
+	end,
+	Hint = function()
+		return false
+	end,
+	Once = function()
+		return false
+	end,
+	ShowLink = function()
+		return false
+	end,
+	ShowSupport = function()
+		return false
+	end,
+	Register = function(category)
+		return category
+	end,
+}
 core.Credits = ns.CreditsPage
 core.ContextMenu = ns.ContextMenu
 core.Art = ns.Art
@@ -358,21 +395,9 @@ if SlashCmdList ~= nil then
 		local text = tostring(message or "")
 		local command, argument = text:match("^%s*(%S*)%s*(.*)$")
 		command = command or ""
-		if command:lower() == "quests" then
-			if ns.TrackerQuests ~= nil then
-				ns.TrackerQuests.Toggle()
-			end
-			return
-		end
 		if command:lower() == "report" then
 			for _, line in ipairs(StartupReport(argument)) do
 				print(line)
-			end
-			return
-		end
-		if command:lower() == "profile" then
-			if ns.Profile ~= nil then
-				ns.Profile.Show()
 			end
 			return
 		end

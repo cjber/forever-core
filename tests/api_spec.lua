@@ -32,16 +32,9 @@ end
 local env, created = FakeClient.new()
 local ns = {}
 for _, path in ipairs(tocFiles()) do
-	-- Core's own quest list needs the full native tracker template, which this fake client does not build. The
-	-- tracker host has already captured its native frame, so hiding it here only skips that optional section.
-	local native = env.ObjectiveTrackerFrame
-	if path == "UI/TrackerQuests.lua" then
-		env.ObjectiveTrackerFrame = nil
-	end
 	local chunk = assert(loadfile(path), path)
 	setfenv(chunk, env)
 	chunk("ForeverCore", ns)
-	env.ObjectiveTrackerFrame = native
 end
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "the TOC publishes ForeverCore")

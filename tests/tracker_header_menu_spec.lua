@@ -1,9 +1,9 @@
--- Right-clicking a section header opens the column's own switches: Attach to quest tracker, and Lock when the host
--- offers one. Every section the host attaches answers the same way, and a section's own left click is left alone.
+-- Right-clicking a section header opens the column's own switches: Lock when the host offers one, and the
+-- background. Every section the host attaches answers the same way, and a section's own left click is left alone.
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ headerShown = true })
-local check, drain = t.check, t.drain
-local host, first, second = t.ns.TrackerHost, t.first, t.second
+local check = t.check
+local host, first = t.ns.TrackerHost, t.first
 local messages = {}
 t.env.DEFAULT_CHAT_FRAME = {
 	AddMessage = function(_, message)
@@ -24,34 +24,12 @@ local function Entry(menu, text)
 	end
 end
 
-local questListEnabled = true
-t.ns.TrackerQuests = {
-	Enabled = function()
-		return questListEnabled
-	end,
-	SetEnabled = function(value)
-		questListEnabled = value
-	end,
-}
 check(first.Header.mouse == true, "a section header takes a right click")
 local opened = #t.menus
 local menu = Menu(first)
 check(#t.menus == opened + 1 and menu.owner == t.host, "the section's menu opens on the shared column")
-local questList = Entry(menu, "Forever quest list")
-check(questList and questList.isSelected(), "every section offers the shared quest list switch")
-questList.setSelected()
-check(not questListEnabled, "the quest list switch writes through core")
-t.ns.TrackerHostForeign = true
-check(Entry(Menu(second), "Forever quest list") == nil, "a foreign host has no quest list switch")
-t.ns.TrackerHostForeign = nil
-t.ns.TrackerQuests = nil
-check(Entry(Menu(second), "Forever quest list") == nil, "a missing quest list has no switch")
-local attach = Entry(menu, "Attach to quest tracker")
-check(attach ~= nil, "the section menu offers the attach switch")
-check(attach.isSelected() == true, "the attach switch reads the saved setting")
-attach.setSelected()
-check(t.hostSettings.attached == false, "the attach switch saves the setting")
-check(host.IsAttachedToQuestTracker() == false, "the column reports the detached setting")
+check(Entry(menu, "Attach to quest tracker") == nil, "the column offers no attach switch")
+check(Entry(menu, "Forever quest list") == nil, "the quest list switch moved out of core")
 local lock = Entry(menu, "Lock the tracker")
 check(lock ~= nil, "the section menu offers Lock")
 check(lock.isSelected() == false, "the Lock switch reads the saved setting")
@@ -131,20 +109,6 @@ check(buttons[1] == "LeftButton", "the section's own left click still runs")
 Menu(third)
 check(buttons[2] == "RightButton", "the section's own handler still runs on a right click")
 
--- A switch made in combat is saved at once and applied when combat ends, as the save buttons already are.
-host.SetAttached(true)
-drain()
-t.setCombat(true)
-local inCombat = Menu(second)
-Entry(inCombat, "Attach to quest tracker").setSelected()
-check(t.hostSettings.attached == false, "a combat switch saves the setting")
-drain()
-check(t.host.point[2] == t.native.NineSlice, "a combat switch waits for combat's end")
-t.setCombat(false)
-t.fire("PLAYER_REGEN_ENABLED")
-drain()
-check(t.host.point[2] == t.parent, "combat's end applies the switch")
-
 -- A section's own show switch and menu entries run in its SafeCall, so a failure is recorded for that addon rather
 -- than propagating through the shared column.
 local safeCalls = {}
@@ -192,20 +156,8 @@ contractModule.trackerMenu = function(target, builder)
 	builder:Open("Open panel", function() end)
 end
 contractTargets = {}
-t.ns.TrackerQuests = {
-	Enabled = function()
-		return questListEnabled
-	end,
-	SetEnabled = function(value)
-		questListEnabled = value
-	end,
-}
 local contractMenu = Menu(contractModule)
-local trackerMenu = Entry(contractMenu, "Tracker")
-local sharedQuestList = Entry(trackerMenu.submenu, "Forever quest list")
-check(sharedQuestList and not sharedQuestList.isSelected(), "the shared Tracker submenu reads the quest list switch")
-sharedQuestList.setSelected()
-check(questListEnabled, "the shared Tracker submenu changes the quest list switch")
+check(Entry(contractMenu, "Tracker") ~= nil, "the shared Tracker submenu follows the addon's rows")
 check(contractTargets[1].kind == "section", "the declarative section target names its kind")
 check(contractMenu.title == "A block", "Title is the first fixed slot")
 local primaryTip

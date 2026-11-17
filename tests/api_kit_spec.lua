@@ -554,15 +554,9 @@ Client()
 env.errorHandler = function() end
 local ns = {}
 for _, path in ipairs(tocFiles()) do
-	-- Core's own quest list needs the full native tracker template, as api_spec.lua does for the same client.
-	local native = env.ObjectiveTrackerFrame
-	if path == "UI/TrackerQuests.lua" then
-		env.ObjectiveTrackerFrame = nil
-	end
 	local chunk = assert(loadfile(path), path)
 	setfenv(chunk, env)
 	chunk("ForeverCore", ns)
-	env.ObjectiveTrackerFrame = native
 end
 -- The TOC's own load-time timers are not this spec's; every scenario starts with an empty queue.
 env.timers = {}

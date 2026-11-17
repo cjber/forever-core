@@ -9,12 +9,11 @@ end
 for _, scale in ipairs({ 0.5, 1, 1.5 }) do
 	local t = harness.new()
 	local module = t.scrollModule(3, 10, 40)
-	t.native:SetWidth(340)
 	t.host:MarkDirty()
 	t.drain()
 	t.drain()
 	if os.getenv("TRACKER_WIDTH_CASE") ~= "overflow" then
-		check(module.Header:GetWidth() == module:GetWidth(), "viewport header follows section width after resize")
+		check(module.Header:GetWidth() == module:GetWidth(), "viewport header follows section width")
 	end
 	local contents = module.ContentsFrame
 	contents.effectiveScale = scale

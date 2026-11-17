@@ -60,8 +60,8 @@ function TrackerLock.Grip(host, source)
 		GameTooltip:Hide()
 	end)
 	grip:SetScript("OnDragStart", function()
-		-- The host refuses a drag while the column is attached to the quest tracker and in combat, so ask it first.
-		if TrackerLock.Locked() or source.IsAttachedToQuestTracker() or InCombatLockdown() then
+		-- The column holds still in combat, when its secure item buttons are protected.
+		if TrackerLock.Locked() or InCombatLockdown() then
 			return
 		end
 		dragging = true
@@ -83,6 +83,9 @@ function TrackerLock.Grip(host, source)
 		end,
 		SetLabel = function(value)
 			DrawLabel(value)
+		end,
+		Dragging = function()
+			return dragging
 		end,
 	}
 end

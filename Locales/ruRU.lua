@@ -11,21 +11,14 @@ L["%s, %s and %s"] = "%s, %s и %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s и ещё %d"
 L["+%d more"] = "+%d ещё"
 L[", "] = ", "
-L["%d yd"] = "%d м"
 L["%s (last %d):"] = "%s (последние %d):"
 L["%s: no lines yet."] = "%s: строк пока нет."
-L["Adds a macro window with every macro in one list, a mono editor with live checks, and history."] =
-	"Adds a macro window with every macro in one list, a mono editor with live checks, and history."
 L["All addons"] = "Все аддоны"
-L["Attach to quest tracker"] = "Прикрепить к отслеживанию заданий"
 L["Bug"] = "Ошибка"
 L["Bug: "] = "Ошибка: "
 L["Close"] = "Закрыть"
 L["Copy issue link"] = "Скопировать ссылку на issue"
-L["Copy link"] = "Копировать ссылку"
 L["Copy report"] = "Скопировать отчет"
-L["Copy the address, then open it in your browser."] =
-	"Скопируйте адрес и откройте его в браузере."
 L["Debug log is already on and pinned for this character."] =
 	"Журнал отладки уже включён и закреплён для этого персонажа."
 L["Debug log is off and unpinned."] = "Журнал отладки выключен, закрепление снято."
@@ -35,50 +28,23 @@ L["Debug log is off."] = "Журнал отладки выключен."
 L["Debug log is on and pinned for this character."] =
 	"Журнал отладки включён и закреплён для этого персонажа."
 L["Debug log is on for this session."] = "Журнал отладки включён для этого сеанса."
-L["Don't suggest this again"] = "Больше не предлагать"
 L["Drag to move"] = "Перетащите, чтобы переместить"
 L["Feature request"] = "Предложение функции"
 L["Feature request: "] = "Предложение функции: "
 L["ForeverCore"] = "ForeverCore"
 L["Forever addons"] = "Модификации Forever"
-L["Forever quest list"] = "Forever quest list"
 L["Forever tracker"] = "Отслеживание Forever"
 L["Hide this section"] = "Hide this section"
 L["Inspired by"] = "Вдохновили"
-L["Installed, turned off"] = "Установлено, отключено"
-L["Keeps a cosmetic journal of the creatures you kill, zone by zone."] =
-	"Keeps a cosmetic journal of the creatures you kill, zone by zone."
-L["Lists your commission turn-ins, the materials in your bags and the next NPC to visit."] =
-	"Lists your commission turn-ins, the materials in your bags and the next NPC to visit."
-L["Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."] =
-	"Lists your tracked quests in the Forever column, ready to turn in first, then this zone, then the rest by zone, nearest first. The game's own objective tracker is hidden while this is on."
 L["Lock the tracker"] = "Закрепить трекер"
 L["No addon has attached its log yet."] =
 	"Ни один аддон ещё не подключил свой журнал."
 L["No one is listed yet."] = "Пока никого нет в списке."
-L["Not installed"] = "Не установлено"
 L["On"] = "Вкл."
-L["Open"] = "Открыть"
-L["Picks quests for your level and plans them into one journey."] =
-	"Подбирает задания по вашему уровню и объединяет их в один маршрут."
-L["Plans the cheapest route to your next profession rank."] =
-	"Прокладывает самый дешевый путь к следующему рангу профессии."
-L["Plans the quickest way anywhere and guides you there, with live boat and zeppelin times."] =
-	"Прокладывает самый быстрый путь куда угодно и ведет вас туда, с расписанием кораблей и дирижаблей в реальном времени."
 L["Players"] = "Игроки"
-L["Quest automation, rare alerts and merchant handling for the default UI."] =
-	"Автоматизация заданий, оповещения о редких противниках и работа с торговцами для стандартного интерфейса."
-L["Ready to turn in"] = "Ready to turn in"
 L["Report a bug or request a feature"] = "Сообщить об ошибке или предложить функцию"
-L["Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."] =
-	"Показывать неприметную строку там, где помогла бы другая моя модификация Forever. Только для тех, что у вас не установлены."
-L["Shows the Legacy challenges you can advance in each zone."] =
-	"Показывает старинные испытания, которые можно продвинуть в каждой зоне."
-L["Suggest my other Forever addons"] = "Предлагать другие мои модификации Forever"
 L["Thanks"] = "Спасибо"
 L["Thanks to %s"] = "Спасибо %s"
-L["The Forever addons are free, with nothing locked behind them. If they help, you can buy me a coffee."] =
-	"Аддоны Forever бесплатны, и ничего в них не закрыто за оплатой. Если они вам помогают, можете угостить меня кофе."
 L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then paste into a browser; GitHub opens a filled-in issue."] =
 	"Ссылка выделена. Нажмите Ctrl+C (Cmd+C на Mac) и вставьте ее в браузер; GitHub откроет заполненную задачу."
 L["The players who helped each Forever addon."] =
@@ -87,7 +53,6 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"Текст выделен. Нажмите Ctrl+C (Cmd+C на Mac), чтобы скопировать его, затем вставьте в сообщение об ошибке."
 L["The tracker is locked. Turn off Lock the tracker to move it."] =
 	"Трекер закреплён. Отключите «Закрепить трекер», чтобы переместить его."
-L["This addon"] = "Эта модификация"
 L["Title"] = "Заголовок"
 L["Tracker background"] = "Фон отслеживания"
 L["Tracker"] = "Отслеживание"
@@ -97,12 +62,6 @@ L["Right-click for options"] =
 L["Unavailable in combat"] = "Недоступно в бою"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Использование: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
-L["Turn off the Forever quest list (use the game's tracker)"] =
-	"Turn off the Forever quest list (use the game's tracker)"
-L["Use the game's tracker"] = "Use the game's tracker"
-L["Keep this list"] = "Keep this list"
-L["This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."] =
-	"This is the Forever quest list, shown in place of the game's quest tracker. To switch it off later, right-click the Quests header, or untick Forever quest list in Options > AddOns > ForeverCore."
 L["What happened, or what you would like"] =
 	"Что произошло или что вы хотели бы видеть"
 L.MINIMAP_UNAVAILABLE =
@@ -145,39 +104,7 @@ L["%s needs ForeverCore. Install it from CurseForge, or choose Reinstall on Fore
 	"%s требует ForeverCore. Установите его с CurseForge или выберите «Переустановить» для ForeverCore в приложении CurseForge." -- mt
 L["%s: ForeverCore is turned off. Enable it in the AddOns list to fix this."] =
 	"%s: ForeverCore отключён. Включите его в списке аддонов, чтобы исправить это." -- mt
-L["No Forever addon has recorded anything for this character yet."] =
-	"Ни один аддон Forever ещё ничего не записал для этого персонажа."
-L["The link is selected. Press Ctrl+C (Cmd+C on a Mac), then open it in a browser. Nothing is sent."] =
-	"Ссылка выделена. Нажмите Ctrl+C (Cmd+C на Mac) и откройте её в браузере. Ничего не отправляется."
-L["Your Forever profile"] = "Ваш профиль Forever"
-L["%s (%d)"] = "%s (%d)"
-L["%s %d/%d"] = "%s %d/%d"
-L["Abandon"] = "Отказаться"
-L["Abandoning a quest is not available."] = "Нельзя отказаться от задания."
-L["Collapse"] = "Свернуть"
-L["Expand"] = "Развернуть"
-L["Focus"] = "Отслеживать"
-L["Stop focusing"] = "Прекратить отслеживание"
-L["Objectives"] = "Задачи"
-L["Open Quest Details"] = "Открыть сведения о задании"
-L["Hide Quest Details"] = "Скрыть сведения о задании"
-L["Open Quest Map"] = "Открыть карту задания"
-L["Quest"] = "Задание"
 L["Quests"] = "Задания"
-L["Route with Shortest Path"] = "Маршрут через Shortest Path"
-L["Shortest Path is not loaded."] = "Shortest Path не загружен."
-L["Shortest Path could not plan this route."] =
-	"Shortest Path не смог построить этот маршрут."
-L["There is no map pin for this quest."] = "Для этого задания нет метки на карте."
-L["There is no quest link to share."] = "Нет ссылки на задание для отправки."
-L["The world map is not available."] = "Карта мира недоступна."
-L["The quest log is not available."] = "Журнал заданий недоступен."
-L["Untrack"] = "Перестать отслеживать"
-L["Share Quest"] = "Поделиться заданием"
-L["Share in Chat"] = "Отправить в чат"
-L["fold this zone"] = "свернуть эту зону"
-L["unfold this zone"] = "развернуть эту зону"
-L["focus this quest"] = "отслеживать это задание"
 
 L["ForeverCore startup report"] = "Отчёт о запуске ForeverCore" -- mt
 L["Core: %s; API %s"] = "Core: %s; API %s" -- mt

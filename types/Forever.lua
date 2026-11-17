@@ -41,55 +41,15 @@
 ---@field chat? boolean chat logging before the capture
 ---@field combat? boolean combat logging before the capture
 
--- The Forever quest list's pure ordering model, in Core/QuestOrder.lua.
----@class ForeverQuestRecord
----@field questID number
----@field title string?
----@field zone string?
----@field ready boolean?
----@field onMap boolean?
----@field distanceSq number?
-
----@class ForeverQuestGroup
----@field title string
----@field quests ForeverQuestRecord[]
-
--- UI/TrackerQuests.lua, core's own quest section, enabled unless explicitly turned off.
----@class ForeverTrackerQuestsAPI
----@field Enabled fun(): boolean
----@field SetEnabled fun(value: boolean)
----@field Toggle fun()
-
----@class ForeverQuestTrackerModule : ForeverTrackerModule
----@field MarkDirty fun(self: ForeverQuestTrackerModule)
----@field SetHeader fun(self: ForeverQuestTrackerModule, text: string)
----@field GetBlock fun(self: ForeverQuestTrackerModule, id: any, template?: string): any, boolean
----@field LayoutBlock fun(self: ForeverQuestTrackerModule, block: any): boolean
----@field DoQuestObjectives fun(self: ForeverQuestTrackerModule, block: any, questCompleted: boolean, questSequenced: boolean, isExistingBlock: boolean, useFullHeight: boolean): boolean
----@field GetQuestTagText fun(self: ForeverQuestTrackerModule, questID: number): string?
----@field ShouldDisplayQuest fun(self: ForeverQuestTrackerModule, quest: any): boolean
----@field Records fun(self: ForeverQuestTrackerModule): ForeverQuestRecord[]
----@field UpdateQuest fun(self: ForeverQuestTrackerModule, record: ForeverQuestRecord): boolean
----@field AddHeaderMenuEntries fun(self: ForeverQuestTrackerModule, root: any)
----@field OnBlockHeaderClick fun(self: ForeverQuestTrackerModule, block: any, mouseButton: string)
----@field thinBarPool? any[]
----@field activeThinBars? any[]
----@field itemButtons? ForeverQuestItemButton[]
----@field combatChangeQueued? boolean
-
--- UI/TrackerQuests.lua's secure quest item button, the client's item look on SecureActionButtonTemplate.
----@class ForeverQuestItemButton : Button
----@field foreverIndex integer
----@field questLogIndex? number
----@field charges? number
----@field rangeTimer? number
----@field foreverBlock? any
----@field Glow Texture
----@field HotKey FontString
----@field icon Texture
----@field Count FontString
----@field Cooldown Cooldown
----@field SetUp fun(self: ForeverQuestItemButton, questLogIndex: number)
+-- The retired Forever addons page's members, kept on the core table for one release so an older addon release still
+-- loads: State answers from the client, the rest draw nothing.
+---@class ForeverFamilyAPI
+---@field State fun(folder: string): "on"|"off"|"missing" whether that addon is running, installed but off, or absent
+---@field Hint fun(...): boolean always false
+---@field Once fun(...): boolean always false
+---@field ShowLink fun(...): boolean always false
+---@field ShowSupport fun(): boolean always false
+---@field Register fun(category: table, ...): table the category it was given
 
 -- UI/SettingsPage.lua, the shared settings canvas a consumer's settings page is drawn on.
 ---@class ForeverSettingsPageModule
@@ -184,23 +144,18 @@
 ---@field TrackerLine? ForeverTrackerLineAPI
 ---@field TrackerLock? ForeverTrackerLock
 ---@field TrackerOrder? ForeverTrackerOrderAPI
----@field TrackerQuestie? ForeverTrackerQuestie
----@field TrackerEllesmere? ForeverTrackerEllesmere
----@field TrackerEqot? ForeverTrackerEqot
----@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field SettingsSections? ForeverSettingsSectionsAPI
 ---@field Text? table
----@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
 ---@field APIKit? ForeverCoreAPIKit
 ---@field Open fun(addon: string, where?: any): boolean?, string?
 ---@field Journey ForeverCoreJourney
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
----@field Family? ForeverFamilyAPI
+---@field Family? ForeverFamilyAPI the retired Forever addons page's members, answering without drawing
 ---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 ---@field Art? ForeverArt
@@ -306,8 +261,6 @@ ForeverCore = nil
 ---@field MinimapButton? ForeverMinimapButtonAPI
 ---@field QuestLogTabs? ForeverQuestLogTabsAPI
 ---@field ProfessionTabs? ForeverProfessionTabsAPI
----@field QuestOrder fun(records: ForeverQuestRecord[]): ForeverQuestGroup[]
----@field TrackerQuests? ForeverTrackerQuestsAPI
 ---@field ContextMenu? fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
 ---@field SafeCall fun(label: string, fn: function, ...: any): boolean, ...any
 

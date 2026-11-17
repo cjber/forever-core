@@ -1,4 +1,4 @@
--- Shared stubs for the tracker host specs: one private host over a stubbed native tracker.
+-- Shared stubs for the tracker host specs: one private host on a stubbed UIParent, and a native tracker it never reads.
 local harness = {}
 
 function harness.new(options)
@@ -15,14 +15,13 @@ function harness.new(options)
 	local initializationEvents
 	local combat = false
 	local parent
-	local nativeAnchorPoint = options.nativeAnchorPoint or "TOPRIGHT"
 	local function frame()
 		local f = { width = 250, height = 0, scripts = {} }
 		function f:SetPoint(...)
 			self.point = { ... }
 		end
 		function f.GetPoint(self)
-			return unpack(self.point or { nativeAnchorPoint, parent, nativeAnchorPoint, 0, -100 })
+			return unpack(self.point or { "TOPRIGHT", parent, "TOPRIGHT", 0, -100 })
 		end
 		function f:SetWidth(value)
 			self.width = value
@@ -225,61 +224,22 @@ function harness.new(options)
 		frames[#frames + 1] = f
 		return f
 	end
-	local native = frame()
+	-- The client's tracker only has to exist, which says its section template loaded: the column never reads, writes
+	-- or hooks it, so any access fails the spec.
+	local native = setmetatable({}, {
+		__index = function(_, key)
+			error("the host read the native tracker: " .. tostring(key))
+		end,
+		__newindex = function(_, key)
+			error("the host wrote the native tracker: " .. tostring(key))
+		end,
+	})
 	local minimap = frame()
 	minimap.left, minimap.right, minimap.top, minimap.bottom, minimap.shown = 900, 1100, 700, 500, false
 	parent = frame()
-	native.parent = parent
 	parent.width = 1200
-	native.point = { nativeAnchorPoint, parent, nativeAnchorPoint, 0, -100 }
-	native.height = 300
 	parent:SetHeight(1080)
-	native.effectiveScale, parent.effectiveScale = 1.25, 1
-	local nativeHeader = frame()
-	nativeHeader.shown = options.headerShown == true
-	nativeHeader.parent = native
-	nativeHeader.point = { "TOPLEFT", native, "TOPLEFT", 0, 0 }
-	local minimizeButton = frame()
-	nativeHeader.MinimizeButton = minimizeButton
-	native.Header = nativeHeader
-	native.headerWanted = options.headerShown == true
-	-- The native container anchors this to the bottom of its last shown module: here 100 px of quests below its top.
-	native.NineSlice = {
-		bottom = 540,
-		GetBottom = function(self)
-			return self.bottom
-		end,
-		GetCenter = function()
-			return native:GetCenter()
-		end,
-		GetEffectiveScale = function()
-			return native:GetEffectiveScale()
-		end,
-	}
-	-- Blizzard's tracker re-anchors its header at the end of every update.
-	function native.UpdateHeaderPosition()
-		nativeHeader:SetPoint("TOPLEFT", native, "TOPLEFT", 0, 0)
-	end
-	function native:ShouldShowHeader()
-		return self.headerWanted and self:IsShown()
-	end
-	-- Mirrors the client update order: header visibility, objective layout, then unconditional header re-anchor.
-	function native:UpdateOrder()
-		if not self:ShouldShowHeader() then
-			nativeHeader:Hide()
-		else
-			nativeHeader:Show()
-		end
-		self:UpdateHeaderPosition()
-		return self:ShouldShowHeader()
-	end
-	-- The managed-frame layout calls this after it re-anchors the frame to its saved slot.
-	function native.UpdateHeight() end
-	-- A native tracker update re-anchors the frame to its saved slot and finishes at the header.
-	function native.RestoreSavedAnchor()
-		native:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -100)
-		native:UpdateHeaderPosition()
-	end
+	parent.effectiveScale = 1
 	local ns = options.ns or {
 		L = setmetatable({}, {
 			__index = function(_, key)
@@ -287,7 +247,8 @@ function harness.new(options)
 			end,
 		}),
 	}
-	local hostSettings = options.hostSettings or { attached = true }
+	-- A table already past the one-time move off the quest tracker; a spec covers the migration itself.
+	local hostSettings = options.hostSettings or { attached = false }
 	function ns.TrackerHostSettings()
 		return hostSettings
 	end
@@ -296,18 +257,6 @@ function harness.new(options)
 			error("native manager accessed: " .. key)
 		end,
 	})
-	local callbacks = {}
-	local eventRegistry = {
-		RegisterCallback = function(_, event, callback, owner)
-			callbacks[event] = callbacks[event] or {}
-			callbacks[event][#callbacks[event] + 1] = { callback = callback, owner = owner }
-		end,
-		TriggerEvent = function(_, event, ...)
-			for _, entry in ipairs(callbacks[event] or {}) do
-				entry.callback(entry.owner, ...)
-			end
-		end,
-	}
 	-- The shared context menu, recorded so a spec can read back what a click offered. An entry with no callback and
 	-- entries of its own is a submenu, as inserting elements into an element description makes one in the client.
 	local function captureMenu(owner, generator)
@@ -335,16 +284,6 @@ function harness.new(options)
 		return menu
 	end
 	ns.ContextMenu = captureMenu
-	local editMode = { active = false, shown = false, scripts = {} }
-	function editMode:IsEditModeActive()
-		return self.active
-	end
-	function editMode:IsShown()
-		return self.shown
-	end
-	function editMode:HookScript(kind, fn)
-		self.scripts[kind] = fn
-	end
 	local env
 	env = setmetatable({
 		ObjectiveTrackerManager = forbidden,
@@ -370,8 +309,7 @@ function harness.new(options)
 				readyFn = fn
 			end,
 		},
-		EventRegistry = eventRegistry,
-		EditModeManagerFrame = editMode,
+		EventRegistry = { RegisterCallback = noop },
 		C_XMLUtil = {
 			GetTemplateInfo = function()
 				return { type = "Frame" }
@@ -473,16 +411,6 @@ function harness.new(options)
 		native = native,
 		parent = parent,
 		minimap = minimap,
-		nativeHeader = nativeHeader,
-		updateOrder = function()
-			return native:UpdateOrder()
-		end,
-		headerShown = function()
-			return native:ShouldShowHeader()
-		end,
-		minimizeButton = minimizeButton,
-		eventRegistry = eventRegistry,
-		editMode = editMode,
 		menus = menus,
 		check = check,
 		checks = function()
@@ -509,9 +437,6 @@ function harness.new(options)
 		end,
 		inCombat = function()
 			return combat
-		end,
-		setNativeAnchorPoint = function(value)
-			nativeAnchorPoint = value
 		end,
 	}
 	-- Delivers a client event to the host only when the host registered it, as the client does.
@@ -598,12 +523,10 @@ function harness.new(options)
 	function ctx.blocksReleased()
 		return released
 	end
-	function ctx.probe()
-		for _, f in ipairs(frames) do
-			if f.point and f.point[2] == native and f.scripts.OnSizeChanged then
-				return f
-			end
-		end
+	-- Saves a dragged position that leaves exactly `room` units for the sections under the column's grip.
+	function ctx.room(room)
+		hostSettings.x, hostSettings.y = 0, room + 24 - parent:GetHeight()
+		ctx.host:MarkDirty()
 	end
 	-- A module shaped like Blizzard's own, with a real block chain, so a spec can see the shared scroll wrapper: the
 	-- cap, the viewport, the bar and the block-snapped offsets. It does not load Blizzard's source.
@@ -663,7 +586,7 @@ function harness.new(options)
 		return m
 	end
 	ctx.loadHost(ns)
-	ctx.host, ctx.grip = frames[6], frames[7]
+	ctx.host, ctx.grip = frames[3], frames[4]
 	ctx.first, ctx.second = ctx.module(1), ctx.module(2)
 	if not options.deferReady then
 		ctx.ready()

@@ -135,8 +135,9 @@ says whether the host handled the click. A legacy `OnBlockHeaderClick` is wrappe
 `AddHeaderMenuEntries` stays supported for migrating consumers, but cannot be combined with a
 new menu contract. A rejected combination leaves the attached module unchanged.
 
-The column's settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale, lock, attached/detached,
-background opacity and the detached position. A consumer whose old version kept its own tracker table offers it once so
+The column is one frame of its own on `UIParent`, which the player drags and locks; it never anchors to the game's
+quest tracker or another tracker addon. Its settings are ForeverCore's own, in `ForeverCoreDB.trackerHost`: scale,
+lock, background opacity and position. A consumer whose old version kept its own tracker table offers it once so
 players keep the layout they chose:
 
 ```lua
@@ -176,8 +177,6 @@ for the client and one column's settings move every section together.
   native vertical settings list. It uses Blizzard's `Settings.RegisterInitializer` path, so consumers do not mutate
   the category layout directly.
 - `ForeverCore.Text.Fold` and `ForeverCore.Text.Rank` are the shared search fold and ranking.
-- `ForeverCore.Family` draws the Forever addons page and its link windows. `Family.Register` and `Family.CreatePanel`
-  take the addon's `SafeCall` as their last argument.
 - `ForeverCore.OpenMap` and `ForeverCore.OpenSettingsPanel` open the client's restricted map and settings panel
   through their secure client paths, never in combat. `Core/OpenMap.lua` and `Core/OpenSettings.lua` are core runtime
   files, split by what each addon opens; each returns false in combat or when the client's secure method is missing,

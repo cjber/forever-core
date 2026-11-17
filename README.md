@@ -18,10 +18,9 @@ so the game loads it first when it is installed and exactly one copy of each sha
 loads when core is missing, and then says on screen how to install it. It has no settings page of its own. Your
 Forever addons use it for:
 
-- **One tracker column.** Every Forever addon adds its section to the same objective tracker. Scale it, lock it or
-  drag it once, and every addon follows. The quest list, with progress, folds, item buttons and
-  scrolling, is on by default only with Adventure Guide, and never touches Questie or any other tracker addon. Turn
-  it on or off in settings, with `/fcore quests`, or from the section menu.
+- **One tracker column.** Every Forever addon adds its section to the same column, a frame of its own that starts at
+  the right edge under the minimap. Scale it, lock it or drag it once, and every addon follows. It never moves with
+  the game's quest tracker or another tracker addon.
 - **A bug report window.** Each addon's report command opens a ready-to-copy report with the version, the client
   build, the character, the place, recent errors, a performance table and a log.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
@@ -36,11 +35,8 @@ terrain keeps the stock look.
 
 ## What it does not do
 
-It draws no route, profession or challenge sections of its own; the quest list is the one section core keeps. On by
-default with Adventure Guide Forever loaded (off otherwise, and always off while another tracker owns the quests), it lists watched quests in the Forever column and hides the game's whole
-objective tracker while on, including scenarios and bonus objectives, as Questie does. The game's tracker comes back
-when the list is off. Every other section belongs to the addon that owns the feature: see the suite's ownership
-boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
+It draws no sections of its own, and it leaves the game's quest tracker alone. Every section belongs to the addon that
+owns the feature, the Forever quest list included, which is Adventure Guide's: see the suite's ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
 modules on the `ForeverCore` table; see
 [`docs/adoption.md`](docs/adoption.md). The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).

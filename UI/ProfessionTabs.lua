@@ -25,8 +25,8 @@ local CUSTOM_WIDTH = 850
 local fixedWidth = CUSTOM_WIDTH
 local enforcingWidth = false
 
--- Frame work waits for combat to end, the way UI/TrackerQuests.lua does: a protected native window, or an addon page
--- with a secure child, refuses SetWidth and Show/Hide under our taint.
+-- Frame work waits for combat to end: a protected native window, or an addon page with a secure child, refuses
+-- SetWidth and Show/Hide under our taint.
 local pending = false
 ---@type Frame[]
 local hiddenNativePages = {}

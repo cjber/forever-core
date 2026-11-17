@@ -104,13 +104,10 @@ local module = assert(ns.TrackerLock, "the module registers itself on the namesp
 
 -- A host standing in for UI/TrackerHost.lua, which is what the grip asks for the switch and to save a drag. The module
 -- finds it on the namespace, as it does at runtime.
-local locked, attached, saved = false, false, {}
+local locked, saved = false, {}
 local host = {
 	IsLocked = function()
 		return locked
-	end,
-	IsAttachedToQuestTracker = function()
-		return attached
 	end,
 	SavePosition = function(x, y)
 		saved[#saved + 1] = { x, y }
@@ -137,15 +134,17 @@ host.IsLocked = function()
 	return locked
 end
 
--- Unlocked and detached: the grip offers a drag, moves the column and saves where it stopped.
+-- Unlocked: the grip offers a drag, moves the column and saves where it stopped.
 hover()
 check(tooltipText == "Drag to move", "an unlocked grip offers a drag")
 check(label.text == "Forever tracker", "an unlocked grip keeps the column's title")
 handle.scripts.OnDragStart(handle)
 check(column.moving == true, "an unlocked drag moves the column")
+check(grip.Dragging() == true, "the host can see a drag in progress")
 column.left, column.top = 500, 900
 handle.scripts.OnDragStop(handle)
 check(column.moving == false, "letting go stops the move")
+check(grip.Dragging() == false, "a finished drag is no longer in progress")
 check(#saved == 1, "the drag saves once")
 check(saved[1][1] == 500 and saved[1][2] == -180, "the drag saves the column's screen position")
 handle.scripts.OnLeave(handle)
@@ -173,16 +172,7 @@ check(label.text == "Forever tracker", "the label follows the switch back to the
 grip.SetLabel(true)
 check(label.text == "", "and the locked sentence never returns to the label")
 
--- Attached, the host moves the column itself, so the grip refuses a drag whether or not Lock is on.
-locked = false
-attached = true
-hover()
-check(tooltipText == "Drag to move", "an attached grip still offers no lock wording")
-handle.scripts.OnDragStart(handle)
-check(column.moving == false, "an attached column's grip starts no drag")
-
 -- In combat the drag waits for it to end, as the host does, and the switch itself changes nothing.
-attached = false
 combat = true
 handle.scripts.OnDragStart(handle)
 check(column.moving == false, "a drag in combat waits")
@@ -191,7 +181,7 @@ handle.scripts.OnDragStart(handle)
 check(column.moving == true, "the drag works once combat ends")
 handle.scripts.OnDragStop(handle)
 
--- The host hides the grip while the column is attached, and shows it again when it is let go.
+-- The grip's show switch.
 grip.Show(false)
 check(handle.shown == false, "the host can hide the grip")
 grip.Show(true)

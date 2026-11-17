@@ -21,15 +21,7 @@ local function session(order, saved)
 		for _, entry in ipairs(Toc.files(".", "ForeverCore.toc")) do
 			if entry.kind == "lua" and entry.path ~= "Core/Loader.lua" then
 				local chunk = setfenv(assert(loadfile(entry.path)), env)
-				copy:Define(function(...)
-					-- The fake client has no native objective-tracker templates.
-					local native = env.ObjectiveTrackerFrame
-					if entry.path == "UI/TrackerQuests.lua" then
-						env.ObjectiveTrackerFrame = nil
-					end
-					chunk(...)
-					env.ObjectiveTrackerFrame = native
-				end)
+				copy:Define(chunk)
 			end
 		end
 		check(copy:Seal(), "real runtime seals")
@@ -74,14 +66,6 @@ local function session(order, saved)
 	end
 	runtime.Report.Show("report")
 	check(icons[#icons] == loader.Selected().root .. "\\media\\Icon", "core report portrait uses elected media")
-	runtime.ProfileCode.Read = function()
-		return { stats = { one = 1 } }
-	end
-	runtime.ProfileCode.Link = function()
-		return "https://wow.cjber.dev/profile"
-	end
-	runtime.Profile.Show()
-	check(icons[#icons] == loader.Selected().root .. "\\media\\Icon", "profile portrait uses elected media")
 	runtime.Art.Icon = icon
 
 	if #order > 1 then

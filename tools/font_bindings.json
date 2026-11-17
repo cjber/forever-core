@@ -3,7 +3,7 @@
   "producers": [
     {
       "source": "UI/TrackerLock.lua",
-      "sha256": "9ecab77fdf4da4e5b62c9f0c657a421156b0d08c298f474d7cd3ab7467d80b35",
+      "sha256": "5e2dceac75cd62dae4f4b6e923467afa2c7d221a2d62a99c38a9c7a42aacf5fb",
       "review": "Grip reads title from ns.L, creates label with GameFontNormal, and DrawLabel reuses title or the empty literal. Tooltip text is excluded because its font belongs to the tooltip template.",
       "bindings": [
         {
@@ -37,43 +37,6 @@
           "font": "GameFontHighlightSmall",
           "widget": "Refresh item.count static prefix of formatted count",
           "literal": "x"
-        }
-      ]
-    },
-    {
-      "source": "UI/ForeverFamily.lua",
-      "sha256": "3be647a7ed972c2f15b34f7ff24ea6845300776b86ee2fc81fc881af944fa329",
-      "review": "Register Build closes over Strings(), which reads ns.L. title, label, about, thanksName and thanksLine have explicit CreateFontString fonts and direct phrase assignments. THANKS_LINE is the literal phrase below. Support().name is Ko-fi, inserted in links, then rendered by the row name FontString. Button and template-owned fonts, dynamic links and generated credits are excluded.",
-      "bindings": [
-        {
-          "font": "GameFontNormalLarge",
-          "widget": "Register Build title",
-          "phrase": "Forever addons"
-        },
-        {
-          "font": "GameFontHighlight",
-          "widget": "Register Build label",
-          "phrase": "Suggest my other Forever addons"
-        },
-        {
-          "font": "GameFontDisableSmall",
-          "widget": "Register Build about",
-          "phrase": "Show a quiet line where one of my other Forever addons would help. Only for addons you don't have."
-        },
-        {
-          "font": "GameFontNormal",
-          "widget": "Register Build thanksName",
-          "phrase": "Thanks"
-        },
-        {
-          "font": "GameFontHighlightSmall",
-          "widget": "Register Build thanksLine via THANKS_LINE",
-          "phrase": "The players who helped each Forever addon."
-        },
-        {
-          "font": "GameFontNormal",
-          "widget": "Support name via Register Build links row name",
-          "literal": "Ko-fi"
         }
       ]
     }

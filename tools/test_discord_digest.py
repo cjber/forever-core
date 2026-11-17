@@ -4,7 +4,6 @@ import contextlib
 import io
 import json
 import os
-import re
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -31,12 +30,8 @@ def addon(repo):
 
 class FamilySyncTest(unittest.TestCase):
     def test_every_list_names_the_same_addons_in_the_same_order(self):
-        source = (digest.ROOT / "UI/ForeverFamily.lua").read_text(encoding="utf-8")
-        calls = re.findall(r'Addon\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"', source)
         family_names = [name for name, _slug, _line in digest.family.ADDONS]
         family_slugs = [slug for _name, slug, _line in digest.family.ADDONS]
-        self.assertEqual([name for name, _folder, _slug in calls], family_names)
-        self.assertEqual([slug for _name, _folder, slug in calls], family_slugs)
         self.assertEqual([item.name for item in digest.ADDONS], family_names)
         self.assertEqual([item.repo for item in digest.ADDONS], family_slugs)
         self.assertEqual(set(digest.ACCENTS), set(family_slugs))
