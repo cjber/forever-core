@@ -737,6 +737,20 @@ function M.build(sim)
 			return default
 		end
 	end
+	-- QuestInfo's legacy reward reads and QuestUtil's sharing action, confirmed by the client probe.
+	questNative("GetNumQuestLogRewards", 0)
+	questNative("GetNumQuestLogChoices", 0)
+	questNative("GetQuestLogRewardInfo", nil)
+	questNative("GetQuestLogChoiceInfo", nil)
+	questNative("GetQuestLogRewardMoney", 0)
+	questNative("GetQuestLogRewardXP", 0)
+	questNative("GetQuestLogChoiceInfoLootType", 0)
+	questNative("QuestLogPushQuest", nil)
+	questNative("GetQuestLogRewardSkillPoints", nil)
+	questNative("GetQuestLogRewardArtifactXP", 0)
+	questNative("GetQuestLogRewardHonor", 0)
+	questNative("GetQuestLogRewardTitle", nil)
+	questNative("GetQuestLogItemLink", nil)
 	questNative("GetNumQuestLeaderBoards", 0)
 	questNative("GetQuestLogLeaderBoard", nil)
 	questNative("GetQuestLogCompletionText", nil)

@@ -99,6 +99,19 @@ function M.install(Sim)
 		return unpack(result, 2, table.maxn(result))
 	end
 
+	-- Dispatch a CLICK override as fresh hardware input to the named button.
+	function Sim:pressBinding(key)
+		self:input(function()
+			local action = self.G.GetBindingAction(key, true)
+			local name, mouseButton = action:match("^CLICK (.+):([^:]+)$")
+			local button = name and self.G[name]
+			if button then
+				button:Click(mouseButton)
+			end
+		end)
+		self:advance(0.05)
+	end
+
 	-- Presses Escape as fresh hardware input: the client's own ToggleGameMenu, which walks every Escape handler
 	-- secure code has registered, Blizzard's and addons'.
 	function Sim:pressEscape()

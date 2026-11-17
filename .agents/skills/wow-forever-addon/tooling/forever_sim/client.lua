@@ -1,6 +1,7 @@
 -- The client's native side: the global table and Lua builtins the game provides, the root frames, events,
 -- timers and OnUpdate, CVars, the error handler, and ADDON_ACTION_BLOCKED / ADDON_ACTION_FORBIDDEN.
 local Secret = require("veil")
+local Docs = require("docs")
 
 local M = {}
 
@@ -559,6 +560,7 @@ function M.build(sim)
 			local d = math.min(step, remaining)
 			remaining = remaining - d
 			sim.time = sim.time + d
+			sim.widgets.flushEditText()
 			-- Timers due now, in order.
 			table.sort(sim.timers, function(a, b)
 				if a.due == b.due then
@@ -789,9 +791,6 @@ function M.build(sim)
 		"PlaySound",
 		"PlaySoundFile",
 		"StopSound",
-		"SetOverrideBinding",
-		"SetOverrideBindingClick",
-		"ClearOverrideBindings",
 		"SetBinding",
 		"SaveBindings",
 		"LoadBindings",
@@ -820,8 +819,56 @@ function M.build(sim)
 	G.GetBindingText = function(key)
 		return key or ""
 	end
-	G.GetBindingAction = function()
-		return ""
+	-- Engine-owned override bindings. Priority wins; within a priority class the latest set wins.
+	-- The latter is the simulator's documented choice, not a claim about engine ordering between owners.
+	local overrides, bindingSequence = {}, 0
+	local function bindingRefused(name)
+		if Taint.current and Docs.applies(sim.restrictionClasses(name), sim.combatLockdown, sim.hardwareInput) then
+			sim.forbidden(name)
+			return true
+		end
+		return false
+	end
+	G.SetOverrideBinding = function(owner, isPriority, key, action)
+		if bindingRefused("SetOverrideBinding") then
+			return
+		end
+		overrides[owner] = overrides[owner] or {}
+		bindingSequence = bindingSequence + 1
+		overrides[owner][key] = action
+				and { priority = not not isPriority, action = action, sequence = bindingSequence }
+			or nil
+	end
+	G.SetOverrideBindingClick = function(owner, isPriority, key, button, mouseButton)
+		if bindingRefused("SetOverrideBindingClick") then
+			return
+		end
+		G.SetOverrideBinding(owner, isPriority, key, "CLICK " .. button .. ":" .. (mouseButton or "LeftButton"))
+	end
+	G.ClearOverrideBindings = function(owner)
+		if bindingRefused("ClearOverrideBindings") then
+			return
+		end
+		overrides[owner] = nil
+	end
+	G.GetBindingAction = function(key, checkOverride)
+		local winner
+		if checkOverride then
+			for _, bindings in pairs(overrides) do
+				local binding = bindings[key]
+				if
+					binding
+					and (
+						not winner
+						or (binding.priority and not winner.priority)
+						or (binding.priority == winner.priority and binding.sequence > winner.sequence)
+					)
+				then
+					winner = binding
+				end
+			end
+		end
+		return winner and winner.action or ""
 	end
 	-- The key-binding calls the settings pages make through legacy globals (the generated API does not
 	-- document them): no modifier click by default, and a binding with no keys bound to it.

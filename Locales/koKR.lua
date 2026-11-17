@@ -192,3 +192,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 L["Callback error: %s"] = "콜백 오류: %s" -- mt
 L["Login error: %s"] = "로그인 오류: %s" -- mt
 L["Copy %s: %s"] = "사본 %s: %s" -- mt
+
+L.MINIMAP_DRAG_HINT = "드래그하여 미니맵 주위로 버튼을 이동하세요." -- mt

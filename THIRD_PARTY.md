@@ -45,6 +45,11 @@ One row per shipped contribution: a player with five shipped items has five rows
 
 | Who | What | Notes |
 |---|---|---|
+| Laddylucks | Minimap button under SexyMap's control | CurseForge; thread 8729503; #685 |
+| thirex | Minimap button under SexyMap's control | CurseForge; thread 8729648; #685 |
+| axejess | Minimap button under SexyMap's control | CurseForge; thread 8729935; #685 |
+| p1tu | Minimap button under SexyMap's control | CurseForge; thread 8730902; #685 |
+| Mirades96 | Minimap button under SexyMap's control | CurseForge; thread 8731392; #685 |
 | silhouetteone | The game's tracker stays hidden in combat | CurseForge; thread 8731206; #686 |
 | [kowakowa93](https://github.com/kowakowa93) | Forever sections follow Kaliel's Tracker | Contributor integration branch; #602 |
 | xh43k | Reported clipped tracker rows and quest item art | CurseForge; thread 8715086; #603 |

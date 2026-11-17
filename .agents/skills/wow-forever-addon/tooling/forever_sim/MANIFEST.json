@@ -7,7 +7,7 @@
   },
   "files": {
     "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "client.lua": "5445d3ec045e7288ef9b7d32e09596a8671c13f94456c7a1668344a8695cdf93",
+    "client.lua": "a750865e0c3c8fdd392e966dfa01b020852c725e9274e480fc97d919777455cb",
     "clientdata.lua": "303930badfe8576b9e05cba367709e5a34e414074c6d2c7e418d81405ca3f6f1",
     "docs.lua": "2d47348e20f34b1274d857b46b0ed4cc12ced502f16034271303565c3d248e04",
     "fetch.py": "5f1923ef4dbba7d31c2a4d5ea41ef1cf82a93b653b9ad70ea342f5808b1212f0",
@@ -15,12 +15,12 @@
     "instrument.lua": "0458145c18888024db1b7aa9919ba4f462714348c27bebe3a97bbc4fd222c31c",
     "layout.lua": "2310ddc299e8fab165249b2378ae4b7f451f008c97078ad7f2dcbccad57b9ae2",
     "loader.lua": "5d16673a1d289764f69d1632c6607473df92ea47a439a0f9338728d8ecca6326",
-    "natives.lua": "219551bd769c7d8821c08c8816eda2a85846a6bb7285674a527fe846110ad2e6",
+    "natives.lua": "7dbd9d11d8f06c61d306618684de9fa05588d070754289d344cca9027851b7a9",
     "restrictions.txt": "afa04c4814ddb35a1f8ef6f66d5617bc57643fbf91c68b514680933bd3a8a706",
     "run.lua": "08003b2d7f22ce3be5f1ca0a1c7d04006dfaec93d2c3d4cb2a2bd6c14effe9d3",
-    "scenario.lua": "6a63f49e8323376ccd725fd5d6320191d55e368da0cbab30d55a9dc59dbf68dd",
+    "scenario.lua": "28b94f802e0bac8271c20c582dcb5dd771ddf1537685d4749a6350d87828efe6",
     "script_types.lua": "24540b2a24f0ba9994c2a01d3e2fac555b814e321eade675bf823a734e1ae8f0",
-    "sim.lua": "f51d856d5638c93897f62ce0937033a3d1b123f5d523c3c0a4100e2fe491fd2a",
+    "sim.lua": "b994cbcda5a3fa1e674e6d34b40547bb77452a64bba3c22ddba5d6aa71830e41",
     "stubgen.lua": "c60786b23c59e43ce10098b2cf452184ecf6261d94fb0ffd32ddf0b64473cc71",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
@@ -38,8 +38,8 @@
     "transform.lua": "7d12c6805e503cb844bb6f815aba2fc9bde6f6c8360bcdd7e51c41c107a32bb2",
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",
     "watch.lua": "2023fec311f100a85ee757a2c2bc2b59e9982cb6182d8546d4dd55f682b6e536",
-    "widgets.lua": "6a0e94e7555eec9740e45054f06af61c483d7be9223ee13fcc55b8258d35242f",
-    "world.lua": "aaf80adf7259be377ea3b25bd7d8eb6934fc6bb9f4e5aface6d5ea1dd1a3a8ea",
+    "widgets.lua": "8e6f2005b05382786d3a7cab4641d714bcab4fb00789554879c89d1046deff70",
+    "world.lua": "2bf5ae30d6fc5b85bf62223e07ec7e01df891a04b3927ba212e39d604848deac",
     "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
   }
 }

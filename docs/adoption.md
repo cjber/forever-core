@@ -152,6 +152,9 @@ for the client and one column's settings move every section together.
 
 - `ForeverCore.MinimapButton.Create(spec)` draws the addon's minimap button on the one shared ring. Pass `spec.safeCall`
   (the `SafeCall` from `ForeverCore.Register`) so its click and refresh failures land in the addon's own journal.
+  Set `spec.libDBIcon` to a launcher name such as `"SkillUp Forever"` to let LibDBIcon minimap managers control it
+  when LibDataBroker and LibDBIcon are available. Opted-in callers must create it at `PLAYER_LOGIN` or later so
+  addons embedding those libraries have loaded. Without them it uses the shared ring and the same saved settings.
 - `ForeverCore.ContextMenu(owner, generator)` opens the suite's own context menu, with the same generator shape as
   `MenuUtil.CreateContextMenu`.
 - `ForeverCore.QuestLogTabs.Register(key, spec)` adds a panel tab to the world map's quest log. A `spec.safeCall` keeps
