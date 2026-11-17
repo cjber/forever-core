@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- **A Forever addon's minimap button can register with LibDBIcon** so SexyMap and other minimap managers can show it on hover, move and hide it. The tooltip says it can be dragged. Thanks to Laddylucks, thirex, axejess, p1tu and Mirades96 for the reports. (#685)
 - **The glyph check reads every English locale shape the addons use**: `ns.L["key"]` assignments and the fields of an `ns.L = { ... }` table, as well as `L["key"]`. A key whose value is client text, not a string literal, gets no English entry. (#543)
 - **The glyph check accepts reviewed XML font producers with no bindings.** Their source digests still require review when a template changes, and Lua string literals are read only for phrase keys absent from enUS entries. (#543)
 - **Every Forever addon can check its translations against the game's fonts.** The glyph check ships to each addon with its own reviewed list of widgets and fonts. (#543)
