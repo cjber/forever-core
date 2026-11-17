@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.4] - 2026-11-17
+
+### Fixed
+
+- **ForeverCore no longer touches the game's quest tracker when you use Questie's tracker.** With Questie's tracker on, the Forever quest list steps aside from the start, so the game's tracker no longer flashes at login or pops up over Questie's list when a quest updates. Players on the game's own tracker still get the Forever quest list, and the switch to turn it off is unchanged. Thanks to kirbs.xyz, anarchly, vladsnz, noenken and c0res1ash for the reports. (#774)
+- **The shared changelog tool passes a consumer's lint on a Python 3.11 target.** It reads the UTC release date with `time.gmtime()`, which every supported Python has, instead of `timezone.utc`, which ruff's UP017 flags there. (#751)
+
 ## [1.14.3] - 2026-11-17
 
 - **The Forever quest list steps aside for your UI suite's tracker**, including EllesmereUI. Turn the list off or on from the Tracker menu on any Forever section. (#736, cjber/shortest-path-forever#949) Thanks to dokiz, user_vyffn82yvmu3bflh and user_8vheexbirr5v6h4a for the reports.

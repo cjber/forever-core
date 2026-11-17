@@ -216,6 +216,25 @@ for _, mode in ipairs({ "ellesmere", "alpha", "parent" }) do
 	tick()
 	check(trackerShown, mode .. " stays deferred on the ticker")
 end
+-- #774: Questie's tracker setting owns the quest list before Questie builds its list frame, so core never mutes the
+-- native tracker and never shows it back, at load or on a quest update, with the list on by default or switched off.
+for _, stored in ipairs({ "default", "off" }) do
+	env.ForeverCoreDB = stored == "off" and { questList = false } or {}
+	env.Questie = { db = { profile = { trackerEnabled = true } } }
+	trackerShown, trackerAlpha, trackerVisible, section.shown = false, 0.75, true, true
+	local shows = nativeShows
+	setfenv(assert(loadfile("UI/TrackerQuests.lua")), env)("Test", ns)
+	ready()
+	section:OnEvent("PLAYER_ENTERING_WORLD")
+	section:OnEvent("QUEST_LOG_UPDATE")
+	tick()
+	check(trackerAlpha == 0.75, stored .. ": Questie's tracker setting keeps core off the native alpha")
+	check(driver == nil, stored .. ": Questie's tracker setting keeps core off the native visibility driver")
+	check(not trackerShown and nativeShows == shows, stored .. ": core never shows the tracker Questie hid")
+	check(section:LayoutContents() == nil, stored .. ": the Forever list steps aside for Questie's tracker")
+end
+env.Questie = nil
+env.ForeverCoreDB = {}
 ns.TrackerEllesmere = nil
 trackerShown, trackerAlpha, trackerVisible, section.shown = true, 0.75, true, true
 hookCount = 0

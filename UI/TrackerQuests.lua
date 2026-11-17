@@ -111,6 +111,14 @@ local function OtherOwner()
 	if ns.TrackerEllesmere and ns.TrackerEllesmere.Owns() then
 		return true
 	end
+	-- Questie hides the native tracker itself (Hide plus an OnShow hook, Modules/QuestieCompat.lua) whenever its own
+	-- tracker setting is on, seconds before it builds Questie_BaseFrame. Its setting is known from Questie's
+	-- ADDON_LOADED, before core's first apply, so core never mutes the tracker and later hands it back with a Show.
+	local questieAddon = rawget(_G, "Questie")
+	local questieDB = type(questieAddon) == "table" and questieAddon.db
+	if type(questieDB) == "table" and type(questieDB.profile) == "table" and questieDB.profile.trackerEnabled then
+		return true
+	end
 	-- Before our own suppression, a muted tracker or a shown tracker under a hidden parent means another addon
 	-- replaced the visible list. A plain hidden tracker can just be Blizzard's empty list; UIParent can hide globally.
 	if
