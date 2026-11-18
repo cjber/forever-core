@@ -316,8 +316,13 @@ GAME_KEYSYMS = {
 GAME_MODIFIERS = {"SHIFT": "Shift_L", "CTRL": "Control_L", "ALT": "Alt_L"}
 # The resolved keys, per session and per SavedVariables write, so one walk does not re-read the client each step.
 BINDINGS_CACHE = "bindings.json"
-# Keys a verb holds down right now, one per line, so a job end after a killed verb still releases them.
+# The hold in progress, its token and keys, so a job end or the hold's watchdog releases them after a killed verb.
 HELD_KEYS = "held-keys"
+HOLD_MAX = 10.0  # seconds one `key --for` may hold; longer walks go through `walkto`, which re-reads as it goes
+HOLD_SLICE = 0.25  # seconds between safety checks while keys are held
+HOLD_GRACE = 2.0  # seconds past a hold's end before its watchdog releases what is still down
+# Keys that move the character on the client's default bindings: a raw hold of one marks the job as having moved it.
+MOVEMENT_KEYSYMS = {"w", "a", "s", "d", "q", "e", "space", "Up", "Down", "Left", "Right"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -687,11 +692,7 @@ def release_session_modifiers(state: Mapping | None) -> None:
     """Release shift, ctrl, alt and any key a verb was holding on the session's display, so no job inherits a key an
     ended one held."""
     keys = list(MODIFIER_KEYS.values())
-    try:
-        recorded = (STATE_DIR / HELD_KEYS).read_text().split()
-    except OSError:
-        recorded = []
-    keys += [key for key in recorded if key not in keys]
+    keys += [key for key in held_record()[1] if key not in keys]
     failure = release_modifiers((state or {}).get("display"), keys)
     if not failure:
         (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
@@ -699,17 +700,57 @@ def release_session_modifiers(state: Mapping | None) -> None:
         print(f"forever_client: {failure}", file=sys.stderr, flush=True)
 
 
+def held_record() -> tuple[str | None, list[str]]:
+    """The token and keys of the hold in progress, from its record; (None, []) when there is none."""
+    try:
+        record = json.loads((STATE_DIR / HELD_KEYS).read_text())
+    except (OSError, ValueError):
+        return None, []
+    keys = record.get("keys") if isinstance(record, dict) else None
+    if not isinstance(keys, list):
+        return None, []
+    return record.get("token"), [key for key in keys if isinstance(key, str)]
+
+
+def release_held_later(display: str, token: str, seconds: float) -> None:
+    """Start a detached watchdog that releases this hold's keys `seconds` from now if its record is still there: a verb
+    killed mid-hold has no process left to release them, and no job may start for a long time (#833 review)."""
+    try:
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "release-held", token, f"{seconds:.2f}", display],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise ClientError(f"cannot start the held-key watchdog: {error}") from None
+
+
+def release_held(token: str, seconds: float, display: str) -> int:
+    """The watchdog: after `seconds`, release the keys of hold `token` if that hold is still recorded."""
+    time.sleep(seconds)
+    recorded, keys = held_record()
+    if recorded == token and keys:
+        if release_modifiers(display, keys) is None:
+            (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
+    return 0
+
+
 @contextmanager
-def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
+def held(state: Mapping, keys: Sequence[str], watchdog: float | None = None) -> Generator[None]:
     """Hold keys down for the body, releasing every key pressed even when the body raises.
 
-    The keys are recorded under the state directory first: a verb killed while holding them leaves no process to
-    release them, and the next job start or end releases what the record names.
+    The keys are recorded under the state directory first, so the next job start or end releases them after a verb
+    killed while holding them; with `watchdog`, a detached process also releases them that many seconds on.
     """
     pressed: list[str] = []
     record = STATE_DIR / HELD_KEYS
     if keys:
-        record.write_text("\n".join(keys) + "\n")
+        token = uuid.uuid4().hex
+        atomic_write(record, json.dumps({"token": token, "keys": list(keys)}))
+        if watchdog is not None:
+            release_held_later(str(state.get("display") or ""), token, watchdog)
     try:
         for key in keys:
             x(state, "keydown", key)
@@ -1057,37 +1098,48 @@ def asked_bindings(state: Mapping) -> dict[str, list[str]]:
     return keys
 
 
+def bindings_hash(keys: Mapping[str, Sequence[str]]) -> int:
+    """The 16-bit hash !!ForeverHeadless draws of the client's movement bindings: each action's first two keys."""
+    text = ""
+    for action in ACTIONS:
+        bound = [*keys.get(action, []), "", ""]
+        text += f"{action}={bound[0]},{bound[1]};"
+    return sum(ord(char) * index for index, char in enumerate(text, 1)) % 65536
+
+
 def action_bindings(state: Mapping) -> dict[str, list[str]]:
-    """Each action's keys in the running client, always from its own GetBindingKey: !!DevSmoke's record (made at login
-    and every UPDATE_BINDINGS, on disk at the next reload) when there is one, otherwise one eval per session that asks
-    the client, cached. Only when the client cannot be asked do the defaults changed by bindings-cache.wtf answer, with
-    a warning: that file is a cache the client may not match (on Hel-Io it still listed A for turning left).
+    """Each action's keys in the running client. Every source is checked against the hash of the client's live
+    bindings that the motion row carries, so a stale one is never pressed: the session's cached answer, !!DevSmoke's
+    record (on disk only at a reload), the client's defaults changed by bindings-cache.wtf, and last the client itself
+    through an eval of GetBindingKey (two reloads). When none matches, the action is refused.
     """
+    live = read_motion(state)["bindings"]
     cache = STATE_DIR / BINDINGS_CACHE
     session = str(state.get("pid") or state.get("display") or "")
-    recorded = recorded_bindings()
-    if recorded is not None:
-        return recorded[0]
     try:
         cached = json.loads(cache.read_text())
     except (OSError, ValueError):
         cached = {}
+    candidates = []
     if cached.get("session") == session and isinstance(cached.get("keys"), dict):
-        return cached["keys"]
-    if state.get("ready"):
-        try:
-            keys = asked_bindings(state)
-        except ClientError as error:
-            print(f"forever_client: could not ask the client for its key bindings: {error}", file=sys.stderr)
-        else:
+        candidates.append(cached["keys"])
+    recorded = recorded_bindings()
+    if recorded is not None:
+        candidates.append(recorded[0])
+    try:
+        candidates.append(file_bindings())
+    except ClientError:
+        pass
+    for keys in candidates:
+        if bindings_hash(keys) == live:
             atomic_write(cache, json.dumps({"session": session, "keys": keys}))
             return keys
-    print(
-        "forever_client: key bindings from bindings-cache.wtf and the client's defaults, not the client itself; "
-        "they may not match it",
-        file=sys.stderr,
-    )
-    return file_bindings()
+    keys = asked_bindings(state)
+    live = read_motion(state)["bindings"]
+    if bindings_hash(keys) != live:
+        raise ClientError("the client's key bindings changed while they were read: run the action again")
+    atomic_write(cache, json.dumps({"session": session, "keys": keys}))
+    return keys
 
 
 def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:
@@ -1122,9 +1174,10 @@ def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None
 # The motion row the headless addon draws under the safety strip (forever-core#820): an 8-cell header, four flags, seven
 # 16-bit fields and an 8-bit checksum, one 4-pixel cell per bit on pixel row 4 to 7.
 MOTION_HEADER = [True, False, False, True, True, False, True, True]
-MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x")
+MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x", "bindings")
 MOTION_FLAGS = ("known", "indoors", "plate", "near")
 MOTION_ROW = 6
+STRIP_ROWS = 8  # both strips sit in the frame's top 8 pixel rows
 # Closed-loop movement. Each step reads the motion row again; these bound one step, not the result.
 FACE_TOLERANCE = math.radians(4)  # close enough to walk straight at a point
 PLATE_TOLERANCE = 0.03  # a target's nameplate this near the screen's middle is in front
@@ -1136,6 +1189,7 @@ RUN_SPEED = 7.0  # yards a second running, for one step's length
 WALK_STEP_MAX = 1.5
 WALK_TOLERANCE = 1.5  # yards from the point counts as arrived
 WALK_STEPS = 120
+WALK_BUDGET = 240.0  # seconds a walk may take before it reports where it got to
 STUCK_PROGRESS = 0.3  # yards a step must gain, or it counts toward stuck
 STUCK_STEPS = 2
 # A blocked straight line (a shop counter between the player and the point): follow the obstacle to one side, stepping
@@ -1146,6 +1200,7 @@ ESCAPE_ANGLE = math.radians(80)
 ESCAPE_STEP = 1.0
 ESCAPE_STEPS = 12  # steps along the obstacle on each side
 MOVED_MARK = "moved"
+PARK_FAILED_CODE = 3
 PARK_SPOTS = CONFIG.parent / "park.json"
 
 
@@ -1153,20 +1208,20 @@ class MotionUnread(ClientError):
     """The motion row is on screen but did not decode: a torn frame or cells that do not line up with the pixels."""
 
 
-def motion_state(state: Mapping) -> dict | None:
+def motion_state(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> dict | None:
     """Where the player stands, from the motion row: map, x and y (0 to 1), facing (radians), the map's size in yards,
-    indoors, the target's nameplate across the screen (0 to 1) and whether it is within interact distance. None when
-    the row is missing, from an older addon, or fails its checksum."""
-    path = STATE_DIR / f"motion-{os.getpid()}.png"
-    try:
-        image = shot(state, path, mark_read=False)
-        _width, _height, channels, rows = png_pixels(image)
-        cells = len(MOTION_HEADER) + len(MOTION_FLAGS) + 16 * len(MOTION_FIELDS) + 8
-        bits = [rows[MOTION_ROW][(column * 4 + 2) * channels] >= 128 for column in range(cells)]
-    except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
+    indoors, the target's nameplate across the screen (0 to 1), whether it is within interact distance and a hash of
+    the client's movement key bindings. None when the row is missing or from an older addon; MotionUnread when it is on
+    screen but fails its checksum."""
+    frame = frame or strip_rows(state)
+    if frame is None:
         return None
-    finally:
-        path.unlink(missing_ok=True)
+    channels, rows = frame
+    cells = len(MOTION_HEADER) + len(MOTION_FLAGS) + 16 * len(MOTION_FIELDS) + 8
+    try:
+        bits = [rows[MOTION_ROW][(column * 4 + 2) * channels] >= 128 for column in range(cells)]
+    except IndexError:
+        return None
     motion = decode_motion(bits)
     if motion is None and bits[: len(MOTION_HEADER)] == MOTION_HEADER:
         raise MotionUnread("the motion row is on screen but fails its checksum")
@@ -1195,11 +1250,16 @@ def decode_motion(bits: Sequence[bool]) -> dict | None:
 
 
 def read_motion(state: Mapping) -> dict:
-    """The motion state, which must be known: a missing row or an unknown position stops movement. A frame caught
-    mid-paint fails its checksum, so a failed read is taken again, up to three times."""
+    """The motion state from one fresh frame, which must be safe and known: a dead or fighting character, a missing row
+    or an unknown position stops movement. A frame caught mid-paint fails its checksum, so a failed read is taken again,
+    up to three times."""
     for attempt in range(3):
+        frame = strip_rows(state)
+        ui = client_ui(state, frame) if frame else {"safety": False}
+        if ui.get("safety") and (ui["dead"] or ui["combat"]):
+            raise SafetyRefusal("player is dead or a ghost" if ui["dead"] else "player is in combat")
         try:
-            motion = motion_state(state)
+            motion = motion_state(state, frame)
             break
         except MotionUnread:
             if attempt == 2:
@@ -1209,6 +1269,13 @@ def read_motion(state: Mapping) -> dict:
     if not motion["known"]:
         raise ClientError("the client gives no position here (an instance or a loading screen)")
     return motion
+
+
+def map_size(motion: Mapping) -> tuple[int, int]:
+    """The map's size in yards, which yard distances need: a map the client gives no size for refuses them."""
+    if not motion["width"] or not motion["height"]:
+        raise ClientError(f"the client gives no size in yards for map {motion['map']}, so distances there are unknown")
+    return motion["width"], motion["height"]
 
 
 def angle_between(heading: float, facing: float) -> float:
@@ -1222,8 +1289,9 @@ def heading_to(motion: Mapping, x: float, y: float) -> tuple[float, float]:
 
     Facing 0 is north and grows to the left (west); map x grows east and map y south.
     """
-    east = (x - motion["x"]) * (motion["width"] or 1)
-    south = (y - motion["y"]) * (motion["height"] or 1)
+    width, height = map_size(motion)
+    east = (x - motion["x"]) * width
+    south = (y - motion["y"]) * height
     return math.atan2(-east, -south) % (2 * math.pi), math.hypot(east, south)
 
 
@@ -1236,10 +1304,15 @@ def hold_action(state: Mapping, actions: Sequence[str], seconds: float) -> None:
     press_actions(state, actions, seconds)
 
 
-def face(state: Mapping, heading: float) -> dict:
+def progress(message: str) -> None:
+    """One line per movement step, so a caller sees a long walk advance rather than silence."""
+    print(f"forever_client: {message}", file=sys.stderr, flush=True)
+
+
+def face(state: Mapping, heading: float, motion: dict | None = None) -> dict:
     """Turn until the measured facing is within FACE_TOLERANCE of `heading`; the motion state when it is."""
     rate = TURN_RATE
-    motion = read_motion(state)
+    motion = motion or read_motion(state)
     for _ in range(TURN_TRIES):
         turn = angle_between(heading, motion["facing"])
         if abs(turn) <= FACE_TOLERANCE:
@@ -1286,98 +1359,141 @@ def walk_step(state: Mapping, seconds: float, *, jump: bool = False) -> dict:
 
 
 def yards_between(a: Mapping, b: Mapping) -> float:
-    return math.hypot((a["x"] - b["x"]) * (a["width"] or 1), (a["y"] - b["y"]) * (a["height"] or 1))
+    width, height = map_size(a)
+    return math.hypot((a["x"] - b["x"]) * width, (a["y"] - b["y"]) * height)
 
 
-def step_toward(state: Mapping, x: float, y: float) -> tuple[dict, float, float]:
-    """Face (x, y) and walk one step at it: the motion after, the heading walked and the yards gained."""
-    motion = read_motion(state)
-    heading, distance = heading_to(motion, x, y)
-    motion = face(state, heading)
-    heading, distance = heading_to(motion, x, y)
-    after = walk_step(state, min(distance / RUN_SPEED, WALK_STEP_MAX))
-    return after, heading, distance - heading_to(after, x, y)[1]
+class Walk:
+    """One walk to map point (x, y), 0 to 1, on one map: every read is checked against that map and the time budget,
+    and every step is reported."""
+
+    def __init__(self, state: Mapping, x: float, y: float, map_id: int | None, budget: float):
+        self.state, self.x, self.y = state, x, y
+        self.deadline = time.monotonic() + budget
+        self.blocked: list[int] = []
+        self.steps = 0
+        self.motion = read_motion(state)
+        self.map = self.motion["map"] if map_id is None else map_id
+        self.check(self.motion)
+
+    def check(self, motion: Mapping) -> None:
+        if motion["map"] != self.map:
+            raise ClientError(f"the player is on map {motion['map']}, not {self.map}: walkto stays on one map")
+        if time.monotonic() > self.deadline:
+            raise ClientError(self.stuck("ran out of time"))
+
+    def distance(self, motion: Mapping | None = None) -> float:
+        return heading_to(motion or self.motion, self.x, self.y)[1]
+
+    def read(self, motion: dict) -> dict:
+        self.check(motion)
+        self.motion = motion
+        return motion
+
+    def step(self, seconds: float | None = None, *, jump: bool = False, heading: float | None = None) -> float:
+        """Face the point (or `heading`), walk one step, and return the yards it gained toward the point."""
+        before = self.distance()
+        aim = heading if heading is not None else heading_to(self.motion, self.x, self.y)[0]
+        self.read(face(self.state, aim, self.motion))
+        length = seconds if seconds is not None else min(self.distance() / RUN_SPEED, WALK_STEP_MAX)
+        self.read(walk_step(self.state, max(length, 0.1), jump=jump))
+        self.steps += 1
+        progress(
+            f"step {self.steps}: {self.motion['x'] * 100:.2f}, {self.motion['y'] * 100:.2f}, "
+            f"{self.distance():.1f} yd to go"
+        )
+        return before - self.distance()
+
+    def stuck(self, why: str) -> str:
+        heading, distance = heading_to(self.motion, self.x, self.y)
+        seen = list(dict.fromkeys(self.blocked))
+        return (
+            f"stuck ({why}) at {self.motion['x'] * 100:.2f}, {self.motion['y'] * 100:.2f} on map {self.motion['map']}, "
+            f"{distance:.1f} yd from {self.x * 100:.2f}, {self.y * 100:.2f} (heading {math.degrees(heading):.0f} deg); "
+            f"blocked toward {', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
+        )
+
+    def go_round(self) -> bool:
+        """Follow the obstacle across the line, one side then the other, until a straight step gains ground."""
+        for side in (1, -1):
+            for _ in range(ESCAPE_STEPS):
+                start = self.motion
+                aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
+                self.step(ESCAPE_STEP, heading=aside)
+                if yards_between(self.motion, start) < STUCK_PROGRESS:
+                    self.blocked.append(round(math.degrees(aside)) % 360)
+                    break
+                if self.step() >= STUCK_PROGRESS:
+                    return True
+                self.blocked.append(round(math.degrees(heading_to(self.motion, self.x, self.y)[0])) % 360)
+        return False
 
 
-def go_round(state: Mapping, x: float, y: float, blocked: list[int]) -> bool:
-    """Follow the obstacle across the line to (x, y), one side then the other, until a straight step gains ground."""
-    for side in (1, -1):
-        for _ in range(ESCAPE_STEPS):
-            motion = read_motion(state)
-            aside = (heading_to(motion, x, y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
-            face(state, aside)
-            after = walk_step(state, ESCAPE_STEP)
-            if yards_between(after, motion) < STUCK_PROGRESS:
-                blocked.append(round(math.degrees(aside)) % 360)
-                break
-            _after, heading, gained = step_toward(state, x, y)
-            if gained >= STUCK_PROGRESS:
-                return True
-            blocked.append(round(math.degrees(heading)) % 360)
-    return False
-
-
-def walkto(state: Mapping, x: float, y: float, map_id: int | None = None, tolerance: float = WALK_TOLERANCE) -> dict:
+def walkto(
+    state: Mapping,
+    x: float,
+    y: float,
+    map_id: int | None = None,
+    tolerance: float = WALK_TOLERANCE,
+    budget: float = WALK_BUDGET,
+) -> dict:
     """Walk to map point (x, y), 0 to 1, re-reading the position after every step and facing the point again.
 
-    A step that gains less than STUCK_PROGRESS yards counts toward stuck; after STUCK_STEPS of them the walker jumps
-    forward once, then follows the obstacle (go_round). When that gains no ground either it stops and reports where it
-    is and which headings were blocked, rather than looping.
+    Progress is the best distance so far: STUCK_STEPS steps that do not beat it by STUCK_PROGRESS yards (straight into
+    a wall, or sliding along one) count as stuck. Stuck, the walker jumps forward once, then follows the obstacle
+    (Walk.go_round). When that gains nothing, or the time budget runs out, it stops and reports where it is and which
+    headings were blocked, rather than looping.
     """
-    motion = read_motion(state)
-    if map_id is not None and motion["map"] != map_id:
-        raise ClientError(f"the player is on map {motion['map']}, not {map_id}: walkto stays on one map")
-    stuck, jumped, blocked = 0, False, []
+    walk = Walk(state, x, y, map_id, budget)
+    best, stalled, jumped = walk.distance(), 0, False
     for _ in range(WALK_STEPS):
-        if heading_to(motion, x, y)[1] <= tolerance:
-            return motion
-        motion, heading, gained = step_toward(state, x, y)
-        if gained >= STUCK_PROGRESS:
-            stuck = 0
+        if walk.distance() <= tolerance:
+            return walk.motion
+        heading = heading_to(walk.motion, x, y)[0]
+        walk.step()
+        if walk.distance() <= best - STUCK_PROGRESS:
+            best, stalled = walk.distance(), 0
             continue
-        stuck += 1
-        if stuck < STUCK_STEPS:
+        stalled += 1
+        if stalled < STUCK_STEPS:
             continue
-        stuck = 0
-        blocked.append(round(math.degrees(heading)) % 360)
+        stalled = 0
+        walk.blocked.append(round(math.degrees(heading)) % 360)
         if not jumped:
             jumped = True
-            motion = walk_step(state, 0.8, jump=True)
-            continue
-        if not go_round(state, x, y, blocked):
-            break
-        motion = read_motion(state)
-    else:
-        motion = read_motion(state)
-        if heading_to(motion, x, y)[1] <= tolerance:
-            return motion
-    motion = read_motion(state)
-    heading, distance = heading_to(motion, x, y)
-    seen = list(dict.fromkeys(blocked))
-    raise ClientError(
-        f"stuck at {motion['x'] * 100:.2f}, {motion['y'] * 100:.2f} on map {motion['map']}, {distance:.1f} yd from "
-        f"{x * 100:.2f}, {y * 100:.2f} (heading {math.degrees(heading):.0f} deg); blocked toward "
-        f"{', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
-    )
+            walk.step(0.8, jump=True)
+        elif not walk.go_round():
+            raise ClientError(walk.stuck("no way round"))
+        best = min(best, walk.distance())
+    if walk.distance() <= tolerance:
+        return walk.motion
+    raise ClientError(walk.stuck(f"{WALK_STEPS} steps"))
 
 
-def walkto_target(state: Mapping) -> dict:
-    """Walk to the target until it is within interact distance, facing its nameplate before every step."""
-    stuck = 0
-    for _ in range(WALK_STEPS):
+def walkto_target(state: Mapping, budget: float = WALK_BUDGET) -> dict:
+    """Walk to the target until it is within interact distance, facing its nameplate before every step. Stuck, it jumps
+    forward once and carries on; stuck again, it reports where it is."""
+    deadline = time.monotonic() + budget
+    stalled, jumped = 0, False
+    for step in range(1, WALK_STEPS + 1):
+        if time.monotonic() > deadline:
+            raise ClientError("ran out of time walking to the target")
         motion = face_target(state)
         if motion["near"]:
             return motion
         after = walk_step(state, 1.0)
-        stuck = stuck + 1 if yards_between(after, motion) < STUCK_PROGRESS else 0
-        if stuck >= STUCK_STEPS:
-            after = walk_step(state, 0.8, jump=True)
-            if after["near"]:
-                return after
+        progress(f"step {step}: {after['x'] * 100:.2f}, {after['y'] * 100:.2f} toward the target")
+        stalled = stalled + 1 if yards_between(after, motion) < STUCK_PROGRESS else 0
+        if stalled < STUCK_STEPS:
+            continue
+        stalled = 0
+        if jumped:
             raise ClientError(
                 f"stuck at {after['x'] * 100:.2f}, {after['y'] * 100:.2f} on map {after['map']} walking to the "
                 f"target (heading {math.degrees(after['facing']):.0f} deg, 0 north, 90 west)"
             )
+        jumped = True
+        walk_step(state, 0.8, jump=True)
     raise ClientError("the target was never within interact distance")
 
 
@@ -1408,6 +1524,7 @@ def park(state: Mapping) -> dict:
     if not spots:
         raise ClientError(f"no park spot on map {motion['map']}: stand at one and run `park --add LABEL`")
     spot = min(spots, key=lambda spot: heading_to(motion, spot["x"], spot["y"])[1])
+    progress(f"parking at {spot['label']}")
     motion = walkto(state, spot["x"], spot["y"], spot["map"])
     if motion["indoors"]:
         raise ClientError(f"park spot {spot['label']} reads as indoors")
@@ -1415,17 +1532,21 @@ def park(state: Mapping) -> dict:
     return spot
 
 
-def park_after_job(state: Mapping) -> None:
-    """At the end of a job that moved the character, walk it back to a park spot; a failure is reported, not raised."""
+def park_after_job(state: Mapping) -> bool:
+    """At the end of a job that moved the character, walk it back to a park spot. A failure is printed on stdout and
+    stderr and keeps the moved mark, so the next job end tries again; True when the character is parked or never
+    moved."""
     if not (STATE_DIR / MOVED_MARK).exists():
-        return
+        return True
     try:
         spot = park(state)
-        print(f"forever_client: parked at {spot['label']}", file=sys.stderr, flush=True)
     except (ClientError, SafetyRefusal) as error:
-        print(f"forever_client: could not park after the job: {error}", file=sys.stderr, flush=True)
-    finally:
-        (STATE_DIR / MOVED_MARK).unlink(missing_ok=True)
+        line = f"forever_client: PARK FAILED, the character is not parked: {error}"
+        print(line, flush=True)
+        print(line, file=sys.stderr, flush=True)
+        return False
+    print(f"forever_client: parked at {spot['label']}", file=sys.stderr, flush=True)
+    return True
 
 
 def describe_motion(motion: Mapping) -> str:
@@ -1454,13 +1575,20 @@ def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) ->
         for k in keys:
             send(state, "key", k)
         return
-    if hold_for <= 0:
-        raise ClientError("--for takes a positive number of seconds")
+    if not 0 < hold_for <= HOLD_MAX:
+        raise ClientError(f"--for takes more than 0 and at most {HOLD_MAX:g} seconds; walk further with `walkto`")
     wait = INPUT_GAP - (time.time() - mark("last-input"))
     if wait > 0:
         time.sleep(wait)
-    with held(state, list(dict.fromkeys(keys))):
-        time.sleep(hold_for)
+    if any(key in MOVEMENT_KEYSYMS for key in keys):
+        mark_moved()
+    with held(state, list(dict.fromkeys(keys)), watchdog=hold_for + HOLD_GRACE):
+        # The character can be pulled into a fight or die mid-hold: check between slices and let go at once.
+        end = time.monotonic() + hold_for
+        while (left := end - time.monotonic()) > 0:
+            time.sleep(min(HOLD_SLICE, left))
+            if time.monotonic() < end:
+                require_safe(state)
     (STATE_DIR / "last-input").touch()
 
 
@@ -1472,14 +1600,28 @@ def one_line_slash(command: str) -> None:
         raise ClientError(f"slash sends a slash command, not chat text: refused {command.strip() or 'an empty line'!r}")
 
 
-def client_ui(state: Mapping) -> dict[str, bool]:
-    """Decode live safety, identifying older strips for guarded session replacement."""
-    unknown = {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True}
+def strip_rows(state: Mapping) -> tuple[int, list[bytes]] | None:
+    """The top rows of one fresh frame, where both pixel strips sit, and the bytes a pixel takes; None when no frame."""
     # Every gameplay verb reads the strip, so its full-frame capture is removed once decoded rather than left behind.
     path = STATE_DIR / f"client-state-{os.getpid()}.png"
     try:
         image = shot(state, path, mark_read=False)
-        _width, _height, channels, rows = png_pixels(image)
+        _width, _height, channels, rows = png_pixels(image, max_rows=STRIP_ROWS)
+        return channels, rows
+    except (subprocess.CalledProcessError, ClientError, OSError):
+        return None
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def client_ui(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> dict[str, bool]:
+    """Decode live safety, identifying older strips for guarded session replacement."""
+    unknown = {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True}
+    try:
+        frame = frame or strip_rows(state)
+        if frame is None:
+            return unknown
+        channels, rows = frame
         bits = []
         for column in range(8):
             offset = (column * 4 + 2) * channels
@@ -1492,10 +1634,8 @@ def client_ui(state: Mapping) -> dict[str, bool]:
             offset = (column * 4 + 2) * channels
             bits.append(rows[2][offset] >= 128)
         return dict(zip(("world", "menu", "chat", "dead", "combat"), bits[8:], strict=True)) | {"safety": True}
-    except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
+    except IndexError:
         return unknown
-    finally:
-        path.unlink(missing_ok=True)
 
 
 def require_safe(state: Mapping, *, waiting: bool = False) -> None:
@@ -1604,8 +1744,9 @@ PLAY_FILL = bytes((0, 116, 224))
 PLAY_LABEL = "play"
 
 
-def png_pixels(path: Path) -> tuple[int, int, int, list[bytes]]:
-    """The screenshot's width, height, channels and rows, decoded without an image library.
+def png_pixels(path: Path, max_rows: int | None = None) -> tuple[int, int, int, list[bytes]]:
+    """The screenshot's width, height, channels and rows, decoded without an image library. With `max_rows`, only
+    that many rows from the top: the pixel strips sit there, and a full 1920-wide frame takes over a second to unfilter.
 
     gamescope writes an 8-bit, non-interlaced RGB or RGBA PNG. Anything else is a ClientError naming the file: a frame
     this tool cannot read must never be reported as a launcher without Play.
@@ -1643,16 +1784,20 @@ def png_pixels(path: Path) -> tuple[int, int, int, list[bytes]]:
             break
     if not width or not height or channels is None:
         raise ClientError(f"{path} has no PNG header")
+    stride = width * channels
+    wanted = height if max_rows is None else min(height, max_rows)
     try:
-        raw = zlib.decompress(b"".join(compressed))
+        if max_rows is None:
+            raw = zlib.decompress(b"".join(compressed))
+        else:
+            raw = zlib.decompressobj().decompress(b"".join(compressed), (stride + 1) * wanted)
     except zlib.error as error:
         raise ClientError(f"{path} is not a readable PNG: {error}") from None
-    stride = width * channels
     rows: list[bytes] = []
     previous = bytes(stride)
     at = 0
     try:
-        for _row in range(height):
+        for _row in range(wanted):
             kind = raw[at]
             at += 1
             line = bytearray(raw[at : at + stride])
@@ -4334,10 +4479,13 @@ def job(args: argparse.Namespace) -> int:
             "FOREVER_CLIENT_JOB": token,
             "FOREVER_CLIENT_CALLER": os.environ.get("FOREVER_CLIENT_CALLER") or "job",
         }
+        code = None
         try:
-            return run_job_command(command, env, maximum)
+            code = run_job_command(command, env, maximum)
         finally:
-            park_after_job(state)
+            parked = park_after_job(state)
+        # A job whose own command passed still fails when it left the character unparked.
+        return code if code or parked else PARK_FAILED_CODE
     finally:
         release_job(handle, token)
 
@@ -4545,6 +4693,9 @@ def hyprland_job(
                 "FOREVER_CLIENT_WINDOW": state["window"]["address"],
             }
             result["code"] = run_job_command(request["command"], command_env, request["maximum"], check)
+            # The restored session reopens where this one ends, so a job that moved the character parks it first.
+            if not park_after_job(state) and not result["code"]:
+                result["code"] = PARK_FAILED_CODE
         except (ClientError, module.NestedError, subprocess.SubprocessError, OSError) as error:
             errors.append(f"job: {error}")
             print(f"forever_client: the Hyprland job failed: {error}", flush=True)
@@ -4872,7 +5023,13 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         else:
             if args.y is None:
                 raise ClientError(f"{args.verb} takes X Y or `target`")
-            x, y = map_point(float(args.x)), map_point(args.y)
+            try:
+                x = float(args.x)
+            except ValueError:
+                raise ClientError(
+                    f"{args.verb} takes map coordinates 0 to 100 or `target`: refused {args.x!r}"
+                ) from None
+            x, y = map_point(x), map_point(args.y)
             if args.verb == "face":
                 motion = face(state, heading_to(read_motion(state), x, y)[0])
             else:
@@ -4919,6 +5076,10 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    words = list(sys.argv[1:] if argv is None else argv)
+    if words[:1] == ["release-held"] and len(words) == 4:
+        # The held-key watchdog a hold starts; it needs no session, lock or safety check, only the display.
+        return release_held(words[1], float(words[2]), words[3])
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="verb", required=True)
     for name in ("up", "serve"):

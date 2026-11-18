@@ -93,7 +93,7 @@ end)
 -- screen. Each value is 16 bits, one 4-pixel cell per bit like the row above, closed by a checksum, so a torn or
 -- missing frame decodes as nothing rather than as a wrong position (forever-core#820).
 local MOTION_HEADER = { true, false, false, true, true, false, true, true }
-local FIELDS = 7 -- map, x, y, facing, map width, map height, target plate x
+local FIELDS = 8 -- map, x, y, facing, map width, map height, target plate x, movement bindings hash
 local FLAGS = 4 -- position known, indoors, target plate shown, target within interact distance
 local motion = CreateFrame("Frame", nil, UIParent)
 motion:SetIgnoreParentScale(true)
@@ -125,6 +125,42 @@ for column = 1, MOTION_CELLS do
 	motionCells[column] = texture
 end
 
+-- A 16-bit hash of the keys bound to the actions forever_client presses, recomputed when the bindings change, so the
+-- tool can tell whether the bindings it resolved still match this client (the same string and sum it builds).
+local BOUND_ACTIONS = {
+	"MOVEFORWARD",
+	"MOVEBACKWARD",
+	"TURNLEFT",
+	"TURNRIGHT",
+	"STRAFELEFT",
+	"STRAFERIGHT",
+	"JUMP",
+	"INTERACTTARGET",
+	"TARGETNEARESTENEMY",
+}
+local bindingsHash = 0
+local function hashBindings()
+	if type(_G.GetBindingKey) ~= "function" then
+		bindingsHash = 0
+		return
+	end
+	local parts = {}
+	for _, action in ipairs(BOUND_ACTIONS) do
+		local first, second = _G.GetBindingKey(action)
+		parts[#parts + 1] = action .. "=" .. (first or "") .. "," .. (second or "") .. ";"
+	end
+	local text, sum = table.concat(parts), 0
+	for index = 1, #text do
+		sum = (sum + text:byte(index) * index) % 65536
+	end
+	bindingsHash = sum
+end
+hashBindings()
+local bindingsChanged = CreateFrame("Frame")
+bindingsChanged:RegisterEvent("PLAYER_LOGIN")
+bindingsChanged:RegisterEvent("UPDATE_BINDINGS")
+bindingsChanged:SetScript("OnEvent", hashBindings)
+
 local sizes = {}
 -- The map's width and height in yards, from the world positions of its corners; nil where the client gives none.
 local function mapSize(map)
@@ -154,7 +190,7 @@ end
 
 -- The player's motion state as flags and 16-bit fields; zeros with the first flag off when the position is unknown.
 local function motionState()
-	local flags, fields = { false, false, false, false }, { 0, 0, 0, 0, 0, 0, 0 }
+	local flags, fields = { false, false, false, false }, { 0, 0, 0, 0, 0, 0, 0, bindingsHash }
 	local map = _G.C_Map and _G.C_Map.GetBestMapForUnit and _G.C_Map.GetBestMapForUnit("player")
 	local position = map and _G.C_Map.GetPlayerMapPosition and _G.C_Map.GetPlayerMapPosition(map, "player")
 	local facing = _G.GetPlayerFacing and _G.GetPlayerFacing()

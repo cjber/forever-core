@@ -231,6 +231,10 @@ do
 	_G.UnitExists = function()
 		return true
 	end
+	local bound = { MOVEFORWARD = { "S" }, MOVEBACKWARD = { "DOWN" }, TURNLEFT = { "LEFT" }, JUMP = { "SPACE" } }
+	_G.GetBindingKey = function(action)
+		return unpack(bound[action] or {})
+	end
 	_G.CheckInteractDistance = function()
 		return true
 	end
@@ -260,7 +264,7 @@ do
 	local flags = { read(1), read(1), read(1), read(1) }
 	assert(flags[1] == 1 and flags[2] == 1 and flags[3] == 1 and flags[4] == 1, "known, indoors, plate, near")
 	local fields = {}
-	for index = 1, 7 do
+	for index = 1, 8 do
 		fields[index] = read(16)
 	end
 	assert(fields[1] == 1453, "the map")
@@ -268,6 +272,9 @@ do
 	assert(fields[4] == math.floor(65535 / 4 + 0.5), "facing a quarter turn")
 	assert(fields[5] == 1000 and fields[6] == 600, "the map's size in yards")
 	assert(fields[7] == math.floor(0.25 * 65535 + 0.5), "the target's plate a quarter across the screen")
+	-- forever_client hashes "MOVEFORWARD=S,;MOVEBACKWARD=DOWN,;..." the same way; tools/test_forever_client.py
+	-- checks the same string gives the same number.
+	assert(fields[8] == 30719, "the movement bindings hash")
 	local sum = 1 + 2 + 3 + 4
 	for _, value in ipairs(fields) do
 		sum = sum + value

@@ -5046,26 +5046,68 @@ class ModifierHoldTest(unittest.TestCase):
         self.assertEqual(self.sent, [self.RELEASE_ALL])
         self.assertEqual(self.displays, [":5"])
 
+    def clock(self):
+        """A fake clock that time.sleep advances, so a hold's slices run instantly."""
+        now = [0.0]
+
+        def sleep(seconds):
+            self.sent.append(["slept", f"{seconds:g}"])
+            now[0] += seconds
+
+        self.enterContext(mock.patch.object(fc.time, "sleep", side_effect=sleep))
+        self.enterContext(mock.patch.object(fc.time, "monotonic", side_effect=lambda: now[0]))
+
     def test_key_for_holds_every_key_down_together_then_releases_them(self):
         self.record()
-        with mock.patch.object(fc.time, "sleep", side_effect=lambda _s: self.sent.append(["slept", str(_s)])):
-            fc.press({"display": ":9"}, ["w", "a", "w"], 1.5)
+        self.clock()
+        watchdog = self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
+        fc.press({"display": ":9"}, ["w", "a", "w"], 0.5)
         self.assertEqual(
             self.sent,
             [
                 ["xdotool", "keydown", "w"],
                 ["xdotool", "keydown", "a"],
-                ["slept", "1.5"],
+                ["slept", "0.25"],
+                ["slept", "0.25"],
                 ["xdotool", "keyup", "w", "a"],
             ],
         )
+        self.assertEqual(watchdog.call_args.args[0][-4:], ["release-held", mock.ANY, "2.50", ":9"])
         self.assertFalse((self.state / fc.HELD_KEYS).exists(), "the record goes once the keys are up")
 
-    def test_key_for_refuses_no_time_before_any_input(self):
+    def test_a_hold_lets_go_the_moment_the_character_is_unsafe(self):
+        self.record()
+        self.clock()
+        self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
+        checks = iter([None, None, fc.SafetyRefusal("player is in combat")])
+
+        def safe(_state, **_kwargs):
+            result = next(checks, None)
+            if isinstance(result, Exception):
+                raise result
+
+        self.enterContext(mock.patch.object(fc, "require_safe", side_effect=safe))
+        with self.assertRaisesRegex(fc.SafetyRefusal, "in combat"):
+            fc.press({"display": ":9"}, ["s"], 5)
+        self.assertEqual(self.sent[-1], ["xdotool", "keyup", "s"], "released at once")
+        self.assertLess(sum(float(argv[1]) for argv in self.sent if argv[0] == "slept"), 1, "not the whole hold")
+
+    def test_key_for_refuses_no_time_or_too_long_before_any_input(self):
         run = self.record()
-        with self.assertRaisesRegex(fc.ClientError, "positive number of seconds"):
-            fc.press({"display": ":9"}, ["w"], 0)
+        for seconds in (0, fc.HOLD_MAX + 1):
+            with self.assertRaisesRegex(fc.ClientError, "more than 0 and at most"):
+                fc.press({"display": ":9"}, ["w"], seconds)
         run.assert_not_called()
+
+    def test_the_watchdog_releases_only_its_own_hold(self):
+        self.record()
+        self.enterContext(mock.patch.object(fc.time, "sleep"))
+        (self.state / fc.HELD_KEYS).write_text(json.dumps({"token": "mine", "keys": ["s"]}))
+        fc.release_held("other", 2, ":9")
+        self.assertEqual(self.sent, [], "a later hold's keys are not released by an earlier watchdog")
+        fc.main(["release-held", "mine", "2", ":9"])
+        self.assertEqual(self.sent, [["xdotool", "keyup", "s"]])
+        self.assertFalse((self.state / fc.HELD_KEYS).exists())
 
     def test_numlock_is_the_key_xdotool_names_num_lock(self):
         self.record()
@@ -5074,7 +5116,7 @@ class ModifierHoldTest(unittest.TestCase):
 
     def test_a_key_held_by_a_killed_verb_is_released_at_the_next_job(self):
         self.record()
-        (self.state / fc.HELD_KEYS).write_text("w\na\n")
+        (self.state / fc.HELD_KEYS).write_text(json.dumps({"token": "t", "keys": ["w", "a"]}))
         fc.release_session_modifiers({"display": ":4"})
         self.assertEqual(self.sent, [[*self.RELEASE_ALL, "w", "a"]])
         self.assertFalse((self.state / fc.HELD_KEYS).exists())
@@ -5090,10 +5132,13 @@ class ModifierHoldTest(unittest.TestCase):
 
 
 class ActionKeyTest(unittest.TestCase):
-    """`key --action` presses the key the running client binds to a game action, never a fixed key (#820)."""
+    """`key --action` presses the key the running client binds to a game action, never a fixed key (#820). Every
+    source of bindings is checked against the hash of the client's live bindings on the motion row."""
 
     # The headless account's own bindings-cache.wtf: forward moved to S, Up unbound, interact on F9.
     CACHE = "bind S MOVEFORWARD\nbind BUTTON3 STARTAUTORUN\nbind UP NONE\nbind F9 INTERACTTARGET\nbind SPACE JUMP\n"
+    # What that file gives over the client's defaults (S joins W for forward, Up goes): the live bindings in most tests.
+    FROM_CACHE = fc.bindings_from_cache_file(CACHE)
 
     def setUp(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -5110,6 +5155,7 @@ class ActionKeyTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "INPUT_GAP", 0))
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.enterContext(mock.patch.object(fc, "release_modifiers", REAL_RELEASE_MODIFIERS))
+        self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
         self.sent: list[list[str]] = []
         self.enterContext(
             mock.patch.object(
@@ -5119,29 +5165,18 @@ class ActionKeyTest(unittest.TestCase):
             )
         )
         self.reload = self.enterContext(mock.patch.object(fc, "reload"))
-
-    def record(self, keys: str) -> None:
-        (self.account / "SavedVariables/!!DevSmoke.lua").write_text(
-            'DevSmokeDB = {\n["bindings"] = {\n["keys"] = {\n' + keys + '},\n["recorded"] = 1,\n},\n}\n'
+        self.live = dict(self.FROM_CACHE)
+        self.enterContext(
+            mock.patch.object(fc, "read_motion", side_effect=lambda _state: {"bindings": fc.bindings_hash(self.live)})
         )
 
-    def test_a_rebound_action_resolves_to_the_clients_own_key(self):
-        self.record('["MOVEFORWARD"] = {\n"S",\n},\n["MOVEBACKWARD"] = {\n"DOWN",\n},\n')
-        with mock.patch.object(fc.time, "sleep"):
-            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 2)
-        self.assertEqual(self.sent, [["xdotool", "keydown", "s"], ["xdotool", "keyup", "s"]], "S, never W")
-        self.sent.clear()
-        fc.press_actions({"display": ":9", "ready": True}, ["MOVEBACKWARD"])
-        self.assertEqual(self.sent, [["xdotool", "key", "Down"]])
-        self.reload.assert_not_called()
-
-    def test_a_rebinding_replaces_the_cached_keys(self):
-        self.record('["MOVEFORWARD"] = {\n"S",\n},\n')
-        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD"]), [["s"]])
-        path = self.account / "SavedVariables/!!DevSmoke.lua"
-        self.record('["MOVEFORWARD"] = {\n"W",\n},\n')
-        os.utime(path, ns=(path.stat().st_mtime_ns + 10**9, path.stat().st_mtime_ns + 10**9))
-        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD"]), [["w"]])
+    def record(self, keys: dict[str, list[str]]) -> None:
+        body = "".join(
+            f'["{action}"] = {{\n' + "".join(f'"{key}",\n' for key in bound) + "},\n" for action, bound in keys.items()
+        )
+        (self.account / "SavedVariables/!!DevSmoke.lua").write_text(
+            'DevSmokeDB = {\n["bindings"] = {\n["keys"] = {\n' + body + '},\n["recorded"] = 1,\n},\n}\n'
+        )
 
     def ask(self, answers: dict[str, list[str]]):
         """The client's eval answer: one BIND line per action, as the lookup snippet prints it."""
@@ -5152,53 +5187,81 @@ class ActionKeyTest(unittest.TestCase):
         out = ["\t".join(["BIND", action, *(answers.get(action, []) + ["", ""])[:2]]) for action in fc.ACTIONS]
         return self.enterContext(mock.patch.object(fc, "saved_eval", return_value={"run": "t1", "out": out}))
 
-    def test_with_no_record_the_client_is_asked_once_a_session(self):
-        # Hel-Io's client turns on the arrow keys only, whatever its bindings-cache.wtf still lists.
-        (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind S MOVEFORWARD\n")
-        saved = self.ask({"MOVEFORWARD": ["S"], "TURNLEFT": ["LEFT"], "INTERACTTARGET": ["F9"]})
+    def test_a_rebound_action_resolves_to_the_clients_own_key(self):
+        self.record(self.live)
+        with mock.patch.object(fc.time, "sleep"):
+            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 2)
+        self.assertEqual(self.sent, [["xdotool", "keydown", "s"], ["xdotool", "keyup", "s"]], "S, never W")
+        self.sent.clear()
+        fc.press_actions({"display": ":9", "ready": True}, ["MOVEBACKWARD"])
+        self.assertEqual(self.sent, [["xdotool", "key", "Down"]])
+        self.reload.assert_not_called()
+
+    def test_a_stale_record_is_never_pressed(self):
+        # The record on disk still says W; the client moved forward to S since the last reload.
+        self.record(self.FROM_CACHE | {"MOVEFORWARD": ["W"], "MOVEBACKWARD": ["S", "DOWN"]})
+        self.live = self.live | {"MOVEFORWARD": ["S"]}
+        self.ask(self.live)
+        self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"]), [["s"]])
+        self.assertEqual(self.reload.call_count, 2, "the client was asked, not the stale record trusted")
+
+    def test_a_rebinding_in_the_session_replaces_the_cached_keys(self):
+        self.record(self.live)
         state = {"ready": True, "display": ":9"}
-        self.assertEqual(fc.action_keys(state, ["TURNLEFT", "MOVEFORWARD"]), [["Left"], ["s"]])
-        self.assertEqual(self.reload.call_count, 2, "one reload runs the lookup, a second saves its answer")
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
+        self.live = self.live | {"MOVEFORWARD": ["W"]}
+        self.record(self.live)
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["w"]])
+
+    def test_the_bindings_file_is_used_only_when_it_matches_the_client(self):
+        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+        self.assertEqual(
+            fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD", "INTERACTTARGET"]), [["s"], ["F9"]]
+        )
+        self.reload.assert_not_called()
+        # Hel-Io's client turns on the arrows only, whatever its bindings-cache.wtf still lists.
+        self.live = self.live | {"TURNLEFT": ["LEFT"]}
+        (self.state / fc.BINDINGS_CACHE).unlink()
+        self.ask(self.live)
+        self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["TURNLEFT"]), [["Left"]])
+        self.assertEqual(self.reload.call_count, 2, "a file that disagrees with the client sends it to the client")
+
+    def test_the_client_is_asked_once_a_session(self):
+        saved = self.ask(self.live)
+        state = {"ready": True, "display": ":9"}
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
         saved.assert_called_once_with("t1")
         self.assertEqual(fc.action_keys(state, ["INTERACTTARGET"]), [["F9"]])
         self.assertEqual(self.reload.call_count, 2, "the answer is cached for the session")
-        self.assertEqual(fc.action_keys({"ready": True, "display": ":10"}, ["TURNLEFT"]), [["Left"]])
-        self.assertEqual(self.reload.call_count, 4, "a new session asks again")
+
+    def test_an_answer_that_disagrees_with_the_client_is_refused(self):
+        self.ask(self.live | {"MOVEFORWARD": ["W"]})
+        with self.assertRaisesRegex(fc.ClientError, "changed while they were read"):
+            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 1)
+        self.assertEqual(self.sent, [], "nothing pressed")
 
     def test_a_partial_answer_is_not_trusted(self):
-        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
         saved = self.ask({})
         saved.return_value = {"run": "t1", "out": ["BIND\tMOVEFORWARD\tS\t"], "err": "boom"}
-        with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"]), [["s"]])
-        self.assertIn("answered 1 of 9 actions", stderr.getvalue())
-        self.assertIn("not the client itself", stderr.getvalue())
-
-    def test_a_client_that_cannot_be_asked_falls_back_to_the_bindings_file_with_a_warning(self):
-        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
-        with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            keys = fc.action_keys(
-                {"ready": False}, ["MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "INTERACTTARGET", "TARGETNEARESTENEMY"]
-            )
-        self.assertEqual(keys, [["s"], ["Down"], ["a"], ["F9"], ["Tab"]])
-        self.assertIn("may not match it", stderr.getvalue())
-        self.reload.assert_not_called()
+        with self.assertRaisesRegex(fc.ClientError, "answered 1 of 9 actions"):
+            fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"])
 
     def test_the_characters_own_bindings_win_over_the_accounts(self):
         (self.account / "bindings-cache.wtf").write_text("bind W MOVEFORWARD\n")
         (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind W ACTIONBUTTON2\nbind S MOVEFORWARD\n")
-        with contextlib.redirect_stderr(io.StringIO()):
-            keys = fc.action_keys({"ready": False}, ["MOVEFORWARD", "MOVEBACKWARD"])
-        self.assertEqual(keys, [["s"], ["Down"]])
+        keys = fc.file_bindings()
+        self.assertEqual((keys["MOVEFORWARD"], keys["MOVEBACKWARD"]), (["S", "UP"], ["DOWN"]))
 
     def test_an_action_bound_only_to_a_mouse_button_is_refused(self):
-        self.record('["JUMP"] = {\n"BUTTON4",\n},\n')
+        self.live = self.live | {"JUMP": ["BUTTON4"]}
+        self.record(self.live)
         with self.assertRaisesRegex(fc.ClientError, "JUMP is bound to BUTTON4"):
             fc.press_actions({"display": ":9", "ready": True}, ["JUMP"])
         self.assertEqual(self.sent, [])
 
     def test_an_unbound_action_is_refused_by_name(self):
-        self.record('["INTERACTTARGET"] = {\n},\n')
+        self.live = self.live | {"INTERACTTARGET": []}
+        self.record(self.live)
         with self.assertRaisesRegex(fc.ClientError, "INTERACTTARGET is bound to no key"):
             fc.press_actions({"display": ":9", "ready": True}, ["INTERACTTARGET"])
 
@@ -5221,7 +5284,7 @@ class FakeWorld:
     low wall. Movement verbs see it only through the motion row's values, as they see the client."""
 
     def __init__(self, x, y, facing, walls=(), low=(), turn_rate=math.pi, indoors=lambda x, y: False):
-        self.x, self.y, self.facing = x, y, facing
+        self.x, self.y, self.facing, self.map, self.size = x, y, facing, 1453, 1000
         self.walls, self.low, self.turn_rate, self.indoors = list(walls), list(low), turn_rate, indoors
         self.held: list[tuple[tuple[str, ...], float]] = []
         self.target = None
@@ -5240,13 +5303,14 @@ class FakeWorld:
             "indoors": self.indoors(self.x, self.y),
             "plate": plate,
             "near": near,
-            "map": 1453,
+            "map": self.map,
             "x": self.x / 1000,
             "y": self.y / 1000,
             "facing": self.facing,
-            "width": 1000,
-            "height": 1000,
+            "width": self.size,
+            "height": self.size,
             "plate_x": plate_x,
+            "bindings": 0,
         }
 
     @staticmethod
@@ -5318,20 +5382,53 @@ class MovementTest(unittest.TestCase):
         self.assertEqual(sum("JUMP" in actions for actions, _ in world.held), 1, "one jump, then walking again")
 
     def test_walkto_reports_stuck_with_position_and_blocked_headings_instead_of_looping(self):
-        world = self.world(
-            500,
-            500,
-            0.0,
-            walls=[(490, 490, 510, 492), (490, 508, 510, 510), (488, 490, 490, 510), (510, 490, 512, 510)],
-        )
+        walls = [(490, 490, 510, 492), (490, 508, 510, 510), (488, 490, 490, 510), (510, 490, 512, 510)]
+        world = self.world(500, 500, 0.0, walls=walls)
         with self.assertRaisesRegex(
             fc.ClientError,
-            r"stuck at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 "
+            r"stuck \(no way round\) at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 "
             r"\(heading \d+ deg\); blocked toward 0 deg, ",
         ):
             fc.walkto({}, 0.5, 0.48)
         walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
-        self.assertLessEqual(walks, fc.STUCK_STEPS * 2 + 1 + 2 * fc.ESCAPE_STEPS * 2 + 2, "bounded, not a loop")
+        self.assertLessEqual(walks, fc.STUCK_STEPS * 3 + 1 + 2 * fc.ESCAPE_STEPS * 2, "bounded, not a loop")
+
+    def test_walkto_sliding_along_a_wall_without_closing_in_counts_as_stuck(self):
+        # A long wall across the line: each step slides sideways a little but never gets nearer than the best so far.
+        self.world(500, 500, 0.0, walls=[(300, 495, 700, 497)])
+        with self.assertRaisesRegex(fc.ClientError, "stuck"):
+            fc.walkto({}, 0.5, 0.40)
+
+    def test_walkto_refuses_a_map_without_a_size_before_moving(self):
+        world = self.world(500, 500, 0.0)
+        world.size = 0
+        with self.assertRaisesRegex(fc.ClientError, "no size in yards for map 1453"):
+            fc.walkto({}, 0.9, 0.9)
+        self.assertEqual(world.held, [], "nothing pressed")
+
+    def test_walkto_stops_when_a_step_crosses_onto_another_map(self):
+        world = self.world(500, 500, 0.0)
+        hold = world.hold
+
+        def cross(state, actions, seconds):
+            hold(state, actions, seconds)
+            if "MOVEFORWARD" in actions:
+                world.map = 1429
+
+        self.enterContext(mock.patch.object(fc, "press_actions", side_effect=cross))
+        with self.assertRaisesRegex(fc.ClientError, "on map 1429, not 1453"):
+            fc.walkto({}, 0.5, 0.4)
+
+    def test_walkto_reports_where_it_got_when_time_runs_out(self):
+        self.world(500, 500, 0.0)
+        with self.assertRaisesRegex(fc.ClientError, r"stuck \(ran out of time\) at"):
+            fc.walkto({}, 0.5, 0.1, budget=0)
+
+    def test_walkto_target_carries_on_after_a_jump_clears_the_way(self):
+        world = self.world(500, 500, 0.0, low=[(480, 496, 520, 496.5)])
+        world.target = (500, 460)
+        fc.walkto_target({})
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 460), 9.9)
 
     def test_walkto_target_walks_until_the_target_is_within_interact_distance(self):
         world = self.world(500, 500, 1.0)
@@ -5362,11 +5459,19 @@ class MovementTest(unittest.TestCase):
         self.assertLessEqual(math.hypot(world.x - 450, world.y - 450), fc.WALK_TOLERANCE)
         self.assertFalse((self.state / fc.MOVED_MARK).exists())
         world.held.clear()
-        fc.park_after_job({})
+        self.assertTrue(fc.park_after_job({}))
         self.assertEqual(world.held, [], "a job that did not move the character does not park it")
 
+    def test_a_failed_park_keeps_the_mark_and_says_so(self):
+        self.world(500, 500, 0.0)
+        (self.state / fc.MOVED_MARK).touch()
+        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(fc.park_after_job({}))
+        self.assertIn("PARK FAILED", out.getvalue())
+        self.assertTrue((self.state / fc.MOVED_MARK).exists(), "the next job end tries again")
+
     def test_the_motion_row_decodes_only_with_its_header_and_checksum(self):
-        fields = [1453, 42730, 46793, 16384, 1000, 600, 16384]
+        fields = [1453, 42730, 46793, 16384, 1000, 600, 16384, 30719]
         flags = [True, True, False, False]
         bits = list(fc.MOTION_HEADER) + flags
         for value in fields:
@@ -5381,6 +5486,20 @@ class MovementTest(unittest.TestCase):
         torn[20] = not torn[20]
         self.assertIsNone(fc.decode_motion(torn), "a torn frame decodes as nothing")
         self.assertIsNone(fc.decode_motion([False] * len(bits)), "an older addon has no motion row")
+
+    def test_a_word_for_a_coordinate_is_refused_cleanly(self):
+        self.world(500, 500, 0.0)
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}),
+            mock.patch.object(fc, "with_job", side_effect=lambda _label, _timeout, action: action({"ready": True})),
+            mock.patch.object(fc, "require_safe"),
+            mock.patch.object(fc, "load_state", return_value={}),
+            mock.patch.object(fc, "session_alive", return_value=False),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+        ):
+            code = fc.main(["walkto", "north", "40"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("refused 'north'", err.getvalue())
 
     def test_map_points_are_the_maps_own_0_to_100(self):
         self.assertAlmostEqual(fc.map_point(65.2), 0.652)
