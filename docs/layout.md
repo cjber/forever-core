@@ -177,10 +177,11 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
-  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC names
-  ForeverCore in `## OptionalDeps` must ship it in its own zip (`externals:` at the pin and
-  `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
-  `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag). A consumer that embeds core
+  (`## X-Forever-Core-Embed: 1`) lists `forevercore` under `embedded-libraries:`, ships no top-level ForeverCore
+  external or `move-folders:` rule, does not list it under `required-dependencies:`, and carries
+  `## X-Forever-Core: <pin>`, the tag a sibling addon compares. A consumer that has not opted in yet keeps the bridge
+  bundle: `externals:` at the pin and `move-folders:` `<package-as>/ForeverCore: ForeverCore`.
   A `## Dependencies` line naming ForeverCore fails, because the client would skip the addon and it could never say
   core is missing.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also

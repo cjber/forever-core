@@ -154,6 +154,50 @@ class CheckConsumersTest(unittest.TestCase):
         self.assertIn("`move-folders:` must place ForeverCore at the zip's top level", out)
         self.assertIn("LegacyForever/ForeverCore: ForeverCore", out)
 
+    def write_embedded(self, pkgmeta_extra="", relation="embedded-libraries", pin="v1.4.0", toc_pin="v1.4.0"):
+        """A consumer that carries core under Libs/ForeverCore, in the decided end state unless a test changes it."""
+        self.write_toc(
+            "## Interface: 16001\n## OptionalDeps: ForeverCore\n"
+            f"## X-Forever-Core: {toc_pin}\n## X-Forever-Core-Embed: 1\n"
+        )
+        self.write_pkgmeta(
+            "package-as: LegacyForever\n\n" + pkgmeta_extra + (f"\n{relation}:\n  - forevercore\n" if relation else "")
+        )
+
+    def embedded_failures(self):
+        return check_consumers.check_packaging("legacy-forever", "v1.4.0", "main", self.checkouts)
+
+    def test_an_embedded_consumer_in_the_end_state_passes(self):
+        self.write_embedded()
+        self.assertEqual(self.embedded_failures(), [])
+
+    def test_an_embedded_consumer_still_shipping_the_top_level_external_fails(self):
+        self.write_embedded(
+            "externals:\n  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.0/"
+            "ForeverCore-v1.4.0-forever.zip\n"
+        )
+        self.assertTrue(any("remove that external" in failure for failure in self.embedded_failures()))
+
+    def test_an_embedded_consumer_still_moving_the_top_level_folder_fails(self):
+        self.write_embedded("move-folders:\n  LegacyForever/ForeverCore: ForeverCore\n")
+        self.assertTrue(any("`move-folders:` still places" in failure for failure in self.embedded_failures()))
+
+    def test_an_embedded_consumer_requiring_the_standalone_fails(self):
+        self.write_embedded(relation="required-dependencies")
+        failures = self.embedded_failures()
+        self.assertTrue(any("move it to `embedded-libraries:`" in failure for failure in failures))
+        self.assertTrue(any("list `- forevercore` under `embedded-libraries:`" in failure for failure in failures))
+
+    def test_an_embedded_consumer_without_the_relation_fails(self):
+        self.write_embedded(relation="")
+        self.assertTrue(
+            any("list `- forevercore` under `embedded-libraries:`" in failure for failure in self.embedded_failures())
+        )
+
+    def test_an_embedded_consumer_whose_toc_names_another_release_fails(self):
+        self.write_embedded(toc_pin="v1.3.0")
+        self.assertTrue(any("must be v1.4.0" in failure for failure in self.embedded_failures()))
+
     def test_a_required_dependency_alongside_the_transition_bundle_passes(self):
         self.write_core_pkgmeta(declares_required=True)
         self.write_core_toc()

@@ -23,16 +23,12 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-2** Zero setup. Every feature works out of the box: no required settings, extra downloads
   or companion installs. Data ships in the release zip (`.pkgmeta` `move-folders` for a
   load-on-demand data addon). Anything off by default is off because it acts for the player.
-  ForeverCore is the one required companion, and the addon's own zip ships it: declare `## OptionalDeps: ForeverCore`
-  in the TOC, never `## Dependencies`, so the addon still loads when core is missing and can say what to install, and in
-  `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
-  with `move-folders:` `<package-as>/ForeverCore: ForeverCore`. Add the CurseForge slug `forevercore` under
-  `required-dependencies` while retaining that pinned bundle during standalone dependency adoption. Existing installs
-  must acquire manager-owned core through ordinary updates, including a direct jump that skips bridge releases, before
-  any channel drops its fallback. Verify mixed-addon updates and uninstalling either consumer, especially the last
-  writer of the shared folder. Channels without automatic dependency resolution keep a bundled artifact. Follow core's
-  `docs/dependency-transition.md` for the canary evidence and rollback gates. The store relation alone does not fix shared-folder ownership. It is
-  the suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
+  ForeverCore is embedded in the addon, as Ace3 and LibStub libraries are: the TOC declares
+  `## OptionalDeps: ForeverCore` (never `## Dependencies`) and `## X-Forever-Core-Embed: 1`, the embed step puts the
+  pinned copy under `Libs/ForeverCore/` at package time, and `.pkgmeta` lists `forevercore` under `embedded-libraries`
+  with no top-level ForeverCore external or `move-folders` rule. The standalone stays an optional download. Core's
+  `docs/dependency-transition.md` is the source for this layout and `tools/check_consumers.py` enforces it. It is the
+  suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
   `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. An addon that sets `## X-Forever-Core-Embed: 1` also ships core inside itself at
   `Libs/ForeverCore/`: its release and CI package job run `python3 -m tools.forever_tools.embed` before the packager
   (core's `docs/dependency-transition.md` section 4); never commit `Libs/ForeverCore/`. Every core

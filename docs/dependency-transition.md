@@ -153,10 +153,28 @@ the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's
   and an elected copy reads those mirrors, keeping a newer embedded change over a stale standalone table.
   `tests/generated_bundle_spec.lua` covers install, update and removal in either order.
 
-The bridge release ships the embedded copy and keeps the top-level `ForeverCore/` folder from the same pin, so a partial
-switch is safe: any mix of bridged and unbridged addons runs one core. Within a session a pre-loader standalone cannot
-be outranked by a newer embedded copy; the converted standalone (`plan(..., standalone=True)`), which elects by build,
-ships once every consumer's bridge release is live, before any bundle is dropped.
+## 5. End state: embedded only
+
+The owner chose the accepted community method in [#787](https://github.com/cjber/forever-core/issues/787), the way
+Ace3 and LibStub libraries ship:
+
+- **Embedded only:** each addon's zip carries core only under `Libs/ForeverCore/`. Its `.pkgmeta` drops the top-level
+  ForeverCore external and `move-folders` rule. No zip writes a shared `AddOns/ForeverCore/` folder any more, which
+  ends [#448](https://github.com/cjber/forever-core/issues/448): removing or downgrading one addon can no longer delete
+  or roll back core under the others.
+- **Embedded relation:** `.pkgmeta` lists `forevercore` under `embedded-libraries`, not `required-dependencies`. The
+  CurseForge app links core on the project page and never installs it as required.
+- **Optional standalone:** the standalone ForeverCore project stays on CurseForge as an optional download that gets
+  every core release, so an installed standalone is never older than the embedded copies.
+
+The manager results in Phase 2 no longer block this. A manager that deletes the old shared folder during an update
+leaves the updated addon running on its embedded copy. `tools/check_consumers.py` holds every consumer that opts in with
+`## X-Forever-Core-Embed: 1` to this layout. A consumer that has not opted in keeps the bridge bundle (externals and
+`move-folders`) until its embed release.
+
+An already-released standalone (any 1.14.x or 1.15.0) that is enabled publishes its table while it loads. The loader
+adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release
+proof shows the addon working with no standalone installed and with an old standalone enabled.
 
 ## Rollback
 

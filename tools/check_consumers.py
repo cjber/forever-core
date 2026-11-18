@@ -13,11 +13,12 @@ drifts the same way:
   addon's specs and CI test against the core a player runs. The tag comes from `forever_tools.core_pin.latest_release`,
   the same read every consumer's release gate uses; with `--local` it is this checkout's newest `v*` tag
   from `git describe`. A latest release that cannot be read fails this gate rather than skipping the check.
-- `.pkgmeta`, when the consumer's root TOC names ForeverCore in `## OptionalDeps`, must retain its pinned fallback
-  during standalone dependency adoption: `externals:` downloads `ForeverCore-<pin>-forever.zip` from the release the
-  consumer's `tools/forever-core.txt` names and `move-folders:` places it beside the addon's own folder. The sync adds
-  `forevercore` under `required-dependencies`; bundle-only consumers remain valid during adoption. Removal needs the
-  per-manager lifecycle evidence in docs/dependency-transition.md, since metadata alone does not prove ownership.
+- `.pkgmeta`, when the root TOC opts in with `## X-Forever-Core-Embed: 1`, ships core only under `Libs/ForeverCore/`:
+  no ForeverCore `externals:` entry, no top-level `move-folders:` rule, `forevercore` under `embedded-libraries:` and
+  not under `required-dependencies:`, and `## X-Forever-Core:` equal to the pin (docs/dependency-transition.md).
+- `.pkgmeta`, when the consumer's root TOC names ForeverCore in `## OptionalDeps` without opting in to the embed, keeps
+  the bridge bundle until its embed release: `externals:` downloads `ForeverCore-<pin>-forever.zip` from the release
+  the consumer's `tools/forever-core.txt` names and `move-folders:` places it beside the addon's own folder.
 - The same root TOC must carry `## X-Forever-Core: <pin>`, the tag the bundled folder is, so a player's other Forever
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
@@ -289,13 +290,21 @@ def check_packaging(repo, pin, branch, local):
             f"{repo}: {toc_path}: lists ForeverCore in `## Dependencies`, so the client skips the addon when core is"
             " missing; move it to `## OptionalDeps` and keep the other names on that line"
         )
-    if not (required or optional or ships or declares):
+    embeds = toc_names(toc, "X-Forever-Core-Embed") == {"1"}
+    if not (required or optional or ships or declares or embeds):
         return failures
     if not optional and not required:
         failures.append(
             f"{repo}: {toc_path}: a Forever addon with no `## OptionalDeps: ForeverCore`; add it so the client loads"
             " core first when it is installed and this addon still loads without it"
         )
+    if embeds:
+        return failures + [
+            f"{repo}: {failure}"
+            for failure in check_embedded_packaging(
+                pin or "", toc, blocks, package, ships, declares, path=path, toc_path=toc_path
+            )
+        ]
     failures += [
         f"{repo}: {failure}"
         for failure in compare(
@@ -316,6 +325,44 @@ def check_packaging(repo, pin, branch, local):
         )
     # During standalone dependency adoption the pinned bundle remains the fallback for old installations.
     # Removal is gated by manager lifecycle proof, documented in docs/dependency-transition.md.
+    return failures
+
+
+def check_embedded_packaging(pin, toc, blocks, package, ships, declares, *, path, toc_path):
+    """The end state for a consumer that carries ForeverCore under `Libs/ForeverCore/` (`## X-Forever-Core-Embed: 1`).
+
+    The zip ships core only inside the addon, as Ace3 and LibStub libraries are embedded. A top-level `ForeverCore/`
+    folder that several zips own is the #448 problem: removing or downgrading one addon deletes or rolls back core under
+    the others. The store relation is `embedded-libraries`, so the CurseForge app links core on the project page and
+    never installs it as a required dependency; the standalone stays its own optional download (#787).
+    """
+    failures = []
+    if ships:
+        failures.append(
+            f"{path}: embeds ForeverCore under Libs/ForeverCore but `externals:` also ships the top-level folder;"
+            " remove that external (cjber/forever-core#448)"
+        )
+    moved = block_values(blocks.get("move-folders", []))
+    if f"{package}/{CORE_FOLDER}".lower() in moved:
+        failures.append(
+            f"{path}: embeds ForeverCore under Libs/ForeverCore but `move-folders:` still places a top-level"
+            f" `{CORE_FOLDER}` folder; remove `{package}/{CORE_FOLDER}: {CORE_FOLDER}`"
+        )
+    if declares:
+        failures.append(
+            f"{path}: embeds ForeverCore but lists `forevercore` under `required-dependencies:`; move it to"
+            " `embedded-libraries:` so the store never installs the standalone as required"
+        )
+    if "forevercore" not in block_entries(blocks.get("embedded-libraries", [])):
+        failures.append(f"{path}: embeds ForeverCore; list `- forevercore` under `embedded-libraries:`")
+    declared = core_pin.toc_field(toc.decode("utf-8", "replace"))
+    if not pin:
+        failures.append(f"{PIN_PATH}: embeds ForeverCore, but no pin names the release it embeds")
+    elif declared != pin:
+        failures.append(
+            f"{toc_path}: `## {core_pin.CORE_FIELD}:` is {declared or '(missing)'}; {PIN_PATH} pins {pin},"
+            f" the release the embed step copies, so it must be {pin}"
+        )
     return failures
 
 

@@ -94,9 +94,9 @@ AGENTS.md says how to write code for that addon, this says which addon should ow
 
 ForeverCore owns the code that is shared by every addon, not the features those addons draw.
 
-- **Required, not copied.** Every Forever addon names ForeverCore in `## OptionalDeps: ForeverCore` and lists ForeverCore
-  under `required-dependencies` in `.pkgmeta`, so the addon still loads and can say what to install when core is
-  missing. ForeverCore loads first, so exactly one copy of `Core/SafeCall.lua`,
+- **Embedded, not copied by hand.** Every Forever addon names ForeverCore in `## OptionalDeps: ForeverCore`, and its
+  package carries the pinned release under `Libs/ForeverCore/` (an `embedded-libraries` relation in `.pkgmeta`), so
+  the addon runs with or without the standalone. The loader elects one copy, so exactly one copy of `Core/SafeCall.lua`,
   `Core/Log.lua`, `UI/Report.lua`, `UI/ForeverFamily.lua`, the tracker files and the rest runs in the game.
 - **One source of truth.** A shared change lands in ForeverCore and ships with its own release. Nothing is copied into
   a consumer. The development tooling in `tools/check_core_shared.py`'s `VENDORED` still travels with
