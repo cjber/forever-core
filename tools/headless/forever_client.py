@@ -23,6 +23,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py click X Y --hold shift [--hold ctrl]
                                           # hold shift, ctrl or alt through a click, hover or scroll; released after
     forever_client.py key Escape          # any key xdotool names
+    forever_client.py key --for 2 w       # hold keys down together: walk with w, turn with a or d, for 2 s
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
@@ -251,6 +252,10 @@ WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a j
 RELOAD_WAIT = 120  # how long a /reload's loading screen may hide the strip, the same bound `reload` waits for the world
 # The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
 MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
+# Key names people write that xdotool spells another way: the game binds autorun to Num Lock.
+KEY_ALIASES = {"NumLock": "Num_Lock"}
+# Keys a verb holds down right now, one per line, so a job end after a killed verb still releases them.
+HELD_KEYS = "held-keys"
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -617,16 +622,32 @@ def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.v
 
 
 def release_session_modifiers(state: Mapping | None) -> None:
-    """Release shift, ctrl and alt on the session's display, so no job inherits a key an ended one held."""
-    failure = release_modifiers((state or {}).get("display"))
+    """Release shift, ctrl, alt and any key a verb was holding on the session's display, so no job inherits a key an
+    ended one held."""
+    keys = list(MODIFIER_KEYS.values())
+    try:
+        recorded = (STATE_DIR / HELD_KEYS).read_text().split()
+    except OSError:
+        recorded = []
+    keys += [key for key in recorded if key not in keys]
+    failure = release_modifiers((state or {}).get("display"), keys)
+    if not failure:
+        (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
     if failure:
         print(f"forever_client: {failure}", file=sys.stderr, flush=True)
 
 
 @contextmanager
 def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
-    """Hold modifier keys down for the body, releasing every key pressed even when the body raises."""
+    """Hold keys down for the body, releasing every key pressed even when the body raises.
+
+    The keys are recorded under the state directory first: a verb killed while holding them leaves no process to
+    release them, and the next job start or end releases what the record names.
+    """
     pressed: list[str] = []
+    record = STATE_DIR / HELD_KEYS
+    if keys:
+        record.write_text("\n".join(keys) + "\n")
     try:
         for key in keys:
             x(state, "keydown", key)
@@ -634,6 +655,8 @@ def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
         yield
     finally:
         failure = release_modifiers(state.get("display"), pressed)
+        if keys and not failure:
+            record.unlink(missing_ok=True)
     if failure:
         raise ClientError(failure)
 
@@ -824,9 +847,25 @@ def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = (
     )
 
 
-def press(state: Mapping, keys: Sequence[str]) -> None:
-    for k in keys:
-        send(state, "key", k)
+def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
+    """Tap each key in turn, or with `hold_for`, hold them all down together for that many seconds.
+
+    A tap is a press and release with no time between, which the game reads as a key event but not as movement: a
+    held key is how the character walks (w), turns (a, d) or strafes, for as long as it is held (#820).
+    """
+    keys = [KEY_ALIASES.get(key, key) for key in keys]
+    if hold_for is None:
+        for k in keys:
+            send(state, "key", k)
+        return
+    if hold_for <= 0:
+        raise ClientError("--for takes a positive number of seconds")
+    wait = INPUT_GAP - (time.time() - mark("last-input"))
+    if wait > 0:
+        time.sleep(wait)
+    with held(state, list(dict.fromkeys(keys))):
+        time.sleep(hold_for)
+    (STATE_DIR / "last-input").touch()
 
 
 def one_line_slash(command: str) -> None:
@@ -4204,7 +4243,7 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     elif args.verb == "scroll":
         scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
-        press(state, args.keys)
+        press(state, args.keys, args.hold_for)
     elif args.verb == "slash":
         slash(state, args.command)
     elif args.verb == "reload":
@@ -4324,6 +4363,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("ticks", type=int, help="wheel-up ticks (zoom in) when positive, wheel-down when negative")
         elif name == "key":
             p.add_argument("keys", nargs="+")
+            p.add_argument(
+                "--for",
+                dest="hold_for",
+                type=float,
+                metavar="SECONDS",
+                help="hold the keys down together for this long instead of tapping them: walk with w, turn with a or d",
+            )
         elif name == "slash":
             p.add_argument("command")
         elif name == "eval":

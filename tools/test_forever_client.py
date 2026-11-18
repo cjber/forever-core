@@ -5045,6 +5045,39 @@ class ModifierHoldTest(unittest.TestCase):
         self.assertEqual(self.sent, [self.RELEASE_ALL])
         self.assertEqual(self.displays, [":5"])
 
+    def test_key_for_holds_every_key_down_together_then_releases_them(self):
+        self.record()
+        with mock.patch.object(fc.time, "sleep", side_effect=lambda _s: self.sent.append(["slept", str(_s)])):
+            fc.press({"display": ":9"}, ["w", "a", "w"], 1.5)
+        self.assertEqual(
+            self.sent,
+            [
+                ["xdotool", "keydown", "w"],
+                ["xdotool", "keydown", "a"],
+                ["slept", "1.5"],
+                ["xdotool", "keyup", "w", "a"],
+            ],
+        )
+        self.assertFalse((self.state / fc.HELD_KEYS).exists(), "the record goes once the keys are up")
+
+    def test_key_for_refuses_no_time_before_any_input(self):
+        run = self.record()
+        with self.assertRaisesRegex(fc.ClientError, "positive number of seconds"):
+            fc.press({"display": ":9"}, ["w"], 0)
+        run.assert_not_called()
+
+    def test_numlock_is_the_key_xdotool_names_num_lock(self):
+        self.record()
+        fc.press({"display": ":9"}, ["NumLock"])
+        self.assertEqual(self.sent, [["xdotool", "key", "Num_Lock"]])
+
+    def test_a_key_held_by_a_killed_verb_is_released_at_the_next_job(self):
+        self.record()
+        (self.state / fc.HELD_KEYS).write_text("w\na\n")
+        fc.release_session_modifiers({"display": ":4"})
+        self.assertEqual(self.sent, [[*self.RELEASE_ALL, "w", "a"]])
+        self.assertFalse((self.state / fc.HELD_KEYS).exists())
+
     def test_serve_teardown_releases_every_modifier_before_the_client_stops(self):
         self.record()
         with (
