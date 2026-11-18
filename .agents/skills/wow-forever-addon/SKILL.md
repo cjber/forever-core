@@ -208,6 +208,21 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   the player's way to the feature and adds the states that have broken before: combat, a secret tooltip, the
   gamepad interface, Questie's tracker, an old saved file. A fix for a reported error comes with a scenario that
   fails on the release the error was reported against.
+- **WFA-40** A change is proven in the real client by what it does and what it costs, not by how it looks. A
+  screenshot passes a window that closes on the next click and a handler that freezes the client for a second.
+  - Every surface the change touches gets a proof flow: the actions a player takes there (open, sort, click, buy,
+    open the bags, turn the camera), each with its expected result, written as a Lua flow that raises on the first
+    mismatch so the proof fails ([in-game.md](in-game.md#behaviour-and-cost-flows)). A hardware-only action is the
+    flow's `--flow-click`.
+  - Every flow reads `!!DevPerf`'s per-event split for its own actions: a Forever handler call or a tick over one
+    frame (1000/60 ms) fails it, named by addon and event. WFA-13's 3 ms budget still holds; this is the floor a
+    proof enforces in the client.
+  - Every proof runs with full logging: `taintLog` 2, `scriptErrors` 1, BugGrabber, DevSessionLog and the
+    `!!DevPerf` profiler. A new taint.log line or BugGrabber entry naming an addon of ours fails the proof, and a FAIL
+    reports the exact error, its stack and the event or action that raised it, never a summary.
+  - Every `CHANGELOG.md` bullet the change adds maps to the flow that proves it, listed in the pull request body.
+  - Where Forever's client differs from retail, the behaviour is modelled in `forever_sim` from a live record, and
+    the change's scenario runs against it (WFA-35). A bench of per-event work reads the sim's work counter.
 
 ### Build, CI and release
 

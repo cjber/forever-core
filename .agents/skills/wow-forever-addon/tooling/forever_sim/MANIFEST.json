@@ -7,7 +7,7 @@
   },
   "files": {
     "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "client.lua": "a750865e0c3c8fdd392e966dfa01b020852c725e9274e480fc97d919777455cb",
+    "client.lua": "94381d9db41547a5c67111b857d481b2a945b4757e3c47fb6df90f85960bd78a",
     "clientdata.lua": "303930badfe8576b9e05cba367709e5a34e414074c6d2c7e418d81405ca3f6f1",
     "docs.lua": "2d47348e20f34b1274d857b46b0ed4cc12ced502f16034271303565c3d248e04",
     "fetch.py": "5f1923ef4dbba7d31c2a4d5ea41ef1cf82a93b653b9ad70ea342f5808b1212f0",
@@ -18,10 +18,10 @@
     "natives.lua": "9797023978d1197b0d9fd3a7a3936e79ac42eb5d84ea1bf1313069d92b7a0243",
     "restrictions.txt": "afa04c4814ddb35a1f8ef6f66d5617bc57643fbf91c68b514680933bd3a8a706",
     "run.lua": "08003b2d7f22ce3be5f1ca0a1c7d04006dfaec93d2c3d4cb2a2bd6c14effe9d3",
-    "scenario.lua": "28b94f802e0bac8271c20c582dcb5dd771ddf1537685d4749a6350d87828efe6",
+    "scenario.lua": "0e325613d37a369351a1a0b021a45167d5d857dedcbe70a3d08aedb16603b940",
     "script_types.lua": "24540b2a24f0ba9994c2a01d3e2fac555b814e321eade675bf823a734e1ae8f0",
     "sim.lua": "bf4c52eb5654b008198cb6e7e6896d6ca65b27caa5742a0cf2b3909c04f1b9a9",
-    "stubgen.lua": "d4f3d3008731f67a17ff7ea200b0f05fe615d7287cbb652f1a45386df9473580",
+    "stubgen.lua": "37284fab78a1825ba8420e4b19c6b1776efc9bdeea5b73d1cd04098e4c422896",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",
     "stubs/Polestar/Polestar.lua": "3dbb87a7003637ca11d16d4c5e101ba44a3226129437046a2622a4dfd1de206f",
@@ -39,7 +39,7 @@
     "veil.lua": "7e5deadc3d5714033d70e0a568096a1f08b196500f9692f3f185f11a8695aa36",
     "watch.lua": "2023fec311f100a85ee757a2c2bc2b59e9982cb6182d8546d4dd55f682b6e536",
     "widgets.lua": "86f487a8cb5ca8e0c4a18ca9eb5a9011d61ff4d2f309ea05b61b1c7668a6e020",
-    "world.lua": "c3dfd15e76c435e6646f6e74fd9a2db75bab89390440a801416753d41d38f793",
+    "world.lua": "89fe05fedea8516b82ef8e6132357548bbe503797cde986769f375715678578d",
     "xml.lua": "2e914a32ccf48a66b12415b6f540d7df1767fd5abcc32a7425a2035232ff698d"
   }
 }
