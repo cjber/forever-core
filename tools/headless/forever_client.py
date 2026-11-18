@@ -134,6 +134,7 @@ import functools
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -1109,11 +1110,323 @@ def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:
 def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None = None) -> None:
     """Press game actions by the keys the running client binds to them: tapped, or with `hold_for` held together."""
     combos = action_keys(state, actions)
+    if any(action.startswith(("MOVE", "TURN", "STRAFE", "JUMP")) for action in actions):
+        mark_moved()
     if hold_for is None:
         for combo in combos:
             send(state, "key", "+".join(combo))
         return
     press(state, [keysym for combo in combos for keysym in combo], hold_for)
+
+
+# The motion row the headless addon draws under the safety strip (forever-core#820): an 8-cell header, four flags, seven
+# 16-bit fields and an 8-bit checksum, one 4-pixel cell per bit on pixel row 4 to 7.
+MOTION_HEADER = [True, False, False, True, True, False, True, True]
+MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x")
+MOTION_FLAGS = ("known", "indoors", "plate", "near")
+MOTION_ROW = 6
+# Closed-loop movement. Each step reads the motion row again; these bound one step, not the result.
+FACE_TOLERANCE = math.radians(4)  # close enough to walk straight at a point
+PLATE_TOLERANCE = 0.03  # a target's nameplate this near the screen's middle is in front
+TURN_RATE = math.pi  # radians a second while a turn key is held, the client's own rate; each step re-measures it
+TURN_STEP_MIN, TURN_STEP_MAX = 0.04, 0.8
+TURN_TRIES = 16
+CAMERA_FOV = 1.5  # radians across the screen, for the first turn toward a nameplate; the loop corrects the rest
+RUN_SPEED = 7.0  # yards a second running, for one step's length
+WALK_STEP_MAX = 1.5
+WALK_TOLERANCE = 1.5  # yards from the point counts as arrived
+WALK_STEPS = 120
+STUCK_PROGRESS = 0.3  # yards a step must gain, or it counts toward stuck
+STUCK_STEPS = 2
+# A blocked straight line (a shop counter between the player and the point): follow the obstacle to one side, stepping
+# at ESCAPE_ANGLE off the line and trying the line again after every step, then to the other side. The client gives no
+# collision geometry, so following the obstacle is how a walker without a map gets round it; it is bounded and
+# reports what it tried.
+ESCAPE_ANGLE = math.radians(80)
+ESCAPE_STEP = 1.0
+ESCAPE_STEPS = 12  # steps along the obstacle on each side
+MOVED_MARK = "moved"
+PARK_SPOTS = CONFIG.parent / "park.json"
+
+
+def motion_state(state: Mapping) -> dict | None:
+    """Where the player stands, from the motion row: map, x and y (0 to 1), facing (radians), the map's size in yards,
+    indoors, the target's nameplate across the screen (0 to 1) and whether it is within interact distance. None when
+    the row is missing, from an older addon, or fails its checksum."""
+    path = STATE_DIR / f"motion-{os.getpid()}.png"
+    try:
+        image = shot(state, path, mark_read=False)
+        _width, _height, channels, rows = png_pixels(image)
+        cells = len(MOTION_HEADER) + len(MOTION_FLAGS) + 16 * len(MOTION_FIELDS) + 8
+        bits = [rows[MOTION_ROW][(column * 4 + 2) * channels] >= 128 for column in range(cells)]
+    except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
+        return None
+    finally:
+        path.unlink(missing_ok=True)
+    return decode_motion(bits)
+
+
+def decode_motion(bits: Sequence[bool]) -> dict | None:
+    """The motion row's bits as values, or None when the header or checksum does not match."""
+    if list(bits[: len(MOTION_HEADER)]) != MOTION_HEADER:
+        return None
+    at = len(MOTION_HEADER)
+    flags = list(bits[at : at + len(MOTION_FLAGS)])
+    at += len(MOTION_FLAGS)
+    fields = []
+    for _ in MOTION_FIELDS:
+        fields.append(int("".join("1" if bit else "0" for bit in bits[at : at + 16]), 2))
+        at += 16
+    checksum = int("".join("1" if bit else "0" for bit in bits[at : at + 8]), 2)
+    if checksum != (sum(index for index, flag in enumerate(flags, 1) if flag) + sum(fields)) % 256:
+        return None
+    values = dict(zip(MOTION_FLAGS, flags, strict=True)) | dict(zip(MOTION_FIELDS, fields, strict=True))
+    for name in ("x", "y", "plate_x"):
+        values[name] /= 65535
+    values["facing"] = values["facing"] / 65535 * 2 * math.pi
+    return values
+
+
+def read_motion(state: Mapping) -> dict:
+    """The motion state, which must be known: a missing row or an unknown position stops movement."""
+    motion = motion_state(state)
+    if motion is None:
+        raise ClientError("no motion row on screen: the session's headless addon predates `face` and `walkto`")
+    if not motion["known"]:
+        raise ClientError("the client gives no position here (an instance or a loading screen)")
+    return motion
+
+
+def angle_between(heading: float, facing: float) -> float:
+    """The turn from facing to heading, in (-pi, pi]; positive turns left (the client's facing grows to the left)."""
+    turn = (heading - facing) % (2 * math.pi)
+    return turn - 2 * math.pi if turn > math.pi else turn
+
+
+def heading_to(motion: Mapping, x: float, y: float) -> tuple[float, float]:
+    """The facing that points from the player at map point (x, y), both 0 to 1, and the distance in yards.
+
+    Facing 0 is north and grows to the left (west); map x grows east and map y south.
+    """
+    east = (x - motion["x"]) * (motion["width"] or 1)
+    south = (y - motion["y"]) * (motion["height"] or 1)
+    return math.atan2(-east, -south) % (2 * math.pi), math.hypot(east, south)
+
+
+def mark_moved() -> None:
+    (STATE_DIR / MOVED_MARK).touch()
+
+
+def hold_action(state: Mapping, actions: Sequence[str], seconds: float) -> None:
+    mark_moved()
+    press_actions(state, actions, seconds)
+
+
+def face(state: Mapping, heading: float) -> dict:
+    """Turn until the measured facing is within FACE_TOLERANCE of `heading`; the motion state when it is."""
+    rate = TURN_RATE
+    motion = read_motion(state)
+    for _ in range(TURN_TRIES):
+        turn = angle_between(heading, motion["facing"])
+        if abs(turn) <= FACE_TOLERANCE:
+            return motion
+        seconds = min(max(abs(turn) / rate, TURN_STEP_MIN), TURN_STEP_MAX)
+        hold_action(state, ["TURNLEFT" if turn > 0 else "TURNRIGHT"], seconds)
+        after = read_motion(state)
+        turned = abs(angle_between(after["facing"], motion["facing"]))
+        if turned > 0.01:
+            rate = turned / seconds
+        motion = after
+    raise ClientError(
+        f"facing stayed {math.degrees(motion['facing']):.0f} deg after {TURN_TRIES} turns toward "
+        f"{math.degrees(heading):.0f} deg: TURNLEFT and TURNRIGHT do not turn this character"
+    )
+
+
+def face_target(state: Mapping) -> dict:
+    """Turn until the target's nameplate is in the middle of the screen; a target off screen is searched for in
+    quarter turns."""
+    rate = TURN_RATE
+    motion = read_motion(state)
+    searched = 0
+    for _ in range(TURN_TRIES):
+        if not motion["plate"]:
+            if searched >= 4:
+                raise ClientError("no nameplate for the target after a full turn: target it and show nameplates")
+            hold_action(state, ["TURNLEFT"], min(math.pi / 2 / rate, TURN_STEP_MAX * 2))
+            searched += 1
+            motion = read_motion(state)
+            continue
+        off = motion["plate_x"] - 0.5
+        if abs(off) <= PLATE_TOLERANCE:
+            return motion
+        seconds = min(max(abs(off) * CAMERA_FOV / rate, TURN_STEP_MIN), TURN_STEP_MAX)
+        hold_action(state, ["TURNRIGHT" if off > 0 else "TURNLEFT"], seconds)
+        motion = read_motion(state)
+    raise ClientError("the target's nameplate never came to the middle of the screen")
+
+
+def walk_step(state: Mapping, seconds: float, *, jump: bool = False) -> dict:
+    hold_action(state, ["MOVEFORWARD", "JUMP"] if jump else ["MOVEFORWARD"], seconds)
+    return read_motion(state)
+
+
+def yards_between(a: Mapping, b: Mapping) -> float:
+    return math.hypot((a["x"] - b["x"]) * (a["width"] or 1), (a["y"] - b["y"]) * (a["height"] or 1))
+
+
+def step_toward(state: Mapping, x: float, y: float) -> tuple[dict, float, float]:
+    """Face (x, y) and walk one step at it: the motion after, the heading walked and the yards gained."""
+    motion = read_motion(state)
+    heading, distance = heading_to(motion, x, y)
+    motion = face(state, heading)
+    heading, distance = heading_to(motion, x, y)
+    after = walk_step(state, min(distance / RUN_SPEED, WALK_STEP_MAX))
+    return after, heading, distance - heading_to(after, x, y)[1]
+
+
+def go_round(state: Mapping, x: float, y: float, blocked: list[int]) -> bool:
+    """Follow the obstacle across the line to (x, y), one side then the other, until a straight step gains ground."""
+    for side in (1, -1):
+        for _ in range(ESCAPE_STEPS):
+            motion = read_motion(state)
+            aside = (heading_to(motion, x, y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
+            face(state, aside)
+            after = walk_step(state, ESCAPE_STEP)
+            if yards_between(after, motion) < STUCK_PROGRESS:
+                blocked.append(round(math.degrees(aside)) % 360)
+                break
+            _after, heading, gained = step_toward(state, x, y)
+            if gained >= STUCK_PROGRESS:
+                return True
+            blocked.append(round(math.degrees(heading)) % 360)
+    return False
+
+
+def walkto(state: Mapping, x: float, y: float, map_id: int | None = None, tolerance: float = WALK_TOLERANCE) -> dict:
+    """Walk to map point (x, y), 0 to 1, re-reading the position after every step and facing the point again.
+
+    A step that gains less than STUCK_PROGRESS yards counts toward stuck; after STUCK_STEPS of them the walker jumps
+    forward once, then follows the obstacle (go_round). When that gains no ground either it stops and reports where it
+    is and which headings were blocked, rather than looping.
+    """
+    motion = read_motion(state)
+    if map_id is not None and motion["map"] != map_id:
+        raise ClientError(f"the player is on map {motion['map']}, not {map_id}: walkto stays on one map")
+    stuck, jumped, blocked = 0, False, []
+    for _ in range(WALK_STEPS):
+        if heading_to(motion, x, y)[1] <= tolerance:
+            return motion
+        motion, heading, gained = step_toward(state, x, y)
+        if gained >= STUCK_PROGRESS:
+            stuck = 0
+            continue
+        stuck += 1
+        if stuck < STUCK_STEPS:
+            continue
+        stuck = 0
+        blocked.append(round(math.degrees(heading)) % 360)
+        if not jumped:
+            jumped = True
+            motion = walk_step(state, 0.8, jump=True)
+            continue
+        if not go_round(state, x, y, blocked):
+            break
+        motion = read_motion(state)
+    else:
+        motion = read_motion(state)
+        if heading_to(motion, x, y)[1] <= tolerance:
+            return motion
+    motion = read_motion(state)
+    heading, distance = heading_to(motion, x, y)
+    seen = list(dict.fromkeys(blocked))
+    raise ClientError(
+        f"stuck at {motion['x'] * 100:.2f}, {motion['y'] * 100:.2f} on map {motion['map']}, {distance:.1f} yd from "
+        f"{x * 100:.2f}, {y * 100:.2f} (heading {math.degrees(heading):.0f} deg); blocked toward "
+        f"{', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
+    )
+
+
+def walkto_target(state: Mapping) -> dict:
+    """Walk to the target until it is within interact distance, facing its nameplate before every step."""
+    stuck = 0
+    for _ in range(WALK_STEPS):
+        motion = face_target(state)
+        if motion["near"]:
+            return motion
+        after = walk_step(state, 1.0)
+        stuck = stuck + 1 if yards_between(after, motion) < STUCK_PROGRESS else 0
+        if stuck >= STUCK_STEPS:
+            after = walk_step(state, 0.8, jump=True)
+            if after["near"]:
+                return after
+            raise ClientError(
+                f"stuck at {after['x'] * 100:.2f}, {after['y'] * 100:.2f} on map {after['map']} walking to the "
+                f"target (heading {math.degrees(after['facing']):.0f} deg, 0 north, 90 west)"
+            )
+    raise ClientError("the target was never within interact distance")
+
+
+def park_spots() -> list[dict]:
+    try:
+        spots = json.loads(PARK_SPOTS.read_text())
+    except (OSError, ValueError):
+        return []
+    return [spot for spot in spots if isinstance(spot, dict)] if isinstance(spots, list) else []
+
+
+def park_add(state: Mapping, label: str) -> dict:
+    """Record where the player stands as a park spot: outdoors, with a merchant and creatures in reach."""
+    motion = read_motion(state)
+    if motion["indoors"]:
+        raise ClientError("a park spot is outdoors: the player is indoors here")
+    spot = {"label": label, "map": motion["map"], "x": round(motion["x"], 5), "y": round(motion["y"], 5)}
+    spots = [old for old in park_spots() if old.get("label") != label] + [spot]
+    PARK_SPOTS.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(PARK_SPOTS, json.dumps(spots, indent=1))
+    return spot
+
+
+def park(state: Mapping) -> dict:
+    """Walk to the nearest park spot on the player's map and check it is outdoors."""
+    motion = read_motion(state)
+    spots = [spot for spot in park_spots() if spot.get("map") == motion["map"]]
+    if not spots:
+        raise ClientError(f"no park spot on map {motion['map']}: stand at one and run `park --add LABEL`")
+    spot = min(spots, key=lambda spot: heading_to(motion, spot["x"], spot["y"])[1])
+    motion = walkto(state, spot["x"], spot["y"], spot["map"])
+    if motion["indoors"]:
+        raise ClientError(f"park spot {spot['label']} reads as indoors")
+    (STATE_DIR / MOVED_MARK).unlink(missing_ok=True)
+    return spot
+
+
+def park_after_job(state: Mapping) -> None:
+    """At the end of a job that moved the character, walk it back to a park spot; a failure is reported, not raised."""
+    if not (STATE_DIR / MOVED_MARK).exists():
+        return
+    try:
+        spot = park(state)
+        print(f"forever_client: parked at {spot['label']}", file=sys.stderr, flush=True)
+    except (ClientError, SafetyRefusal) as error:
+        print(f"forever_client: could not park after the job: {error}", file=sys.stderr, flush=True)
+    finally:
+        (STATE_DIR / MOVED_MARK).unlink(missing_ok=True)
+
+
+def describe_motion(motion: Mapping) -> str:
+    return (
+        f"map {motion['map']} at {motion['x'] * 100:.2f}, {motion['y'] * 100:.2f} facing "
+        f"{math.degrees(motion['facing']):.0f} deg (0 north, 90 west){', indoors' if motion['indoors'] else ''}"
+        f"{', target within interact distance' if motion['near'] else ''}"
+    )
+
+
+def map_point(value: float) -> float:
+    """A map coordinate as the game's map shows it, 0 to 100, as the 0 to 1 the client's API uses."""
+    if not 0 <= value <= 100:
+        raise ClientError(f"map coordinates run 0 to 100, as the map shows them: refused {value:g}")
+    return value / 100
 
 
 def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
@@ -4007,7 +4320,10 @@ def job(args: argparse.Namespace) -> int:
             "FOREVER_CLIENT_JOB": token,
             "FOREVER_CLIENT_CALLER": os.environ.get("FOREVER_CLIENT_CALLER") or "job",
         }
-        return run_job_command(command, env, maximum)
+        try:
+            return run_job_command(command, env, maximum)
+        finally:
+            park_after_job(state)
     finally:
         release_job(handle, token)
 
@@ -4479,7 +4795,21 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {
+    "shot",
+    "click",
+    "hover",
+    "scroll",
+    "key",
+    "slash",
+    "reload",
+    "eval",
+    "errors",
+    "face",
+    "walkto",
+    "park",
+    "where",
+}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -4522,6 +4852,25 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
             press(state, args.keys, args.hold_for)
     elif args.verb == "slash":
         slash(state, args.command)
+    elif args.verb in ("face", "walkto"):
+        if args.x == "target":
+            motion = face_target(state) if args.verb == "face" else walkto_target(state)
+        else:
+            if args.y is None:
+                raise ClientError(f"{args.verb} takes X Y or `target`")
+            x, y = map_point(float(args.x)), map_point(args.y)
+            if args.verb == "face":
+                motion = face(state, heading_to(read_motion(state), x, y)[0])
+            else:
+                motion = walkto(state, x, y, args.map_id, args.tolerance)
+        print(describe_motion(motion))
+    elif args.verb == "where":
+        print(describe_motion(read_motion(state)))
+    elif args.verb == "park":
+        if args.add:
+            print(f"park spot {park_add(state, args.add)}")
+        else:
+            print(f"parked at {park(state)['label']}")
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
     elif args.verb == "eval":
@@ -4613,7 +4962,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "hover", "scroll", "key", "slash", "eval", "errors"):
+    for name in (
+        "reload",
+        "shot",
+        "click",
+        "hover",
+        "scroll",
+        "key",
+        "slash",
+        "eval",
+        "errors",
+        "face",
+        "walkto",
+        "park",
+        "where",
+    ):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
         if name in ("click", "hover", "scroll"):
@@ -4655,6 +5018,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif name == "slash":
             p.add_argument("command")
+        elif name in ("face", "walkto"):
+            p.add_argument("x", help="map x as the map shows it, 0 to 100, or `target`")
+            p.add_argument("y", nargs="?", type=float, help="map y, 0 to 100")
+            if name == "walkto":
+                p.add_argument("--map", type=int, dest="map_id", help="the map the point is on; refused on another")
+                p.add_argument("--tolerance", type=float, default=WALK_TOLERANCE, help="yards from the point")
+        elif name == "park":
+            p.add_argument("--add", metavar="LABEL", help="record where the player stands as a park spot")
         elif name == "eval":
             p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
         elif name == "errors":

@@ -8,6 +8,7 @@ import fcntl
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -5213,6 +5214,177 @@ class ActionKeyTest(unittest.TestCase):
         ):
             with self.subTest(binding=binding):
                 self.assertEqual(fc.game_keysyms(binding), keysyms)
+
+
+class FakeWorld:
+    """A character on a 1000 by 1000 yard map with walls: turn keys turn it, the forward key runs it, a jump clears a
+    low wall. Movement verbs see it only through the motion row's values, as they see the client."""
+
+    def __init__(self, x, y, facing, walls=(), low=(), turn_rate=math.pi, indoors=lambda x, y: False):
+        self.x, self.y, self.facing = x, y, facing
+        self.walls, self.low, self.turn_rate, self.indoors = list(walls), list(low), turn_rate, indoors
+        self.held: list[tuple[tuple[str, ...], float]] = []
+        self.target = None
+
+    def motion(self, _state=None):
+        plate, plate_x, near = False, 0.0, False
+        if self.target:
+            east, south = self.target[0] - self.x, self.target[1] - self.y
+            bearing = math.atan2(-east, -south) % (2 * math.pi)
+            off = fc.angle_between(bearing, self.facing)
+            plate = abs(off) < 0.75
+            plate_x = 0.5 - off / 1.5
+            near = math.hypot(east, south) <= 9.9
+        return {
+            "known": True,
+            "indoors": self.indoors(self.x, self.y),
+            "plate": plate,
+            "near": near,
+            "map": 1453,
+            "x": self.x / 1000,
+            "y": self.y / 1000,
+            "facing": self.facing,
+            "width": 1000,
+            "height": 1000,
+            "plate_x": plate_x,
+        }
+
+    @staticmethod
+    def crosses(a, b, box):
+        left, top, right, bottom = box
+        for step in range(21):
+            x = a[0] + (b[0] - a[0]) * step / 20
+            y = a[1] + (b[1] - a[1]) * step / 20
+            if left <= x <= right and top <= y <= bottom:
+                return True
+        return False
+
+    def hold(self, _state, actions, seconds):
+        self.held.append((tuple(actions), seconds))
+        if "TURNLEFT" in actions:
+            self.facing = (self.facing + self.turn_rate * seconds) % (2 * math.pi)
+        if "TURNRIGHT" in actions:
+            self.facing = (self.facing - self.turn_rate * seconds) % (2 * math.pi)
+        if "MOVEFORWARD" in actions:
+            yards = fc.RUN_SPEED * seconds
+            end = (self.x - math.sin(self.facing) * yards, self.y - math.cos(self.facing) * yards)
+            walls = self.walls + ([] if "JUMP" in actions else self.low)
+            if not any(self.crosses((self.x, self.y), end, box) for box in walls):
+                self.x, self.y = end
+
+
+class MovementTest(unittest.TestCase):
+    """`face`, `walkto` and `park` close the loop on the measured position and facing (#820)."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.enterContext(mock.patch.object(fc, "PARK_SPOTS", self.state / "park.json"))
+
+    def world(self, *args, **kwargs):
+        world = FakeWorld(*args, **kwargs)
+        self.enterContext(mock.patch.object(fc, "read_motion", side_effect=world.motion))
+        self.enterContext(mock.patch.object(fc, "press_actions", side_effect=world.hold))
+        return world
+
+    def test_face_turns_to_the_measured_heading_whatever_the_turn_rate(self):
+        for rate in (math.pi, 1.3, 5.0):
+            for start, heading in ((0.0, 3.0), (5.9, 0.2), (1.0, 1.0)):
+                with self.subTest(rate=rate, start=start, heading=heading):
+                    world = self.world(500, 500, start, turn_rate=rate)
+                    fc.face({}, heading)
+                    self.assertLessEqual(abs(fc.angle_between(heading, world.facing)), fc.FACE_TOLERANCE)
+
+    def test_face_reports_a_character_that_does_not_turn(self):
+        self.world(500, 500, 0.0, turn_rate=0.0)
+        with self.assertRaisesRegex(fc.ClientError, "do not turn this character"):
+            fc.face({}, 2.0)
+
+    def test_walkto_arrives_across_open_ground(self):
+        world = self.world(500, 500, 0.0)
+        fc.walkto({}, 0.52, 0.47)
+        self.assertLessEqual(math.hypot(world.x - 520, world.y - 470), fc.WALK_TOLERANCE)
+
+    def test_walkto_gets_round_a_counter_between_the_player_and_the_point(self):
+        # Behind a shop counter: a wall across the straight line, open at one end.
+        world = self.world(500, 500, 0.0, walls=[(490, 495, 506, 497)])
+        fc.walkto({}, 0.5, 0.48)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 480), fc.WALK_TOLERANCE)
+
+    def test_walkto_jumps_a_low_wall_once(self):
+        world = self.world(500, 500, 0.0, low=[(480, 496, 520, 496.5)])
+        fc.walkto({}, 0.5, 0.48)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 480), fc.WALK_TOLERANCE)
+        self.assertEqual(sum("JUMP" in actions for actions, _ in world.held), 1, "one jump, then walking again")
+
+    def test_walkto_reports_stuck_with_position_and_blocked_headings_instead_of_looping(self):
+        world = self.world(
+            500,
+            500,
+            0.0,
+            walls=[(490, 490, 510, 492), (490, 508, 510, 510), (488, 490, 490, 510), (510, 490, 512, 510)],
+        )
+        with self.assertRaisesRegex(
+            fc.ClientError,
+            r"stuck at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 \(heading \d+ deg\); blocked toward 0 deg, ",
+        ):
+            fc.walkto({}, 0.5, 0.48)
+        walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
+        self.assertLessEqual(walks, fc.STUCK_STEPS * 2 + 1 + 2 * fc.ESCAPE_STEPS * 2 + 2, "bounded, not a loop")
+
+    def test_walkto_target_walks_until_the_target_is_within_interact_distance(self):
+        world = self.world(500, 500, 1.0)
+        world.target = (530, 470)
+        fc.walkto_target({})
+        self.assertLessEqual(math.hypot(world.x - 530, world.y - 470), 9.9)
+
+    def test_face_target_centres_the_nameplate(self):
+        world = self.world(500, 500, 0.0)
+        world.target = (400, 500)  # due west: a quarter turn left
+        motion = fc.face_target({})
+        self.assertLessEqual(abs(motion["plate_x"] - 0.5), fc.PLATE_TOLERANCE)
+
+    def test_park_records_outdoor_spots_and_walks_to_the_nearest(self):
+        world = self.world(500, 500, 0.0, indoors=lambda x, y: x > 600)
+        world.x = 610
+        with self.assertRaisesRegex(fc.ClientError, "outdoors"):
+            fc.park_add({}, "inside")
+        world.x, world.y = 450, 450
+        fc.park_add({}, "trade district")
+        world.x, world.y = 300, 300
+        fc.park_add({}, "far gate")
+        world.x, world.y = 520, 520
+        (self.state / fc.MOVED_MARK).touch()
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            fc.park_after_job({})
+        self.assertIn("parked at trade district", stderr.getvalue())
+        self.assertLessEqual(math.hypot(world.x - 450, world.y - 450), fc.WALK_TOLERANCE)
+        self.assertFalse((self.state / fc.MOVED_MARK).exists())
+        world.held.clear()
+        fc.park_after_job({})
+        self.assertEqual(world.held, [], "a job that did not move the character does not park it")
+
+    def test_the_motion_row_decodes_only_with_its_header_and_checksum(self):
+        fields = [1453, 42730, 46793, 16384, 1000, 600, 16384]
+        flags = [True, True, False, False]
+        bits = list(fc.MOTION_HEADER) + flags
+        for value in fields:
+            bits += [bool(value >> shift & 1) for shift in range(15, -1, -1)]
+        checksum = (1 + 2 + sum(fields)) % 256
+        bits += [bool(checksum >> shift & 1) for shift in range(7, -1, -1)]
+        motion = fc.decode_motion(bits)
+        self.assertEqual((motion["map"], motion["width"], motion["height"]), (1453, 1000, 600))
+        self.assertAlmostEqual(motion["facing"], math.pi / 2, places=3)
+        self.assertTrue(motion["indoors"])
+        torn = list(bits)
+        torn[20] = not torn[20]
+        self.assertIsNone(fc.decode_motion(torn), "a torn frame decodes as nothing")
+        self.assertIsNone(fc.decode_motion([False] * len(bits)), "an older addon has no motion row")
+
+    def test_map_points_are_the_maps_own_0_to_100(self):
+        self.assertAlmostEqual(fc.map_point(65.2), 0.652)
+        with self.assertRaisesRegex(fc.ClientError, "0 to 100"):
+            fc.map_point(652)
 
 
 class NestedHyprlandTest(unittest.TestCase):

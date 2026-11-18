@@ -61,22 +61,19 @@ them where it can:
    NPC, and put the CVar back to its earlier value before the job ends. At an auction house, open it and search; never
    bid, buy or post. Never attack a creature or walk into one's aggro range, fight, loot, quest, trade or chat to
    other players. Nothing else blocks the game: `slash` sends any one-line slash command (`/use Hearthstone` to get
-   somewhere) and `key` any key. Move only with game actions, never raw keys: an account can rebind any key (the
-   headless account walks forward on S, so `w` does nothing there). `key --action ACTION --for SECONDS` holds the key
-   the running client binds to that action, from its own `GetBindingKey`: `!!DevSmoke`'s record (made at login and at
-   every key binding change, on disk at the next reload), or else one eval per session that asks the client (two
-   reloads, then cached). The bindings-cache.wtf file is only a last resort, with a warning, because the client may
-   not match it. `key --action MOVEFORWARD --for 2` walks for 2 s,
-   `key --action TURNLEFT --for 0.5` turns left, repeat `--action` to hold several together. The actions are
-   MOVEFORWARD, MOVEBACKWARD, TURNLEFT, TURNRIGHT, STRAFELEFT, STRAFERIGHT, JUMP, INTERACTTARGET and
-   TARGETNEARESTENEMY; without `--for` each is tapped once (`key --action INTERACTTARGET`; with `autoInteract` on, the
-   game walks the character to an out-of-range target first). A tapped key never moves
-   the character. Check the frame or the player's map position between holds. Where the character is parked or
-   whether it is
-   resting never matters, so move it wherever a check needs it rather than waiting or asking. `click` and `scroll`
+   somewhere) and `key` any key. Move only with `face` and `walkto`, which turn and walk on the measured facing and
+   position: `walkto 61.2 73.9` (map coordinates as the map shows them), `walkto target` (to interact distance),
+   `face 61.2 73.9`, `face target`, and `where` to read the position. They press the keys the running client binds to
+   TURNLEFT, TURNRIGHT, MOVEFORWARD and JUMP (`key --action ACTION [--for SECONDS]` presses one by hand, never a raw
+   movement key: the headless account walks forward on S). `walkto` reports where it stuck instead of looping. Never
+   park or end a job inside a shop: a job that moved the character ends by walking it to the nearest outdoor park spot
+   with a merchant and creatures in reach (`park`; record a new one standing there with `park --add LABEL`). With
+   `autoInteract` on, INTERACTTARGET walks to an out-of-range target first. Whether the character is resting never
+   matters, so move it wherever a check needs it rather than waiting or asking. `click` and `scroll`
    refuse until a `shot` was taken after the last input, so each input aims at what you have just read in the frame.
 2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
-   Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs
+   Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`, `face`,
+   `walkto`, `where`, `park`) runs
    inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
    is the `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job
    lock. The session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit`
