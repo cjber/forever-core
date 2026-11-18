@@ -34,7 +34,7 @@ upgrade and defaults over every field the spec leaves out.
 2. Choose the trigger (below), then the display, the load conditions, and any options the user asked for.
 3. Look up every field you set in the installed source, in the file the table below names. When a field's
    meaning is unclear, decode a published aura that uses it rather than guessing.
-4. Check the file loads: `luajit fa.lua encode <file> | luajit fa.lua decode -` prints every display.
+4. Check the file loads: `luajit <forever-core>/.agents/skills/foreverauras/scripts/fa.lua encode <file>`, piped into the same script with `decode -`, prints every display.
 5. Commit in `forever-dev` and push, then give the user the in-game check: `/reload`, the chat line
    `DevAuras: installed <id>` or `updated <id>`, and what should show. Agents never drive the client.
 
