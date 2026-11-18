@@ -1,5 +1,7 @@
 -- Lua 5.1 fixtures for the startup handshake. A missing character configuration must never signal readiness.
 local source = assert(io.open("tools/headless/!!ForeverHeadless/ForeverHeadless.lua")):read("*a")
+-- Every scale the addon set on a frame.
+local scales = {}
 
 local function run(config, name, guid, dead, combat, lockdown, screenshot)
 	local events, callback, updates = {}, nil, {}
@@ -25,6 +27,9 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 			SetSize = function() end,
 			SetPoint = function() end,
 			SetIgnoreParentScale = function() end,
+			SetScale = function(_, scale)
+				scales[#scales + 1] = scale
+			end,
 			SetFrameStrata = function() end,
 			Hide = function() end,
 			CreateTexture = function()
@@ -70,7 +75,11 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 	end
 	_G.print = function() end
 	assert(loadstring(source))()
-	assert(events[1] == "PLAYER_ENTERING_WORLD", "registers world readiness")
+	local registered = {}
+	for _, event in ipairs(events) do
+		registered[event] = true
+	end
+	assert(registered.PLAYER_ENTERING_WORLD, "registers world readiness")
 	callback(nil, "PLAYER_ENTERING_WORLD")
 	_G.GameMenuFrame = {
 		IsShown = function()
@@ -152,6 +161,9 @@ do
 			SetSize = function() end,
 			SetPoint = function() end,
 			SetIgnoreParentScale = function() end,
+			SetScale = function(_, scale)
+				scales[#scales + 1] = scale
+			end,
 			SetFrameStrata = function() end,
 			CreateTexture = function()
 				local cell = {}
@@ -222,7 +234,12 @@ do
 	_G.CheckInteractDistance = function()
 		return true
 	end
+	_G.GetPhysicalScreenSize = function()
+		return 1920, 804
+	end
+	scales = {}
 	assert(loadstring(source))()
+	assert(scales[1] == 768 / 804, "the motion row is scaled to exactly 4 screen pixels a cell")
 	for _, fn in ipairs(updates) do
 		fn()
 	end

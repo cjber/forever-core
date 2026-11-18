@@ -1149,6 +1149,10 @@ MOVED_MARK = "moved"
 PARK_SPOTS = CONFIG.parent / "park.json"
 
 
+class MotionUnread(ClientError):
+    """The motion row is on screen but did not decode: a torn frame or cells that do not line up with the pixels."""
+
+
 def motion_state(state: Mapping) -> dict | None:
     """Where the player stands, from the motion row: map, x and y (0 to 1), facing (radians), the map's size in yards,
     indoors, the target's nameplate across the screen (0 to 1) and whether it is within interact distance. None when
@@ -1163,7 +1167,10 @@ def motion_state(state: Mapping) -> dict | None:
         return None
     finally:
         path.unlink(missing_ok=True)
-    return decode_motion(bits)
+    motion = decode_motion(bits)
+    if motion is None and bits[: len(MOTION_HEADER)] == MOTION_HEADER:
+        raise MotionUnread("the motion row is on screen but fails its checksum")
+    return motion
 
 
 def decode_motion(bits: Sequence[bool]) -> dict | None:
@@ -1188,8 +1195,15 @@ def decode_motion(bits: Sequence[bool]) -> dict | None:
 
 
 def read_motion(state: Mapping) -> dict:
-    """The motion state, which must be known: a missing row or an unknown position stops movement."""
-    motion = motion_state(state)
+    """The motion state, which must be known: a missing row or an unknown position stops movement. A frame caught
+    mid-paint fails its checksum, so a failed read is taken again, up to three times."""
+    for attempt in range(3):
+        try:
+            motion = motion_state(state)
+            break
+        except MotionUnread:
+            if attempt == 2:
+                raise
     if motion is None:
         raise ClientError("no motion row on screen: the session's headless addon predates `face` and `walkto`")
     if not motion["known"]:

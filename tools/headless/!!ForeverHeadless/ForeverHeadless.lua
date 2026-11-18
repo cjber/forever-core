@@ -101,6 +101,22 @@ motion:SetFrameStrata("TOOLTIP")
 local MOTION_CELLS = #MOTION_HEADER + FLAGS + FIELDS * 16 + 8
 motion:SetSize(MOTION_CELLS * 4, 4)
 motion:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, -4)
+-- Exactly 4 screen pixels a cell, whatever the screen's height: an unscaled frame is 768 units tall, so its scale is
+-- 768 over the physical height. In UI units a 131-cell row would drift across cell edges on any screen not 768 tall.
+local function pixelExact()
+	if type(_G.GetPhysicalScreenSize) ~= "function" then
+		return
+	end
+	local _, height = _G.GetPhysicalScreenSize()
+	if type(height) == "number" and height > 0 then
+		motion:SetScale(768 / height)
+	end
+end
+pixelExact()
+local resized = CreateFrame("Frame")
+resized:RegisterEvent("DISPLAY_SIZE_CHANGED")
+resized:RegisterEvent("UI_SCALE_CHANGED")
+resized:SetScript("OnEvent", pixelExact)
 local motionCells = {}
 for column = 1, MOTION_CELLS do
 	local texture = motion:CreateTexture(nil, "OVERLAY")

@@ -5326,7 +5326,8 @@ class MovementTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             fc.ClientError,
-            r"stuck at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 \(heading \d+ deg\); blocked toward 0 deg, ",
+            r"stuck at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 "
+            r"\(heading \d+ deg\); blocked toward 0 deg, ",
         ):
             fc.walkto({}, 0.5, 0.48)
         walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
