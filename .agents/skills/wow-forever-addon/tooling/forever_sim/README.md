@@ -72,6 +72,7 @@ means something; the walk still covers only the repository's own widgets.
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
+| `sim:noisy{ seed, itemsPerFrame, failPercent, bagPercent, merchantPercent }`, `sim:noisy(false)` | a noisy client: every frame, seeded GET_ITEM_INFO_RECEIVED and ITEM_DATA_LOAD_RESULT pairs for random item IDs with some loads failed, BAG_UPDATE churn then BAG_UPDATE_DELAYED, and MERCHANT_UPDATE while the merchant is open; a requested load of a known item fails at the same rate; `sim.noise.fired` counts what it raised. A consumer spec runs it with `sim.work` to assert its work per event stays flat |
 | `sim.work.reset()`, `sim.work.paths[label]`, `sim.work.measure(label, f, ...)` | the work counter: every event is measured under its own name, and `measure` wraps any other path (a tooltip, a click, a callback), returning that run's `{ handlers, apiCalls }` and then `f`'s results; each `paths` entry holds `runs`, `handlers`, `apiCalls`, `maxHandlers` and `maxApiCalls` |
 | `sim:rect(frame)`, `sim:overlap(a, b)`, `sim:expectNoOverlap(a, b)`, `sim:expectOnScreen(frame)` | layout |
 

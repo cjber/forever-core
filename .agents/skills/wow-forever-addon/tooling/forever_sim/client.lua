@@ -665,6 +665,9 @@ function M.build(sim)
 					end
 				end
 			end
+			if sim.noise then
+				sim.noise.frame()
+			end
 			E.flush()
 		until remaining <= 0
 	end

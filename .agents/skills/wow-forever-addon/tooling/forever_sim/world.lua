@@ -767,7 +767,10 @@ function M.build(sim)
 		return ""
 	end
 	impl["C_Item.RequestLoadItemDataByID"] = function(id)
-		sim.events.queue("ITEM_DATA_LOAD_RESULT", id, W.items[tonumber(id) or 0] ~= nil)
+		local known = W.items[tonumber(id) or 0] ~= nil
+		-- A noisy client fails some loads of items it does know (sim:noisy).
+		local failed = known and sim.noise and sim.noise.fails()
+		sim.events.queue("ITEM_DATA_LOAD_RESULT", id, known and not failed)
 	end
 
 	-- Maps: the player's position and the map tree (fill sim.world.maps[id] = { name, parent, mapType }).
