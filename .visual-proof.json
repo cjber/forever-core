@@ -1,10 +1,10 @@
 {
-  "input_digest": "6ab6abb9634da19ff0c81064262cbdf418d0d607ac915f2c1381f0ef8dc9f9a6",
-  "runtime_sha256": "6ab6abb9634da19ff0c81064262cbdf418d0d607ac915f2c1381f0ef8dc9f9a6",
-  "candidate": "59ce22d8755e25e40edb381332040d5c134e8346061d16cc14fd4b36e63c8198",
+  "input_digest": "7c27ed0d903d2cda68961ca0192e082c02c34f9e6f4ed9629cc4d13c7932b205",
+  "runtime_sha256": "7c27ed0d903d2cda68961ca0192e082c02c34f9e6f4ed9629cc4d13c7932b205",
+  "candidate": "01d0e4daff64a6f281397bc5cd18f1a91f7b9f2e6c2c07c78da4c886f33aeaef",
   "client_build": "1.60.1.70959 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "12b016bbf0243b5adc640af40f4a8dae737fd429",
+  "source_commit": "ce7a81f4c85a6e438d241639e5318e73923c7e58",
   "flows": [
     {
       "name": "column",
@@ -47,32 +47,43 @@
         "sha256:0e3622d1f62cd5bee9a5f4c6033ab96d8c23230bacda182db48f32a4c70f0d56 clear_pos.lua"
       ],
       "result": "pass"
+    },
+    {
+      "name": "clip",
+      "steps": [
+        "sha256:d9ecf6b8785940f3ec31869e82e69520dbc9474a3807a2aa435f2ffa6ccc58b3 probe797-clip3-wait.lua"
+      ],
+      "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/1-column.png",
-      "sha256": "bdeb7e77be291b27020e581c15b2d8b4a90b27a3c5e5fedb229a4bfbee8105c8"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/1-column.png",
+      "sha256": "ce95831e91082cf00c3dbbb66a4056ca565a09c0337785dff2628511b730b529"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/2-menu.png",
-      "sha256": "fb3d07bbb1570b099c04642f61c637a568c6027d6fab5595f6fd4b908891dfbf"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/2-menu.png",
+      "sha256": "42ff1b6e1429ee243735b06756743b4e1be8e8671a74c949813b3fbcde395a06"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/3-drag.png",
-      "sha256": "43318b52d31f5d9494e93464a056b4159c4bc064f0f7358c91e0427e896c769b"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/3-drag.png",
+      "sha256": "7678a06c35047ec5536101d0130445ba5ef5037428a3bd24fe453aa2e334dc20"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/4-persist.png",
-      "sha256": "b7950ef6069bb49ae165b6ace586255f509b1e5cfb377a21d651feb746271238"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/4-persist.png",
+      "sha256": "1569f46a3270a2fba9642e4a3d0539f67f9b1b0a1ab5782d527038ee3ed3a2df"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/5-lock.png",
-      "sha256": "e876bbceaaa019978b32460381ba2c01a7e73e4d11da9dfcbb36ec8e8671cd45"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/5-lock.png",
+      "sha256": "a5808b69b74f850d233b13f86ed07266b7760f670c0f0cd02183344b3230013e"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/6-reset.png",
-      "sha256": "8ce64eb51b9be9dca6ba8cbc012cf596e0cc541c69114a9e24ca62851f10c3e6"
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/6-reset.png",
+      "sha256": "01dab787435c307765c6654268690c750de6479946c915706d3f9fc627c2b894"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/1e64e99231d93d8b0f9123b26fdddc9a/raw/23e2bcd15b9b9cbccb017f2d3b7e309503dfb035/7-clip.png",
+      "sha256": "9699af436be3357043120d64cdc21d7aaba765a0170d2d086171788a17e628dc"
     }
   ]
 }
