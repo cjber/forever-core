@@ -19,9 +19,11 @@ loads, directly or through an XML `Script`, as a deferred chunk on the file's fi
 the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's files, `ForeverCoreRun.lua` and
 `ForeverCoreReady.lua`.
 
-- With the standalone folder installed, the loader is already active and the addon's files run inline during its own
-  file load, exactly as before. Every standalone release up to 1.15.0 is unwrapped, so it wins the session.
-- Without it, the highest sealed copy is elected at PLAYER_LOGIN. The addon's files run then, and each frame they
+- With an older standalone folder installed (1.15.0 and earlier publish their table at file load), the loader adopts it
+  for the session, since a second runtime cannot start beside it, and the addon's files run inline during its own file
+  load, exactly as before. When it is older than the newest embedded copy, the player sees an on-screen notice once per
+  installed standalone version, naming both versions and saying to update or disable ForeverCore.
+- Without it, the highest sealed embedded copy is elected at PLAYER_LOGIN, with no install prompt. The addon's files run then, and each frame they
   registered receives the addon's `ADDON_LOADED` and the `PLAYER_LOGIN` it missed.
 - `ForeverCoreDB` carries over in both directions: the standalone mirrors its store into every offered consumer table,
   and an elected copy reads those mirrors, keeping a newer embedded change over a stale standalone table.
@@ -39,7 +41,8 @@ Ace3 and LibStub libraries ship:
 - **Embedded relation:** `.pkgmeta` lists `forevercore` under `embedded-libraries`, not `required-dependencies`. The
   CurseForge app links core on the project page and never installs it as required.
 - **Optional standalone:** the standalone ForeverCore project stays on CurseForge as an optional download that gets
-  every core release, so an installed standalone is never older than the embedded copies.
+  every core release, so the newest standalone available matches the newest embedded copy. A player who does not update
+  an installed standalone can still run an older one, as described above.
 
 The manager results in the bridge history below no longer block this. A manager that deletes the old shared folder
 during an update leaves the updated addon running on its embedded copy. `tools/check_consumers.py` holds every consumer that opts in with
@@ -48,14 +51,21 @@ during an update leaves the updated addon running on its embedded copy. `tools/c
 `## X-Forever-Core-Embed:` line decides, and only the value `1` opts in, so every check agrees with the embed step.
 
 The embed releases go out together. While any addon still ships the shared top-level `ForeverCore/` folder, removing
-or downgrading that addon rolls core back under the others, so `tools/release_consumers.py` holds an opted-in addon's
-release, naming the addons still to opt in, until every addon in its `EMBED_FLEET` sets the field on its own `main`.
+or downgrading that addon rolls core back under the others. Two holds enforce this:
+
+- **At every release:** each opted-in addon's own `release.yml` runs `python3 -m tools.forever_tools.fleet` before its
+  packager, and `tools/check_consumers.py` fails a release workflow without that step. It fails until every addon in
+  `forever_tools.fleet.EMBED_FLEET` sets the field on its own `main`, so a hand-run release or a pushed tag holds too.
+- **As one batch:** once all have opted in, `tools/release_consumers.py` dispatches none of the embed releases until
+  every fleet addon is ready to release in the same run or already has an embedded release published.
 The embed step also refuses a TOC whose `## SavedVariables` does not name exactly one account global: core mirrors
 its account store into that one global, and a per-character global or a choice of several cannot hold it.
 
 An already-released standalone (any 1.14.x or 1.15.0) that is enabled publishes its table while it loads. The loader
 adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release
-proof shows the addon working with no standalone installed and with an old standalone enabled.
+proof shows the addon working with no standalone installed and with an old standalone enabled. `forever_client.py
+proof` compares the installed build with the checkout after the same embed step at the same pin, and records the
+checkout's own digests, whose pin binds the embedded copy.
 
 ## History: the standalone dependency bridge
 

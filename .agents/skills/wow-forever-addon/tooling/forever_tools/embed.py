@@ -137,18 +137,33 @@ class EmbedError(ValueError):
 
 
 def _toc_path(root: Path) -> Path:
-    tocs = sorted(root.glob("*.toc"))
-    if len(tocs) != 1:
-        raise EmbedError(f"{root}: expected one root TOC, found {[path.name for path in tocs]}")
-    return tocs[0]
+    """The root TOC the packager ships, resolved by `core_pin.toc_name_for` as every checker resolves it."""
+    policy = core_pin.policy_path(root)
+    try:
+        package = core_pin.policy_package(policy.read_text(encoding="utf-8", errors="replace") if policy else "")
+        name = core_pin.toc_name_for(package, [path.name for path in root.glob("*.toc")])
+    except ValueError as error:
+        raise EmbedError(f"{root}: {error}") from None
+    if name is None or not (root / name).is_file():
+        raise EmbedError(f"{root}: no root TOC {name or '(none found)'}")
+    return root / name
 
 
 _fields = core_pin.toc_fields
 
 
 def enabled(root: Path) -> bool:
-    """True when the root TOC opts in with `## X-Forever-Core-Embed: 1` (`core_pin.embeds`)."""
-    return core_pin.embeds(_toc_path(root).read_text(encoding="utf-8-sig"))
+    """True when the root TOC opts in with `## X-Forever-Core-Embed: 1` (`core_pin.embeds`).
+
+    An opt-in line with any other value is an error, not a quiet "no": a consumer that meant to embed would otherwise
+    ship without its copy.
+    """
+    toc_path = _toc_path(root)
+    toc_text = toc_path.read_text(encoding="utf-8-sig")
+    problem = core_pin.embed_problem(toc_text, toc_path.name)
+    if problem:
+        raise EmbedError(problem)
+    return core_pin.embeds(toc_text)
 
 
 def wrap(data: bytes) -> bytes:
@@ -227,6 +242,12 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
     fields = _fields(toc_text)
     if not core_pin.embeds(toc_text):
         raise EmbedError(f"{toc_path.name}: no `## {EMBED_FIELD}: 1`; nothing to embed")
+    others = sorted(path.name for path in root.glob("*.toc") if path.name != toc_path.name)
+    if others:
+        raise EmbedError(
+            f"{toc_path.name}: the embed step rewrites one root TOC, but the checkout also has {', '.join(others)};"
+            " an addon loaded from another TOC would run without its core"
+        )
     dependencies = {
         name.strip()
         for name in re.split(r"[,\s]+", fields.get("dependencies", "") + " " + fields.get("requireddeps", ""))

@@ -94,6 +94,35 @@ class CorePinTest(unittest.TestCase):
         self.toc.rename(self.root / "LegacyForever_Mainline.toc")
         self.assertTrue(any("flavor-suffixed" in failure for failure in core_pin.check(self.root)))
 
+    def test_the_consumers_own_gate_refuses_a_bridge_policy_for_an_embedding_toc(self):
+        for extra, expected in (
+            ("required-dependencies:\n  - forevercore\n", "required-dependencies"),
+            (
+                "externals:\n  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.0/x.zip\n",
+                "second ForeverCore",
+            ),
+            ("move-folders:\n  LegacyForever/Libs/ForeverCore: ForeverCore\n", "Libs/ForeverCore"),
+        ):
+            with self.subTest(expected=expected):
+                self.write_embedded()
+                self.pkgmeta.write_text(self.pkgmeta.read_text(encoding="utf-8") + extra, encoding="utf-8")
+                self.assertTrue(any(expected in failure for failure in core_pin.check(self.root)))
+
+    def test_an_opt_in_value_other_than_1_fails_the_gate(self):
+        self.write_embedded()
+        self.toc.write_text(self.toc.read_text().replace("Embed: 1", "Embed: yes"))
+        self.assertTrue(any("exactly 1" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_toc_without_a_policy_fails(self):
+        self.write_embedded()
+        self.pkgmeta.unlink()
+        self.assertTrue(any("no .pkgmeta or pkgmeta.yaml" in failure for failure in core_pin.check(self.root)))
+
+    def test_package_as_twice_fails(self):
+        self.write_embedded()
+        self.pkgmeta.write_text("package-as: Wrong\n" + self.pkgmeta.read_text(encoding="utf-8"), encoding="utf-8")
+        self.assertTrue(any("set 2 times" in failure for failure in core_pin.check(self.root)))
+
     def test_three_copies_of_one_release_pass(self):
         self.write()
         self.assertEqual(core_pin.check(self.root), [])
@@ -206,6 +235,7 @@ class CorePinTest(unittest.TestCase):
     def test_a_consumer_without_a_bundle_still_checks_its_pin(self):
         self.pin.write_text("v1.3.2\n", encoding="utf-8")
         self.pkgmeta.write_text("package-as: KilnForever\n", encoding="utf-8")
+        (self.root / "KilnForever.toc").write_text("## Interface: 16001\n", encoding="utf-8")
         failures = core_pin.check(self.root, "v1.4.0")
         self.assertEqual(len(failures), 1)
         self.assertIn("pin v1.3.2, core's latest release is v1.4.0", failures[0])

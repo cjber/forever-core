@@ -3306,6 +3306,58 @@ class ProofHelpersTest(unittest.TestCase):
             ):
                 fc.proof_digests(self.state)
 
+    def embedding_checkout(self, field="## X-Forever-Core-Embed: 1\n"):
+        checkout = self.state / "macro-assist-forever"
+        checkout.mkdir()
+        (checkout / "MacroAssistForever.toc").write_text(f"## Interface: 16001\n{field}Main.lua\n")
+        (checkout / "Main.lua").write_text("print('edited, not committed')\n")
+        (checkout / "untracked.lua").write_text("not shipped\n")
+        return checkout
+
+    def test_a_checkout_without_the_embed_field_is_its_own_proof_source(self):
+        checkout = self.embedding_checkout(field="")
+        with mock.patch.object(fc, "embed_core", side_effect=AssertionError("no embed")):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(source, checkout)
+
+    def test_an_embedding_checkout_is_compared_after_the_same_embed_step(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "MacroAssistForever.toc\0Main.lua\0", "")
+        embedded = []
+
+        def embed(stage):
+            embedded.append(stage)
+            (stage / "Libs" / "ForeverCore").mkdir(parents=True)
+
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=embed),
+        ):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(embedded, [source])
+                self.assertNotEqual(source, checkout)
+                self.assertEqual((source / "Main.lua").read_text(), "print('edited, not committed')\n")
+                self.assertFalse((source / "untracked.lua").exists())
+                self.assertTrue((source / "Libs" / "ForeverCore").is_dir())
+            self.assertFalse(source.exists())
+        self.assertFalse((checkout / "Libs").exists())
+
+    def test_the_proof_stage_is_removed_when_the_embed_step_fails(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "Main.lua\0", "")
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=fc.ClientError("embedding ForeverCore failed")),
+        ):
+            with self.assertRaises(fc.ClientError):
+                with fc.proof_source(checkout, "macro-assist-forever"):
+                    pass
+        self.assertFalse((builds / "macro-assist-forever-proof-source").exists())
+
     def test_proof_compare_accepts_only_an_equivalent_installed_folder(self):
         good = mock.Mock(returncode=0, stdout=json.dumps({"equivalent": True}), stderr="")
         with mock.patch.object(fc, "visual_proof_run", return_value=good):

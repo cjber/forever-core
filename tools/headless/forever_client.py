@@ -2733,6 +2733,48 @@ def proof_digests(checkout: Path) -> dict:
         raise ClientError(f"visual proof --digests printed no JSON: {completed.stdout.strip()[:200]}") from None
 
 
+EMBED_FIELD_LINE = re.compile(r"^\ufeff?[ \t]*##[ \t]*X-Forever-Core-Embed[ \t]*:", re.IGNORECASE | re.MULTILINE)
+
+
+@contextmanager
+def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
+    """The tree the installed proof build must match: the checkout, run through its embed step when it embeds core.
+
+    A consumer whose root TOC carries the embed field ships `embed(checkout, pin)`, not the checkout itself: the build
+    rewrites its TOC and Lua and adds `Libs/ForeverCore/`. So its tracked files, as they stand in the checkout
+    (uncommitted edits included, as the plain comparison reads them), are staged outside any git work tree and given
+    the same `embed_core` the build ran, at the same pin; that staged tree is compared. The proof's digests still come
+    from the checkout itself (`proof_digests`), so the recorded identity is the source the pull request carries, and the
+    pin it hashes binds the embedded bytes. A checkout without the field is compared as it is. The stage is removed on
+    every exit.
+    """
+    if not any(
+        EMBED_FIELD_LINE.search(toc.read_text(encoding="utf-8", errors="replace")) for toc in checkout.glob("*.toc")
+    ):
+        yield checkout
+        return
+    stage = BUILD_ROOT / f"{repo}-proof-source"
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(checkout), "ls-files", "-z"], check=True, capture_output=True, text=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise ClientError(f"cannot list {checkout}'s tracked files for the embedded proof: {detail.strip()}") from None
+    try:
+        for name in filter(None, listed.split("\0")):
+            source = checkout / name
+            if source.is_file():
+                target = stage / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        embed_core(stage)
+        yield stage
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 def proof_compare(checkout: Path, installed: Path) -> dict:
     """`visual_proof --compare`: the checkout's shipped runtime against the installed addon folder."""
     completed = visual_proof_run(checkout, "--compare", str(installed))
@@ -2837,7 +2879,8 @@ def proof(args: argparse.Namespace) -> int:
             # A queued proof can rebuild this shared folder as soon as the job lock is released.
             build = client_build(folders[0][1])
             try:
-                proof_compare(checkout, folders[0][1])
+                with proof_source(checkout, repo) as source:
+                    proof_compare(source, folders[0][1])
             except ClientError:
                 # A proof that does not describe the installed build must never be left where it could be committed.
                 (checkout / PROOF_FILE).unlink(missing_ok=True)

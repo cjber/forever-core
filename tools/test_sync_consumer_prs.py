@@ -1060,6 +1060,30 @@ class BundleTest(unittest.TestCase):
         self.bump()
         self.assertNotIn("required-dependencies", self.pkgmeta.read_text(encoding="utf-8"))
 
+    def test_an_embedded_consumer_without_package_as_moves_its_toc_field(self):
+        self.embedded()
+        self.pkgmeta.write_text(self.EMBEDDED_PKGMETA.replace("package-as: LegacyForever\n", ""), encoding="utf-8")
+        self.bump()
+        self.assertIn("## X-Forever-Core: v1.4.0\n", self.toc.read_text(encoding="utf-8"))
+        self.assertIn(sync.SYNC_BULLET, self.changelog.read_text())
+
+    def test_a_pkgmeta_yaml_hybrid_consumer_gets_no_required_relation(self):
+        self.toc.write_text(self.EMBEDDED_TOC, encoding="utf-8")
+        hybrid = self.PKGMETA.replace("\nrequired-dependencies:\n  - forevercore\n", "\n")
+        self.pkgmeta.unlink()
+        yaml = self.root / "pkgmeta.yaml"
+        yaml.write_text(hybrid, encoding="utf-8")
+        self.assertTrue(sync.embeds_core(self.root))
+        self.assertFalse(sync.ensure_core_dependency(self.root))
+        self.bump()
+        self.assertNotIn("required-dependencies", yaml.read_text(encoding="utf-8"))
+
+    def test_package_as_set_twice_stops_the_sync(self):
+        self.embedded()
+        self.pkgmeta.write_text("package-as: Wrong\n" + self.EMBEDDED_PKGMETA, encoding="utf-8")
+        with self.assertRaisesRegex(sync.SyncError, "set 2 times"):
+            sync.embeds_core(self.root)
+
     def test_dependency_transition_keeps_the_bundle_and_existing_relations(self):
         self.pkgmeta.write_text(self.PKGMETA.replace("  - forevercore", "  - another-addon"), encoding="utf-8")
         self.bump("v1.3.2")

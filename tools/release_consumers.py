@@ -23,8 +23,11 @@ minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `mai
 
 A consumer whose root TOC opts in to the embedded core (`## X-Forever-Core-Embed: 1`) at the commit it would release
 also waits until every addon in `EMBED_FLEET` has opted in on its own `main`, and the wait names the ones that have not.
-Until then another addon's zip still ships the shared top-level `ForeverCore` folder, so the embed releases go out
-together (docs/dependency-transition.md, "Packaging").
+Until then another addon's zip still ships the shared top-level `ForeverCore` folder. Once all have opted in, the embed
+releases still go out as one batch: none is dispatched until every fleet addon is either ready to release in this run
+or already has an embedded release published, so no addon ships its embed build alone while another waits on CI
+(docs/dependency-transition.md, "Packaging"). Each consumer's own `release.yml` runs `forever_tools.fleet` too, so a
+hand-run release or a pushed tag holds the same way.
 
 The consumers are discovered the same way `tools/sync_consumer_prs.py` discovers them, so a new addon needs no edit
 here. The run dispatches only, never tags or writes, so it is idempotent and safe on a 20-minute schedule: a consumer
@@ -47,12 +50,13 @@ import re
 import sys
 from dataclasses import dataclass
 
+# sync_consumer_prs puts core's vendored tooling on the import path.
+from forever_tools import fleet  # noqa: E402
 from sync_consumer_prs import (
     OWNER,
     SyncError,
     api_json,
     consumer_repos,
-    core_pin,
     discover_tooling_repos,
     gh,
     unreleased_notes,
@@ -64,21 +68,10 @@ RELEASE_WORKFLOW = "release.yml"
 CI_WORKFLOW = "ci.yml"
 # The commit status `forever_client.py smoke` posts, which `tools/smoke_queue.py` fills in ahead of a release.
 SMOKE_CONTEXT = "headless-smoke"
-# The published addons that embed ForeverCore under Libs/ForeverCore. While any of them still ships the shared top-level
-# ForeverCore folder, removing or downgrading that addon rolls core back under the others (cjber/forever-core#448), so
-# no opted-in addon releases until all of them have opted in, and then they release together.
-EMBED_FLEET = (
-    "adventure-guide-forever",
-    "commissions-forever",
-    "field-guide-forever",
-    "legacy-forever",
-    "macro-assist-forever",
-    "shortest-path-forever",
-    "skillup-forever",
-    "tweaks-forever",
-)
-# The packager's policy files, in the order it reads them.
-PKGMETA_FILES = (".pkgmeta", "pkgmeta.yaml")
+# The published addons that embed ForeverCore under Libs/ForeverCore (`forever_tools.fleet`, which each consumer's own
+# release also runs). While any of them still ships the shared top-level ForeverCore folder, removing or downgrading
+# that addon rolls core back under the others (cjber/forever-core#448).
+EMBED_FLEET = fleet.EMBED_FLEET
 HEADING = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\][^\r\n]*$", re.MULTILINE)
 
 
@@ -224,24 +217,27 @@ def read_changelog(repo: str, ref: str) -> str | None:
 
 
 def embeds_at(repo: str, ref: str) -> bool:
-    """Whether the consumer's root TOC at `ref` opts in to the embedded core, read as `core_pin.embeds` reads it.
+    """Whether the consumer's root TOC at `ref` opts in to the embedded core (`forever_tools.fleet.opted_in`).
 
-    The root TOC is the one the packager names after `package-as`. A consumer with no policy file packages nothing and
-    has not opted in; a policy or TOC that cannot be read is a SyncError, never a pass, so the gate fails closed.
+    The root TOC is the one the packager names, as every other reader resolves it. A policy or TOC that cannot be read
+    is a SyncError, never a pass, so the gate fails closed.
     """
-    for name in PKGMETA_FILES:
-        policy = read_file(repo, name, ref)
-        if policy is not None:
-            break
-    else:
-        return False
-    package = core_pin.pkgmeta_field(policy, "package-as")
-    if not package:
-        raise SyncError(f"{repo}'s {name} at {ref[:7]} sets no package-as, so its root TOC cannot be told")
-    toc = read_file(repo, f"{package}.toc", ref)
-    if toc is None:
-        raise SyncError(f"{repo} has no {package}.toc at {ref[:7]}")
-    return core_pin.embeds(toc)
+
+    def list_tocs():
+        listing = api_json(f"repos/{OWNER}/{repo}/contents?ref={ref}")
+        return [entry["name"] for entry in listing if entry.get("name", "").endswith(".toc")]
+
+    try:
+        return fleet.opted_in(lambda path: read_file(repo, path, ref), list_tocs)
+    except fleet.FleetUnreadable as error:
+        raise SyncError(f"{repo} at {ref[:7]}: {error}") from None
+
+
+def latest_release_embeds(repo: str) -> bool:
+    """Whether the consumer's latest published release already embeds core, so the batch does not wait for it."""
+    result = gh("api", f"repos/{OWNER}/{repo}/releases/latest", "--jq", ".tag_name", check=False)
+    tag = result.stdout.strip() if result.returncode == 0 else ""
+    return bool(tag) and embeds_at(repo, tag)
 
 
 def embed_hold(opted: dict[str, bool]) -> str | None:
@@ -372,10 +368,18 @@ def main() -> int:
 
     failed = 0
     forbidden = 0
-    fleet: dict[str, bool] | None = None
+    opted: dict[str, bool] | None = None
+    batch: str | None = None
+    plans: dict[str, Decision] = {}
+
+    def plan_of(name: str) -> Decision:
+        if name not in plans:
+            plans[name] = plan(name)
+        return plans[name]
+
     for repo in repos:
         try:
-            decision = plan(repo)
+            decision = plan_of(repo)
             if decision.failed:
                 failed += 1
                 print(f"{repo}: failed: {decision.reason}")
@@ -386,9 +390,24 @@ def main() -> int:
             if embeds_at(repo, decision.commit):
                 # Read once per run, and only when an opted-in release is otherwise ready; this addon counts as the
                 # commit it would release.
-                if fleet is None:
-                    fleet = {name: embeds_at(name, main_head(name)) for name in EMBED_FLEET}
-                hold = embed_hold({**fleet, repo: True})
+                if opted is None:
+                    opted = {name: embeds_at(name, main_head(name)) for name in EMBED_FLEET}
+                hold = embed_hold({**opted, repo: True})
+                if not hold:
+                    # Every addon has opted in: the batch goes only when every other one is ready now or already
+                    # shipped its embedded release.
+                    if batch is None:
+                        waiting = [
+                            name
+                            for name in EMBED_FLEET
+                            if name != repo and not plan_of(name).release and not latest_release_embeds(name)
+                        ]
+                        batch = (
+                            "the embedded ForeverCore releases go out together; not ready yet: " + ", ".join(waiting)
+                            if waiting
+                            else ""
+                        )
+                    hold = batch or None
                 if hold:
                     print(f"{repo}: waiting: {hold}")
                     continue

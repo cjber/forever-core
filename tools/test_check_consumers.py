@@ -271,9 +271,9 @@ class CheckConsumersTest(unittest.TestCase):
     def test_the_last_opt_in_line_decides_like_the_embed_step(self):
         self.write_embedded()
         toc = (self.repo / "LegacyForever.toc").read_text(encoding="utf-8")
-        # Opted out last: the embed step skips it, so the bridge rules apply and the embedded pkgmeta fails them.
+        # A last value other than 1 is neither embedded nor quietly opted out: the line has to say 1 or go.
         (self.repo / "LegacyForever.toc").write_text(toc + "## X-Forever-Core-Embed: 0\n", encoding="utf-8")
-        self.assertTrue(any("does not ship ForeverCore" in failure for failure in self.embedded_failures()))
+        self.assertTrue(any("exactly 1" in failure for failure in self.embedded_failures()))
         (self.repo / "LegacyForever.toc").write_text(
             toc.replace("## X-Forever-Core-Embed: 1\n", "## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n"),
             encoding="utf-8",
@@ -292,6 +292,55 @@ class CheckConsumersTest(unittest.TestCase):
         (self.repo / ".pkgmeta").write_text(text, encoding="utf-8")
         (self.repo / "LegacyForever_Vanilla.toc").write_text("## Interface: 11507\n", encoding="utf-8")
         self.assertTrue(any("required-dependencies" in failure for failure in self.embedded_failures()))
+
+    def test_package_as_set_twice_fails(self):
+        self.write_embedded()
+        text = (self.repo / ".pkgmeta").read_text(encoding="utf-8")
+        (self.repo / ".pkgmeta").write_text("package-as: Wrong\n" + text, encoding="utf-8")
+        self.assertTrue(any("set 2 times" in failure for failure in self.embedded_failures()))
+
+    def test_package_as_naming_a_missing_toc_fails(self):
+        self.write_embedded()
+        text = (self.repo / ".pkgmeta").read_text(encoding="utf-8").replace("LegacyForever", "Missing")
+        (self.repo / ".pkgmeta").write_text(text, encoding="utf-8")
+        self.assertTrue(any("Missing.toc, which does not exist" in failure for failure in self.embedded_failures()))
+
+    def test_an_opted_in_consumer_without_a_policy_fails(self):
+        self.write_embedded()
+        (self.repo / ".pkgmeta").unlink()
+        self.assertTrue(any("no .pkgmeta or pkgmeta.yaml" in failure for failure in self.embedded_failures()))
+
+    def test_a_second_root_toc_beside_an_embedded_one_fails(self):
+        self.write_embedded()
+        (self.repo / "LegacyForever_Mainline.toc").write_text("## Interface: 110000\n", encoding="utf-8")
+        self.assertTrue(any("LegacyForever_Mainline.toc" in failure for failure in self.embedded_failures()))
+
+    def test_an_external_nested_deeper_than_its_sibling_is_still_an_external(self):
+        self.write_embedded(
+            "externals:\n  Libs/Foo: https://example.org/foo.git\n    ForeverCore: https://github.com/cjber/forever-core.git\n"
+        )
+        self.assertTrue(any("second ForeverCore" in failure for failure in self.embedded_failures()))
+
+    def test_a_store_id_external_ships_core(self):
+        self.write_embedded("externals:\n  Libs/Core: https://wow.curseforge.com/projects/1796337\n")
+        self.assertTrue(any("second ForeverCore" in failure for failure in self.embedded_failures()))
+
+    def test_a_later_relation_for_core_replaces_the_embedded_one(self):
+        for relation in ("optional-dependencies", "tools-used"):
+            with self.subTest(relation=relation):
+                self.write_embedded(relation="")
+                text = (self.repo / ".pkgmeta").read_text(encoding="utf-8")
+                (self.repo / ".pkgmeta").write_text(
+                    text + f"\nembedded-libraries:\n  - forevercore\n{relation}:\n  - ForeverCore\n",
+                    encoding="utf-8",
+                )
+                self.assertTrue(any(f"under `{relation}:`" in failure for failure in self.embedded_failures()))
+
+    def test_an_opt_in_value_other_than_1_fails(self):
+        self.write_embedded()
+        toc = (self.repo / "LegacyForever.toc").read_text(encoding="utf-8")
+        (self.repo / "LegacyForever.toc").write_text(toc.replace("Embed: 1", "Embed: true"), encoding="utf-8")
+        self.assertTrue(any("exactly 1" in failure for failure in self.embedded_failures()))
 
     def test_a_tab_indented_pkgmeta_fails_as_the_packager_refuses_it(self):
         self.write_embedded("embedded-libraries:\n\t- forevercore\n", relation="")
@@ -559,6 +608,7 @@ class EmbedCheckTest(unittest.TestCase):
 
     PACKAGER = "      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0\n"
     EMBED = "      - name: Embed ForeverCore\n        run: python3 -m tools.forever_tools.embed\n"
+    HOLD = "      - name: Hold for the fleet\n        run: python3 -m tools.forever_tools.fleet\n"
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -574,7 +624,7 @@ class EmbedCheckTest(unittest.TestCase):
             f"## Interface: 16001\n## OptionalDeps: ForeverCore\n{field}\nMain.lua\n", encoding="utf-8"
         )
         for name, embedded in (("release.yml", release), ("ci.yml", ci)):
-            steps = (self.EMBED if embedded else "") + self.PACKAGER
+            steps = (self.EMBED if embedded else "") + (self.HOLD if name == "release.yml" else "") + self.PACKAGER
             (self.repo / ".github" / "workflows" / name).write_text(
                 f"jobs:\n  a:\n    steps:\n{steps}", encoding="utf-8"
             )
@@ -608,7 +658,8 @@ class EmbedCheckTest(unittest.TestCase):
     def test_an_embed_in_another_job_does_not_cover_the_packager(self):
         self.write()
         (self.repo / ".github" / "workflows" / "release.yml").write_text(
-            f"jobs:\n  test:\n    steps:\n{self.EMBED}\n  release:\n    steps:\n{self.PACKAGER}", encoding="utf-8"
+            f"jobs:\n  test:\n    steps:\n{self.EMBED}\n  release:\n    steps:\n{self.HOLD}{self.PACKAGER}",
+            encoding="utf-8",
         )
         failures = self.check()
         self.assertEqual(len(failures), 1)
@@ -617,10 +668,53 @@ class EmbedCheckTest(unittest.TestCase):
     def test_a_commented_embed_does_not_cover_the_packager(self):
         self.write()
         (self.repo / ".github" / "workflows" / "release.yml").write_text(
-            f"jobs:\n  a:\n    steps:\n      # run: python3 -m tools.forever_tools.embed\n{self.PACKAGER}",
+            f"jobs:\n  a:\n    steps:\n      # run: python3 -m tools.forever_tools.embed\n{self.HOLD}{self.PACKAGER}",
             encoding="utf-8",
         )
         self.assertEqual(len(self.check()), 1)
+
+    def release(self, text):
+        (self.repo / ".github" / "workflows" / "release.yml").write_text(text, encoding="utf-8")
+        return [failure for failure in self.check() if "release.yml" in failure]
+
+    def test_a_jobs_line_with_a_comment_still_splits_the_jobs(self):
+        self.write()
+        failures = self.release(
+            f"jobs: # build and release\n  test:\n    steps:\n{self.EMBED}\n"
+            f"  r:\n    steps:\n{self.HOLD}{self.PACKAGER}"
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("a packager step with no", failures[0])
+
+    def test_an_embed_named_only_in_a_shell_comment_embeds_nothing(self):
+        self.write()
+        step = "      - run: echo build # python3 -m tools.forever_tools.embed\n"
+        self.assertEqual(len(self.release(f"jobs:\n  a:\n    steps:\n{step}{self.HOLD}{self.PACKAGER}")), 1)
+
+    def test_an_embed_step_that_never_runs_embeds_nothing(self):
+        self.write()
+        step = "      - if: false\n        run: python3 -m tools.forever_tools.embed\n"
+        self.assertEqual(len(self.release(f"jobs:\n  a:\n    steps:\n{step}{self.HOLD}{self.PACKAGER}")), 1)
+
+    def test_a_block_run_embed_covers_the_packager(self):
+        self.write()
+        step = (
+            "      - name: Embed\n        run: |\n          echo start\n"
+            "          python3 -m tools.forever_tools.embed\n"
+        )
+        self.assertEqual(self.release(f"jobs:\n  a:\n    steps:\n{step}{self.HOLD}{self.PACKAGER}"), [])
+
+    def test_a_release_without_the_fleet_hold_fails(self):
+        self.write()
+        failures = self.release(f"jobs:\n  a:\n    steps:\n{self.EMBED}{self.PACKAGER}")
+        self.assertEqual(len(failures), 1)
+        self.assertIn("tools.forever_tools.fleet", failures[0])
+
+    def test_a_commented_out_packager_is_no_packager(self):
+        self.write()
+        failures = self.release(f"jobs:\n  a:\n    steps:\n{self.EMBED}      # - uses: BigWigsMods/packager@v2\n")
+        self.assertEqual(len(failures), 1)
+        self.assertIn("runs no BigWigs packager", failures[0])
 
 
 if __name__ == "__main__":

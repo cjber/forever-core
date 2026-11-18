@@ -88,7 +88,6 @@ from check_consumers import (
     block_entries,
     core_external,
     pkgmeta_blocks,
-    pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
 from forever_tools import core_pin
@@ -311,15 +310,22 @@ def released_core_tag(root: Path, tag: str) -> str | None:
     """
     repo = root.name
     fetch_tag(root, tag)
-    pkgmeta = file_at_tag(root, tag, consumer_path(repo, PKGMETA))
-    if pkgmeta is None:
-        return None
-    external = CORE_EXTERNAL.search(pkgmeta)
+    pkgmeta = next(
+        (text for name in POLICY_FILES if (text := file_at_tag(root, tag, consumer_path(repo, name))) is not None),
+        None,
+    )
+    external = CORE_EXTERNAL.search(pkgmeta or "")
     core = EXTERNAL_TAG.search(external.group(0)) if external else None
     if core:
         return core["tag"]
-    package = pkgmeta_field(pkgmeta, "package-as")
-    toc = file_at_tag(root, tag, consumer_path(repo, f"{package}.toc")) if package else None
+    folder = consumer_path(repo, "").rstrip("/")
+    listed = git(root, "ls-tree", "--name-only", tag, f"{folder}/" if folder else ".", check=False)
+    names = [Path(line).name for line in listed.stdout.splitlines()] if listed.returncode == 0 else []
+    try:
+        toc_name = core_pin.toc_name_for(core_pin.policy_package(pkgmeta or ""), names)
+    except ValueError as error:
+        raise SyncError(f"{repo}: {tag}: {error}") from None
+    toc = file_at_tag(root, tag, consumer_path(repo, toc_name)) if toc_name else None
     return toc_core_tag(toc) if toc is not None else None
 
 
@@ -357,9 +363,15 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
     return bumped
 
 
+# The packager reads `.pkgmeta`, else `pkgmeta.yaml`.
+POLICY_FILES = (PKGMETA, "pkgmeta.yaml")
+
+
 def pkgmeta_path(root: Path) -> Path:
-    """Where the consumer keeps its `.pkgmeta`, below its addon folder when that is not the repo root."""
-    return root / consumer_path(root.name, PKGMETA)
+    """The consumer's packager policy (`.pkgmeta`, else `pkgmeta.yaml`), below its addon folder when that is not the
+    repo root. A consumer with neither gets the `.pkgmeta` path, which does not exist."""
+    folder = root / consumer_path(root.name, ".")
+    return core_pin.policy_path(folder) or root / consumer_path(root.name, PKGMETA)
 
 
 def rewrite_core_external(root: Path, pin: str) -> bool:
@@ -407,12 +419,19 @@ def ensure_core_dependency(root: Path) -> bool:
 
 
 def root_toc_path(root: Path) -> Path | None:
-    """The consumer's root TOC, named after `package-as` as the packager names it, or None when that is unknown."""
+    """The consumer's root TOC as the packager names it (`core_pin.toc_name_for`), or None when it has none.
+
+    `package-as` names it; without one the shortest root TOC is the packager's choice. A policy that sets `package-as`
+    twice, or a flavor-only root, is a SyncError rather than a guess.
+    """
     path = pkgmeta_path(root)
-    if not path.is_file():
-        return None
-    package = pkgmeta_field(path.read_text(encoding="utf-8"), "package-as")
-    return root / consumer_path(root.name, f"{package}.toc") if package else None
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    folder = root / consumer_path(root.name, ".")
+    try:
+        name = core_pin.toc_name_for(core_pin.policy_package(text), [toc.name for toc in folder.glob("*.toc")])
+    except ValueError as error:
+        raise SyncError(f"{root.name}: {path.name}: {error}") from None
+    return root / consumer_path(root.name, name) if name else None
 
 
 def dependency_names(value: str) -> list[str]:

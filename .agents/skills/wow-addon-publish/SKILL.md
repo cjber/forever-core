@@ -43,8 +43,8 @@ updates acquire manager-owned core; a declared relation does not establish that 
 ```
 
 Never name ForeverCore in `## Dependencies`: the client would skip the addon when core is missing, and the player would
-see nothing. As an optional dependency it loads first when installed, and without it the addon still loads and its
-`Core/ForeverRequire.lua` shows one line naming the install.
+see nothing. As an optional dependency it loads first when installed. Without it, an addon that embeds core runs on its
+own copy and shows no install prompt.
 
 The addon embeds ForeverCore: its TOC also sets `## X-Forever-Core-Embed: 1`, and the embed step copies the release
 `tools/forever-core.txt` pins under `Libs/ForeverCore/` at package time. `.pkgmeta` lists core as an embedded library
@@ -59,14 +59,17 @@ Inspect the published CurseForge file relation: project 1796337 must be `embedde
 project page without installing it as required. Core's `docs/dependency-transition.md` is the source for this layout.
 
 Keep `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal; `tools/check_consumers.py` fails a mismatch, a
-top-level ForeverCore external or `move-folders` rule, a `required-dependencies` entry for core, a TOC that names core
-in `## Dependencies`, and one without `## OptionalDeps: ForeverCore`. The field is what
+top-level ForeverCore external or `move-folders` rule, a relation for core other than `embedded-libraries`, a TOC that
+names core in `## Dependencies`, one without `## OptionalDeps: ForeverCore`, and a release workflow without the fleet
+hold (`python3 -m tools.forever_tools.fleet`) before its packager; the addon's own `core_pin` gate checks the same
+packaging. The field is what
 a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's CurseForge page is
 `forevercore` (project 1796337; `forever-core` belongs to someone else). Do not
 copy its runtime files into the addon.
 
-Every core release re-releases every addon, because each carries its own copy and the newest copy installed is the
-one that runs. Core's sync PR moves `tools/forever-core.txt` and the TOC field. When the consumer has no pending `changes/*.md`, sync adds a release entry above the newest version: the
+Every core release re-releases every addon, because each carries its own copy. Without an installed standalone the
+highest embedded copy runs. An installed older standalone (1.15.0 and earlier) is adopted for the session instead,
+and the player sees a notice once per standalone version to update or disable it. Core's sync PR moves `tools/forever-core.txt` and the TOC field. When the consumer has no pending `changes/*.md`, sync adds a release entry above the newest version: the
 next patch, dated today, with the marker `<!-- forever-core-sync -->` and the plain bullet about the shared code. When
 fragments already exist, it adds `changes/forever-core-sync.md` under `### Changed`, so the core ships in the addon's
 own next release. `tools/release_consumers.py` then dispatches the addon's own

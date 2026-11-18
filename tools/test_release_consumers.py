@@ -512,6 +512,45 @@ class EmbedFleetTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA)
 
+    def run_batch(self, ready, released):
+        """Every addon opted in; `ready` names those whose own plan releases now, `released` those already embedded."""
+        out = io.StringIO()
+        waiting = release.Decision(reason="waiting for ci")
+        with (
+            mock.patch.dict(os.environ, {"GH_TOKEN": "token"}),
+            mock.patch.object(release, "consumer_repos", return_value=list(release.EMBED_FLEET)),
+            mock.patch.object(release, "discover_tooling_repos", return_value=set()),
+            mock.patch.object(release, "plan", side_effect=lambda repo: self.READY if repo in ready else waiting),
+            mock.patch.object(release, "main_head", side_effect=lambda repo: f"head-{repo}"),
+            mock.patch.object(release, "embeds_at", return_value=True),
+            mock.patch.object(release, "latest_release_embeds", side_effect=lambda repo: repo in released),
+            mock.patch.object(release, "dispatch") as dispatched,
+            contextlib.redirect_stdout(out),
+        ):
+            code = release.main()
+        return code, out.getvalue(), dispatched
+
+    def test_the_embed_releases_wait_for_every_addon_to_be_ready(self):
+        ready = set(release.EMBED_FLEET) - {"tweaks-forever"}
+        code, out, dispatched = self.run_batch(ready, set())
+        self.assertEqual(code, 0, out)
+        dispatched.assert_not_called()
+        self.assertIn("go out together; not ready yet: tweaks-forever", out)
+
+    def test_an_addon_already_released_embedded_does_not_hold_the_batch(self):
+        ready = set(release.EMBED_FLEET) - {"tweaks-forever"}
+        code, out, dispatched = self.run_batch(ready, {"tweaks-forever"})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(dispatched.call_count, len(ready))
+
+    def test_embeds_at_without_package_as_reads_the_listed_root_toc(self):
+        files = {".pkgmeta": "ignore:\n  - tools\n", "MacroAssistForever.toc": "## X-Forever-Core-Embed: 1\n"}
+        with (
+            mock.patch.object(release, "read_file", side_effect=lambda repo, path, ref: files.get(path)),
+            mock.patch.object(release, "api_json", return_value=[{"name": "MacroAssistForever.toc"}]),
+        ):
+            self.assertTrue(release.embeds_at("macro-assist-forever", SHA))
+
     def test_embed_hold_names_only_the_missing_addons(self):
         self.assertIsNone(release.embed_hold(dict.fromkeys(release.EMBED_FLEET, True)))
         self.assertTrue(release.embed_hold({}).endswith(", ".join(sorted(release.EMBED_FLEET))))
