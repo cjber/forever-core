@@ -65,6 +65,24 @@ class EmbedTest(unittest.TestCase):
         )
         subprocess.run(["luajit", "-e", script], check=True)
 
+    @unittest.skipUnless(shutil.which("git"), "git not on PATH")
+    def test_in_a_git_checkout_the_new_files_are_tracked_for_the_packager(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        self.run_embed()
+        others = subprocess.run(
+            ["git", "-C", str(self.root), "ls-files", "--others", "--directory"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertEqual(others, "")
+        tracked = subprocess.run(
+            ["git", "-C", str(self.root), "ls-files"], capture_output=True, text=True, check=True
+        ).stdout.split()
+        self.assertIn("Libs/ForeverCore/Core/Loader.lua", tracked)
+        self.assertIn(embed.HOST_RUN, tracked)
+
     def test_a_required_core_is_refused(self):
         self.toc("## Dependencies: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariables: DemoForeverDB\n")
         with self.assertRaisesRegex(embed.EmbedError, "OptionalDeps"):

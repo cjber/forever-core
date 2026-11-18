@@ -33,6 +33,7 @@ import json
 import os
 import posixpath
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
@@ -274,7 +275,24 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
     }
     manifest["wrapped"] = lua
     (root / PREFIX / "bundle.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    _stage(root, [PREFIX, HOST_BEGIN, HOST_RUN, READY])
     return {"folder": folder, "build": manifest["build"], "digest": manifest["source_digest"], "wrapped": len(lua)}
+
+
+def _stage(root: Path, names: list[str]) -> None:
+    """Stage the new files when `root` is a git checkout. The BigWigs packager adds every file `git ls-files --others`
+    lists to its ignore list, so an untracked `Libs/ForeverCore/` would be left out of the zip while the rewritten
+    TOC still loads it. A plain folder (`build-dev`'s git archive) has nothing to stage."""
+    inside = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True, check=False
+    )
+    if inside.returncode or inside.stdout.strip() != "true":
+        return
+    staged = subprocess.run(
+        ["git", "-C", str(root), "add", "--force", "--", *names], capture_output=True, text=True, check=False
+    )
+    if staged.returncode:
+        raise EmbedError(f"git add of the embedded files failed: {staged.stderr.strip()}")
 
 
 def pinned_version(root: Path) -> str:
