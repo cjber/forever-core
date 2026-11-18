@@ -121,3 +121,49 @@ scenario("a frame docked at the window's bottom right does not pull the column d
 	placed("docked frame, Cooking", pf, tab)
 	sim:expectNoErrors(ADDON)
 end)
+
+scenario("a foreign tab in the second slot is not covered by our second tab", function(sim)
+	local pf, tab = setup(sim, { profession(164, "Blacksmithing"), profession(185, "Cooking") })
+	local ns
+	for _, entry in ipairs(sim.loader.addons) do
+		if entry.name == ADDON then
+			ns = entry.ns
+		end
+	end
+	assert(
+		sim:runAs(
+			ADDON,
+			[[
+		local ns = ...
+		local page = CreateFrame("Frame", nil, _G.ProfessionsFrame)
+		page:SetAllPoints(_G.ProfessionsFrame)
+		ns.ColumnScenarioTab2 = ns.ProfessionTabs.Register("col2", {
+			icon = "Interface\\Icons\\INV_Scroll_03",
+			tooltip = "Col2",
+			page = page,
+		})
+	]],
+			ns
+		),
+		"registering the second tab failed"
+	)
+	local second = ns.ColumnScenarioTab2
+	assert(second, "the second tab registered")
+	local G = sim.G
+	local native = lastNative(pf)
+	-- Another addon anchors its tab to the window, one free slot under the client's last tab.
+	local foreign = G.CreateFrame("Button", nil, pf, "LargeSideTabButtonTemplate")
+	local slot = 2 + tab:GetHeight()
+	local offset = pf:GetTop() - native:GetBottom() + slot + 2
+	foreign:SetPoint("TOPLEFT", pf, "TOPRIGHT", native:GetLeft() - pf:GetRight(), -offset)
+	foreign:Show()
+	G.HideUIPanel(pf)
+	sim:advance(0.1)
+	sim:openProfessions(164)
+	sim:advance(0.2)
+	for label, ours in pairs({ first = tab, second = second }) do
+		local overlaps = ours:GetTop() > foreign:GetBottom() and ours:GetBottom() < foreign:GetTop()
+		assert(not overlaps, "our " .. label .. " tab covers the foreign tab")
+	end
+	sim:expectNoErrors(ADDON)
+end)

@@ -231,10 +231,11 @@ local function AnchoredToOurTabs(frame)
 end
 
 -- No addon publishes a registration API for the column just outside the window's right edge, so another addon's side
--- tab is found by where it sits: in the slot one of our tabs would take under the last tab of the column, level with
--- the client's own tabs. Each frame found there extends the column, and the walk goes on under it. A frame further
--- down, past a free slot, is not in the column: a panel docked at the window's bottom right, say, is not a tab to stack
--- under (skillup-forever#807). That geometric test holds for every addon drawing in the slot and names none of them.
+-- tab is found by where it sits: in the slots our tabs would take under the last tab of the column, level with the
+-- client's own tabs. Each frame found there extends the column, and the walk goes on under it. A frame further down,
+-- past the room our tabs need, is not in the column: a panel docked at the window's bottom right, say, is not a tab
+-- to stack under (skillup-forever#807). That geometric test holds for every addon drawing in the slot and names none
+-- of them.
 ---@param native ForeverProfessionNativeTab
 ---@return Frame?
 local function ColumnOccupant(native)
@@ -242,8 +243,14 @@ local function ColumnOccupant(native)
 	if type(nativeLeft) ~= "number" or type(nativeRight) ~= "number" or type(nativeBottom) ~= "number" then
 		return nil
 	end
-	-- The slot is the height of the tab we would place there, below the gap Anchor leaves between tabs.
-	local slot = TAB_GAP + (order[1] and order[1].tab:GetHeight() or native:GetHeight())
+	-- Our tabs need one slot each, a tab's height below the gap Anchor leaves between tabs.
+	local room = 0
+	for _, entry in ipairs(order) do
+		room = room + TAB_GAP + entry.tab:GetHeight()
+	end
+	if room == 0 then
+		room = TAB_GAP + native:GetHeight()
+	end
 	---@type { frame: Frame, top: number, bottom: number }[]
 	local candidates = {}
 	local seen = {}
@@ -288,7 +295,7 @@ local function ColumnOccupant(native)
 	while true do
 		local found, foundBottom
 		for _, candidate in ipairs(candidates) do
-			if candidate.top > bottom - slot and candidate.bottom < bottom then
+			if candidate.top > bottom - room and candidate.bottom < bottom then
 				if not foundBottom or candidate.bottom < foundBottom then
 					found, foundBottom = candidate.frame, candidate.bottom
 				end
