@@ -22,6 +22,8 @@ local installed = false
 
 -- Custom profession pages share the approved 850-unit layout, independent of native page history.
 local CUSTOM_WIDTH = 850
+-- The client stacks its side tabs 2 apart; ours keep the same gap.
+local TAB_GAP = 2
 local fixedWidth = CUSTOM_WIDTH
 local enforcingWidth = false
 
@@ -229,8 +231,11 @@ local function AnchoredToOurTabs(frame)
 end
 
 -- No addon publishes a registration API for the column just outside the window's right edge, so another addon's side
--- tab is found by where it sits: level with the client's own tabs across and below the last one the window shows. That
--- geometric test holds for every addon drawing in the slot and names none of them.
+-- tab is found by where it sits: in the slots our tabs would take under the last tab of the column, level with the
+-- client's own tabs. Each frame found there extends the column, and the walk goes on under it. A frame further down,
+-- past the room our tabs need, is not in the column: a panel docked at the window's bottom right, say, is not a tab
+-- to stack under (skillup-forever#807). That geometric test holds for every addon drawing in the slot and names none
+-- of them.
 ---@param native ForeverProfessionNativeTab
 ---@return Frame?
 local function ColumnOccupant(native)
@@ -238,9 +243,16 @@ local function ColumnOccupant(native)
 	if type(nativeLeft) ~= "number" or type(nativeRight) ~= "number" or type(nativeBottom) ~= "number" then
 		return nil
 	end
-	---@type Frame?
-	local lowest
-	local lowestBottom
+	-- Our tabs need one slot each, a tab's height below the gap Anchor leaves between tabs.
+	local room = 0
+	for _, entry in ipairs(order) do
+		room = room + TAB_GAP + entry.tab:GetHeight()
+	end
+	if room == 0 then
+		room = TAB_GAP + native:GetHeight()
+	end
+	---@type { frame: Frame, top: number, bottom: number }[]
+	local candidates = {}
 	local seen = {}
 	---@param frame Frame?
 	local function inspect(frame)
@@ -261,9 +273,7 @@ local function ColumnOccupant(native)
 		if AnchoredToOurTabs(frame) then
 			return
 		end
-		if not lowestBottom or bottom < lowestBottom then
-			lowest, lowestBottom = frame, bottom
-		end
+		candidates[#candidates + 1] = { frame = frame, top = top, bottom = bottom }
 	end
 	-- All The Things reparents the client's own tabs, so a native tab's parent is read now rather than assumed to be
 	-- the window itself.
@@ -279,7 +289,23 @@ local function ColumnOccupant(native)
 			inspect(frame)
 		end
 	end
-	return lowest
+	---@type Frame?
+	local last
+	local bottom = nativeBottom
+	while true do
+		local found, foundBottom
+		for _, candidate in ipairs(candidates) do
+			if candidate.top > bottom - room and candidate.bottom < bottom then
+				if not foundBottom or candidate.bottom < foundBottom then
+					found, foundBottom = candidate.frame, candidate.bottom
+				end
+			end
+		end
+		if not found then
+			return last
+		end
+		last, bottom = found, foundBottom
+	end
 end
 
 -- Place every registered tab under the client's side tabs and then under one another, in registration order. Core
@@ -296,7 +322,7 @@ Anchor = function()
 	for _, entry in ipairs(order) do
 		local tab = entry.tab
 		tab:ClearAllPoints()
-		tab:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, -2)
+		tab:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, -TAB_GAP)
 		above = tab
 	end
 end
