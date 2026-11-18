@@ -63,7 +63,7 @@ local function run(sim, trackerHost)
 end
 
 scenario("jitter795: the pinned column holds still while section heights swing", function(sim)
-	local column = run(sim, {})
+	local column = run(sim, { placement = "left" })
 	local G = sim.G
 	local tracker = G.ObjectiveTrackerFrame
 	assert(column:GetRight() == tracker:GetLeft(), "the pinned column's right edge is on the game tracker's left edge")

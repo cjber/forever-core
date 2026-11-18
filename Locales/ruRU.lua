@@ -51,6 +51,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"Текст выделен. Нажмите Ctrl+C (Cmd+C на Mac), чтобы скопировать его, затем вставьте в сообщение об ошибке."
 L["Title"] = "Заголовок"
 L["Tracker background"] = "Фон отслеживания"
+L["Tracker position"] = "Положение отслеживания"
+L["Under the quest tracker"] = "Под списком заданий"
+L["Left of the quest tracker"] = "Слева от списка заданий"
 L["Tracker"] = "Отслеживание"
 L["Click to %s"] = "Нажмите, чтобы %s"
 L["Right-click for options"] =

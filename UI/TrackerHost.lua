@@ -92,6 +92,7 @@ if type(existing) == "table" then
 	for _, name in ipairs({
 		"Attach",
 		"Debug",
+		"GetPlacement",
 		"GetScale",
 		"GetSettings",
 		"IsAttached",
@@ -101,6 +102,7 @@ if type(existing) == "table" then
 		"SavePosition",
 		"SetAttached",
 		"SetLocked",
+		"SetPlacement",
 		"SetScale",
 		"SetSectionMaxHeight",
 	}) do
@@ -172,6 +174,9 @@ local function Settings()
 	end
 	settings.backdropOpacity = Opacity(settings.backdropOpacity)
 	settings.x, settings.y = Coordinate(settings.x), Coordinate(settings.y)
+	if settings.placement ~= "left" then
+		settings.placement = "under"
+	end
 	return settings
 end
 -- The column's width in its own units: the 260 of the client's ObjectiveTrackerContainer header template, so a Forever
@@ -1005,10 +1010,64 @@ local function LayoutModules(width, available)
 	host:MarkDirty()
 	return hasSections
 end
--- The private column sits wherever the player dragged it. Until then its top right corner is pinned to the game's quest
--- tracker's top left corner, one anchor the engine keeps, so an Edit Mode move carries the column along, and the pin
--- holds whether that tracker is shown or hidden. Placement never reads the tracker or the column's own height. Returns
--- the column's width and top, both in its own units.
+-- Where the column goes under the game's quest tracker: its top left corner on the tracker's last visible line, read
+-- from the tracker's NineSlice, which Blizzard anchors under its last shown section, or the tracker's top while it is
+-- hidden with nothing to show. Returns that x and y in the host's own units, nil before the client has placed the
+-- tracker. These are reads only; nothing here writes to the tracker or hooks it.
+---@return number? x, number? top
+local function TrackerEdge()
+	local edge = ObjectiveTrackerFrame.NineSlice
+	local left = ObjectiveTrackerFrame:GetLeft()
+	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
+	local bottom, scale
+	if edge and ObjectiveTrackerFrame:IsShown() then
+		bottom, scale = edge:GetBottom(), edge:GetEffectiveScale()
+	else
+		bottom, scale = ObjectiveTrackerFrame:GetTop(), trackerScale
+	end
+	if not (left and bottom) then
+		return nil
+	end
+	local hostScale = host:GetEffectiveScale()
+	return left * trackerScale / hostScale, bottom * scale / hostScale
+end
+local AddPlacementMenu
+-- Whether the column now sits under the quest tracker rather than at its pin to the left.
+local under = false
+local function PinLeft()
+	host:ClearAllPoints()
+	host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+	under = false
+end
+-- Puts a column placed under the quest tracker on the tracker's last line when the whole column, as its last layout
+-- measured it, fits between that line and the screen's bottom, and at its pin to the left when it does not. It is one
+-- SetPoint on UIParent and never a layout, so a quest line changing only moves the column. The column holds protected
+-- quest item buttons, so it is placed at coordinates rather than anchored to the tracker: an anchor would bring the
+-- tracker's own frames into the column's protected chain, which the engine moves in combat. Combat runs none of this,
+-- and PLAYER_REGEN_ENABLED's layout puts the column where the tracker's line has gone meanwhile.
+---@param settings ForeverTrackerSettings
+local function FollowTracker(settings)
+	if settings.placement ~= "under" or (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
+		return
+	end
+	local x, top = TrackerEdge()
+	if not (x and top) or (host:GetHeight() or 0) > top then
+		PinLeft()
+		return
+	end
+	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	local screenWidth = UIParent:GetWidth() / scale
+	x = math.max(0, math.min(x, math.max(0, screenWidth - (host:GetWidth() or 0))))
+	host:ClearAllPoints()
+	host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, top)
+	under = true
+end
+-- The private column sits wherever the player dragged it. Until then it sits left of the game's quest tracker or under
+-- it. Left is its top right corner pinned to the tracker's top left corner, one anchor the engine keeps, so an Edit
+-- Mode move carries the column along, and the pin holds whether that tracker is shown or hidden. Under is placed after
+-- the layout, by FollowTracker, once the column's height is known. Either way the sections lay out in the room from the
+-- tracker's top to the screen's bottom, so the column's height never depends on where the quest list ends and moving
+-- between the two places is never a layout. Returns the column's width and top, both in its own units.
 ---@param settings ForeverTrackerSettings
 ---@return number width, number top
 local function Anchor(settings)
@@ -1020,14 +1079,21 @@ local function Anchor(settings)
 	if Drag.Dragging() then
 		return width, host:GetTop() or screenHeight
 	end
-	host:ClearAllPoints()
 	if settings.x and settings.y then
+		host:ClearAllPoints()
 		local x = math.max(0, math.min(settings.x / scale, math.max(0, screenWidth - width)))
 		local y = math.min(0, math.max(settings.y / scale, 24 - screenHeight))
 		host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+		under = false
 		return width, screenHeight + y
 	end
-	host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+	if settings.placement == "under" then
+		local top = ObjectiveTrackerFrame:GetTop()
+		if top then
+			return width, top * ObjectiveTrackerFrame:GetEffectiveScale() / host:GetEffectiveScale()
+		end
+	end
+	PinLeft()
 	return width, host:GetTop() or screenHeight
 end
 
@@ -1036,6 +1102,7 @@ local function Place(settings)
 	host:Show()
 	local width, top = Anchor(settings)
 	host:SetShown(LayoutModules(width, math.max(24, top)))
+	FollowTracker(settings)
 end
 
 local function Layout()
@@ -1116,6 +1183,30 @@ end
 function api.SetLocked(value)
 	Settings().locked = not not value
 end
+-- "under" (the default) or "left" of the game's quest tracker. A dragged column keeps its saved choice, which applies
+-- again once the player picks a place.
+---@return "under"|"left"
+function api.GetPlacement()
+	return Settings().placement
+end
+-- Picking a place releases a dragged position, so the column goes there. It only writes the setting, so it is safe in
+-- combat; the move waits for the next layout, which combat defers.
+---@param value "under"|"left"
+function api.SetPlacement(value)
+	if value ~= "under" and value ~= "left" then
+		return
+	end
+	local settings = Settings()
+	settings.placement = value
+	settings.x, settings.y = nil, nil
+	host:MarkDirty()
+end
+-- Whether the column follows a place, rather than a position the player dragged it to.
+---@return boolean
+local function Placed()
+	local settings = Settings()
+	return not (settings.x and settings.y)
+end
 -- Compatibility for consumers written when the column could attach to the quest tracker: it never does now, so these
 -- answer false, change nothing and never call back.
 function api.IsAttachedToQuestTracker()
@@ -1131,6 +1222,21 @@ function api.SavePosition(x, y)
 	local settings = Settings()
 	settings.x, settings.y = x, y
 	host:MarkDirty()
+end
+
+-- The Tracker position choice, the same in every section's menu. Neither radio is ticked while the column sits where it
+-- was dragged; picking one moves it there.
+---@param menu table
+AddPlacementMenu = function(menu)
+	local L = ns.L
+	local position = menu:CreateButton(L["Tracker position"])
+	for _, choice in ipairs({ { "under", L["Under the quest tracker"] }, { "left", L["Left of the quest tracker"] } }) do
+		position:CreateRadio(choice[2], function()
+			return Placed() and api.GetPlacement() == choice[1]
+		end, function()
+			api.SetPlacement(choice[1])
+		end)
+	end
 end
 
 -- Declarative menu slots keep every section and block shaped alike. The wrapper deliberately exposes only the small
@@ -1244,6 +1350,7 @@ local function NewTrackerMenu(root, module, target)
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
+		AddPlacementMenu(tracker)
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
 			return api.GetBackdropOpacity() == 0
@@ -1340,6 +1447,7 @@ local function AddHeaderMenu(module)
 					api.SetLocked(not api.IsLocked())
 				end)
 			end
+			AddPlacementMenu(root)
 			-- Every section's menu offers the same background choices, so no addon has to wire a settings row of its
 			-- own. The values are the saved fractions the host draws, and picking one only recolours the texture.
 			local backgroundMenu = root:CreateButton(background)
@@ -1487,6 +1595,23 @@ host:RegisterEvent("UI_SCALE_CHANGED")
 -- A pinned column hangs off the game's tracker, which Edit Mode places after login and the player can move, so each
 -- layout Edit Mode applies lays the column out again where it now has room. No hook touches the tracker's own methods.
 host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+-- Under the quest tracker, the column follows the tracker's last line with no event of the tracker's own and no hook.
+-- An addon-owned probe with no children spans from the screen's bottom left corner to that line, so the line moving, a
+-- quest added, completed or collapsed or the tracker moved, resizes the probe, and its OnSizeChanged places the column
+-- again. A frame of ours parented to the tracker hears it show and hide, which moves no line. Neither is protected,
+-- and FollowTracker only reads the tracker.
+local function Follow()
+	if ready then
+		FollowTracker(Settings())
+	end
+end
+local probe = CreateFrame("Frame", nil, UIParent)
+probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
+probe:SetScript("OnSizeChanged", Follow)
+local watcher = CreateFrame("Frame", nil, ObjectiveTrackerFrame)
+watcher:SetScript("OnShow", Follow)
+watcher:SetScript("OnHide", Follow)
 host:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_ENABLED" then
 		for module, attachment in pairs(pendingAttachments) do
@@ -1530,9 +1655,10 @@ function api.Debug()
 			frame:GetEffectiveScale()
 		)
 	end
-	return ("combat=%s shown=%s hostH=%.1f host[%s] g[%s] uiS%.2f"):format(
+	return ("combat=%s shown=%s under=%s hostH=%.1f host[%s] g[%s] uiS%.2f"):format(
 		tostring(InCombatLockdown()),
 		tostring(host:IsShown()),
+		tostring(under),
 		host:GetHeight() or -1,
 		point(host),
 		geometry(host),
