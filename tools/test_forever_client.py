@@ -1411,16 +1411,34 @@ class ForeverClientTest(unittest.TestCase):
                 fc.drag({}, **values)
         send.assert_not_called()
 
-    def test_a_drag_that_fails_releases_its_button(self):
+    def test_a_drag_that_fails_or_is_stopped_releases_its_button(self):
+        for error in (fc.subprocess.CalledProcessError(1, "xdotool"), KeyboardInterrupt()):
+            with (
+                self.subTest(error=type(error).__name__),
+                tempfile.TemporaryDirectory() as folder,
+                mock.patch.object(fc, "STATE_DIR", Path(folder)),
+                mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
+                mock.patch.object(fc, "send", side_effect=error),
+                mock.patch.object(fc.subprocess, "run") as run,
+                self.assertRaises(type(error)),
+            ):
+                fc.drag({"display": ":2"}, 10, 10, 20, 20, button="3")
+            self.assertEqual(run.call_args.args[0], ["xdotool", "mouseup", "3"])
+            self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":2")
+            self.assertFalse((Path(folder) / fc.HELD_BUTTON).exists())
+
+    def test_a_drag_killed_mid_chain_is_released_by_the_next_jobs_cleanup(self):
         with (
-            mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
-            mock.patch.object(fc, "send", side_effect=fc.subprocess.CalledProcessError(1, "xdotool")),
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.object(fc, "STATE_DIR", Path(folder)),
             mock.patch.object(fc.subprocess, "run") as run,
-            self.assertRaises(fc.subprocess.CalledProcessError),
         ):
-            fc.drag({"display": ":2"}, 10, 10, 20, 20, button="3")
-        self.assertEqual(run.call_args.args[0], ["xdotool", "mouseup", "3"])
-        self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":2")
+            (Path(folder) / fc.HELD_BUTTON).write_text("1")
+            fc.release_session_modifiers({"display": ":2"})
+            self.assertFalse((Path(folder) / fc.HELD_BUTTON).exists())
+            fc.release_session_modifiers({"display": ":2"})
+        mouseups = [call.args[0] for call in run.call_args_list if call.args[0][1] == "mouseup"]
+        self.assertEqual(mouseups, [["xdotool", "mouseup", "1"]], "released once, and only the recorded button")
 
     def test_drag_cli_reaches_the_drag_verb(self):
         state = live_state(ready=1.0)
@@ -3114,6 +3132,7 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc, "clear_eval_inbox"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": False}),
             mock.patch.object(fc, "x", side_effect=fake_x),
+            mock.patch.object(fc, "world_load_shot", return_value=False),
             mock.patch.object(fc.time, "sleep", side_effect=fake_sleep),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
@@ -3155,7 +3174,10 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc, "shot", side_effect=lambda *_a, **_k: events.append("shot")),
             mock.patch.object(fc, "drag", side_effect=lambda _state, *points: events.append(f"drag {points}")),
             mock.patch.object(fc, "mark_moved") as moved,
-            mock.patch.object(fc, "wait_for_flow_ready", side_effect=lambda *_a, **_k: events.append("ready")),
+            mock.patch.object(
+                fc, "wait_for_flow_ready", side_effect=lambda *_a, **_k: events.append("ready") or Path("2-ready.png")
+            ),
+            mock.patch.object(fc, "world_load_shot", return_value=False),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
             self.assertEqual(fc.run_flow({"ready": True}, "/sf", inputs), "run-1")
@@ -3175,6 +3197,29 @@ class ProofHelpersTest(unittest.TestCase):
         )
         moved.assert_not_called()
         self.assertIn("pressed INTERACTTARGET (Control_L+f9)", out.getvalue())
+
+    def test_a_flow_whose_inputs_reload_the_client_fails_instead_of_capturing_the_world(self):
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": Path("/sf"), "lines": 5, "token": "t"}
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.jpg")),
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "wait_for_flow_ready", return_value=Path("2-world.jpg")),
+            mock.patch.object(fc, "world_load_shot", return_value=True) as world_load,
+            mock.patch.object(fc, "flow_capture_failure", side_effect=lambda _s, _a, _t, error: error),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(fc.ClientError, "inputs reloaded the client"),
+        ):
+            fc.run_flow({"ready": True}, "/sf", [("type", "/reload")])
+        world_load.assert_called_once_with(Path("2-world.jpg"))
 
     def test_a_flow_without_keys_never_reads_the_bindings(self):
         with mock.patch.object(fc, "action_keys") as keys:
@@ -3647,6 +3692,7 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
             stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
             stack.enter_context(mock.patch.object(fc, "wait_for_flow_world", return_value=self.state / "world.jpg"))
+            stack.enter_context(mock.patch.object(fc, "world_load_shot", return_value=False))
             stack.enter_context(mock.patch.object(fc, "click", self.click))
             stack.enter_context(mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool))
             stack.enter_context(mock.patch.object(fc, "shot", side_effect=self.fake_shot))

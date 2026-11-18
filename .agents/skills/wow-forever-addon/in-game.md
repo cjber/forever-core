@@ -128,8 +128,9 @@ takes the job lock for its own invocation.
 
 `drag X1 Y1 X2 Y2 [--button 1|3] [--steps N] [--hold shift]` moves a draggable frame the way a player does: it presses
 the button at the first point, moves to the second in `N` steps (10 by default) and releases there, so the frame's
-OnDragStart and OnDragStop run. It aims like `click`, at UI from the last shot, and the whole drag is one input, so
-the release is sent even when the call is stopped mid-drag.
+OnDragStart and OnDragStop run. It aims like `click`, at UI from the last shot, and the whole drag is one input. A
+drag that fails or is stopped mid-drag releases its button, and one killed outright is released when the next job
+starts.
 
 Driving the client across several tool calls, use a lease:
 
@@ -265,7 +266,8 @@ A flow that needs real input names it with these options, each `NAME=...` where 
 
 A flow's inputs run in the order given, inside the proof's own job, once that flow's reload has written its world
 screenshot (the flow's snippet has run by then) and before its ready screenshot is waited for. Nothing reloads between
-them and the capture, so a window they open is still open for it. A `--flow-key` binding is looked up before the
+them and the capture, so a window they open is still open for it. An input that reloads the client (a typed
+`/reload`) would close that window, so the proof fails when the screenshot after the inputs is a world load's. A `--flow-key` binding is looked up before the
 flow's reload, because a lookup that is not cached reloads the client itself. An aimed input after the first aims at
 a fresh `shot`.
 

@@ -328,6 +328,8 @@ GAME_MODIFIERS = {"SHIFT": "Shift_L", "CTRL": "Control_L", "ALT": "Alt_L"}
 BINDINGS_CACHE = "bindings.json"
 # The hold in progress, its token and keys, so a job end or the hold's watchdog releases them after a killed verb.
 HELD_KEYS = "held-keys"
+# The mouse button a drag holds down, recorded so a drag killed mid-chain is released by the next job's cleanup.
+HELD_BUTTON = "held-button"
 HOLD_MAX = 10.0  # seconds one `key --for` may hold; longer walks go through `walkto`, which re-reads as it goes
 HOLD_SLICE = 0.25  # seconds between safety checks while keys are held
 HOLD_GRACE = 2.0  # seconds past a hold's end before its watchdog releases what is still down
@@ -704,16 +706,44 @@ def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.v
     return None
 
 
+def release_button(display: str | None) -> str | None:
+    """Send mouseup for the button a drag recorded as down, if any; the failure as text, or None. It never raises.
+
+    A drag stopped between its press and its release (a job timeout's SIGTERM kills its xdotool chain) leaves the
+    button down in the client, so every later pointer move would drag; the record says which button to let go.
+    """
+    record = STATE_DIR / HELD_BUTTON
+    try:
+        button = record.read_text().strip()
+    except OSError:
+        return None
+    if display and button in ("1", "3"):
+        try:
+            subprocess.run(
+                ["xdotool", "mouseup", button],
+                env={**os.environ, "DISPLAY": display},
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            return f"mouseup {button} on {display} failed: {error}"
+    record.unlink(missing_ok=True)
+    return None
+
+
 def release_session_modifiers(state: Mapping | None) -> None:
-    """Release shift, ctrl, alt and any key a verb was holding on the session's display, so no job inherits a key an
-    ended one held."""
+    """Release shift, ctrl, alt, any key a verb was holding and a dragged button on the session's display, so no job
+    inherits an input an ended one held."""
+    display = (state or {}).get("display")
     keys = list(MODIFIER_KEYS.values())
     keys += [key for key in held_record()[1] if key not in keys]
-    failure = release_modifiers((state or {}).get("display"), keys)
+    failure = release_modifiers(display, keys)
     if not failure:
         (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
-    if failure:
-        print(f"forever_client: {failure}", file=sys.stderr, flush=True)
+    for problem in (failure, release_button(display)):
+        if problem:
+            print(f"forever_client: {problem}", file=sys.stderr, flush=True)
 
 
 def held_record() -> tuple[str | None, list[str]]:
@@ -1604,8 +1634,9 @@ def drag(
 ) -> None:
     """Press a mouse button at one point, move to another in steps and release it there, as a player drags (#857).
 
-    It is the same screenshot-bound input as `click`. The whole drag is one xdotool chain, so the release is sent even
-    if this process is stopped mid-drag; a chain that fails is followed by a release of its button.
+    It is the same screenshot-bound input as `click`. The button is recorded as down for the length of the chain: a
+    chain that fails or is interrupted is followed by a release here, and one whose process is killed outright is
+    released by the next job's cleanup (`release_session_modifiers`).
     """
     if button not in ("1", "3"):
         raise ClientError("drag takes --button 1 (left) or 3 (right)")
@@ -1623,17 +1654,13 @@ def drag(
     for px, py in drag_points(x1, y1, x2, y2, steps):
         chain += ["sleep", DRAG_STEP_DELAY, "mousemove", str(px), str(py)]
     chain += ["sleep", DRAG_STEP_DELAY, "mouseup", button]
+    (STATE_DIR / HELD_BUTTON).write_text(button)
     try:
         send(state, *chain, hold=keys)
-    except (OSError, subprocess.SubprocessError):
-        subprocess.run(
-            ["xdotool", "mouseup", button],
-            env={**os.environ, "DISPLAY": state["display"]},
-            check=False,
-            capture_output=True,
-            timeout=10,
-        )
+    except BaseException:
+        release_button(state["display"])
         raise
+    (STATE_DIR / HELD_BUTTON).unlink(missing_ok=True)
 
 
 def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
@@ -3497,6 +3524,19 @@ def run_flow_inputs(state: Mapping, inputs: Sequence[FlowInput], combos: Sequenc
         sent = True
 
 
+def world_load_shot(path: Path, timeout: float = 5.0) -> bool:
+    """Whether a client screenshot is a world load's, by the marker !!DevSmoke draws only then; waits for a file the
+    client is still writing."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return has_headless_marker(path)
+        except ClientError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
 def run_flow(state: Mapping, action: str, inputs: Sequence[FlowInput] = ()) -> str:
     """Run one proof flow through !!DevSmoke: a slash command, or a Lua file.
 
@@ -3531,7 +3571,12 @@ def run_flow(state: Mapping, action: str, inputs: Sequence[FlowInput] = ()) -> s
             world = wait_for_flow_world(before, action, written["token"], state=state)
             print(f"sending {len(inputs)} input(s) after {world.name}", flush=True)
             run_flow_inputs(state, inputs, combos)
-        wait_for_flow_ready(before, action, written["token"], state=state)
+        ready = wait_for_flow_ready(before, action, written["token"], state=state)
+        if inputs and world_load_shot(ready):
+            raise ClientError(
+                f"the flow {action}: its inputs reloaded the client, which closes any window they opened, so the "
+                "screenshot after them is a fresh world load rather than the flow's ready one"
+            )
     except SafetyRefusal:
         raise
     except ClientError as error:
