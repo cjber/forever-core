@@ -56,3 +56,6 @@ no `OptionalDeps`. Skills for the suite (`wow-forever-addon`, `wow-addon-publish
 
 - `repo-standards`: the RS-* requirements every cjber and agent-labs-dev repo meets; its `audit.py` checks this repo.
 - `wow-forever-addon`: the WFA-* addon rules, which win where stricter.
+- `wow-mock-screenshots`: rendering README and store screenshots with `tools/wowmock`.
+- `wow-visual-audit`: gating a rendered scene's layout, or judging a screenshot by eye.
+- `foreverauras`: building or decoding a ForeverAuras (WeakAuras) import string.

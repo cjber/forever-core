@@ -12,7 +12,7 @@ Write our own code.
 ## Toolchain (already installed, CI-pinned versions)
 stylua 2.5.2, luacheck, luajit, lua-language-server 3.19.1, ruff 0.16.8, actionlint 1.7.12, zizmor 1.30.1,
 gitleaks 8.30.1, Pillow, bun. If a gate needs something else, install it; never skip a check.
-Screenshots need WOWMOCK (the wow-mock-screenshots library in /home/user/skills/wow-mock-screenshots) and
+Screenshots need WOWMOCK (`tools/wowmock` in this repo, with the `wow-mock-screenshots` skill) and
 wago.tools network access. If they truly cannot run here, say so in the PR and in your report; don't fake PNGs.
 
 ## Rules
