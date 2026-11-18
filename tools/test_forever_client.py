@@ -1369,6 +1369,78 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
         scroll.assert_called_once_with(state, 960, 540, -4, [])
 
+    def test_drag_presses_moves_in_steps_and_releases_at_a_freshly_seen_point(self):
+        with (
+            mock.patch.object(
+                fc, "mark", side_effect=lambda name: fc.time.time() + (0.1 if name == "last-shot" else 0)
+            ),
+            mock.patch.object(fc, "send") as send,
+        ):
+            fc.drag({}, 100, 200, 140, 180, steps=2)
+        pause = fc.DRAG_STEP_DELAY
+        send.assert_called_once_with(
+            {},
+            *("mousemove", "100", "200", "mousedown", "1"),
+            *("sleep", pause, "mousemove", "120", "190"),
+            *("sleep", pause, "mousemove", "140", "180"),
+            *("sleep", pause, "mouseup", "1"),
+            hold=[],
+        )
+
+    def test_drag_points_end_exactly_on_the_end_point(self):
+        self.assertEqual(fc.drag_points(0, 0, 10, -5, 3), [(3, -2), (7, -3), (10, -5)])
+        self.assertEqual(fc.drag_points(5, 5, 5, 5, 1), [(5, 5)])
+
+    def test_drag_needs_a_shot_points_in_the_frame_and_a_step_count(self):
+        with (
+            mock.patch.object(fc, "mark", return_value=0),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "take a `shot`"),
+        ):
+            fc.drag({}, 10, 10, 20, 20)
+        fresh = mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1)
+        for kwargs, message in (
+            ({"x2": fc.WIDTH}, "outside"),
+            ({"y1": -1}, "outside"),
+            ({"steps": 0}, "--steps"),
+            ({"steps": fc.DRAG_STEPS_MAX + 1}, "--steps"),
+            ({"button": "2"}, "--button"),
+        ):
+            values = {"x1": 10, "y1": 10, "x2": 20, "y2": 20, **kwargs}
+            with self.subTest(kwargs=kwargs), fresh, self.assertRaisesRegex(fc.ClientError, message):
+                fc.drag({}, **values)
+        send.assert_not_called()
+
+    def test_a_drag_that_fails_releases_its_button(self):
+        with (
+            mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
+            mock.patch.object(fc, "send", side_effect=fc.subprocess.CalledProcessError(1, "xdotool")),
+            mock.patch.object(fc.subprocess, "run") as run,
+            self.assertRaises(fc.subprocess.CalledProcessError),
+        ):
+            fc.drag({"display": ":2"}, 10, 10, 20, 20, button="3")
+        self.assertEqual(run.call_args.args[0], ["xdotool", "mouseup", "3"])
+        self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":2")
+
+    def test_drag_cli_reaches_the_drag_verb(self):
+        state = live_state(ready=1.0)
+        with (
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "drag") as drag,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["drag", "10", "20", "300", "400", "--steps", "5", "--hold", "shift"]), 0)
+            self.assertEqual(fc.main(["drag", "1", "2", "3", "4"]), 0)
+        self.assertEqual(
+            drag.call_args_list,
+            [
+                mock.call(state, 10, 20, 300, 400, "1", 5, ["shift"]),
+                mock.call(state, 1, 2, 3, 4, "1", fc.DRAG_STEPS, []),
+            ],
+        )
+
     def test_inputs_are_spaced_out(self):
         sleeps = []
         with mock.patch.object(fc, "x"), mock.patch.object(fc.time, "sleep", sleeps.append):
@@ -2908,26 +2980,77 @@ class ProofHelpersTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
                 fc.parse_flows([bad])
 
-    def test_parse_flow_clicks_takes_a_named_point_in_screenshot_coordinates(self):
-        flows = [("update notice", "/lf"), ("professions", "/sf")]
-        self.assertEqual(fc.parse_flow_clicks([], flows), {})
+    def test_parse_flow_inputs_keeps_each_flows_inputs_in_command_line_order(self):
+        flows = [("update notice", "/lf"), ("merchant", "/sf")]
+        self.assertEqual(fc.parse_flow_inputs([], flows), {})
         self.assertEqual(
-            fc.parse_flow_clicks(["professions=400, 300", "update notice = 12,34"], flows),
-            {"professions": (400, 300), "update notice": (12, 34)},
+            fc.parse_flow_inputs(
+                [
+                    ("type", "merchant=/tar Thurman Mullby"),
+                    ("click", "update notice = 12,34"),
+                    ("key", "merchant=INTERACTTARGET"),
+                    ("drag", "merchant=10, 20,30,40"),
+                ],
+                flows,
+            ),
+            {
+                "merchant": [
+                    ("type", "/tar Thurman Mullby"),
+                    ("key", "INTERACTTARGET"),
+                    ("drag", (10, 20, 30, 40)),
+                ],
+                "update notice": [("click", (12, 34))],
+            },
         )
 
-    def test_parse_flow_clicks_refuses_a_name_no_flow_has(self):
+    def test_parse_flow_inputs_refuses_a_name_no_flow_has(self):
         flows = [("update notice", "/lf")]
-        with self.assertRaisesRegex(fc.ClientError, r"no --flow of that name \(update notice\)"):
-            fc.parse_flow_clicks(["profession=400,300"], flows)
+        for kind in fc.FLOW_INPUT_FORMS:
+            with self.subTest(kind=kind), self.assertRaisesRegex(fc.ClientError, r"no --flow of that name \(update"):
+                fc.parse_flow_inputs([(kind, "profession=1,2")], flows)
 
-    def test_parse_flow_clicks_refuses_a_point_that_is_not_two_integers(self):
+    def test_parse_flow_inputs_refuses_malformed_points(self):
         flows = [("professions", "/sf"), ("update notice", "/lf")]
-        for bad in ("professions", "professions=", "=1,2", "professions=1", "professions=1,2,3", "professions=a,b"):
+        for kind, bad in (
+            ("click", "professions"),
+            ("click", "professions="),
+            ("click", "=1,2"),
+            ("click", "professions=1"),
+            ("click", "professions=1,2,3"),
+            ("click", "professions=a,b"),
+            ("drag", "professions=1,2"),
+            ("drag", "professions=1,2,3,4,5"),
+            ("drag", "professions=1,2,x,4"),
+        ):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
-                fc.parse_flow_clicks([bad], flows)
+                fc.parse_flow_inputs([(kind, bad)], flows)
         with self.assertRaisesRegex(fc.ClientError, "outside the"):
-            fc.parse_flow_clicks([f"professions={fc.WIDTH},10"], flows)
+            fc.parse_flow_inputs([("click", f"professions={fc.WIDTH},10")], flows)
+        with self.assertRaisesRegex(fc.ClientError, r"--flow-drag professions: \(10, 1080\) is outside the"):
+            fc.parse_flow_inputs([("drag", f"professions=1,1,10,{fc.HEIGHT}")], flows)
+
+    def test_parse_flow_inputs_takes_only_a_bound_action_and_one_slash_line(self):
+        flows = [("merchant", "/sf")]
+        with self.assertRaisesRegex(fc.ClientError, "MOVEUP is not an action; it takes MOVEFORWARD"):
+            fc.parse_flow_inputs([("key", "merchant=MOVEUP")], flows)
+        with mock.patch.object(fc, "one_line_slash", wraps=fc.one_line_slash):
+            for bad in ("merchant=hello", "merchant=/tar a\n/reload"):
+                with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
+                    fc.parse_flow_inputs([("type", bad)], flows)
+
+    def test_flow_record_lists_its_inputs_in_order(self):
+        self.assertEqual(
+            fc.flow_record(
+                "merchant", "/sf", [("type", "/tar Bob"), ("key", "INTERACTTARGET"), ("drag", (1, 2, 3, 4))]
+            ),
+            {
+                "name": "merchant",
+                "steps": ["/sf"],
+                "inputs": [{"type": "/tar Bob"}, {"key": "INTERACTTARGET"}, {"drag": [1, 2, 3, 4]}],
+                "result": "pass",
+            },
+        )
+        self.assertEqual(fc.flow_record("notice", "/lf"), {"name": "notice", "steps": ["/lf"], "result": "pass"})
 
     def test_flow_slug_is_a_file_name(self):
         self.assertEqual(fc.flow_slug("Update notice!"), "update-notice")
@@ -2994,9 +3117,69 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc.time, "sleep", side_effect=fake_sleep),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            self.assertEqual(fc.run_flow({"ready": True}, "/sf", (400, 300)), "run-1")
+            self.assertEqual(fc.run_flow({"ready": True}, "/sf", [("click", (400, 300))]), "run-1")
         self.assertEqual(events, ["reload", "click"])
-        self.assertIn("clicked 400,300 after 1-world.png", out.getvalue())
+        self.assertIn("sending 1 input(s) after 1-world.png", out.getvalue())
+        self.assertIn("clicked 400,300", out.getvalue())
+
+    def test_a_flows_keys_resolve_before_its_reload_and_its_inputs_run_in_order_before_ready(self):
+        events = []
+        tool = mock.Mock()
+        tool.EvalError = Exception
+
+        def written(*_args, **_kwargs):
+            events.append("write")
+            return {"chunk": Path("/x/Eval.lua"), "snippet": Path("/sf"), "lines": 5, "token": "run-1"}
+
+        def bindings(_state, actions):
+            # A lookup that is not cached reloads through an eval of its own: it must finish before the flow's snippet.
+            events.append(f"bindings {' '.join(actions)}")
+            return [["Control_L", "f9"]]
+
+        tool.write_slash.side_effect = written
+        inputs = [("type", "/tar Thurman Mullby"), ("key", "INTERACTTARGET"), ("drag", (10, 20, 30, 40))]
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "action_keys", side_effect=bindings),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: events.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(
+                fc, "wait_for_flow_world", side_effect=lambda *_a, **_k: events.append("world") or Path("1-world.png")
+            ),
+            mock.patch.object(fc, "slash", side_effect=lambda _state, command: events.append(f"type {command}")),
+            mock.patch.object(fc, "send", side_effect=lambda _state, *args: events.append(" ".join(args))),
+            mock.patch.object(fc, "shot", side_effect=lambda *_a, **_k: events.append("shot")),
+            mock.patch.object(fc, "drag", side_effect=lambda _state, *points: events.append(f"drag {points}")),
+            mock.patch.object(fc, "mark_moved") as moved,
+            mock.patch.object(fc, "wait_for_flow_ready", side_effect=lambda *_a, **_k: events.append("ready")),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(fc.run_flow({"ready": True}, "/sf", inputs), "run-1")
+        self.assertEqual(
+            events,
+            [
+                "bindings INTERACTTARGET",
+                "write",
+                "reload",
+                "world",
+                "type /tar Thurman Mullby",
+                "key Control_L+f9",
+                "shot",
+                "drag (10, 20, 30, 40)",
+                "ready",
+            ],
+        )
+        moved.assert_not_called()
+        self.assertIn("pressed INTERACTTARGET (Control_L+f9)", out.getvalue())
+
+    def test_a_flow_without_keys_never_reads_the_bindings(self):
+        with mock.patch.object(fc, "action_keys") as keys:
+            self.assertEqual(fc.flow_key_combos("state", [("click", (1, 2)), ("type", "/tar Bob")]), [])
+        keys.assert_not_called()
 
     def test_a_flow_without_a_click_never_clicks_nor_waits_for_the_world_frame(self):
         tool = mock.Mock()
@@ -3404,7 +3587,7 @@ class ProofTest(unittest.TestCase):
             "ref": "main",
             "checkout": self.checkout,
             "flow": ["update notice=/lf"],
-            "flow_click": [],
+            "flow_inputs": [],
             "timeout": 600,
             "manual_launcher": False,
         }
@@ -3568,26 +3751,46 @@ class ProofTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def test_a_proof_clicks_the_point_its_flow_names_and_records_it(self):
-        code, printed, _err = self.run_proof(flow_click=["update notice=400, 300"])
+        code, printed, _err = self.run_proof(flow_inputs=[("click", "update notice=400, 300")])
         self.assertEqual(code, 0)
         self.click.assert_called_once_with(mock.ANY, 400, 300, "1")
         self.assertIn("clicked 400,300", printed)
         proof = json.loads((self.checkout / ".visual-proof.json").read_text())
         self.assertEqual(
             proof["flows"],
-            [{"name": "update notice", "steps": ["/lf"], "click": [400, 300], "result": "pass"}],
+            [{"name": "update notice", "steps": ["/lf"], "inputs": [{"click": [400, 300]}], "result": "pass"}],
         )
+
+    def test_a_proof_types_and_presses_a_bound_key_after_its_flows_reload(self):
+        reloads_at_press = []
+        with (
+            mock.patch.object(fc, "action_keys", return_value=[["f9"]]) as keys,
+            mock.patch.object(
+                fc, "send", side_effect=lambda *_a, **_k: reloads_at_press.append(self.reload.call_count)
+            ),
+        ):
+            code, printed, _err = self.run_proof(
+                flow_inputs=[("type", "update notice=/tar Thurman Mullby"), ("key", "update notice=INTERACTTARGET")]
+            )
+        self.assertEqual(code, 0)
+        keys.assert_called_once_with(mock.ANY, ["INTERACTTARGET"])
+        self.assertEqual(self.slashes, ["/tar Thurman Mullby"])
+        self.assertEqual(reloads_at_press, [2], "after the proof's reload and the flow's, before the eval's")
+        self.assertEqual(self.reload.call_count, 3)
+        self.assertIn("pressed INTERACTTARGET (f9)", printed)
+        proof = json.loads((self.checkout / ".visual-proof.json").read_text())
+        self.assertEqual(proof["flows"][0]["inputs"], [{"type": "/tar Thurman Mullby"}, {"key": "INTERACTTARGET"}])
 
     def test_a_proof_without_a_flow_click_clicks_nothing(self):
         code, _printed, _err = self.run_proof()
         self.assertEqual(code, 0)
         self.click.assert_not_called()
         proof = json.loads((self.checkout / ".visual-proof.json").read_text())
-        self.assertNotIn("click", proof["flows"][0])
+        self.assertNotIn("inputs", proof["flows"][0])
 
     def test_a_flow_click_that_names_no_flow_is_refused_before_the_build(self):
         with self.assertRaisesRegex(fc.ClientError, "no --flow of that name"):
-            self.run_proof(flow_click=["profession=400,300"])
+            self.run_proof(flow_inputs=[("click", "profession=400,300")])
         self.build_dev.assert_not_called()
 
     def test_a_proof_compare_that_fails_removes_a_stale_proof(self):
@@ -3762,6 +3965,8 @@ class ProofTest(unittest.TestCase):
                     "update notice=/lf",
                     "--flow-click",
                     "update notice=400,300",
+                    "--flow-key",
+                    "update notice=JUMP",
                     "--manual-launcher",
                 ]
             )
@@ -3770,7 +3975,7 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(options.repo, "legacy-forever")
         self.assertEqual(options.checkout, self.checkout)
         self.assertEqual(options.flow, ["update notice=/lf"])
-        self.assertEqual(options.flow_click, ["update notice=400,300"])
+        self.assertEqual(options.flow_inputs, [("click", "update notice=400,300"), ("key", "update notice=JUMP")])
         self.assertTrue(options.manual_launcher)
 
 
@@ -4471,6 +4676,18 @@ class HyprlandJobTest(unittest.TestCase):
             fc.x({"display": ":2"}, "mousemove", "10", "20")
         self.assertEqual(run.call_args_list[0].args[0], ["xdotool", "mousemove", "1290", "20", "click", "1"])
         self.assertEqual(run.call_args_list[1].args[0], ["xdotool", "mousemove", "10", "20"])
+
+    def test_every_move_in_a_pointer_chain_gets_the_nested_offset(self):
+        with mock.patch.object(fc.subprocess, "run") as run:
+            fc.x(
+                {"display": ":3", "origin": [1280, 40]},
+                *("mousemove", "10", "20", "mousedown", "1", "sleep", "0.03", "mousemove", "30", "40", "mouseup", "1"),
+            )
+        self.assertEqual(
+            run.call_args.args[0],
+            ["xdotool", "mousemove", "1290", "60", "mousedown", "1", "sleep", "0.03", "mousemove", "1310", "80"]
+            + ["mouseup", "1"],
+        )
 
     def nested(self, *, start_error=None):
         module = mock.Mock()
