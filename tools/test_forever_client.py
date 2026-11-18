@@ -5088,6 +5088,101 @@ class ModifierHoldTest(unittest.TestCase):
         self.assertEqual(self.sent, [self.RELEASE_ALL, ["end_client"]])
 
 
+class ActionKeyTest(unittest.TestCase):
+    """`key --action` presses the key the running client binds to a game action, never a fixed key (#820)."""
+
+    # The headless account's own bindings-cache.wtf: forward moved to S, Up unbound, interact on F9.
+    CACHE = "bind S MOVEFORWARD\nbind BUTTON3 STARTAUTORUN\nbind UP NONE\nbind F9 INTERACTTARGET\nbind SPACE JUMP\n"
+
+    def setUp(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.client, self.state = root / "client", root / "state"
+        self.state.mkdir()
+        config = root / "env.json"
+        config.write_text(json.dumps({"character": {"name": "Barry", "guid": "Player-1-0001"}}))
+        self.account = self.client / "WTF/Account/122785280#1"
+        (self.account / "Realm/Barry").mkdir(parents=True)
+        (self.account / "SavedVariables").mkdir()
+        (self.client / "WTF/Account/OTHER/Realm/Someone").mkdir(parents=True)
+        for name, value in (("CLIENT", self.client), ("STATE_DIR", self.state), ("CONFIG", config)):
+            self.enterContext(mock.patch.object(fc, name, value))
+        self.enterContext(mock.patch.object(fc, "INPUT_GAP", 0))
+        self.enterContext(mock.patch.object(fc, "require_safe"))
+        self.enterContext(mock.patch.object(fc, "release_modifiers", REAL_RELEASE_MODIFIERS))
+        self.sent: list[list[str]] = []
+        self.enterContext(
+            mock.patch.object(
+                fc.subprocess,
+                "run",
+                side_effect=lambda argv, **_kw: self.sent.append(list(argv)) or mock.Mock(returncode=0),
+            )
+        )
+        self.reload = self.enterContext(mock.patch.object(fc, "reload"))
+
+    def record(self, keys: str) -> None:
+        (self.account / "SavedVariables/!!DevSmoke.lua").write_text(
+            'DevSmokeDB = {\n["bindings"] = {\n["keys"] = {\n' + keys + '},\n["recorded"] = 1,\n},\n}\n'
+        )
+
+    def test_a_rebound_action_resolves_to_the_clients_own_key(self):
+        self.record('["MOVEFORWARD"] = {\n"S",\n},\n["MOVEBACKWARD"] = {\n"DOWN",\n},\n')
+        with mock.patch.object(fc.time, "sleep"):
+            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 2)
+        self.assertEqual(self.sent, [["xdotool", "keydown", "s"], ["xdotool", "keyup", "s"]], "S, never W")
+        self.sent.clear()
+        fc.press_actions({"display": ":9", "ready": True}, ["MOVEBACKWARD"])
+        self.assertEqual(self.sent, [["xdotool", "key", "Down"]])
+        self.reload.assert_not_called()
+
+    def test_a_rebinding_replaces_the_cached_keys(self):
+        self.record('["MOVEFORWARD"] = {\n"S",\n},\n')
+        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD"]), [["s"]])
+        path = self.account / "SavedVariables/!!DevSmoke.lua"
+        self.record('["MOVEFORWARD"] = {\n"W",\n},\n')
+        os.utime(path, ns=(path.stat().st_mtime_ns + 10**9, path.stat().st_mtime_ns + 10**9))
+        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD"]), [["w"]])
+
+    def test_with_no_record_one_reload_writes_it(self):
+        self.reload.side_effect = lambda _state: self.record('["JUMP"] = {\n"SPACE",\n},\n')
+        self.assertEqual(fc.action_keys({"ready": True}, ["JUMP"]), [["space"]])
+        self.reload.assert_called_once()
+
+    def test_without_devsmoke_the_bindings_file_changes_the_defaults(self):
+        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+        state = {"ready": True, "display": ":9"}
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
+        self.reload.assert_called_once()
+        keys = fc.action_keys(
+            {"ready": True}, ["MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "INTERACTTARGET", "TARGETNEARESTENEMY"]
+        )
+        self.assertEqual(keys, [["s"], ["Down"], ["a"], ["F9"], ["Tab"]])
+
+    def test_an_action_bound_only_to_a_mouse_button_is_refused(self):
+        self.record('["JUMP"] = {\n"BUTTON4",\n},\n')
+        with self.assertRaisesRegex(fc.ClientError, "JUMP is bound to BUTTON4"):
+            fc.press_actions({"display": ":9", "ready": True}, ["JUMP"])
+        self.assertEqual(self.sent, [])
+
+    def test_an_unbound_action_is_refused_by_name(self):
+        self.record('["INTERACTTARGET"] = {\n},\n')
+        with self.assertRaisesRegex(fc.ClientError, "INTERACTTARGET is bound to no key"):
+            fc.press_actions({"display": ":9", "ready": True}, ["INTERACTTARGET"])
+
+    def test_game_key_names_become_xdotool_keysyms(self):
+        for binding, keysyms in (
+            ("S", ["s"]),
+            ("F9", ["F9"]),
+            ("CTRL-SHIFT-B", ["Control_L", "Shift_L", "b"]),
+            ("SHIFT--", ["Shift_L", "minus"]),
+            ("NUMPAD5", ["KP_5"]),
+            ("BUTTON3", None),
+            ("META-X", None),
+        ):
+            with self.subTest(binding=binding):
+                self.assertEqual(fc.game_keysyms(binding), keysyms)
+
+
 class NestedHyprlandTest(unittest.TestCase):
     def setUp(self):
         self.enterContext(mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}))

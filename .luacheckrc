@@ -122,6 +122,7 @@ files["tools/devsmoke/"] = {
 		"time",
 		"NUM_CHAT_WINDOWS",
 		"GetChatWindowInfo",
+		"GetBindingKey",
 		"FCF_OpenNewWindow",
 		"FCF_SelectDockFrame",
 		"BugGrabber",

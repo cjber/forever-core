@@ -23,7 +23,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py click X Y --hold shift [--hold ctrl]
                                           # hold shift, ctrl or alt through a click, hover or scroll; released after
     forever_client.py key Escape          # any key xdotool names
-    forever_client.py key --for 2 w       # hold keys down together: walk with w, turn with a or d, for 2 s
+    forever_client.py key --action MOVEFORWARD --for 2
+                                          # hold the key this client binds to a game action: walk, turn, strafe
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
@@ -254,6 +255,66 @@ RELOAD_WAIT = 120  # how long a /reload's loading screen may hide the strip, the
 MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
 # Key names people write that xdotool spells another way: the game binds autorun to Num Lock.
 KEY_ALIASES = {"NumLock": "Num_Lock"}
+# The game actions `key --action` presses. Each resolves to the key the running client binds to it, never a fixed key:
+# an account can rebind any of them (the headless account moves forward on S, so W does nothing there) (#820).
+ACTIONS = (
+    "MOVEFORWARD",
+    "MOVEBACKWARD",
+    "TURNLEFT",
+    "TURNRIGHT",
+    "STRAFELEFT",
+    "STRAFERIGHT",
+    "JUMP",
+    "INTERACTTARGET",
+    "TARGETNEARESTENEMY",
+)
+# The client's own default keys for those actions, as its Key Bindings "Reset to Default" sets them. The defaults live
+# in the client binary, not in its Bindings XML, so this is the one copy; it is read only when the running client's
+# answer is not on disk, and bindings-cache.wtf records every change from it.
+DEFAULT_BINDINGS: dict[str, tuple[str, ...]] = {
+    "MOVEFORWARD": ("W", "UP"),
+    "MOVEBACKWARD": ("S", "DOWN"),
+    "TURNLEFT": ("A", "LEFT"),
+    "TURNRIGHT": ("D", "RIGHT"),
+    "STRAFELEFT": ("Q",),
+    "STRAFERIGHT": ("E",),
+    "JUMP": ("SPACE",),
+    "INTERACTTARGET": (),
+    "TARGETNEARESTENEMY": ("TAB",),
+}
+# The game's names for keys xdotool spells another way; a single letter or digit is lowercased, F-keys stay as they are.
+GAME_KEYSYMS = {
+    "SPACE": "space",
+    "TAB": "Tab",
+    "UP": "Up",
+    "DOWN": "Down",
+    "LEFT": "Left",
+    "RIGHT": "Right",
+    "ENTER": "Return",
+    "ESCAPE": "Escape",
+    "BACKSPACE": "BackSpace",
+    "DELETE": "Delete",
+    "INSERT": "Insert",
+    "HOME": "Home",
+    "END": "End",
+    "PAGEUP": "Prior",
+    "PAGEDOWN": "Next",
+    "NUMLOCK": "Num_Lock",
+    "-": "minus",
+    "=": "equal",
+    "`": "grave",
+    "[": "bracketleft",
+    "]": "bracketright",
+    ";": "semicolon",
+    "'": "apostrophe",
+    ",": "comma",
+    ".": "period",
+    "/": "slash",
+    "\\": "backslash",
+}
+GAME_MODIFIERS = {"SHIFT": "Shift_L", "CTRL": "Control_L", "ALT": "Alt_L"}
+# The resolved keys, per session and per SavedVariables write, so one walk does not re-read the client each step.
+BINDINGS_CACHE = "bindings.json"
 # Keys a verb holds down right now, one per line, so a job end after a killed verb still releases them.
 HELD_KEYS = "held-keys"
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
@@ -845,6 +906,166 @@ def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = (
         button,
         hold=keys,
     )
+
+
+def game_keysyms(binding: str) -> list[str] | None:
+    """The xdotool keysyms a game binding presses, modifiers first, or None for a mouse button or a key it cannot name.
+
+    The game writes a binding as its modifiers and key joined by `-`, as `CTRL-SHIFT-B`; the key `-` itself is the
+    last part, so `SHIFT--` is Shift and minus.
+    """
+    parts = binding.split("-")
+    if binding.endswith("-"):
+        parts = [*parts[:-2], "-"]
+    *modifiers, key = parts
+    if not key or any(modifier not in GAME_MODIFIERS for modifier in modifiers):
+        return None
+    if key.startswith("BUTTON") or key.startswith("MOUSEWHEEL"):
+        return None
+    if re.fullmatch(r"F\d{1,2}", key):
+        keysym = key
+    elif len(key) == 1 and key.isalnum():
+        keysym = key.lower()
+    elif key.startswith("NUMPAD") and key[6:].isdigit():
+        keysym = f"KP_{key[6:]}"
+    else:
+        keysym = GAME_KEYSYMS.get(key)
+    if keysym is None:
+        return None
+    return [GAME_MODIFIERS[modifier] for modifier in modifiers] + [keysym]
+
+
+def bindings_from_cache_file(text: str) -> dict[str, list[str]]:
+    """Each action's keys from the client's defaults changed by a bindings-cache.wtf: `bind KEY ACTION` moves the key
+    to that action, first in its list, and `bind KEY NONE` unbinds it."""
+    keys = {action: list(default) for action, default in DEFAULT_BINDINGS.items()}
+    for line in text.splitlines():
+        match = re.fullmatch(r"bind (\S+) (\S+)", line.strip())
+        if not match:
+            continue
+        key, action = match.groups()
+        for bound in keys.values():
+            if key in bound:
+                bound.remove(key)
+        if action in keys:
+            keys[action].insert(0, key)
+    return keys
+
+
+def approved_character() -> str | None:
+    """The approved character's name from the launch config, or None when there is none to read."""
+    try:
+        character = json.loads(CONFIG.read_text()).get("character")
+    except (OSError, ValueError, AttributeError):
+        return None
+    name = character.get("name") if isinstance(character, dict) else None
+    return name if isinstance(name, str) and name.strip() else None
+
+
+def account_folder() -> Path | None:
+    """The WTF account folder holding the approved character, or None when it cannot be told apart."""
+    name = approved_character()
+    accounts = CLIENT / "WTF/Account"
+    if name:
+        found = sorted({path.parent.parent for path in accounts.glob(f"*/*/{name}") if path.is_dir()})
+        if len(found) == 1:
+            return found[0]
+    return None
+
+
+def recorded_bindings() -> tuple[dict[str, list[str]], str] | None:
+    """The keys the running client gave GetBindingKey, from !!DevSmoke's SavedVariables, and the file's identity."""
+    folder = account_folder()
+    files = saved_variables("!!DevSmoke")
+    if folder is not None:
+        files = [path for path in files if folder in path.parents]
+    lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    for path in sorted(files, key=lambda candidate: candidate.stat().st_mtime, reverse=True):
+        try:
+            variables = lua.load_lua(path)
+        except (OSError, lua.LuaSyntaxError):
+            continue
+        smoke = variables.get("DevSmokeDB")
+        record = smoke.get("bindings") if isinstance(smoke, dict) else None
+        keys = record.get("keys") if isinstance(record, dict) else None
+        if not isinstance(keys, dict):
+            continue
+        resolved = {}
+        for action in ACTIONS:
+            bound = keys.get(action)
+            values = bound.values() if isinstance(bound, dict) else bound if isinstance(bound, list) else ()
+            resolved[action] = [value for value in values if isinstance(value, str)]
+        return resolved, f"{path}:{path.stat().st_mtime_ns}"
+    return None
+
+
+def file_bindings() -> dict[str, list[str]]:
+    """The client's defaults changed by the account's bindings-cache.wtf, then by the character's own."""
+    folder = account_folder()
+    if folder is None:
+        raise ClientError("cannot tell which WTF account the session's character is in, so its bindings are unknown")
+    text = ""
+    name = approved_character()
+    for path in [folder / "bindings-cache.wtf", *sorted(folder.glob(f"*/{name}/bindings-cache.wtf"))]:
+        try:
+            text += path.read_text(errors="replace") + "\n"
+        except OSError:
+            continue
+    return bindings_from_cache_file(text)
+
+
+def action_bindings(state: Mapping) -> dict[str, list[str]]:
+    """Each action's keys in the running client: its own GetBindingKey answer as !!DevSmoke recorded it (at login and
+    every UPDATE_BINDINGS, on disk at the next reload), cached until that record changes. With no record yet, one reload
+    per session writes it; without !!DevSmoke loaded, the client's defaults changed by bindings-cache.wtf answer."""
+    cache = STATE_DIR / BINDINGS_CACHE
+    session = str(state.get("pid") or state.get("display") or "")
+    try:
+        cached = json.loads(cache.read_text())
+    except (OSError, ValueError):
+        cached = {}
+    if cached.get("session") != session:
+        cached = {}
+    recorded = recorded_bindings()
+    if recorded is None and state.get("ready") and not cached.get("reloaded"):
+        reload(state)
+        recorded = recorded_bindings()
+    if recorded is None:
+        keys = file_bindings()
+        atomic_write(cache, json.dumps({"session": session, "reloaded": True, "identity": None, "keys": keys}))
+        return keys
+    keys, identity = recorded
+    if cached.get("identity") == identity:
+        return cached["keys"]
+    atomic_write(cache, json.dumps({"session": session, "reloaded": True, "identity": identity, "keys": keys}))
+    return keys
+
+
+def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:
+    """The keysyms to press for each action: its first binding xdotool can press, modifiers first."""
+    refused = [action for action in actions if action not in ACTIONS]
+    if refused:
+        raise ClientError(f"--action takes {', '.join(ACTIONS)}; refused {', '.join(refused)}")
+    bindings = action_bindings(state)
+    pressed = []
+    for action in actions:
+        bound = bindings.get(action) or []
+        keysyms = next((found for found in map(game_keysyms, bound) if found), None)
+        if keysyms is None:
+            shown = ", ".join(bound) or "no key"
+            raise ClientError(f"{action} is bound to {shown} in this client, which no key press reaches")
+        pressed.append(keysyms)
+    return pressed
+
+
+def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None = None) -> None:
+    """Press game actions by the keys the running client binds to them: tapped, or with `hold_for` held together."""
+    combos = action_keys(state, actions)
+    if hold_for is None:
+        for combo in combos:
+            send(state, "key", "+".join(combo))
+        return
+    press(state, [keysym for combo in combos for keysym in combo], hold_for)
 
 
 def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
@@ -4243,7 +4464,14 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     elif args.verb == "scroll":
         scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
-        press(state, args.keys, args.hold_for)
+        if args.action and args.keys:
+            raise ClientError("key takes key names or --action, not both")
+        if not args.action and not args.keys:
+            raise ClientError("key needs a key name or --action")
+        if args.action:
+            press_actions(state, args.action, args.hold_for)
+        else:
+            press(state, args.keys, args.hold_for)
     elif args.verb == "slash":
         slash(state, args.command)
     elif args.verb == "reload":
@@ -4362,7 +4590,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("y", type=int)
             p.add_argument("ticks", type=int, help="wheel-up ticks (zoom in) when positive, wheel-down when negative")
         elif name == "key":
-            p.add_argument("keys", nargs="+")
+            p.add_argument("keys", nargs="*", help="xdotool key names; for movement use --action instead")
+            p.add_argument(
+                "--action",
+                action="append",
+                default=[],
+                choices=ACTIONS,
+                help="a game action, pressed by the key this client binds to it; repeat for more than one",
+            )
             p.add_argument(
                 "--for",
                 dest="hold_for",

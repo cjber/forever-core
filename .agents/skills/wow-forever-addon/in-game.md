@@ -61,10 +61,15 @@ them where it can:
    NPC, and put the CVar back to its earlier value before the job ends. At an auction house, open it and search; never
    bid, buy or post. Never attack a creature or walk into one's aggro range, fight, loot, quest, trade or chat to
    other players. Nothing else blocks the game: `slash` sends any one-line slash command (`/use Hearthstone` to get
-   somewhere) and `key` any key, including movement and keybinds. A tapped key does not move the character: walk,
-   turn or strafe by holding keys with `key --for SECONDS` (`key --for 2 w` walks forward for 2 s, `key --for 0.5 a`
-   turns left, `key --for 3 w d` walks and turns together), checking the frame or the player's map position between
-   holds. Where the character is parked or whether it is
+   somewhere) and `key` any key. Move only with game actions, never raw keys: an account can rebind any key (the
+   headless account walks forward on S, so `w` does nothing there). `key --action ACTION --for SECONDS` holds the key
+   the running client binds to that action, read from its own `GetBindingKey` (recorded by `!!DevSmoke` at login and
+   at every key binding change, on disk at the next reload): `key --action MOVEFORWARD --for 2` walks for 2 s,
+   `key --action TURNLEFT --for 0.5` turns left, repeat `--action` to hold several together. The actions are
+   MOVEFORWARD, MOVEBACKWARD, TURNLEFT, TURNRIGHT, STRAFELEFT, STRAFERIGHT, JUMP, INTERACTTARGET and
+   TARGETNEARESTENEMY; without `--for` each is tapped once (`key --action INTERACTTARGET`). A tapped key never moves
+   the character. Check the frame or the player's map position between holds. Where the character is parked or
+   whether it is
    resting never matters, so move it wherever a check needs it rather than waiting or asking. `click` and `scroll`
    refuse until a `shot` was taken after the last input, so each input aims at what you have just read in the frame.
 2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
