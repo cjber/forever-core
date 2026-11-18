@@ -1052,6 +1052,14 @@ class BundleTest(unittest.TestCase):
         self.bump()
         self.assertEqual(self.pkgmeta.read_text(encoding="utf-8"), self.EMBEDDED_PKGMETA)
 
+    def test_an_embedded_consumer_still_carrying_the_bridge_external_gets_no_required_relation(self):
+        self.toc.write_text(self.EMBEDDED_TOC, encoding="utf-8")
+        hybrid = self.PKGMETA.replace("\nrequired-dependencies:\n  - forevercore\n", "\n")
+        self.pkgmeta.write_text(hybrid, encoding="utf-8")
+        self.assertFalse(sync.ensure_core_dependency(self.root))
+        self.bump()
+        self.assertNotIn("required-dependencies", self.pkgmeta.read_text(encoding="utf-8"))
+
     def test_dependency_transition_keeps_the_bundle_and_existing_relations(self):
         self.pkgmeta.write_text(self.PKGMETA.replace("  - forevercore", "  - another-addon"), encoding="utf-8")
         self.bump("v1.3.2")
@@ -1473,6 +1481,11 @@ class BodyTest(unittest.TestCase):
             "Moves the ForeverCore pin from v1.3.2 to v1.4.0, so this addon's CI runs against the latest release.", body
         )
         self.assertNotIn("Moves the ForeverCore pin", sync.pr_body("abc123", ("tools/forever-core.txt",)))
+
+    def test_an_embedded_body_names_no_external(self):
+        body = sync.pr_body("abc123", ("tools/forever-core.txt",), ("v1.3.2", "v1.4.0"), embedded=True)
+        self.assertNotIn("external", body)
+        self.assertIn("Libs/ForeverCore/", body)
 
 
 class SummaryTest(unittest.TestCase):

@@ -93,6 +93,39 @@ class EmbedTest(unittest.TestCase):
         with self.assertRaisesRegex(embed.EmbedError, "SavedVariables"):
             self.run_embed()
 
+    def test_an_addon_with_only_per_character_saved_variables_is_refused(self):
+        self.toc(
+            "## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariablesPerCharacter: DemoCharDB\n"
+        )
+        with self.assertRaisesRegex(embed.EmbedError, "per character"):
+            self.run_embed()
+        self.assertFalse((self.root / "Libs").exists())
+
+    def test_an_addon_with_several_account_saved_variables_is_refused(self):
+        self.toc("## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariables: DemoDB, DemoOtherDB\n")
+        with self.assertRaisesRegex(embed.EmbedError, "exactly one"):
+            self.run_embed()
+        self.assertFalse((self.root / "Libs").exists())
+
+    def test_one_account_global_beside_a_per_character_one_embeds(self):
+        self.toc(
+            "## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariables: DemoForeverDB\n"
+            "## SavedVariablesPerCharacter: DemoCharDB\n"
+        )
+        self.assertEqual(self.run_embed()["wrapped"], 2)
+
+    def test_the_last_opt_in_line_decides(self):
+        for fields, embedded in (
+            ("## X-Forever-Core-Embed: 1\n## X-Forever-Core-Embed: 0\n", False),
+            ("## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n", True),
+            ("## X-Forever-Core-Embed: 1, 1\n", False),
+            ("##X-Forever-Core-Embed: 1\n", True),
+            ("  ## X-Forever-Core-Embed: 1\n", True),
+        ):
+            with self.subTest(fields=fields):
+                self.toc("## OptionalDeps: ForeverCore\n## SavedVariables: DemoForeverDB\n" + fields)
+                self.assertIs(embed.enabled(self.root), embedded)
+
     def test_a_second_run_is_refused(self):
         self.run_embed()
         with self.assertRaisesRegex(embed.EmbedError, "already"):

@@ -25,6 +25,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import pkgmeta as pkgmeta_reader
+
 __all__ = [
     "CORE_EXTERNAL",
     "CORE_FIELD",
@@ -45,7 +47,10 @@ __all__ = [
     "latest_release",
     "main",
     "pkgmeta_field",
+    "policy_path",
+    "root_toc_name",
     "toc_field",
+    "toc_fields",
 ]
 
 # The release a consumer's specs and CI check ForeverCore out at, and the packaging files that decide how it ships.
@@ -59,8 +64,11 @@ CORE_EXTERNAL = re.compile(r"^(?P<indent>[ \t]*)ForeverCore:[ \t]*\S+[^\r\n]*", 
 EXTERNAL_TAG = re.compile(r"/download/(?P<tag>[^/\s]+)/", re.IGNORECASE)
 TOC_CORE_FIELD = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 TOC_CORE_VALUE = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[ \t]*(?P<value>\S+)", re.IGNORECASE | re.MULTILINE)
-# A consumer that carries core under Libs/ForeverCore opts in with this TOC field; forever_tools.embed reads the same.
-TOC_EMBED = re.compile(r"^##[ \t]*X-Forever-Core-Embed[ \t]*:[ \t]*1[ \t]*$", re.IGNORECASE | re.MULTILINE)
+# A consumer that carries core under Libs/ForeverCore opts in with this TOC field. `embeds` is the one reader of it:
+# forever_tools.embed, the vendored package check and core's drift and sync tools all call it.
+EMBED_FIELD = "X-Forever-Core-Embed"
+# One `## Name: value` TOC line, matched after the line is stripped.
+TOC_FIELD_LINE = re.compile(r"^##\s*(?P<name>[^:]+?)\s*:\s*(?P<value>.*?)\s*$")
 # The release the whole suite bundles: every consumer's zip must carry this one, newest, published ForeverCore.
 LATEST_RELEASE_URL = "https://api.github.com/repos/cjber/forever-core/releases/latest"
 
@@ -197,9 +205,25 @@ def compare(
     return failures
 
 
+def toc_fields(toc):
+    """A TOC's `## Name: value` fields, names lowercased. A field set twice keeps its last value, as embed reads it."""
+    if isinstance(toc, bytes):
+        toc = toc.decode("utf-8-sig", "replace")
+    fields = {}
+    for line in (toc or "").lstrip("\ufeff").splitlines():
+        match = TOC_FIELD_LINE.match(line.strip())
+        if match:
+            fields[match["name"].strip().lower()] = match["value"]
+    return fields
+
+
 def embeds(toc):
-    """Whether a root TOC opts in to carrying core under Libs/ForeverCore (`## X-Forever-Core-Embed: 1`)."""
-    return bool(TOC_EMBED.search(toc or ""))
+    """Whether a root TOC (text or bytes) opts in to carrying core under Libs/ForeverCore.
+
+    The field's last value must be exactly `1`, the value the embed step acts on, so every checker agrees with the
+    step that writes the zip: a TOC the embed step skips is never treated as embedded, and the reverse.
+    """
+    return toc_fields(toc).get(EMBED_FIELD.lower()) == "1"
 
 
 def compare_embedded(pin, toc, *, pin_path=PIN_PATH, toc_path="the root TOC"):
@@ -217,6 +241,34 @@ def compare_embedded(pin, toc, *, pin_path=PIN_PATH, toc_path="the root TOC"):
     return []
 
 
+def policy_path(root):
+    """The checkout's packager policy, `.pkgmeta` or else `pkgmeta.yaml` as the packager reads it, or None."""
+    for name in pkgmeta_reader.FILES:
+        if (Path(root) / name).is_file():
+            return Path(root) / name
+    return None
+
+
+def root_toc_name(root, package):
+    """The root TOC the packager names: `package-as`, else the shortest visible root TOC name, ties broken by name.
+
+    Raises ValueError when that name is flavor-suffixed, which the packager refuses without a plain fallback
+    (`forever_tools.pkgmeta.project_toc_files`). None when the checkout has no root TOC.
+    """
+    if package:
+        return f"{package}.toc"
+    tocs = sorted(
+        (path.name for path in Path(root).glob("*.toc") if not path.name.startswith(".")),
+        key=lambda name: (len(name), name),
+    )
+    if not tocs:
+        return None
+    stem = tocs[0][: -len(".toc")]
+    if any(stem.endswith(suffix) for suffix in pkgmeta_reader.PROJECT_TOC_VARIANTS if suffix):
+        raise ValueError(f"no `package-as`, and the shortest root TOC {tocs[0]} is flavor-suffixed")
+    return tocs[0]
+
+
 def check(root, latest=None):
     """Failures in a consumer checkout's ForeverCore pin and bundle, relative to `root`.
 
@@ -228,14 +280,17 @@ def check(root, latest=None):
     pin_path = root / PIN_PATH
     pin = pin_path.read_text(encoding="utf-8", errors="replace").strip() if pin_path.is_file() else ""
     failures = compare_latest(pin, latest) if latest is not None and pin_path.is_file() else []
-    pkgmeta_path = root / PKGMETA
-    if not pkgmeta_path.is_file():
+    pkgmeta_path = policy_path(root)
+    if pkgmeta_path is None:
         return failures
     pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace")
-    package = pkgmeta_field(pkgmeta, "package-as")
-    toc_name = f"{package}.toc" if package else "the root TOC"
-    toc_path = root / toc_name
-    toc = toc_path.read_text(encoding="utf-8", errors="replace") if package and toc_path.is_file() else ""
+    try:
+        toc_name = root_toc_name(root, pkgmeta_field(pkgmeta, "package-as"))
+    except ValueError as error:
+        return failures + [f"{pkgmeta_path.name}: {error}; set `package-as` or add a plain fallback TOC"]
+    toc_path = root / toc_name if toc_name else None
+    toc = toc_path.read_text(encoding="utf-8-sig", errors="replace") if toc_path and toc_path.is_file() else ""
+    toc_name = toc_name or "the root TOC"
     if embeds(toc):
         return failures + compare_embedded(pin, toc, pin_path=PIN_PATH, toc_path=toc_name)
     if not external_line(pkgmeta):
@@ -245,7 +300,7 @@ def check(root, latest=None):
         pkgmeta,
         toc,
         pin_path=PIN_PATH,
-        pkgmeta_path=PKGMETA,
+        pkgmeta_path=pkgmeta_path.name,
         toc_path=toc_name,
     )
     return failures
@@ -259,8 +314,8 @@ def check_latest(root, fetch=None):
     neither a pin nor a ForeverCore external does not use core at all, so it is left alone without a network read.
     """
     root = Path(root)
-    pkgmeta_path = root / PKGMETA
-    pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace") if pkgmeta_path.is_file() else ""
+    pkgmeta_path = policy_path(root)
+    pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace") if pkgmeta_path else ""
     if not (root / PIN_PATH).is_file() and not external_line(pkgmeta):
         # No pin and no external: nothing to compare with the latest release, but an embedding TOC still needs a pin.
         return check(root)

@@ -235,6 +235,64 @@ class CheckConsumersTest(unittest.TestCase):
                     any("(spaces, no trailing whitespace)" in failure for failure in self.embedded_failures())
                 )
 
+    def test_an_embedded_consumer_with_another_form_of_core_external_fails(self):
+        for external in (
+            "Vendor/Core: https://github.com/cjber/forever-core.git\n",
+            "Vendor/Core: git@github.com:cjber/forever-core.git\n",
+            "Vendor/Core:\n    url: https://repos.curseforge.com/wow/forevercore/trunk\n",
+            "Vendor/Core: https://example.com/ForeverCore-v1.4.0-forever.zip\n",
+        ):
+            with self.subTest(external=external):
+                self.write_embedded("externals:\n  " + external)
+                self.assertTrue(any("ships a second ForeverCore" in failure for failure in self.embedded_failures()))
+
+    def test_an_embedded_consumer_with_a_capitalised_relation_is_read_without_case(self):
+        self.write_embedded("required-dependencies:\n  - ForeverCore\n", relation="")
+        failures = self.embedded_failures()
+        self.assertTrue(any("move it to `embedded-libraries:`" in failure for failure in failures))
+        for entry in ("ForeverCore", "'ForeverCore'"):
+            with self.subTest(entry=entry):
+                self.write_embedded(f"embedded-libraries:\n  - {entry}\n", relation="")
+                self.assertEqual(self.embedded_failures(), [])
+
+    def test_an_embedded_consumer_moving_a_folder_to_core_in_another_form_fails(self):
+        for destination, message in (
+            ("/ForeverCore", "outside the zip's top level"),
+            ("../ForeverCore", "outside the zip's top level"),
+            ("ForeverCore.", "at the top-level ForeverCore."),
+            ("Shared/ForeverCore", "ForeverCore ships only under Libs/ForeverCore"),
+            ("LegacyForever/Libs/ForeverCore", "ForeverCore ships only under Libs/ForeverCore"),
+            ("LegacyForever/Libs", "over the embedded ForeverCore"),
+        ):
+            with self.subTest(destination=destination):
+                self.write_embedded(f"move-folders:\n  LegacyForever/Vendor/Core: {destination}\n")
+                self.assertTrue(any(message in failure for failure in self.embedded_failures()), destination)
+
+    def test_the_last_opt_in_line_decides_like_the_embed_step(self):
+        self.write_embedded()
+        toc = (self.repo / "LegacyForever.toc").read_text(encoding="utf-8")
+        # Opted out last: the embed step skips it, so the bridge rules apply and the embedded pkgmeta fails them.
+        (self.repo / "LegacyForever.toc").write_text(toc + "## X-Forever-Core-Embed: 0\n", encoding="utf-8")
+        self.assertTrue(any("does not ship ForeverCore" in failure for failure in self.embedded_failures()))
+        (self.repo / "LegacyForever.toc").write_text(
+            toc.replace("## X-Forever-Core-Embed: 1\n", "## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n"),
+            encoding="utf-8",
+        )
+        self.assertEqual(self.embedded_failures(), [])
+
+    def test_a_pkgmeta_yaml_embedded_consumer_is_checked(self):
+        self.write_embedded("required-dependencies:\n  - forevercore\n")
+        (self.repo / ".pkgmeta").rename(self.repo / "pkgmeta.yaml")
+        failures = self.embedded_failures()
+        self.assertTrue(any("pkgmeta.yaml" in failure and "required-dependencies" in failure for failure in failures))
+
+    def test_an_embedded_consumer_without_package_as_uses_the_shortest_root_toc(self):
+        self.write_embedded("required-dependencies:\n  - forevercore\n")
+        text = (self.repo / ".pkgmeta").read_text(encoding="utf-8").replace("package-as: LegacyForever\n", "")
+        (self.repo / ".pkgmeta").write_text(text, encoding="utf-8")
+        (self.repo / "LegacyForever_Vanilla.toc").write_text("## Interface: 11507\n", encoding="utf-8")
+        self.assertTrue(any("required-dependencies" in failure for failure in self.embedded_failures()))
+
     def test_a_tab_indented_pkgmeta_fails_as_the_packager_refuses_it(self):
         self.write_embedded("embedded-libraries:\n\t- forevercore\n", relation="")
         self.assertTrue(any("leading tab" in failure for failure in self.embedded_failures()))
@@ -546,6 +604,23 @@ class EmbedCheckTest(unittest.TestCase):
         failures = self.check()
         self.assertEqual(len(failures), 1)
         self.assertIn("ci.yml: a packager step with no", failures[0])
+
+    def test_an_embed_in_another_job_does_not_cover_the_packager(self):
+        self.write()
+        (self.repo / ".github" / "workflows" / "release.yml").write_text(
+            f"jobs:\n  test:\n    steps:\n{self.EMBED}\n  release:\n    steps:\n{self.PACKAGER}", encoding="utf-8"
+        )
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("release.yml: a packager step with no", failures[0])
+
+    def test_a_commented_embed_does_not_cover_the_packager(self):
+        self.write()
+        (self.repo / ".github" / "workflows" / "release.yml").write_text(
+            f"jobs:\n  a:\n    steps:\n      # run: python3 -m tools.forever_tools.embed\n{self.PACKAGER}",
+            encoding="utf-8",
+        )
+        self.assertEqual(len(self.check()), 1)
 
 
 if __name__ == "__main__":

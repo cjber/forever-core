@@ -217,20 +217,67 @@ def toc_core(toc):
     return FOREVER_CORE in toc_names(toc, "Dependencies"), FOREVER_CORE in toc_names(toc, "OptionalDeps")
 
 
-def root_toc(repo, pkgmeta, branch, local):
-    """The consumer's root TOC text, or None when it cannot be told.
+def read_pkgmeta(repo, branch, local):
+    """The consumer's packager policy as `(path, text, error)`: `.pkgmeta`, else `pkgmeta.yaml`, as the packager reads.
 
-    The packager names the TOC after `package-as`, so that field gives its path; a `.pkgmeta` without it, or a TOC
-    that cannot be read, leaves the packaging rule unchecked rather than guessing.
+    A consumer with neither is `(.pkgmeta path, None, None)`; a read that fails is that file's path and the reason.
+    """
+    for name in pkgmeta_reader.FILES:
+        path = consumer_path(repo, name)
+        data, error = read_consumer(repo, path, branch, local)
+        if error:
+            return path, None, error
+        if data is not None:
+            return path, data.decode("utf-8", "replace"), None
+    return consumer_path(repo, PKGMETA), None, None
+
+
+def root_toc_names(repo, branch, local):
+    """The `.toc` file names in the consumer's root folder."""
+    folder = CONSUMER_ROOT.get(repo, "")
+    if local:
+        return [path.name for path in (local / repo / folder).glob("*.toc")]
+    suffix = f"/{folder}" if folder else ""
+    listing = remote_json(f"https://api.github.com/repos/cjber/{repo}/contents{suffix}?ref={branch}")
+    return [entry["name"] for entry in listing if entry.get("type") == "file" and entry["name"].endswith(".toc")]
+
+
+def root_toc(repo, pkgmeta, branch, local, pkgmeta_path=PKGMETA):
+    """`(package, TOC bytes, failure)` for the consumer's root TOC, chosen as the packager chooses it.
+
+    `package-as` names the TOC. Without it the packager takes the shortest visible root TOC name, ties broken by name,
+    and refuses a flavor-suffixed one (`forever_tools.pkgmeta.project_toc_files`), so this does the same. A consumer
+    whose root TOC is not in the checkout has no packaging to check and is `(package, None, None)`; a TOC that cannot be
+    listed or read is a failure, never a skipped check.
     """
     package = pkgmeta_field(pkgmeta, "package-as")
     if not package:
-        return None
+        try:
+            names = root_toc_names(repo, branch, local)
+        except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError, TypeError) as error:
+            return (
+                None,
+                None,
+                f"{repo}: {pkgmeta_path}: no `package-as`, and the root TOCs could not be listed: {error}",
+            )
+        tocs = sorted((name for name in names if not name.startswith(".")), key=lambda name: (len(name), name))
+        if not tocs:
+            return None, None, None
+        package = tocs[0][: -len(".toc")]
+        if any(package.endswith(suffix) for suffix in pkgmeta_reader.PROJECT_TOC_VARIANTS if suffix):
+            return (
+                package,
+                None,
+                (
+                    f"{repo}: {pkgmeta_path}: no `package-as`, and the shortest root TOC {tocs[0]} is flavor-suffixed;"
+                    " set `package-as` or add a plain fallback TOC"
+                ),
+            )
     path = consumer_path(repo, f"{package}.toc")
     data, error = read_consumer(repo, path, branch, local)
     if error:
-        print(f"{repo}: {path}: {error}; the packaging check is skipped")
-    return data
+        return package, None, f"{repo}: {path}: {error}"
+    return package, data, None
 
 
 def read_pins(consumers, branch, local):
@@ -267,17 +314,16 @@ def check_pins(pins, local):
 
 def check_packaging(repo, pin, branch, local):
     """A consumer that requires core ships it in its own zip, from the release its pin names, and owns it once."""
-    path = consumer_path(repo, PKGMETA)
-    data, error = read_consumer(repo, path, branch, local)
+    path, pkgmeta, error = read_pkgmeta(repo, branch, local)
     if error:
         return [f"{repo}: {path}: {error}"]
-    if data is None:
+    if pkgmeta is None:
         return []
-    pkgmeta = data.decode("utf-8", "replace")
-    toc = root_toc(repo, pkgmeta, branch, local)
+    package, toc, failure = root_toc(repo, pkgmeta, branch, local, path)
+    if failure:
+        return [failure]
     if toc is None:
         return []
-    package = pkgmeta_field(pkgmeta, "package-as")
     toc_path = consumer_path(repo, f"{package}.toc")
     required, optional = toc_core(toc)
     blocks = pkgmeta_blocks(pkgmeta)
@@ -291,7 +337,7 @@ def check_packaging(repo, pin, branch, local):
             f"{repo}: {toc_path}: lists ForeverCore in `## Dependencies`, so the client skips the addon when core is"
             " missing; move it to `## OptionalDeps` and keep the other names on that line"
         )
-    embeds = toc_names(toc, "X-Forever-Core-Embed") == {"1"}
+    embeds = core_pin.embeds(toc)
     if not (required or optional or ships or declares or embeds):
         return failures
     if not optional and not required:
@@ -327,6 +373,22 @@ def check_packaging(repo, pin, branch, local):
     return failures
 
 
+def external_ships_core(key, url):
+    """Whether one `.pkgmeta` external downloads ForeverCore, whatever host, scheme or form the URL takes.
+
+    The key's folder named ForeverCore, a URL path or SSH segment naming the `forever-core` repository or the
+    `forevercore` store project (with or without `.git` or a trailing slash), or a `ForeverCore-*.zip` release asset.
+    """
+    if PurePosixPath(key).name.casefold() == CORE_FOLDER.casefold():
+        return True
+    address = url.strip().casefold().split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    address = address.removesuffix(".git").rstrip("/")
+    parts = [part for part in re.split(r"[/:]", address) if part]
+    if any(part in ("forever-core", "forevercore") for part in parts):
+        return True
+    return bool(parts) and parts[-1].startswith("forevercore-") and parts[-1].endswith(".zip")
+
+
 def check_embedded_packaging(pin, toc, pkgmeta, package, *, path, toc_path):
     """The end state for a consumer that carries ForeverCore under `Libs/ForeverCore/` (`## X-Forever-Core-Embed: 1`).
 
@@ -345,7 +407,7 @@ def check_embedded_packaging(pin, toc, pkgmeta, package, *, path, toc_path):
     failures = []
     core = CORE_FOLDER.casefold()
     for key, url in shipped.externals:
-        if PurePosixPath(key).name.casefold() == core or "/cjber/forever-core/" in url.casefold():
+        if external_ships_core(key, url):
             failures.append(
                 f"{path}: `externals:` ships a second ForeverCore at {key}; the embed step is the only copy"
                 " (cjber/forever-core#448)"
@@ -353,11 +415,21 @@ def check_embedded_packaging(pin, toc, pkgmeta, package, *, path, toc_path):
     embedded = PurePosixPath(package.casefold(), "libs", core)
     for moved_from, destination in shipped.moves:
         source_path = PurePosixPath(moved_from.casefold())
-        destination_parts = PurePosixPath(destination.casefold()).parts
-        if destination_parts[:1] == (core,):
+        target = PurePosixPath(destination.casefold())
+        parts = target.parts
+        # Windows drops a trailing dot or space from a folder name, so `ForeverCore.` installs as `ForeverCore`.
+        final = parts[-1].rstrip(" .") if parts else ""
+        if target.is_absolute() or ".." in parts:
+            failures.append(f"{path}: `move-folders:` sends {moved_from} to {destination}, outside the zip's top level")
+        elif final == core:
+            where = f"the top-level {destination}" if len(parts) == 1 else destination
             failures.append(
-                f"{path}: `move-folders:` puts {moved_from} at the top-level {destination}; ForeverCore ships only"
-                " under Libs/ForeverCore (cjber/forever-core#448)"
+                f"{path}: `move-folders:` puts {moved_from} at {where}; ForeverCore ships only under Libs/ForeverCore"
+                " (cjber/forever-core#448)"
+            )
+        elif len(parts) > 1 and (target == embedded or target in embedded.parents or embedded in target.parents):
+            failures.append(
+                f"{path}: `move-folders:` moves {moved_from} over the embedded ForeverCore at {destination}"
             )
         elif (
             source_path.parts[:1] == (package.casefold(),)
@@ -365,12 +437,15 @@ def check_embedded_packaging(pin, toc, pkgmeta, package, *, path, toc_path):
             and (source_path in embedded.parents or source_path == embedded or embedded in source_path.parents)
         ):
             failures.append(f"{path}: `move-folders:` moves {moved_from}, which holds the embedded ForeverCore")
-    if "forevercore" in shipped.required:
+    # The store matches project slugs without case, as the bridge gate's own `block_entries` reads them.
+    required = {entry.casefold() for entry in shipped.required}
+    embedded_libraries = {entry.casefold() for entry in shipped.embedded}
+    if "forevercore" in required:
         failures.append(
             f"{path}: embeds ForeverCore but lists `forevercore` under `required-dependencies:`; move it to"
             " `embedded-libraries:` so the store never installs the standalone as required"
         )
-    if "forevercore" not in shipped.embedded:
+    if "forevercore" not in embedded_libraries:
         failures.append(
             f"{path}: embeds ForeverCore; list `  - forevercore` (spaces, no trailing whitespace) under"
             " `embedded-libraries:`"
@@ -432,11 +507,12 @@ def check_embed(repo, branch, local):
     The embed step rewrites the checkout the packager zips. A packager step with no embed before it uploads, or checks,
     an addon that cannot run without the standalone ForeverCore, which is the case the embedded copy exists for.
     """
-    data, error = read_consumer(repo, consumer_path(repo, PKGMETA), branch, local)
-    if error or data is None:
+    _path, pkgmeta, error = read_pkgmeta(repo, branch, local)
+    if error or pkgmeta is None:
         return []
-    toc = root_toc(repo, data.decode("utf-8", "replace"), branch, local)
-    if toc is None or toc_names(toc, "X-Forever-Core-Embed") != {"1"}:
+    # An unreadable or unresolvable root TOC is check_packaging's failure; it is not reported twice.
+    _package, toc, _failure = root_toc(repo, pkgmeta, branch, local)
+    if toc is None or not core_pin.embeds(toc):
         return []
     failures = []
     for workflow in (RELEASE_WORKFLOW, CI_WORKFLOW):
@@ -449,14 +525,42 @@ def check_embed(repo, branch, local):
         packagers = [match.start() for match in re.finditer(r"BigWigsMods/packager@", text)]
         if not packagers:
             failures.append(f"{repo}: {path}: opts in to the embedded ForeverCore but runs no BigWigs packager")
-        embeds = [match.start() for match in re.finditer(re.escape(f"python3 -m {EMBED_COMMAND}"), text)]
-        for packager in packagers:
-            if not any(embed < packager for embed in embeds):
-                failures.append(
-                    f"{repo}: {path}: a packager step with no `python3 -m {EMBED_COMMAND}` before it; the TOC sets"
-                    " `## X-Forever-Core-Embed: 1`, so embed the pinned core first"
-                )
+        # Each job has its own fresh checkout, so the embed has to run in the packager's own job, and a comment that
+        # names the command runs nothing.
+        for job in workflow_jobs(text):
+            embeds = [match.start() for match in re.finditer(re.escape(f"python3 -m {EMBED_COMMAND}"), job)]
+            for match in re.finditer(r"BigWigsMods/packager@", job):
+                if not any(embed < match.start() for embed in embeds):
+                    failures.append(
+                        f"{repo}: {path}: a packager step with no `python3 -m {EMBED_COMMAND}` before it in its job;"
+                        " the TOC sets `## X-Forever-Core-Embed: 1`, so embed the pinned core first"
+                    )
     return failures
+
+
+def workflow_jobs(text):
+    """Each job's text under a workflow's top-level `jobs:`, comment lines dropped; the whole file when it has none."""
+    lines = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    start = next((index for index, line in enumerate(lines) if line.rstrip() == "jobs:"), None)
+    if start is None:
+        return ["\n".join(lines)]
+    jobs = []
+    indent = None
+    for line in lines[start + 1 :]:
+        if not line.strip():
+            if jobs:
+                jobs[-1].append(line)
+            continue
+        width = len(line) - len(line.lstrip())
+        if width == 0:
+            break
+        if indent is None:
+            indent = width
+        if width == indent:
+            jobs.append([line])
+        elif jobs:
+            jobs[-1].append(line)
+    return ["\n".join(job) for job in jobs]
 
 
 def workflow_step(text, name):

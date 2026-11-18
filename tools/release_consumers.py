@@ -1,7 +1,7 @@
 """Release every consumer whose newest CHANGELOG.md entry came from the ForeverCore sync.
 
-Every consumer's release zip carries ForeverCore in the same `ForeverCore` folder, so all of the addons' latest releases
-must ship the same core: a core release has to re-release every consumer. `tools/sync_consumer_prs.py` moves each
+Every consumer's release zip carries its own copy of the pinned ForeverCore, so all of the addons' latest releases must
+ship the same core: a core release has to re-release every consumer. `tools/sync_consumer_prs.py` moves each
 consumer's pin to the new core release, rewrites its bundle and, when its latest released tag bundles a different core
 than that pin and has no pending fragments, adds a release entry to `CHANGELOG.md` carrying the
 `<!-- forever-core-sync -->` marker above a marked entry whose own tag is already released. This script, run every 20
@@ -20,6 +20,11 @@ minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `mai
   client loaded that build, ran `/forever selftest` and found no Lua errors in the addon's folders. A commit without
   one is reported as waiting and retried by the next run, never as failed, so a release waits for the smoke instead of
   turning the job red.
+
+A consumer whose root TOC opts in to the embedded core (`## X-Forever-Core-Embed: 1`) at the commit it would release
+also waits until every addon in `EMBED_FLEET` has opted in on its own `main`, and the wait names the ones that have not.
+Until then another addon's zip still ships the shared top-level `ForeverCore` folder, so the embed releases go out
+together (docs/dependency-transition.md, "Packaging").
 
 The consumers are discovered the same way `tools/sync_consumer_prs.py` discovers them, so a new addon needs no edit
 here. The run dispatches only, never tags or writes, so it is idempotent and safe on a 20-minute schedule: a consumer
@@ -47,6 +52,7 @@ from sync_consumer_prs import (
     SyncError,
     api_json,
     consumer_repos,
+    core_pin,
     discover_tooling_repos,
     gh,
     unreleased_notes,
@@ -58,6 +64,21 @@ RELEASE_WORKFLOW = "release.yml"
 CI_WORKFLOW = "ci.yml"
 # The commit status `forever_client.py smoke` posts, which `tools/smoke_queue.py` fills in ahead of a release.
 SMOKE_CONTEXT = "headless-smoke"
+# The published addons that embed ForeverCore under Libs/ForeverCore. While any of them still ships the shared top-level
+# ForeverCore folder, removing or downgrading that addon rolls core back under the others (cjber/forever-core#448), so
+# no opted-in addon releases until all of them have opted in, and then they release together.
+EMBED_FLEET = (
+    "adventure-guide-forever",
+    "commissions-forever",
+    "field-guide-forever",
+    "legacy-forever",
+    "macro-assist-forever",
+    "shortest-path-forever",
+    "skillup-forever",
+    "tweaks-forever",
+)
+# The packager's policy files, in the order it reads them.
+PKGMETA_FILES = (".pkgmeta", "pkgmeta.yaml")
 HEADING = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\][^\r\n]*$", re.MULTILINE)
 
 
@@ -180,11 +201,11 @@ def decide(
     return Decision(version, head, f"releases v{version} at {head}")
 
 
-def read_changelog(repo: str, ref: str) -> str | None:
-    """CHANGELOG.md at `ref` as text, or None when the repository has none there."""
+def read_file(repo: str, path: str, ref: str) -> str | None:
+    """`path` at `ref` as text, or None when the repository has no such file there."""
     result = gh(
         "api",
-        f"repos/{OWNER}/{repo}/contents/{CHANGELOG}?ref={ref}",
+        f"repos/{OWNER}/{repo}/contents/{path}?ref={ref}",
         "-H",
         "Accept: application/vnd.github.raw",
         check=False,
@@ -194,7 +215,41 @@ def read_changelog(repo: str, ref: str) -> str | None:
     detail = (result.stderr or result.stdout).strip()
     if "404" in detail or "Not Found" in detail:
         return None
-    raise SyncError(f"could not read {repo}'s {CHANGELOG}: {detail}")
+    raise SyncError(f"could not read {repo}'s {path}: {detail}")
+
+
+def read_changelog(repo: str, ref: str) -> str | None:
+    """CHANGELOG.md at `ref` as text, or None when the repository has none there."""
+    return read_file(repo, CHANGELOG, ref)
+
+
+def embeds_at(repo: str, ref: str) -> bool:
+    """Whether the consumer's root TOC at `ref` opts in to the embedded core, read as `core_pin.embeds` reads it.
+
+    The root TOC is the one the packager names after `package-as`. A consumer with no policy file packages nothing and
+    has not opted in; a policy or TOC that cannot be read is a SyncError, never a pass, so the gate fails closed.
+    """
+    for name in PKGMETA_FILES:
+        policy = read_file(repo, name, ref)
+        if policy is not None:
+            break
+    else:
+        return False
+    package = core_pin.pkgmeta_field(policy, "package-as")
+    if not package:
+        raise SyncError(f"{repo}'s {name} at {ref[:7]} sets no package-as, so its root TOC cannot be told")
+    toc = read_file(repo, f"{package}.toc", ref)
+    if toc is None:
+        raise SyncError(f"{repo} has no {package}.toc at {ref[:7]}")
+    return core_pin.embeds(toc)
+
+
+def embed_hold(opted: dict[str, bool]) -> str | None:
+    """Why an opted-in consumer's release waits, naming every `EMBED_FLEET` addon not opted in yet, or None."""
+    missing = sorted(repo for repo in EMBED_FLEET if not opted.get(repo))
+    if not missing:
+        return None
+    return "its embedded ForeverCore release waits until every Forever addon opts in; not yet: " + ", ".join(missing)
 
 
 def has_change_fragments(repo: str, ref: str) -> bool:
@@ -317,6 +372,7 @@ def main() -> int:
 
     failed = 0
     forbidden = 0
+    fleet: dict[str, bool] | None = None
     for repo in repos:
         try:
             decision = plan(repo)
@@ -327,6 +383,15 @@ def main() -> int:
             if not decision.release:
                 print(f"{repo}: waiting: {decision.reason}")
                 continue
+            if embeds_at(repo, decision.commit):
+                # Read once per run, and only when an opted-in release is otherwise ready; this addon counts as the
+                # commit it would release.
+                if fleet is None:
+                    fleet = {name: embeds_at(name, main_head(name)) for name in EMBED_FLEET}
+                hold = embed_hold({**fleet, repo: True})
+                if hold:
+                    print(f"{repo}: waiting: {hold}")
+                    continue
             dispatch(repo, decision.version, decision.commit)
         except DispatchForbidden:
             forbidden += 1

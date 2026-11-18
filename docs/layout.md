@@ -222,7 +222,7 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   commit. A commit the smoke has not reached yet is reported as waiting and retried by the next run, never as failed; a
   consumer whose release already failed at main's head is reported as failed, so the job goes red instead of retrying
   every 20 minutes, and the maintainer fixes it and dispatches by hand.
-  Every core release therefore re-releases every consumer, whose zips all carry the same `ForeverCore` folder. It is
+  Every core release therefore re-releases every consumer, because each zip carries its own copy of the pinned core. It is
   dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
   prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
 - `tools/headless/forever_client.py`: the one way the `wow in-game` agent touches the client; every other agent sends

@@ -31,9 +31,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
   `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. An addon that sets `## X-Forever-Core-Embed: 1` also ships core inside itself at
   `Libs/ForeverCore/`: its release and CI package job run `python3 -m tools.forever_tools.embed` before the packager
-  (core's `docs/dependency-transition.md` section 4); never commit `Libs/ForeverCore/`. Every core
-  release re-releases every addon automatically: the core sync PR moves the pin, rewrites the external and the TOC
-  field, and adds a marked `CHANGELOG.md` entry, then `release-consumers.yml` dispatches each addon's own release once
+  (core's `docs/dependency-transition.md`, "Packaging"); never commit `Libs/ForeverCore/`. Every core
+  release re-releases every addon automatically: the core sync PR moves the pin and the TOC field (and a bridge
+  consumer's external), and adds a marked `CHANGELOG.md` entry, then `release-consumers.yml` dispatches each addon's own release once
   its full CI on main is green. Each addon's `Core/Require.lua` computes `ready` from feature checks of every
   post-API-1 ForeverCore member it calls, never a version comparison, and calls `ns.ForeverRequire(ready, slash)`, `slash` being `{ key = <SlashCmdList key>, <words>... }`, so a
   stopped addon's slash words and compartment entry repeat the line instead of doing nothing; the vendored file is

@@ -44,7 +44,14 @@ Ace3 and LibStub libraries ship:
 The manager results in the bridge history below no longer block this. A manager that deletes the old shared folder
 during an update leaves the updated addon running on its embedded copy. `tools/check_consumers.py` holds every consumer that opts in with
 `## X-Forever-Core-Embed: 1` to this layout. A consumer that has not opted in keeps the bridge bundle (externals and
-`move-folders`) until its embed release.
+`move-folders`) until its embed release. `core_pin.embeds` is the one reader of that field: the last
+`## X-Forever-Core-Embed:` line decides, and only the value `1` opts in, so every check agrees with the embed step.
+
+The embed releases go out together. While any addon still ships the shared top-level `ForeverCore/` folder, removing
+or downgrading that addon rolls core back under the others, so `tools/release_consumers.py` holds an opted-in addon's
+release, naming the addons still to opt in, until every addon in its `EMBED_FLEET` sets the field on its own `main`.
+The embed step also refuses a TOC whose `## SavedVariables` does not name exactly one account global: core mirrors
+its account store into that one global, and a per-character global or a choice of several cannot hold it.
 
 An already-released standalone (any 1.14.x or 1.15.0) that is enabled publishes its table while it loads. The loader
 adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release

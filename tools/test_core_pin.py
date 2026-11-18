@@ -63,6 +63,37 @@ class CorePinTest(unittest.TestCase):
         failures = core_pin.check_latest(self.root, fetch=lambda *_: self.fail("no network read without a pin"))
         self.assertTrue(any("no pin names the release to embed" in failure for failure in failures))
 
+    def test_the_opt_in_is_the_last_field_value_and_exactly_one(self):
+        for toc, embedded in (
+            ("## X-Forever-Core-Embed: 1\n## X-Forever-Core-Embed: 0\n", False),
+            ("## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n", True),
+            ("## X-Forever-Core-Embed: 1, 1\n", False),
+            ("##X-Forever-Core-Embed: 1\n", True),
+            ("  ## X-Forever-Core-Embed: 1\n", True),
+            ("\ufeff## X-Forever-Core-Embed: 1\n", True),
+            (b"\xef\xbb\xbf## X-Forever-Core-Embed: 1\n", True),
+        ):
+            with self.subTest(toc=toc):
+                self.assertIs(core_pin.embeds(toc), embedded)
+
+    def test_a_pkgmeta_yaml_embedding_consumer_is_checked(self):
+        self.write_embedded(toc="v1.3.0")
+        self.pkgmeta.rename(self.root / "pkgmeta.yaml")
+        self.assertTrue(any("must be v1.4.0" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_package_as_uses_the_shortest_root_toc(self):
+        self.write_embedded(toc="v1.3.0")
+        self.pkgmeta.write_text("embedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        (self.root / "LegacyForever_Vanilla.toc").write_text("## Interface: 11507\n", encoding="utf-8")
+        failures = core_pin.check(self.root)
+        self.assertTrue(any("LegacyForever.toc" in failure and "must be v1.4.0" in failure for failure in failures))
+
+    def test_a_flavor_suffixed_only_root_toc_without_package_as_fails(self):
+        self.write_embedded()
+        self.pkgmeta.write_text("embedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        self.toc.rename(self.root / "LegacyForever_Mainline.toc")
+        self.assertTrue(any("flavor-suffixed" in failure for failure in core_pin.check(self.root)))
+
     def test_three_copies_of_one_release_pass(self):
         self.write()
         self.assertEqual(core_pin.check(self.root), [])
