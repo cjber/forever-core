@@ -49,13 +49,11 @@ Each version needs changelog fragments consumed into a `CHANGELOG.md` entry befo
 GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
 kind: proof` request (`flows: update notice=<slash or Lua file>`). A core release re-releases every consumer
 through `release-consumers.yml`. Load order: `ForeverCore.toc` loads the modules, then `Expose.lua` last; it has
-no `OptionalDeps`. Skills for the suite (`wow-forever-addon`, `wow-addon-publish`, `wow-retail-ui-style`) live in
+no `OptionalDeps`. Skills for the suite (`wow-forever-addon`, `wow-addon-publish`, `wow-retail-ui-style`,
+`wow-mock-screenshots`, `wow-visual-audit`, `foreverauras`) live in
 `.agents/skills`; each addon pins them here.
 
 ## Standards
 
 - `repo-standards`: the RS-* requirements every cjber and agent-labs-dev repo meets; its `audit.py` checks this repo.
 - `wow-forever-addon`: the WFA-* addon rules, which win where stricter.
-- `wow-mock-screenshots`: rendering README and store screenshots with `tools/wowmock`.
-- `wow-visual-audit`: gating a rendered scene's layout, or judging a screenshot by eye.
-- `foreverauras`: building or decoding a ForeverAuras (WeakAuras) import string.
