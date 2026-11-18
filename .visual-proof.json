@@ -1,69 +1,23 @@
 {
-  "input_digest": "c1812ed367ecd288f4bbab4789a4752a7b24fa9f7b81b13fcfd7a43e3fe54298",
-  "runtime_sha256": "c1812ed367ecd288f4bbab4789a4752a7b24fa9f7b81b13fcfd7a43e3fe54298",
-  "candidate": "2692e8ac2ceba0ea7df76a5d2f087d06b67420c2f439ce69ae774e5df8523199",
+  "input_digest": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
+  "runtime_sha256": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
+  "candidate": "d44d3b9fd5985a30d5a5e083eb71efbcb3cc302a94ee2843d46c2a23e22b4e95",
   "client_build": "1.60.1.70959 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "8d1a4434c5a6880a5dc1f0f4a305b59a52922a9e",
+  "source_commit": "cae5f437a7fa2cbc2f2cb17958e8bec5edef9da8",
   "flows": [
     {
-      "name": "tabs",
+      "name": "tracker",
       "steps": [
-        "sha256:9a568e8e342568f35daeec54dfd1a54166e242abab4b5f7c16cd3822a4437afc skillup.lua"
-      ],
-      "inputs": [
-        {
-          "click": [
-            960,
-            402
-          ]
-        }
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "commissions",
-      "steps": [
-        "sha256:41e2f1ce5a4530d985d85ded6959faecbf9934d368888d5a3930b115d73f30d0 commissions.lua"
-      ],
-      "inputs": [
-        {
-          "click": [
-            960,
-            402
-          ]
-        }
-      ],
-      "result": "pass"
-    },
-    {
-      "name": "cooking",
-      "steps": [
-        "sha256:ae777264cf54b31a750d62c9c86fe04c5140ee55491a9156e37cd4543e5479c5 cooking.lua"
-      ],
-      "inputs": [
-        {
-          "click": [
-            960,
-            402
-          ]
-        }
+        "/forever"
       ],
       "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/c03601346cb5710f0d29861601a93bb9/raw/a5a7ca82b2c4fbfcf82229bc6cee55850f6d263d/1-tabs.png",
-      "sha256": "4f3e7a96d82acff51dc5ad101baf27c7c70a89d527e206c3961de7fa4f442ece"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/c03601346cb5710f0d29861601a93bb9/raw/a5a7ca82b2c4fbfcf82229bc6cee55850f6d263d/2-commissions.png",
-      "sha256": "aabcc1eeebfe96f1537310a0e7520f3fa0b2ac28f7d1f2f800f0955826e287f5"
-    },
-    {
-      "url": "https://gist.githubusercontent.com/cjber/c03601346cb5710f0d29861601a93bb9/raw/a5a7ca82b2c4fbfcf82229bc6cee55850f6d263d/3-cooking.png",
-      "sha256": "9b895abe7c217cedf43e0a32020e7ac28a69ac2d36dcfa268f6ec87803226dc6"
+      "url": "https://gist.githubusercontent.com/cjber/04a883d272109227622d98e25e0ef337/raw/da62f103e3cea93637cb4e3f05fe381d641e71b2/1-tracker.png",
+      "sha256": "64698f4f9a0437efb4f5a20f59cc6c839e289b31f99472fe58f6772b508f83ae"
     }
   ]
 }
