@@ -1858,7 +1858,7 @@ class BuildDevTest(unittest.TestCase):
         stamped = (built / "LegacyForever.toc").read_bytes()
         self.assertNotIn(b"@project-version@", stamped)
         self.assertTrue(stamped.endswith(b"Core\\Core.lua\r\n"), stamped)
-        self.assertRegex(stamped, rb"## Version: v1\.2\.3-dev\+[0-9a-f]{1,}\r\n")
+        self.assertRegex(stamped, rb"## Version: 1\.2\.3-dev\+[0-9a-f]{1,}\r\n")
 
     def test_the_build_replaces_the_previous_one_atomically(self):
         first = fc.build_dev("legacy-forever", "HEAD")
@@ -1876,10 +1876,10 @@ class BuildDevTest(unittest.TestCase):
             fc.build_dev("legacy-forever", "no-such-ref")
         self.assertEqual((built / "Core/Core.lua").read_text(), "-- the addon\n")
 
-    def test_a_repository_with_no_release_is_stamped_v0_0_0(self):
+    def test_a_repository_with_no_release_is_stamped_0_0_0(self):
         self.git("tag", "-d", "v1.2.3")
         built = fc.build_dev("legacy-forever", "HEAD")
-        self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: v0\.0\.0-dev\+")
+        self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: 0\.0\.0-dev\+")
 
     def test_build_dev_cli_refuses_a_release_tag(self):
         out = io.StringIO()

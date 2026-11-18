@@ -1400,7 +1400,8 @@ def tag_name(repo_root: Path, commit: str) -> str | None:
 
 
 def dev_version(repo_root: Path, commit: str) -> str:
-    """`<tag>-dev+<sha>`, so wowaddon returns the dev link to the store release once a newer one ships."""
+    """`<version>-dev+<sha>`, the tag without its `v` as a release TOC carries it, so wowaddon returns the dev link to
+    the store release once a newer one ships."""
     try:
         tag = subprocess.check_output(
             ["git", "-C", str(repo_root), "describe", "--tags", "--abbrev=0", commit],
@@ -1409,7 +1410,8 @@ def dev_version(repo_root: Path, commit: str) -> str:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         tag = "v0.0.0"  # a repository with no release yet
-    return f"{tag}-dev+{git(repo_root, 'rev-parse', '--short', commit)}"
+    version = tag[1:] if re.match(r"[vV]\d", tag) else tag
+    return f"{version}-dev+{git(repo_root, 'rev-parse', '--short', commit)}"
 
 
 def stamp_tocs(build: Path, version: str) -> None:

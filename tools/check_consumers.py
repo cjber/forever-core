@@ -26,6 +26,8 @@ drifts the same way:
 - The same `release.yml` must carry core's own "Tag a manual release" step unchanged, the one that peels a signed tag
   and tags a workflow-changing commit with the PAT; `tools/sync_consumers.py` copies it in.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
+- Every BigWigs packager step in a consumer's `release.yml` and `ci.yml` must have
+  `python3 -m tools.forever_tools.toc_version` before it, so `## Version` ships bare, never the tag's `v`.
 - A consumer whose root TOC opts in with `## X-Forever-Core-Embed: 1` must run `python3 -m tools.forever_tools.embed`
   before every BigWigs packager step in its `release.yml` and `ci.yml`, so the zip it uploads and the package CI
   checks both carry `Libs/ForeverCore/` (docs/dependency-transition.md).
@@ -357,6 +359,32 @@ def check_release_gate(repo, branch, local):
 
 EMBED_COMMAND = "tools.forever_tools.embed"
 CI_WORKFLOW = ".github/workflows/ci.yml"
+VERSION_COMMAND = "tools.forever_tools.toc_version"
+
+
+def check_version_step(repo, branch, local):
+    """Every packager step in a consumer's release and CI workflows has the bare version step before it.
+
+    The packager alone writes the tag, `v1.2.3`, into `## Version`, which no addon's version comparison matches.
+    """
+    failures = []
+    command = f"python3 -m {VERSION_COMMAND}"
+    for workflow in (RELEASE_WORKFLOW, CI_WORKFLOW):
+        path = consumer_path(repo, workflow)
+        data, error = read_consumer(repo, path, branch, local)
+        if error:
+            failures.append(f"{repo}: {path}: {error}")
+            continue
+        text = "" if data is None else data.decode("utf-8", "replace")
+        previous = 0
+        for packager in (match.start() for match in re.finditer(r"BigWigsMods/packager@", text)):
+            if command not in text[previous:packager]:
+                failures.append(
+                    f"{repo}: {path}: a packager step with no `{command}` before it, so the TOC ships the tag's v;"
+                    " run tools/sync_consumers.py"
+                )
+            previous = packager
+    return failures
 
 
 def check_embed(repo, branch, local):
@@ -625,6 +653,7 @@ def main(argv=None):
     for repo in repos:
         failures += check_consumer_gates(repo, arguments.branch, arguments.local)
         failures += check_embed(repo, arguments.branch, arguments.local)
+        failures += check_version_step(repo, arguments.branch, arguments.local)
 
     if failures:
         print("Consumers differ from this repo:")

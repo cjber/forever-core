@@ -6,7 +6,7 @@ from pathlib import Path
 
 TOOLING = Path(__file__).resolve().parent.parent / ".agents/skills/wow-forever-addon/tooling"
 sys.path.insert(0, str(TOOLING))
-from forever_tools import lua51, widget_handlers  # noqa: E402
+from forever_tools import lua51, package, widget_handlers  # noqa: E402
 
 PACKAGE = Path(".release") / "ForeverCore"
 DEV = ("tests", "tools", "docs", "types")
@@ -36,6 +36,7 @@ def main():
         problems.append("loaded but not packaged: " + ", ".join(missing))
     if leaked:
         problems.append("development files packaged: " + ", ".join(leaked))
+    problems += package.check_version(PACKAGE.parent, PACKAGE / "ForeverCore.toc")
     problems += widget_handlers.check_root(PACKAGE)
     problems += lua51.check(PACKAGE)
     if problems:

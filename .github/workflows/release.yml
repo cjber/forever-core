@@ -182,6 +182,11 @@ jobs:
         run: |
           python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
           python3 tools/suite_load.py --released -v
+      # The packager fills @project-version@ with the tag, v and all; write the bare version first.
+      - name: Write the bare version into the TOC
+        env:
+          PYTHONPATH: .agents/skills/wow-forever-addon/tooling
+        run: python3 -m forever_tools.toc_version
       - name: Build the release zip without uploading
         uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:

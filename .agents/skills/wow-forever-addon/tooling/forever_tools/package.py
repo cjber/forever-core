@@ -5,6 +5,8 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 `args: -d -z`), then this reads its release directory and fails on:
 
 - an addon folder that is missing, or has no TOC of its own name;
+- a TOC whose `## Version` is the tag with its `v` (`v1.2.3`) or the unfilled `@project-version@`: every addon
+  compares `GetAddOnMetadata(addon, "Version")` with a bare version, and `forever_tools.toc_version` writes it;
 - a file a TOC or its XML loads (`Script`, `Include`), or an `Interface\\AddOns\\<packaged folder>\\...` path a TOC
   tag, XML attribute or whole Lua string names, that is not in the package;
 - a development file or folder that shipped at an addon folder's top level (`tests`, `tools`, `types`, `docs`,
@@ -206,6 +208,7 @@ def check(release: Path, policy: Policy) -> list[str]:
             problems.append(f"{addon}/{addon}.toc: missing")
         for toc in tocs:
             problems += check_loaded(release, folder, toc, policy.addons)
+            problems += check_version(release, toc)
         if not any(child.is_file() and licence_file(child.name) for child in folder.iterdir()):
             problems.append(f"{addon}/LICENSE: missing; every packaged folder ships its licence")
     if policy.addons and (release / policy.addons[0]).is_dir():
@@ -232,6 +235,28 @@ def check(release: Path, policy: Policy) -> list[str]:
                 shown = "` or `".join(wanted)
                 problems.append(f"{name}/{file}: no `{shown}` section with text; credit what the addon uses")
     return problems
+
+
+VERSION_FIELD = re.compile(r"^##\s*Version\s*:\s*(?P<value>.*?)\s*$", re.IGNORECASE)
+
+
+def check_version(release: Path, toc: Path) -> list[str]:
+    """A packaged `## Version` is the bare release version that `GetAddOnMetadata` hands every reader: never the
+    tag's `v` the packager writes on its own, and never its unfilled keyword."""
+    for line in toc.read_text(encoding="utf-8-sig").splitlines():
+        found = VERSION_FIELD.match(line.strip())
+        if found is None:
+            continue
+        value, where = found["value"], toc.relative_to(release).as_posix()
+        if "@project-version@" in value:
+            return [f"{where}: ## Version still holds @project-version@; the packager did not fill it in"]
+        if value[:1] in ("v", "V") and value[1:2].isdigit():
+            return [
+                f"{where}: ## Version is {value}, the tag with its v; run python3 -m tools.forever_tools.toc_version"
+                " before the packager"
+            ]
+        return []
+    return []
 
 
 def check_loaded(release: Path, folder: Path, toc: Path, addons: tuple[str, ...]) -> list[str]:
