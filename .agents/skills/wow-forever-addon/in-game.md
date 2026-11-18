@@ -360,7 +360,13 @@ printed: it is the flow's ready check, polled by `!!DevSmoke`, whose screenshot 
 The client reads the inbox once per session: the first `/devsmoke eval` or login loads it, and any snippet written
 after that needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the snippet it
 just wrote, then clears the inbox before reloading once more and reading the result that snippet's own run token
-names. The second reload therefore saves that one run instead of running the snippet again (#588).
+names. The second reload therefore saves that one run instead of running the snippet again (#588). `eval A.lua B.lua`
+runs each file at a login of its own, and each file's reload saves the result of the file before it, so N files take
+N + 1 reloads instead of 2N; batch independent probes into one call.
+
+A session ends after 10 min with no job, unless a queued job ticket or an unexpired lease on the session says more
+work is coming. An agent with more requests queued holds `lease --ttl` across them, so the next job skips a cold login
+(1 to 2.5 min). The 3 h lifetime cap still applies.
 
 `DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil>,
 ready = <"captured"|"failed"|"timeout"|nil>, readyErr = <string|nil> }`, where `out` holds the same lines the Agent

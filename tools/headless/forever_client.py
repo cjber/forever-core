@@ -26,7 +26,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
-    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, run it, print its own result
+    forever_client.py eval FILE...        # run each FILE through !!DevSmoke's inbox, print each one's own result
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
@@ -83,6 +83,8 @@ position; a timeout bounds the wait without guaranteeing acquisition. `STATE_DIR
 (pid, token, label, start) so a waiter can say who it waits for. The session
 ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
+A queued ticket or an unexpired lease on the session holds off the idle limit, never the lifetime cap: an agent
+with requests still queued keeps a lease to spare the next job a cold login.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
 is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
 Each verb using that token takes and releases the lock itself; `release TOKEN` ends the lease and retains its reason.
@@ -3153,20 +3155,53 @@ def at_character_select(state: dict, manual_launcher: bool) -> None:
         press_play(state)
 
 
-def session_end_reason(now: float, started: float, ready: float, last_job: float) -> str | None:
+def session_end_reason(
+    now: float, started: float, ready: float, last_job: float, pending: Callable[[], bool] = lambda: False
+) -> str | None:
     """Why the resident session should stop now, or None. Two fixed limits, checked in this order:
 
     - MAX_SESSION from the launch: the lifetime cap, whatever jobs arrive.
-    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming.
+    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming. `pending` says
+      work is declared, a live lease or a queued ticket, so a job is coming and the idle limit waits for it: a cold
+      login costs 1 to 2.5 min, more than the idle client does.
 
     `last_job` is never before `ready`: `last_job_mark` clamps it, because a mark an earlier session left says
     nothing about this one.
     """
     if now - started >= MAX_SESSION:
         return f"the {MAX_SESSION // 3600} h lifetime cap"
-    if now - last_job >= IDLE_LIMIT:
+    if now - last_job >= IDLE_LIMIT and not pending():
         return f"{IDLE_LIMIT // 60} min without a job"
     return None
+
+
+def pending_work(state: Mapping) -> bool:
+    """A job is coming: a queued ticket that is not the session's own end, or an unexpired lease on this session.
+
+    An agent with queued requests holds a lease (`lease --ttl`, renewed while its queue is not empty) to keep the
+    session warm between them; the lease expires on its own, so a forgotten one costs at most LEASE_MAX.
+    """
+    for path in job_queue():
+        try:
+            if not json.loads(path.read_text()).get("session_end", False):
+                return True
+        except (OSError, ValueError):
+            continue
+    now, identity = time.time(), session_identity(state)
+    for path in (STATE_DIR / "leases").glob("*.json"):
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (
+            isinstance(record, dict)
+            and not record.get("ended")
+            and isinstance(record.get("expires"), (int, float))
+            and record["expires"] > now
+            and record.get("session") == identity
+        ):
+            return True
+    return False
 
 
 def last_job_mark(ready: float) -> float:
@@ -3381,7 +3416,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 job = job_token = None
                 continue
             last_world_check, reason = resident_world_check(state, last_world_check)
-            reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            reason = reason or session_end_reason(
+                time.monotonic(), launched, ready, last_job_mark(ready), lambda: pending_work(state)
+            )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -3405,7 +3442,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state.pop("world_lost", None)
                 write_state(state)
             reason = ("the client left the world" if not world else None) or session_end_reason(
-                time.monotonic(), launched, ready, last_job_mark(ready)
+                time.monotonic(), launched, ready, last_job_mark(ready), lambda: pending_work(state)
             )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
@@ -4193,6 +4230,47 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
+def eval_files(state: Mapping, files: Sequence[Path]) -> int:
+    """Run each snippet through !!DevSmoke at a login of its own and print each one's own result; 1 when any failed.
+
+    A snippet's result reaches disk at the reload after its own (#580). The next snippet's reload is that save, so N
+    snippets take N + 1 reloads instead of 2N. Clearing the inbox after each run keeps a later reload from running a
+    snippet twice (#588), and an eval is not a proof flow, so it schedules no ready screenshot (#588).
+    """
+    tool = devsmoke_eval()
+    failed = False
+    cleared = True
+    unread: tuple[Path, str] | None = None
+
+    def report(path: Path, token: str) -> None:
+        nonlocal failed
+        text, ok = format_eval(saved_eval(token))
+        print(f"== {path}\n{text}" if len(files) > 1 else text, flush=True)
+        failed = failed or not ok
+
+    try:
+        for path in files:
+            cleared = False
+            try:
+                written = tool.write_snippet(path, addons=CLIENT / "Interface/AddOns", capture=False)
+            except tool.EvalError as error:
+                raise ClientError(str(error)) from None
+            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+            reload(state)
+            clear_eval_inbox()
+            cleared = True
+            if unread:
+                report(*unread)
+            unread = (path, written["token"])
+        if unread:
+            reload(state)
+            report(*unread)
+    finally:
+        if not cleared:
+            clear_eval_inbox(quiet=True)
+    return 1 if failed else 0
+
+
 JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
 
 
@@ -4232,27 +4310,7 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
     elif args.verb == "eval":
-        tool = devsmoke_eval()
-        cleared = False
-        try:
-            try:
-                # An eval is not a proof flow: it must not schedule a ready screenshot that would race the reload
-                # saving its result (#588).
-                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns", capture=False)
-            except tool.EvalError as error:
-                raise ClientError(str(error)) from None
-            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-            # This reload runs the snippet once. Clearing the inbox before the next reload keeps that reload from
-            # running it a second time; that reload saves the first run's result for the reader (#580, #588).
-            reload(state)
-            clear_eval_inbox()
-            cleared = True
-            report, ok = eval_result(state, written["token"])
-            print(report)
-            return 0 if ok else 1
-        finally:
-            if not cleared:
-                clear_eval_inbox(quiet=True)
+        return eval_files(state, args.file)
     elif args.verb == "errors":
         # A shared session's log holds every job's lines: read from where this job's own work started.
         completed = errors({**state, "started": job_started()}, args.addon)
@@ -4349,7 +4407,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "slash":
             p.add_argument("command")
         elif name == "eval":
-            p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
+            p.add_argument(
+                "file", type=Path, nargs="+", help="Lua snippets to run through !!DevSmoke, each at a reload of its own"
+            )
         elif name == "errors":
             p.add_argument("--addon")
     p = sub.add_parser("sv")

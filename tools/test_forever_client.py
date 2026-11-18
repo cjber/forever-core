@@ -1686,6 +1686,36 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
         self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
 
+    def test_eval_of_two_files_takes_three_reloads_and_reports_each_ones_own_result(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("b.lua"), "lines": 1, "token": "run-b"},
+        ]
+        order = []
+        records = {
+            "run-a": {"run": "run-a", "ok": False, "err": "a.lua:1: boom"},
+            "run-b": {"run": "run-b", "ok": True},
+        }
+        state = live_state(ready=1.0)
+        out = io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: order.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: order.append("clear")),
+            mock.patch.object(fc, "saved_eval", side_effect=lambda token: order.append(token) or records[token]),
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "b.lua"]), 1, "one snippet failed")
+        # b's reload saves a's result; only the last snippet needs a reload of its own: N + 1, not 2N.
+        self.assertEqual(order, ["reload", "clear", "reload", "clear", "run-a", "reload", "run-b"])
+        printed = out.getvalue()
+        self.assertIn("== a.lua\nDevSmokeDB.eval: failed", printed)
+        self.assertIn("a.lua:1: boom", printed)
+        self.assertIn("== b.lua\nDevSmokeDB.eval: ok", printed)
+
     def test_eval_never_reports_an_earlier_runs_result(self):
         # The SavedVariables file holds the session before this one until the next reload, and the first reader
         # answered with it: a passing snippet was called failed, and a failing one passed (#580).
@@ -3887,6 +3917,44 @@ class BrokerTest(unittest.TestCase):
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, fc.MAX_SESSION - 1))
         # The lifetime cap wins when both limits are due, so the session never outlives it.
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0))
+
+    def test_declared_work_holds_off_the_idle_limit_but_not_the_lifetime_cap(self):
+        idle = fc.IDLE_LIMIT + 50
+        self.assertIsNone(fc.session_end_reason(idle, 0, 50, 50, lambda: True))
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0, lambda: True))
+        asked = mock.Mock(return_value=False)
+        self.assertIsNone(fc.session_end_reason(100, 0, 50, 95, asked))
+        asked.assert_not_called()
+
+    def test_pending_work_is_a_live_lease_on_this_session_or_a_queued_ticket(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}
+        leases = fc.STATE_DIR / "leases"
+        leases.mkdir(parents=True, exist_ok=True)
+        lease = leases / "t.json"
+
+        def write(**fields):
+            record = {"token": "t", "expires": time.time() + 600, "session": fc.session_identity(state)}
+            record.update(fields)
+            lease.write_text(json.dumps(record))
+
+        with mock.patch.object(fc, "job_queue", return_value=[]):
+            self.assertFalse(fc.pending_work(state))
+            write()
+            self.assertTrue(fc.pending_work(state))
+            write(expires=time.time() - 1)
+            self.assertFalse(fc.pending_work(state), "an expired lease")
+            write(ended="released")
+            self.assertFalse(fc.pending_work(state), "a released lease")
+            write(session={**fc.session_identity(state), "pid": 8})
+            self.assertFalse(fc.pending_work(state), "another session's lease")
+        lease.unlink()
+        ticket = fc.STATE_DIR / "ticket.json"
+        ticket.write_text(json.dumps({"session_end": True}))
+        with mock.patch.object(fc, "job_queue", return_value=[ticket]):
+            self.assertFalse(fc.pending_work(state), "the session's own end is not a coming job")
+        ticket.write_text(json.dumps({"label": "proof"}))
+        with mock.patch.object(fc, "job_queue", return_value=[ticket]):
+            self.assertTrue(fc.pending_work(state))
 
     def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):
         stale = self.state / "last-job"
