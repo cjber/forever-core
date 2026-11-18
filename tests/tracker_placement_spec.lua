@@ -154,6 +154,42 @@ early.check(Pinned(early), "with no tracker line yet the column waits at its pin
 early.moveLine(700)
 early.check(Under(early, 700), "and goes under the line once the tracker has one")
 
+-- The "Attach to quest tracker" checkbox addons still ship (#850's report: toggling it did nothing). It reads
+-- GetSettings().attached and writes SetAttached; off picks Left, on picks Under, and its callback hears each change.
+local box = harness.new({ hostSettings = { attached = false } })
+local boxApi = box.ns.TrackerHost
+local heard = {}
+boxApi.OnAttachmentChanged(function(attached)
+	heard[#heard + 1] = attached
+end)
+box.check(
+	boxApi.GetSettings().attached == true and boxApi.IsAttachedToQuestTracker(),
+	"the checkbox shows attached while under"
+)
+boxApi.SetAttached(false)
+box.drain()
+box.check(Pinned(box) and boxApi.GetPlacement() == "left", "turning it off moves the column left of the tracker")
+box.check(boxApi.GetSettings().attached == false and heard[#heard] == false, "and the checkbox hears it is off")
+boxApi.SetAttached(true)
+box.drain()
+box.check(Under(box) and boxApi.GetSettings().attached == true, "turning it on puts the column back under")
+box.check(heard[#heard] == true, "and the checkbox hears it is on")
+boxApi.SavePosition(10, -10)
+box.check(boxApi.GetSettings().attached == false and heard[#heard] == false, "a drag shows as not attached")
+boxApi.SetAttached(true)
+box.drain()
+box.check(Under(box), "and turning it on releases the drag")
+
+-- A reload keeps the choice: saved settings with a placement are not migrated again.
+local saved = box.hostSettings
+saved.attached, saved.placement = true, "left"
+local reloaded = harness.new({ hostSettings = saved })
+reloaded.check(Pinned(reloaded) and reloaded.ns.TrackerHost.GetSettings().attached == false, "Left survives a reload")
+local savedUnder = harness.new({ hostSettings = { attached = true, placement = "under", x = 5, y = -5 } })
+savedUnder.check(savedUnder.hostSettings.x == 5, "a dragged spot saved with a placement survives a reload")
+local old = harness.new({ hostSettings = { attached = true, x = 5, y = -5 } })
+old.check(old.hostSettings.x == nil and Under(old), "a pre-placement attached table drops its spot and goes under")
+
 -- The host scale applies to the line: a tracker at a different scale is converted into the column's units.
 local scaled = harness.new({ hostSettings = { attached = false } })
 scaled.nativeRect.scale, scaled.nativeRect.left = 2, 100
@@ -161,4 +197,14 @@ scaled.moveLine(300)
 local point = scaled.host.point
 scaled.check(point[4] == 200 and point[5] == 600, "the line is read in the column's units")
 
-print(("tracker_placement_spec: %d checks passed"):format(t.checks() + early.checks() + scaled.checks()))
+print(
+	("tracker_placement_spec: %d checks passed"):format(
+		t.checks()
+			+ early.checks()
+			+ scaled.checks()
+			+ box.checks()
+			+ reloaded.checks()
+			+ savedUnder.checks()
+			+ old.checks()
+	)
+)

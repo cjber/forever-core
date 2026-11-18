@@ -305,9 +305,12 @@ host.SetPoint, host.SetHeight, host.ClearAllPoints = setPoint, setHeight, clearP
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "the drag works again after combat")
 
--- The retired attach switch leaves the column free.
+-- The attach checkbox picks Under, which releases the drag.
 ns.TrackerHost.SetAttached(true)
 drain()
-check(not ns.TrackerHost.IsAttachedToQuestTracker(), "attaching is a no-op")
+check(
+	ns.TrackerHost.IsAttachedToQuestTracker() and hostSettings.x == nil,
+	"attaching puts the column under the tracker"
+)
 
 print("tracker_host_lock_spec: " .. checks .. " checks passed")

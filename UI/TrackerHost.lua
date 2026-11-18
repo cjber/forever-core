@@ -70,6 +70,8 @@ local function CopyLegacy()
 			settings[field] = legacy[field]
 		end
 	end
+	-- The copied table predates placement, so the next read migrates its attachment.
+	settings.placement = nil
 	settings.migrated = true
 	return true
 end
@@ -156,15 +158,15 @@ local function Opacity(value)
 	end
 	return math.max(0, math.min(1, value))
 end
--- The column is pinned beside the game's quest tracker until the player drags it, and saved x and y mean a dragged
--- position. An old attached placement (`attached` true or missing) drops its saved spot once, so it becomes the pin;
--- an old beside placement already has none. A free position the player dragged (attached false with x and y) is kept.
--- `attached = false` marks the settings as migrated, and the player's Lock choice stays either way.
+-- The column sits at its placement until the player drags it, and saved x and y mean a dragged position. Settings with
+-- no placement predate it: an old attached placement (`attached` true or missing) drops its saved spot once, so it
+-- follows its place, and a free position the player dragged (attached false with x and y) is kept. The player's Lock
+-- choice stays either way. `attached` then mirrors whether the column follows the quest tracker under it, which is
+-- what an addon's "Attach to quest tracker" checkbox reads.
 ---@return ForeverTrackerSettings
 local function Settings()
 	local settings = ns.TrackerHostSettings and ns.TrackerHostSettings() or fallbackSettings
-	if settings.attached ~= false then
-		settings.attached = false
+	if settings.placement == nil and settings.attached ~= false then
 		settings.x, settings.y = nil, nil
 	end
 	settings.locked = settings.locked == true
@@ -179,6 +181,7 @@ local function Settings()
 	if settings.placement ~= "left" then
 		settings.placement = "under"
 	end
+	settings.attached = settings.placement == "under" and not (settings.x and settings.y)
 	return settings
 end
 -- The column's width in its own units: the 260 of the client's ObjectiveTrackerContainer header template, so a Forever
@@ -1204,6 +1207,15 @@ end
 -- "under" (the default) or "left" of the game's quest tracker. A dragged column keeps its saved choice, which applies
 -- again once the player picks a place.
 ---@return "under"|"left"
+-- Addons' attach checkboxes, told when the column starts or stops following the tracker so they show its state.
+---@type (fun(attached: boolean))[]
+local attachmentCallbacks = {}
+local function NotifyAttachment()
+	local attached = Settings().attached
+	for _, callback in ipairs(attachmentCallbacks) do
+		RunSafe(nil, "OnAttachmentChanged", callback, attached)
+	end
+end
 function api.GetPlacement()
 	return Settings().placement
 end
@@ -1219,6 +1231,7 @@ function api.SetPlacement(value)
 	settings.x, settings.y = nil, nil
 	placeAgain = true
 	host:MarkDirty()
+	NotifyAttachment()
 end
 -- Whether the column follows a place, rather than a position the player dragged it to.
 ---@return boolean
@@ -1226,13 +1239,21 @@ local function Placed()
 	local settings = Settings()
 	return not (settings.x and settings.y)
 end
--- Compatibility for consumers written when the column could attach to the quest tracker: it never does now, so these
--- answer false, change nothing and never call back.
+-- The "Attach to quest tracker" checkbox addons still ship: attached is the Under placement with no dragged position,
+-- and turning it off picks Left.
 function api.IsAttachedToQuestTracker()
-	return false
+	return Settings().attached
 end
-function api.SetAttached(_) end
-function api.OnAttachmentChanged(_) end
+---@param value boolean
+function api.SetAttached(value)
+	api.SetPlacement(value and "under" or "left")
+end
+---@param callback fun(attached: boolean)
+function api.OnAttachmentChanged(callback)
+	if type(callback) == "function" then
+		attachmentCallbacks[#attachmentCallbacks + 1] = callback
+	end
+end
 -- A drag saves a free position, which releases the pin.
 function api.SavePosition(x, y)
 	if type(x) ~= "number" or type(y) ~= "number" then
@@ -1241,6 +1262,7 @@ function api.SavePosition(x, y)
 	local settings = Settings()
 	settings.x, settings.y = x, y
 	host:MarkDirty()
+	NotifyAttachment()
 end
 
 -- The Tracker position choice, the same in every section's menu. Neither radio is ticked while the column sits where it

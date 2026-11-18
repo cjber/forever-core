@@ -137,7 +137,7 @@ pinned.check(Entry(entries, "Reset position") == nil, "and no Reset entry")
 -- a beside one never had one.
 local migrated = harness.new({ hostSettings = { attached = true, locked = true, x = 10, y = -20 } })
 settings = migrated.hostSettings
-migrated.check(settings.attached == false, "an attached placement is marked migrated")
+migrated.check(settings.placement == "under", "an attached placement is given a place")
 migrated.check(settings.x == nil and settings.y == nil, "the attached placement's old spot is dropped")
 migrated.check(settings.locked == true, "the player's Lock choice survives the migration")
 migrated.check(Under(migrated), "a migrated attached column sits under the game tracker, the default place")
@@ -158,18 +158,19 @@ migrated.ns.TrackerHost.SavePosition(50, -60)
 migrated.drain()
 migrated.check(settings.x == 50 and settings.y == -60, "a position saved after the migration is kept")
 migrated.check(migrated.host.point[4] == 50 and migrated.host.point[5] == -60, "the column moves to the saved spot")
--- The retired attach switch answers false and changes nothing.
+-- The attach checkbox: a dragged column reports not attached, and turning it on puts the column under the tracker.
+migrated.check(migrated.ns.TrackerHost.IsAttachedToQuestTracker() == false, "a dragged column reports not attached")
+local notified
+migrated.ns.TrackerHost.OnAttachmentChanged(function(attached)
+	notified = attached
+end)
 migrated.ns.TrackerHost.SetAttached(true)
 migrated.drain()
-migrated.check(migrated.ns.TrackerHost.IsAttachedToQuestTracker() == false, "the column never reports attached")
-migrated.check(settings.attached == false and settings.x == 50, "SetAttached changes no saved setting")
-migrated.check(migrated.host.point[4] == 50 and migrated.host.point[5] == -60, "SetAttached moves nothing")
-local notified = false
-migrated.ns.TrackerHost.OnAttachmentChanged(function()
-	notified = true
-end)
+migrated.check(settings.attached == true and settings.x == nil, "SetAttached(true) releases the drag")
+migrated.check(Under(migrated) and notified == true, "moves the column under and tells the checkbox")
 migrated.ns.TrackerHost.SetAttached(false)
-migrated.check(not notified, "an attachment callback is never called")
+migrated.drain()
+migrated.check(settings.placement == "left" and notified == false, "SetAttached(false) picks Left")
 
 -- A layout during a drag leaves the column where the drag holds it.
 local dragged = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
