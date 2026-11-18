@@ -446,7 +446,7 @@ function M.build(sim)
 			left, width = CX - w / 2, w
 		end
 		-- Text with no height of its own wraps at the width its anchors stretched it to, as the client's does.
-		if s.kind == "FontString" and width and not ((Secret.unwrap(s.height) or 0) > 0) and L and R then
+		if s.kind == "FontString" and width and (Secret.unwrap(s.height) or 0) <= 0 and L and R then
 			local saved = s.width
 			s.width = width / es
 			local _, th = textSize(s)
