@@ -248,6 +248,7 @@ HYPRLAND_END = "hyprland-end"
 HYPRLAND_WORLD_WAIT = 600
 HYPRLAND_RETURN_WAIT = 900
 WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a job.
+RELOAD_WAIT = 120  # how long a /reload's loading screen may hide the strip, the same bound `reload` waits for the world
 # The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
 MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
@@ -874,6 +875,26 @@ def require_safe(state: Mapping, *, waiting: bool = False) -> None:
         raise SafetyRefusal("player is in combat")
 
 
+def client_ui_after_load(state: Mapping) -> dict[str, bool]:
+    """The strip once any loading screen is over: a /reload hides it while the client still runs (#815).
+
+    Only a strip that decodes, an outdated one, a client that is gone or RELOAD_WAIT without a strip ends the wait,
+    so a verb sent during a reload waits for the world instead of reading the loading screen as the world being left.
+    """
+    deadline = time.monotonic() + RELOAD_WAIT
+    ui = client_ui(state)
+    while not ui.get("safety") and not ui.get("outdated") and time.monotonic() < deadline and client_alive(state):
+        time.sleep(WAIT_POLL)
+        ui = client_ui(state)
+    return ui
+
+
+def client_alive(state: Mapping) -> bool:
+    """Whether the session and its gamescope still run; a Hyprland job session records no gamescope."""
+    gamescope = state.get("gamescope")
+    return session_alive(state) and (gamescope is None or gamescope_running(gamescope, state))
+
+
 def resident_world_check(state: Mapping, last_check: float) -> tuple[float, str | None]:
     """Probe only between jobs; readiness can change only after the caller takes the job lock."""
     now = time.monotonic()
@@ -1318,7 +1339,7 @@ def enter_world(state: Mapping) -> None:
     (STATE_DIR / "last-input").touch()
 
 
-def reload(state: Mapping, timeout: float = 120) -> Path:
+def reload(state: Mapping, timeout: float = RELOAD_WAIT) -> Path:
     # The new cycle's screenshots are the ones after the command was sent: a screenshot an earlier reload's flow
     # still takes would otherwise be read as this one's world load.
     slash(state, "/reload")
@@ -3352,7 +3373,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state["reloading"] = True
                 write_state(state)
             job, job_token = acquire_job(None, f"the session's end ({reason})", session_end=True)
-            world = client_ui(state)["world"]
+            world = client_ui_after_load(state)["world"]
             if not world:
                 state.pop("ready", None)
                 state["world_lost"] = True
@@ -3589,7 +3610,7 @@ def ensure_session(timeout: float, manual_launcher: bool = False) -> dict:
         if state and (state.get("ready") or state.get("world_lost")):
             addon_matches = state.get("headless_addon_digest") == headless_addon_digest()
             # Changed helper code needs replacement even if its pixel protocol version is unchanged.
-            ui = client_ui(state) if addon_matches else {}
+            ui = client_ui_after_load(state) if addon_matches else {}
             if addon_matches and ui.get("safety") and ui["world"]:
                 if not state.get("ready"):
                     state["ready"] = time.time()

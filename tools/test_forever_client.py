@@ -4001,7 +4001,9 @@ class BrokerTest(unittest.TestCase):
         fresh = live_state(ready=2.0)
         with (
             mock.patch.object(fc, "current_session", side_effect=[stale, None, fresh]),
-            mock.patch.object(fc, "client_ui", side_effect=[{"world": False}, {"world": True, "safety": True}]),
+            mock.patch.object(
+                fc, "client_ui", side_effect=[{"world": False, "safety": True}, {"world": True, "safety": True}]
+            ),
             mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
             mock.patch.object(fc, "write_state") as write,
             mock.patch.object(fc, "down") as down,
@@ -4014,10 +4016,52 @@ class BrokerTest(unittest.TestCase):
         start.assert_called_once()
         self.assertNotIn("ready", write.call_args.args[0])
 
+    def test_a_reload_loading_screen_is_waited_out_not_read_as_leaving_the_world(self):
+        # A /reload hides the strip while the client still runs (#815): the job waits for the world to come back.
+        clock = FakeClock()
+        state = live_state(ready=1.0, gamescope=os.getpid(), gamescope_start=fc.process_start(os.getpid()))
+        loading = {"world": False, "safety": False}
+        with (
+            mock.patch.object(fc, "current_session", return_value=state),
+            mock.patch.object(fc, "client_ui", side_effect=[loading, loading, {"world": True, "safety": True}]) as ui,
+            mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
+            mock.patch.object(fc, "down") as down,
+            mock.patch.object(fc, "start_serve") as start,
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+        ):
+            self.assertEqual(fc.ensure_session(60), state)
+        self.assertEqual(ui.call_count, 3)
+        down.assert_not_called()
+        start.assert_not_called()
+
+    def test_a_strip_missing_past_the_reload_wait_replaces_the_client(self):
+        clock = FakeClock()
+        stale = live_state(ready=1.0, gamescope=os.getpid(), gamescope_start=fc.process_start(os.getpid()))
+        fresh = live_state(ready=2.0)
+        down = mock.Mock()
+        with (
+            mock.patch.object(fc, "current_session", side_effect=[stale, None, fresh]),
+            mock.patch.object(
+                fc, "client_ui", side_effect=lambda _state: {"world": True, "safety": True} if down.called else {}
+            ),
+            mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
+            mock.patch.object(fc, "write_state"),
+            mock.patch.object(fc, "down", down),
+            mock.patch.object(fc, "session_lock_held", return_value=False),
+            mock.patch.object(fc, "start_serve", return_value=mock.Mock(poll=lambda: None)),
+            mock.patch.object(fc.time, "monotonic", clock.monotonic),
+            mock.patch.object(fc.time, "sleep", clock.sleep),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(fc.ensure_session(600), fresh)
+        down.assert_called_once()
+        self.assertGreaterEqual(clock.now, fc.RELOAD_WAIT)
+
     def test_out_of_world_session_cannot_stop_another_jobs_client(self):
         with (
             mock.patch.object(fc, "current_session", return_value=live_state(ready=1.0)),
-            mock.patch.object(fc, "client_ui", return_value={"world": False}),
+            mock.patch.object(fc, "client_ui", return_value={"world": False, "safety": True}),
             mock.patch.object(fc, "job_holder", return_value={"pid": -1, "token": "foreign"}),
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch.object(fc, "down") as down,
@@ -5519,6 +5563,8 @@ class LiveSafetyTest(unittest.TestCase):
                     self.assertEqual(old_ui.get("outdated", False), header == "10110010")
                     with (
                         mock.patch.object(fc, "client_ui", side_effect=[old_ui, {"world": True, "safety": True}]) as ui,
+                        # A strip still missing once a reload's loading screen would be over (#815).
+                        mock.patch.object(fc, "RELOAD_WAIT", 0),
                         mock.patch.object(fc, "require_safe") as safety,
                         mock.patch.object(fc, "job_holder", return_value={"pid": os.getpid()}),
                         mock.patch.object(fc, "write_state"),
