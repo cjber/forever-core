@@ -2627,6 +2627,13 @@ def run_flow(
             one_line_slash(action)
             written = tool.write_slash(action, addons=CLIENT / "Interface/AddOns", capture=True)
     except tool.EvalError as error:
+        if previous:
+            # The earlier flow has run, but only a reload saves its result: report that flow too, so this refusal
+            # never hides its failure.
+            print(f"flow {action} refused: {error}", file=sys.stderr, flush=True)
+            clear_eval_inbox(quiet=True)
+            reload(state)
+            check_flow_eval(state, *previous, saved=True)
         raise ClientError(str(error)) from None
     print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
     # The snippet runs at login of this reload. Clearing the inbox afterwards keeps the later reloads a proof makes
@@ -2635,7 +2642,7 @@ def run_flow(
     reload(state)
     clear_eval_inbox()
     if previous:
-        check_flow_eval(state, *previous, saved=True)
+        check_flow_eval(state, *previous, saved=True, next_flow=(action, written["token"]))
     try:
         if point:
             world = wait_for_flow_world(before, action, written["token"], state=state)
@@ -2664,12 +2671,25 @@ def eval_result(state: Mapping, token: str, *, saved: bool = False) -> tuple[str
     return format_eval(saved_eval(token))
 
 
-def check_flow_eval(state: Mapping, action: str, token: str, *, saved: bool = False) -> None:
-    """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's."""
+def check_flow_eval(
+    state: Mapping, action: str, token: str, *, saved: bool = False, next_flow: tuple[str, str] | None = None
+) -> None:
+    """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's.
+
+    `next_flow` is the (action, token) of the flow whose reload saved this one: !!DevSmoke saves that flow's own record
+    over this one when its ready check fails before this read, and the error says so instead of "not saved".
+    """
     try:
         report, ok = eval_result(state, token, saved=saved)
     except SafetyRefusal:
         raise
+    except EvalMismatch as error:
+        if next_flow and error.seen == next_flow[1]:
+            raise ClientError(
+                f"flow {action}: its result was overwritten by flow {next_flow[0]}'s own record, saved when that "
+                "flow's ready check failed; rerun the proof with the flows apart to read it"
+            ) from None
+        raise ClientError(f"flow {action}: {error}") from None
     except ClientError as error:
         raise ClientError(f"flow {action}: {error}") from None
     print(report, flush=True)
@@ -3210,10 +3230,16 @@ def pending_work(state: Mapping) -> bool:
     An agent with queued requests holds a lease (`lease --ttl`, renewed while its queue is not empty) to keep the
     session warm between them; the lease expires on its own, so a forgotten one costs at most LEASE_MAX.
     """
-    if any(ordinary for ordinary, _path in live_tickets()):
-        return True
+    try:
+        if any(ordinary for ordinary, _path in live_tickets()):
+            return True
+        leases = list((STATE_DIR / "leases").glob("*.json"))
+    except OSError:
+        # The idle check must never end a healthy session on a state-directory fault; a queued job re-checks the
+        # session under the job lock before teardown.
+        return False
     identity = session_identity(state)
-    for path in (STATE_DIR / "leases").glob("*.json"):
+    for path in leases:
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError):
@@ -4201,6 +4227,14 @@ def clear_eval_inbox(*, quiet: bool = False) -> None:
         raise ClientError(str(error)) from None
 
 
+class EvalMismatch(ClientError):
+    """DevSmokeDB.eval on disk holds another run's record; `seen` is that run's token."""
+
+    def __init__(self, seen: object, message: str):
+        super().__init__(message)
+        self.seen = seen
+
+
 def saved_eval(token: str | None = None) -> dict:
     """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke.
 
@@ -4228,9 +4262,10 @@ def saved_eval(token: str | None = None) -> dict:
             seen = data
     if seen is None:
         raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
-    raise ClientError(
+    raise EvalMismatch(
+        seen.get("run"),
         f"DevSmokeDB.eval holds the run {_text(seen.get('run'))!r}, not this snippet's {token!r}: the snippet's own "
-        "result was not saved (did the inbox load, and is !!DevSmoke linked and loaded?)"
+        "result was not saved (did the inbox load, and is !!DevSmoke linked and loaded?)",
     )
 
 
@@ -4277,12 +4312,21 @@ def eval_files(state: Mapping, files: Sequence[Path]) -> int:
     """
     tool = devsmoke_eval()
     failed = False
+    missing: list[str] = []
     cleared = True
     unread: tuple[Path, str] | None = None
 
     def report(path: Path, token: str) -> None:
         nonlocal failed
-        text, ok = format_eval(saved_eval(token))
+        try:
+            text, ok = format_eval(saved_eval(token))
+        except SafetyRefusal:
+            raise
+        except ClientError as error:
+            # A result missing from disk is named against its file, and the files after it still run; the eval then
+            # ends as a client error, since nothing says whether that snippet passed.
+            missing.append(f"{path}: {error}")
+            return
         print(f"== {path}\n{text}" if len(files) > 1 else text, flush=True)
         failed = failed or not ok
 
@@ -4312,6 +4356,8 @@ def eval_files(state: Mapping, files: Sequence[Path]) -> int:
     finally:
         if not cleared:
             clear_eval_inbox(quiet=True)
+    if missing:
+        raise ClientError("; ".join(missing))
     return 1 if failed else 0
 
 

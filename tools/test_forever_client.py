@@ -1742,6 +1742,37 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("== a.lua\nDevSmokeDB.eval: ok", out.getvalue())
         self.assertIn("missing.lua: no such file", err.getvalue())
 
+    def test_eval_names_a_file_whose_result_is_missing_and_runs_the_rest(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("b.lua"), "lines": 1, "token": "run-b"},
+        ]
+
+        def read(token):
+            if token == "run-a":
+                raise fc.ClientError("DevSmokeDB.eval is missing")
+            return {"run": token, "ok": True}
+
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "saved_eval", side_effect=read),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "b.lua"]), 2, "a missing result is a client error")
+        self.assertIn("a.lua: DevSmokeDB.eval is missing", err.getvalue())
+        self.assertIn("== b.lua\nDevSmokeDB.eval: ok", out.getvalue(), "and the files after it still ran")
+
+    def test_a_state_directory_fault_never_ends_the_session_from_the_idle_check(self):
+        with mock.patch.object(fc, "live_tickets", side_effect=PermissionError("queue")):
+            self.assertFalse(fc.pending_work({"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}))
+
     def test_the_idle_check_skips_a_ticket_or_lease_the_broker_could_not_use(self):
         state = {"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}
         queue = fc.STATE_DIR / "queue"
@@ -2688,6 +2719,7 @@ class SmokeTest(unittest.TestCase):
         calls = []
         self.reload.side_effect = lambda _state: calls.append("reload")
         stage = mock.Mock(side_effect=lambda _folders: calls.append("stage") or "startup-token")
+        startup = mock.Mock(side_effect=lambda _token: calls.append("read startup") or [])
         with (
             mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool),
             mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: calls.append("clear")),
@@ -2698,10 +2730,14 @@ class SmokeTest(unittest.TestCase):
                 folders=[("ForeverCore", core)],
                 slash=mock.Mock(side_effect=lambda _state, command: calls.append(command)),
                 stage=stage,
+                startup=startup,
             )
         self.assertEqual(code, 0)
-        # One reload loads the candidate and runs the staged snippet; one saves the errors and its record together.
-        self.assertEqual(calls, ["clear", "stage", "reload", "clear", "/forever selftest", "reload", "clear"])
+        # One reload loads the candidate and runs the staged snippet; one saves the errors and its record together,
+        # and the record is read only after it.
+        self.assertEqual(
+            calls, ["clear", "stage", "reload", "clear", "/forever selftest", "reload", "read startup", "clear"]
+        )
         stage.assert_called_once_with([("LegacyForever", self.released_folder)])
 
     def test_the_startup_check_runs_for_released_folders_only(self):
@@ -3714,6 +3750,35 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a"])
         self.create_gist.assert_not_called()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
+
+    def test_a_refused_flow_still_saves_and_reports_the_flow_before_it(self):
+        order = []
+        with self.one_eval_slot({"run-a": False}, order):
+            stage = self.eval_tool.write_slash.side_effect
+
+            def refuse_b(action, **kw):
+                if action == "/b":
+                    raise RuntimeError("/b: refused")
+                return stage(action, **kw)
+
+            self.eval_tool.write_slash.side_effect = refuse_b
+            with self.assertRaisesRegex(fc.ClientError, "flow snippet /a failed"):
+                self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
+        # The refusal of the second flow neither skips nor hides the first flow's failure: one more reload saves it.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a"])
+
+    def test_a_flow_result_overwritten_by_the_next_flow_says_so(self):
+        mismatch = fc.EvalMismatch("run-b", "DevSmokeDB.eval holds the run 'run-b'")
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=mismatch),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: its result was overwritten by flow /b"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True, next_flow=("/b", "run-b"))
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=fc.EvalMismatch("run-z", "holds the run 'run-z'")),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: holds the run 'run-z'"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True, next_flow=("/b", "run-b"))
 
     def test_shared_build_reads_finish_before_the_job_lock_is_released(self):
         def read_while_locked(*_args):
