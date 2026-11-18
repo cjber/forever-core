@@ -2073,6 +2073,11 @@ def restore_handlers(previous: Mapping[int, object]) -> None:
 def errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -> subprocess.CompletedProcess:
     """Reload so the client writes its SavedVariables, then read this session's Lua errors (exit 1 when any)."""
     reload(state)
+    return saved_errors(state, addon, as_json=as_json)
+
+
+def saved_errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -> subprocess.CompletedProcess:
+    """This session's Lua errors as the last reload saved them, read without another reload (exit 1 when any)."""
     tool = Path(__file__).resolve().parents[1] / "forever_errors.py"
     command = [sys.executable, str(tool), "--since", str(state["started"])]
     if addon:
@@ -2083,10 +2088,15 @@ def errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -
 
 
 def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[str, int]:
-    """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run."""
+    """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run.
+
+    One reload saves every folder's errors, so each folder is read from that one save: a reload per folder only
+    repeated the same login, and a core smoke with its released consumers spent one on each.
+    """
+    reload(state)
     counts: dict[str, int] = {}
     for name, _folder in folders:
-        completed = errors(state, name, as_json=True)
+        completed = saved_errors(state, name, as_json=True)
         if completed.returncode not in (0, 1):
             raise ClientError(f"errors --addon {name} failed ({completed.returncode}): {completed.stderr.strip()}")
         try:
@@ -2262,11 +2272,11 @@ def not_registered(lines: Sequence) -> list[str]:
     return [line[len(prefix) :] for line in lines if isinstance(line, str) and line.startswith(prefix)]
 
 
-def smoke_registrations(state: Mapping, folders: Sequence[tuple[str, Path]]) -> list[str]:
-    """Each folder that never called ForeverCore.Register, read through one !!DevSmoke eval after the selftest.
+def stage_registrations(folders: Sequence[tuple[str, Path]]) -> str:
+    """Write the !!DevSmoke snippet that asks ForeverCore.Registered for each folder; answer its run token.
 
-    The snippet prints a line per unregistered folder. The eval route reloads twice: the first reload runs the snippet
-    at login, and the second saves its record to disk, because SavedVariables reach disk only at a reload (#580).
+    The smoke writes it before the reload that loads the candidate, so it runs at that login, and the reload
+    `smoke_counts` makes saves its record with the errors: no reload of its own (#580 is why one save is needed).
     """
     names = [name for name, _folder in folders]
     snippet = STATE_DIR / "smoke-registered.lua"
@@ -2277,13 +2287,15 @@ def smoke_registrations(state: Mapping, folders: Sequence[tuple[str, Path]]) -> 
         written = tool.write_snippet(snippet, addons=CLIENT / "Interface/AddOns", capture=False)
     except tool.EvalError as error:
         raise ClientError(f"could not check the released addons' startup: {error}") from None
-    try:
-        reload(state)
-        clear_eval_inbox()
-        reload(state)
-        data = saved_eval(written["token"])
-    finally:
-        clear_eval_inbox(quiet=True)
+    return written["token"]
+
+
+def smoke_registrations(token: str) -> list[str]:
+    """Each folder that never called ForeverCore.Register, from the staged snippet's saved record.
+
+    The snippet prints a line per unregistered folder; its record is on disk once a reload after its login has run.
+    """
+    data = saved_eval(token)
     report, ok = format_eval(data)
     if not ok:
         raise ClientError(f"the released addons' startup check failed: {report}")
@@ -2356,12 +2368,15 @@ def smoke(args: argparse.Namespace) -> int:
             clear_eval_inbox()
             records = link_build(folders, addons_dir())
             try:
+                startup = stage_registrations(released) if released else None
                 reload(state)
+                # The startup snippet ran at this login; a later login must not run it again.
+                clear_eval_inbox()
                 slash(state, "/forever selftest")
-                # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
+                # The selftest is synchronous Lua; the reload `smoke_counts` makes settles it and writes SavedVariables.
                 outcome["counts"] = smoke_counts(state, folders)
-                if released:
-                    outcome["not_started"] = smoke_registrations(state, released)
+                if startup:
+                    outcome["not_started"] = smoke_registrations(startup)
             finally:
                 restore_links(records)
         except SafetyRefusal:
@@ -2609,19 +2624,21 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     return written["token"]
 
 
-def eval_result(state: Mapping, token: str) -> tuple[str, bool]:
+def eval_result(state: Mapping, token: str, *, saved: bool = False) -> tuple[str, bool]:
     """The report of the eval the run token wrote, read after the reload that saves this session to disk.
 
     SavedVariables are written at a reload or logout, so the file the snippet's own reload left behind still holds the
-    session before it: a second reload makes this run's own result the one on disk (#580).
+    session before it: a second reload makes this run's own result the one on disk (#580). `saved` says a later
+    reload, such as the next flow's, has already done that, so no reload of its own is needed.
     """
-    reload(state)
+    if not saved:
+        reload(state)
     return format_eval(saved_eval(token))
 
 
-def check_flow_eval(state: Mapping, action: str, token: str) -> None:
+def check_flow_eval(state: Mapping, action: str, token: str, *, saved: bool = False) -> None:
     """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's."""
-    report, ok = eval_result(state, token)
+    report, ok = eval_result(state, token, saved=saved)
     print(report, flush=True)
     if not ok:
         raise ClientError(f"flow snippet {action} failed: {report}")
@@ -2813,15 +2830,20 @@ def proof(args: argparse.Namespace) -> int:
             records = link_build(folders, addons_dir())
             try:
                 reload(state)
+                # A flow's eval is read after the shot, once a reload has saved it: the reload that saves it opens the
+                # world again, which would close what the flow showed (#580). The next flow's own reload is that
+                # save, so only the last flow needs a reload of its own: N flows take N + 2 reloads, not 2N + 1.
+                unread: tuple[str, str] | None = None
                 for index, (name, action) in enumerate(flows, start=1):
                     verify_links(records)
                     flow_token = run_flow(state, action, clicks.get(name))
+                    if unread:
+                        check_flow_eval(state, *unread, saved=True)
                     verify_links(records)
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
-                    if flow_token:
-                        # After the shot: the reload that saves the eval opens the world again, which would close
-                        # what the flow showed (#580).
-                        check_flow_eval(state, action, flow_token)
+                    unread = (action, flow_token) if flow_token else None
+                if unread:
+                    check_flow_eval(state, *unread)
             finally:
                 try:
                     verify_links(records)

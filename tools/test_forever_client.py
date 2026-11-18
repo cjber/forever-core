@@ -2318,7 +2318,7 @@ class SmokeTest(unittest.TestCase):
             mock.Mock(returncode=1 if count else 0, stdout=json.dumps([{"signature": "x"}] * count), stderr="")
             for count in counts
         ]
-        return mock.patch.object(fc, "errors", side_effect=answers)
+        return mock.patch.object(fc, "saved_errors", side_effect=answers)
 
     def smoke(self, argv=None):
         options = {
@@ -2343,6 +2343,7 @@ class SmokeTest(unittest.TestCase):
         registrations=None,
         startup=None,
         slash=None,
+        stage=None,
     ):
         folders = folders or [("LegacyForever", self.build)]
         startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
@@ -2362,6 +2363,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
             mock.patch.object(fc, "smoke_registrations", startup),
+            mock.patch.object(fc, "stage_registrations", stage or mock.Mock(return_value="startup-token")),
             self.report(*answers),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
@@ -2387,14 +2389,16 @@ class SmokeTest(unittest.TestCase):
         )
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
-        self.reload.assert_called_once()
+        self.assertEqual(
+            self.reload.call_count, 2, "the one that loads the candidate and the one that saves its errors"
+        )
         self.released.assert_called_once()
 
     def test_a_smoke_clears_the_eval_inbox_when_it_starts_and_ends(self):
         with mock.patch.object(fc, "clear_eval_inbox") as clear:
             code, _printed, _build = self.run_smoke()
         self.assertEqual(code, 0)
-        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
+        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(), mock.call(quiet=True)])
 
     def test_manual_launcher_flag_reaches_the_session(self):
         argv = ["smoke", "--repo", "legacy-forever", "--ref", "main"]
@@ -2555,7 +2559,7 @@ class SmokeTest(unittest.TestCase):
         lines = ["not registered: TweaksForever", "something else", "not registered: LegacyForever", 7]
         self.assertEqual(fc.not_registered(lines), ["TweaksForever", "LegacyForever"])
 
-    def test_smoke_registrations_reads_the_snippet_own_eval_record(self):
+    def test_the_startup_check_is_staged_without_a_reload_and_read_by_its_run_token(self):
         class Tool:
             class EvalError(RuntimeError):
                 pass
@@ -2576,35 +2580,43 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "clear_eval_inbox") as cleared,
             mock.patch.object(fc, "saved_eval", return_value=record) as saved,
         ):
-            names = fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+            token = fc.stage_registrations([("TweaksForever", self.released_folder)])
+            names = fc.smoke_registrations(token)
         self.assertEqual(names, ["TweaksForever"])
-        self.assertEqual(reloaded.call_count, 2)
-        self.assertEqual(cleared.call_count, 2)
+        reloaded.assert_not_called()
+        cleared.assert_not_called()
         saved.assert_called_once_with("run-token")
 
     def test_a_startup_check_snippet_that_raises_is_an_error(self):
-        class Tool:
-            class EvalError(RuntimeError):
-                pass
-
-            @staticmethod
-            def lua_string(value):
-                return f'"{value}"'
-
-            @staticmethod
-            def write_snippet(path, addons=None, capture=False):
-                return {"token": "run-token"}
-
         with (
-            mock.patch.object(fc, "devsmoke_eval", return_value=Tool),
-            mock.patch.object(fc, "reload"),
-            mock.patch.object(fc, "clear_eval_inbox"),
             mock.patch.object(
                 fc, "saved_eval", return_value={"ok": False, "out": [], "err": "ForeverCore.Registered is missing"}
             ),
             self.assertRaisesRegex(fc.ClientError, "startup check failed"),
         ):
-            fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+            fc.smoke_registrations("run-token")
+
+    def test_a_core_smoke_reloads_twice_and_runs_the_startup_check_at_the_candidates_login(self):
+        core = self.state / "core"
+        core.mkdir()
+        calls = []
+        self.reload.side_effect = lambda _state: calls.append("reload")
+        stage = mock.Mock(side_effect=lambda _folders: calls.append("stage") or "startup-token")
+        with (
+            mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: calls.append("clear")),
+        ):
+            code, _printed, _build = self.run_smoke(
+                answers=(0, 0),
+                repo="forever-core",
+                folders=[("ForeverCore", core)],
+                slash=mock.Mock(side_effect=lambda _state, command: calls.append(command)),
+                stage=stage,
+            )
+        self.assertEqual(code, 0)
+        # One reload loads the candidate and runs the staged snippet; one saves the errors and its record together.
+        self.assertEqual(calls, ["clear", "stage", "reload", "clear", "/forever selftest", "reload", "clear"])
+        stage.assert_called_once_with([("LegacyForever", self.released_folder)])
 
     def test_the_startup_check_runs_for_released_folders_only(self):
         core = self.state / "core"
@@ -2612,8 +2624,7 @@ class SmokeTest(unittest.TestCase):
         registrations = mock.Mock(return_value=[])
         with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
             self.run_smoke(answers=(0, 0), repo="forever-core", folders=[("ForeverCore", core)], startup=registrations)
-        registrations.assert_called_once()
-        self.assertEqual(registrations.call_args.args[1], [("LegacyForever", self.released_folder)])
+        registrations.assert_called_once_with("startup-token")
 
     def test_a_startup_check_that_could_not_run_fails_the_status(self):
         core = self.state / "core"
@@ -2757,14 +2768,14 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "reload", side_effect=lambda _state: calls.append("reload")),
             mock.patch.object(fc, "slash", side_effect=selftest),
-            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
+            mock.patch.object(fc, "saved_errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
             mock.patch.object(fc, "post_status"),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(self.smoke(), 0)
-        self.assertEqual(calls, ["reload", "/forever selftest"])
+        self.assertEqual(calls, ["reload", "/forever selftest", "reload"])
         read.assert_called_once_with(mock.ANY, "LegacyForever", as_json=True)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
@@ -2788,7 +2799,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "reload"),
             mock.patch.object(fc, "slash"),
-            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
+            mock.patch.object(fc, "saved_errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
             mock.patch.object(fc, "post_status") as posted,
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
@@ -3546,6 +3557,33 @@ class ProofTest(unittest.TestCase):
         self.assertIn("wrote", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
+
+    def test_two_flows_take_four_reloads_the_second_flows_saving_the_firsts_eval(self):
+        self.eval_tool.write_slash.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf"), "lines": 5, "token": "run-1"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf2"), "lines": 5, "token": "run-2"},
+        ]
+        order = []
+        self.reload.side_effect = lambda _state: order.append("reload")
+        records = {"run-1": {"run": "run-1", "ok": True}, "run-2": {"run": "run-2", "ok": True}}
+        with mock.patch.object(fc, "saved_eval", side_effect=lambda token: order.append(token) or records[token]):
+            code, _printed, _err = self.run_proof(flow=["one=/lf", "two=/lf2"])
+        self.assertEqual(code, 0)
+        self.assertEqual([path.name for path in self.shot_paths], ["1-one.png", "2-two.png"])
+        # The proof's own reload, each flow's, and one more that saves the last flow's eval: N + 2, not 2N + 1.
+        self.assertEqual(order, ["reload", "reload", "reload", "run-1", "reload", "run-2"])
+
+    def test_a_first_flow_whose_snippet_raised_fails_the_proof_after_the_next_flows_reload(self):
+        self.eval_tool.write_slash.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf"), "lines": 5, "token": "run-1"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf2"), "lines": 5, "token": "run-2"},
+        ]
+        self.saved_eval({"run": "run-1", "ran": 9, "ok": False, "err": "Eval.lua:2: boom", "out": {1: "before"}})
+        with self.assertRaisesRegex(fc.ClientError, "flow snippet /lf failed"):
+            self.run_proof(flow=["one=/lf", "two=/lf2"])
+        self.assertEqual(self.reload.call_count, 3, "no reload of its own: the second flow's saved the first's eval")
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
 
     def test_shared_build_reads_finish_before_the_job_lock_is_released(self):
         def read_while_locked(*_args):
