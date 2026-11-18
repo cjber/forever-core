@@ -63,11 +63,14 @@ them where it can:
    other players. Nothing else blocks the game: `slash` sends any one-line slash command (`/use Hearthstone` to get
    somewhere) and `key` any key. Move only with game actions, never raw keys: an account can rebind any key (the
    headless account walks forward on S, so `w` does nothing there). `key --action ACTION --for SECONDS` holds the key
-   the running client binds to that action, read from its own `GetBindingKey` (recorded by `!!DevSmoke` at login and
-   at every key binding change, on disk at the next reload): `key --action MOVEFORWARD --for 2` walks for 2 s,
+   the running client binds to that action, from its own `GetBindingKey`: `!!DevSmoke`'s record (made at login and at
+   every key binding change, on disk at the next reload), or else one eval per session that asks the client (two
+   reloads, then cached). The bindings-cache.wtf file is only a last resort, with a warning, because the client may
+   not match it. `key --action MOVEFORWARD --for 2` walks for 2 s,
    `key --action TURNLEFT --for 0.5` turns left, repeat `--action` to hold several together. The actions are
    MOVEFORWARD, MOVEBACKWARD, TURNLEFT, TURNRIGHT, STRAFELEFT, STRAFERIGHT, JUMP, INTERACTTARGET and
-   TARGETNEARESTENEMY; without `--for` each is tapped once (`key --action INTERACTTARGET`). A tapped key never moves
+   TARGETNEARESTENEMY; without `--for` each is tapped once (`key --action INTERACTTARGET`; with `autoInteract` on, the
+   game walks the character to an out-of-range target first). A tapped key never moves
    the character. Check the frame or the player's map position between holds. Where the character is parked or
    whether it is
    resting never matters, so move it wherever a check needs it rather than waiting or asking. `click` and `scroll`

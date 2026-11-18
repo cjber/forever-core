@@ -1023,31 +1023,70 @@ def file_bindings() -> dict[str, list[str]]:
     return bindings_from_cache_file("")
 
 
+def asked_bindings(state: Mapping) -> dict[str, list[str]]:
+    """Each action's keys from the running client's own GetBindingKey, asked through an eval: one reload runs it and a
+    second saves its answer."""
+    names = ", ".join(f'"{action}"' for action in ACTIONS)
+    source = (
+        f"for _, action in ipairs({{ {names} }}) do\n"
+        "\tlocal first, second = GetBindingKey(action)\n"
+        '\tprint("BIND", action, first or "", second or "")\n'
+        "end\n"
+    )
+    tool = devsmoke_eval()
+    try:
+        written = tool.write_source(source, "key binding lookup", addons=CLIENT / "Interface/AddOns")
+    except tool.EvalError as error:
+        raise ClientError(str(error)) from None
+    try:
+        reload(state)
+    finally:
+        clear_eval_inbox(quiet=True)
+    reload(state)
+    data = saved_eval(str(written["token"]))
+    out = data.get("out")
+    lines = out.values() if isinstance(out, dict) else out if isinstance(out, list) else []
+    keys: dict[str, list[str]] = {}
+    for line in lines:
+        parts = str(line).split("\t")
+        if len(parts) >= 2 and parts[0] == "BIND" and parts[1] in ACTIONS:
+            keys[parts[1]] = [part for part in parts[2:] if part]
+    if set(keys) != set(ACTIONS):
+        raise ClientError(f"the key binding lookup answered {len(keys)} of {len(ACTIONS)} actions: {data.get('err')}")
+    return keys
+
+
 def action_bindings(state: Mapping) -> dict[str, list[str]]:
-    """Each action's keys in the running client: its own GetBindingKey answer as !!DevSmoke recorded it (at login and
-    every UPDATE_BINDINGS, on disk at the next reload), cached until that record changes. With no record yet, one reload
-    per session writes it; without !!DevSmoke loaded, the client's defaults changed by bindings-cache.wtf answer."""
+    """Each action's keys in the running client, always from its own GetBindingKey: !!DevSmoke's record (made at login
+    and every UPDATE_BINDINGS, on disk at the next reload) when there is one, otherwise one eval per session that asks
+    the client, cached. Only when the client cannot be asked do the defaults changed by bindings-cache.wtf answer, with
+    a warning: that file is a cache the client may not match (on Hel-Io it still listed A for turning left).
+    """
     cache = STATE_DIR / BINDINGS_CACHE
     session = str(state.get("pid") or state.get("display") or "")
+    recorded = recorded_bindings()
+    if recorded is not None:
+        return recorded[0]
     try:
         cached = json.loads(cache.read_text())
     except (OSError, ValueError):
         cached = {}
-    if cached.get("session") != session:
-        cached = {}
-    recorded = recorded_bindings()
-    if recorded is None and state.get("ready") and not cached.get("reloaded"):
-        reload(state)
-        recorded = recorded_bindings()
-    if recorded is None:
-        keys = file_bindings()
-        atomic_write(cache, json.dumps({"session": session, "reloaded": True, "identity": None, "keys": keys}))
-        return keys
-    keys, identity = recorded
-    if cached.get("identity") == identity:
+    if cached.get("session") == session and isinstance(cached.get("keys"), dict):
         return cached["keys"]
-    atomic_write(cache, json.dumps({"session": session, "reloaded": True, "identity": identity, "keys": keys}))
-    return keys
+    if state.get("ready"):
+        try:
+            keys = asked_bindings(state)
+        except ClientError as error:
+            print(f"forever_client: could not ask the client for its key bindings: {error}", file=sys.stderr)
+        else:
+            atomic_write(cache, json.dumps({"session": session, "keys": keys}))
+            return keys
+    print(
+        "forever_client: key bindings from bindings-cache.wtf and the client's defaults, not the client itself; "
+        "they may not match it",
+        file=sys.stderr,
+    )
+    return file_bindings()
 
 
 def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:

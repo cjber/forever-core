@@ -5142,26 +5142,53 @@ class ActionKeyTest(unittest.TestCase):
         os.utime(path, ns=(path.stat().st_mtime_ns + 10**9, path.stat().st_mtime_ns + 10**9))
         self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD"]), [["w"]])
 
-    def test_with_no_record_one_reload_writes_it(self):
-        self.reload.side_effect = lambda _state: self.record('["JUMP"] = {\n"SPACE",\n},\n')
-        self.assertEqual(fc.action_keys({"ready": True}, ["JUMP"]), [["space"]])
-        self.reload.assert_called_once()
+    def ask(self, answers: dict[str, list[str]]):
+        """The client's eval answer: one BIND line per action, as the lookup snippet prints it."""
+        tool = mock.Mock(EvalError=RuntimeError)
+        tool.write_source.return_value = {"token": "t1"}
+        self.enterContext(mock.patch.object(fc, "devsmoke_eval", return_value=tool))
+        self.enterContext(mock.patch.object(fc, "clear_eval_inbox"))
+        out = ["\t".join(["BIND", action, *(answers.get(action, []) + ["", ""])[:2]]) for action in fc.ACTIONS]
+        return self.enterContext(mock.patch.object(fc, "saved_eval", return_value={"run": "t1", "out": out}))
 
-    def test_without_devsmoke_the_bindings_file_changes_the_defaults(self):
-        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+    def test_with_no_record_the_client_is_asked_once_a_session(self):
+        # Hel-Io's client turns on the arrow keys only, whatever its bindings-cache.wtf still lists.
+        (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind S MOVEFORWARD\n")
+        saved = self.ask({"MOVEFORWARD": ["S"], "TURNLEFT": ["LEFT"], "INTERACTTARGET": ["F9"]})
         state = {"ready": True, "display": ":9"}
-        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
-        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
-        self.reload.assert_called_once()
-        keys = fc.action_keys(
-            {"ready": True}, ["MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "INTERACTTARGET", "TARGETNEARESTENEMY"]
-        )
+        self.assertEqual(fc.action_keys(state, ["TURNLEFT", "MOVEFORWARD"]), [["Left"], ["s"]])
+        self.assertEqual(self.reload.call_count, 2, "one reload runs the lookup, a second saves its answer")
+        saved.assert_called_once_with("t1")
+        self.assertEqual(fc.action_keys(state, ["INTERACTTARGET"]), [["F9"]])
+        self.assertEqual(self.reload.call_count, 2, "the answer is cached for the session")
+        self.assertEqual(fc.action_keys({"ready": True, "display": ":10"}, ["TURNLEFT"]), [["Left"]])
+        self.assertEqual(self.reload.call_count, 4, "a new session asks again")
+
+    def test_a_partial_answer_is_not_trusted(self):
+        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+        saved = self.ask({})
+        saved.return_value = {"run": "t1", "out": ["BIND\tMOVEFORWARD\tS\t"], "err": "boom"}
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"]), [["s"]])
+        self.assertIn("answered 1 of 9 actions", stderr.getvalue())
+        self.assertIn("not the client itself", stderr.getvalue())
+
+    def test_a_client_that_cannot_be_asked_falls_back_to_the_bindings_file_with_a_warning(self):
+        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            keys = fc.action_keys(
+                {"ready": False}, ["MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "INTERACTTARGET", "TARGETNEARESTENEMY"]
+            )
         self.assertEqual(keys, [["s"], ["Down"], ["a"], ["F9"], ["Tab"]])
+        self.assertIn("may not match it", stderr.getvalue())
+        self.reload.assert_not_called()
 
     def test_the_characters_own_bindings_win_over_the_accounts(self):
         (self.account / "bindings-cache.wtf").write_text("bind W MOVEFORWARD\n")
         (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind W ACTIONBUTTON2\nbind S MOVEFORWARD\n")
-        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD", "MOVEBACKWARD"]), [["s"], ["Down"]])
+        with contextlib.redirect_stderr(io.StringIO()):
+            keys = fc.action_keys({"ready": False}, ["MOVEFORWARD", "MOVEBACKWARD"])
+        self.assertEqual(keys, [["s"], ["Down"]])
 
     def test_an_action_bound_only_to_a_mouse_button_is_refused(self):
         self.record('["JUMP"] = {\n"BUTTON4",\n},\n')
