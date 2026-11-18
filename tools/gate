@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# The fast local gate: luacheck, StyLua, every spec (about a second, in parallel) and ruff over tools/.
+# `tools/gate --changed` lints only the files changed against origin/main and skips ruff when no tools/ Python changed.
+# CI also runs the typecheck, the tools' unit tests, the native tracker spec and the project rules.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ "${1:-}" = "--changed" ]; then
+  committed="$(git diff --name-only --diff-filter=d origin/main)"
+  untracked="$(git ls-files --others --exclude-standard)"
+  changed="$(printf '%s\n%s\n' "$committed" "$untracked" | sort -u)"
+  lua=(); py=0; full=0
+  while IFS= read -r f; do
+    case "$f" in
+      .luacheckrc | stylua.toml | .styluaignore | tools/gate) full=1 ;;
+      tools/pyproject.toml | tools/uv.lock | ruff.toml) py=1 ;;
+      *.lua) lua+=("$f") ;;
+      tools/*.py) py=1 ;;
+    esac
+  done <<< "$changed"
+  if [ "$full" = 1 ]; then
+    luacheck .
+    stylua --check .
+  elif [ "${#lua[@]}" -gt 0 ]; then
+    luacheck "${lua[@]}"
+    stylua --check --respect-ignores "${lua[@]}"
+  fi
+else
+  luacheck .
+  stylua --check .
+  py=1
+fi
+
+python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py
+if [ "$py" = 1 ]; then
+  uv run --project tools --frozen --group dev ruff check tools
+  uv run --project tools --frozen --group dev ruff format --check tools
+fi
