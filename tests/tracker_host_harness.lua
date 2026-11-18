@@ -79,10 +79,17 @@ function harness.new(options)
 			local _, top = Anchored(self)
 			return self.top or top or 640
 		end
+		-- A scroll child has no rect until its ScrollFrame updates it, as in the client.
 		function f.GetLeft(self)
+			if self.unplaced then
+				return nil
+			end
 			return self.left or Anchored(self) or 0
 		end
 		function f.GetRight(self)
+			if self.unplaced then
+				return nil
+			end
 			return self.right or self:GetLeft() + self:GetWidth()
 		end
 		function f.GetBottom(self)
@@ -141,6 +148,12 @@ function harness.new(options)
 		function f:SetScrollChild(child)
 			self.scrollChild = child
 			child.parent = self
+			child.unplaced = true
+		end
+		function f:UpdateScrollChildRect()
+			if self.scrollChild then
+				self.scrollChild.unplaced = nil
+			end
 		end
 		function f:GetScrollChild()
 			return self.scrollChild
@@ -595,6 +608,9 @@ function harness.new(options)
 		function m.Update(self, available)
 			self.available, self.updates = available, (self.updates or 0) + 1
 			self.firstContentsWidth = self.firstContentsWidth or self.ContentsFrame:GetWidth()
+			if self.firstContentsLeft == nil then
+				self.firstContentsLeft = self.ContentsFrame:GetLeft() or false
+			end
 			self:BeginLayout()
 			self.contentsHeight = self.headerHeight
 			local first, last

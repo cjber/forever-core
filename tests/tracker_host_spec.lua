@@ -249,6 +249,9 @@ scroll.check(
 	capped.firstContentsWidth == capped:GetWidth() - 18,
 	"the first build measures its text in the column's width less the gutter"
 )
+-- The client places a scroll child only when its ScrollFrame updates, so a section built in the frame its viewport was
+-- made would measure every wrapped line as one row and draw it over the next (#795).
+scroll.check(capped.firstContentsLeft ~= false, "the first build has a placed scroll child to wrap its lines in")
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
 scroll.check(

@@ -565,12 +565,15 @@ function Module:CreateTrackerScroll()
 	self:SetScrollFrozen(InCombatLockdown())
 end
 
--- The blocks' width: the section's, less the gutter the bar sits in.
+-- The blocks' width: the section's, less the gutter the bar sits in. The client places a scroll child only when its
+-- ScrollFrame next updates, so the rect is brought up to date here: the client wraps and measures each line at the
+-- width its anchors resolve to, and a clean section keeps that build (#795).
 function Module:SetTrackerContentsWidth()
 	local width = math.max(0, (self:GetWidth() or 0) - SCROLL_GUTTER)
 	if self.scrollFrame and self.scrollContentsWidth ~= width then
 		self.scrollContentsWidth = width
 		self.ContentsFrame:SetWidth(width)
+		self.scrollFrame:UpdateScrollChildRect()
 	end
 	return width
 end
