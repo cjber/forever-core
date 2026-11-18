@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.15.0] - 2026-11-18
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
+### Changed
+
+- **The Forever quest list is gone.** Your quests show in the game's own quest tracker, or in your quest addon's. No Forever addon hides, replaces or reorders the game's tracker any more. The `/fcore quests` and `/fcore profile` commands, the profile code and the Forever addons page are gone too. (#792)
+- **The Forever tracker sits to the left of the game's quest tracker,** top edges level, and follows it when you move that tracker in Edit Mode. Drag any section's header to move it, and turn on **Lock the tracker** in the header's right-click menu to keep it there. The bar above the column is gone. A position you dragged before is kept, and an older placement moves beside the game's tracker once, keeping your Lock choice. (#792, #793)
+- **The minimap buttons are gone.** Open each addon from its slash command, the AddOns menu on the minimap, the game's settings or its tracker section. Map pins on the minimap stay. (#799)
+- **Updates are published on CurseForge and GitHub.** Wago publishing has ended. (#649)
+
+### Fixed
+
+- **The Forever tracker no longer jumps** while a route loads, when you move, or when you change zone. A /reload, a quest update or a flight path no longer moves the column or redraws every section: only the section whose content changed is rebuilt, and the column settles in one frame. Section text keeps the same width whether or not it scrolls. (#795)
+- **A turned-off ForeverCore is named as the problem.** An addon stopped because ForeverCore is turned off now says so, instead of naming every other Forever addon as out of date. (cjber/shortest-path-forever#996)
+- **An addon that cannot start says why when you try to open it.** Its slash commands and its entry in the addon compartment now repeat the line naming the fix, such as turning ForeverCore back on, instead of doing nothing or raising a Lua error. (cjber/shortest-path-forever#996)
+
 ## [1.14.5] - 2026-11-17
 
 ### Changed
