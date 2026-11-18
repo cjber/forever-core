@@ -217,6 +217,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   - Every flow reads `!!DevPerf`'s per-event split for its own actions: a Forever handler call or a tick over one
     frame (1000/60 ms) fails it, named by addon and event. WFA-13's 3 ms budget still holds; this is the floor a
     proof enforces in the client.
+  - Every proof runs with full logging: `taintLog` 2, `scriptErrors` 1, BugGrabber, DevSessionLog and the
+    `!!DevPerf` profiler. A new taint.log line or BugGrabber entry naming an addon of ours fails the proof, and a FAIL
+    reports the exact error, its stack and the event or action that raised it, never a summary.
   - Every `CHANGELOG.md` bullet the change adds maps to the flow that proves it, listed in the pull request body.
   - Where Forever's client differs from retail, the behaviour is modelled in `forever_sim` from a live record, and
     the change's scenario runs against it (WFA-35). A bench of per-event work reads the sim's work counter.
