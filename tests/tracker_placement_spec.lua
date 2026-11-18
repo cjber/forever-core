@@ -210,6 +210,19 @@ grown.host:MarkDirty()
 grown.drain()
 grown.check(Pinned(grown), "but moves left once it would run off the screen")
 
+-- A column the player dragged never moves, locked or not, however the tracker grows.
+local pinnedDrag =
+	harness.new({ hostSettings = { attached = false, placement = "under", locked = true, x = 40, y = -300 } })
+pinnedDrag.first.contentHeight = 800
+pinnedDrag.host:MarkDirty()
+pinnedDrag.drain()
+pinnedDrag.moveLine(100)
+local dragPoint = pinnedDrag.host.point
+pinnedDrag.check(
+	dragPoint[2] == pinnedDrag.parent and dragPoint[4] == 40 and dragPoint[5] == -300,
+	"a dragged, locked column stays at its spot when the tracker grows"
+)
+
 -- A reload keeps the choice: saved settings with a placement are not migrated again.
 local saved = box.hostSettings
 saved.attached, saved.placement = true, "left"
@@ -238,5 +251,6 @@ print(
 			+ old.checks()
 			+ once.checks()
 			+ grown.checks()
+			+ pinnedDrag.checks()
 	)
 )
