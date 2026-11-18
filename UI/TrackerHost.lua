@@ -1045,13 +1045,29 @@ end
 -- quest item buttons, so it is placed at coordinates rather than anchored to the tracker: an anchor would bring the
 -- tracker's own frames into the column's protected chain, which the engine moves in combat. Combat runs none of this,
 -- and PLAYER_REGEN_ENABLED's layout puts the column where the tracker's line has gone meanwhile.
+-- A locked column holds the place it has, as a dragged one does, until the player picks a place again.
+local placeAgain = false
+-- Whether this session has placed the column by the tracker's line at least once.
+local followed = false
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
 	if settings.placement ~= "under" or (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
 		return
 	end
+	if settings.locked and followed and not placeAgain then
+		return
+	end
 	local x, top = TrackerEdge()
-	if not (x and top) or (host:GetHeight() or 0) > top then
+	-- A tracker the client has not placed yet says nothing about room: the column waits at the pin until it has a line,
+	-- and once placed keeps its place.
+	if not (x and top) then
+		if not followed then
+			PinLeft()
+		end
+		return
+	end
+	placeAgain, followed = false, true
+	if (host:GetHeight() or 0) > top then
 		PinLeft()
 		return
 	end
@@ -1199,6 +1215,7 @@ function api.SetPlacement(value)
 	local settings = Settings()
 	settings.placement = value
 	settings.x, settings.y = nil, nil
+	placeAgain = true
 	host:MarkDirty()
 end
 -- Whether the column follows a place, rather than a position the player dragged it to.
@@ -1598,8 +1615,9 @@ host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 -- Under the quest tracker, the column follows the tracker's last line with no event of the tracker's own and no hook.
 -- An addon-owned probe with no children spans from the screen's bottom left corner to that line, so the line moving, a
 -- quest added, completed or collapsed or the tracker moved, resizes the probe, and its OnSizeChanged places the column
--- again. A frame of ours parented to the tracker hears it show and hide, which moves no line. Neither is protected,
--- and FollowTracker only reads the tracker.
+-- again. It is not protected, nothing is anchored to it, and FollowTracker only reads the tracker. The tracker showing
+-- or hiding moves no line, so the column holds its place then until its own next layout, which places it again: a
+-- frame of ours parented to the tracker would hear it, but that adds a child to Blizzard's frame.
 local function Follow()
 	if ready then
 		FollowTracker(Settings())
@@ -1609,9 +1627,6 @@ local probe = CreateFrame("Frame", nil, UIParent)
 probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
 probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
 probe:SetScript("OnSizeChanged", Follow)
-local watcher = CreateFrame("Frame", nil, ObjectiveTrackerFrame)
-watcher:SetScript("OnShow", Follow)
-watcher:SetScript("OnHide", Follow)
 host:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_ENABLED" then
 		for module, attachment in pairs(pendingAttachments) do

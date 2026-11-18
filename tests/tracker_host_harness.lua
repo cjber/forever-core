@@ -149,6 +149,9 @@ function harness.new(options)
 		function f:ClearAllPoints()
 			self.point, self.points = nil, nil
 		end
+		function f:GetNumPoints()
+			return self.point and 1 or 0
+		end
 		function f:SetAlpha(value)
 			self.alpha = value
 		end

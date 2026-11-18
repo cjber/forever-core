@@ -106,11 +106,13 @@ scenario("placement850: the column follows the quest list's last line with no la
 	sim:expectNoErrors("ForeverCore")
 end)
 
-scenario("placement850: with no quests the tracker hides and the column takes its top", function(sim)
+scenario("placement850: with no quests the tracker hides and the column's next layout takes its top", function(sim)
 	local _, column, tracker = run(sim, {})
 	tracker:RemoveModule(tracker.questList)
 	sim:advance(0.1)
 	assert(not tracker:IsShown(), "the game's tracker hides with nothing to list")
+	column:MarkDirty()
+	sim:advance(0.5)
 	assert(
 		near(column:GetTop(), tracker:GetTop()) and near(column:GetLeft(), tracker:GetLeft()),
 		"the column sits at its top"

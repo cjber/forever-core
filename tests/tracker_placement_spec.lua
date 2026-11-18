@@ -56,11 +56,21 @@ t.host:MarkDirty()
 t.drain()
 check(Under(t, 400), "and comes back when it shrinks")
 
--- A tracker with nothing to show hides; the column takes its top, and goes back under the line when it shows again.
+-- A tracker with nothing to show hides, which moves no line: core adds no frame to the tracker to hear it, so the
+-- column holds its place until its own next layout puts it at the tracker's top.
 t.showTracker(false)
-check(Under(t, t.nativeRect.top), "a hidden tracker leaves the column at the tracker's top")
+check(Under(t, 400), "a tracker hiding leaves the column where it was")
+t.host:MarkDirty()
+t.drain()
+check(Under(t, t.nativeRect.top), "and its next layout puts it at the hidden tracker's top")
 t.showTracker(true)
-check(Under(t, 400), "showing it again puts the column under its last line")
+t.moveLine(400)
+check(Under(t, 400), "the line moving again puts the column under it")
+
+-- A tracker the client has not placed yet has no line, which says nothing about room: the column keeps its place.
+t.moveLine(nil)
+check(Under(t, 400), "an unplaced tracker line leaves the column under the list")
+t.moveLine(400)
 
 -- An Edit Mode move of the tracker moves its line and its left edge; the column follows both.
 t.nativeRect.left = 300
@@ -97,11 +107,20 @@ check(Under(t, 700), "Under puts it back on the line")
 api.SetPlacement("above")
 check(api.GetPlacement() == "under", "an unknown place is ignored")
 
--- Lock stops a drag and leaves the place alone.
+-- Lock wins: a locked column holds its place while the list moves, and picking a place still moves it.
 api.SetLocked(true)
 t.moveLine(650)
-check(Under(t, 650), "a locked column still follows the line")
+check(Under(t, 700), "a locked column holds its place while the list moves")
+t.moveLine(100)
+check(Under(t, 700), "even when the list grows past it")
+api.SetPlacement("under")
+t.drain()
+check(Under(t, 100) or Pinned(t), "picking a place moves a locked column once")
+t.moveLine(650)
+check(not Under(t, 650), "and it holds again after")
 api.SetLocked(false)
+t.moveLine(650)
+check(Under(t, 650), "unlocked, it follows the line again")
 
 -- Every section's menu offers the two places, and picking one sets it.
 local function Entry(entries, text)
@@ -126,6 +145,15 @@ api.SavePosition(10, -10)
 t.drain()
 check(not left.isSelected() and not under.isSelected(), "neither is ticked while the column sits where it was dragged")
 
+-- A column whose first layout finds no tracker line yet waits at the pin, and goes under once the line exists.
+local early = harness.new({ hostSettings = { attached = false }, deferReady = true })
+early.nativeRect.line = nil
+early.ready()
+early.drain()
+early.check(Pinned(early), "with no tracker line yet the column waits at its pin")
+early.moveLine(700)
+early.check(Under(early, 700), "and goes under the line once the tracker has one")
+
 -- The host scale applies to the line: a tracker at a different scale is converted into the column's units.
 local scaled = harness.new({ hostSettings = { attached = false } })
 scaled.nativeRect.scale, scaled.nativeRect.left = 2, 100
@@ -133,4 +161,4 @@ scaled.moveLine(300)
 local point = scaled.host.point
 scaled.check(point[4] == 200 and point[5] == 600, "the line is read in the column's units")
 
-print(("tracker_placement_spec: %d checks passed"):format(t.checks() + scaled.checks()))
+print(("tracker_placement_spec: %d checks passed"):format(t.checks() + early.checks() + scaled.checks()))
