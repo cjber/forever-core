@@ -1716,6 +1716,62 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("a.lua:1: boom", printed)
         self.assertIn("== b.lua\nDevSmokeDB.eval: ok", printed)
 
+    def test_eval_prints_an_earlier_files_result_before_a_later_file_is_refused(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            tool.EvalError("missing.lua: no such file"),
+        ]
+        order = []
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: order.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: order.append("clear")),
+            mock.patch.object(
+                fc, "saved_eval", side_effect=lambda token: order.append(token) or {"run": token, "ok": True}
+            ),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "missing.lua"]), 2)
+        # a ran at the first reload; the refusal still saves and prints it, and runs nothing more.
+        self.assertEqual(order, ["reload", "clear", "clear", "reload", "run-a"])
+        self.assertIn("== a.lua\nDevSmokeDB.eval: ok", out.getvalue())
+        self.assertIn("missing.lua: no such file", err.getvalue())
+
+    def test_the_idle_check_skips_a_ticket_or_lease_the_broker_could_not_use(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}
+        queue = fc.STATE_DIR / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        for name, text in (("1.json", "[]"), ("2.json", "{trunc")):
+            ticket = queue / name
+            ticket.write_text(text)
+        handles = [open(queue / name) for name in ("1.json", "2.json")]
+        self.addCleanup(lambda: [handle.close() for handle in handles])
+        for handle in handles:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        # A locked ticket is a caller still waiting, whatever its record holds; the scan neither raises nor drops it.
+        self.assertEqual([path.name for path in fc.job_queue()], ["1.json", "2.json"])
+        self.assertTrue(fc.pending_work(state))
+        for handle in handles:
+            handle.close()
+        leases = fc.STATE_DIR / "leases"
+        leases.mkdir(parents=True, exist_ok=True)
+        identity = fc.session_identity(state)
+        for record in (
+            {"expires": time.time() + 600, "session": identity},
+            {"token": "other", "expires": time.time() + 600, "session": identity},
+            {"token": "t", "expires": float("inf"), "session": identity},
+            {"token": "t", "expires": True, "session": identity},
+        ):
+            with self.subTest(record=record):
+                (leases / "t.json").write_text(json.dumps(record))
+                self.assertFalse(fc.pending_work(state))
+                self.assertFalse(fc.usable_lease(record, "t", identity))
+
     def test_eval_never_reports_an_earlier_runs_result(self):
         # The SavedVariables file holds the session before this one until the next reload, and the first reader
         # answered with it: a passing snippet was called failed, and a failing one passed (#580).
@@ -3630,6 +3686,13 @@ class ProofTest(unittest.TestCase):
         stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", side_effect=ready))
         return stack
 
+    def test_a_flow_whose_result_is_missing_is_named_in_the_error(self):
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=fc.ClientError("DevSmokeDB.eval is missing")),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: DevSmokeDB.eval is missing"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True)
+
     def test_two_flows_take_four_reloads_the_second_flows_saving_the_firsts_eval(self):
         order = []
         with self.one_eval_slot({"run-a": True, "run-b": True}, order):
@@ -3974,7 +4037,7 @@ class BrokerTest(unittest.TestCase):
             record.update(fields)
             lease.write_text(json.dumps(record))
 
-        with mock.patch.object(fc, "job_queue", return_value=[]):
+        with mock.patch.object(fc, "live_tickets", return_value=[]):
             self.assertFalse(fc.pending_work(state))
             write()
             self.assertTrue(fc.pending_work(state))
@@ -3985,12 +4048,16 @@ class BrokerTest(unittest.TestCase):
             write(session={**fc.session_identity(state), "pid": 8})
             self.assertFalse(fc.pending_work(state), "another session's lease")
         lease.unlink()
-        ticket = fc.STATE_DIR / "ticket.json"
+        queue = fc.STATE_DIR / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        ticket = queue / "1.json"
         ticket.write_text(json.dumps({"session_end": True}))
-        with mock.patch.object(fc, "job_queue", return_value=[ticket]):
+        with open(ticket) as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
             self.assertFalse(fc.pending_work(state), "the session's own end is not a coming job")
         ticket.write_text(json.dumps({"label": "proof"}))
-        with mock.patch.object(fc, "job_queue", return_value=[ticket]):
+        with open(ticket) as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
             self.assertTrue(fc.pending_work(state))
 
     def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):

@@ -1919,6 +1919,15 @@ def enqueue_job(*, session_end: bool = False) -> tuple[Path, object]:
 
 def job_queue() -> list[Path]:
     """Live tickets in arrival order, with serve teardown ahead of ordinary callers."""
+    return [path for _ordinary, path in live_tickets()]
+
+
+def live_tickets() -> list[tuple[bool, Path]]:
+    """(ordinary, path) of each ticket whose caller still holds it, teardown first, then in arrival order.
+
+    A ticket is live while its caller holds its lock, so a locked ticket whose record cannot be read is still a caller
+    waiting: it counts as ordinary rather than ending the scan, which the serve loop's idle check and teardown share.
+    """
     live = []
     directory = STATE_DIR / "queue"
     directory.mkdir(parents=True, exist_ok=True)
@@ -1930,13 +1939,20 @@ def job_queue() -> list[Path]:
                     try:
                         fcntl.flock(ticket, fcntl.LOCK_SH | fcntl.LOCK_NB)
                     except BlockingIOError:
-                        record = json.load(ticket)
-                        live.append((not record.get("session_end", False), path))
+                        try:
+                            record = json.load(ticket)
+                        except ValueError:
+                            record = {}
+                        ending = isinstance(record, dict) and record.get("session_end", False) is True
+                        live.append((not ending, path))
                     else:
                         path.unlink(missing_ok=True)
             except FileNotFoundError:
                 continue
-    return [path for _ordinary, path in sorted(live)]
+            except OSError:
+                # Unreadable by this process: a caller's lock cannot be seen, so it is neither queued nor pruned.
+                continue
+    return sorted(live)
 
 
 def acquire_job(timeout: float | None, label: str, *, session_end: bool = False) -> tuple[object, str]:
@@ -2650,7 +2666,12 @@ def eval_result(state: Mapping, token: str, *, saved: bool = False) -> tuple[str
 
 def check_flow_eval(state: Mapping, action: str, token: str, *, saved: bool = False) -> None:
     """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's."""
-    report, ok = eval_result(state, token, saved=saved)
+    try:
+        report, ok = eval_result(state, token, saved=saved)
+    except SafetyRefusal:
+        raise
+    except ClientError as error:
+        raise ClientError(f"flow {action}: {error}") from None
     print(report, flush=True)
     if not ok:
         raise ClientError(f"flow snippet {action} failed: {report}")
@@ -3189,25 +3210,15 @@ def pending_work(state: Mapping) -> bool:
     An agent with queued requests holds a lease (`lease --ttl`, renewed while its queue is not empty) to keep the
     session warm between them; the lease expires on its own, so a forgotten one costs at most LEASE_MAX.
     """
-    for path in job_queue():
-        try:
-            if not json.loads(path.read_text()).get("session_end", False):
-                return True
-        except (OSError, ValueError):
-            continue
-    now, identity = time.time(), session_identity(state)
+    if any(ordinary for ordinary, _path in live_tickets()):
+        return True
+    identity = session_identity(state)
     for path in (STATE_DIR / "leases").glob("*.json"):
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
-        if (
-            isinstance(record, dict)
-            and not record.get("ended")
-            and isinstance(record.get("expires"), (int, float))
-            and record["expires"] > now
-            and record.get("session") == identity
-        ):
+        if usable_lease(record, path.stem, identity):
             return True
     return False
 
@@ -4025,12 +4036,31 @@ def live_lease(token: str) -> dict:
         raise ClientError("lease ended: unreadable record, run lease again")
     if record.get("ended"):
         raise ClientError(f"lease ended: {record['ended']}")
-    expires = record.get("expires")
-    if record.get("token") != token or not isinstance(expires, (int, float)) or expires <= time.time():
+    if not unexpired_lease(record, token):
         raise ClientError("lease expired: run lease again")
     if record.get("session") != session_identity(current_session() or {}):
         raise ClientError("lease ended: session replaced or stopped, run lease again")
     return record
+
+
+def unexpired_lease(record: Mapping, token: str) -> bool:
+    expires = record.get("expires")
+    return (
+        record.get("token") == token
+        and isinstance(expires, (int, float))
+        and not isinstance(expires, bool)
+        and time.time() < expires <= time.time() + LEASE_MAX
+    )
+
+
+def usable_lease(record: object, token: str, identity: Mapping) -> bool:
+    """The checks `live_lease` makes, without raising: the idle limit waits only on a lease a caller could use."""
+    return (
+        isinstance(record, dict)
+        and not record.get("ended")
+        and unexpired_lease(record, token)
+        and record.get("session") == identity
+    )
 
 
 def clear_leases(reason: str = "session ended because teardown stopped the client") -> None:
@@ -4262,6 +4292,12 @@ def eval_files(state: Mapping, files: Sequence[Path]) -> int:
             try:
                 written = tool.write_snippet(path, addons=CLIENT / "Interface/AddOns", capture=False)
             except tool.EvalError as error:
+                if unread:
+                    # The earlier snippet has run: save and print its result before reporting this one's refusal.
+                    clear_eval_inbox(quiet=True)
+                    cleared = True
+                    reload(state)
+                    report(*unread)
                 raise ClientError(str(error)) from None
             print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
             reload(state)
