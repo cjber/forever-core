@@ -180,6 +180,21 @@ boxApi.SetAttached(true)
 box.drain()
 box.check(Under(box), "and turning it on releases the drag")
 
+-- Each change is announced once: a repeated pick, or a drag of a column already off the tracker, calls back nothing,
+-- and a callback that writes the value it hears back through SetAttached ends there instead of recursing.
+local once = harness.new({ hostSettings = { attached = false } })
+local onceApi, calls = once.ns.TrackerHost, 0
+onceApi.OnAttachmentChanged(function(attached)
+	calls = calls + 1
+	onceApi.SetAttached(attached)
+end)
+onceApi.SetAttached(false)
+once.check(calls == 1, "one toggle is one callback, even when the callback writes it back")
+onceApi.SetAttached(false)
+onceApi.SavePosition(10, -10)
+onceApi.SavePosition(20, -20)
+once.check(calls == 1, "a repeated pick and a drag of a detached column call back nothing")
+
 -- A reload keeps the choice: saved settings with a placement are not migrated again.
 local saved = box.hostSettings
 saved.attached, saved.placement = true, "left"
@@ -206,5 +221,6 @@ print(
 			+ reloaded.checks()
 			+ savedUnder.checks()
 			+ old.checks()
+			+ once.checks()
 	)
 )

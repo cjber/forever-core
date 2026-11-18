@@ -59,19 +59,21 @@ local function CopyLegacy()
 		return false
 	end
 	for field, kind in pairs({
-		attached = "boolean",
 		locked = "boolean",
 		scale = "number",
 		backdropOpacity = "number",
-		x = "number",
-		y = "number",
 	}) do
 		if type(legacy[field]) == kind then
 			settings[field] = legacy[field]
 		end
 	end
-	-- The copied table predates placement, so the next read migrates its attachment.
-	settings.placement = nil
+	-- The legacy table predates placement: only a detached one (attached false) holds a spot the player dragged to,
+	-- and an attached one (true or missing) drops it, the same as Settings migrates the store's own table. A place
+	-- the store already has is kept, and setting one marks the store migrated, so the store's own flag is not read.
+	if legacy.attached == false and type(legacy.x) == "number" and type(legacy.y) == "number" then
+		settings.x, settings.y = legacy.x, legacy.y
+	end
+	settings.placement = settings.placement or "under"
 	settings.migrated = true
 	return true
 end
@@ -1210,8 +1212,14 @@ end
 -- Addons' attach checkboxes, told when the column starts or stops following the tracker so they show its state.
 ---@type (fun(attached: boolean))[]
 local attachmentCallbacks = {}
-local function NotifyAttachment()
+-- Called with the state before a change, and calls back only when it changed, so a callback that writes the same
+-- value back through SetAttached ends there instead of recursing.
+---@param before boolean
+local function NotifyAttachment(before)
 	local attached = Settings().attached
+	if attached == before then
+		return
+	end
 	for _, callback in ipairs(attachmentCallbacks) do
 		RunSafe(nil, "OnAttachmentChanged", callback, attached)
 	end
@@ -1227,11 +1235,12 @@ function api.SetPlacement(value)
 		return
 	end
 	local settings = Settings()
+	local before = settings.attached
 	settings.placement = value
 	settings.x, settings.y = nil, nil
 	placeAgain = true
 	host:MarkDirty()
-	NotifyAttachment()
+	NotifyAttachment(before)
 end
 -- Whether the column follows a place, rather than a position the player dragged it to.
 ---@return boolean
@@ -1260,9 +1269,10 @@ function api.SavePosition(x, y)
 		return
 	end
 	local settings = Settings()
+	local before = settings.attached
 	settings.x, settings.y = x, y
 	host:MarkDirty()
-	NotifyAttachment()
+	NotifyAttachment(before)
 end
 
 -- The Tracker position choice, the same in every section's menu. Neither radio is ticked while the column sits where it
