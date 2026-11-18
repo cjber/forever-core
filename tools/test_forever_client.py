@@ -5101,9 +5101,9 @@ class ActionKeyTest(unittest.TestCase):
         config = root / "env.json"
         config.write_text(json.dumps({"character": {"name": "Barry", "guid": "Player-1-0001"}}))
         self.account = self.client / "WTF/Account/122785280#1"
-        (self.account / "Realm/Barry").mkdir(parents=True)
+        (self.account / "93/Barry-Io").mkdir(parents=True)
         (self.account / "SavedVariables").mkdir()
-        (self.client / "WTF/Account/OTHER/Realm/Someone").mkdir(parents=True)
+        (self.client / "WTF/Account/OTHER/93/Barryish-Io").mkdir(parents=True)
         for name, value in (("CLIENT", self.client), ("STATE_DIR", self.state), ("CONFIG", config)):
             self.enterContext(mock.patch.object(fc, name, value))
         self.enterContext(mock.patch.object(fc, "INPUT_GAP", 0))
@@ -5157,6 +5157,11 @@ class ActionKeyTest(unittest.TestCase):
             {"ready": True}, ["MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "INTERACTTARGET", "TARGETNEARESTENEMY"]
         )
         self.assertEqual(keys, [["s"], ["Down"], ["a"], ["F9"], ["Tab"]])
+
+    def test_the_characters_own_bindings_win_over_the_accounts(self):
+        (self.account / "bindings-cache.wtf").write_text("bind W MOVEFORWARD\n")
+        (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind W ACTIONBUTTON2\nbind S MOVEFORWARD\n")
+        self.assertEqual(fc.action_keys({"ready": True}, ["MOVEFORWARD", "MOVEBACKWARD"]), [["s"], ["Down"]])
 
     def test_an_action_bound_only_to_a_mouse_button_is_refused(self):
         self.record('["JUMP"] = {\n"BUTTON4",\n},\n')

@@ -962,15 +962,25 @@ def approved_character() -> str | None:
     return name if isinstance(name, str) and name.strip() else None
 
 
+def character_folder() -> Path | None:
+    """The approved character's WTF folder, `Account/<account>/<realm>/<name>-<suffix>` or `.../<name>`, or None when
+    no folder or more than one matches."""
+    name = approved_character()
+    if not name:
+        return None
+    accounts = CLIENT / "WTF/Account"
+    found = sorted(
+        path
+        for path in accounts.glob("*/*/*")
+        if path.is_dir() and (path.name == name or path.name.startswith(f"{name}-"))
+    )
+    return found[0] if len(found) == 1 else None
+
+
 def account_folder() -> Path | None:
     """The WTF account folder holding the approved character, or None when it cannot be told apart."""
-    name = approved_character()
-    accounts = CLIENT / "WTF/Account"
-    if name:
-        found = sorted({path.parent.parent for path in accounts.glob(f"*/*/{name}") if path.is_dir()})
-        if len(found) == 1:
-            return found[0]
-    return None
+    character = character_folder()
+    return character.parent.parent if character else None
 
 
 def recorded_bindings() -> tuple[dict[str, list[str]], str] | None:
@@ -1000,18 +1010,17 @@ def recorded_bindings() -> tuple[dict[str, list[str]], str] | None:
 
 
 def file_bindings() -> dict[str, list[str]]:
-    """The client's defaults changed by the account's bindings-cache.wtf, then by the character's own."""
-    folder = account_folder()
-    if folder is None:
-        raise ClientError("cannot tell which WTF account the session's character is in, so its bindings are unknown")
-    text = ""
-    name = approved_character()
-    for path in [folder / "bindings-cache.wtf", *sorted(folder.glob(f"*/{name}/bindings-cache.wtf"))]:
+    """The client's defaults changed by the character's own bindings-cache.wtf when it keeps per-character bindings,
+    otherwise by the account's."""
+    character = character_folder()
+    if character is None:
+        raise ClientError("cannot tell which WTF folder is the session's character, so its bindings are unknown")
+    for path in (character / "bindings-cache.wtf", character.parent.parent / "bindings-cache.wtf"):
         try:
-            text += path.read_text(errors="replace") + "\n"
+            return bindings_from_cache_file(path.read_text(errors="replace"))
         except OSError:
             continue
-    return bindings_from_cache_file(text)
+    return bindings_from_cache_file("")
 
 
 def action_bindings(state: Mapping) -> dict[str, list[str]]:
