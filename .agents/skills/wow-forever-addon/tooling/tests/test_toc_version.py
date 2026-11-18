@@ -7,7 +7,8 @@ from forever_tools import package, toc_version
 
 
 def git(root, *args):
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+    identity = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "tag.gpgSign=false", "-c", "commit.gpgSign=false"]
+    subprocess.run(["git", "-C", str(root), *identity, *args], check=True, capture_output=True)
 
 
 class TocVersionTest(unittest.TestCase):
@@ -21,7 +22,7 @@ class TocVersionTest(unittest.TestCase):
         (self.root / "tools").mkdir()
         (self.root / "tools/Vendored.toc").write_bytes(b"## Version: @project-version@\n")
         git(self.root, "init", "-q")
-        git(self.root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "c")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "c")
 
     def test_bare_drops_only_a_version_v(self):
         self.assertEqual(toc_version.bare("v1.43.1\n"), "1.43.1")
