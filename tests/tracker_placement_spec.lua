@@ -195,6 +195,21 @@ onceApi.SavePosition(10, -10)
 onceApi.SavePosition(20, -20)
 once.check(calls == 1, "a repeated pick and a drag of a detached column call back nothing")
 
+-- A locked column placed under a short list holds there, but growing past the screen's bottom moves it left (#851's
+-- in-game check: after a reload the sections filled in under a long list and ran off the screen).
+local grown = harness.new({ hostSettings = { attached = true, placement = "under", locked = true } })
+grown.first.contentHeight = 40
+grown.host:MarkDirty()
+grown.drain()
+grown.check(Under(grown), "a locked column goes under a list it fits under")
+local heldAt = grown.nativeRect.line
+grown.moveLine(650)
+grown.check(Under(grown, heldAt), "and holds there while the list moves")
+grown.first.contentHeight = 800
+grown.host:MarkDirty()
+grown.drain()
+grown.check(Pinned(grown), "but moves left once it would run off the screen")
+
 -- A reload keeps the choice: saved settings with a placement are not migrated again.
 local saved = box.hostSettings
 saved.attached, saved.placement = true, "left"
@@ -222,5 +237,6 @@ print(
 			+ savedUnder.checks()
 			+ old.checks()
 			+ once.checks()
+			+ grown.checks()
 	)
 )

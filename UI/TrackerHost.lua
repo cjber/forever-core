@@ -1052,7 +1052,8 @@ end
 -- quest item buttons, so it is placed at coordinates rather than anchored to the tracker: an anchor would bring the
 -- tracker's own frames into the column's protected chain, which the engine moves in combat. Combat runs none of this,
 -- and PLAYER_REGEN_ENABLED's layout puts the column where the tracker's line has gone meanwhile.
--- A locked column holds the place it has, as a dragged one does, until the player picks a place again.
+-- A locked column holds the place it has, as a dragged one does, until the player picks a place again, except that it
+-- never runs off the screen.
 local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
@@ -1061,7 +1062,12 @@ local function FollowTracker(settings)
 	if settings.placement ~= "under" or (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
 		return
 	end
+	-- Lock holds the place the column has, but never off the screen: a locked column under the tracker that grows past
+	-- the screen's bottom from where it is takes the left place, as an unlocked one would.
 	if settings.locked and followed and not placeAgain then
+		if under and (host:GetHeight() or 0) > (host:GetTop() or 0) then
+			PinLeft()
+		end
 		return
 	end
 	local x, top = TrackerEdge()
