@@ -6,12 +6,13 @@ Every addon TOC carries `## Version: @project-version@`, and the packager fills 
 (`v1.2.3`); it has no option to drop the prefix. The client then reports `v1.2.3` from
 `C_AddOns.GetAddOnMetadata(addon, "Version")`, while each addon's What's New check, report and saved version compare it
 with a bare `1.2.3`. Run this on the disposable checkout before every packager step (the Release workflow and the CI
-package job): it writes the version the packager would, `git describe --tags --always --abbrev=7` (the tag on a tagged
-commit), with the `v` removed, so the packager has no keyword left to fill. `forever_tools.package.check` fails a
-packaged TOC whose `## Version` still starts with `v`.
+package job): it writes the version the packager would (the pushed tag on a tagged commit, else
+`git describe --tags --always --abbrev=7`) with the `v` removed, so the packager has no keyword left to fill.
+`forever_tools.package.check` fails a packaged TOC whose `## Version` still starts with `v`.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,15 +30,23 @@ def bare(tag: str) -> str:
     return tag[1:] if tag[:1] in ("v", "V") and tag[1:2].isdigit() else tag
 
 
-def described(root: Path) -> str:
-    """The version the packager would read from git for `root`'s HEAD, without the tag's `v`."""
-    shown = subprocess.run(
-        ["git", "-C", str(root), "describe", "--tags", "--always", "--abbrev=7"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return bare(shown.stdout)
+def git(root: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def described(root: Path, ref: str | None = None) -> str:
+    """The version the packager would read from git for `root`'s HEAD, without the tag's `v`.
+
+    This follows the pinned packager's own choice: of the tags on HEAD, the one the workflow was pushed for
+    (`GITHUB_REF`), else the newest; with no tag on HEAD, `git describe --tags --always --abbrev=7`."""
+    ref = os.environ.get("GITHUB_REF", "") if ref is None else ref
+    tags = git(
+        root, "tag", "--points-at", "HEAD", "--sort=-committerdate", "--sort=-v:refname", "--sort=-taggerdate"
+    ).splitlines()
+    if tags:
+        pushed = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else None
+        return bare(pushed if pushed in tags else tags[0])
+    return bare(git(root, "describe", "--tags", "--always", "--abbrev=7"))
 
 
 def stamp(root: Path, version: str) -> list[Path]:

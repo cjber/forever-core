@@ -42,6 +42,12 @@ class TocVersionTest(unittest.TestCase):
         self.assertEqual(toc_version.main([str(self.root)]), 0)
         self.assertRegex(self.toc.read_bytes(), rb"## Version: [0-9a-f]{7}\r\n")
 
+    def test_the_pushed_tag_wins_when_two_tags_name_the_commit(self):
+        git(self.root, "tag", "-a", "-m", "old", "v1.16.0")
+        git(self.root, "tag", "v1.16.1")
+        self.assertEqual(toc_version.described(self.root, "refs/tags/v1.16.1"), "1.16.1")
+        self.assertEqual(toc_version.described(self.root, "refs/tags/v1.16.0"), "1.16.0")
+
     def test_a_second_run_changes_nothing(self):
         git(self.root, "tag", "v2.5.0")
         toc_version.main([str(self.root)])
@@ -66,6 +72,26 @@ class CheckVersionTest(unittest.TestCase):
 
     def test_an_unfilled_keyword_fails(self):
         self.assertIn("still holds @project-version@", self.check("## Version: @project-version@")[0])
+
+    def test_a_bundled_folder_keeps_the_version_its_release_wrote(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        for folder, version in (("Addon", "1.2.3"), ("ForeverCore", "v1.15.1")):
+            (root / folder).mkdir()
+            (root / folder / f"{folder}.toc").write_text(f"## Version: {version}\n", encoding="utf-8")
+            (root / folder / "LICENSE").write_text("MIT", encoding="utf-8")
+        problems = package.check(root, package.Policy(addons=("Addon", "ForeverCore")))
+        self.assertFalse([problem for problem in problems if "Version" in problem], problems)
+        (root / "Addon/Addon.toc").write_text("## Version: v1.2.3\n", encoding="utf-8")
+        problems = package.check(root, package.Policy(addons=("Addon", "ForeverCore")))
+        self.assertEqual(
+            [problem for problem in problems if "Version" in problem],
+            [
+                "Addon/Addon.toc: ## Version is v1.2.3, the tag with its v; run python3 -m"
+                " tools.forever_tools.toc_version before the packager"
+            ],
+        )
 
     def test_bare_and_dev_versions_pass(self):
         for line in (

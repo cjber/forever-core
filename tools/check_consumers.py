@@ -362,6 +362,11 @@ CI_WORKFLOW = ".github/workflows/ci.yml"
 VERSION_COMMAND = "tools.forever_tools.toc_version"
 
 
+def uncommented(text):
+    """`text` with each YAML comment-only line blanked to spaces, so offsets still line up with the original."""
+    return re.sub(r"(?m)^[ \t]*#.*$", lambda line: " " * len(line[0]), text)
+
+
 def check_version_step(repo, branch, local):
     """Every packager step in a consumer's release and CI workflows has the bare version step before it.
 
@@ -375,7 +380,7 @@ def check_version_step(repo, branch, local):
         if error:
             failures.append(f"{repo}: {path}: {error}")
             continue
-        text = "" if data is None else data.decode("utf-8", "replace")
+        text = uncommented("" if data is None else data.decode("utf-8", "replace"))
         previous = 0
         for packager in (match.start() for match in re.finditer(r"BigWigsMods/packager@", text)):
             if command not in text[previous:packager]:

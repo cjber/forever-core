@@ -29,7 +29,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from check_consumers import CI_WORKFLOW, TAG_STEP, VERSION_COMMAND, pkgmeta_field, tag_step, workflow_step
+from check_consumers import CI_WORKFLOW, TAG_STEP, VERSION_COMMAND, pkgmeta_field, tag_step, uncommented, workflow_step
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -125,12 +125,13 @@ def version_step(indent="      "):
 
 def version_step_edit(text):
     """`text` with the version step directly above each BigWigs packager step that has none before it, or None."""
-    packagers = list(PACKAGER_STEP.finditer(text))
+    live = uncommented(text)  # a commented-out step does not run
+    packagers = list(PACKAGER_STEP.finditer(live))
     command = f"python3 -m {VERSION_COMMAND}"
     previous, pieces = 0, []
     for packager in packagers:
         anchor = packager.start()
-        if command not in text[previous:anchor]:
+        if command not in live[previous:anchor]:
             # The pin gate stays the last step before the packager, so the version step goes above it and its comment.
             gate = text.rfind(f"- name: {RELEASE_GATE_NAME}\n", previous, anchor)
             if gate >= 0:

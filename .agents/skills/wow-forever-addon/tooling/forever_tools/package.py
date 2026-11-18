@@ -208,7 +208,10 @@ def check(release: Path, policy: Policy) -> list[str]:
             problems.append(f"{addon}/{addon}.toc: missing")
         for toc in tocs:
             problems += check_loaded(release, folder, toc, policy.addons)
-            problems += check_version(release, toc)
+            # Only the addon this repository builds: a bundled folder (ForeverCore) is an external release zip that
+            # carries whatever version its own release wrote.
+            if addon == policy.addons[0]:
+                problems += check_version(release, toc)
         if not any(child.is_file() and licence_file(child.name) for child in folder.iterdir()):
             problems.append(f"{addon}/LICENSE: missing; every packaged folder ships its licence")
     if policy.addons and (release / policy.addons[0]).is_dir():

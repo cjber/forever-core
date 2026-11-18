@@ -397,6 +397,16 @@ class VersionStepTest(unittest.TestCase):
         self.assertIn("python3 -m tools.forever_tools.embed\n" + step + "      - uses: BigWigsMods/packager@", ci)
         self.assertEqual(self.run_sync(), 0)
 
+    def test_a_commented_out_step_does_not_count(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        packager = "      - uses: BigWigsMods/packager@"
+        commented = "      # - run: python3 -m tools.forever_tools.toc_version\n"
+        path.write_text(RELEASE_WORKFLOW.replace(packager, commented + packager), encoding="utf-8")
+        self.assertIn("release.yml: a packager step with no", self.check()[0])
+        self.run_sync()
+        self.assertIn(sync.version_step() + packager, path.read_text(encoding="utf-8"))
+        self.assertEqual(self.check(), [])
+
     def test_the_pin_gate_stays_directly_above_the_packager(self):
         path = self.root / sync.RELEASE_WORKFLOW
         packager = "      - uses: BigWigsMods/packager@"
