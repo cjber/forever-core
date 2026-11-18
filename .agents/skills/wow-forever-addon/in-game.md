@@ -24,8 +24,13 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    checkout: <worktree path>                       (proof and check)
    flows: <name>=<slash or lua file>; ...          (proof)
    check: <what to verify, steps, expected result> (check)
+   changelog: <bullet> => <flow name>; ...         (proof)
    needs: <third-party addons, character, place>   (optional)
    ```
+
+   A proof's flows follow [Behaviour and cost flows](#behaviour-and-cost-flows): one per changed surface, each doing
+   what a player does there and raising on an unexpected result or a handler over one frame. `changelog:` maps every
+   `CHANGELOG.md` bullet the change adds to the flow that proves it; a bullet with no flow sends the request back.
 
    The ref is the full 40-character SHA of a pushed commit. Every check one commit needs goes in one message, as
    several `kind:` blocks one after another, so the in-game agent loads that build once. A `check` names
@@ -254,6 +259,52 @@ screenshot is waited for. Opening a profession window is a protected action no L
 once `professions.lua`'s ready check sees it filled. `NAME` must match a
 `--flow` name, and the proof's flow entry records the point as `click`, so the evidence says what was clicked. A flow
 with no `--flow-click` is unchanged.
+
+### Behaviour and cost flows
+
+A proof shows that the change works and what it costs, not only how it looks (WFA-40). Each flow is a Lua file that
+does what a player does on the changed surface, then checks the result and the cost from its ready function. A raise
+there fails the proof with its message, so the message says what was expected and what happened. The cost comes from
+`!!DevPerf`'s per-event split: `/devperf events reset` at the start scopes it to the flow, and the session's
+`events` table (format in forever-dev's `!!DevPerf/AGENTS.md`) holds every Forever handler's peak and its calls
+over one frame.
+
+```lua
+-- sorted-recipe.lua: with the Professions window open (the flow's --flow-click), sort by skill-up and pick a recipe.
+SlashCmdList.DEVPERF("events reset")
+local events = DevPerfDB.sessions[#DevPerfDB.sessions].events
+SkillUpForever.SortBy("skillup")
+SkillUpForever.SelectRow(1)
+local started = GetTime()
+return function()
+	-- Expected result: the window stays open on the chosen recipe.
+	if not ProfessionsFrame:IsShown() then
+		error("expected ProfessionsFrame open after picking a sorted recipe, it closed")
+	end
+	-- Cost: no Forever handler call or tick over one frame during the flow.
+	for addon, handlers in pairs(events.handlers or {}) do
+		for key, stat in pairs(handlers) do
+			if stat.over > 0 then
+				error(("%s %s took %.1f ms, over one frame"):format(addon, key, stat.peakMs))
+			end
+		end
+	end
+	local spike = events.spikes and events.spikes[1]
+	if spike then
+		error(("%s spent %.1f ms in one tick (%s)"):format(spike.addon, spike.ms, spike.source))
+	end
+	-- Give late events a second to land before passing.
+	return GetTime() - started > 1
+end
+```
+
+- One flow per changed surface, named for it, and every action a player takes there: a list sorted and clicked, a
+  purchase, the bags opened at a merchant, the camera turned with a route loaded. A flow that only opens a window
+  proves only that it opens.
+- Each action states its expected result in the check that raises, the frame or value a player would see.
+- `events.off` set means the build cannot time handlers: report it, since the cost half of the proof is missing.
+- The `SkillUpForever` calls above stand for the addon's own entry points: drive the addon through its real
+  functions or widgets, never a test-only path.
 
 `tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
 proof it prints this command for the pull request's head, and the release session runs it and commits the result.

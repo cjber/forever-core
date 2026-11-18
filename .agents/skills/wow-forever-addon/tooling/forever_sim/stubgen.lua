@@ -365,6 +365,9 @@ function M.build(sim)
 		local f = function(...)
 			local args = { ... }
 			local tainted = Taint.current
+			if tainted and sim.work then
+				sim.work.count("apiCalls")
+			end
 			if tainted then
 				for i, a in ipairs(fdoc.Arguments or {}) do
 					local v = args[i]
@@ -399,6 +402,11 @@ function M.build(sim)
 			local refused = protected or (restricted and restrictedNow(qualified))
 			if refused and tainted then
 				sim.forbidden(qualified)
+				-- What the client still does after refusing the call, where that was recorded live.
+				local onRefused = sim.refusedImpl and sim.refusedImpl[qualified]
+				if onRefused then
+					Taint.callSecure(onRefused, ...)
+				end
 				return
 			end
 			local impl = sim.impl[qualified]

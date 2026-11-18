@@ -72,6 +72,7 @@ means something; the walk still covers only the repository's own widgets.
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
+| `sim.work.reset()`, `sim.work.paths[label]`, `sim.work.measure(label, f, ...)` | the work counter: every event is measured under its own name, and `measure` wraps any other path (a tooltip, a click, a callback), returning that run's `{ handlers, apiCalls }` and then `f`'s results; each `paths` entry holds `runs`, `handlers`, `apiCalls`, `maxHandlers` and `maxApiCalls` |
 | `sim:rect(frame)`, `sim:overlap(a, b)`, `sim:expectNoOverlap(a, b)`, `sim:expectOnScreen(frame)` | layout |
 
 `sim.world` holds what the client reports: `player`, `units` (target, mouseover...), `group`, `professions`,
@@ -131,6 +132,15 @@ end)
   its documented system (`SimpleButtonAPI_SetEnabled`) or, for a block the live client recorded, by its own name
   (`SetEnabled`): `fetch.py --refresh-restrictions --probe <ForeverProbe SavedVariables>` merges every call the
   client refused into the pin, classed from the recorded event and combat state.
+- **Forever's professions**: `C_TradeSkillUI.OpenRecipe` behaves as recorded live, not as retail: from a hardware
+  input it closes an open Professions window (three TRADE_SKILL_CLOSE) and answers
+  `OPEN_RECIPE_RESPONSE(recipeID, base, child)`, and from tainted code outside one it is refused yet still answers.
+  `CraftRecipe` is refused to tainted code at any time. A profession's `childSkillLineID` (Cooking 185, child 2939)
+  is reported only by recipe, with the base line as parent; `GetProfessionChildSkillLineID` is 0. A refused call's
+  recorded side effects live in `sim.refusedImpl`.
+- **Work per path**: `sim.work` counts, per event and per path a spec wraps in `measure`, the handlers dispatched and
+  the documented API calls tainted code made, nested paths counting in their parent too. Counts are deterministic, so
+  a bench asserts an upper bound on one path's work; the in-game per-frame cost is !!DevPerf's per-event split.
 - **Secret values**: the documented `SecretReturns` and `SecretWhen*` rules (combat, unit restrictions, maps)
   return secrets. Tainted code that does arithmetic, comparisons, `#`, indexing or calls on a secret gets the client's
   error, naming the addon. Widget aspects work too: a secret argument adds the documented aspect, and getters on a region

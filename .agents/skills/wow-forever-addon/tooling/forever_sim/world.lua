@@ -355,7 +355,9 @@ function M.build(sim)
 		return W.openProfession and profession(W.openProfession)
 	end
 	sim.profession = open
-	local function professionInfo(p)
+	-- A profession's child skill line (Cooking 185, child 2939) shows only where Forever reports it: by recipe. The open
+	-- window reports the base line with no parent, and GetProfessionChildSkillLineID is 0 (cjber/forever-core#831).
+	local function professionInfo(p, child)
 		local info = sim.api.zero({ Type = "ProfessionInfo" })
 		if not p then
 			return info
@@ -364,6 +366,11 @@ function M.build(sim)
 		info.professionName = p.name
 		info.parentProfessionName = nil
 		info.parentProfessionID = nil
+		if child and p.childSkillLineID then
+			info.professionID = p.childSkillLineID
+			info.parentProfessionID = p.skillLineID
+			info.parentProfessionName = p.name
+		end
 		info.skillLevel = p.skill
 		info.maxSkillLevel = p.max
 		info.skillModifier = p.modifier or 0
@@ -403,7 +410,7 @@ function M.build(sim)
 		for _, p in ipairs(W.professions) do
 			for _, r in ipairs(p.recipes or {}) do
 				if r.id == recipeID then
-					return professionInfo(p)
+					return professionInfo(p, true)
 				end
 			end
 		end
@@ -559,6 +566,39 @@ function M.build(sim)
 		end
 		return false
 	end
+	impl["C_TradeSkillUI.GetProfessionChildSkillLineID"] = function()
+		return 0
+	end
+	local function recipeProfession(recipeID)
+		for _, p in ipairs(W.professions) do
+			for _, r in ipairs(p.recipes or {}) do
+				if r.id == recipeID then
+					return p
+				end
+			end
+		end
+	end
+	local function openRecipeResponse(recipeID)
+		local p = recipeProfession(recipeID)
+		if p then
+			sim.events.queue("OPEN_RECIPE_RESPONSE", recipeID, p.skillLineID, p.childSkillLineID or p.skillLineID)
+		end
+	end
+	-- Forever's OpenRecipe, recorded live (cjber/forever-core#831, cjber/skillup-forever#840), where retail selects the
+	-- recipe in the open window: the window closes, with three TRADE_SKILL_CLOSE in one frame, and then
+	-- OPEN_RECIPE_RESPONSE(recipeID, base, child) fires; the window never reopens.
+	impl["C_TradeSkillUI.OpenRecipe"] = function(recipeID)
+		if W.openProfession then
+			W.openProfession = nil
+			for _ = 1, 3 do
+				sim.events.queue("TRADE_SKILL_CLOSE")
+			end
+		end
+		openRecipeResponse(recipeID)
+	end
+	-- Refused to tainted code outside a hardware event, the response still fires and the window stays open.
+	sim.refusedImpl = sim.refusedImpl or {}
+	sim.refusedImpl["C_TradeSkillUI.OpenRecipe"] = openRecipeResponse
 	impl["C_TradeSkillUI.CloseTradeSkill"] = function()
 		if not W.openProfession then
 			return

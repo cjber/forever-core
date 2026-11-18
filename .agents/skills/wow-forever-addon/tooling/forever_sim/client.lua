@@ -395,6 +395,10 @@ function M.build(sim)
 		-- refused to tainted code at any time, and C_UI.Reload refused to tainted code outside a hardware event.
 		["C_TradeSkillUI.OpenTradeSkill"] = { class = "always", issue = "cjber/forever-core#538" },
 		["C_UI.Reload"] = { class = "hwevent", issue = "cjber/forever-core#538" },
+		-- OpenRecipe from addon code outside a hardware event logged ADDON_ACTION_BLOCKED live (cjber/forever-core#831);
+		-- CraftRecipe reached from tainted code did at any time (cjber/skillup-forever#313).
+		["C_TradeSkillUI.OpenRecipe"] = { class = "hwevent", issue = "cjber/forever-core#831" },
+		["C_TradeSkillUI.CraftRecipe"] = { class = "always", issue = "cjber/skillup-forever#313" },
 	}
 	-- Every class of a restriction, the observed override first, then the pin, then the pre-class combat-only rule for
 	-- an untagged name. A function can carry several classes, and any one that applies refuses the call.
@@ -440,8 +444,64 @@ function M.build(sim)
 		end
 		return out
 	end
+	-- The work a path causes, for benches: per label, how often it ran, the event handlers it dispatched and the
+	-- documented client API calls tainted code made inside it. Every event is measured under its own name; a spec wraps
+	-- any other path (a tooltip, a click, a callback) in work.measure. A nested path counts in its own entry and in every
+	-- enclosing one. Counts, not a clock, so a bench can assert a deterministic upper bound on one path's work.
+	local work = { paths = {}, stack = {} }
+	sim.work = work
+	function work.reset()
+		work.paths = {}
+	end
+	function work.count(field)
+		for _, entry in ipairs(work.stack) do
+			entry[field] = entry[field] + 1
+		end
+	end
+	local function workBegin(label)
+		local entry = { label = label, handlers = 0, apiCalls = 0 }
+		work.stack[#work.stack + 1] = entry
+		return entry
+	end
+	local function workEnd(entry)
+		for i = #work.stack, 1, -1 do
+			if work.stack[i] == entry then
+				table.remove(work.stack, i)
+				break
+			end
+		end
+		local stat = work.paths[entry.label]
+		if not stat then
+			stat = { runs = 0, handlers = 0, apiCalls = 0, maxHandlers = 0, maxApiCalls = 0 }
+			work.paths[entry.label] = stat
+		end
+		stat.runs = stat.runs + 1
+		stat.handlers = stat.handlers + entry.handlers
+		stat.apiCalls = stat.apiCalls + entry.apiCalls
+		stat.maxHandlers = math.max(stat.maxHandlers, entry.handlers)
+		stat.maxApiCalls = math.max(stat.maxApiCalls, entry.apiCalls)
+		return stat
+	end
+	-- Runs f(...) as the path label and returns that run's counts, then f's results. An error in f still closes the
+	-- entry and is raised again.
+	function work.measure(label, f, ...)
+		local entry = workBegin(label)
+		local result = { pcall(f, ...) }
+		workEnd(entry)
+		if not result[1] then
+			error(result[2], 0)
+		end
+		return { handlers = entry.handlers, apiCalls = entry.apiCalls }, unpack(result, 2, table.maxn(result))
+	end
+
 	-- Fires an event the way the client does: each registered frame's OnEvent in its own secure dispatch.
 	function E.fire(event, ...)
+		-- A handler's error goes to the client's error handler inside dispatch, as live, so the entry always closes.
+		local entry = workBegin(event)
+		E.dispatchAll(event, ...)
+		workEnd(entry)
+	end
+	function E.dispatchAll(event, ...)
 		for _, frame in ipairs(E.listeners(event)) do
 			local st = sim.widgets.state[frame]
 			if st and st.events and (st.events[event] or st.allEvents) then
@@ -457,6 +517,7 @@ function M.build(sim)
 					end
 				end
 				if pass then
+					work.count("handlers")
 					sim.widgets.dispatch(frame, "OnEvent", event, ...)
 				end
 			end
