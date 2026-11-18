@@ -1206,9 +1206,6 @@ end
 function api.SetLocked(value)
 	Settings().locked = not not value
 end
--- "under" (the default) or "left" of the game's quest tracker. A dragged column keeps its saved choice, which applies
--- again once the player picks a place.
----@return "under"|"left"
 -- Addons' attach checkboxes, told when the column starts or stops following the tracker so they show its state.
 ---@type (fun(attached: boolean))[]
 local attachmentCallbacks = {}
@@ -1224,6 +1221,9 @@ local function NotifyAttachment(before)
 		RunSafe(nil, "OnAttachmentChanged", callback, attached)
 	end
 end
+-- "under" (the default) or "left" of the game's quest tracker. A dragged column keeps its saved choice, which applies
+-- again once the player picks a place.
+---@return "under"|"left"
 function api.GetPlacement()
 	return Settings().placement
 end
