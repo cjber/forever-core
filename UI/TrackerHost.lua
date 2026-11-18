@@ -1062,11 +1062,16 @@ local function FollowTracker(settings)
 	if settings.placement ~= "under" or (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
 		return
 	end
-	-- Lock holds the place the column has, but never off the screen: a locked column under the tracker that grows past
-	-- the screen's bottom from where it is takes the left place, as an unlocked one would.
+	-- Lock holds the place the column has, except for Under's no-room fallback: a locked column under the tracker that no
+	-- longer fits under the list's last line, or would run past the screen's bottom from where it is, takes the left
+	-- place, as an unlocked one would. It does not return under on its own; picking a place or unlocking does that.
 	if settings.locked and followed and not placeAgain then
-		if under and (host:GetHeight() or 0) > (host:GetTop() or 0) then
-			PinLeft()
+		if under then
+			local _, line = TrackerEdge()
+			local height = host:GetHeight() or 0
+			if height > (line or math.huge) or height > (host:GetTop() or 0) then
+				PinLeft()
+			end
 		end
 		return
 	end

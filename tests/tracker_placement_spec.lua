@@ -107,12 +107,13 @@ check(Under(t, 700), "Under puts it back on the line")
 api.SetPlacement("above")
 check(api.GetPlacement() == "under", "an unknown place is ignored")
 
--- Lock wins: a locked column holds its place while the list moves, and picking a place still moves it.
+-- Lock wins: a locked column holds its place while the list moves, except for Under's no-room fallback to Left, and
+-- picking a place still moves it.
 api.SetLocked(true)
 t.moveLine(650)
 check(Under(t, 700), "a locked column holds its place while the list moves")
 t.moveLine(100)
-check(Under(t, 700), "even when the list grows past it")
+check(Pinned(t), "but a list that leaves no room under it moves the column left, as Under does unlocked")
 api.SetPlacement("under")
 t.drain()
 check(Under(t, 100) or Pinned(t), "picking a place moves a locked column once")
@@ -205,6 +206,14 @@ grown.check(Under(grown), "a locked column goes under a list it fits under")
 local heldAt = grown.nativeRect.line
 grown.moveLine(650)
 grown.check(Under(grown, heldAt), "and holds there while the list moves")
+-- #851's in-game check: a locked column placed under the list as it loaded after a reload sat over the list once the
+-- list grew in under it. A list that leaves the column no room under it puts it left, Lock on or off.
+local longList = harness.new({ hostSettings = { attached = true, placement = "under", locked = true } })
+longList.check(Under(longList), "a locked column goes under a short list")
+longList.moveLine(longList.host:GetHeight() - 1)
+longList.check(Pinned(longList), "and moves left once the list leaves it no room under it")
+longList.moveLine(800)
+longList.check(Pinned(longList), "and stays left, locked, when room comes back")
 grown.first.contentHeight = 800
 grown.host:MarkDirty()
 grown.drain()
@@ -252,5 +261,6 @@ print(
 			+ once.checks()
 			+ grown.checks()
 			+ pinnedDrag.checks()
+			+ longList.checks()
 	)
 )
