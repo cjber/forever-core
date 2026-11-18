@@ -1021,6 +1021,37 @@ class BundleTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return sync.bump_pin(self.root, latest, self.DAY)
 
+    EMBEDDED_PKGMETA = "package-as: LegacyForever\n\nembedded-libraries:\n  - forevercore\n"
+    EMBEDDED_TOC = (
+        "## Interface: 16001\n## OptionalDeps: ForeverCore\n## X-Forever-Core: v1.3.2\n"
+        "## X-Forever-Core-Embed: 1\n## Title: Legacy Forever\n"
+    )
+
+    def embedded(self):
+        self.pkgmeta.write_text(self.EMBEDDED_PKGMETA, encoding="utf-8")
+        self.toc.write_text(self.EMBEDDED_TOC, encoding="utf-8")
+
+    def test_an_embedded_consumer_gets_a_release_entry_for_a_new_core(self):
+        self.embedded()
+        self.bump()
+        self.assertIn(sync.SYNC_BULLET, self.changelog.read_text())
+        self.assertIn("## X-Forever-Core: v1.4.0\n", self.toc.read_text(encoding="utf-8"))
+
+    def test_an_embedded_consumer_whose_release_carries_an_older_core_gets_an_entry(self):
+        self.embedded()
+        self.pin.write_text("v1.4.0\n", encoding="utf-8")
+        with (
+            mock.patch.object(sync, "latest_release_tag", return_value="v1.2.3"),
+            mock.patch.object(sync, "released_core_tag", return_value="v1.3.2"),
+        ):
+            self.bump()
+        self.assertIn(sync.SYNC_BULLET, self.changelog.read_text())
+
+    def test_an_embedded_consumer_keeps_its_packaging(self):
+        self.embedded()
+        self.bump()
+        self.assertEqual(self.pkgmeta.read_text(encoding="utf-8"), self.EMBEDDED_PKGMETA)
+
     def test_dependency_transition_keeps_the_bundle_and_existing_relations(self):
         self.pkgmeta.write_text(self.PKGMETA.replace("  - forevercore", "  - another-addon"), encoding="utf-8")
         self.bump("v1.3.2")

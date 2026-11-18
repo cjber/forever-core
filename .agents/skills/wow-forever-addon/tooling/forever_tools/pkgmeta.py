@@ -19,7 +19,17 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-__all__ = ["FILES", "Layout", "Manifest", "layout", "localization_toc_files", "project_toc_files", "read"]
+__all__ = [
+    "FILES",
+    "Layout",
+    "Manifest",
+    "Packaging",
+    "layout",
+    "localization_toc_files",
+    "packaging",
+    "project_toc_files",
+    "read",
+]
 
 PKGMETA = ".pkgmeta"
 FALLBACK = "pkgmeta.yaml"
@@ -219,6 +229,32 @@ def _external_entries(text: str) -> tuple[tuple[str, str], ...]:
         elif current is not None and _unquote(name.strip()).casefold() == "url" and not current[1]:
             current[1] = _unquote(value.strip())
     return tuple((key, value) for key, value in entries)
+
+
+@dataclass(frozen=True)
+class Packaging:
+    """Where a `.pkgmeta` ships folders and which store relations it declares, read as release.sh reads them.
+
+    `externals` are `(path, url)` pairs in the scalar or block form, `moves` are `(source, destination)` pairs, and
+    `embedded` and `required` are the `embedded-libraries` and `required-dependencies` list entries exactly as the
+    uploader keeps them: a trailing space stays part of the name, and a flow list or a mapping is no entry at all.
+    """
+
+    externals: tuple[tuple[str, str], ...]
+    moves: tuple[tuple[str, str], ...]
+    embedded: tuple[str, ...]
+    required: tuple[str, ...]
+
+
+def packaging(text: str) -> Packaging:
+    """The `.pkgmeta` text's externals, moves and store relations. Raises ValueError on a leading tab, which the
+    packager refuses before it reads anything."""
+    return Packaging(
+        _external_entries(text),
+        _mapping(text, "move-folders"),
+        tuple(_entries(text, "embedded-libraries")),
+        tuple(_entries(text, "required-dependencies")),
+    )
 
 
 def _external_keys(text: str) -> tuple[str, ...]:

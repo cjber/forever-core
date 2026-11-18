@@ -45,7 +45,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 from check_core_shared import CONSUMER_ROOT, VENDORED, check_gate_invocations, source
@@ -55,6 +55,7 @@ TOOLING = CORE_ROOT / ".agents/skills/wow-forever-addon/tooling"
 sys.path.insert(0, str(TOOLING))
 
 from forever_tools import core_pin  # noqa: E402
+from forever_tools import pkgmeta as pkgmeta_reader  # noqa: E402
 from forever_tools import sync as tooling_sync  # noqa: E402
 
 TOOLING_PACKAGE = TOOLING / "forever_tools"
@@ -301,9 +302,7 @@ def check_packaging(repo, pin, branch, local):
     if embeds:
         return failures + [
             f"{repo}: {failure}"
-            for failure in check_embedded_packaging(
-                pin or "", toc, blocks, package, ships, declares, path=path, toc_path=toc_path
-            )
+            for failure in check_embedded_packaging(pin or "", toc, pkgmeta, package, path=path, toc_path=toc_path)
         ]
     failures += [
         f"{repo}: {failure}"
@@ -328,33 +327,54 @@ def check_packaging(repo, pin, branch, local):
     return failures
 
 
-def check_embedded_packaging(pin, toc, blocks, package, ships, declares, *, path, toc_path):
+def check_embedded_packaging(pin, toc, pkgmeta, package, *, path, toc_path):
     """The end state for a consumer that carries ForeverCore under `Libs/ForeverCore/` (`## X-Forever-Core-Embed: 1`).
 
     The zip ships core only inside the addon, as Ace3 and LibStub libraries are embedded. A top-level `ForeverCore/`
     folder that several zips own is the #448 problem: removing or downgrading one addon deletes or rolls back core under
     the others. The store relation is `embedded-libraries`, so the CurseForge app links core on the project page and
     never installs it as a required dependency; the standalone stays its own optional download (#787).
+
+    The `.pkgmeta` is read the way the pinned packager and uploader read it (`forever_tools.pkgmeta.packaging`), so an
+    entry passes here only when the release would carry it the same way.
     """
+    try:
+        shipped = pkgmeta_reader.packaging(pkgmeta)
+    except ValueError as error:
+        return [f"{path}: {error}"]
     failures = []
-    if ships:
-        failures.append(
-            f"{path}: embeds ForeverCore under Libs/ForeverCore but `externals:` also ships the top-level folder;"
-            " remove that external (cjber/forever-core#448)"
-        )
-    moved = block_values(blocks.get("move-folders", []))
-    if f"{package}/{CORE_FOLDER}".lower() in moved:
-        failures.append(
-            f"{path}: embeds ForeverCore under Libs/ForeverCore but `move-folders:` still places a top-level"
-            f" `{CORE_FOLDER}` folder; remove `{package}/{CORE_FOLDER}: {CORE_FOLDER}`"
-        )
-    if declares:
+    core = CORE_FOLDER.casefold()
+    for key, url in shipped.externals:
+        if PurePosixPath(key).name.casefold() == core or "/cjber/forever-core/" in url.casefold():
+            failures.append(
+                f"{path}: `externals:` ships a second ForeverCore at {key}; the embed step is the only copy"
+                " (cjber/forever-core#448)"
+            )
+    embedded = PurePosixPath(package.casefold(), "libs", core)
+    for moved_from, destination in shipped.moves:
+        source_path = PurePosixPath(moved_from.casefold())
+        destination_parts = PurePosixPath(destination.casefold()).parts
+        if destination_parts[:1] == (core,):
+            failures.append(
+                f"{path}: `move-folders:` puts {moved_from} at the top-level {destination}; ForeverCore ships only"
+                " under Libs/ForeverCore (cjber/forever-core#448)"
+            )
+        elif (
+            source_path.parts[:1] == (package.casefold(),)
+            and len(source_path.parts) > 1
+            and (source_path in embedded.parents or source_path == embedded or embedded in source_path.parents)
+        ):
+            failures.append(f"{path}: `move-folders:` moves {moved_from}, which holds the embedded ForeverCore")
+    if "forevercore" in shipped.required:
         failures.append(
             f"{path}: embeds ForeverCore but lists `forevercore` under `required-dependencies:`; move it to"
             " `embedded-libraries:` so the store never installs the standalone as required"
         )
-    if "forevercore" not in block_entries(blocks.get("embedded-libraries", [])):
-        failures.append(f"{path}: embeds ForeverCore; list `- forevercore` under `embedded-libraries:`")
+    if "forevercore" not in shipped.embedded:
+        failures.append(
+            f"{path}: embeds ForeverCore; list `  - forevercore` (spaces, no trailing whitespace) under"
+            " `embedded-libraries:`"
+        )
     declared = core_pin.toc_field(toc.decode("utf-8", "replace"))
     if not pin:
         failures.append(f"{PIN_PATH}: embeds ForeverCore, but no pin names the release it embeds")

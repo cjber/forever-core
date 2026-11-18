@@ -36,6 +36,33 @@ class CorePinTest(unittest.TestCase):
         )
         self.toc.write_text(f"## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: {toc}\n")
 
+    def write_embedded(self, pin="v1.4.0", toc="v1.4.0"):
+        if pin is None:
+            if self.pin.exists():
+                self.pin.unlink()
+        else:
+            self.pin.write_text(f"{pin}\n", encoding="utf-8")
+        self.pkgmeta.write_text("package-as: LegacyForever\n\nembedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        field = f"## X-Forever-Core: {toc}\n" if toc else ""
+        self.toc.write_text(f"## Interface: 16001\n## OptionalDeps: ForeverCore\n{field}## X-Forever-Core-Embed: 1\n")
+
+    def test_an_embedding_consumer_with_an_agreeing_toc_field_passes(self):
+        self.write_embedded()
+        self.assertEqual(core_pin.check(self.root), [])
+
+    def test_an_embedding_consumer_whose_toc_field_lags_fails(self):
+        self.write_embedded(toc="v1.3.0")
+        self.assertTrue(any("must be v1.4.0" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_a_toc_field_fails(self):
+        self.write_embedded(toc=None)
+        self.assertTrue(any("(missing)" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_a_pin_fails_the_release_gate_offline(self):
+        self.write_embedded(pin=None)
+        failures = core_pin.check_latest(self.root, fetch=lambda *_: self.fail("no network read without a pin"))
+        self.assertTrue(any("no pin names the release to embed" in failure for failure in failures))
+
     def test_three_copies_of_one_release_pass(self):
         self.write()
         self.assertEqual(core_pin.check(self.root), [])

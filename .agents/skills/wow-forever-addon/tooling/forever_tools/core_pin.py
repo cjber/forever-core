@@ -40,6 +40,7 @@ __all__ = [
     "compare",
     "compare_latest",
     "core_external",
+    "embeds",
     "external_tag",
     "latest_release",
     "main",
@@ -58,6 +59,8 @@ CORE_EXTERNAL = re.compile(r"^(?P<indent>[ \t]*)ForeverCore:[ \t]*\S+[^\r\n]*", 
 EXTERNAL_TAG = re.compile(r"/download/(?P<tag>[^/\s]+)/", re.IGNORECASE)
 TOC_CORE_FIELD = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[^\r\n]*", re.IGNORECASE | re.MULTILINE)
 TOC_CORE_VALUE = re.compile(r"^##[ \t]*X-Forever-Core[ \t]*:[ \t]*(?P<value>\S+)", re.IGNORECASE | re.MULTILINE)
+# A consumer that carries core under Libs/ForeverCore opts in with this TOC field; forever_tools.embed reads the same.
+TOC_EMBED = re.compile(r"^##[ \t]*X-Forever-Core-Embed[ \t]*:[ \t]*1[ \t]*$", re.IGNORECASE | re.MULTILINE)
 # The release the whole suite bundles: every consumer's zip must carry this one, newest, published ForeverCore.
 LATEST_RELEASE_URL = "https://api.github.com/repos/cjber/forever-core/releases/latest"
 
@@ -194,6 +197,26 @@ def compare(
     return failures
 
 
+def embeds(toc):
+    """Whether a root TOC opts in to carrying core under Libs/ForeverCore (`## X-Forever-Core-Embed: 1`)."""
+    return bool(TOC_EMBED.search(toc or ""))
+
+
+def compare_embedded(pin, toc, *, pin_path=PIN_PATH, toc_path="the root TOC"):
+    """Failures when an embedding consumer's pin and TOC field disagree: the embed step copies the pin, and a sibling
+    addon reads the field to name an out-of-date core, so both have to name the same release."""
+    pin = pin.strip()
+    if not pin:
+        return [f"{pin_path}: the TOC embeds ForeverCore, but no pin names the release to embed"]
+    declared = toc_field(toc)
+    if declared != pin:
+        return [
+            f"{toc_path}: `## {CORE_FIELD}:` is {declared or '(missing)'}; {pin_path} pins {pin}, the release the"
+            f" embed step copies, so it must be {pin}"
+        ]
+    return []
+
+
 def check(root, latest=None):
     """Failures in a consumer checkout's ForeverCore pin and bundle, relative to `root`.
 
@@ -209,12 +232,14 @@ def check(root, latest=None):
     if not pkgmeta_path.is_file():
         return failures
     pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace")
-    if not external_line(pkgmeta):
-        return failures
     package = pkgmeta_field(pkgmeta, "package-as")
     toc_name = f"{package}.toc" if package else "the root TOC"
     toc_path = root / toc_name
     toc = toc_path.read_text(encoding="utf-8", errors="replace") if package and toc_path.is_file() else ""
+    if embeds(toc):
+        return failures + compare_embedded(pin, toc, pin_path=PIN_PATH, toc_path=toc_name)
+    if not external_line(pkgmeta):
+        return failures
     failures += compare(
         pin,
         pkgmeta,
@@ -237,7 +262,8 @@ def check_latest(root, fetch=None):
     pkgmeta_path = root / PKGMETA
     pkgmeta = pkgmeta_path.read_text(encoding="utf-8", errors="replace") if pkgmeta_path.is_file() else ""
     if not (root / PIN_PATH).is_file() and not external_line(pkgmeta):
-        return []
+        # No pin and no external: nothing to compare with the latest release, but an embedding TOC still needs a pin.
+        return check(root)
     try:
         latest = latest_release(fetch)
     except LatestReleaseUnavailable as error:

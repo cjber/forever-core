@@ -89,6 +89,7 @@ from check_consumers import (
     pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
+from forever_tools import core_pin
 from forever_tools.visual_proof import input_digest, requires_proof
 
 OWNER = "cjber"
@@ -637,6 +638,12 @@ def ships_core(root: Path) -> bool:
     return path.is_file() and CORE_EXTERNAL.search(path.read_text(encoding="utf-8")) is not None
 
 
+def embeds_core(root: Path) -> bool:
+    """Whether the consumer's root TOC opts in to carrying core under Libs/ForeverCore, so its release zip does."""
+    path = root_toc_path(root)
+    return path is not None and path.is_file() and core_pin.embeds(path.read_text(encoding="utf-8-sig"))
+
+
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
     """Point the bundle at `pin`, touching the changelog when the consumer's latest release ships another core.
 
@@ -647,7 +654,9 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     core while the latest release still ships the old one, and a re-run has to repair that. A consumer that has never
     released has no tag to compare, so a bundle tag this run changed is what needs carrying.
     """
-    bundles = ships_core(root)
+    # Either way the release zip carries core: as the bridge external or as the embedded copy the embed step makes from
+    # the pin. Only the bridge external gets the required relation; an embedded consumer lists it as embedded.
+    bundles = ships_core(root) or embeds_core(root)
     dependency_changed = ensure_core_dependency(root)
     rewrite_toc_dependencies(root)
     before = bundle_tag(root) or previous_pin

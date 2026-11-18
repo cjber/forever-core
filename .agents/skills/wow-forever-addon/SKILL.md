@@ -41,7 +41,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-28** Game data has two sources: the installed QuestieDB (quests, NPCs, objects, spawns,
   vendors, trainers' places) and AtlasLoot (bosses, loot, recipes, drop rates), read at runtime
   through their public tables. Neither is copied into the repo or the zip: QuestieDB carries no
-  licence and AtlasLoot is GPL v2. This is the one data companion WFA-2 allows (ForeverCore is the required library,
+  licence and AtlasLoot is GPL v2. This is the one data companion WFA-2 allows (ForeverCore is the embedded library,
   not a data companion); without it the
   feature says in one plain line what to install and the rest of the addon works. A dataset neither
   holds (trainer fees, transports) is a named exception in the repo's `AGENTS.md` under `## Waivers`,
@@ -50,7 +50,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   it is never the source for a dataset QuestieDB or AtlasLoot holds. `.pkgmeta` lists the CurseForge
   slug of every TOC `OptionalDeps` data folder under `optional-dependencies` (QuestieDB is `questiedb`,
   AtlasLoot's Forever build `atlasloot-forever`), and ForeverCore, the one non-data entry, under
-  `required-dependencies` instead: the TOC line only orders loading, and the store
+  `embedded-libraries` (WFA-2): the TOC line only orders loading, and the store
   relation is what makes the CurseForge app offer the data addon. Wrong or missing data in either is
   fixed upstream, by a report or PR to that project (Questie's in-game debug offer already collects
   missing quest, NPC and loot data), not by an override table in the addon, which drifts from what
