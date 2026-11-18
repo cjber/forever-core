@@ -15,7 +15,8 @@ forever_tools sync, never the workflow alone.
 The release workflow is not a vendored file: each addon keeps its own. A full sync therefore inserts the ForeverCore
 release gate directly above the BigWigs packager step in every consumer that has one, idempotently, so a core release
 that lands between CI and the upload is still caught. A workflow with no packager step (kiln-forever's own tar build)
-is left alone and its exact step is printed for the maintainer.
+is left alone and its exact step is printed for the maintainer. A full sync also removes the retired Wago store
+metadata, upload credential and store links from consumer-owned publishing files.
 
 """
 
@@ -124,6 +125,38 @@ def sync_release_gate(root, repo, dry_run):
     return 1
 
 
+def without_wago_store(text):
+    """Remove the retired publishing channel, preserving wago.tools data attribution.
+
+    These are store metadata keys and Markdown store links, not a keyword filter over game-data sources.
+    """
+    text = re.sub(r"^##\s*X-Wago-ID\s*:.*(?:\n|$)", "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r"^[ \t]*WAGO_API_TOKEN\s*:.*(?:\n|$)", "", text, flags=re.MULTILINE)
+    text = re.sub(r" or\s+\[Wago(?: Addons)?\]\(https://addons\.wago\.io/[^)]+\)", "", text)
+    return text.replace("CurseForge and Wago install", "CurseForge installs").replace(
+        "CurseForge and Wago", "CurseForge"
+    )
+
+
+def sync_store_channels(root, repo, dry_run):
+    """Retire Wago in consumer-owned publishing files during a full sync."""
+    addon = root / CONSUMER_ROOT.get(repo, "")
+    paths = [root / RELEASE_WORKFLOW, root / "README.md", addon / "docs/curseforge.md", *sorted(addon.glob("*.toc"))]
+    changed = 0
+    for path in paths:
+        if not path.is_file():
+            continue
+        text = path.read_bytes().decode("utf-8")
+        updated = without_wago_store(text)
+        if updated == text:
+            continue
+        changed += 1
+        print(f"{repo}: {path.relative_to(root)}")
+        if not dry_run:
+            path.write_bytes(updated.encode("utf-8"))
+    return changed
+
+
 def sync_tag_step(root, repo, dry_run):
     """Replace `repo`'s manual-release tag step with core's own, returning whether it changed.
 
@@ -190,6 +223,7 @@ def main(argv=None):
             if not root.is_dir():
                 continue
             try:
+                changed += sync_store_channels(root, repo, arguments.dry_run)
                 changed += sync_release_gate(root, repo, arguments.dry_run)
                 changed += sync_tag_step(root, repo, arguments.dry_run)
             except OSError as error:

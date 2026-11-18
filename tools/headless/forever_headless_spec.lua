@@ -1,7 +1,7 @@
--- Lua 5.1 fixtures for the startup handshake. A missing parked-character configuration must never signal readiness.
+-- Lua 5.1 fixtures for the startup handshake. A missing character configuration must never signal readiness.
 local source = assert(io.open("tools/headless/!!ForeverHeadless/ForeverHeadless.lua")):read("*a")
 
-local function run(config, name, guid, resting, dead, combat, lockdown, screenshot)
+local function run(config, name, guid, dead, combat, lockdown, screenshot)
 	local events, callback, update = {}, nil, nil
 	local textures = {}
 	_G.CreateFrame = function()
@@ -56,9 +56,6 @@ local function run(config, name, guid, resting, dead, combat, lockdown, screensh
 		return lockdown
 	end
 	_G.FOREVER_HEADLESS_CHARACTER = config
-	_G.IsResting = function()
-		return resting
-	end
 	_G.ChatEdit_GetActiveWindow = function()
 		return nil
 	end
@@ -116,76 +113,20 @@ local function run(config, name, guid, resting, dead, combat, lockdown, screensh
 end
 
 local screenshot = { count = 0 }
-run(nil, "Tester", "Player-1-2-3", true, false, false, false, screenshot)
+run(nil, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 0, "missing parked-character configuration refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	false,
-	false,
-	false,
-	screenshot
-)
-assert(screenshot.count == 1, "approved resting character signals readiness")
-run(
-	{ name = "Other", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	false,
-	false,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
+assert(screenshot.count == 1, "approved character signals readiness")
+run({ name = "Other", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "unexpected identity refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	false,
-	false,
-	false,
-	false,
-	screenshot
-)
-assert(screenshot.count == 1, "unresting character refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	true,
-	false,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, false, false, screenshot)
 assert(screenshot.count == 1, "dead character refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	false,
-	true,
-	false,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, true, false, screenshot)
 assert(screenshot.count == 1, "combat character refuses readiness")
-run(
-	{ name = "Tester", guid = "Player-1-2-3", require_resting = true },
-	"Tester",
-	"Player-1-2-3",
-	true,
-	false,
-	false,
-	true,
-	screenshot
-)
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, true, screenshot)
 assert(screenshot.count == 1, "lockdown character refuses readiness")
-print("forever headless: identity and resting handshake pass")
+print("forever headless: identity handshake pass")
 
-run(nil, "Tester", "Player-1-2-3", true, nil, nil, nil, screenshot)
-run(nil, "Tester", "Player-1-2-3", true, false, nil, false, screenshot)
-run(nil, "Tester", "Player-1-2-3", true, false, false, nil, screenshot)
+run(nil, "Tester", "Player-1-2-3", nil, nil, nil, screenshot)
+run(nil, "Tester", "Player-1-2-3", false, nil, false, screenshot)
+run(nil, "Tester", "Player-1-2-3", false, false, nil, screenshot)

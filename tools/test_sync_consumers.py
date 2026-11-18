@@ -218,6 +218,40 @@ class ReleaseGateTest(unittest.TestCase):
     def release(self):
         return (self.root / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8")
 
+    def test_full_sync_retires_wago_and_is_idempotent(self):
+        self.write(self.root, sync.RELEASE_WORKFLOW, RELEASE_WORKFLOW + "          WAGO_API_TOKEN: token\n")
+        self.write(self.root, "LegacyForever.toc", "## X-Wago-ID: old\n## X-Curse-Project-ID: 1\n")
+        self.write(
+            self.root,
+            "README.md",
+            "Install from [CurseForge](https://cf.test) or\n"
+            "[Wago Addons](https://addons.wago.io/addons/x), or GitHub.\n"
+            "Data: [wago.tools](https://wago.tools).\n",
+        )
+        self.write(self.root, "docs/curseforge.md", "CurseForge and Wago install core.\n")
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("WAGO_API_TOKEN", self.release())
+        self.assertEqual((self.root / "LegacyForever.toc").read_text(), "## X-Curse-Project-ID: 1\n")
+        self.assertEqual(
+            (self.root / "README.md").read_text(),
+            "Install from [CurseForge](https://cf.test), or GitHub.\nData: [wago.tools](https://wago.tools).\n",
+        )
+        self.assertEqual((self.root / "docs/curseforge.md").read_text(), "CurseForge installs core.\n")
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertIn("0 file(s) changed", out)
+
+    def test_wago_cleanup_dry_run_and_nested_addon(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "addon/KilnForever/KilnForever.toc"
+            self.write(root, str(path.relative_to(root)), "## X-Wago-ID: old\n")
+            self.assertEqual(sync.sync_store_channels(root, "kiln-forever", True), 1)
+            self.assertIn("X-Wago-ID", path.read_text())
+            self.assertEqual(sync.sync_store_channels(root, "kiln-forever", False), 1)
+            self.assertEqual(path.read_text(), "")
+
     def test_the_gate_lands_directly_above_the_packager(self):
         self.write(self.root, sync.RELEASE_WORKFLOW, RELEASE_WORKFLOW)
         code, out = self.run_sync()

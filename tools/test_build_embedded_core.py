@@ -175,7 +175,7 @@ class GeneratedBundleTests(unittest.TestCase):
         files = plan(ROOT, "ForeverCore", "1.12.3", "ForeverCoreDB", b"", standalone=True)
         toc = files["ForeverCore.toc"].decode()
         self.assertIn("## X-Curse-Project-ID: 1796337", toc)
-        self.assertIn("## X-Wago-ID: RNL4RQNo", toc)
+        self.assertNotIn("X-Wago-ID", toc)
         self.assertIn("## Version: 1.12.3", toc)
         self.assertNotIn("Libs/ForeverCore", toc)
         self.assertIn("Begin.lua", files)

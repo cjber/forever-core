@@ -38,8 +38,12 @@ local function entry(overrides)
 	return item
 end
 
+local GUID = "Player-1-0ABCDEF0"
 _G.UnitName = function()
 	return "Player"
+end
+_G.UnitGUID = function()
+	return GUID
 end
 _G.GetAddOnMetadata = function(name, field)
 	if name == "MyAddon" and field == "X-Forever-Core" then
@@ -96,6 +100,9 @@ _G.C_AddOns = {
 		if field == "X-Forever-Core" then
 			return item.tag
 		end
+		if field == "AddonCompartmentFunc" or field == "AddonCompartmentFuncOnEnter" then
+			return item[field]
+		end
 		if field == "X-Curse-Project-ID" then
 			if item.project_error then
 				error("metadata unavailable")
@@ -109,8 +116,20 @@ _G.C_AddOns = {
 	IsAddOnLoaded = function(index)
 		return addons[index] and addons[index].loaded
 	end,
-	GetAddOnEnableState = function(index)
-		return addons[index] and addons[index].enabled
+	-- As the client answers: the character is a GUID, a name is ignored and reads 2 for every addon, and no character
+	-- gives the all-characters state.
+	GetAddOnEnableState = function(index, character)
+		local item = addons[index]
+		if not item then
+			return nil
+		end
+		if character == GUID then
+			return item.enabled
+		end
+		if character ~= nil then
+			return 2
+		end
+		return item.everyone or item.enabled
 	end,
 	GetAddOnDependencies = function(index)
 		return unpack(addons[index] and addons[index].deps or {})
@@ -120,7 +139,7 @@ _G.C_AddOns = {
 	end,
 }
 
-local function run(entries, ready, L, core_addon, logged)
+local function run(entries, ready, L, core_addon, logged, slash)
 	addons = {
 		{ name = "MyAddon", title = own.title, loaded = true, enabled = 2, deps = { "ForeverCore" }, tag = own.tag },
 	}
@@ -135,7 +154,7 @@ local function run(entries, ready, L, core_addon, logged)
 	loggedIn = logged ~= false
 	local ns = { L = L }
 	assert(loadfile("tools/consumer/ForeverRequire.lua"))("MyAddon", ns)
-	local result = ns.ForeverRequire(ready)
+	local result = ns.ForeverRequire(ready, slash)
 	return ns, result, messages[1] and messages[1].text
 end
 
@@ -184,6 +203,16 @@ do
 	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
 	local _, _, blames = run({ culprit }, false, nil, off)
 	equal(blames, text, "a turned off core is named instead of the out-of-date addon")
+	local mine = {
+		name = "ForeverCore",
+		title = "ForeverCore",
+		loaded = false,
+		enabled = 0,
+		everyone = 1,
+		project = "1796337",
+	}
+	local _, _, only = run({ culprit }, false, nil, mine)
+	equal(only, DISABLED, "a core turned off for this character alone is named too")
 end
 
 -- One older culprit is named.
@@ -436,6 +465,39 @@ do
 	equal(#frames, 0, "a logged in player needs no frame")
 	fire("PLAYER_ENTERING_WORLD")
 	equal(#messages, 1, "a later entering world adds no second line")
+end
+
+-- A stopped addon's own entry points repeat the line instead of doing nothing or raising an error (#996 in Shortest
+-- Path: players who turned ForeverCore off saw the addon stop with no reason they noticed).
+do
+	local off = { name = "ForeverCore", title = "ForeverCore", loaded = false, enabled = 0, project = "1796337" }
+	own.AddonCompartmentFunc = "MyAddon_OnCompartmentClick"
+	own.AddonCompartmentFuncOnEnter = "MyAddon_OnCompartmentEnter"
+	_G.SlashCmdList = {}
+	run({}, false, nil, off, true, { key = "MYADDON", "/myaddon", "/my" })
+	equal(_G.SLASH_MYADDON1, "/myaddon", "the first slash word is registered")
+	equal(_G.SLASH_MYADDON2, "/my", "the second slash word is registered")
+	_G.SlashCmdList.MYADDON("")
+	equal(#messages, 2, "the slash command repeats the line")
+	equal(messages[2].text, DISABLED, "the slash command names the same fix")
+	_G.MyAddon_OnCompartmentClick("MyAddon", "LeftButton")
+	equal(#messages, 3, "a compartment click repeats the line")
+	equal(messages[3].text, DISABLED, "the compartment click names the same fix")
+	_G.MyAddon_OnCompartmentEnter("MyAddon")
+	equal(#messages, 3, "hovering the compartment entry shows nothing")
+
+	-- A ready addon defines its own entry points, and one already defined is never replaced.
+	_G.MyAddon_OnCompartmentClick, _G.MyAddon_OnCompartmentEnter = nil, nil
+	_G.SlashCmdList, _G.SLASH_MYADDON1, _G.SLASH_MYADDON2 = {}, nil, nil
+	run({}, true, nil, nil, true, { key = "MYADDON", "/myaddon" })
+	equal(_G.MyAddon_OnCompartmentClick, nil, "a ready addon gets no stand-in compartment function")
+	equal(_G.SlashCmdList.MYADDON, nil, "a ready addon gets no stand-in slash command")
+	local mine = function() end
+	_G.MyAddon_OnCompartmentClick = mine
+	run({}, false, nil, off, true)
+	equal(_G.MyAddon_OnCompartmentClick, mine, "an addon's own compartment function stays")
+	own.AddonCompartmentFunc, own.AddonCompartmentFuncOnEnter = nil, nil
+	_G.MyAddon_OnCompartmentClick, _G.MyAddon_OnCompartmentEnter, _G.SlashCmdList = nil, nil, nil
 end
 
 print(("forever_require_spec: %d checks passed"):format(checks))

@@ -15,6 +15,10 @@ on:
         description: Backfill start as an ISO time, for a digest
         required: false
         type: string
+      until:
+        description: Window end as an ISO time; defaults to the current UTC hour
+        required: false
+        type: string
       dry_run:
         description: Print the payload instead of posting it
         required: true
@@ -23,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # the previous successful scheduled run's start sets this run's windows
 
 jobs:
   digest:
@@ -38,18 +43,18 @@ jobs:
           DISCORD_ANNOUNCE_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_SINCE: ${{ inputs.since }}
+          INPUT_UNTIL: ${{ inputs.until }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            now="$(date -u +%Y-%m-%dT%H:00:00Z)"
-            python3 tools/discord_digest.py --mode features --now "$now"
-            if [ "${now:11:2}" = "18" ]; then
-              python3 tools/discord_digest.py --mode digest --now "$now"
-            fi
+            python3 tools/discord_digest.py --mode schedule
           else
             args=(--mode "${INPUT_MODE:-features}")
             if [ -n "${INPUT_SINCE:-}" ]; then
               args+=(--since "$INPUT_SINCE")
+            fi
+            if [ -n "${INPUT_UNTIL:-}" ]; then
+              args+=(--now "$INPUT_UNTIL")
             fi
             if [ "${INPUT_DRY_RUN:-true}" = "true" ]; then
               args+=(--dry-run)

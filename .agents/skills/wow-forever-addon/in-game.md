@@ -37,8 +37,9 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    - `INGAME PASS`: carries the capture paths, gist URLs and, for a proof, the `.visual-proof.json` it wrote into
      your checkout. Commit that file and embed the captures.
    - `INGAME FAIL`: observed against expected, with captures and Lua errors. Fix the defect and request again.
-   - `INGAME BLOCKED`: the client cannot reach the world (the player is on, sign-in needs the user). Report it as
-     your blocker.
+   - `INGAME BLOCKED`: only when the client cannot reach the world because the player's own client is running or
+     sign-in needs the user. Where the character stands, resting or not, is never a block: the in-game agent moves
+     it. Report it as your blocker.
 
 The rest of this file is the in-game agent's reference for running requests. Its commands set
 `FOREVER_CLIENT_CALLER=in-game`; jobs and detached sessions preserve the marker.
@@ -59,10 +60,10 @@ them where it can:
    vendor), walk with Click-to-Move: `eval` `SetCVar("autoInteract", 1)`, then `click --button 3` on the ground or the
    NPC, and put the CVar back to its earlier value before the job ends. At an auction house, open it and search; never
    bid, buy or post. Never attack a creature or walk into one's aggro range, fight, loot, quest, trade or chat to
-   other players. `slash` sends only the Forever addons' own commands (read from their `SLASH_` globals) and
-   `/reload`, `/rl`, `/fstack`, `/etrace`; `key` sends only Return, Escape and BackSpace; there is no free typing;
-   `click` and `scroll` refuse until a `shot` was taken after the last input, so each input aims at UI you have just
-   read in the frame.
+   other players. Nothing else blocks the game: `slash` sends any one-line slash command (`/use Hearthstone` to get
+   somewhere) and `key` any key, including movement and keybinds; where the character is parked or whether it is
+   resting never matters, so move it wherever a check needs it rather than waiting or asking. `click` and `scroll`
+   refuse until a `shot` was taken after the last input, so each input aims at what you have just read in the frame.
 2. **One job at a time.** The client is shared and stays up while jobs arrive; only one job touches it at once.
    Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs
    inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
@@ -215,10 +216,9 @@ AddOns slot is put back exactly as it was, and the checkout is never committed o
 
 There is no default flow. ForeverCore has no shared opener for an addon's update notice: every addon prints it as one
 chat line at login, and a dev build's stamped version does not equal the addon's `WHATS_NEW_VERSION`, so that line
-does not fire on its own in a proof session. Name the flow that shows the changed text: the addon's own slash command
-(the `SLASH_` globals in its files, such as `/lf` or `/fgf`), or a Lua file through `!!DevSmoke` for anything a chat
-command cannot reach, written as the eval section below shows. Exit 3 means the player's own client is running, so
-nothing was recorded and a later run tries again; another job is waited for. Exit 1 is a job that stopped
+does not fire on its own in a proof session. Name the flow that shows the changed text: a slash command, usually the
+addon's own (such as `/lf` or `/fgf`), or a Lua file through `!!DevSmoke` for anything a chat command cannot reach,
+written as the eval section below shows. Exit 3 means the player's own client is running, so nothing was recorded and a later run tries again; another job is waited for. Exit 1 is a job that stopped
 before its flows ran, and exit 2 is a failure the tool names. `--manual-launcher` starts the session that way while
 launcher OCR is not finding Play.
 

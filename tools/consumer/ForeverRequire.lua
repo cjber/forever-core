@@ -18,8 +18,11 @@ local function outdated(tag, mine)
 	a, b, c = tonumber(a), tonumber(b), tonumber(c)
 	return a < mine[1] or a == mine[1] and (b < mine[2] or b == mine[2] and c < mine[3])
 end
+-- The client keys per-character enable state by GUID and ignores a character name, answering 2 for every addon
+-- (cjber/shortest-path-forever#996); with no character it gives the all-characters state, which reads 1 when an addon
+-- is off for this character alone.
 local function enabled(index)
-	local state = safe("GetAddOnEnableState", index, _G.UnitName and _G.UnitName("player"))
+	local state = safe("GetAddOnEnableState", index, _G.UnitGUID and _G.UnitGUID("player"))
 	return safe("IsAddOnLoaded", index) or (type(state) == "number" and state > 0)
 end
 -- The index of an installed folder named ForeverCore, false when no such folder is installed at all, and nil when
@@ -122,7 +125,30 @@ local function show(text)
 end
 -- The frame a line waits on until the world is drawn, kept here so the client does not collect it before then.
 local worldFrame
-function ns.ForeverRequire(ready)
+-- A stopped addon still owns the ways a player opens it, and each one repeats the line, so trying the addon says why it
+-- does nothing (cjber/shortest-path-forever#996). The addon compartment calls the global its TOC names, which the
+-- addon's own files would have defined; without one a click raises a Lua error. Slash words come from the caller,
+-- because nothing in the TOC lists them.
+local function answer(text, slash)
+	local function repeatLine()
+		show(text)
+	end
+	for _, field in ipairs({ "AddonCompartmentFunc", "AddonCompartmentFuncOnEnter", "AddonCompartmentFuncOnLeave" }) do
+		local name = trimmed(safe("GetAddOnMetadata", addonName, field))
+		if name and name ~= "" and _G[name] == nil then
+			_G[name] = field == "AddonCompartmentFunc" and repeatLine or function() end
+		end
+	end
+	if type(slash) == "table" and type(slash.key) == "string" and type(_G.SlashCmdList) == "table" then
+		for index, word in ipairs(slash) do
+			_G["SLASH_" .. slash.key .. index] = word
+		end
+		_G.SlashCmdList[slash.key] = repeatLine
+	end
+end
+---@param ready boolean
+---@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key
+function ns.ForeverRequire(ready, slash)
 	if ready then
 		return true
 	end
@@ -156,6 +182,7 @@ function ns.ForeverRequire(ready)
 			text = phrase("%s could not start. Reinstall %s to fix this.", own, own)
 		end
 	end
+	answer(text, slash)
 	-- This runs while the addon's files load, so the loading screen covers the line and it has faded before the world is
 	-- drawn (#659). A player who is still logging in sees it on the first PLAYER_ENTERING_WORLD instead, once.
 	if _G.IsLoggedIn and not _G.IsLoggedIn() and type(_G.CreateFrame) == "function" then

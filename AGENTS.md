@@ -327,8 +327,10 @@ registers two fake addons and checks the public API.
   read their own snippet's result rather than the session before it (#580). `tests/devsmoke_spec.lua` is its spec,
   `tools/test_devsmoke_eval.py` the writer's.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
-  `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` posts hourly on the
-  schedule only; `tools/test_discord_digest.py` is its spec.
+  `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` runs hourly with
+  `--mode schedule`, which takes its windows from the previous successful scheduled run (GitHub drops and delays
+  scheduled runs), never the wall clock; a dispatch backfills with `since` and `until`. `tools/test_discord_digest.py`
+  is its spec.
 - `tools/release_check.py` and `tools/changelog.py`: the release gate (the commit's full CI run on main and its green
   `headless-smoke` status, which a missing or pending one makes wait and a failed one names) and the version's
   CHANGELOG notes, both thin wrappers over the skill pack's `forever_tools`.
@@ -376,7 +378,7 @@ logic out of a general rule.
 | Skill | Load it when |
 |---|---|
 | `.agents/skills/wow-forever-addon/SKILL.md` | the shared standards pack (`WFA-*`), UI look, icon, docs, CI and release baseline |
-| `.agents/skills/wow-addon-publish/SKILL.md` | publishing to CurseForge and Wago, or cutting a release |
+| `.agents/skills/wow-addon-publish/SKILL.md` | publishing to CurseForge and GitHub, or cutting a release |
 | `.agents/skills/wow-retail-ui-style/SKILL.md` | drawing or auditing addon windows, frames and widgets |
 
 Each addon declares `wow-forever-addon` under `## Standards` in its `AGENTS.md`, pinned to this repo. The pack's
@@ -389,14 +391,13 @@ Every version needs changelog fragments consumed into a `CHANGELOG.md` entry bef
 `python3 tools/changelog.py release X.Y.Z` in the release preparation commit. No PR edits `CHANGELOG.md` otherwise:
 CI's `--check --base` fails it. `.github/workflows/release.yml` waits for full CI on the commit, checks it with
 `tools/release_check.py`, prints the version's notes with `tools/changelog.py <version>`, and runs the packager with
-`CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH`, so GitHub, CurseForge and Wago all get the same words. A release
+`CF_API_KEY` and `GITHUB_OAUTH`, so GitHub and CurseForge get the same words. A release
 preparation that edits the update notice or a locale records the visual proof its runtime change needs through an
 `INGAME ... kind: proof` request to the in-game agent with `flows: update notice=<slash command or Lua file>`, and
 commits the `.visual-proof.json` it writes, so the required `visual-proof` check passes without an admin merge. A sync
 PR that moves the ForeverCore pin sends the request its own run prints. See `wow-forever-addon/in-game.md`.
-CurseForge is the published description and gallery; Wago is an upload mirror with a fixed stub pointing at
-CurseForge. A core version bump reaches consumers through the stores, since they require it; nothing is copied into
-them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
+CurseForge is the published description and gallery. A core version bump reaches consumers through the stores, since
+they require it; nothing is copied into them. Raise `ForeverCore.API` only when the public table or `Register` breaks.
 
 ## Load order
 

@@ -4,7 +4,6 @@
 local SAFE_CHARACTER = _G.FOREVER_HEADLESS_CHARACTER
 local UnitGUID = _G.UnitGUID
 local UnitAffectingCombat = _G.UnitAffectingCombat
-local IsResting = _G.IsResting
 local MARKER = {
 	"10011001",
 	"01100110",
@@ -26,7 +25,7 @@ end
 
 local function safeCharacter()
 	if type(SAFE_CHARACTER) ~= "table" then
-		return false, "no safe parked character configured"
+		return false, "no approved character configured"
 	end
 	if type(UnitGUID) ~= "function" or type(UnitAffectingCombat) ~= "function" then
 		return false, "player identity or combat API unavailable"
@@ -45,14 +44,6 @@ local function safeCharacter()
 	end
 	if combat then
 		return false, "player is in combat"
-	end
-	if SAFE_CHARACTER.require_resting then
-		if type(IsResting) ~= "function" or type(IsResting()) ~= "boolean" then
-			return false, "resting state unavailable"
-		end
-		if not IsResting() then
-			return false, "player is not resting at the approved park spot"
-		end
 	end
 	return true, realm or ""
 end

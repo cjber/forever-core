@@ -1,6 +1,6 @@
 """Check the folders the BigWigs packager built before anything uploads them.
 
-The release workflow hands the packager's output straight to GitHub, CurseForge and Wago, and `.pkgmeta`'s ignore
+The release workflow hands the packager's output straight to GitHub and CurseForge, and `.pkgmeta`'s ignore
 list is never compared with the TOC. Run the packager without uploading (`release.sh -d -z`, or the action with
 `args: -d -z`), then this reads its release directory and fails on:
 

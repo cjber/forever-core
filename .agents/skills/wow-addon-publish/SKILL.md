@@ -1,29 +1,28 @@
 ---
 name: wow-addon-publish
-description: "Use in a WoW addon repo (a .toc at the root; cjber's WoW: Forever addons such as tweaks-forever, skillup-forever, legacy-forever, shortest-path-forever) to publish it on CurseForge and Wago, create the store project, set its description/logo/gallery (CurseForge; Wago gets a stub), or cut a release that uploads to both. Not for non-WoW repos."
+description: "Use in a WoW addon repo (a .toc at the root; cjber's WoW: Forever addons such as tweaks-forever, skillup-forever, legacy-forever, shortest-path-forever) to publish it on CurseForge and GitHub, create the store project, set its description/logo/gallery (CurseForge), or cut a release that uploads to CurseForge and GitHub. Not for non-WoW repos."
 ---
 
-# Publish a WoW addon to CurseForge and Wago
+# Publish a WoW addon to CurseForge and GitHub
 
-The pipeline is: a store project on each site → its ID in the TOC → a signed `v*` tag → the BigWigs
-packager uploads to GitHub, CurseForge and Wago. Project creation is the only manual part; do it once,
-in the user's already-logged-in Chrome, through each site's own web form.
+The pipeline is: a CurseForge project → its ID in the TOC → a signed `v*` tag → the BigWigs
+packager uploads to GitHub and CurseForge. Project creation is the only manual part; do it once,
+in the user's already-logged-in Chrome, through its web form.
 
 Never enter passwords, API keys or tokens into a page, never log in for the user, never print a secret.
 If a token is missing, ask the user to run, in their own terminal (not `!`: it has no TTY, so gh's hidden
 prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <owner>/<repo>`, or
-`--body "$VAR"` when the key is in a variable. The names are exactly `CF_API_KEY` and `WAGO_API_TOKEN`
-(Wago's UI calls it an "API key"; `WAGO_API_KEY` is ignored). An empty secret shows as a blank rather than
-`***` in the release log.
+`--body "$VAR"` when the key is in a variable. The name is exactly `CF_API_KEY`. An empty secret shows as a blank
+rather than `***` in the release log.
 
 ## 1. Repo prerequisites
 
 - `.github/workflows/release.yml` on `push: tags: ["v*"]` running `BigWigsMods/packager` (pinned by SHA)
-  with `CF_API_KEY`, `WAGO_API_TOKEN` and `GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}`, and
+  with `CF_API_KEY` and `GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}`, and
   `permissions: contents: write`. Copy it from `cjber/skillup-forever` rather than writing one.
 - Release notes = this version's rendered changelog entry (`tools/changelog.py <tag>`, also in skillup-forever),
   prose style, `## [x.y.z] - YYYY-MM-DD` headings. API changes go under an optional `### For addon authors`
-  subsection after the player bullets; the notes carry it to GitHub, CurseForge and Wago as written.
+  subsection after the player bullets; the notes carry it to GitHub and CurseForge as written.
 - A `package` CI job builds with the packager's `-d -z` and runs `tools/check_package.py`
   (`wow-forever-addon` WFA-15), so `.pkgmeta` drift fails before a tag, not after an upload.
 - `docs/curseforge.md`: the store description, pitched and worded per `wow-forever-addon` WFA-23/24
@@ -36,8 +35,7 @@ prompt reads empty stdin and stores an empty secret), `gh secret set <NAME> -R <
 
 Every Forever addon depends on ForeverCore, the suite's shared library, and ships it inside its own release zip.
 Add the standalone required store dependency while retaining the pinned bundle during migration. Verify ordinary
-updates acquire manager-owned core; a declared relation does not establish that behavior. Wago's documented upload
-metadata has no dependency field, so verify its manager path separately. In the TOC:
+updates acquire manager-owned core; a declared relation does not establish that behavior. In the TOC:
 
 ```toc
 ## OptionalDeps: ForeverCore
@@ -71,14 +69,12 @@ Rollback uses a new higher patch release restoring the bundle, never overwritten
 
 Inspect the published CurseForge file relation: project 1796337 must be `requiredDependency`, not `embeddedLibrary`.
 The GitHub ZIP external has no `curse-slug`; adding one lets BigWigs override the required relation as embedded.
-Do not claim Wago installs dependencies merely because `.pkgmeta` declares them.
 
 Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
 `<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails
 a TOC that names core in `## Dependencies` or that ships core without `## OptionalDeps: ForeverCore`. The field is what
-a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's own store pages are CurseForge
-`forevercore` (project 1796337;
-`forever-core` belongs to someone else) and Wago `addons.wago.io/addons/forever-core` (project ID `RNL4RQNo`). Do not
+a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's CurseForge page is
+`forevercore` (project 1796337; `forever-core` belongs to someone else). Do not
 copy its runtime files into the addon.
 
 Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
@@ -118,35 +114,13 @@ Steps and what trips agents up:
 4. **License**: the dropdowns are custom comboboxes whose list often does not show in screenshots. Open
    with a click, then `find` the option by its text (e.g. "GNU General Public License version 3 (GPLv3)")
    and click the returned ref. Close an open list by clicking empty page space before the next field.
-   Distribution: "Allow distribution to 3rd party" (the addon is also on Wago/GitHub).
+   Distribution: "Allow distribution to 3rd party" (the addon is also on GitHub).
 5. **Create** (the user's request to publish is the authorization). You land on
    `#/projects/<ID>/files`; the number in the URL is the **project ID**.
 6. **Media** (`#/projects/<ID>/media`): upload with the in-page steps under Store updates, one image
    per run.
 
 A new project stays hidden until a moderator approves it; uploaded files appear after approval.
-
-## 3. Wago project (addons.wago.io)
-
-Wago is an upload mirror for the few players on the Wago app or WowUp's Wago source: CurseForge
-carries well over 95% of downloads, so the full store page lives there and Wago gets only what the
-packager and a short pointer give it.
-
-`https://addons.wago.io/developers/projects/create`, create from the GitHub repo. Settings: name,
-summary, categories, thumbnail. The project ID is the slug in `addons.wago.io/addons/<ID>`.
-
-Its description is this stub, set once on the settings page (paste in the `textarea`, a real keypress
-in it, then "Save changes" in that textarea's own form) and left alone afterwards:
-
-```
-<Addon name> for WoW: Forever. <The summary line from the TOC.>
-
-Screenshots, the full feature list and the changelog are on CurseForge: <CurseForge project URL>
-Source and issues: <GitHub repo URL>
-```
-
-Wago has no gallery to maintain. When a Wago gallery still holds images, delete them on
-`addons.wago.io/addons/<slug>/gallery`.
 
 ## Store updates
 
@@ -156,7 +130,7 @@ does not outlast the tool call. Confirm every change after a reload or on the pu
 **Descriptions.** After a PR that changes `docs/curseforge.md` merges, paste it on CurseForge, then run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it reads each stored description back from CurseForge's Core API and fails on any word or link that differs from `main`. Its `--push` publishes through fastbrowse but is unreliable until agent-labs-dev/fastbrowse#939 is fixed. It needs `CURSEFORGE_CORE_API_KEY`, in pass as `dev/CURSEFORGE_CORE_API_KEY`. Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
 "Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
 press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
-CurseForge rewrites the markdown, so compare words and links, not lengths. Wago keeps its stub (step 3).
+CurseForge rewrites the markdown, so compare words and links, not lengths.
 
 **CurseForge gallery.** Upload from the current `origin/main` render. Take the title from
 `docs/curseforge.md` first, then `docs/gallery.md`. The media title limit is 128 characters.
@@ -193,16 +167,15 @@ retrying a deletion, as the first reload can still show stale cards.
 
 A gallery image that no longer matches the addon is a defect of the change that made it stale.
 Whenever a visible feature changes, regenerate its mocks in the same PR (`wow-mock-screenshots`),
-and after the release upload the new images to both stores. Delete duplicates, older renders of an
+and after the release upload the new images to CurseForge. Delete duplicates, older renders of an
 image the repo now renders differently, and images neither `docs/curseforge.md` nor `docs/gallery.md`
 shows: every image can be rebuilt from the repo. Order each gallery as `docs/curseforge.md` shows its
 images, then the rest of `docs/gallery.md`.
 
-## 4. TOC and release
+## 3. TOC and release
 
 ```
 ## X-Curse-Project-ID: <numeric id>
-## X-Wago-ID: <wago id>
 ```
 
 Before the version bump, the exact commit being released needs a green `headless-smoke` commit status on
@@ -259,7 +232,7 @@ gh run watch "$id" -R <owner>/<repo> --exit-status
 gh run view "$id" -R <owner>/<repo> --log | grep -A1 "Uploading"
 ```
 
-Done means the log shows `CurseForge ID: <id> [token set]`, `Wago ID: <id> [token set]` and a
+Done means the log shows `CurseForge ID: <id> [token set]` and a
 `Success!` after each `Uploading ... to` line. `[token set]` missing = secret missing; the packager
 then silently skips that site while the run stays green.
 

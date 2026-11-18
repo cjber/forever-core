@@ -8,14 +8,13 @@ character block:
 ```json
 "character": {
   "name": "Barry",
-  "guid": "Player-...",
-  "require_resting": true
+  "guid": "Player-..."
 }
 ```
 
-The name and GUID prevent a proof from entering a different character. `require_resting`
-requires the client to report the character resting before the headless addon emits its
-world-ready marker. A missing or malformed block stops before the launcher starts. The
+The name and GUID prevent a proof from entering a different character. Where the character
+stands does not matter: a check moves it wherever it needs (Hearthstone, Click-to-Move).
+A missing or malformed block stops before the launcher starts. The
 headless addon copy and its generated Lua configuration live only under the session state
 directory and are removed during normal or stale-session cleanup.
 
@@ -34,7 +33,9 @@ immediately after ensuring the session. Every input verb and each input send che
 commands inside a job using `FOREVER_CLIENT_JOB`. Screenshots and status remain available. Error reads reload to flush SavedVariables and
 are refused when unsafe. Reload and proof waits report a live safety refusal as soon as the strip shows it.
 
-Walking and opening or searching the auction house are allowed. Bidding, buying, posting,
+`slash` sends any one-line slash command, such as `/use Hearthstone`, and `key` sends any key,
+including movement and keybinds. `click` and `slash` close a Game Menu left open rather than
+refusing. Walking and opening or searching the auction house are allowed. Bidding, buying, posting,
 fighting, resurrection and automatic recovery are forbidden. A refusal sends no recovery input.
 An older resident addon or an unreadable safety strip is replaced through the guarded
 session teardown path before reuse. Unknown safety still refuses input.
