@@ -47,6 +47,8 @@ function harness.new(options)
 		local f = { width = 250, height = 0, scripts = {} }
 		function f:SetPoint(...)
 			self.point = { ... }
+			self.points = self.points or {}
+			self.points[(...)] = self.point
 		end
 		function f.GetPoint(self)
 			return unpack(self.point or { "TOPRIGHT", parent, "TOPRIGHT", 0, -100 })
@@ -79,15 +81,19 @@ function harness.new(options)
 			local _, top = Anchored(self)
 			return self.top or top or 640
 		end
-		-- A scroll child has no rect in the frame its ScrollFrame takes it, as in the client.
+		-- As in the client, a scroll child has no rect in the frame its ScrollFrame takes it, and a frame hung by its
+		-- top alone (`topOnly`) has none at height 0, which the client reads as no height (#795).
+		local function Unplaced(self)
+			return self.unplaced or (self.topOnly and (self.height or 0) == 0)
+		end
 		function f.GetLeft(self)
-			if self.unplaced then
+			if Unplaced(self) then
 				return nil
 			end
 			return self.left or Anchored(self) or 0
 		end
 		function f.GetRight(self)
-			if self.unplaced then
+			if Unplaced(self) then
 				return nil
 			end
 			return self.right or self:GetLeft() + self:GetWidth()
@@ -140,7 +146,7 @@ function harness.new(options)
 			return self.parent
 		end
 		function f:ClearAllPoints()
-			self.point = nil
+			self.point, self.points = nil, nil
 		end
 		function f:SetAlpha(value)
 			self.alpha = value
@@ -596,6 +602,7 @@ function harness.new(options)
 		m.trackerMaxHeight = maxHeight
 		m.Header = frame()
 		m.ContentsFrame = frame()
+		m.ContentsFrame.topOnly = true
 		m.lineTemplate = "Line"
 		m.count, m.scrollChanges = count, 0
 		function m:OnScrollChanged()

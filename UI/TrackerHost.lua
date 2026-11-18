@@ -438,15 +438,10 @@ function Module:ApplyScrollAnchor(starts)
 	return starts[index].start
 end
 
--- The contents sit in the viewport at the scroll offset, moved right by the room HorizontalOverflow gave the viewport.
+-- The contents hang from the header at the scroll offset, not from the viewport: a viewport with no room has a height
+-- of 0, which the client treats as no height at all, so it has no rect, and nothing anchored to it would either.
 function Module:PlaceTrackerContents()
-	self.ContentsFrame:SetPoint(
-		"TOPLEFT",
-		self.scrollFrame,
-		"TOPLEFT",
-		self.trackerClipLeft or 0,
-		self.scrollOffset or 0
-	)
+	self.ContentsFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", 0, self.scrollOffset or 0)
 end
 
 ---@param offset number
@@ -555,10 +550,10 @@ function Module:CreateTrackerScroll()
 	local contents = self.ContentsFrame
 	contents:SetParent(scroll)
 	contents:ClearAllPoints()
-	contents:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
 	-- The blocks take the column's width less the gutter from the start, so the first build measures its text there.
 	contents:SetHeight(0)
 	self.scrollFrame = scroll
+	self:PlaceTrackerContents()
 	self:SetTrackerContentsWidth()
 
 	-- The client's minimal scrollbar is an EventFrame on ScrollBarMixin, not a Slider. Its percentage drives the
@@ -695,7 +690,6 @@ function Module:LayoutTrackerScroll()
 	local clipLeft, clipRight = HorizontalOverflow(contents, width)
 	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
 	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + clipRight, 0)
-	self.trackerClipLeft = clipLeft
 	self:PlaceTrackerContents()
 	-- The bar belongs in the section's gutter, independent of the viewport's clipping expansion.
 	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
@@ -836,6 +830,12 @@ function Module:Update(availableHeight, dirtyUpdate)
 		if self:CanUpdate() then
 			self.trackerBuiltWidth = width
 		end
+	end
+	-- Blizzard wraps and measures each line at the width its block resolves to, and a frame of height 0 resolves to
+	-- none: the client reads 0 as no height. The contents start at 0 and keep the last body's height, 0 for a section
+	-- that has shown nothing yet, so they take the cap while the blocks are built; LayoutTrackerScroll sets the body.
+	if availableHeight > 0 then
+		self.ContentsFrame:SetHeight(availableHeight)
 	end
 	return self.baseUpdate(self, availableHeight, dirtyUpdate)
 end

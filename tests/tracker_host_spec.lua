@@ -249,10 +249,12 @@ scroll.check(
 	capped.firstContentsWidth == capped:GetWidth() - 18,
 	"the first build measures its text in the column's width less the gutter"
 )
--- A ScrollFrame places its child only when it next draws, so a section built in the frame its viewport was made would
--- measure every wrapped line as one row and draw it over the next (#795). The viewport is a clipping frame instead.
+-- A section's first build must have placed contents, or Blizzard measures every wrapped line as one row and the next
+-- line draws over it (#795). A ScrollFrame places its child only when it next draws, and a frame of height 0 has no
+-- rect, so the viewport is a clipping frame and the contents hang from the header with the cap as their height.
 scroll.check(capped.firstContentsLeft ~= false, "the first build has placed contents to wrap its lines in")
 scroll.check(capped.scrollFrame.clipsChildren == true, "the viewport clips the contents")
+scroll.check(select(2, capped.ContentsFrame:GetPoint()) == capped.Header, "the contents hang from the header")
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
 scroll.check(
