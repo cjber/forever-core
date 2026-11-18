@@ -1,10 +1,10 @@
 {
-  "input_digest": "1ea8935eaeef0eacc043772ec9d98deb76777d73a9fa0e5ccb8d95124bb417cd",
-  "runtime_sha256": "1ea8935eaeef0eacc043772ec9d98deb76777d73a9fa0e5ccb8d95124bb417cd",
-  "candidate": "fba36d1ec0d63e7a06ea8a12f298872d5d5312a40e5b2836ca7aa315c83b200e",
-  "client_build": "1.60.1.70938 (Interface 16001)",
+  "input_digest": "6ab6abb9634da19ff0c81064262cbdf418d0d607ac915f2c1381f0ef8dc9f9a6",
+  "runtime_sha256": "6ab6abb9634da19ff0c81064262cbdf418d0d607ac915f2c1381f0ef8dc9f9a6",
+  "candidate": "59ce22d8755e25e40edb381332040d5c134e8346061d16cc14fd4b36e63c8198",
+  "client_build": "1.60.1.70959 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "b6865e5718b01c9972c34a270bfccad013ffff55",
+  "source_commit": "12b016bbf0243b5adc640af40f4a8dae737fd429",
   "flows": [
     {
       "name": "column",
@@ -19,16 +19,60 @@
         "sha256:3fe1545bd1246872e45e708e8f019ceb7fd1d5815e721e0dd575ee895897f07b header_menu.lua"
       ],
       "result": "pass"
+    },
+    {
+      "name": "drag",
+      "steps": [
+        "sha256:2f2cd531218f5382b66e9c9dd88013895a3fdc884395cfa1b33cba599bc9bbce drag.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "persist",
+      "steps": [
+        "sha256:9ff650d6fc2f15837cedc2b12c2c8ff74cf447cd1b52ebc22a8767ca1ad6539f persist.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "lock",
+      "steps": [
+        "sha256:e39cf6ba2b1bc57ba5fd0e1c7ece8abc37bbfdc0e4ed54794c7db271158d09fe lock.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "reset",
+      "steps": [
+        "sha256:0e3622d1f62cd5bee9a5f4c6033ab96d8c23230bacda182db48f32a4c70f0d56 clear_pos.lua"
+      ],
+      "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/34023284fe70792ec573d01cd2dff987/raw/c183d5f7fa4dff3abae3dd79b0d478d2717ebe23/1-column.png",
-      "sha256": "03c3a8d738876ee0e69e8fa03cf7d5d78e1d1fd0bc372d217ecbca4554a9f65a"
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/1-column.png",
+      "sha256": "bdeb7e77be291b27020e581c15b2d8b4a90b27a3c5e5fedb229a4bfbee8105c8"
     },
     {
-      "url": "https://gist.githubusercontent.com/cjber/34023284fe70792ec573d01cd2dff987/raw/c183d5f7fa4dff3abae3dd79b0d478d2717ebe23/2-menu.png",
-      "sha256": "2c917cdca436330420ae9d6adc4067a54788aec0dded06e23ff40d40e861b35e"
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/2-menu.png",
+      "sha256": "fb3d07bbb1570b099c04642f61c637a568c6027d6fab5595f6fd4b908891dfbf"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/3-drag.png",
+      "sha256": "43318b52d31f5d9494e93464a056b4159c4bc064f0f7358c91e0427e896c769b"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/4-persist.png",
+      "sha256": "b7950ef6069bb49ae165b6ace586255f509b1e5cfb377a21d651feb746271238"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/5-lock.png",
+      "sha256": "e876bbceaaa019978b32460381ba2c01a7e73e4d11da9dfcbb36ec8e8671cd45"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/5b4cb715815c64b535f6087d1374597b/raw/b3f2c2e822eb8647ed8355347b7438e941e7df5c/6-reset.png",
+      "sha256": "8ce64eb51b9be9dca6ba8cbc012cf596e0cc541c69114a9e24ca62851f10c3e6"
     }
   ]
 }
