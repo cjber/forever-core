@@ -826,9 +826,11 @@ function Module:Update(availableHeight, dirtyUpdate)
 			self:UpdateHeight()
 			return self:GetContentsHeight(), self:IsTruncated()
 		end
-		-- A section that cannot update now (combat) keeps its blocks, and its last build width with them.
+		-- A section that cannot update now (combat) keeps its blocks, and its last build width with them. Text wraps at the
+		-- width its block resolves to on screen, so a build while the column has no rect yet (the game's tracker not
+		-- placed at login) measured unwrapped text: it records no width, and the first pass with a rect builds again.
 		if self:CanUpdate() then
-			self.trackerBuiltWidth = width
+			self.trackerBuiltWidth = self.ContentsFrame:GetLeft() and width or nil
 		end
 	end
 	-- Blizzard wraps and measures each line at the width its block resolves to, and a frame of height 0 resolves to
@@ -1482,6 +1484,9 @@ host:RegisterEvent("PLAYER_REGEN_ENABLED")
 host:RegisterEvent("PLAYER_REGEN_DISABLED")
 host:RegisterEvent("DISPLAY_SIZE_CHANGED")
 host:RegisterEvent("UI_SCALE_CHANGED")
+-- A pinned column hangs off the game's tracker, which Edit Mode places after login and the player can move, so each
+-- layout Edit Mode applies lays the column out again where it now has room. No hook touches the tracker's own methods.
+host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 host:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_ENABLED" then
 		for module, attachment in pairs(pendingAttachments) do

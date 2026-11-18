@@ -445,6 +445,14 @@ function M.build(sim)
 		elseif sizedX and CX then
 			left, width = CX - w / 2, w
 		end
+		-- Text with no height of its own wraps at the width its anchors stretched it to, as the client's does.
+		if s.kind == "FontString" and width and not ((Secret.unwrap(s.height) or 0) > 0) and L and R then
+			local saved = s.width
+			s.width = width / es
+			local _, th = textSize(s)
+			s.width = saved
+			h = th * es
+		end
 		-- Side anchors position a sized region without stretching it on the other axis.
 		-- Intrinsic text is sized too; opposite edges still explicitly stretch either kind.
 		if ((Secret.unwrap(s.height) or 0) > 0 or s.kind == "FontString") and not (T and B) and (T or B) then
@@ -1014,6 +1022,10 @@ function M.build(sim)
 			return r[4] / effectiveScale(self)
 		end
 		if s.kind == "FontString" and (Secret.unwrap(s.height) or 0) <= 0 then
+			local placed = rect(self)
+			if placed then
+				return placed[4] / effectiveScale(self)
+			end
 			local _, h = textSize(s)
 			return h
 		end
@@ -2040,8 +2052,22 @@ function M.build(sim)
 		s.width = saved
 		return w
 	end
+	-- A string with no width of its own wraps at the width its anchors give it, as the client's does.
+	local function anchoredSize(self)
+		local s = st(self)
+		local w = Secret.unwrap(s.width)
+		if w and w > 0 then
+			return textSize(s)
+		end
+		local r = rect(self)
+		local saved = s.width
+		s.width = r and r[3] > 0 and r[3] / effectiveScale(self) or nil
+		local tw, th = textSize(s)
+		s.width = saved
+		return tw, th
+	end
 	impl.FontString.GetStringHeight = function(self)
-		local _, h = textSize(st(self))
+		local _, h = anchoredSize(self)
 		return h
 	end
 	impl.FontString.GetLineHeight = function(self)
@@ -2049,7 +2075,7 @@ function M.build(sim)
 	end
 	impl.FontString.GetNumLines = function(self)
 		local s = st(self)
-		local _, h = textSize(s)
+		local _, h = anchoredSize(self)
 		return math.max(1, math.floor(h / (s.fontHeight or 12) + 0.5))
 	end
 	impl.FontString.IsTruncated = function(self)

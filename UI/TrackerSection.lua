@@ -114,7 +114,7 @@ end
 -- `{ key, title, rows }`, each row `{ key, text, color }`, matching the blocks a section keeps for its own refresh.
 ---@param module ForeverTrackerModule
 ---@param blocks ForeverTrackerTextBlock[]
----@return boolean resized whether a line grew enough to need a new layout
+---@return boolean resized whether a line's height changed, so the section lays out again
 function TrackerSection.UpdateText(module, blocks)
 	local resized = false
 	local headerColor = OBJECTIVE_TRACKER_COLOR and OBJECTIVE_TRACKER_COLOR.Header
@@ -132,7 +132,8 @@ function TrackerSection.UpdateText(module, blocks)
 				if line and line.used and line.Text and line.Text:GetText() ~= row.text then
 					local height =
 						block:SetStringText(line.Text, row.text, true, row.color or normalColor, block.isHighlighted)
-					resized = resized or height > line:GetHeight() + 0.5
+					-- A shorter row leaves a gap as surely as a longer one clips, so either change lays out again.
+					resized = resized or math.abs(height - line:GetHeight()) > 0.5
 				end
 			end
 		end
