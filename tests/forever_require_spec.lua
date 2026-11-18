@@ -38,8 +38,12 @@ local function entry(overrides)
 	return item
 end
 
+local GUID = "Player-1-0ABCDEF0"
 _G.UnitName = function()
 	return "Player"
+end
+_G.UnitGUID = function()
+	return GUID
 end
 _G.GetAddOnMetadata = function(name, field)
 	if name == "MyAddon" and field == "X-Forever-Core" then
@@ -112,8 +116,20 @@ _G.C_AddOns = {
 	IsAddOnLoaded = function(index)
 		return addons[index] and addons[index].loaded
 	end,
-	GetAddOnEnableState = function(index)
-		return addons[index] and addons[index].enabled
+	-- As the client answers: the character is a GUID, a name is ignored and reads 2 for every addon, and no character
+	-- gives the all-characters state.
+	GetAddOnEnableState = function(index, character)
+		local item = addons[index]
+		if not item then
+			return nil
+		end
+		if character == GUID then
+			return item.enabled
+		end
+		if character ~= nil then
+			return 2
+		end
+		return item.everyone or item.enabled
 	end,
 	GetAddOnDependencies = function(index)
 		return unpack(addons[index] and addons[index].deps or {})
@@ -187,6 +203,16 @@ do
 	local culprit = entry({ name = "LegacyForever", title = "Legacy Forever", tag = "v1.4.1" })
 	local _, _, blames = run({ culprit }, false, nil, off)
 	equal(blames, text, "a turned off core is named instead of the out-of-date addon")
+	local mine = {
+		name = "ForeverCore",
+		title = "ForeverCore",
+		loaded = false,
+		enabled = 0,
+		everyone = 1,
+		project = "1796337",
+	}
+	local _, _, only = run({ culprit }, false, nil, mine)
+	equal(only, DISABLED, "a core turned off for this character alone is named too")
 end
 
 -- One older culprit is named.

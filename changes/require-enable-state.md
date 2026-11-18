@@ -1,0 +1,1 @@
+- A Forever addon stopped by a turned-off ForeverCore now says ForeverCore is turned off, instead of naming every other Forever addon as out of date.

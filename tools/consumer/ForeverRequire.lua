@@ -18,8 +18,11 @@ local function outdated(tag, mine)
 	a, b, c = tonumber(a), tonumber(b), tonumber(c)
 	return a < mine[1] or a == mine[1] and (b < mine[2] or b == mine[2] and c < mine[3])
 end
+-- The client keys per-character enable state by GUID and ignores a character name, answering 2 for every addon
+-- (cjber/shortest-path-forever#996); with no character it gives the all-characters state, which reads 1 when an addon
+-- is off for this character alone.
 local function enabled(index)
-	local state = safe("GetAddOnEnableState", index, _G.UnitName and _G.UnitName("player"))
+	local state = safe("GetAddOnEnableState", index, _G.UnitGUID and _G.UnitGUID("player"))
 	return safe("IsAddOnLoaded", index) or (type(state) == "number" and state > 0)
 end
 -- The index of an installed folder named ForeverCore, false when no such folder is installed at all, and nil when
