@@ -249,9 +249,10 @@ scroll.check(
 	capped.firstContentsWidth == capped:GetWidth() - 18,
 	"the first build measures its text in the column's width less the gutter"
 )
--- The client places a scroll child only when its ScrollFrame updates, so a section built in the frame its viewport was
--- made would measure every wrapped line as one row and draw it over the next (#795).
-scroll.check(capped.firstContentsLeft ~= false, "the first build has a placed scroll child to wrap its lines in")
+-- A ScrollFrame places its child only when it next draws, so a section built in the frame its viewport was made would
+-- measure every wrapped line as one row and draw it over the next (#795). The viewport is a clipping frame instead.
+scroll.check(capped.firstContentsLeft ~= false, "the first build has placed contents to wrap its lines in")
+scroll.check(capped.scrollFrame.clipsChildren == true, "the viewport clips the contents")
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
 scroll.check(
@@ -293,7 +294,7 @@ scroll.check(capped.scrollOffset == 60, "the wheel moves one block, not a fixed 
 scroll.check(math.abs(capped.scrollBar:GetScrollPercentage() - 60 / 325) < 1e-9, "the bar follows the view")
 capped.scrollBar:SetScrollPercentage(0.5)
 scroll.check(math.abs(capped.scrollOffset - 162.5) < 1e-9, "dragging the bar moves the view")
-scroll.check(capped.scrollFrame:GetVerticalScroll() == capped.scrollOffset, "the scroll child follows the bar")
+scroll.check(select(5, capped.ContentsFrame:GetPoint()) == capped.scrollOffset, "the contents follow the bar")
 scroll.host:MarkDirty()
 scroll.drain()
 scroll.check(capped.scrollOffset == 160, "a layout keeps the same block at the top of the view")
@@ -360,7 +361,7 @@ scroll.host:MarkDirty()
 scroll.drain()
 scroll.check(capped.trackerOverflow == false and capped.scrollRange == 0, "a shrunken list no longer overflows")
 scroll.check(capped.scrollOffset == 0, "a shrunken list returns to the top")
-scroll.check(capped.scrollFrame:GetVerticalScroll() == 0, "the scroll child returns to the top")
+scroll.check(select(5, capped.ContentsFrame:GetPoint()) == 0, "the contents return to the top")
 scroll.check(capped.scrollBar:IsShown() == false, "the shrunken list hides the bar")
 scroll.check(capped.scrollChanges > scrollChanges, "the shrunken list redraws its item buttons")
 

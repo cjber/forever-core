@@ -438,6 +438,17 @@ function Module:ApplyScrollAnchor(starts)
 	return starts[index].start
 end
 
+-- The contents sit in the viewport at the scroll offset, moved right by the room HorizontalOverflow gave the viewport.
+function Module:PlaceTrackerContents()
+	self.ContentsFrame:SetPoint(
+		"TOPLEFT",
+		self.scrollFrame,
+		"TOPLEFT",
+		self.trackerClipLeft or 0,
+		self.scrollOffset or 0
+	)
+end
+
 ---@param offset number
 function Module:SetScrollOffset(offset)
 	if InCombatLockdown() then
@@ -447,7 +458,7 @@ function Module:SetScrollOffset(offset)
 	offset = math.max(0, math.min(range, tonumber(offset) or 0))
 	self.scrollOffset = offset
 	if self.scrollFrame then
-		self.scrollFrame:SetVerticalScroll(offset)
+		self:PlaceTrackerContents()
 	end
 	if self.scrollBar then
 		self.updatingScrollBar = true
@@ -523,13 +534,17 @@ function Module:SetScrollFrozen(frozen)
 	self:EnableMouseWheel(not frozen)
 end
 
--- Builds the viewport once, on the first attach, out of core's own frames. The scroll child is the module's own
--- ContentsFrame, so every block and every pooled line keeps its parent and its anchors.
+-- Builds the viewport once, on the first attach, out of core's own frames: a frame that clips its children, holding the
+-- module's own ContentsFrame, so every block and every pooled line keeps its parent and its anchors. It is not a
+-- ScrollFrame: the client places a scroll child only when its ScrollFrame next draws, so a section built in the frame
+-- it attached would wrap and measure its lines with no width, each counting as one row (#795). Plain anchors resolve
+-- at once, and scrolling moves the contents' anchor.
 function Module:CreateTrackerScroll()
 	if self.scrollFrame or not self.ContentsFrame or not self.Header then
 		return
 	end
-	local scroll = CreateFrame("ScrollFrame", nil, self)
+	local scroll = CreateFrame("Frame", nil, self)
+	scroll:SetClipsChildren(true)
 	scroll:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", 0, 0)
 	scroll:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", 0, 0)
 	scroll:SetHeight(0)
@@ -538,8 +553,8 @@ function Module:CreateTrackerScroll()
 		self:OnTrackerWheel(delta)
 	end)
 	local contents = self.ContentsFrame
+	contents:SetParent(scroll)
 	contents:ClearAllPoints()
-	scroll:SetScrollChild(contents)
 	contents:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
 	-- The blocks take the column's width less the gutter from the start, so the first build measures its text there.
 	contents:SetHeight(0)
@@ -565,15 +580,12 @@ function Module:CreateTrackerScroll()
 	self:SetScrollFrozen(InCombatLockdown())
 end
 
--- The blocks' width: the section's, less the gutter the bar sits in. The client places a scroll child only when its
--- ScrollFrame next updates, so the rect is brought up to date here: the client wraps and measures each line at the
--- width its anchors resolve to, and a clean section keeps that build (#795).
+-- The blocks' width: the section's, less the gutter the bar sits in.
 function Module:SetTrackerContentsWidth()
 	local width = math.max(0, (self:GetWidth() or 0) - SCROLL_GUTTER)
 	if self.scrollFrame and self.scrollContentsWidth ~= width then
 		self.scrollContentsWidth = width
 		self.ContentsFrame:SetWidth(width)
-		self.scrollFrame:UpdateScrollChildRect()
 	end
 	return width
 end
@@ -683,7 +695,8 @@ function Module:LayoutTrackerScroll()
 	local clipLeft, clipRight = HorizontalOverflow(contents, width)
 	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
 	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + clipRight, 0)
-	contents:SetPoint("TOPLEFT", self.scrollFrame, "TOPLEFT", clipLeft, 0)
+	self.trackerClipLeft = clipLeft
+	self:PlaceTrackerContents()
 	-- The bar belongs in the section's gutter, independent of the viewport's clipping expansion.
 	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
 	self.scrollBar:SetPoint("BOTTOMLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -viewport)
