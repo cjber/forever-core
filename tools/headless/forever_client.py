@@ -2093,7 +2093,9 @@ def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[st
     """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run.
 
     One reload saves every folder's errors, so each folder is read from that one save: a reload per folder only
-    repeated the same login, and a core smoke with its released consumers spent one on each.
+    repeated the same login, and a core smoke with its released consumers spent one on each. Every folder is counted
+    over the same session, the candidate's login and the selftest. Before, the first folder covered that session and
+    each later one also covered the logins of the reloads before it, so coverage depended on a folder's place.
     """
     reload(state)
     counts: dict[str, int] = {}
@@ -2584,7 +2586,9 @@ def flow_capture_failure(state: Mapping, action: str, token: str, timeout: Clien
     return timeout
 
 
-def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
+def run_flow(
+    state: Mapping, action: str, point: tuple[int, int] | None = None, previous: tuple[str, str] | None = None
+) -> str:
     """Run one proof flow through !!DevSmoke: a slash command, or a Lua file.
 
     Both routes write a snippet whose own run token `check_flow_eval` reads once the screenshot is taken: the reload
@@ -2594,6 +2598,10 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     capture waits for that file instead of a pause (#593). `point` is a click in screenshot coordinates that runs
     between the reload's world screenshot and the flow's own: opening a protected window is not something a Lua
     snippet can do, and since #648 no outside `click` can reach the client while this job holds it (#655).
+
+    `previous` is the earlier flow's (action, token): this flow's reload saves that flow's eval, which is checked
+    straight after it, before this flow sends any input or waits on its own capture, so a failure is reported against
+    the flow that caused it.
     """
     tool = devsmoke_eval()
     try:
@@ -2610,6 +2618,8 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     before = screenshots()
     reload(state)
     clear_eval_inbox()
+    if previous:
+        check_flow_eval(state, *previous, saved=True)
     try:
         if point:
             world = wait_for_flow_world(before, action, written["token"], state=state)
@@ -2838,9 +2848,7 @@ def proof(args: argparse.Namespace) -> int:
                 unread: tuple[str, str] | None = None
                 for index, (name, action) in enumerate(flows, start=1):
                     verify_links(records)
-                    flow_token = run_flow(state, action, clicks.get(name))
-                    if unread:
-                        check_flow_eval(state, *unread, saved=True)
+                    flow_token = run_flow(state, action, clicks.get(name), unread)
                     verify_links(records)
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
                     unread = (action, flow_token) if flow_token else None

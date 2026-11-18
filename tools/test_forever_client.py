@@ -3488,6 +3488,7 @@ class ProofTest(unittest.TestCase):
 
     def run_proof(self, **overrides):
         ensure = overrides.pop("ensure", None)
+        ready_patched = overrides.pop("ready_patched", False)
         overrides.pop("up", None)
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(fc, "git", side_effect=self.fake_git))
@@ -3502,7 +3503,8 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "reload", self.reload))
             stack.enter_context(mock.patch.object(fc, "job_started", return_value=3.0))
             stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
-            stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
+            if not ready_patched:
+                stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
             stack.enter_context(mock.patch.object(fc, "wait_for_flow_world", return_value=self.state / "world.jpg"))
             stack.enter_context(mock.patch.object(fc, "click", self.click))
             stack.enter_context(mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool))
@@ -3588,30 +3590,65 @@ class ProofTest(unittest.TestCase):
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
 
+    def one_eval_slot(self, outcomes: dict[str, bool], order: list) -> contextlib.ExitStack:
+        """A client with one inbox, one DevSmokeDB.eval in memory and one on disk, as the real one has.
+
+        A reload first writes the session's memory to disk, then the new login runs whatever the inbox holds, once. A
+        read finds only the record on disk, so a token read before the reload that saves it is missing.
+        """
+        client = {"inbox": None, "memory": None, "disk": None}
+
+        def stage(action, **_kw):
+            token = f"run-{action.strip('/')}"
+            client["inbox"] = token
+            return {"chunk": Path("/x/Eval.lua"), "snippet": Path(action), "lines": 1, "token": token}
+
+        def reload(_state):
+            order.append("reload")
+            client["disk"] = client["memory"]
+            if client["inbox"]:
+                client["memory"] = {"run": client["inbox"], "ok": outcomes[client["inbox"]], "err": "boom"}
+
+        def clear(**_kw):
+            client["inbox"] = None
+
+        def read(token):
+            order.append(f"read {token}")
+            if (client["disk"] or {}).get("run") != token:
+                raise fc.ClientError(f"{token} is not on disk yet")
+            return client["disk"]
+
+        def ready(*_args, **_kw):
+            order.append("ready")
+            return self.state / "flow.jpg"
+
+        self.eval_tool.write_slash.side_effect = stage
+        self.reload.side_effect = reload
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(fc, "clear_eval_inbox", side_effect=clear))
+        stack.enter_context(mock.patch.object(fc, "saved_eval", side_effect=read))
+        stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", side_effect=ready))
+        return stack
+
     def test_two_flows_take_four_reloads_the_second_flows_saving_the_firsts_eval(self):
-        self.eval_tool.write_slash.side_effect = [
-            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf"), "lines": 5, "token": "run-1"},
-            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf2"), "lines": 5, "token": "run-2"},
-        ]
         order = []
-        self.reload.side_effect = lambda _state: order.append("reload")
-        records = {"run-1": {"run": "run-1", "ok": True}, "run-2": {"run": "run-2", "ok": True}}
-        with mock.patch.object(fc, "saved_eval", side_effect=lambda token: order.append(token) or records[token]):
-            code, _printed, _err = self.run_proof(flow=["one=/lf", "two=/lf2"])
+        with self.one_eval_slot({"run-a": True, "run-b": True}, order):
+            code, _printed, _err = self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
         self.assertEqual(code, 0)
         self.assertEqual([path.name for path in self.shot_paths], ["1-one.png", "2-two.png"])
-        # The proof's own reload, each flow's, and one more that saves the last flow's eval: N + 2, not 2N + 1.
-        self.assertEqual(order, ["reload", "reload", "reload", "run-1", "reload", "run-2"])
+        # The proof's own reload, each flow's, and one more that saves the last flow's eval: N + 2, not 2N + 1. Each
+        # read follows the reload that put its token on disk, and the first flow is read before the second waits.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a", "ready", "reload", "read run-b"])
 
-    def test_a_first_flow_whose_snippet_raised_fails_the_proof_after_the_next_flows_reload(self):
-        self.eval_tool.write_slash.side_effect = [
-            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf"), "lines": 5, "token": "run-1"},
-            {"chunk": Path("/x/Eval.lua"), "snippet": Path("/lf2"), "lines": 5, "token": "run-2"},
-        ]
-        self.saved_eval({"run": "run-1", "ran": 9, "ok": False, "err": "Eval.lua:2: boom", "out": {1: "before"}})
-        with self.assertRaisesRegex(fc.ClientError, "flow snippet /lf failed"):
-            self.run_proof(flow=["one=/lf", "two=/lf2"])
-        self.assertEqual(self.reload.call_count, 3, "no reload of its own: the second flow's saved the first's eval")
+    def test_a_first_flow_whose_snippet_raised_fails_the_proof_before_the_next_flow_waits(self):
+        order = []
+        with (
+            self.one_eval_slot({"run-a": False, "run-b": True}, order),
+            self.assertRaisesRegex(fc.ClientError, "flow snippet /a failed"),
+        ):
+            self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
+        # Reported against the flow that raised, before the second flow sends input or waits on its capture.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a"])
         self.create_gist.assert_not_called()
         self.assertFalse((self.checkout / ".visual-proof.json").exists())
 
