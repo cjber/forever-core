@@ -9,6 +9,7 @@
 - **An addon carrying its own ForeverCore starts it in every case.** It also starts when the addon is turned on after you log in, and in a session where the game's login event did not reach it. Before, it could stay waiting with no error, leaving no Forever tracker column or settings page. (#837)
 - **An outdated ForeverCore install is named.** If the separate ForeverCore you have installed is too old for the addons that carry their own copy, the error now names its version and says to update or turn it off, instead of the addons failing one by one. (#837)
 - **Search ranking no longer builds a blanked copy of every title it ranks.** Ranking a name in a search list (Adventure Guide Forever) rebuilt the title with punctuation blanked, and a word list for the query, on every call. It now scans the title's own word starts directly, at the same ranking.
+- **Contribution counts in the credits are translated.** German, Spanish, French, Korean, Portuguese and Russian showed "contributions" in English.
 
 ## [1.15.3] - 2026-11-19
 

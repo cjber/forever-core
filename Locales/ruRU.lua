@@ -10,6 +10,7 @@ L["%s and %s"] = "%s и %s"
 L["%s, %s and %s"] = "%s, %s и %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s и ещё %d"
 L["+%d more"] = "+%d ещё"
+L["%d contributions"] = "вкладов: %d" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (последние %d):"
 L["%s: no lines yet."] = "%s: строк пока нет."

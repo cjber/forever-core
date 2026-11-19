@@ -10,6 +10,7 @@ L["%s and %s"] = "%s und %s"
 L["%s, %s and %s"] = "%s, %s und %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s und %d weitere"
 L["+%d more"] = "+%d weitere"
+L["%d contributions"] = "%d Beiträge" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (letzte %d):"
 L["%s: no lines yet."] = "%s: noch keine Zeilen."

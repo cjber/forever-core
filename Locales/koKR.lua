@@ -10,6 +10,7 @@ L["%s and %s"] = "%s 및 %s"
 L["%s, %s and %s"] = "%s, %s 및 %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s 및 %d명 더"
 L["+%d more"] = "+%d개 더"
+L["%d contributions"] = "기여 %d건" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (최근 %d개):"
 L["%s: no lines yet."] = "%s: 아직 줄이 없습니다."
