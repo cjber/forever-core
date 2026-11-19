@@ -49,10 +49,14 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
-# sync_consumer_prs puts core's vendored tooling on the import path.
+# Run as a script, nothing has put the addon skill pack's tooling on the path yet.
+TOOLING = Path(__file__).resolve().parent.parent / ".agents/skills/wow-forever-addon/tooling"
+sys.path.insert(0, str(TOOLING))
+
 from forever_tools import fleet  # noqa: E402
-from sync_consumer_prs import (
+from sync_consumer_prs import (  # noqa: E402
     OWNER,
     SyncError,
     api_json,
