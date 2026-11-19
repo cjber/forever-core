@@ -65,6 +65,9 @@ requests a stop and returns immediately; the session stops when the job ends.
 `serve --wait` queues for a separate session and reports the current holder,
 its launch lifetime deadline and its idle deadline before waiting.
 
+The session ends 60 minutes after the last job ended (or after READY when none has run) and 3 hours after launch.
+The idle end never fires while a request is queued or a lease of the session is live; the lifetime cap always does.
+
 
 ## Hyprland job
 

@@ -4577,7 +4577,7 @@ class BrokerTest(unittest.TestCase):
                 fc.serve(argparse.Namespace(wait=True, timeout=0))
             self.assertIn(expected, out.getvalue())
             self.assertIn("latest end 1970-01-01T03:01:40Z (177 min remaining)", out.getvalue())
-            self.assertIn("idle end 1970-01-01T00:13:20Z (8 min remaining)", out.getvalue())
+            self.assertIn("idle end 1970-01-01T01:03:20Z (58 min remaining)", out.getvalue())
             self.assertIn("job/lease run inside the resident session now without --wait", out.getvalue())
 
     def test_exited_job_leader_gives_its_child_time_to_handle_term(self):

@@ -87,7 +87,8 @@ Waiters hold exclusive locks on numbered ticket files and acquire in arrival ord
 Serve teardown takes priority over waiters without interrupting the holder. Wait logs update the holder and queue
 position; a timeout bounds the wait without guaranteeing acquisition. `STATE_DIR/job.json` names its holder
 (pid, token, label, start) so a waiter can say who it waits for. The session
-ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
+ends `IDLE_LIMIT` (60 min) after the last job ended, or after READY when none has run yet, and not while a request
+is queued or a lease is live, and never later than
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
 is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
@@ -224,9 +225,10 @@ CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "for
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
 WIDTH, HEIGHT = 1920, 1080
 # The session is shared, so the client stays up while jobs arrive instead of ending after one test. These are fixed
-# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY when none has run yet), and
-# never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is never cut off.
-IDLE_LIMIT = 10 * 60
+# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY; never while work is
+# pending), and never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is
+# never cut off.
+IDLE_LIMIT = 60 * 60
 MAX_SESSION = 3 * 60 * 60
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
