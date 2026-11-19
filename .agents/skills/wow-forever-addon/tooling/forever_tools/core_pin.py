@@ -435,7 +435,7 @@ def check(root, latest=None):
     except ValueError as error:
         return failures + [f"{policy_name}: {error}; set exactly one `package-as` or add a plain fallback TOC"]
     toc_path = root / toc_name if toc_name else None
-    if package and pkgmeta_path is not None and not toc_path.is_file():
+    if package and pkgmeta_path is not None and (toc_path is None or not toc_path.is_file()):
         return failures + [f"{policy_name}: `package-as: {package}` names {toc_name}, which the checkout does not have"]
     toc = toc_path.read_text(encoding="utf-8-sig", errors="replace") if toc_path and toc_path.is_file() else ""
     toc_name = toc_name or "the root TOC"
