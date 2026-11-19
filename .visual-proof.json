@@ -1,10 +1,10 @@
 {
-  "input_digest": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
-  "runtime_sha256": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
-  "candidate": "d44d3b9fd5985a30d5a5e083eb71efbcb3cc302a94ee2843d46c2a23e22b4e95",
+  "input_digest": "bd0137973e74ed9ab924498974ce97a9ffa869dcd99dee2330902b97dc615a02",
+  "runtime_sha256": "bd0137973e74ed9ab924498974ce97a9ffa869dcd99dee2330902b97dc615a02",
+  "candidate": "ad23908fc33eb8f18e5edc95259375c345942520aa153099d2359018e66e889c",
   "client_build": "1.60.1.70959 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "cae5f437a7fa2cbc2f2cb17958e8bec5edef9da8",
+  "source_commit": "e971376307f00c57b4258ef3119039a9b83eef8e",
   "flows": [
     {
       "name": "tracker",
@@ -12,12 +12,23 @@
         "/forever"
       ],
       "result": "pass"
+    },
+    {
+      "name": "menu-cursor",
+      "steps": [
+        "sha256:0a9edb24e490731d220a8722ff81936e2eedd4b75a17e2bff868166b45bea001 menu869.lua"
+      ],
+      "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/04a883d272109227622d98e25e0ef337/raw/da62f103e3cea93637cb4e3f05fe381d641e71b2/1-tracker.png",
-      "sha256": "64698f4f9a0437efb4f5a20f59cc6c839e289b31f99472fe58f6772b508f83ae"
+      "url": "https://gist.githubusercontent.com/cjber/934e800b19e602974fc9a292fe5bb323/raw/d583d3035ac73d1f66ef8edac47b2f4d87a63802/1-tracker.png",
+      "sha256": "81a17664804fc94ab0c738ce1aa7c8b361cb840ec89cfce6cf7b2278388703a7"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/934e800b19e602974fc9a292fe5bb323/raw/d583d3035ac73d1f66ef8edac47b2f4d87a63802/2-menu-cursor.png",
+      "sha256": "b3e776806c1e240b97cc3e50be93d51e1219cc722e1f0309ba08e03423e64fcb"
     }
   ]
 }
