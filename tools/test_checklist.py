@@ -99,6 +99,19 @@ class ChecklistTest(unittest.TestCase):
             cl.main(["status", "--addon", "forever-core", "--sha", sha])
         self.assertEqual(e.exception.code, 1)
 
+    def test_an_answer_counts_only_for_the_build_it_was_given_against(self):
+        for c in cl.compose("2026-11-19-2")["checks"]:
+            if c["addon"] == "forever-core":
+                cl.record_answer("2026-11-19-2", c["id"], "pass", None)
+        with contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--sha", "c0ffee12"])
+        self.assertFalse(cl.gate("forever-core", "c0ffee12")[0])
+        cl.record_answer("2026-11-19-2", "menus", None, "a note after the new build")
+        _, rows = cl.status_rows("2026-11-19-2")
+        menus = next(r for r in rows if r["id"] == "menus")
+        self.assertEqual((menus["status"], menus["note"]), (None, "a note after the new build"))
+        self.assertNotIn('"status": "pass"', cl.render("2026-11-19-2", served=True))
+
     def test_answers_reject_unknown_checks_and_statuses(self):
         with self.assertRaises(ValueError):
             cl.record_answer("2026-11-19-2", "nope", "pass", None)
@@ -159,6 +172,21 @@ class ChecklistTest(unittest.TestCase):
         self.assertEqual(e.exception.code, 403)
         e.exception.close()
         self.assertEqual(cl.load_results("2026-11-19-2")["answers"]["menus"]["status"], "pass")
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            post("/api/image/2026-11-19-2", {"check": "nope", "data": png})
+        self.assertEqual(e.exception.code, 400)
+        e.exception.close()
+        for bad in ("/shots/../rounds/2026-11-19-2.yaml", "/round/..", "/round/2026-01-01-1", "/api/results/x"):
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(base + bad)
+            self.assertEqual(e.exception.code, 404, bad)
+            e.exception.close()
+        self.assertFalse((self.home / "results" / "2026-01-01-1.json").exists())
+        rebound = urllib.request.Request(base + "/api/results/2026-11-19-2", headers={"Host": "evil.example"})
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(rebound)
+        self.assertEqual(e.exception.code, 403)
+        e.exception.close()
 
     def test_copy_has_no_long_dashes(self):
         files = [cl.PAGE_TEMPLATE, cl.HERE / "README.md", *cl.REGRESSION_DIR.glob("*.yaml")]

@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import datetime as dt
+import fcntl
 import html
 import json
 import os
@@ -94,6 +96,8 @@ def latest_round() -> str:
 
 
 def round_path(name: str) -> Path:
+    if not ROUND_NAME.match(name):
+        raise SystemExit(f"round names are <yyyy-mm-dd>-<n>, such as 2026-11-19-2, not {name!r}")
     return rounds_dir() / f"{name}.yaml"
 
 
@@ -190,6 +194,15 @@ def next_check_id(data: dict, title: str) -> str:
 _lock = threading.Lock()
 
 
+@contextlib.contextmanager
+def locked(name: str):
+    """One writer at a time for a round's results, across the server's threads and a CLI run beside it."""
+    results_dir().mkdir(parents=True, exist_ok=True)
+    with _lock, open(results_dir() / f".{name}.lock", "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
 def results_path(name: str) -> Path:
     return results_dir() / f"{name}.json"
 
@@ -216,10 +229,11 @@ def record_answer(name: str, check: str, status: str | None, note: str | None) -
         raise ValueError(f"no check {check} in round {name}")
     if status not in (*STATUSES, None, ""):
         raise ValueError(f"status must be one of {', '.join(STATUSES)}")
-    with _lock:
+    with locked(name):
         data = load_results(name)
         data.setdefault("started", now())
-        answer = data["answers"].setdefault(check, {"images": []})
+        answer = current(data["answers"].get(check, {"images": []}), composed[check]["sha"])
+        data["answers"][check] = answer
         if status is not None:
             answer["status"] = status or None
         if note is not None:
@@ -232,13 +246,15 @@ def record_answer(name: str, check: str, status: str | None, note: str | None) -
 
 
 def record_image(name: str, check: str, data_url: str) -> str:
+    if check not in {c["id"] for c in compose(name)["checks"]}:
+        raise ValueError(f"no check {check} in round {name}")
     m = re.match(r"^data:image/(png|jpeg|webp);base64,(.+)$", data_url, re.S)
     if not m:
         raise ValueError("expected a PNG, JPEG or WebP data URL")
     ext = "jpg" if m.group(1) == "jpeg" else m.group(1)
     folder = results_dir() / name
     folder.mkdir(parents=True, exist_ok=True)
-    with _lock:
+    with locked(name):
         data = load_results(name)
         answer = data["answers"].setdefault(check, {"images": []})
         images = answer.setdefault("images", [])
@@ -389,7 +405,7 @@ def bug_errors(since: int, path: Path | None = None) -> list[dict]:
 
 
 def snapshot_bugs(name: str) -> list[dict]:
-    with _lock:
+    with locked(name):
         data = load_results(name)
         since = int(data.get("started") or now())
         data["bugs"] = bug_errors(since)
@@ -421,9 +437,12 @@ def render(name: str, served: bool) -> str:
     composed = compose(name)
     for check in composed["checks"]:
         check["picture"] = embed_picture(check["picture"])
+    results = load_results(name)
+    shas = {c["id"]: c["sha"] for c in composed["checks"]}
+    results["answers"] = {k: current(v, shas[k]) for k, v in results["answers"].items() if k in shas}
     payload = {
         "round": composed,
-        "results": load_results(name),
+        "results": results,
         "served": served,
         "results_file": str(results_path(name)),
     }
@@ -466,7 +485,17 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, obj, code: int = 200) -> None:
         self.send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json")
 
+    def local_host(self) -> bool:
+        """Refuse a Host other than this machine's, so a page on a rebound DNS name cannot read or write results."""
+        host = urlparse("//" + (self.headers.get("Host") or "")).hostname
+        if host in (HOST, "localhost"):
+            return True
+        self.send_json({"error": "unknown host"}, 403)
+        return False
+
     def do_GET(self):
+        if not self.local_host():
+            return
         path = unquote(urlparse(self.path).path)
         try:
             if path == "/":
@@ -474,19 +503,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Location", f"/round/{latest_round()}")
                 self.end_headers()
                 return
-            m = re.match(r"^/round/([\w.-]+)$", path)
+            m = re.fullmatch(r"/round/([\w-]+)", path)
             if m:
                 name = m.group(1)
-                with _lock:
+                load_round(name)
+                with locked(name):
                     data = load_results(name)
                     if "started" not in data:
                         data["started"] = now()
                         save_results(name, data)
                 return self.send(200, render(name, served=True).encode(), "text/html; charset=utf-8")
-            m = re.match(r"^/api/results/([\w.-]+)$", path)
+            m = re.fullmatch(r"/api/results/([\w-]+)", path)
             if m:
+                load_round(m.group(1))
                 return self.send_json(load_results(m.group(1)))
-            m = re.match(r"^/shots/([\w.-]+)/([\w.-]+)$", path)
+            m = re.fullmatch(r"/shots/(\d{4}-\d{2}-\d{2}-\d+)/([\w-]+\.(?:png|jpg|webp))", path)
             if m:
                 f = results_dir() / m.group(1) / m.group(2)
                 if f.is_file():
@@ -497,28 +528,33 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": str(e)}, 404)
 
     def do_POST(self):
+        if not self.local_host():
+            return
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).hostname not in (HOST, "localhost"):
             return self.send_json({"error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
-        m = re.match(r"^/api/(answer|image|submit)/([\w.-]+)$", path)
+        m = re.fullmatch(r"/api/(answer|image|submit)/([\w-]+)", path)
         if not m:
             return self.send_json({"error": "not found"}, 404)
         kind, name = m.groups()
-        length = int(self.headers.get("Content-Length") or 0)
         try:
+            load_round(name)
+            length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(body, dict) or not isinstance(body.get("check", ""), str):
+                raise ValueError("expected a JSON object with a string check")
             if kind == "answer":
                 return self.send_json(record_answer(name, body["check"], body.get("status"), body.get("note")))
             if kind == "image":
                 return self.send_json({"file": record_image(name, body["check"], body["data"])})
-            with _lock:
+            with locked(name):
                 data = load_results(name)
                 data["submitted"] = now()
                 save_results(name, data)
             bugs = snapshot_bugs(name)
             return self.send_json({"bugs": len(bugs), "submitted": True})
-        except (ValueError, KeyError, SystemExit) as e:
+        except (ValueError, KeyError, TypeError, SystemExit) as e:
             return self.send_json({"error": str(e)}, 400)
 
 
@@ -531,9 +567,17 @@ def make_server(port: int = PORT) -> ThreadingHTTPServer:
 
 
 def same_sha(a: str, b: str) -> bool:
+    """One build: the same SHA, or one an abbreviation (7 or more characters) of the other."""
     a, b = (a or "").lower(), (b or "").lower()
     n = min(len(a), len(b))
-    return n >= 7 and a[:n] == b[:n]
+    return a == b or (n >= 7 and a[:n] == b[:n])
+
+
+def current(answer: dict, sha: str) -> dict:
+    """The answer as it stands for the build now linked: a status given against another build no longer counts."""
+    if answer.get("status") and not same_sha(answer.get("sha", ""), sha):
+        return {k: v for k, v in answer.items() if k not in ("status", "sha")}
+    return answer
 
 
 def status_rows(name: str) -> tuple[dict, list[dict]]:
@@ -541,7 +585,7 @@ def status_rows(name: str) -> tuple[dict, list[dict]]:
     answers = load_results(name)["answers"]
     rows = []
     for check in composed["checks"]:
-        ans = answers.get(check["id"], {})
+        ans = current(answers.get(check["id"], {}), check["sha"])
         rows.append(dict(check, status=ans.get("status"), note=ans.get("note", ""), images=ans.get("images", [])))
     return composed, rows
 
@@ -607,6 +651,8 @@ def cmd_add(a):
     name = a.round or latest_round()
     data = load_round(name)
     check = dict({"addon": a.addon}, **check_from_args(a, data))
+    if any(c["id"] == check["id"] for c in data["checks"]):
+        raise SystemExit(f"round {name} already has a check {check['id']}")
     data["checks"].append(check)
     dump_yaml(round_path(name), data)
     print(f"{name}: added {check['id']}")

@@ -152,6 +152,8 @@ function card(c) {
   const tick = (msg) => { saved.textContent = msg; };
   const fail = (e) => tick("Not saved: " + e.message);
   const node = el("section", {class: "card", tabindex: "0", "aria-label": c.title});
+  let queue = Promise.resolve();
+  const send = (kind, data) => (queue = queue.catch(() => {}).then(() => post(kind, data)));
   const btn = (s, label, k) => el("button", {type: "button", class: s, "aria-pressed": "false", onclick: () => mark(s)}, label, el("kbd", {}, k));
   const buttons = {pass: btn("pass", "Pass", "P"), fail: btn("fail", "Fail", "F"), skip: btn("skip", "Skip", "S")};
   function paint() {
@@ -164,14 +166,14 @@ function card(c) {
   function mark(s) {
     a.status = a.status === s ? null : s;
     paint();
-    post("answer", {check: c.id, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
+    send("answer", {check: c.id, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
     if (a.status === "fail") note.focus(); else if (a.status) move(1, true);
   }
   let timer;
   note.addEventListener("input", () => {
     a.note = note.value;
     clearTimeout(timer);
-    timer = setTimeout(() => post("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail), 500);
+    timer = setTimeout(() => send("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail), 500);
   });
   node.addEventListener("paste", (ev) => {
     for (const item of ev.clipboardData.items) {
@@ -180,7 +182,7 @@ function card(c) {
       const r = new FileReader();
       r.onload = () => {
         if (!D.served) { a.images.push(r.result); paint(); post(); return; }
-        post("image", {check: c.id, data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
+        send("image", {check: c.id, data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
       };
       r.readAsDataURL(item.getAsFile());
     }
