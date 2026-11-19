@@ -1,10 +1,10 @@
 {
-  "input_digest": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
-  "runtime_sha256": "caade979fa0507a1a60218986bc4b06f6aa6550ffd09c3416c5c09d2fe7179eb",
-  "candidate": "d44d3b9fd5985a30d5a5e083eb71efbcb3cc302a94ee2843d46c2a23e22b4e95",
+  "input_digest": "b8332436359af27d3213ded5cb1bbb299d5dc3cc8ab2b4d4d12839cfe56603d3",
+  "runtime_sha256": "b8332436359af27d3213ded5cb1bbb299d5dc3cc8ab2b4d4d12839cfe56603d3",
+  "candidate": "5ad3367a82667d4b849ea946d2dddf5957c099433d87a690af11bb2b5054f8fd",
   "client_build": "1.60.1.70959 (Interface 16001)",
   "tested_artifact": "source-tree",
-  "source_commit": "cae5f437a7fa2cbc2f2cb17958e8bec5edef9da8",
+  "source_commit": "6feb18d18ba26d261e7ab1718c8114b84e614d15",
   "flows": [
     {
       "name": "tracker",
@@ -12,12 +12,34 @@
         "/forever"
       ],
       "result": "pass"
+    },
+    {
+      "name": "section-menu",
+      "steps": [
+        "sha256:29546a1cfab7b8be4789244e34e045c2fc7f72516d57f8f06fb7d4ffbd67ca84 section-menu.lua"
+      ],
+      "result": "pass"
+    },
+    {
+      "name": "line-right-click",
+      "steps": [
+        "sha256:599756b409bd1d6352f27a584a49ec467a1698d20f5ed339ce41b7a5e37fa052 line-right-click.lua"
+      ],
+      "result": "pass"
     }
   ],
   "images": [
     {
-      "url": "https://gist.githubusercontent.com/cjber/04a883d272109227622d98e25e0ef337/raw/da62f103e3cea93637cb4e3f05fe381d641e71b2/1-tracker.png",
-      "sha256": "64698f4f9a0437efb4f5a20f59cc6c839e289b31f99472fe58f6772b508f83ae"
+      "url": "https://gist.githubusercontent.com/cjber/daebce6ac6335fcfefcdf9175c13cfac/raw/8f50731dd2232cfae654f2aedf84d77c8688f051/1-tracker.png",
+      "sha256": "21b24fb7ac72b7684f2bc1648121ea80444b6d75faa55213be6377652090aeb0"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/daebce6ac6335fcfefcdf9175c13cfac/raw/8f50731dd2232cfae654f2aedf84d77c8688f051/2-section-menu.png",
+      "sha256": "2d8db8c6f89734d5858f1a627a5e71566f411300ccf9d9c470400f8d65007607"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/cjber/daebce6ac6335fcfefcdf9175c13cfac/raw/8f50731dd2232cfae654f2aedf84d77c8688f051/3-line-right-click.png",
+      "sha256": "a6be7cd539b5c72a615ed2e058dd6eeaecc3311e3b198970135b105105f5eeed"
     }
   ]
 }

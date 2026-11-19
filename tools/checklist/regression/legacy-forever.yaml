@@ -1,0 +1,16 @@
+name: Legacy
+checks:
+  - id: loads
+    title: Loads clean and /lf opens its settings
+    steps:
+      - Type /reload.
+      - Type /lf.
+    pass: No Lua error, and the Legacy settings open.
+    minutes: 1
+  - id: map-shield
+    title: The world map shows unfinished challenges
+    steps:
+      - Open the world map on a zone you have not fully explored.
+      - Click the Legacy shield.
+    pass: The shield's number matches what is left, and its menu lists the challenges.
+    minutes: 2

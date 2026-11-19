@@ -1,8 +1,8 @@
 # Depending on ForeverCore
 
-ForeverCore is a standalone addon every Forever addon requires. It loads once, before its consumers, and owns the
-shared runtime: the tracker column, the report and issue windows, the error journal and debug log, the quest log
-side tabs, the settings-page chrome and the family page.
+ForeverCore is the shared runtime every Forever addon carries inside itself: the tracker column, the report and issue
+windows, the error journal and debug log, the quest log side tabs and the settings-page chrome. Each addon's zip embeds
+it under `Libs/ForeverCore/`, one copy runs per session, and the standalone ForeverCore addon is an optional download.
 
 ## The dependency
 
@@ -12,25 +12,22 @@ The TOC declares it as an optional dependency:
 ## OptionalDeps: ForeverCore
 ```
 
-The client loads ForeverCore before the addon when it is installed, and the addon still loads when it is missing,
-which is what lets its vendored `Core/ForeverRequire.lua` show one line saying how to install core. Do not declare
-ForeverCore in `## Dependencies`: the client would skip the addon entirely, and the player would see nothing.
+The client loads the standalone ForeverCore before the addon when it is installed, and the addon still loads when it is
+missing, running its embedded copy. Do not declare ForeverCore in `## Dependencies`: the client would skip the addon
+entirely, and the player would see nothing.
 
-The store relation uses the CurseForge project slug, `forevercore` (project 1796337):
+The addon embeds core: its TOC sets `## X-Forever-Core-Embed: 1`, the embed step copies the pinned release under
+`Libs/ForeverCore/` at package time, and the store relation names the CurseForge project slug, `forevercore`
+(project 1796337), as an embedded library:
 
 ```yaml
-required-dependencies:
+embedded-libraries:
   - forevercore
 ```
 
-During the dependency transition, keep the existing pinned ForeverCore ZIP external and top-level `move-folders`
-entry. The sync producer adds this relation without removing the bundle. `tools/forever-core.txt`, the external URL
-and `## X-Forever-Core:` must continue to name the same release. The runtime loads once from the shared
-`AddOns/ForeverCore` folder; consumers never copy individual runtime files into their own folder.
-
-A store relation does not prove that an existing installation acquires an independently managed dependency.
-Keep the fallback on every channel until that channel
-passes the [dependency transition](dependency-transition.md) upgrade and uninstall checks.
+The zip ships no top-level `ForeverCore/` folder. `tools/forever-core.txt` and `## X-Forever-Core:` name the same
+release. Consumers never copy individual runtime files into their own source; the embed step owns that copy. The
+[dependency transition](dependency-transition.md) has the reasons and the bridge history.
 
 ## Asking for per-addon services
 
@@ -82,7 +79,7 @@ keeps the top block in place across updates, the wheel moves one block per step,
 alpha so every secure quest item button stays beside its quest. `TrackerSection.UpdateText(module, blocks)` rewrites
 existing line and header text without another layout. `TrackerSection.Room(module, block)` measures the room left in
 the column, and `TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
-{ onClick, tooltip })` makes a stock line clickable, and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
+{ onClick, tooltip })` makes a stock line clickable (a right-click on it opens its block's menu), and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
 header's hover; `ForeverTrackerInteractiveLineTemplate` is the mouse-enabled line template both use.
 
 `ForeverCore.TrackerHost` is the one column. Attach a section directly to it:

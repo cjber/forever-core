@@ -957,6 +957,7 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_press_play_ignores_the_upgrade_available_banner(self):
         # The banner advertises an account upgrade beside a working Play button, so it must not stop startup.
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -999,6 +1000,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", side_effect=[found, found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -1016,7 +1018,8 @@ class ForeverClientTest(unittest.TestCase):
             [mock.call(state, "key", "--window", "12345", "Escape")] * 2,
         )
         self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
-        self.assertIn(str(self.state / "launcher.png"), warning.getvalue())
+        self.assertIn(str(self.state / "launcher-no-play.png"), warning.getvalue())
+        self.assertEqual((self.state / "launcher-no-play.png").read_bytes(), b"frame")
         self.assertIn("--manual-launcher", warning.getvalue())
 
     def test_manual_launcher_cli_only_allows_shot_and_left_click_before_ready(self):
@@ -3050,6 +3053,29 @@ class ProofHelpersTest(unittest.TestCase):
         ready.assert_called_once_with(set(), "/lf", "run-slash", state="state")
         self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from /lf (5 lines)", out.getvalue())
 
+    def test_a_secure_slash_flow_is_typed_into_chat_not_written_as_a_snippet(self):
+        self.assertTrue(fc.secure_slash("/cast Cooking"))
+        self.assertTrue(fc.secure_slash("/USE 12"))
+        self.assertFalse(fc.secure_slash("/lf"))
+        tool = mock.Mock()
+        with (
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.png")),
+            mock.patch.object(fc, "slash") as typed,
+            mock.patch.object(fc.time, "sleep") as settle,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.run_flow("state", "/cast Cooking"), "")
+            with self.assertRaises(fc.ClientError):
+                fc.run_flow("state", "/cast Cooking", (1, 2))
+        tool.write_slash.assert_not_called()
+        reload.assert_called_once_with("state")
+        typed.assert_called_once_with("state", "/cast Cooking")
+        settle.assert_called_once_with(fc.SECURE_SLASH_SETTLE_SECONDS)
+
     def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
         tool = mock.Mock()
         tool.EvalError = Exception
@@ -3305,6 +3331,58 @@ class ProofHelpersTest(unittest.TestCase):
                 self.assertRaises(fc.ClientError),
             ):
                 fc.proof_digests(self.state)
+
+    def embedding_checkout(self, field="## X-Forever-Core-Embed: 1\n"):
+        checkout = self.state / "macro-assist-forever"
+        checkout.mkdir()
+        (checkout / "MacroAssistForever.toc").write_text(f"## Interface: 16001\n{field}Main.lua\n")
+        (checkout / "Main.lua").write_text("print('edited, not committed')\n")
+        (checkout / "untracked.lua").write_text("not shipped\n")
+        return checkout
+
+    def test_a_checkout_without_the_embed_field_is_its_own_proof_source(self):
+        checkout = self.embedding_checkout(field="")
+        with mock.patch.object(fc, "embed_core", side_effect=AssertionError("no embed")):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(source, checkout)
+
+    def test_an_embedding_checkout_is_compared_after_the_same_embed_step(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "MacroAssistForever.toc\0Main.lua\0", "")
+        embedded = []
+
+        def embed(stage):
+            embedded.append(stage)
+            (stage / "Libs" / "ForeverCore").mkdir(parents=True)
+
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=embed),
+        ):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(embedded, [source])
+                self.assertNotEqual(source, checkout)
+                self.assertEqual((source / "Main.lua").read_text(), "print('edited, not committed')\n")
+                self.assertFalse((source / "untracked.lua").exists())
+                self.assertTrue((source / "Libs" / "ForeverCore").is_dir())
+            self.assertFalse(source.exists())
+        self.assertFalse((checkout / "Libs").exists())
+
+    def test_the_proof_stage_is_removed_when_the_embed_step_fails(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "Main.lua\0", "")
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=fc.ClientError("embedding ForeverCore failed")),
+        ):
+            with self.assertRaises(fc.ClientError):
+                with fc.proof_source(checkout, "macro-assist-forever"):
+                    pass
+        self.assertFalse((builds / "macro-assist-forever-proof-source").exists())
 
     def test_proof_compare_accepts_only_an_equivalent_installed_folder(self):
         good = mock.Mock(returncode=0, stdout=json.dumps({"equivalent": True}), stderr="")
@@ -3773,6 +3851,196 @@ class ProofTest(unittest.TestCase):
         self.assertTrue(options.manual_launcher)
 
 
+class AttestTest(unittest.TestCase):
+    """`attest`: the user's checklist pass becomes the proof, bound to the tested runtime, without the client."""
+
+    SHA = "a" * 40
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.workspace = self.root / "ws"
+        (self.workspace / "demo-forever").mkdir(parents=True)
+        self.checkout = self.root / "checkout"
+        self.checkout.mkdir()
+        self.artifact = self.workspace / "test-artifacts/demo-forever-aaaaaaaa"
+        (self.artifact / "DemoForever").mkdir(parents=True)
+        (self.artifact / "DemoForever/DemoForever.toc").write_text("## Interface: 16001\n")
+        self.results = self.root / "handoff/results"
+        self.results.mkdir(parents=True)
+        self.client = self.root / "client"
+        (self.client / "Screenshots").mkdir(parents=True)
+        self.shot = self.results / "pasted.png"
+        Image.new("RGB", (4, 4)).save(self.shot)
+        for name, value in (
+            ("WORKSPACE", self.workspace),
+            ("PROOF_SCRATCH", self.root / "scratch"),
+            ("CLIENT", self.client),
+            ("CHECKLIST_RESULTS", self.results),
+        ):
+            patch = mock.patch.object(fc, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    @property
+    def bound(self) -> dict:
+        return {
+            "sha": self.SHA,
+            "digest": "d" * 64,
+            "artifact_sha256": "f" * 64,
+            "client_build": "1.60.1.70959 (Interface 16001)",
+        }
+
+    def report(self, **build) -> dict:
+        return {
+            "round": "2026-11-19-2",
+            "passed": True,
+            "build": {
+                "sha": self.SHA,
+                "digest": "d" * 64,
+                "artifact": "test-artifacts/demo-forever-aaaaaaaa",
+                "artifact_path": str(self.artifact),
+                "artifact_sha256": "f" * 64,
+                "artifact_sha256_now": "f" * 64,
+                "client_build": "1.60.1.70959 (Interface 16001)",
+                **build,
+            },
+            "checks": [
+                {
+                    "id": "c1",
+                    "title": "Panel opens",
+                    "steps": ["Type /demo.", "  "],
+                    "status": "pass",
+                    "images": [str(self.shot)],
+                    **self.bound,
+                },
+                {
+                    "id": "c2",
+                    "title": "Optional",
+                    "steps": [],
+                    "status": "skip",
+                    "images": [],
+                    **self.bound,
+                },
+            ],
+        }
+
+    def run_attest(self, report: dict, shots: list[str] | None = None, digest: str = "d" * 64):
+        namespace = argparse.Namespace(
+            repo="demo-forever", ref=self.SHA, checkout=self.checkout, round=None, shot=shots or []
+        )
+        with (
+            mock.patch.object(fc, "resolve_commit", return_value=self.SHA),
+            mock.patch.object(fc, "git", return_value=self.SHA),
+            mock.patch.object(fc, "checklist_status", return_value=report),
+            mock.patch.object(fc, "proof_digests", return_value={"input_digest": digest, "candidate": "c" * 64}),
+            mock.patch.object(fc, "package_name", return_value="DemoForever"),
+            mock.patch.object(fc, "proof_compare", return_value={"equivalent": True}) as compare,
+            mock.patch.object(fc, "client_build", side_effect=AssertionError("the round records the client build")),
+            mock.patch.object(fc, "create_gist", return_value="gist1") as gist,
+            mock.patch.object(
+                fc,
+                "upload_screenshots",
+                side_effect=lambda g, shots, d: [{"url": f"u/{s.name}", "sha256": "0" * 64} for s in shots],
+            ),
+            mock.patch.object(fc, "acquire_job", side_effect=AssertionError("attest must not take the client")),
+            mock.patch.object(fc, "ensure_session", side_effect=AssertionError("attest must not start the client")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = fc.attest(namespace)
+        return result, compare, gist
+
+    def test_writes_a_user_checked_proof_from_the_passed_checks(self):
+        result, compare, _ = self.run_attest(self.report())
+        self.assertEqual(result, 0)
+        compare.assert_called_once_with(self.checkout, self.artifact / "DemoForever")
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual(proof["kind"], "user-checked")
+        self.assertEqual(proof["round"], "2026-11-19-2")
+        self.assertEqual(proof["input_digest"], "d" * 64)
+        self.assertEqual(proof["runtime_sha256"], "d" * 64)
+        self.assertEqual(proof["source_commit"], self.SHA)
+        self.assertEqual(proof["client_build"], "1.60.1.70959 (Interface 16001)")
+        self.assertEqual(proof["flows"], [{"name": "Panel opens", "steps": ["Type /demo."], "result": "pass"}])
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-pasted.png"])
+
+    def test_adds_client_screenshots_named_with_shot(self):
+        capture = self.client / "Screenshots/WoWScrnShot_111926_103244.jpg"
+        Image.new("RGB", (4, 4)).save(capture, "JPEG")
+        report = self.report()
+        report["checks"][0]["images"] = []
+        self.run_attest(report, shots=[str(capture)])
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-wowscrnshot-111926-103244.png"])
+        staged = self.root / "scratch" / f"attest-demo-forever-{self.SHA[:7]}/1-wowscrnshot-111926-103244.png"
+        self.assertTrue(staged.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "the checker takes PNG only")
+
+    def test_refuses_a_pass_for_another_runtime_or_without_evidence(self):
+        no_images = self.report()
+        no_images["checks"][0]["images"] = []
+        stale = self.report()
+        stale["checks"][1]["digest"] = "e" * 64
+        stray = self.report()
+        secret = self.root / "id_ed25519.png"
+        secret.write_bytes(b"key")
+        stray["checks"][0]["images"] = [str(secret)]
+        lua = self.report()
+        lua["checks"][0]["steps"] = ["C:\\flows\\demo.lua"]
+        annotated = self.report()
+        annotated["checks"][0]["steps"] = ["sha256:" + "0" * 64 + " /home/me/flow.lua"]
+        pass_line = self.report()
+        pass_line["checks"][0].update(steps=[], **{"pass": "/home/me/flow.lua"})
+        cases = {
+            "not the one recorded": (self.report(artifact_sha256_now="0" * 64), "d" * 64),
+            "recorded before artifact hashing": (self.report(artifact_sha256=""), "d" * 64),
+            "were not answered for this build": (stale, "d" * 64),
+            "no client build": (self.report(client_build=""), "d" * 64),
+            "not a screenshot from the client": (stray, "d" * 64),
+            "absolute path": (lua, "d" * 64),
+            "absolute path, fallback": (pass_line, "d" * 64),
+            "absolute path, annotated": (annotated, "d" * 64),
+            "another build": (self.report(), "e" * 64),
+            "no runtime digest": (self.report(digest=""), "d" * 64),
+            "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),
+            "no unpacked build": (self.report(artifact_path=str(self.workspace / "missing")), "d" * 64),
+            "no screenshot": (no_images, "d" * 64),
+        }
+        for message, (report, digest) in cases.items():
+            with self.subTest(message), self.assertRaisesRegex(fc.ClientError, message.split(", ")[0]):
+                self.run_attest(report, digest=digest)
+            self.assertFalse((self.checkout / fc.PROOF_FILE).exists())
+
+    def test_checklist_status_maps_the_gate_exit_codes(self):
+        passed = {"round": "r", "passed": True, "build": {}, "checks": []}
+        failed = {
+            "round": "r",
+            "passed": False,
+            "build": {},
+            "checks": [{"id": "c1", "status": "fail"}, {"id": "c2", "status": None}],
+        }
+        with mock.patch.object(
+            fc.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=json.dumps(passed), stderr="")
+        ) as run:
+            self.assertEqual(fc.checklist_status("demo-forever", self.SHA, "r"), passed)
+        self.assertEqual(
+            run.call_args.args[0][1:],
+            ["status", "--addon", "demo-forever", "--sha", self.SHA, "--json", "--round", "r"],
+        )
+        with (
+            mock.patch.object(
+                fc.subprocess, "run", return_value=mock.Mock(returncode=1, stdout=json.dumps(failed), stderr="")
+            ),
+            self.assertRaisesRegex(fc.ClientError, r"c1 \(fail\), c2 \(open\)"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=2, stdout="", stderr="")),
+            self.assertRaisesRegex(fc.ClientError, "no checklist round"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+
+
 class BrokerTest(unittest.TestCase):
     """The resident session and the short job lock: one client, several agents, no login per test."""
 
@@ -3849,6 +4117,29 @@ class BrokerTest(unittest.TestCase):
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, fc.MAX_SESSION - 1))
         # The lifetime cap wins when both limits are due, so the session never outlives it.
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0))
+
+    def test_the_idle_limit_waits_for_a_queued_request_or_a_live_lease(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 2, "boot_id": "b"}
+        idle = fc.IDLE_LIMIT + 50
+        self.assertIsNone(fc.pending_work(state))
+        lease = self.state / "leases" / "tok.json"
+        lease.parent.mkdir(parents=True)
+        record = {"token": "tok", "expires": time.time() + 60, "session": fc.session_identity(state)}
+        lease.write_text(json.dumps(record))
+        self.assertEqual(fc.pending_work(state), "a lease is live")
+        self.assertIsNone(fc.session_end_reason(idle, 0, 50, 50, fc.pending_work(state)))
+        for change in ({"ended": "released by caller"}, {"expires": time.time() - 1}, {"session": {"pid": 8}}):
+            lease.write_text(json.dumps({**record, **change}))
+            self.assertIsNone(fc.pending_work(state))
+        lease.unlink()
+        ticket, handle = fc.enqueue_job()
+        try:
+            self.assertEqual(fc.pending_work(state), "a request is queued")
+        finally:
+            ticket.unlink(missing_ok=True)
+            handle.close()
+        # The lifetime cap still wins over pending work.
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0, "a lease is live"))
 
     def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):
         stale = self.state / "last-job"
@@ -4309,7 +4600,7 @@ class BrokerTest(unittest.TestCase):
                 fc.serve(argparse.Namespace(wait=True, timeout=0))
             self.assertIn(expected, out.getvalue())
             self.assertIn("latest end 1970-01-01T03:01:40Z (177 min remaining)", out.getvalue())
-            self.assertIn("idle end 1970-01-01T00:13:20Z (8 min remaining)", out.getvalue())
+            self.assertIn("idle end 1970-01-01T01:03:20Z (58 min remaining)", out.getvalue())
             self.assertIn("job/lease run inside the resident session now without --wait", out.getvalue())
 
     def test_exited_job_leader_gives_its_child_time_to_handle_term(self):

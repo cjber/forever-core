@@ -94,7 +94,6 @@ L["Unavailable in combat"] = "Unavailable in combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "What happened, or what you would like"
-L["MENU_BACK"] = "Back"
 L["Quests"] = "Quests"
 
 L["ForeverCore startup report"] = "ForeverCore startup report"

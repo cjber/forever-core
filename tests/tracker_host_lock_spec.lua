@@ -132,6 +132,9 @@ local nativeHeader = frame()
 nativeHeader.MinimizeButton = frame()
 native.Header = nativeHeader
 function native.UpdateHeaderPosition() end
+function native.IsCollapsed()
+	return false
+end
 function native.UpdateHeight() end
 local ns = {
 	-- English phrases, as the addon that translates by phrase has them. Nothing is set for the lock's constant key,

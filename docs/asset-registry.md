@@ -231,14 +231,15 @@ pinned build does not have, or the declared path repeated in shipped Lua.
 
 ## What the addons actually reference today
 
-Sixteen atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
+Fifteen atlas names and a few loose assets in total: `common-dropdown-bg`, `CircleMaskScalable`,
 `questlog-icon-setting`, `common-icon-checkmark`, `common-dropdown-c-button-hover-arrow`,
 `common-dropdown-ticksquare`, `common-dropdown-icon-checkmark-yellow`, `common-dropdown-tickradial`,
-`common-dropdown-icon-radialtick-yellow`, `common-dropdown-icon-next`, `checkmark-minimal`,
+`common-dropdown-icon-radialtick-yellow`, `checkmark-minimal`,
 `Waypoint-MapPin-Tracked`, `Navigation-Tracked-Arrow`, `UI-HUD-CoolDownManager-Bar`,
 `UI-HUD-CoolDownManager-Bar-BG`, `bags-roundhighlight`; `map-icon-suramardoor.tga`,
 `media/Dot.tga`, `media/TooltipBorder*.tga`, plus the allowlisted native widget pieces `WhiteIconFrame`,
-`ButtonHilight-Square` and `UI-QuestTitleHighlight`. The shared minimap button uses LibDBIcon's three loose
+`ButtonHilight-Square`, and the context menu's `UI-QuestTitleHighlight`, `ChatFrameExpandArrow` and
+`UI-TooltipDivider-Transparent`, which are Blizzard_Menu's own row highlight, submenu arrow and divider. The shared minimap button uses LibDBIcon's three loose
 pieces by FileDataID, the same construction Questie's, RXP's and AtlasLoot's buttons already wear on the
 player's rim: `136477` (`interface/minimap/ui-minimap-zoombutton-highlight`) as the button's highlight,
 `136430` (`interface/minimap/minimap-trackingborder`) as the 50-unit overlay, and `136467`

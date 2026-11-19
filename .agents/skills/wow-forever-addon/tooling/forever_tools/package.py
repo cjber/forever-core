@@ -186,6 +186,15 @@ def has_section(text: str, heading: str) -> bool:
 def check(release: Path, policy: Policy) -> list[str]:
     """Every problem with the packaged folders under `release`, each as one line."""
     problems: list[str] = []
+    # Every top-level folder the zip installs is an addon the policy names and checks. Another one is an addon the
+    # player gets without a check, such as a moved or external ForeverCore that several zips would then own.
+    named = {addon.lower() for addon in policy.addons}
+    if release.is_dir():
+        for child in sorted(release.iterdir()):
+            if child.is_dir() and not child.name.startswith(".") and child.name.lower() not in named:
+                problems.append(
+                    f"{child.name}: a top-level folder the package policy does not name; ship it inside the addon"
+                )
     for addon in policy.addons:
         folder = release / addon
         if not folder.is_dir():

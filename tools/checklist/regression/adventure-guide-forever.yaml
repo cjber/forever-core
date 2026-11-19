@@ -1,0 +1,30 @@
+name: Adventure Guide
+checks:
+  - id: loads
+    title: Loads clean and /agf opens the guide
+    steps:
+      - Type /reload.
+      - Type /agf.
+    pass: No Lua error, and the guide opens.
+    minutes: 1
+  - id: tracker-section
+    title: The guide's section shows in the Forever column
+    setup: A journey chosen in the guide.
+    steps:
+      - Look at the Forever column.
+      - Type /reload.
+    pass: The guide section shows the next step under the column header, both before and after the reload.
+  - id: quest-accept
+    title: Accepting a quest updates the guide smoothly
+    steps:
+      - Accept a quest from a quest giver.
+      - Progress one objective.
+    pass: The guide step updates without the column flashing or jumping, and no stutter.
+    minutes: 3
+  - id: equip-no-stutter
+    title: Looting and equipping cause no stutter
+    steps:
+      - Equip and unequip an item three times.
+    pass: No hitch you can feel.
+    issue: adventure-guide-forever#862
+    minutes: 1

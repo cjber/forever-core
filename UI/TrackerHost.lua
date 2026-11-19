@@ -21,10 +21,11 @@ local _, ns = ...
 
 -- The client's own objective tracker. Its presence says Blizzard_ObjectiveTracker loaded, which defines the section
 -- template every Forever section is built from, and the column sits under its last line or pins left of it. The column
--- reads only where it is, whether it is shown and where its NineSlice, which ends under its last line, ends. It never
--- reads its contents and never writes to it or hooks it.
+-- reads only where it is, whether it is shown or collapsed, and where its NineSlice, which ends under its last line,
+-- and its header end. It never reads its contents and never writes to it or hooks it.
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field NineSlice Frame?
+---@field Header Frame?
 
 -- Keep our sections and their frame pools entirely outside the native module collection and its Edit Mode path.
 if not ObjectiveTrackerFrame then
@@ -1017,17 +1018,33 @@ local function LayoutModules(width, available)
 	host:MarkDirty()
 	return hasSections
 end
--- Where the column goes under the game's quest tracker: its top left corner on the tracker's last visible line, read
--- from the tracker's NineSlice, which Blizzard anchors under its last shown section, or the tracker's top while it is
--- hidden with nothing to show. Returns that x and y in the host's own units, nil before the client has placed the
--- tracker. These are reads only; nothing here writes to the tracker or hooks it.
+-- What the game's quest tracker shows, which decides its last visible line: "hidden" with nothing to list, "collapsed"
+-- to its header, or "list". Reads only.
+---@return "hidden"|"collapsed"|"list"
+local function TrackerShows()
+	if not ObjectiveTrackerFrame:IsShown() then
+		return "hidden"
+	end
+	if ObjectiveTrackerFrame:IsCollapsed() then
+		return "collapsed"
+	end
+	return "list"
+end
+-- Where the column goes under the game's quest tracker: its top left corner on the tracker's last visible line. That is
+-- the bottom of the tracker's NineSlice, which Blizzard anchors under its last shown section; the bottom of its header
+-- while the player has it collapsed, since its sections hide then but the NineSlice keeps their old anchor; or the
+-- tracker's top while it is hidden with nothing to show. Returns that x and y in the host's own units, nil before the
+-- client has placed the tracker. These are reads only; nothing here writes to the tracker or hooks it.
+---@param shows "hidden"|"collapsed"|"list"
 ---@return number? x, number? top
-local function TrackerEdge()
-	local edge = ObjectiveTrackerFrame.NineSlice
+local function TrackerEdge(shows)
 	local left = ObjectiveTrackerFrame:GetLeft()
 	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
+	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
+		or shows == "collapsed" and ObjectiveTrackerFrame.Header
+		or nil
 	local bottom, scale
-	if edge and ObjectiveTrackerFrame:IsShown() then
+	if edge then
 		bottom, scale = edge:GetBottom(), edge:GetEffectiveScale()
 	else
 		bottom, scale = ObjectiveTrackerFrame:GetTop(), trackerScale
@@ -1057,6 +1074,9 @@ end
 local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
+-- What the tracker showed when the column was last placed by it, so a change the probe cannot see places it again.
+---@type "hidden"|"collapsed"|"list"|nil
+local followedShows
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
 	if settings.placement ~= "under" or (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
@@ -1065,9 +1085,10 @@ local function FollowTracker(settings)
 	-- Lock holds the place the column has, except for Under's no-room fallback: a locked column under the tracker that no
 	-- longer fits under the list's last line, or would run past the screen's bottom from where it is, takes the left
 	-- place, as an unlocked one would. It does not return under on its own; picking a place or unlocking does that.
+	local shows = TrackerShows()
 	if settings.locked and followed and not placeAgain then
 		if under then
-			local _, line = TrackerEdge()
+			local _, line = TrackerEdge(shows)
 			local height = host:GetHeight() or 0
 			if height > (line or math.huge) or height > (host:GetTop() or 0) then
 				PinLeft()
@@ -1075,7 +1096,7 @@ local function FollowTracker(settings)
 		end
 		return
 	end
-	local x, top = TrackerEdge()
+	local x, top = TrackerEdge(shows)
 	-- A tracker the client has not placed yet says nothing about room: the column waits at the pin until it has a line,
 	-- and once placed keeps its place.
 	if not (x and top) then
@@ -1084,7 +1105,7 @@ local function FollowTracker(settings)
 		end
 		return
 	end
-	placeAgain, followed = false, true
+	placeAgain, followed, followedShows = false, true, shows
 	if (host:GetHeight() or 0) > top then
 		PinLeft()
 		return
@@ -1314,7 +1335,6 @@ local function NewTrackerMenu(root, module, target)
 	local menu = {}
 	local function Entry(text, fn, opts)
 		local entry = ns.NewMenuDescription("button", text)
-		entry.parent = root
 		if type(fn) ~= "function" then
 			return entry
 		end
@@ -1406,12 +1426,13 @@ local function NewTrackerMenu(root, module, target)
 		Append(slots.open)
 		Append(slots.ending)
 		root:CreateDivider()
-		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
+		-- Lock sits on the menu itself, not in the Tracker submenu, so a locked column is unlocked from any right-click.
 		if api.IsLocked and api.SetLocked then
-			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
+			root:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
+		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
 		AddPlacementMenu(tracker)
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
@@ -1672,6 +1693,31 @@ local probe = CreateFrame("Frame", nil, UIParent)
 probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
 probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
 probe:SetScript("OnSizeChanged", Follow)
+-- Two changes move no line the probe can see. Collapsing the tracker hides its sections but leaves its NineSlice on
+-- their old anchor, and the tracker hiding with nothing left to list, or showing again, leaves the line where it was.
+-- The first comes from a click on its header's button and the second from the quest log or the tracked quests changing
+-- (a quest untracked, turned in or abandoned, or the log filling in at login), so each of those events reads what the
+-- tracker shows and places the column again when that changed, as a login would place it. The tracker lays itself out
+-- on the frame after the event (DirtiableMixin's RunNextFrame), so the read waits a frame more than that.
+local watching = false
+local function Recheck()
+	watching = false
+	if ready and TrackerShows() ~= followedShows then
+		Follow()
+	end
+end
+local watch = CreateFrame("Frame")
+watch:RegisterEvent("GLOBAL_MOUSE_UP")
+watch:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
+watch:RegisterEvent("QUEST_LOG_UPDATE")
+watch:SetScript("OnEvent", function()
+	if not watching and ready then
+		watching = true
+		C_Timer.After(0, function()
+			C_Timer.After(0, Recheck)
+		end)
+	end
+end)
 host:SetScript("OnEvent", function(_, event)
 	if event == "PLAYER_REGEN_ENABLED" then
 		for module, attachment in pairs(pendingAttachments) do

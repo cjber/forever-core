@@ -16,7 +16,7 @@ another from one queue instead of racing for the job lock, the sign-in and the A
      "Read ~/.agents/skills/sweep/profiles/wow-ingame.md and follow it. Resume ~/.local/state/sweep/wow/ingame-queue.md."
    ```
 
-2. Push the candidate commit, then send one request:
+2. Push the candidate commit, then send a request (it joins the batch):
 
    ```
    INGAME <repo> <full sha> from <your kiln id>
@@ -33,7 +33,14 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    `CHANGELOG.md` bullet the change adds to the flow that proves it; a bullet with no flow sends the request back.
 
    The ref is the full 40-character SHA of a pushed commit. Every check one commit needs goes in one message, as
-   several `kind:` blocks one after another, so the in-game agent loads that build once. A `check` names
+   several `kind:` blocks one after another, so the in-game agent loads that build once.
+
+   Requests are batched, not run one per session. One logged-in session runs every queued check: it links one build
+   per addon together, runs them in one pass and posts each proof to its own PR. Split a batch only for a real
+   conflict (two builds of one addon, incompatible characters or places) and say the reason in the reply.
+
+   The client stays logged in while any work is queued. Never `down` it between checks or batches; send the
+   request and the live session picks it up. A `check` names
    everything the in-game agent needs to judge it without asking back: the steps, the expected result, and the frame
    or text that shows it.
 
@@ -73,7 +80,7 @@ them where it can:
    Every verb that touches the client (`shot`, `click`, `scroll`, `key`, `slash`, `reload`, `eval`, `errors`) runs
    inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
    is the `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job
-   lock. The session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit`
+   lock. The session ends 60 minutes after the last job (never while a request is queued or a lease is live) and 3 hours after it started, and every ending types `/quit`
    so the character logs out, then stops the client.
 3. **Human pace.** Inputs are at least 1.5 s apart across invocations and slash commands type at 120 ms a key.
    Never loop inputs: take a shot, read it, decide the next action.
@@ -131,8 +138,8 @@ FOREVER_CLIENT_JOB=$TOKEN FOREVER_CLIENT_CALLER=in-game python3 $FC click 960 54
 FOREVER_CLIENT_CALLER=in-game python3 $FC release $TOKEN
 ```
 
-A session ends 10 minutes after the last job ended (or after READY when none has run) and never later than 3 hours
-from its start. At either end it takes the job lock first, so a job in flight is never cut off; `down` does the
+A session ends 60 minutes after the last job ended (or after READY when none has run), unless a request is queued or
+a lease is live, and never later than 3 hours from its start. At either end it takes the job lock first, so a job in flight is never cut off; `down` does the
 same. Every ending logs the character out and stops the client.
 
 ## Smoking a release commit
@@ -245,6 +252,12 @@ true writes the client's own reason to `DevSmokeDB.eval` and saves it; `proof` r
 `ChatEdit_SendText` in the same `!!DevSmoke` route, so its capture follows a confirmed run and its own eval result is
 checked; there is no fixed settle. Name a Lua flow for anything that must wait on data.
 
+A secure slash flow (`--flow "route=/cast Cooking"`; also `/use`, `/click`, `/target`, ...: the client's secure
+words, listed as `SECURE_SLASH_WORDS` in `forever_client.py`) cannot run from Lua at all, so the proof types it into
+chat as the `slash` verb does, after the reload's world screenshot, then settles 3 s before the capture. It has no ready
+check, no eval result and no `--flow-click`. Each flow reloads first, so a later Lua flow starts from a fresh world and
+does not continue from the window the secure flow opened.
+
 A flow whose window only a real click opens names that click with `--flow-click "NAME=X,Y"`, where `X,Y` are the same
 screenshot coordinates `click` takes:
 
@@ -259,6 +272,29 @@ screenshot is waited for. Opening a profession window is a protected action no L
 once `professions.lua`'s ready check sees it filled. `NAME` must match a
 `--flow` name, and the proof's flow entry records the point as `click`, so the evidence says what was clicked. A flow
 with no `--flow-click` is unchanged.
+
+### From the user's checklist pass
+
+When the user has tested a build in the live client from the checklist (`tools/checklist/README.md`), that pass is the
+proof: no headless run is needed. The in-game agent records each linked build with
+`checklist build --addon R --sha SHA --artifact test-artifacts/<dir> --digest <input_digest> --client-build <build>`,
+where the digest is `visual_proof --digests`' `input_digest` of that commit and the client build is the client's
+version line (`1.60.1.70959 (Interface 16001)`). Recording `--artifact` also hashes every file of that unpacked build.
+Once the round passes, anyone writes the proof without the
+client:
+
+```sh
+python3 $FC attest --repo shortest-path-forever --ref <sha> --checkout <worktree at that sha> [--shot <client screenshot>]
+```
+
+`attest` reads `checklist status --addon R --sha SHA --json` and refuses unless the build passed the gate (every check
+passed, or skipped where the check is optional, with at least one pass), each answer was given against this build, the
+round recorded this commit and a client build, its digest equals the checkout's `input_digest`, the unpacked build
+still hashes to what was recorded when it was linked, and it compares equal to the checkout (`visual_proof
+--compare`). Each passed check becomes a flow. The screenshots pasted into passed checks, plus any `--shot` from the
+client's Screenshots folder, are converted to PNG and go to a new secret gist, at least one in total. The file carries
+`kind: user-checked` and the round, and is committed with the change like any proof. A move-folders addon, whose proof
+must test a release package, cannot be attested from a source build.
 
 ### Behaviour and cost flows
 

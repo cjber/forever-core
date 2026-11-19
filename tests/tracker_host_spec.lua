@@ -190,17 +190,37 @@ userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's 
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check, an anchor argument or one of the reads that place the column under it (#850), never another field,
--- a method call or an assignment.
-local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ".NineSlice" }
-local function Read(after)
-	for _, read in ipairs(reads) do
-		if after:sub(1, #read) == read and not after:sub(#read + 1):match("^%s*=[^=]") then
-			return true
+-- a presence check, an anchor argument or one of the reads that place the column under it (#850, #883), never another
+-- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
+local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+local function Starts(text, list)
+	for _, read in ipairs(list) do
+		if text:sub(1, #read) == read then
+			return read
 		end
 	end
-	return false
 end
+local function Read(after)
+	local read = Starts(after, reads)
+	if not read then
+		local child = after:match("^%.NineSlice") or after:match("^%.Header")
+		if not child then
+			return false
+		end
+		local rest = after:sub(#child + 1)
+		read = child .. (Starts(rest, { ":GetBottom()", ":GetEffectiveScale()" }) or "")
+		if read == child and rest:match("^%s*[%.:%[]") then
+			return false
+		end
+	end
+	return not after:sub(#read + 1):match("^%s*=[^=]")
+end
+assert(Read(".Header:GetBottom()") and Read(".NineSlice or x") and Read(":IsCollapsed()"), "the reads pass")
+assert(
+	not Read(".Header:Hide()") and not Read(".NineSlice:SetPoint(") and not Read(".Header.Text"),
+	"a child write fails"
+)
+assert(not Read(".Header = nil") and not Read(":SetCollapsed(true)"), "an assignment or another method fails")
 local writes = {}
 for line in io.lines("ForeverCore.toc") do
 	local path = line:match("^([%w_\\/]+%.lua)%s*$")
