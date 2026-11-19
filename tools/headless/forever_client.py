@@ -1290,8 +1290,12 @@ def press_play(state: dict) -> None:
         # Battle.net window, then let the startup loop inspect a fresh frame.
         x(state, "key", "--window", found.stdout.split()[0], "Escape")
         if not state.get("play_target_missing_reported"):
+            # Every retry overwrites launcher.png, so by the time anyone reads this line the file shows a later
+            # frame (often one with Play drawn). Keep the frame this report is about under its own name.
+            missed = image.with_name(f"{image.stem}-no-play{image.suffix}")
+            shutil.copyfile(image, missed)
             print(
-                f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
+                f"no visible Play label recognized; inspect {missed}. Retrying until the startup deadline. "
                 "For screenshot-guided launcher clicks, restart with up --manual-launcher, then use shot and click.",
                 file=sys.stderr,
                 flush=True,
@@ -3356,18 +3360,46 @@ def at_character_select(state: dict, manual_launcher: bool) -> None:
         press_play(state)
 
 
-def session_end_reason(now: float, started: float, ready: float, last_job: float) -> str | None:
+def pending_work(state: Mapping) -> str | None:
+    """What still needs this session, or None: a waiter in the job queue or a live lease of this session.
+
+    A lease holder works between verbs (building a test addon, reading a screenshot), so no job ends in that
+    time; the lease's own TTL (LEASE_MAX) bounds how long it can keep the session up.
+    """
+    if job_queue():
+        return "a request is queued"
+    directory = STATE_DIR / "leases"
+    for path in directory.glob("*.json") if directory.exists() else ():
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        expires = record.get("expires") if isinstance(record, dict) else None
+        if (
+            isinstance(expires, (int, float))
+            and expires > time.time()
+            and not record.get("ended")
+            and record.get("session") == session_identity(state)
+        ):
+            return "a lease is live"
+    return None
+
+
+def session_end_reason(
+    now: float, started: float, ready: float, last_job: float, busy: str | None = None
+) -> str | None:
     """Why the resident session should stop now, or None. Two fixed limits, checked in this order:
 
     - MAX_SESSION from the launch: the lifetime cap, whatever jobs arrive.
-    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming.
+    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming. Not while
+      `busy` names pending work (`pending_work`): a queued request or a live lease means a job is coming.
 
     `last_job` is never before `ready`: `last_job_mark` clamps it, because a mark an earlier session left says
     nothing about this one.
     """
     if now - started >= MAX_SESSION:
         return f"the {MAX_SESSION // 3600} h lifetime cap"
-    if now - last_job >= IDLE_LIMIT:
+    if busy is None and now - last_job >= IDLE_LIMIT:
         return f"{IDLE_LIMIT // 60} min without a job"
     return None
 
@@ -3584,7 +3616,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 job = job_token = None
                 continue
             last_world_check, reason = resident_world_check(state, last_world_check)
-            reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            reason = reason or session_end_reason(
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
+            )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -3608,7 +3642,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state.pop("world_lost", None)
                 write_state(state)
             reason = ("the client left the world" if not world else None) or session_end_reason(
-                time.monotonic(), launched, ready, last_job_mark(ready)
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
             )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"

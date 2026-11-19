@@ -957,6 +957,7 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_press_play_ignores_the_upgrade_available_banner(self):
         # The banner advertises an account upgrade beside a working Play button, so it must not stop startup.
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -999,6 +1000,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", side_effect=[found, found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -1016,7 +1018,8 @@ class ForeverClientTest(unittest.TestCase):
             [mock.call(state, "key", "--window", "12345", "Escape")] * 2,
         )
         self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
-        self.assertIn(str(self.state / "launcher.png"), warning.getvalue())
+        self.assertIn(str(self.state / "launcher-no-play.png"), warning.getvalue())
+        self.assertEqual((self.state / "launcher-no-play.png").read_bytes(), b"frame")
         self.assertIn("--manual-launcher", warning.getvalue())
 
     def test_manual_launcher_cli_only_allows_shot_and_left_click_before_ready(self):
@@ -4091,6 +4094,29 @@ class BrokerTest(unittest.TestCase):
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, fc.MAX_SESSION - 1))
         # The lifetime cap wins when both limits are due, so the session never outlives it.
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0))
+
+    def test_the_idle_limit_waits_for_a_queued_request_or_a_live_lease(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 2, "boot_id": "b"}
+        idle = fc.IDLE_LIMIT + 50
+        self.assertIsNone(fc.pending_work(state))
+        lease = self.state / "leases" / "tok.json"
+        lease.parent.mkdir(parents=True)
+        record = {"token": "tok", "expires": time.time() + 60, "session": fc.session_identity(state)}
+        lease.write_text(json.dumps(record))
+        self.assertEqual(fc.pending_work(state), "a lease is live")
+        self.assertIsNone(fc.session_end_reason(idle, 0, 50, 50, fc.pending_work(state)))
+        for change in ({"ended": "released by caller"}, {"expires": time.time() - 1}, {"session": {"pid": 8}}):
+            lease.write_text(json.dumps({**record, **change}))
+            self.assertIsNone(fc.pending_work(state))
+        lease.unlink()
+        ticket, handle = fc.enqueue_job()
+        try:
+            self.assertEqual(fc.pending_work(state), "a request is queued")
+        finally:
+            ticket.unlink(missing_ok=True)
+            handle.close()
+        # The lifetime cap still wins over pending work.
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0, "a lease is live"))
 
     def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):
         stale = self.state / "last-job"
