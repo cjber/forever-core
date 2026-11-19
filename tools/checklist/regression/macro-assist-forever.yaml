@@ -1,0 +1,23 @@
+name: Macro Assist
+checks:
+  - id: loads
+    title: Loads clean and /macroassist opens the window
+    steps:
+      - Type /reload.
+      - Type /macroassist.
+    pass: No Lua error, and the macro window opens with your macros listed.
+    minutes: 1
+  - id: edit-save
+    title: Edit and save a macro
+    steps:
+      - Pick a macro, add a line such as /say hi, and save.
+      - Close and reopen the window.
+    pass: The change is kept, the editor colours the line, and the status bar shows no problem.
+    minutes: 2
+  - id: completion
+    title: Completions and fixes in the editor
+    steps:
+      - In a new line type / and pick a command with Tab.
+      - Type a misspelt spell name.
+    pass: The suggestion list appears and inserts, and the misspelling gets a wavy underline with a fix on hover.
+    minutes: 2

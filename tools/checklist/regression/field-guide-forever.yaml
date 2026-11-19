@@ -1,0 +1,16 @@
+name: Field Guide
+checks:
+  - id: loads
+    title: Loads clean and /fg opens the guide
+    steps:
+      - Type /reload.
+      - Type /fg.
+    pass: No Lua error, and the Field Guide opens on your zone.
+    minutes: 1
+  - id: kill-count
+    title: Kill counts go up
+    steps:
+      - Kill a critter or an easy creature.
+      - Open /fg on its zone.
+    pass: Its kill count went up by one, and frame rate stayed smooth.
+    minutes: 2
