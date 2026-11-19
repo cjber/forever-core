@@ -41,6 +41,9 @@ class ClientCallsTest(unittest.TestCase):
             "MyAddon:SendCommMessage('P', 'x', 'PARTY')\n",
             "ChatThrottleLib:SendAddonMessage('NORMAL', 'P', 'x', 'PARTY')\n",
             "local name = _G['SendAddonMessage']\n",
+            "C_Club.SendMessage(1, 2, 'hi')\n",
+            "C_ClubFinder.SendChatWhisper('Ana', 'hi')\n",
+            "ChatEdit_SendText(box)\n",
         ):
             with self.subTest(source=source):
                 self.assertIn("client-forbidden", codes(source, environment))
@@ -48,7 +51,7 @@ class ClientCallsTest(unittest.TestCase):
     def test_a_waiver_does_not_excuse_a_send(self):
         source = "C_ChatInfo.SendAddonMessage('P', 'x', 'PARTY') -- client-ok: party sync\n"
         environment = client_calls.Environment(api=ENVIRONMENT.api | {"C_ChatInfo.SendAddonMessage"})
-        self.assertIn("client-forbidden", codes(source, environment))
+        self.assertEqual(codes(source, environment), ["client-forbidden"])
 
     def test_reading_and_receiving_are_not_sends(self):
         environment = client_calls.Environment(
@@ -59,6 +62,7 @@ class ClientCallsTest(unittest.TestCase):
             "local on = C_QuestLog.IsUnitOnQuest('party1', 1)\n",
             "local registered = C_ChatInfo.IsAddonMessagePrefixRegistered('P')\n",
             "local text = 'party messages'\n",
+            "MyFrame:SendMessage('x')\n",
         ):
             with self.subTest(source=source):
                 self.assertEqual(codes(source, environment), [])
