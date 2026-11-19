@@ -32,9 +32,12 @@ local function near(a, b)
 	return a and b and math.abs(a - b) < 0.01
 end
 
-local function login(sim, height)
+-- A sim from sim:reload() has already logged in with the saved state; a new one logs in here.
+local function login(sim, height, reloaded)
 	local G = sim.G
-	sim:login({ savedVariables = { ForeverCoreDB = { trackerHost = {} } } })
+	if not reloaded then
+		sim:login({ savedVariables = { ForeverCoreDB = { trackerHost = {} } } })
+	end
 	sim:advance(3)
 	local layouts = 0
 	local section
@@ -119,7 +122,7 @@ scenario("placement885: the tracker hiding moves the column to its top at once, 
 	assert(layouts() == before, "with no layout of its sections")
 	-- A login with nothing to list puts it in the same place.
 	local fresh = sim:reload()
-	local _, column2, tracker2 = login(fresh, nil)
+	local _, column2, tracker2 = login(fresh, nil, true)
 	assert(not tracker2:IsShown(), "after the reload the tracker is still hidden")
 	assert(
 		near(column2:GetTop(), tracker2:GetTop()) and near(column2:GetLeft(), tracker2:GetLeft()),
@@ -130,7 +133,9 @@ scenario("placement885: the tracker hiding moves the column to its top at once, 
 			tostring(x)
 		)
 	)
-	-- A quest tracked again brings the list back and the column follows its line, or its left place.
+	fresh:expectNoErrors("ForeverCore")
+	-- Back in the first session, a quest tracked again brings the list back and the column follows its line, or its
+	-- left place.
 	tracker:AddModule(tracker.questList)
 	sim:advance(0.1)
 	sim:event("QUEST_WATCH_LIST_CHANGED")
