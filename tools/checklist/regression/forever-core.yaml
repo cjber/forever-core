@@ -1,0 +1,47 @@
+name: ForeverCore
+checks:
+  - id: reload-clean
+    title: Loads clean and survives /reload
+    steps:
+      - Log in with every Forever addon on.
+      - Type /reload.
+    pass: No Lua error, and no "ForeverCore is missing" or "ForeverCore is older" message.
+    minutes: 1
+  - id: column-place
+    title: The Forever column sits left of the quest tracker
+    setup: Accept at least one quest so the game's quest tracker shows.
+    steps:
+      - Look at the top right of the screen.
+      - Type /reload and look again.
+    pass: The Forever column's top edge is level with the quest tracker's, just left of it, and it does not move on the reload.
+    issue: forever-core#792
+  - id: column-motion
+    title: The column stays put through a zone change and a flight
+    steps:
+      - Note where the Forever column is.
+      - Walk or fly into another zone.
+      - Take one flight from a flight master.
+    pass: The column never jumps, flickers or slides at any point.
+    minutes: 4
+  - id: column-lock
+    title: Drag, lock and unlock the column
+    steps:
+      - Drag a section header in the Forever column to a new spot.
+      - Right-click a header and tick "Lock the tracker".
+      - Try to drag it again, then untick Lock.
+    pass: The drag moves the column, Lock stops the drag, and unlocking lets it move again.
+  - id: menu-at-cursor
+    title: The column's right-click menu opens at the cursor
+    steps:
+      - Right-click any entry in the Forever column.
+    pass: The menu opens where you clicked, with a gold title, a divider, "Lock the tracker" and "Tracker >".
+    issue: forever-core#850
+    minutes: 1
+  - id: questie-tracker
+    title: Questie's tracker keeps working beside the column
+    setup: Questie installed with its tracker on.
+    steps:
+      - Type /reload.
+      - Accept or progress a quest.
+    pass: Questie's quest list stays on and updates, and the Forever column does not cover it.
+    optional: true

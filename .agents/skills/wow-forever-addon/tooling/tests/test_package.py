@@ -47,6 +47,12 @@ class PackageTest(unittest.TestCase):
     def test_a_complete_package_passes(self):
         self.assertEqual(package.check(self.make(self.good()), POLICY), [])
 
+    def test_a_top_level_folder_the_policy_does_not_name_is_refused(self):
+        files = self.good()
+        files["ForeverCore/ForeverCore.toc"] = "Core.lua\n"
+        problems = package.check(self.make(files), POLICY)
+        self.assertTrue(any(problem.startswith("ForeverCore: a top-level folder") for problem in problems), problems)
+
     def test_each_problem_is_reported_once(self):
         files = self.good()
         del files["Addon/UI/ui.lua"], files["Addon/media/Shade.blp"], files["Addon/LICENSE"], files["Lib/Lib.toc"]

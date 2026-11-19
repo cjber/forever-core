@@ -33,6 +33,8 @@ FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py lease    
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
                                           # record the checkout's .visual-proof.json from a client session
+python3 tools/headless/forever_client.py attest --repo R --ref SHA --checkout PATH
+                                          # the same from the user's passed checklist round, without the client
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
