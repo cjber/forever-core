@@ -2987,12 +2987,14 @@ def attest(args: argparse.Namespace) -> int:
         }
         for row in passed
     ]
-    # visual_proof refuses a Lua flow named by an absolute path (#591); a checklist step should be a slash command.
+    # visual_proof refuses a Lua flow named by an absolute path (#591), with or without its sha256 annotation; the
+    # same rule as its absolute_lua_step, which this tool cannot import from a checkout it has not checked yet.
     lua = [
         step
         for flow in flows
         for step in flow["steps"]
-        if step.endswith(".lua") and (PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute())
+        if (bare := re.sub(r"^sha256:[0-9a-f]{64}\s+|\s+sha256:[0-9a-f]{64}$", "", step)).endswith(".lua")
+        and (PurePosixPath(bare).is_absolute() or PureWindowsPath(bare).is_absolute())
     ]
     if lua:
         raise ClientError(

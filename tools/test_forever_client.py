@@ -3909,6 +3909,8 @@ class AttestTest(unittest.TestCase):
         stray["checks"][0]["images"] = [str(secret)]
         lua = self.report()
         lua["checks"][0]["steps"] = ["C:\\flows\\demo.lua"]
+        annotated = self.report()
+        annotated["checks"][0]["steps"] = ["sha256:" + "0" * 64 + " /home/me/flow.lua"]
         pass_line = self.report()
         pass_line["checks"][0].update(steps=[], **{"pass": "/home/me/flow.lua"})
         cases = {
@@ -3919,6 +3921,7 @@ class AttestTest(unittest.TestCase):
             "not a screenshot from the client": (stray, "d" * 64),
             "absolute path": (lua, "d" * 64),
             "absolute path, fallback": (pass_line, "d" * 64),
+            "absolute path, annotated": (annotated, "d" * 64),
             "another build": (self.report(), "e" * 64),
             "no runtime digest": (self.report(digest=""), "d" * 64),
             "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),

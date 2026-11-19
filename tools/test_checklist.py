@@ -142,10 +142,13 @@ class ChecklistTest(unittest.TestCase):
             cl.record_answer("2026-11-19-2", "menus", "pass", None, old)
         with self.assertRaisesRegex(ValueError, "reload the page"):
             cl.record_image("2026-11-19-2", "menus", png, old)
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_answer("2026-11-19-2", "menus", "", None, old)
         cl.record_answer("2026-11-19-2", "menus", None, "a note is kept", old)
-        cl.record_image("2026-11-19-2", "menus", png, shown)
+        first = cl.record_image("2026-11-19-2", "menus", png, shown)
         cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
-        self.assertEqual(cl.load_results("2026-11-19-2")["answers"]["menus"]["status"], "pass")
+        answer = cl.load_results("2026-11-19-2")["answers"]["menus"]
+        self.assertEqual((answer["status"], answer["images"]), ("pass", [first]), "a screenshot pasted first is kept")
         # The same commit and digest tested in another client build reopens the check and drops its screenshot.
         with contextlib.redirect_stdout(io.StringIO()):
             cl.main(["build", "--addon", "forever-core", "--client-build", "1.60.2.71000"])
@@ -154,6 +157,7 @@ class ChecklistTest(unittest.TestCase):
         self.assertEqual((menus["status"], menus["images"], menus["note"]), (None, [], "a note is kept"))
         with self.assertRaisesRegex(ValueError, "reload the page"):
             cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
+        self.assertNotEqual(cl.record_image("2026-11-19-2", "menus", png, None), first)
 
     def test_buggrabber_reader_keeps_errors_since_the_round_started(self):
         path = self.home / "bugs.lua"
@@ -243,10 +247,10 @@ class ChecklistTest(unittest.TestCase):
         e.exception.close()
         post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass", **shown}, origin=base)
         png = "data:image/png;base64,iVBORw0KGgo="
-        self.assertEqual(
-            post("/api/image/2026-11-19-2", {"check": "menus", "data": png, **shown})["file"], "menus-1.png"
-        )
-        self.assertTrue((self.home / "results" / "2026-11-19-2" / "menus-1.png").exists())
+        fname = post("/api/image/2026-11-19-2", {"check": "menus", "data": png, **shown})["file"]
+        self.assertRegex(fname, r"^menus-1-[0-9a-f]{8}\.png$")
+        self.assertTrue((self.home / "results" / "2026-11-19-2" / fname).exists())
+        self.assertEqual(cl.load_results("2026-11-19-2")["answers"]["menus"]["images"], [fname])
         with mock.patch.object(cl, "BUGGRABBER", self.home / "missing.lua"):
             self.assertEqual(post("/api/submit/2026-11-19-2", {})["bugs"], 0)
         with self.assertRaises(urllib.error.HTTPError) as e:

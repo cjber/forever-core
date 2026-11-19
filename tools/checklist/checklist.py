@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -244,7 +245,7 @@ def record_answer(name: str, check: str, status: str | None, note: str | None, s
     composed = {c["id"]: c for c in compose(name)["checks"]}
     if check not in composed:
         raise ValueError(f"no check {check} in round {name}")
-    if status:
+    if status is not None:
         require_shown(composed[check], shown)
     if status not in (*STATUSES, None, ""):
         raise ValueError(f"status must be one of {', '.join(STATUSES)}")
@@ -283,15 +284,19 @@ def record_image(name: str, check: str, data_url: str, shown: dict | None = None
     folder.mkdir(parents=True, exist_ok=True)
     with locked(name):
         data = load_results(name)
+        data.setdefault("started", now())
         # A screenshot taken for an earlier build is no evidence for this one.
         answer = current(data["answers"].get(check, {"images": []}), composed[check])
         data["answers"][check] = answer
         images = answer.setdefault("images", [])
-        fname = f"{slug(check)}-{len(images) + 1}.{ext}"
+        # A fresh name each time, so a file a report already named is never overwritten by a later build's capture.
+        fname = f"{slug(check)}-{len(images) + 1}-{uuid.uuid4().hex[:8]}.{ext}"
         (folder / fname).write_bytes(base64.b64decode(m.group(2)))
         images.append(fname)
+        answer["addon"] = composed[check]["addon"]
+        answer.update({k: composed[check][k] for k in BOUND})
+        answer["at"] = now()
         save_results(name, data)
-    record_answer(name, check, None, None)
     return fname
 
 
