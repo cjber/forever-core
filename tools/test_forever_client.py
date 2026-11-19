@@ -3386,6 +3386,24 @@ class ProofHelpersTest(unittest.TestCase):
             self.assertFalse(source.exists())
         self.assertFalse((checkout / "Libs").exists())
 
+    def test_the_proof_stage_is_its_own_work_tree_with_nothing_untracked(self):
+        workspace = self.state / "workspace"
+        (workspace / ".git").mkdir(parents=True)
+        stage = workspace / "test-artifacts" / "stage"
+        (stage / "Libs" / "ForeverCore").mkdir(parents=True)
+        (stage / ".gitignore").write_text("Libs/\n")
+        (stage / "Main.lua").write_text("print(1)\n")
+        (stage / "Libs" / "ForeverCore" / "Core.lua").write_text("print(2)\n")
+        fc.track_stage(stage)
+        top = subprocess.run(
+            ["git", "-C", str(stage), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(Path(top.stdout.strip()).resolve(), stage.resolve())
+        others = subprocess.run(
+            ["git", "-C", str(stage), "ls-files", "--others", "--directory"], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(others.stdout, "")
+
     def test_the_proof_stage_is_removed_when_the_embed_step_fails(self):
         checkout = self.embedding_checkout()
         builds = self.state / "builds"

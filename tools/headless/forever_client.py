@@ -2801,6 +2801,22 @@ def proof_digests(checkout: Path) -> dict:
 EMBED_FIELD_LINE = re.compile(r"^\ufeff?[ \t]*##[ \t]*X-Forever-Core-Embed[ \t]*:", re.IGNORECASE | re.MULTILINE)
 
 
+def track_stage(stage: Path) -> None:
+    """Make the staged tree its own git work tree with every file tracked, the embedded core included.
+
+    The packager rules the checker applies read git's untracked and ignored paths as unshipped, and fail outright when a
+    `.git` sits above the tree but git cannot read it (an empty `.git` placeholder over the workspace, with the build
+    root on another filesystem). Its own repository, everything force-added, answers both: no untracked paths, and git
+    never looks above the stage.
+    """
+    for args in (["init", "-q"], ["add", "-A", "-f"]):
+        try:
+            subprocess.run(["git", "-C", str(stage), *args], check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", "") or str(error)
+            raise ClientError(f"cannot track the embedded proof stage {stage}: {detail.strip()}") from None
+
+
 @contextmanager
 def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
     """The tree the installed proof build must match: the checkout, run through its embed step when it embeds core.
@@ -2808,7 +2824,8 @@ def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
     A consumer whose root TOC carries the embed field ships `embed(checkout, pin)`, not the checkout itself: the build
     rewrites its TOC and Lua and adds `Libs/ForeverCore/`. So its tracked files, as they stand in the checkout
     (uncommitted edits included, as the plain comparison reads them), are staged outside any git work tree and given
-    the same `embed_core` the build ran, at the same pin; that staged tree is compared. The proof's digests still come
+    the same `embed_core` the build ran, at the same pin, then tracked in a repository of its own (`track_stage`); that
+    staged tree is compared. The proof's digests still come
     from the checkout itself (`proof_digests`), so the recorded identity is the source the pull request carries, and the
     pin it hashes binds the embedded bytes. A checkout without the field is compared as it is. The stage is removed on
     every exit.
@@ -2835,6 +2852,7 @@ def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
         embed_core(stage)
+        track_stage(stage)
         yield stage
     finally:
         shutil.rmtree(stage, ignore_errors=True)
