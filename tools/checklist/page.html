@@ -165,10 +165,11 @@ function post(kind, body) {
 function shotSrc(name) { return name.startsWith("data:") ? name : "/shots/" + R.round + "/" + name; }
 
 function card(c) {
-  // An answer kept for another build (a regenerated standalone page) shows only its note.
+  // An answer saved for another build (a regenerated standalone page) shows only its note. One saved before answers
+  // carried their build stays as it was: standalone answers live in this browser only and never reach the gate.
   const b = bound(c);
   let a = answers[c.id] || {images: []};
-  if (Object.keys(b).some((k) => (a[k] || "") !== (b[k] || ""))) a = {note: a.note || "", images: []};
+  if (Object.keys(b).some((k) => k in a && (a[k] || "") !== (b[k] || ""))) a = {note: a.note || "", images: []};
   a = answers[c.id] = Object.assign(a, b);
   const saved = el("span", {class: "saved"});
   const note = el("textarea", {rows: "1", placeholder: "What did you see? (optional on a pass)", "aria-label": "Note for " + c.title});
