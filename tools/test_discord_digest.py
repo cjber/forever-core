@@ -96,6 +96,19 @@ class ChangelogTest(unittest.TestCase):
         self.assertEqual(entries["1.14.0"].headlines, ("A changed headline.", "A fixed headline."))
         self.assertEqual(entries["1.14.0"].image, "docs/screenshots/route.png")
 
+    def test_player_bullets_with_any_list_marker(self):
+        text = """# Changelog
+
+## [1.14.0] - 2026-11-18
+
+### Fixed
+
+* **A star headline.**
++ **A plus headline.**
+"""
+        entries = digest.parse_changelog(text)
+        self.assertEqual(entries["1.14.0"].headlines, ("A star headline.", "A plus headline."))
+
 
 class ClassificationTest(unittest.TestCase):
     def test_major_and_minor_rises_are_features(self):

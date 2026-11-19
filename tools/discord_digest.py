@@ -152,7 +152,8 @@ class PlannedEmbed:
 _VERSION = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?")
 _HEADING = re.compile(r"^##\s+\[([^\]]+)\]")
 _IMAGE_COMMENT = re.compile(r"^\s*<!--\s*discord-image:\s*(\S+)\s*-->\s*$")
-_PLAYER_BULLET = re.compile(r"^-\s+\*\*(.+?)\*\*")
+# Markdown list bullets: the changelog tool keeps whichever of -, * or + a fragment used.
+_PLAYER_BULLET = re.compile(r"^[-*+]\s+\*\*(.+?)\*\*")
 _CURSE_ID = re.compile(r"^##\s*X-Curse-Project-ID\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
 
 
