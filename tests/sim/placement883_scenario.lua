@@ -108,8 +108,12 @@ scenario("placement883: a collapsed tracker at login places the column as the se
 end)
 
 scenario("placement885: the tracker hiding moves the column to its top at once, as a login does", function(sim)
-	local _, column, tracker, layouts = login(sim, 520)
+	local _, column, tracker, layouts, section = login(sim, 520)
 	assert(left(column, tracker), "a long list: the column is left of the tracker")
+	-- A section the player collapsed stays collapsed through every move below.
+	sim:click(section.Header.MinimizeButton)
+	sim:advance(0.5)
+	assert(section:IsCollapsed(), "the click collapsed the section")
 	local before = layouts()
 	-- The last tracked quest leaves the list (an untrack, or a journey taking the watches): the tracker hides.
 	tracker:RemoveModule(tracker.questList)
@@ -120,6 +124,7 @@ scenario("placement885: the tracker hiding moves the column to its top at once, 
 	local top, x = column:GetTop(), column:GetLeft()
 	assert(near(top, tracker:GetTop()) and near(x, tracker:GetLeft()), "the column takes the hidden tracker's top")
 	assert(layouts() == before, "with no layout of its sections")
+	assert(section:IsCollapsed(), "the tracker hiding leaves the section collapsed")
 	-- A login with nothing to list puts it in the same place.
 	local fresh = sim:reload()
 	local _, column2, tracker2 = login(fresh, nil, true)
@@ -141,6 +146,7 @@ scenario("placement885: the tracker hiding moves the column to its top at once, 
 	sim:event("QUEST_WATCH_LIST_CHANGED")
 	sim:advance(0.1)
 	assert(left(column, tracker), "the list back: the column is left again")
+	assert(section:IsCollapsed(), "the list coming back leaves it collapsed too")
 	sim:expectNoErrors("ForeverCore")
 end)
 
