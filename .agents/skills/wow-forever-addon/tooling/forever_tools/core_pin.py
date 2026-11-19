@@ -26,6 +26,7 @@ import urllib.request
 from pathlib import Path, PurePosixPath
 
 from . import pkgmeta as pkgmeta_reader
+from . import require_slash
 
 __all__ = [
     "CORE_EXTERNAL",
@@ -441,6 +442,9 @@ def check(root, latest=None):
     problem = embed_problem(toc, toc_name)
     if problem:
         failures.append(problem)
+    if toc_path is not None and toc_path.is_file():
+        # The same gate keeps a stopped addon answering its own slash command (forever_tools.require_slash).
+        failures += require_slash.check(root, toc_path.stem)
     if embeds(toc):
         if pkgmeta_path is None:
             return failures + [

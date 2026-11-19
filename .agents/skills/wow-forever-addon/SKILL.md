@@ -37,7 +37,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   its full CI on main is green. Each addon's `Core/Require.lua` computes `ready` from feature checks of every
   post-API-1 ForeverCore member it calls, never a version comparison, and calls `ns.ForeverRequire(ready, slash)`, `slash` being `{ key = <SlashCmdList key>, <words>... }`, so a
   stopped addon's slash words and compartment entry repeat the line instead of doing nothing; the vendored file is
-  never edited in a consumer.
+  never edited in a consumer. The pin gate (`forever_tools.require_slash`, run by `core_pin`) fails when the addon's own
+  command, the key named after its folder, is missing from that argument or its words differ.
 - **WFA-28** Game data has two sources: the installed QuestieDB (quests, NPCs, objects, spawns,
   vendors, trainers' places) and AtlasLoot (bosses, loot, recipes, drop rates), read at runtime
   through their public tables. Neither is copied into the repo or the zip: QuestieDB carries no
