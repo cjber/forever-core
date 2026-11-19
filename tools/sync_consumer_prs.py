@@ -32,28 +32,30 @@ needs, because this script never drives the client. When the tree the PR now car
 digest, the run prints the `INGAME ... kind: proof` request for that PR's head, and the release session sends it to
 the in-game agent and commits the `.visual-proof.json` it writes.
 
-The sync also adds the standalone `forevercore` required store dependency to bundled consumers, retaining their
-pinned external and move rule. See docs/dependency-transition.md for the gates before any bundle removal.
+A consumer that still ships the bridge `.pkgmeta` ForeverCore external also gets the standalone `forevercore`
+required store dependency, retaining its pinned external and move rule. A consumer whose root TOC sets
+`## X-Forever-Core-Embed: 1` carries core under `Libs/ForeverCore/` and lists it under `embedded-libraries:`, so it
+never gets the required relation (docs/dependency-transition.md).
 
-The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
-it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
-(adding it after `## OptionalDeps:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
-repaired even when the pin does not move. Every run also moves a TOC that still names ForeverCore in
+The pin is the whole bundle, because every consumer's release zip carries its own ForeverCore copy from that pin: every
+run points a bridge consumer's `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:`
+line (adding it after `## OptionalDeps:` when absent), so a consumer that pins v1.5.0 while its zip still downloads
+v1.4.1 is repaired even when the pin does not move. Every run also moves a TOC that still names ForeverCore in
 `## Dependencies` to `## OptionalDeps`, keeping every other name on the line, so the addon loads when core is missing
-and can say what is. The changelog decision is that same fact rather than whether this run moved
-the pin: the run reads the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta`
-ForeverCore external, or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from
-the pin, so a re-run repairs a consumer whose `main` already pins the new core while its last release still ships an
-older one. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
-and TOC field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release
-entry: the plain shared-code bullet joins those notes, so the core ships in that addon's own next release. Pending
-`changes/*.md` fragments instead get a `changes/forever-core-sync.md` fragment. With no pending fragments or
-Unreleased notes, the consumer gets a marked release entry above the newest release, that patch raised by one
-and carrying the `<!-- forever-core-sync -->` marker, and
-`tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
-already carries the marker gets no second entry only while its own `vX.Y.Z` tag is missing from the consumer's remote;
-once that entry is released, a newer core gets a new entry above it, the patch raised by one. A consumer with no
-`CHANGELOG.md` or no release entry gets a notice and no entry.
+and can say what is. The changelog decision is that same fact rather than whether this run moved the pin: the run reads
+the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta` ForeverCore external,
+or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from the pin, so a re-run
+repairs a consumer whose `main` already pins the new core while its last release still ships an older one. A consumer
+that neither ships the external nor embeds core (kiln-forever) bundles no core, so its pin and TOC field move with no
+changelog change; an embedded consumer bundles the pin's core and gets the entry. A consumer whose `## [Unreleased]`
+section holds notes gets no release entry: the plain shared-code bullet joins those notes, so the core ships in that
+addon's own next release. Pending `changes/*.md` fragments instead get a `changes/forever-core-sync.md` fragment. With
+no pending fragments or Unreleased notes, the consumer gets a marked release entry above the newest release, that patch
+raised by one and carrying the `<!-- forever-core-sync -->` marker, and `tools/release_consumers.py` releases every
+consumer whose newest entry carries it. A consumer whose newest entry already carries the marker gets no second entry
+only while its own `vX.Y.Z` tag is missing from the consumer's remote; once that entry is released, a newer core gets a
+new entry above it, the patch raised by one. A consumer with no `CHANGELOG.md` or no release entry gets a notice and no
+entry.
 
     python3 tools/sync_consumer_prs.py
 
@@ -86,9 +88,9 @@ from check_consumers import (
     block_entries,
     core_external,
     pkgmeta_blocks,
-    pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
+from forever_tools import core_pin
 from forever_tools.visual_proof import input_digest, requires_proof
 
 OWNER = "cjber"
@@ -308,15 +310,22 @@ def released_core_tag(root: Path, tag: str) -> str | None:
     """
     repo = root.name
     fetch_tag(root, tag)
-    pkgmeta = file_at_tag(root, tag, consumer_path(repo, PKGMETA))
-    if pkgmeta is None:
-        return None
-    external = CORE_EXTERNAL.search(pkgmeta)
+    pkgmeta = next(
+        (text for name in POLICY_FILES if (text := file_at_tag(root, tag, consumer_path(repo, name))) is not None),
+        None,
+    )
+    external = CORE_EXTERNAL.search(pkgmeta or "")
     core = EXTERNAL_TAG.search(external.group(0)) if external else None
     if core:
         return core["tag"]
-    package = pkgmeta_field(pkgmeta, "package-as")
-    toc = file_at_tag(root, tag, consumer_path(repo, f"{package}.toc")) if package else None
+    folder = consumer_path(repo, "").rstrip("/")
+    listed = git(root, "ls-tree", "--name-only", tag, f"{folder}/" if folder else ".", check=False)
+    names = [Path(line).name for line in listed.stdout.splitlines()] if listed.returncode == 0 else []
+    try:
+        toc_name = core_pin.toc_name_for(core_pin.policy_package(pkgmeta or ""), names)
+    except ValueError as error:
+        raise SyncError(f"{repo}: {tag}: {error}") from None
+    toc = file_at_tag(root, tag, consumer_path(repo, toc_name)) if toc_name else None
     return toc_core_tag(toc) if toc is not None else None
 
 
@@ -354,9 +363,15 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
     return bumped
 
 
+# The packager reads `.pkgmeta`, else `pkgmeta.yaml`.
+POLICY_FILES = (PKGMETA, "pkgmeta.yaml")
+
+
 def pkgmeta_path(root: Path) -> Path:
-    """Where the consumer keeps its `.pkgmeta`, below its addon folder when that is not the repo root."""
-    return root / consumer_path(root.name, PKGMETA)
+    """The consumer's packager policy (`.pkgmeta`, else `pkgmeta.yaml`), below its addon folder when that is not the
+    repo root. A consumer with neither gets the `.pkgmeta` path, which does not exist."""
+    folder = root / consumer_path(root.name, ".")
+    return core_pin.policy_path(folder) or root / consumer_path(root.name, PKGMETA)
 
 
 def rewrite_core_external(root: Path, pin: str) -> bool:
@@ -379,8 +394,12 @@ def rewrite_core_external(root: Path, pin: str) -> bool:
 
 
 def ensure_core_dependency(root: Path) -> bool:
-    """Declare the standalone store dependency while retaining the existing pinned ZIP fallback."""
-    if not ships_core(root):
+    """Declare the standalone store dependency while retaining the existing pinned ZIP fallback.
+
+    Only a bridge consumer gets it. A consumer that embeds core never does, even while its `.pkgmeta` still carries
+    the bridge external: the end state lists core under `embedded-libraries:`, and check_consumers fails the external.
+    """
+    if not ships_core(root) or embeds_core(root):
         return False
     path = pkgmeta_path(root)
     text = path.read_text(encoding="utf-8")
@@ -400,12 +419,19 @@ def ensure_core_dependency(root: Path) -> bool:
 
 
 def root_toc_path(root: Path) -> Path | None:
-    """The consumer's root TOC, named after `package-as` as the packager names it, or None when that is unknown."""
+    """The consumer's root TOC as the packager names it (`core_pin.toc_name_for`), or None when it has none.
+
+    `package-as` names it; without one the shortest root TOC is the packager's choice. A policy that sets `package-as`
+    twice, or a flavor-only root, is a SyncError rather than a guess.
+    """
     path = pkgmeta_path(root)
-    if not path.is_file():
-        return None
-    package = pkgmeta_field(path.read_text(encoding="utf-8"), "package-as")
-    return root / consumer_path(root.name, f"{package}.toc") if package else None
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    folder = root / consumer_path(root.name, ".")
+    try:
+        name = core_pin.toc_name_for(core_pin.policy_package(text), [toc.name for toc in folder.glob("*.toc")])
+    except ValueError as error:
+        raise SyncError(f"{root.name}: {path.name}: {error}") from None
+    return root / consumer_path(root.name, name) if name else None
 
 
 def dependency_names(value: str) -> list[str]:
@@ -637,6 +663,12 @@ def ships_core(root: Path) -> bool:
     return path.is_file() and CORE_EXTERNAL.search(path.read_text(encoding="utf-8")) is not None
 
 
+def embeds_core(root: Path) -> bool:
+    """Whether the consumer's root TOC opts in to carrying core under Libs/ForeverCore, so its release zip does."""
+    path = root_toc_path(root)
+    return path is not None and path.is_file() and core_pin.embeds(path.read_text(encoding="utf-8-sig"))
+
+
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
     """Point the bundle at `pin`, touching the changelog when the consumer's latest release ships another core.
 
@@ -647,7 +679,9 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     core while the latest release still ships the old one, and a re-run has to repair that. A consumer that has never
     released has no tag to compare, so a bundle tag this run changed is what needs carrying.
     """
-    bundles = ships_core(root)
+    # Either way the release zip carries core: as the bridge external or as the embedded copy the embed step makes from
+    # the pin. Only the bridge external gets the required relation; an embedded consumer lists it as embedded.
+    bundles = ships_core(root) or embeds_core(root)
     dependency_changed = ensure_core_dependency(root)
     rewrite_toc_dependencies(root)
     before = bundle_tag(root) or previous_pin
@@ -902,15 +936,21 @@ def proof_hint(repo: str, ref: str) -> str:
     )
 
 
-def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
+def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None, embedded: bool = False) -> str:
     lines = ["Syncs this addon's copy of ForeverCore's development tooling.", ""]
     if pin_bump:
         lines += [
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
             " latest release.",
             "",
-            "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and adds a"
-            " marked CHANGELOG.md release entry for the release-consumers workflow to publish.",
+            (
+                "The same commit points `## X-Forever-Core:` at that tag, which the embed step copies into"
+                " `Libs/ForeverCore/`, and adds a marked CHANGELOG.md release entry for the release-consumers workflow"
+                " to publish."
+                if embedded
+                else "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and"
+                " adds a marked CHANGELOG.md release entry for the release-consumers workflow to publish."
+            ),
             "",
         ]
     if RELEASE_WORKFLOW in files:
@@ -1071,7 +1111,7 @@ def sync_consumer(
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         pin_bump = (bumped, latest) if bumped and latest else None
-        body = pr_body(sha, files, pin_bump)
+        body = pr_body(sha, files, pin_bump, embeds_core(root))
         if pull is not None:
             try:
                 oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)

@@ -7,104 +7,103 @@
 <style>
 :root {
   color-scheme: dark light;
-  --bg: #17171a; --card: #222226; --ink: #ececef; --muted: #a0a0a8; --line: #34343a; --accent: #e0b25c;
+  --bg: #17171a; --row: #1f1f23; --row2: #232328; --ink: #ececef; --muted: #9a9aa3; --line: #34343a; --accent: #e0b25c;
   --pass: #6fcf8e; --pass-bg: #1f3326; --fail: #ff8a80; --fail-bg: #3d2020; --skip: #a0a0a8; --skip-bg: #2c2c31;
   --focus: #78aeff;
 }
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f6f5f2; --card: #fff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e2e0da; --accent: #8a5a00;
+    --bg: #f6f5f2; --row: #fff; --row2: #fbfaf8; --ink: #1d1d1f; --muted: #66666c; --line: #e2e0da; --accent: #8a5a00;
     --pass: #1f7a3d; --pass-bg: #e6f4ea; --fail: #b3261e; --fail-bg: #fce8e6; --skip: #6b6b70; --skip-bg: #ecebe8;
     --focus: #1a5fb4;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 14px 24px 12px; }
-header h1 { margin: 0 0 6px; font-size: 22px; }
-.meta { color: var(--muted); font-size: 14px; display: flex; gap: 18px; flex-wrap: wrap; }
-.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); margin: 10px 0 2px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 8px 20px 7px; }
+.top { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+header h1 { margin: 0; font-size: 17px; }
+.meta { color: var(--muted); font-size: 13px; display: flex; gap: 14px; flex-wrap: wrap; }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin: 6px 0; }
 .bar span { display: block; height: 100%; transition: width .2s; }
 .bar .p { background: var(--pass); } .bar .f { background: var(--fail); } .bar .s { background: var(--skip); }
-main { max-width: 1180px; margin: 0 auto; padding: 18px 24px 80px; }
-.banner { background: var(--fail-bg); color: var(--fail); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
-.intro { color: var(--muted); margin: 0 0 18px; }
-table.builds { border-collapse: collapse; width: 100%; margin-bottom: 26px; font-size: 14px; background: var(--card); border-radius: 8px; overflow: hidden; }
-table.builds th, table.builds td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); }
-table.builds th { color: var(--muted); font-weight: 600; }
-code { font: 13px ui-monospace, "JetBrains Mono", monospace; }
-a { color: var(--focus); }
-nav.jump { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
-nav.jump a { border: 1px solid var(--line); border-radius: 99px; padding: 2px 11px; color: var(--ink); text-decoration: none; background: var(--card); }
+nav.jump { display: flex; gap: 5px; flex-wrap: wrap; font-size: 12px; }
+nav.jump a { border: 1px solid var(--line); border-radius: 99px; padding: 0 9px; color: var(--ink); text-decoration: none; }
 nav.jump a:hover { border-color: var(--focus); }
 nav.jump a.done { border-color: var(--pass); color: var(--pass); }
 nav.jump a.failed { border-color: var(--fail); color: var(--fail); }
-nav.jump small { color: var(--muted); margin-left: 5px; }
-h2 { scroll-margin-top: 150px; }
-h2 { font-size: 19px; margin: 30px 0 10px; display: flex; align-items: baseline; gap: 10px; }
-h2 small { color: var(--muted); font-weight: 400; font-size: 14px; }
-.card { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 12px 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 22px; outline: none; }
-.card:focus-visible, .card.current { box-shadow: 0 0 0 3px var(--focus); }
-.card { scroll-margin-top: 150px; }
-.card.pass:not(.open) { padding: 8px 18px; cursor: pointer; }
-.card.pass:not(.open) > :not(.body), .card.pass:not(.open) .body > :not(h3) { display: none; }
-.card.pass:not(.open) h3 { font-size: 15px; font-weight: 500; }
-.card.pass:not(.open) h3::after { content: "Passed, click to open"; color: var(--pass); font-size: 12px; font-weight: 400; margin-left: 12px; }
-.pic { display: flex; flex-direction: column; gap: 10px; }
-.card.pass { border-left-color: var(--pass); } .card.fail { border-left-color: var(--fail); } .card.skip { border-left-color: var(--skip); }
-.card.skip .body { opacity: .65; }
-.card h3 { margin: 0; font-size: 17px; }
-.tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 2px; font-size: 12px; }
-.tag { border: 1px solid var(--line); border-radius: 99px; padding: 1px 9px; color: var(--muted); }
-.tag.reg { color: var(--accent); border-color: var(--accent); }
-.label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 10px; }
-.setup { margin: 2px 0 0; }
-ol { margin: 4px 0 0; padding-left: 24px; } ol li { margin: 2px 0; }
-.passwhen { margin: 2px 0 0; font-weight: 500; }
-.pic { width: 300px; } .pic img { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
-.pic .cap { font-size: 12px; color: var(--muted); }
-.pic figure { margin: 0; }
-.controls { grid-column: 1 / -1; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; margin-top: 6px; }
-button { font: inherit; font-size: 15px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 6px 16px; cursor: pointer; }
-button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
-button kbd { font: 11px ui-monospace, monospace; color: var(--muted); margin-left: 6px; }
+nav.jump small { color: var(--muted); margin-left: 4px; }
+main { max-width: 1400px; margin: 0 auto; padding: 8px 20px 60px; }
+.banner { background: var(--fail-bg); color: var(--fail); border-radius: 6px; padding: 6px 10px; margin: 4px 0 8px; }
+.help { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+details.builds { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+details.builds summary { cursor: pointer; }
+details.builds table { border-collapse: collapse; margin: 4px 0 0; }
+details.builds td { padding: 1px 12px 1px 0; color: var(--ink); }
+code { font: 12px ui-monospace, "JetBrains Mono", monospace; }
+a { color: var(--focus); }
+h2 { font-size: 14px; margin: 14px 0 3px; padding: 0 0 3px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; scroll-margin-top: 100px; }
+h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(180px, 30%); gap: 2px 12px; align-items: start;
+  padding: 5px 8px; border-left: 3px solid transparent; background: var(--row); outline: none; scroll-margin-top: 110px; }
+.row:nth-of-type(even) { background: var(--row2); }
+.row.current, .row:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.row.pass { border-left-color: var(--pass); } .row.fail { border-left-color: var(--fail); background: var(--fail-bg); } .row.skip { border-left-color: var(--skip); }
+.row.pass:not(.open) .do, .row.pass:not(.open) .want, .row.skip:not(.open) .do, .row.skip:not(.open) .want { display: none; }
+.row.unsaved { border-left-color: var(--fail); }
+.unsaved .saved { color: var(--fail); font-weight: 600; }
+.row.pass:not(.open), .row.skip:not(.open) { cursor: pointer; color: var(--muted); }
+.btns { display: flex; gap: 3px; }
+.text { min-width: 0; }
+.title { font-weight: 600; }
+.chips { font-size: 11px; color: var(--muted); margin-left: 8px; font-weight: 400; }
+.chips > * { margin-right: 8px; }
+.chips .reg { color: var(--accent); }
+.chips button.pic { font-size: 11px; padding: 0 6px; color: var(--focus); border-color: var(--focus); }
+.do { color: var(--ink); }
+.do .setup { color: var(--muted); }
+.want { color: var(--pass); }
+.want::before { content: "Pass if: "; color: var(--muted); }
+.row.fail .want { color: var(--ink); }
+.side { display: flex; flex-direction: column; gap: 3px; }
+button { font: inherit; font-size: 12px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 2px 8px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 button.on.pass, button.pass:hover { background: var(--pass-bg); color: var(--pass); border-color: var(--pass); }
 button.on.fail, button.fail:hover { background: var(--fail-bg); color: var(--fail); border-color: var(--fail); }
 button.on.skip, button.skip:hover { background: var(--skip-bg); color: var(--skip); border-color: var(--skip); }
-textarea { flex: 1 1 320px; min-height: 38px; font: inherit; font-size: 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 6px 10px; resize: vertical; }
-.shots { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
-.shots img { height: 90px; border-radius: 5px; border: 1px solid var(--line); cursor: zoom-in; }
-.paste { grid-column: 1 / -1; font-size: 13px; color: var(--fail); display: none; }
-.card.fail .paste { display: block; }
-.saved { font-size: 12px; color: var(--muted); align-self: center; }
-footer { margin-top: 30px; display: flex; gap: 14px; align-items: center; }
-footer button { background: var(--focus); color: #fff; border-color: var(--focus); }
-.keys { color: var(--muted); font-size: 13px; }
-#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 10; cursor: zoom-out; }
-#zoom img { max-width: 95vw; max-height: 95vh; }
-@media (max-width: 760px) { .card { grid-template-columns: 1fr; } .pic { width: 100%; } }
+textarea { width: 100%; height: 24px; min-height: 24px; font: inherit; font-size: 12px; border-radius: 5px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 2px 6px; resize: vertical; }
+.row.fail textarea { min-height: 42px; }
+.extra { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 11px; }
+.extra img { max-height: 44px; max-width: 160px; width: auto; height: auto; border-radius: 3px; border: 1px solid var(--line); cursor: zoom-in; }
+.paste { color: var(--fail); display: none; }
+.row.fail .paste { display: inline; }
+.saved { color: var(--muted); }
+footer { margin-top: 18px; display: flex; gap: 12px; align-items: center; }
+footer button { font-size: 14px; padding: 5px 14px; background: var(--focus); color: #fff; border-color: var(--focus); }
+#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; z-index: 10; cursor: zoom-out; color: #ddd; font-size: 13px; }
+#zoom img { max-width: 95vw; max-height: 90vh; }
+.side, .extra { min-width: 0; }
+@media (max-width: 860px) { .row { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
 <header>
-  <h1 id="title"></h1>
-  <div class="meta"><span id="count"></span><span id="eta"></span><span id="linked"></span></div>
+  <div class="top"><h1 id="title"></h1><div class="meta"><span id="count"></span><span id="eta"></span><span id="linked"></span></div></div>
   <div class="bar" aria-hidden="true"><span class="p"></span><span class="f"></span><span class="s"></span></div>
   <nav class="jump" id="jump" aria-label="Jump to an addon"></nav>
 </header>
 <main>
   <div id="banner" class="banner" hidden></div>
-  <p class="intro">Work down the cards. Each one says what to set up, what to do and what you should see. Mark it Pass, Fail or Skip; on a fail, say what you saw and paste a screenshot (Ctrl+V). Every answer saves as you give it.</p>
-  <p class="keys">Keys: <b>J</b>/<b>K</b> next and previous card, <b>P</b> pass, <b>F</b> fail, <b>S</b> skip, <b>N</b> write a note, <b>Enter</b> open or close a passed card, <b>Esc</b> leave the note.</p>
-  <table class="builds" id="builds"></table>
+  <p class="help">Do the action, compare with the pass line, mark it. On a fail, say what you saw and paste a screenshot (Ctrl+V). Answers save as you go. Keys: <b>J</b>/<b>K</b> move, <b>P</b>/<b>F</b>/<b>S</b> mark, <b>N</b> note, <b>Enter</b> open a passed or skipped row, <b>Esc</b> leave the note.</p>
+  <details class="builds"><summary id="buildsum"></summary><table id="builds"></table></details>
   <div id="groups"></div>
   <footer>
     <button id="submit" type="button">Finish the round</button>
     <span id="submitted" class="saved"></span>
   </footer>
-  <p class="keys">Before you finish, type /reload in game once so the error log is written; finishing reads it.</p>
+  <p class="help">Before you finish, type /reload in game once so the error log is written; finishing reads it.</p>
 </main>
-<div id="zoom"><img alt=""></div>
+<div id="zoom" tabindex="-1" role="dialog" aria-label="Picture, Esc or click closes it"><img alt=""><span></span></div>
 <script id="data" type="application/json">__DATA__</script>
 <script>
 "use strict";
@@ -142,7 +141,7 @@ if (!D.served) {
 }
 
 const builds = document.getElementById("builds");
-builds.append(el("tr", {}, el("th", {}, "Addon"), el("th", {}, "Build"), el("th", {}, "Carries"), el("th", {}, "How")));
+document.getElementById("buildsum").append("Builds: ", ...R.builds.flatMap((b, i) => [i ? ", " : "", (R.names[b.addon] || b.addon) + " ", shaLink(b.addon, b.sha)]));
 for (const b of R.builds) {
   builds.append(el("tr", {},
     el("td", {}, R.names[b.addon] || b.addon),
@@ -151,6 +150,8 @@ for (const b of R.builds) {
     el("td", {}, b.build || "")));
 }
 
+// The build the page shows for a check; the server refuses a write rendered for another build.
+function bound(c) { return {sha: c.sha, digest: c.digest, artifact_sha256: c.artifact_sha256, client_build: c.client_build}; }
 function post(kind, body) {
   if (!D.served) {
     try { localStorage.setItem(key, JSON.stringify(answers)); } catch (e) { return Promise.reject(new Error("this browser is out of room for it")); }
@@ -162,74 +163,88 @@ function post(kind, body) {
 
 function shotSrc(name) { return name.startsWith("data:") ? name : "/shots/" + R.round + "/" + name; }
 
+// One line of action: the setup, then the steps run together as sentences.
+const sentence = (s) => { s = String(s).trim(); return /[.!?:)"]$/.test(s) ? s : s + "."; };
+
 function card(c) {
-  const a = answers[c.id] = answers[c.id] || {images: []};
+  // An answer saved for another build (a regenerated standalone page) shows only its note. One saved before answers
+  // carried their build stays as it was: standalone answers live in this browser only and never reach the gate.
+  const b = bound(c);
+  let a = answers[c.id] || {images: []};
+  if (Object.keys(b).some((k) => k in a && (a[k] || "") !== (b[k] || ""))) a = {note: a.note || "", images: []};
+  a = answers[c.id] = Object.assign(a, b);
+  a.images = a.images || [];
   const saved = el("span", {class: "saved"});
-  const note = el("textarea", {rows: "1", placeholder: "What did you see? (optional on a pass)", "aria-label": "Note for " + c.title});
+  const note = el("textarea", {rows: "1", placeholder: "Note (what you saw)", "aria-label": "Note for " + c.title});
   note.value = a.note || "";
-  const shots = el("div", {class: "shots"});
-  const tick = (msg) => { saved.textContent = msg; };
-  const fail = (e) => tick("Not saved: " + e.message);
-  const node = el("section", {class: "card", tabindex: "0", "aria-label": c.title});
+  const shots = el("span");
+  // A status the server refused stays flagged until a later status write succeeds; a note save does not clear it.
+  let refused = null;
+  const tick = (msg) => { if (!refused) saved.textContent = msg; };
+  const fail = (e) => { saved.textContent = "Not saved: " + e.message; };
+  const node = el("section", {class: "row", tabindex: "0", "aria-label": c.title});
   let queue = Promise.resolve();
   const send = (kind, data) => (queue = queue.catch(() => {}).then(() => post(kind, data)));
-  const btn = (s, label, k) => el("button", {type: "button", class: s, "aria-pressed": "false", onclick: () => mark(s)}, label, el("kbd", {}, k));
+  const btn = (s, label, k) => el("button", {type: "button", class: s, title: label + " (" + k + ")", "aria-pressed": "false", onclick: () => mark(s)}, label);
   const buttons = {pass: btn("pass", "Pass", "P"), fail: btn("fail", "Fail", "F"), skip: btn("skip", "Skip", "S")};
   function paint() {
-    node.classList.remove("pass", "fail", "skip");
+    node.classList.remove("pass", "fail", "skip", "open");
     if (a.status) node.classList.add(a.status);
-    node.classList.remove("open");
-    for (const [s, b] of Object.entries(buttons)) { b.classList.toggle("on", a.status === s); b.setAttribute("aria-pressed", String(a.status === s)); }
-    shots.replaceChildren(...(a.images || []).map((i) => el("img", {src: shotSrc(i), alt: "Screenshot", onclick: zoom})));
+    for (const [s, x] of Object.entries(buttons)) { x.classList.toggle("on", a.status === s); x.setAttribute("aria-pressed", String(a.status === s)); }
+    shots.replaceChildren(...a.images.map((i) => el("img", {src: shotSrc(i), alt: "Screenshot", onclick: zoom})));
     progress();
   }
   function mark(s) {
     a.status = a.status === s ? null : s;
     paint();
-    send("answer", {check: c.id, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
+    send("answer", {check: c.id, ...bound(c), status: a.status || "", note: note.value})
+      .then(() => { refused = null; node.classList.remove("unsaved"); tick("Saved"); })
+      .catch((e) => { refused = e; node.classList.add("unsaved"); fail(e); });
     if (a.status === "fail") note.focus(); else if (a.status) move(1, true);
   }
   let timer;
+  const fit = () => { note.style.height = "auto"; note.style.height = note.scrollHeight + 2 + "px"; };
+  requestAnimationFrame(fit);
   note.addEventListener("input", () => {
+    fit();
     a.note = note.value;
     clearTimeout(timer);
-    timer = setTimeout(() => send("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail), 500);
+    timer = setTimeout(() => { timer = null; send("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail); }, 500);
   });
   node.addEventListener("paste", (ev) => {
     for (const item of ev.clipboardData.items) {
       if (!item.type.startsWith("image/")) continue;
       ev.preventDefault();
-      const r = new FileReader();
-      r.onload = () => {
+      const blob = item.getAsFile();
+      // The read joins the card's queue, so Finish waits for a screenshot still being read.
+      const read = () => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsDataURL(blob); });
+      queue = queue.catch(() => {}).then(read).then((data) => {
         if (!D.served) {
-          a.images.push(r.result);
-          post().then(() => { paint(); tick("Screenshot kept in this browser"); }).catch((e) => { a.images.pop(); fail(e); });
-          return;
+          a.images.push(data);
+          return post().then(() => { paint(); tick("Screenshot kept in this browser"); }).catch((e) => { a.images.pop(); throw e; });
         }
-        send("image", {check: c.id, data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
-      };
-      r.readAsDataURL(item.getAsFile());
+        return post("image", {check: c.id, ...bound(c), data}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); });
+      });
+      queue.catch(fail);
     }
   });
-  const tags = el("div", {class: "tags"},
-    c.kind === "regression" ? el("span", {class: "tag reg"}, "Every release") : "",
-    c.pr ? el("span", {class: "tag"}, prLink(c.addon, c.pr)) : "",
-    c.issue ? el("span", {class: "tag"}, "Guards " + c.issue) : "",
-    c.optional ? el("span", {class: "tag"}, "Optional") : "",
-    el("span", {class: "tag"}, "about " + c.minutes + " min"));
-  const body = el("div", {class: "body"},
-    el("h3", {}, c.title), tags,
-    c.setup ? [el("div", {class: "label"}, "Set up"), el("p", {class: "setup"}, c.setup)] : "",
-    c.steps.length ? [el("div", {class: "label"}, "Steps"), el("ol", {}, c.steps.map((s) => el("li", {}, s)))] : "",
-    c.pass ? [el("div", {class: "label"}, "Passes when"), el("p", {class: "passwhen"}, c.pass)] : "");
-  const pic = el("div", {class: "pic"}, c.picture.map((src) => el("figure", {},
-    el("img", {src, alt: "Expected result", loading: "lazy", onclick: zoom}), el("figcaption", {class: "cap"}, "What it should look like"))));
-  node.append(body, pic,
-    el("div", {class: "controls"}, buttons.pass, buttons.fail, buttons.skip, note, saved),
-    el("div", {class: "paste"}, "Paste a screenshot here with Ctrl+V to show what went wrong."), shots);
+  const pics = c.picture.map((src, i) => el("button", {type: "button", class: "pic", onclick: (e) => { e.stopPropagation(); show(src, "Expected " + (i + 1) + " of " + c.picture.length + ": " + c.title); }},
+    c.picture.length > 1 ? "Picture " + (i + 1) : "Picture"));
+  const chips = el("span", {class: "chips"},
+    c.kind === "regression" ? el("span", {class: "reg"}, "every release") : "",
+    c.optional ? el("span", {}, "optional") : "",
+    c.pr ? prLink(c.addon, c.pr) : "",
+    c.issue ? el("span", {}, "guards " + c.issue) : "",
+    el("span", {}, c.minutes + " min"), pics);
+  const action = el("div", {class: "do"}, c.setup ? el("span", {class: "setup"}, sentence(c.setup) + " ") : "", c.steps.map(sentence).join(" "));
+  node.append(
+    el("div", {class: "btns"}, buttons.pass, buttons.fail, buttons.skip),
+    el("div", {class: "text"}, el("div", {}, el("span", {class: "title"}, c.title), chips), action, c.pass ? el("div", {class: "want"}, c.pass) : ""),
+    el("div", {class: "side"}, note, el("div", {class: "extra"}, el("span", {class: "paste"}, "Ctrl+V pastes a screenshot"), shots, saved)));
   node.addEventListener("click", (e) => {
-    if (a.status === "pass" && !node.classList.contains("open")) { node.classList.add("open"); e.stopPropagation(); }
+    if (a.status && !node.classList.contains("open") && !e.target.closest("button, a, textarea")) node.classList.add("open");
   });
+  node.refused = () => refused;
   node.mark = mark; node.note = note; node.answer = a; node.check = c;
   node.flush = () => {
     if (timer) { clearTimeout(timer); timer = null; send("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail); }
@@ -239,7 +254,6 @@ function card(c) {
   paint();
   return node;
 }
-
 const groups = document.getElementById("groups");
 const jumps = [];
 R.groups.forEach((g, i) => {
@@ -285,25 +299,40 @@ function move(step, unanswered) {
   do { i += step; } while (unanswered && i < cards.length && i >= 0 && cards[i].answer.status);
   if (i >= 0 && i < cards.length) focusCard(i);
 }
-document.addEventListener("focusin", (e) => { const i = cards.indexOf(e.target.closest && e.target.closest(".card")); if (i >= 0) { current = i; cards.forEach((c, j) => c.classList.toggle("current", j === i)); } });
+document.addEventListener("focusin", (e) => { const i = cards.indexOf(e.target.closest && e.target.closest(".row")); if (i >= 0) { current = i; cards.forEach((c, j) => c.classList.toggle("current", j === i)); } });
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "TEXTAREA") { if (e.key === "Escape") { e.target.blur(); focusCard(current); } return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k === "escape") { document.getElementById("zoom").style.display = "none"; return; }
+  if (zoomOpen()) { e.preventDefault(); if (k === "escape" || k === "enter") closeZoom(); return; }
   if (k === "j") { e.preventDefault(); move(1); }
   else if (k === "k") { e.preventDefault(); move(-1); }
   else if (current >= 0 && (k === "p" || k === "f" || k === "s")) { e.preventDefault(); cards[current].mark({p: "pass", f: "fail", s: "skip"}[k]); }
   else if (current >= 0 && k === "n") { e.preventDefault(); cards[current].classList.add("open"); cards[current].note.focus(); }
-  else if (current >= 0 && k === "enter" && e.target === cards[current] && cards[current].answer.status === "pass") { e.preventDefault(); cards[current].classList.toggle("open"); }
+  else if (current >= 0 && k === "enter" && e.target === cards[current] && ["pass", "skip"].includes(cards[current].answer.status)) { e.preventDefault(); cards[current].classList.toggle("open"); }
 });
-function zoom(e) { const z = document.getElementById("zoom"); z.querySelector("img").src = e.target.src; z.style.display = "flex"; }
-document.getElementById("zoom").addEventListener("click", (e) => { e.currentTarget.style.display = "none"; });
+// While a picture is open the checklist keys are off, so a key meant for the picture cannot mark the row behind it.
+const zoomEl = document.getElementById("zoom");
+let zoomFrom = null;
+const zoomOpen = () => zoomEl.style.display === "flex";
+function show(src, caption) {
+  zoomFrom = document.activeElement;
+  zoomEl.querySelector("img").src = src; zoomEl.querySelector("span").textContent = caption || "";
+  zoomEl.style.display = "flex"; zoomEl.focus();
+}
+function closeZoom() { zoomEl.style.display = "none"; if (zoomFrom) zoomFrom.focus({preventScroll: true}); zoomFrom = null; }
+function zoom(e) { e.stopPropagation(); show(e.target.src, "Your screenshot"); }
+zoomEl.addEventListener("click", closeZoom);
 document.getElementById("submit").addEventListener("click", () => {
   const out = document.getElementById("submitted");
-  if (!D.served) { out.textContent = "Saved in this browser only."; return; }
   out.textContent = "Saving...";
-  Promise.all(cards.map((c) => c.flush())).then(() => post("submit", {})).then((j) => { out.textContent = "Finished. " + (j.bugs ? j.bugs + " Lua errors were logged during the round; they are in the results." : "No Lua errors were logged during the round."); }).catch((e) => { out.textContent = "Not saved: " + e.message; });
+  Promise.all(cards.map((c) => c.flush().catch(() => {}))).then(() => {
+    const refused = cards.filter((c) => c.refused());
+    if (refused.length) throw new Error(refused.length + " answer" + (refused.length > 1 ? "s were" : " was") + " refused (marked in red); reload the page and give them again");
+    if (!D.served) return null;
+    return post("submit", {});
+  }).then((j) => {
+    if (!j) { out.textContent = "Saved in this browser only."; return; } out.textContent = "Finished. " + (j.bugs ? j.bugs + " Lua errors were logged during the round; they are in the results." : "No Lua errors were logged during the round."); }).catch((e) => { out.textContent = "Not saved: " + e.message; });
 });
 if (D.results.submitted) document.getElementById("submitted").textContent = "Finished once already; finishing again re-reads the error log.";
 const first = cards.findIndex((c) => !c.answer.status);

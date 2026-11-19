@@ -134,6 +134,31 @@ class ChecklistTest(unittest.TestCase):
         a = cl.load_results("2026-11-19-2")["answers"]["menus"]
         self.assertEqual((a["status"], a["note"], a["sha"][:7]), ("fail", "clipped radios", "b2ba895"))
 
+    def test_a_page_rendered_for_another_build_cannot_pass_this_one(self):
+        shown = {"sha": "b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "digest": ""}
+        old = dict(shown, sha="0" * 40)
+        png = "data:image/png;base64,iVBORw0KGgo="
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_answer("2026-11-19-2", "menus", "pass", None, old)
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_image("2026-11-19-2", "menus", png, old)
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_answer("2026-11-19-2", "menus", "", None, old)
+        cl.record_answer("2026-11-19-2", "menus", None, "a note is kept", old)
+        first = cl.record_image("2026-11-19-2", "menus", png, shown)
+        cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
+        answer = cl.load_results("2026-11-19-2")["answers"]["menus"]
+        self.assertEqual((answer["status"], answer["images"]), ("pass", [first]), "a screenshot pasted first is kept")
+        # The same commit and digest tested in another client build reopens the check and drops its screenshot.
+        with contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--client-build", "1.60.2.71000"])
+        _, rows = cl.status_rows("2026-11-19-2")
+        menus = next(r for r in rows if r["id"] == "menus")
+        self.assertEqual((menus["status"], menus["images"], menus["note"]), (None, [], "a note is kept"))
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
+        self.assertNotEqual(cl.record_image("2026-11-19-2", "menus", png, None), first)
+
     def test_buggrabber_reader_keeps_errors_since_the_round_started(self):
         path = self.home / "bugs.lua"
         path.write_bytes(BUGS.encode())
@@ -167,13 +192,28 @@ class ChecklistTest(unittest.TestCase):
             {"addon": "shortest-path-forever", "sha": "abcdef1000000000000000000000000000000000", "prs": ["1066"]},
         )
         self.assertEqual(data["checks"][-1]["id"], "menus-match")
+        artifact = self.home / "core-1/ForeverCore"
+        artifact.mkdir(parents=True)
+        (artifact / "ForeverCore.toc").write_text("## Interface: 16001\n")
         with contextlib.redirect_stdout(io.StringIO()):
-            cl.main(["build", "--addon", "forever-core", "--artifact", "test-artifacts/core-1", "--digest", "d1"])
-        out = io.StringIO()
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(out):
-            cl.main(["status", "--addon", "forever-core", "--sha", "b2ba895", "--json"])
-        build = json.loads(out.getvalue())["build"]
-        self.assertEqual((build["artifact"], build["digest"]), ("test-artifacts/core-1", "d1"))
+            cl.main(["build", "--addon", "forever-core", "--artifact", str(artifact.parent), "--digest", "d1"])
+            cl.main(["build", "--addon", "forever-core", "--client-build", "1.60.1.70959"])
+
+        def status():
+            out = io.StringIO()
+            with self.assertRaises(SystemExit), contextlib.redirect_stdout(out):
+                cl.main(["status", "--addon", "forever-core", "--sha", "b2ba895", "--json"])
+            return json.loads(out.getvalue())["build"]
+
+        build = status()
+        self.assertEqual((build["artifact"], build["digest"]), (str(artifact.parent), "d1"))
+        self.assertEqual(build["client_build"], "1.60.1.70959")
+        self.assertEqual(len(build["artifact_sha256"]), 64)
+        self.assertEqual(build["artifact_sha256_now"], build["artifact_sha256"])
+        (artifact / "Core.lua").write_text("-- rebuilt\n")
+        self.assertNotEqual(status()["artifact_sha256_now"], build["artifact_sha256"])
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--artifact", "test-artifacts/missing"])
         with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
             cl.main(["add", "--addon", "forever-core", "--id", "menus", "--title", "Again", "--pass", "ok"])
 
@@ -195,10 +235,22 @@ class ChecklistTest(unittest.TestCase):
         page = urllib.request.urlopen(base + "/round/2026-11-19-2").read().decode()
         self.assertIn("Menus match", page)
         self.assertIn("started", cl.load_results("2026-11-19-2"))
-        post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass"}, origin=base)
+        shown = {
+            "sha": "b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "digest": "",
+            "artifact_sha256": "",
+            "client_build": "",
+        }
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass"}, origin=base)
+        self.assertEqual(e.exception.code, 400)
+        e.exception.close()
+        post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass", **shown}, origin=base)
         png = "data:image/png;base64,iVBORw0KGgo="
-        self.assertEqual(post("/api/image/2026-11-19-2", {"check": "menus", "data": png})["file"], "menus-1.png")
-        self.assertTrue((self.home / "results" / "2026-11-19-2" / "menus-1.png").exists())
+        fname = post("/api/image/2026-11-19-2", {"check": "menus", "data": png, **shown})["file"]
+        self.assertRegex(fname, r"^menus-1-[0-9a-f]{8}\.png$")
+        self.assertTrue((self.home / "results" / "2026-11-19-2" / fname).exists())
+        self.assertEqual(cl.load_results("2026-11-19-2")["answers"]["menus"]["images"], [fname])
         with mock.patch.object(cl, "BUGGRABBER", self.home / "missing.lua"):
             self.assertEqual(post("/api/submit/2026-11-19-2", {})["bugs"], 0)
         with self.assertRaises(urllib.error.HTTPError) as e:
