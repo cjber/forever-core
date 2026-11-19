@@ -16,7 +16,14 @@ another from one queue instead of racing for the job lock, the sign-in and the A
      "Read ~/.agents/skills/sweep/profiles/wow-ingame.md and follow it. Resume ~/.local/state/sweep/wow/ingame-queue.md."
    ```
 
-2. Push the candidate commit, then send a request (it joins the batch):
+2. Cover every logic check offline first: busted specs plus the vendored `tools/forever_sim`, which stubs the
+   client API. Ask the client only for what only it can show: real layout and pixels, Blizzard frame interplay
+   (tracker, map, Questie), taint, load order, real game data, motion over reload, zone change or a taxi flight.
+   The PR says which checks the specs or sim cover.
+
+   Testing runs in rounds: all coding first, then one round tests every addon. Push the code-complete commit, then
+   append the request below as one block to `~/.local/state/sweep/wow/notes/ingame/round-next.md`. The coordinator
+   cuts the round; a request outside a sweep goes to the in-game session directly and joins the next round.
 
    ```
    INGAME <repo> <full sha> from <your kiln id>
@@ -35,8 +42,8 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    The ref is the full 40-character SHA of a pushed commit. Every check one commit needs goes in one message, as
    several `kind:` blocks one after another, so the in-game agent loads that build once.
 
-   Requests are batched, not run one per session. One logged-in session runs every queued check: it links one build
-   per addon together, runs them in one pass and posts each proof to its own PR. Split a batch only for a real
+   A round is one logged-in session: it links one build per addon together, runs every block in one pass and posts
+   each proof to its own PR. A request that arrives mid-round waits for the next. Split a batch only for a real
    conflict (two builds of one addon, incompatible characters or places) and say the reason in the reply.
 
    The client stays logged in while any work is queued. Never `down` it between checks or batches; send the
