@@ -3053,6 +3053,29 @@ class ProofHelpersTest(unittest.TestCase):
         ready.assert_called_once_with(set(), "/lf", "run-slash", state="state")
         self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from /lf (5 lines)", out.getvalue())
 
+    def test_a_secure_slash_flow_is_typed_into_chat_not_written_as_a_snippet(self):
+        self.assertTrue(fc.secure_slash("/cast Cooking"))
+        self.assertTrue(fc.secure_slash("/USE 12"))
+        self.assertFalse(fc.secure_slash("/lf"))
+        tool = mock.Mock()
+        with (
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.png")),
+            mock.patch.object(fc, "slash") as typed,
+            mock.patch.object(fc.time, "sleep") as settle,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.run_flow("state", "/cast Cooking"), "")
+            with self.assertRaises(fc.ClientError):
+                fc.run_flow("state", "/cast Cooking", (1, 2))
+        tool.write_slash.assert_not_called()
+        reload.assert_called_once_with("state")
+        typed.assert_called_once_with("state", "/cast Cooking")
+        settle.assert_called_once_with(fc.SECURE_SLASH_SETTLE_SECONDS)
+
     def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
         tool = mock.Mock()
         tool.EvalError = Exception

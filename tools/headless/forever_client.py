@@ -2399,6 +2399,27 @@ def lua_flow(action: str) -> bool:
     return action.endswith(".lua")
 
 
+# The client's secure slash words (SecureCmdList in Blizzard's ChatFrame, hash_SecureCmdList at run time). They run
+# protected actions, so only a player's typed chat line may send them: a Lua snippet that calls ChatEdit_SendText
+# is insecure and the client ignores the command (#901). !!DevSmoke's slash route cannot even find them, because they
+# are not in SlashCmdList. The words are fixed by the client, so this is a documented list, not a guess at content.
+SECURE_SLASH_WORDS = frozenset(
+    (
+        "/assist /cancelaura /cancelform /cast /castrandom /castsequence /click /clearfocus /cleartarget /dismount "
+        "/equip /equipslot /focus /leavevehicle /petaggressive /petassist /petattack /petdefensive /petfollow "
+        "/petpassive /startattack /stopattack /stopcasting /stopmacro /target /targetenemy /targetfriend "
+        "/targetlasttarget /use /userandom"
+    ).split()
+)
+# How long a typed secure slash flow settles before the capture: it has no ready check to poll (#901).
+SECURE_SLASH_SETTLE_SECONDS = 3
+
+
+def secure_slash(action: str) -> bool:
+    """Whether a flow's action is a secure slash command, decided by its command word."""
+    return not lua_flow(action) and action.split()[0].lower() in SECURE_SLASH_WORDS
+
+
 def flow_step(action: str) -> str:
     """What a proof records for one flow: a slash command as typed, or a Lua snippet by name and content digest.
 
@@ -2590,6 +2611,8 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     between the reload's world screenshot and the flow's own: opening a protected window is not something a Lua
     snippet can do, and since #648 no outside `click` can reach the client while this job holds it (#655).
     """
+    if secure_slash(action):
+        return run_secure_flow(state, action, point)
     tool = devsmoke_eval()
     try:
         if lua_flow(action):
@@ -2619,6 +2642,31 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     except ClientError as error:
         raise flow_capture_failure(state, action, written["token"], error) from None
     return written["token"]
+
+
+def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
+    """Run a secure slash flow by typing it into chat, as the `slash` verb does, once the reload's world frame lands.
+
+    A secure command cannot run from insecure Lua, so no snippet is written and the flow has no run token or ready
+    check: the capture follows a short fixed settle after the typed line (#901). Each flow reloads first, so a later
+    Lua flow starts from a fresh world; it does not continue from the window this one opened.
+    """
+    if point:
+        raise ClientError(f"the flow {action} is typed into chat: a secure slash flow takes no --flow-click")
+    one_line_slash(action)
+    before = screenshots()
+    reload(state)
+    clear_eval_inbox()
+    try:
+        world = wait_for_flow_world(before, action, state=state)
+        print(f"typing {action} after {world.name}", flush=True)
+        slash(state, action)
+    except SafetyRefusal:
+        raise
+    except ClientError as error:
+        raise ClientError(f"the flow {action} could not be typed: {error}") from None
+    time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    return ""
 
 
 def eval_result(state: Mapping, token: str) -> tuple[str, bool]:

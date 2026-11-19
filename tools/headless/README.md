@@ -40,6 +40,11 @@ fighting, resurrection and automatic recovery are forbidden. A refusal sends no 
 An older resident addon or an unreadable safety strip is replaced through the guarded
 session teardown path before reuse. Unknown safety still refuses input.
 
+A `proof` flow given as a secure slash command (`--flow "route=/cast Cooking"`, or `/use`, `/click`, `/target`; the
+words are `SECURE_SLASH_WORDS` in `forever_client.py`) cannot run from insecure Lua, so it is typed through the same
+chat path as `slash` once the reload's world screenshot exists, then settles 3 s before the capture. It has no ready
+check, eval result or `--flow-click`, and each flow reloads first, so a later Lua flow does not continue from its window.
+
 Exit 3 means the player's client is in use. Exit 4 means live safety refused the operation:
 `player is dead or a ghost`, `player is in combat`, or the version 2 safety protocol is
 unavailable or outdated. Other client errors use exit 2.

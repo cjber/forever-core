@@ -252,6 +252,12 @@ true writes the client's own reason to `DevSmokeDB.eval` and saves it; `proof` r
 `ChatEdit_SendText` in the same `!!DevSmoke` route, so its capture follows a confirmed run and its own eval result is
 checked; there is no fixed settle. Name a Lua flow for anything that must wait on data.
 
+A secure slash flow (`--flow "route=/cast Cooking"`; also `/use`, `/click`, `/target`, ...: the client's secure
+words, listed as `SECURE_SLASH_WORDS` in `forever_client.py`) cannot run from Lua at all, so the proof types it into
+chat as the `slash` verb does, after the reload's world screenshot, then settles 3 s before the capture. It has no ready
+check, no eval result and no `--flow-click`. Each flow reloads first, so a later Lua flow starts from a fresh world and
+does not continue from the window the secure flow opened.
+
 A flow whose window only a real click opens names that click with `--flow-click "NAME=X,Y"`, where `X,Y` are the same
 screenshot coordinates `click` takes:
 
