@@ -124,7 +124,7 @@ def addon_names() -> dict[str, str]:
     return names
 
 
-def normalise_check(raw: dict, addon: str, sha: str, kind: str) -> dict:
+def normalise_check(raw: dict, addon: str, sha: str, kind: str, digest: str = "") -> dict:
     steps = raw.get("steps") or []
     if isinstance(steps, str):
         steps = [steps]
@@ -132,6 +132,7 @@ def normalise_check(raw: dict, addon: str, sha: str, kind: str) -> dict:
         "id": raw["id"],
         "addon": addon,
         "sha": str(raw.get("sha") or sha or ""),
+        "digest": str(digest or ""),
         "kind": kind,
         "title": raw["title"],
         "setup": raw.get("setup", ""),
@@ -153,13 +154,14 @@ def compose(name: str) -> dict:
     checks = []
     for raw in data["checks"]:
         addon = raw["addon"]
-        checks.append(normalise_check(raw, addon, builds.get(addon, {}).get("sha", ""), "round"))
+        build = builds.get(addon, {})
+        checks.append(normalise_check(raw, addon, build.get("sha", ""), "round", build.get("digest", "")))
     for addon, build in builds.items():
         if build.get("regression", True) is False:
             continue
         for raw in regression_suite(addon).get("checks", []):
             reg = dict(raw, id=f"reg:{addon}:{raw['id']}")
-            checks.append(normalise_check(reg, addon, build.get("sha", ""), "regression"))
+            checks.append(normalise_check(reg, addon, build.get("sha", ""), "regression", build.get("digest", "")))
     order = list(builds) + [c["addon"] for c in checks if c["addon"] not in builds]
     groups = []
     for addon in dict.fromkeys(order):
@@ -232,7 +234,7 @@ def record_answer(name: str, check: str, status: str | None, note: str | None) -
     with locked(name):
         data = load_results(name)
         data.setdefault("started", now())
-        answer = current(data["answers"].get(check, {"images": []}), composed[check]["sha"])
+        answer = current(data["answers"].get(check, {"images": []}), composed[check])
         data["answers"][check] = answer
         if status is not None:
             answer["status"] = status or None
@@ -240,6 +242,7 @@ def record_answer(name: str, check: str, status: str | None, note: str | None) -
             answer["note"] = note
         answer["addon"] = composed[check]["addon"]
         answer["sha"] = composed[check]["sha"]
+        answer["digest"] = composed[check]["digest"]
         answer["at"] = now()
         save_results(name, data)
         return answer
@@ -438,8 +441,8 @@ def render(name: str, served: bool) -> str:
     for check in composed["checks"]:
         check["picture"] = embed_picture(check["picture"])
     results = load_results(name)
-    shas = {c["id"]: c["sha"] for c in composed["checks"]}
-    results["answers"] = {k: current(v, shas[k]) for k, v in results["answers"].items() if k in shas}
+    by_id = {c["id"]: c for c in composed["checks"]}
+    results["answers"] = {k: current(v, by_id[k]) for k, v in results["answers"].items() if k in by_id}
     payload = {
         "round": composed,
         "results": results,
@@ -531,7 +534,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.local_host():
             return
         origin = self.headers.get("Origin")
-        if origin and urlparse(origin).hostname not in (HOST, "localhost"):
+        if origin and origin != f"http://{self.headers.get('Host')}":
             return self.send_json({"error": "cross-origin request refused"}, 403)
         path = urlparse(self.path).path
         m = re.fullmatch(r"/api/(answer|image|submit)/([\w-]+)", path)
@@ -566,17 +569,21 @@ def make_server(port: int = PORT) -> ThreadingHTTPServer:
 # Status and the release gate
 
 
-def same_sha(a: str, b: str) -> bool:
-    """One build: the same SHA, or one an abbreviation (7 or more characters) of the other."""
-    a, b = (a or "").lower(), (b or "").lower()
-    n = min(len(a), len(b))
-    return a == b or (n >= 7 and a[:n] == b[:n])
+FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-def current(answer: dict, sha: str) -> dict:
-    """The answer as it stands for the build now linked: a status given against another build no longer counts."""
-    if answer.get("status") and not same_sha(answer.get("sha", ""), sha):
-        return {k: v for k, v in answer.items() if k not in ("status", "sha")}
+def build_matches(recorded: str, asked: str) -> bool:
+    """The gate's build test: the round records the full SHA, and the caller may give it whole or abbreviated."""
+    recorded, asked = (recorded or "").lower(), (asked or "").lower()
+    return bool(FULL_SHA.match(recorded)) and len(asked) >= 7 and recorded.startswith(asked)
+
+
+def current(answer: dict, check: dict) -> dict:
+    """The answer as it stands for the build now linked: a status given against another SHA or runtime digest no
+    longer counts."""
+    stale = answer.get("sha", "") != check["sha"] or answer.get("digest", "") != check["digest"]
+    if answer.get("status") and stale:
+        return {k: v for k, v in answer.items() if k not in ("status", "sha", "digest")}
     return answer
 
 
@@ -585,7 +592,7 @@ def status_rows(name: str) -> tuple[dict, list[dict]]:
     answers = load_results(name)["answers"]
     rows = []
     for check in composed["checks"]:
-        ans = current(answers.get(check["id"], {}), check["sha"])
+        ans = current(answers.get(check["id"], {}), check)
         rows.append(dict(check, status=ans.get("status"), note=ans.get("note", ""), images=ans.get("images", [])))
     return composed, rows
 
@@ -594,7 +601,7 @@ def gate(addon: str, sha: str, names: list[str] | None = None) -> tuple[bool, li
     """True when some round holds checks for this exact build and every one of them passed."""
     for name in reversed(names or round_names()):
         _, rows = status_rows(name)
-        mine = [r for r in rows if r["addon"] == addon and same_sha(r["sha"], sha)]
+        mine = [r for r in rows if r["addon"] == addon and build_matches(r["sha"], sha)]
         if mine:
             return all(r["status"] == "pass" or (r["optional"] and r["status"] == "skip") for r in mine), mine, name
     return False, [], ""
@@ -613,6 +620,24 @@ def cmd_new(a):
     print(round_path(a.round))
 
 
+def full_sha(addon: str, sha: str) -> str:
+    """The full commit SHA, so the gate never matches a different commit by a shared abbreviation."""
+    if FULL_SHA.match(sha.lower()):
+        return sha.lower()
+    checkout = HANDOFF.parent / addon
+    for cmd in (
+        ["git", "-C", str(checkout), "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
+        ["gh", "api", f"repos/cjber/{addon}/commits/{sha}", "--jq", ".sha"],
+    ):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if out.returncode == 0 and FULL_SHA.match(out.stdout.strip()):
+            return out.stdout.strip()
+    raise SystemExit(f"cannot resolve {addon} {sha} to a full commit SHA: fetch the checkout or pass all 40 characters")
+
+
 def cmd_build(a):
     name = a.round or latest_round()
     data = load_round(name)
@@ -620,6 +645,8 @@ def cmd_build(a):
     if build is None:
         build = {"addon": a.addon}
         data["builds"].append(build)
+    if a.sha:
+        a.sha = full_sha(a.addon, a.sha)
     for key in ("sha", "version", "build", "artifact", "digest"):
         if getattr(a, key):
             build[key] = getattr(a, key)

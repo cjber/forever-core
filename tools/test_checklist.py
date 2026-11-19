@@ -104,13 +104,25 @@ class ChecklistTest(unittest.TestCase):
             if c["addon"] == "forever-core":
                 cl.record_answer("2026-11-19-2", c["id"], "pass", None)
         with contextlib.redirect_stdout(io.StringIO()):
-            cl.main(["build", "--addon", "forever-core", "--sha", "c0ffee12"])
-        self.assertFalse(cl.gate("forever-core", "c0ffee12")[0])
+            cl.main(["build", "--addon", "forever-core", "--sha", "c0ffee1200000000000000000000000000000000"])
+        self.assertFalse(cl.gate("forever-core", "c0ffee1200000000000000000000000000000000")[0])
+        self.assertFalse(cl.gate("forever-core", "b2ba895")[0])
         cl.record_answer("2026-11-19-2", "menus", None, "a note after the new build")
         _, rows = cl.status_rows("2026-11-19-2")
         menus = next(r for r in rows if r["id"] == "menus")
         self.assertEqual((menus["status"], menus["note"]), (None, "a note after the new build"))
         self.assertNotIn('"status": "pass"', cl.render("2026-11-19-2", served=True))
+
+    def test_a_new_runtime_digest_reopens_the_build(self):
+        for c in cl.compose("2026-11-19-2")["checks"]:
+            if c["addon"] == "forever-core":
+                cl.record_answer("2026-11-19-2", c["id"], "pass", None)
+        self.assertTrue(cl.gate("forever-core", "b2ba895")[0])
+        with contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--digest", "relinked"])
+        self.assertFalse(cl.gate("forever-core", "b2ba895")[0])
+        with self.assertRaises(SystemExit), mock.patch.object(cl.subprocess, "run", side_effect=OSError):
+            cl.full_sha("forever-core", "b2ba895")
 
     def test_answers_reject_unknown_checks_and_statuses(self):
         with self.assertRaises(ValueError):
@@ -135,12 +147,25 @@ class ChecklistTest(unittest.TestCase):
 
     def test_add_and_build_cli(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            cl.main(["build", "--addon", "shortest-path-forever", "--sha", "abcdef1", "--pr", "1066"])
+            cl.main(
+                [
+                    "build",
+                    "--addon",
+                    "shortest-path-forever",
+                    "--sha",
+                    "abcdef1000000000000000000000000000000000",
+                    "--pr",
+                    "1066",
+                ]
+            )
             cl.main(
                 ["add", "--addon", "shortest-path-forever", "--title", "Menus match", "--pass", "ok", "--step", "a"]
             )
         data = cl.load_round("2026-11-19-2")
-        self.assertEqual(data["builds"][-1], {"addon": "shortest-path-forever", "sha": "abcdef1", "prs": ["1066"]})
+        self.assertEqual(
+            data["builds"][-1],
+            {"addon": "shortest-path-forever", "sha": "abcdef1000000000000000000000000000000000", "prs": ["1066"]},
+        )
         self.assertEqual(data["checks"][-1]["id"], "menus-match")
         with contextlib.redirect_stdout(io.StringIO()):
             cl.main(["build", "--addon", "forever-core", "--artifact", "test-artifacts/core-1", "--digest", "d1"])
@@ -191,6 +216,10 @@ class ChecklistTest(unittest.TestCase):
             self.assertEqual(e.exception.code, 404, bad)
             e.exception.close()
         self.assertFalse((self.home / "results" / "2026-01-01-1.json").exists())
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            post("/api/answer/2026-11-19-2", {"check": "menus", "status": "fail"}, origin="http://localhost:3000")
+        self.assertEqual(e.exception.code, 403)
+        e.exception.close()
         rebound = urllib.request.Request(base + "/api/results/2026-11-19-2", headers={"Host": "evil.example"})
         with self.assertRaises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(rebound)

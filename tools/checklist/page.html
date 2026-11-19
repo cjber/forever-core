@@ -136,7 +136,10 @@ for (const b of R.builds) {
 }
 
 function post(kind, body) {
-  if (!D.served) { localStorage.setItem(key, JSON.stringify(answers)); return Promise.resolve({}); }
+  if (!D.served) {
+    try { localStorage.setItem(key, JSON.stringify(answers)); } catch (e) { return Promise.reject(new Error("this browser is out of room for it")); }
+    return Promise.resolve({});
+  }
   return fetch("/api/" + kind + "/" + R.round, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
     .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error); return j; });
 }
@@ -181,7 +184,11 @@ function card(c) {
       ev.preventDefault();
       const r = new FileReader();
       r.onload = () => {
-        if (!D.served) { a.images.push(r.result); paint(); post(); return; }
+        if (!D.served) {
+          a.images.push(r.result);
+          post().then(() => { paint(); tick("Screenshot kept in this browser"); }).catch((e) => { a.images.pop(); fail(e); });
+          return;
+        }
         send("image", {check: c.id, data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
       };
       r.readAsDataURL(item.getAsFile());
@@ -203,6 +210,10 @@ function card(c) {
     el("div", {class: "controls"}, buttons.pass, buttons.fail, buttons.skip, note, saved),
     el("div", {class: "paste"}, "Paste a screenshot here with Ctrl+V to show what went wrong."), shots);
   node.mark = mark; node.note = note; node.answer = a; node.check = c;
+  node.flush = () => {
+    if (timer) { clearTimeout(timer); timer = null; send("answer", {check: c.id, note: note.value}).then(() => tick("Saved")).catch(fail); }
+    return queue;
+  };
   cards.push(node);
   paint();
   return node;
@@ -256,7 +267,8 @@ document.getElementById("zoom").addEventListener("click", (e) => { e.currentTarg
 document.getElementById("submit").addEventListener("click", () => {
   const out = document.getElementById("submitted");
   if (!D.served) { out.textContent = "Saved in this browser only."; return; }
-  post("submit", {}).then((j) => { out.textContent = "Finished. " + (j.bugs ? j.bugs + " Lua errors were logged during the round; they are in the results." : "No Lua errors were logged during the round."); }).catch((e) => { out.textContent = "Not saved: " + e.message; });
+  out.textContent = "Saving...";
+  Promise.all(cards.map((c) => c.flush())).then(() => post("submit", {})).then((j) => { out.textContent = "Finished. " + (j.bugs ? j.bugs + " Lua errors were logged during the round; they are in the results." : "No Lua errors were logged during the round."); }).catch((e) => { out.textContent = "Not saved: " + e.message; });
 });
 if (D.results.submitted) document.getElementById("submitted").textContent = "Finished once already; finishing again re-reads the error log.";
 const first = cards.findIndex((c) => !c.answer.status);
