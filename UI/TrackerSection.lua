@@ -178,6 +178,17 @@ function TrackerLine.SetInteractive(line, spec)
 	line:SetScript("OnMouseUp", function(self, button)
 		if button == "LeftButton" and type(spec.onClick) == "function" then
 			spec.onClick(self, button)
+		elseif button == "RightButton" and ns.TrackerHost then
+			-- The line takes the mouse, so a right-click on it opens its block's menu (Lock, the section's end action)
+			-- as a click on the block's header would; otherwise the line swallows it.
+			local block = self:GetParent()
+			local module = block and block.parentModule
+			if module and not ns.TrackerHost.HandleBlockHeaderClick(module, block, button) then
+				-- A section without a menu contract keeps its own block click.
+				if type(module.OnBlockHeaderClick) == "function" then
+					module:OnBlockHeaderClick(block, button)
+				end
+			end
 		end
 	end)
 	line:SetScript("OnEnter", function(self)

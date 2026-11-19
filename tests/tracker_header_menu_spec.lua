@@ -172,9 +172,16 @@ for _, entry in ipairs(contractMenu.entries) do
 	labels[#labels + 1] = entry.text or entry.kind
 end
 check(
-	table.concat(labels, ",") == "Guide me,Choices,Refresh,Open panel,End journey,divider,Tracker",
-	"slots keep exact order"
+	table.concat(labels, ",") == "Guide me,Choices,Refresh,Open panel,End journey,divider,Lock the tracker,Tracker",
+	"slots keep exact order, with Lock on the menu itself ahead of the Tracker submenu"
 )
+check(Entry(contractMenu, "Lock the tracker").kind == "checkbox", "Lock is a checkbox on the section menu")
+check(Entry(Entry(contractMenu, "Tracker"), "Lock the tracker") == nil, "and not repeated in the Tracker submenu")
+local wasLocked = host.IsLocked()
+Entry(contractMenu, "Lock the tracker").callback()
+check(host.IsLocked() ~= wasLocked, "the section menu's Lock toggles the lock")
+Entry(contractMenu, "Lock the tracker").callback()
+check(host.IsLocked() == wasLocked, "and toggles it back")
 host.HandleBlockHeaderClick(
 	contractModule,
 	{ id = "journey", HeaderText = {
@@ -186,6 +193,8 @@ host.HandleBlockHeaderClick(
 )
 local blockTarget = contractTargets[#contractTargets]
 check(blockTarget.kind == "block" and blockTarget.id == "journey", "the block target carries kind and id")
+local blockLock = Entry(t.menus[#t.menus], "Lock the tracker")
+check(blockLock and blockLock.kind == "checkbox", "an entry's own menu offers Lock on the menu itself")
 
 -- Block and section targets share the same Tracker submenu, including the module's show switch.
 local blockShown = true

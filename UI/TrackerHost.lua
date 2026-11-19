@@ -1335,7 +1335,6 @@ local function NewTrackerMenu(root, module, target)
 	local menu = {}
 	local function Entry(text, fn, opts)
 		local entry = ns.NewMenuDescription("button", text)
-		entry.parent = root
 		if type(fn) ~= "function" then
 			return entry
 		end
@@ -1427,12 +1426,13 @@ local function NewTrackerMenu(root, module, target)
 		Append(slots.open)
 		Append(slots.ending)
 		root:CreateDivider()
-		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
+		-- Lock sits on the menu itself, not in the Tracker submenu, so a locked column is unlocked from any right-click.
 		if api.IsLocked and api.SetLocked then
-			tracker:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
+			root:CreateCheckbox(ns.L["Lock the tracker"], api.IsLocked, function()
 				api.SetLocked(not api.IsLocked())
 			end)
 		end
+		local tracker = root:CreateButton(ns.L["Tracker"] or "Tracker")
 		AddPlacementMenu(tracker)
 		local background = tracker:CreateButton(ns.L["Tracker background"])
 		background:CreateRadio(rawget(_G, "OFF") or "Off", function()
