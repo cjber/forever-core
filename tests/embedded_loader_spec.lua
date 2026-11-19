@@ -14,6 +14,16 @@ local function equal(actual, expected, label)
 	end
 end
 
+-- A facade every consumer can use: API 2, Register and the tracker line with SetInteractive.
+local function Facade()
+	return {
+		API = 2,
+		Register = function() end,
+		TrackerLine = { SetInteractive = function() end, template = "Test_ForeverCore_Line" },
+		name = "ForeverCore",
+	}
+end
+
 -- The release build formula: major * 1e6 + minor * 1e3 + patch.
 local function build(major, minor, patch)
 	return major * 1000000 + minor * 1000 + (patch or 0)
@@ -22,7 +32,7 @@ end
 -- A fresh Lua environment is one client session: one loading frame list, one loader global and one facade. Loading
 -- the loader file twice is what two embedded copies do when they are the first and the second copy in the same
 -- session; the second must reuse the first copy's registry.
-local function newSession()
+local function newSession(older, setup)
 	local frames = {}
 	local env = setmetatable({}, { __index = _G })
 	env._G = env
@@ -40,21 +50,41 @@ local function newSession()
 		frames[#frames + 1] = frame
 		return frame
 	end
-	local function load()
-		local chunk = assert(loadfile("Core/Loader.lua"), "Core/Loader.lua")
+	-- The next frame: C_Timer.After(0) work waits for Tick, as it waits for the client's next frame.
+	local queued = {}
+	env.C_Timer = {
+		After = function(_, callback)
+			queued[#queued + 1] = callback
+		end,
+	}
+	local function load(path)
+		local chunk = assert(loadfile(path or "Core/Loader.lua"), path or "Core/Loader.lua")
 		setfenv(chunk, env)
 		chunk("ForeverCore", {})
 	end
+	if setup then
+		setup(env)
+	end
+	if older then
+		load(older)
+	end
 	load()
 	local session = { env = env, frames = frames, boots = {}, identities = {}, starts = {}, logins = {} }
+	function session.Tick()
+		local run = queued
+		queued = {}
+		for _, callback in ipairs(run) do
+			callback()
+		end
+	end
 	session.loader = env.ForeverCoreLoader
 	function session.ReloadLoader()
 		load()
 	end
-	function session.Fire(event, addon)
+	function session.Fire(event, ...)
 		for _, frame in ipairs(frames) do
 			if frame.events[event] and frame.scripts.OnEvent then
-				frame.scripts.OnEvent(frame, event, addon)
+				frame.scripts.OnEvent(frame, event, ...)
 			end
 		end
 	end
@@ -63,12 +93,12 @@ local function newSession()
 	-- winner's namespace before Start and publication, so a test can make a candidate fail or record what it saw.
 	function session:Candidate(folder, version, opts)
 		opts = opts or {}
-		local copy = self.loader.Begin(folder, version, opts.digest)
+		local copy = self.loader.Begin(folder, version, opts.digest, opts.chunks)
 		copy:Define(function(...)
 			local identity, ns = ...
 			self.identities[folder] = identity
 			self.boots[#self.boots + 1] = folder
-			local core = { API = 1, Register = function() end, name = "ForeverCore" }
+			local core = Facade()
 			ns.Start = function()
 				self.starts[#self.starts + 1] = folder
 			end
@@ -188,7 +218,7 @@ local first = session.loader.Begin("AddonA", build(1, 7, 0))
 first:Define(function(_, ns)
 	ns.Start = function() end
 	ns.Login = function() end
-	ns.ForeverCore = { API = 1, Register = function() end, name = "ForeverCore" }
+	ns.ForeverCore = Facade()
 end)
 check(first:Seal(), "the first copy seals")
 local second = session.loader.Begin("AddonA", build(1, 9, 0))
@@ -357,7 +387,7 @@ session = newSession()
 local noStart = session.loader.Begin("NoStart", build(1, 9, 0))
 noStart:Define(function(_, ns)
 	ns.Login = function() end
-	ns.ForeverCore = { API = 1, Register = function() end, name = "ForeverCore" }
+	ns.ForeverCore = Facade()
 end)
 check(noStart:Seal(), "the Start-less copy seals")
 session.Fire("PLAYER_LOGIN")
@@ -423,7 +453,12 @@ check(session.loader.Error() == nil, "and the boot stays clean")
 
 -- Legacy 1.8 is adopted, never neutralised and never run beside: its table stays the identity consumers already see.
 session = newSession()
-local legacy = { API = 1, Register = function() end, name = "ForeverCore" }
+local legacy = {
+	API = 2,
+	Register = function() end,
+	TrackerLine = { SetInteractive = function() end },
+	name = "ForeverCore",
+}
 session.env.ForeverCore = legacy
 session:Candidate("Embedded", build(1, 9, 0))
 session.Fire("PLAYER_LOGIN")
@@ -479,11 +514,11 @@ check(standalone.sealed, "the standalone copy seals")
 check(session.loader.Selected() == nil, "Seal alone does not activate the standalone")
 equal(#session.boots, 0, "no chunk runs before login")
 local frame = session.frames[1]
-check(frame.events.ADDON_LOADED == nil, "the loader needs no ADDON_LOADED activation")
+-- ADDON_LOADED before login never activates: it is only the late-host path (below).
 check(frame.events.PLAYER_LOGIN == true, "the loading frame listens for PLAYER_LOGIN")
 session.Fire("ADDON_LOADED", "SomeOtherAddon")
 session.Fire("ADDON_LOADED", "ForeverCore")
-check(session.loader.Selected() == nil, "own ADDON_LOADED does not activate it")
+check(session.loader.Selected() == nil, "own ADDON_LOADED before login does not activate it")
 equal(#session.boots, 0, "and runs no chunk")
 local later = session:Candidate("EmbeddedLater", build(1, 10, 0))
 check(later.rejected == nil, "a later higher embedded copy remains eligible")
@@ -496,14 +531,14 @@ equal(selected and selected.folder, "EmbeddedLater", "the newest folder is recor
 equal(selected and selected.root, "Interface\\AddOns\\EmbeddedLater\\Libs\\ForeverCore", "selected media root")
 equal(#session.boots, 1, "one runtime boots")
 equal(session.boots[1], "EmbeddedLater", "the highest build is the only runtime")
-check(frame.events.ADDON_LOADED == nil, "no ADDON_LOADED listener remains")
+check(frame.events.PLAYER_LOGIN == nil, "no PLAYER_LOGIN listener remains")
+check(frame.events.ADDON_LOADED == true, "ADDON_LOADED stays for a host that joins the running copy")
 local standaloneOffers = session.loader.Offers()
 equal(#standaloneOffers, 1, "the repeated offer is retained once")
 equal(standaloneOffers[1].folder, "ConsumerAfterStandalone", "with its folder")
 equal(standaloneOffers[1].globalName, "ConsumerAccountDB", "and its saved-variable name")
-local closed, closedReason = session.loader.OfferStore("TooLate", "TooLateDB")
-equal(closed, false, "PLAYER_LOGIN closes new store offers")
-equal(closedReason, "late", "as late")
+check(session.loader.OfferStore("JoinsLater", "JoinsLaterDB"), "an offer after activation is kept for reconciliation")
+equal(#session.loader.Offers(), 2, "beside the startup offer")
 
 -- A failing winner is reported once and is not retried; a lower copy is not booted over its partial side effects.
 session = newSession()
@@ -552,7 +587,8 @@ session = newSession()
 local globalOnly = session.loader.Begin("GlobalOnly", build(1, 7, 0))
 globalOnly:Define(function(_, ns)
 	ns.Start = function() end
-	session.env.ForeverCore = { API = 1, Register = function() end, name = "ForeverCore" }
+	ns.Login = function() end
+	session.env.ForeverCore = Facade()
 end)
 check(globalOnly:Seal(), "the global-only copy seals")
 session.Fire("PLAYER_LOGIN")
@@ -712,9 +748,7 @@ equal(storeReason, "duplicate", "as a duplicate")
 equal(session.loader.Offers()[1].globalName, "AccountA", "and it cannot replace the first name")
 session:Candidate("AddonA", build(1, 7, 0))
 session.Fire("PLAYER_LOGIN")
-accepted, storeReason = session.loader.OfferStore("LateStore", "LateDB")
-equal(accepted, false, "a store offered after activation is rejected")
-equal(storeReason, "late", "as late")
+check(session.loader.OfferStore("LateStore", "LateDB"), "a store offered after activation is kept for its host")
 
 -- Candidate inspection includes unsealed/rejected registrations and cannot mutate the registry.
 session = newSession()
@@ -728,5 +762,580 @@ check(candidates[1].sealed, "complete candidate is sealed")
 equal(candidates[2].rejected, "empty", "rejected candidate retains its reason")
 candidates[1].build = build(9, 0, 0)
 equal(session.loader.Candidates()[1].build, build(1, 9, 0), "diagnostic snapshots do not mutate candidates")
+
+-- Every way a sess reaches activation, for every outcome: a registered copy is never left silent. After the event,
+-- exactly one of Selected and Error answers, the runtime boots at most once and its Login runs at most once, and the
+-- trace names the event that activated it. This is the guard for the class behind #837: a copy that registered and
+-- sealed but was never activated, with Selected and Error both nil.
+local paths = {
+	{
+		name = "PLAYER_LOGIN",
+		run = function(sess)
+			sess.Fire("PLAYER_LOGIN")
+		end,
+	},
+	{
+		name = "PLAYER_ENTERING_WORLD without PLAYER_LOGIN",
+		run = function(sess)
+			-- Every sealed host's own ADDON_LOADED has run, so every offered store is in.
+			sess.Fire("ADDON_LOADED", "Host")
+			sess.Fire("ADDON_LOADED", "Other")
+			sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+			check(#sess.boots == 0, "the world-entry start waits for the next frame")
+			sess.Tick()
+		end,
+	},
+	{
+		name = "PLAYER_ENTERING_WORLD without PLAYER_LOGIN",
+		label = "PLAYER_ENTERING_WORLD before SavedVariables",
+		run = function(sess)
+			sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+			check(sess.loader.Selected() == nil and sess.loader.Error() == nil, "the stores are not loaded yet")
+			check(#sess.boots == 0, "so nothing boots")
+			sess.Fire("VARIABLES_LOADED")
+			sess.Tick()
+		end,
+	},
+	{
+		name = "sealed after login",
+		label = "a load-on-demand host after login",
+		loggedIn = true,
+		run = function(sess)
+			sess.Fire("ADDON_LOADED", "SomeOtherAddon")
+			sess.Fire("ADDON_LOADED", "Host")
+			check(sess.loader.Selected() == nil and sess.loader.Error() == nil, "activation waits for the next frame")
+			sess.Tick()
+		end,
+	},
+	{
+		name = "sealed after login",
+		label = "a manual load after login with no ADDON_LOADED",
+		loggedIn = true,
+		run = function(sess)
+			sess.Tick()
+		end,
+	},
+	{
+		name = "PLAYER_LOGIN, after combat",
+		label = "PLAYER_LOGIN in combat lockdown",
+		run = function(sess)
+			local combat = true
+			sess.env.InCombatLockdown = function()
+				return combat
+			end
+			sess.Fire("PLAYER_LOGIN")
+			check(sess.loader.Selected() == nil and #sess.boots == 0, "nothing boots in combat lockdown")
+			combat = false
+			sess.Fire("PLAYER_REGEN_ENABLED")
+		end,
+	},
+}
+local outcomes = {
+	{ name = "a valid copy", expect = "elected" },
+	{
+		name = "a copy whose Start fails",
+		chunk = function(ns)
+			ns.Start = function()
+				error("start failed", 0)
+			end
+		end,
+		expect = "error",
+	},
+	{
+		name = "a copy with an incomplete facade",
+		chunk = function(_, core)
+			core.Register = nil
+		end,
+		expect = "error",
+		noStart = true,
+	},
+	{
+		name = "a copy whose facade is not API 2",
+		chunk = function(_, core)
+			core.API = 1
+		end,
+		expect = "error",
+		noStart = true,
+	},
+	{
+		name = "a copy with no tracker line",
+		chunk = function(_, core)
+			core.TrackerLine = nil
+		end,
+		expect = "error",
+		noStart = true,
+	},
+	{
+		name = "a copy with no Login",
+		chunk = function(ns)
+			ns.Login = nil
+		end,
+		expect = "error",
+		noStart = true,
+	},
+	{
+		name = "a copy with no tracker line template",
+		chunk = function(_, core)
+			core.TrackerLine.template = nil
+		end,
+		expect = "error",
+		noStart = true,
+	},
+	{ name = "two conflicting copies", conflict = true, expect = "error" },
+}
+for _, path in ipairs(paths) do
+	for _, outcome in ipairs(outcomes) do
+		local label = (path.label or path.name) .. " / " .. outcome.name
+		local sess = newSession()
+		sess.handled = {}
+		sess.env.geterrorhandler = function()
+			return function(message)
+				sess.handled[#sess.handled + 1] = tostring(message)
+			end
+		end
+		if path.loggedIn then
+			sess.env.IsLoggedIn = function()
+				return true
+			end
+		end
+		sess:Candidate("Host", build(1, 9, 0), { digest = "a", chunk = outcome.chunk })
+		if outcome.conflict then
+			sess:Candidate("Other", build(1, 9, 0), { digest = "b" })
+		end
+		equal(#sess.boots, 0, label .. ": nothing runs before activation")
+		path.run(sess)
+		local picked, err = sess.loader.Selected(), sess.loader.Error()
+		check((picked ~= nil) ~= (err ~= nil), label .. ": exactly one of Selected and Error answers")
+		if outcome.expect == "elected" then
+			equal(picked and picked.folder, "Host", label .. ": the copy is elected")
+			equal(#sess.logins, 1, label .. ": its Login runs once")
+		else
+			check(err ~= nil, label .. ": the failure is reported")
+			equal(#sess.handled, 1, label .. ": once, through the client's error handler")
+			check(sess.handled[1]:find(err, 1, true) ~= nil, label .. ": naming the loader's error")
+			equal(#sess.logins, 0, label .. ": no Login runs after a failed boot")
+		end
+		if outcome.noStart then
+			equal(#sess.starts, 0, label .. ": Start never runs for a copy that fails validation")
+		end
+		local boots, logins = #sess.boots, #sess.logins
+		sess.Fire("PLAYER_LOGIN")
+		sess.Fire("PLAYER_ENTERING_WORLD")
+		sess.Fire("ADDON_LOADED", "Host")
+		sess.Tick()
+		equal(#sess.boots, boots, label .. ": later loading events boot nothing more")
+		equal(#sess.logins, logins, label .. ": and run no second Login")
+		local activations = {}
+		for _, entry in ipairs(sess.loader.Trace()) do
+			if entry.kind == "activate" then
+				activations[#activations + 1] = entry.detail
+			end
+		end
+		equal(#activations, 1, label .. ": the trace records one activation")
+		equal(activations[1], path.name, label .. ": named by the event that caused it")
+		for _, event in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do
+			check(not sess.frames[1].events[event], label .. ": the loading frame drops " .. event)
+		end
+	end
+end
+
+-- A normal sess's trace, in order: each copy's begin and seal, then the activation and the boot result.
+do
+	local sess = newSession()
+	sess:Candidate("AddonA", build(1, 7, 0))
+	sess:Candidate("AddonB", build(1, 8, 0))
+	sess.Fire("PLAYER_LOGIN")
+	local kinds = {}
+	for _, entry in ipairs(sess.loader.Trace()) do
+		kinds[#kinds + 1] = entry.kind .. ":" .. tostring(entry.folder)
+	end
+	equal(
+		table.concat(kinds, " "),
+		"begin:AddonA seal:AddonA begin:AddonB seal:AddonB activate:nil boot:AddonB",
+		"the trace lists the sess in order"
+	)
+	local copy = sess.loader.Trace()
+	copy[1].kind = "changed"
+	equal(sess.loader.Trace()[1].kind, "begin", "the trace is a copy")
+end
+
+-- A legacy table is adopted only when it serves the embedded consumers' ready step; an older one fails the sess
+-- with its installed version named, and neither it nor any embedded copy is run or replaced.
+for _, case in ipairs({
+	{
+		name = "API 1",
+		core = { API = 1, Register = function() end, TrackerLine = { SetInteractive = function() end } },
+	},
+	{ name = "no Register", core = { API = 2, TrackerLine = { SetInteractive = function() end } } },
+	{ name = "no TrackerLine", core = { API = 2, Register = function() end } },
+	{ name = "no SetInteractive", core = { API = 2, Register = function() end, TrackerLine = {} } },
+}) do
+	local sess = newSession()
+	sess.env.C_AddOns = {
+		GetAddOnMetadata = function(name, key)
+			if name == "ForeverCore" and key == "Version" then
+				return "v1.7.0"
+			end
+		end,
+	}
+	sess.env.ForeverCore = case.core
+	sess:Candidate("Embedded", build(1, 9, 0))
+	sess.Fire("PLAYER_LOGIN")
+	check(sess.loader.Selected() == nil, "legacy " .. case.name .. " is not adopted")
+	local err = sess.loader.Error() or ""
+	check(err:find("too old", 1, true) and err:find("v1.7.0", 1, true), "legacy " .. case.name .. " names its version")
+	equal(#sess.boots, 0, "legacy " .. case.name .. " runs no embedded copy beside it")
+	check(rawequal(sess.env.ForeverCore, case.core), "legacy " .. case.name .. " stays the published table")
+end
+do
+	local sess = newSession()
+	sess.env.C_AddOns = {
+		GetAddOnMetadata = function()
+			return "v1.15.0"
+		end,
+	}
+	local shown = {}
+	sess.env.StaticPopupDialogs = {}
+	sess.env.StaticPopup_Show = function(which, message)
+		shown[#shown + 1] = which .. ":" .. tostring(message)
+	end
+	local store = {}
+	sess.env.ForeverCoreDB = store
+	sess.env.ForeverCore = legacy
+	sess:Candidate("Embedded", build(1, 16, 0))
+	local picked = sess.loader.Selected()
+	equal(picked.version, "v1.15.0", "a compatible legacy selection reports its installed version")
+	equal(picked.build, build(1, 15, 0), "and its build")
+	equal(picked.newest, build(1, 16, 0), "and the newer embedded build it runs in place of")
+	local warning = sess.loader.Warning() or ""
+	check(warning:find("v1.15.0", 1, true) and warning:find("1.16.0", 1, true), "the warning names both versions")
+	check(warning:find("Update or disable ForeverCore", 1, true), "and what to do")
+	sess.Tick()
+	equal(#shown, 0, "the notice waits for the world entry")
+	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+	sess.Tick()
+	equal(#shown, 1, "then shows once on screen")
+	check(shown[1]:find("FOREVERCORE_OUTDATED", 1, true) == 1, "as the loader's own notice")
+	sess:Candidate("EmbeddedNewer", build(1, 17, 0))
+	sess.Tick()
+	equal(#shown, 1, "and never a second time in the session")
+	equal(store.outdatedNoticeVersion, "v1.15.0", "the standalone's store remembers the version it was shown for")
+
+	-- A later session with the same standalone version shows nothing; Warning still reports it. A different
+	-- installed version shows it once again.
+	for _, case in ipairs({ { version = "v1.15.0", expect = 0 }, { version = "v1.15.1", expect = 1 } }) do
+		local nextSession = newSession()
+		local laterShown = 0
+		nextSession.env.StaticPopupDialogs = {}
+		nextSession.env.StaticPopup_Show = function()
+			laterShown = laterShown + 1
+		end
+		nextSession.env.C_AddOns = {
+			GetAddOnMetadata = function()
+				return case.version
+			end,
+		}
+		nextSession.env.ForeverCoreDB = store
+		nextSession.env.ForeverCore = legacy
+		nextSession:Candidate("Embedded", build(1, 16, 0))
+		nextSession.Fire("PLAYER_ENTERING_WORLD", false, true)
+		nextSession.Tick()
+		equal(laterShown, case.expect, case.version .. ": the notice shows once per standalone version")
+		check(nextSession.loader.Warning() ~= nil, case.version .. ": Warning still reports it")
+	end
+end
+
+-- The loading frame records PLAYER_ENTERING_WORLD and VARIABLES_LOADED once seen, with the first entry's arguments, so
+-- a runtime booted after them does not wait for them again. A loader first made after login counts both as past.
+do
+	local sess = newSession()
+	sess:Candidate("AddonA", build(1, 7, 0))
+	check(not sess.loader.Seen("PLAYER_ENTERING_WORLD"), "the world entry is not past before it fires")
+	sess.Fire("PLAYER_LOGIN")
+	check(not sess.loader.Seen("VARIABLES_LOADED"), "nor are the saved variables")
+	for _, loadingFrame in ipairs(sess.frames) do
+		if loadingFrame.events.PLAYER_ENTERING_WORLD and loadingFrame.scripts.OnEvent then
+			loadingFrame.scripts.OnEvent(loadingFrame, "PLAYER_ENTERING_WORLD", true, false)
+		end
+	end
+	sess.Fire("VARIABLES_LOADED")
+	check(sess.loader.Seen("PLAYER_ENTERING_WORLD"), "the world entry is recorded after activation too")
+	check(sess.loader.Seen("VARIABLES_LOADED"), "and the saved variables")
+	local initial, reloading = sess.loader.WorldEntry()
+	check(initial == true and reloading == false, "with the first entry's arguments")
+	check(not sess.frames[1].events.PLAYER_ENTERING_WORLD, "then the frame stops listening for it")
+	check(not sess.frames[1].events.VARIABLES_LOADED, "and for the saved variables")
+
+	local lateSess = newSession()
+	lateSess.env.IsLoggedIn = function()
+		return true
+	end
+	lateSess:Candidate("LateHost", build(1, 7, 0))
+	check(lateSess.loader.Seen("PLAYER_ENTERING_WORLD"), "a loader made after login counts the world entry as past")
+	check(lateSess.loader.Seen("VARIABLES_LOADED"), "and the saved variables")
+	lateSess.Fire("PLAYER_ENTERING_WORLD", false, true)
+	local lateInitial, lateReloading = lateSess.loader.WorldEntry()
+	check(lateInitial == false and lateReloading == true, "and still records an entry that fires later")
+end
+
+-- Same highest build with different digests is diagnosed and set aside; the next lower sealed build runs.
+do
+	local sess = newSession()
+	sess:Candidate("TiedA", build(1, 9, 0), { digest = "a" })
+	sess:Candidate("Lower", build(1, 8, 0), { digest = "c" })
+	sess:Candidate("TiedB", build(1, 9, 0), { digest = "b" })
+	sess.Fire("PLAYER_LOGIN")
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "Lower", "the next lower build runs")
+	check(sess.loader.Error() == nil, "with no boot error")
+	local reasons = {}
+	for _, entry in ipairs(sess.loader.Rejections()) do
+		reasons[entry.folder .. ":" .. entry.reason] = true
+	end
+	check(reasons["TiedA:tie-conflict"] and reasons["TiedB:tie-conflict"], "both tied copies are diagnosed")
+	equal(#sess.boots, 1, "and only the lower copy boots")
+end
+
+-- A copy that named its chunk count at Begin seals only with every chunk defined.
+do
+	local sess = newSession()
+	local short = sess.loader.Begin("Short", build(1, 9, 0), "s", 3)
+	short:Define(function() end)
+	short:Define(function() end)
+	local shortSealed, shortReason = short:Seal()
+	check(not shortSealed and shortReason == "incomplete", "a package missing a file does not seal")
+	local whole = sess.loader.Begin("Whole", build(1, 8, 0), "w", 1)
+	whole:Define(function(_, ns)
+		ns.Start, ns.Login, ns.ForeverCore = function() end, function() end, Facade()
+	end)
+	check(whole:Seal(), "a complete package seals")
+	sess.Fire("PLAYER_LOGIN")
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "Whole", "the complete package runs")
+	local bad = sess.loader.Begin("BadCount", build(1, 9, 0), "b", 0)
+	equal(bad.rejected, "chunks", "a chunk count below one is rejected")
+end
+
+-- With no sealed copy at login nothing ran, so the session stays open: the error is reported, and a host loaded
+-- later activates.
+do
+	local sess = newSession()
+	sess.loader.Begin("Unsealed", build(1, 9, 0))
+	local readyCount = 0
+	sess.loader.OnReady(function()
+		readyCount = readyCount + 1
+	end)
+	sess.Fire("PLAYER_LOGIN")
+	check(sess.loader.Selected() == nil, "nothing is selected")
+	check((sess.loader.Error() or ""):find("no sealed", 1, true), "and the loader says why")
+	equal(readyCount, 0, "ready callbacks wait")
+	sess.env.IsLoggedIn = function()
+		return true
+	end
+	sess:Candidate("LoadedLater", build(1, 8, 0))
+	sess.Fire("ADDON_LOADED", "LoadedLater")
+	sess.Tick()
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "LoadedLater", "a host loaded later activates")
+	check(sess.loader.Error() == nil, "and the earlier error clears")
+	equal(readyCount, 1, "then ready callbacks run once")
+	equal(#sess.logins, 1, "and its Login runs once")
+end
+
+-- A host that joins the running copy has its store reconciled once its SavedVariables and handlers are in.
+do
+	local sess = newSession()
+	local refreshes = 0
+	sess:Candidate("Running", build(1, 9, 0), {
+		chunk = function(ns)
+			ns.RefreshStore = function()
+				refreshes = refreshes + 1
+			end
+		end,
+	})
+	sess.Fire("PLAYER_LOGIN")
+	check(sess.loader.OfferStore("Joining", "JoiningDB"), "the joining host's offer is kept")
+	sess.Fire("ADDON_LOADED", "Joining")
+	equal(refreshes, 0, "reconciliation waits for the next frame")
+	sess.Tick()
+	equal(refreshes, 1, "then the live store is mirrored into its table")
+	sess.Fire("ADDON_LOADED", "Joining")
+	sess.Tick()
+	equal(refreshes, 1, "once")
+end
+
+-- An older revision-1 loader that loaded first owns the registry. A newer copy supervises it from outside: Seen and
+-- WorldEntry work, and a session whose PLAYER_LOGIN the old loader missed still activates at the world entry.
+for _, case in ipairs({
+	{ name = "PLAYER_LOGIN", events = { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" } },
+	{ name = "PLAYER_ENTERING_WORLD only", events = { "PLAYER_ENTERING_WORLD" } },
+}) do
+	local sess = newSession("tests/fixtures/loader_revision1.lua")
+	check(sess.loader.revision == nil, case.name .. ": the revision 1 loader owns the registry")
+	check(type(sess.loader.Seen) == "function", case.name .. ": the newer copy adds Seen")
+	sess:Candidate("Embedded", build(1, 16, 0))
+	check(not sess.loader.Seen("PLAYER_ENTERING_WORLD"), case.name .. ": the world entry is not past yet")
+	for _, event in ipairs(case.events) do
+		sess.Fire(event, true, false)
+	end
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "Embedded", case.name .. ": the copy activates")
+	equal(#sess.boots, 1, case.name .. ": once")
+	equal(#sess.logins, 1, case.name .. ": with one Login")
+	check(sess.loader.Seen("PLAYER_ENTERING_WORLD"), case.name .. ": Seen records the world entry")
+	local initial = sess.loader.WorldEntry()
+	equal(initial, true, case.name .. ": with its arguments")
+	local kinds = {}
+	for _, entry in ipairs(sess.loader.Trace()) do
+		kinds[#kinds + 1] = entry.kind
+	end
+	equal(kinds[1], "supervise", case.name .. ": the trace says the registry is supervised")
+end
+
+-- The notice reads in the client's language, every shipped locale naming both versions; any other locale gets English.
+do
+	local texts = {}
+	for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "koKR", "ptBR", "ruRU", "zhCN", "zhTW", "itIT" }) do
+		local sess = newSession()
+		sess.env.GetLocale = function()
+			return locale
+		end
+		sess.env.C_AddOns = {
+			GetAddOnMetadata = function()
+				return "v1.15.0"
+			end,
+		}
+		sess.env.ForeverCore = legacy
+		sess:Candidate("Embedded", build(1, 16, 0))
+		local notice = sess.loader.Warning() or ""
+		check(
+			notice:find("v1.15.0", 1, true) and notice:find("1.16.0", 1, true),
+			locale .. ": the notice names both versions"
+		)
+		texts[locale] = notice
+	end
+	for _, locale in ipairs({ "deDE", "esES", "esMX", "frFR", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+		check(texts[locale] ~= texts.enUS, locale .. ": the notice is translated")
+	end
+	equal(texts.itIT, texts.enUS, "a locale with no line falls back to English")
+end
+
+-- A standalone at the same build as the newest embedded copy is not outdated: no notice, no warning, in either
+-- registry.
+for _, older in ipairs({ false, "tests/fixtures/loader_revision1.lua" }) do
+	local label = older and "revision 1 registry" or "this registry"
+	local sess = newSession(older or nil)
+	local count = 0
+	sess.env.StaticPopupDialogs = {}
+	sess.env.StaticPopup_Show = function()
+		count = count + 1
+	end
+	sess.env.C_AddOns = {
+		GetAddOnMetadata = function()
+			return "v1.16.0"
+		end,
+	}
+	sess.env.ForeverCoreDB = {}
+	sess.env.ForeverCore = legacy
+	sess:Candidate("Embedded", build(1, 16, 0))
+	sess.Fire("PLAYER_LOGIN")
+	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+	sess.Tick()
+	equal(count, 0, label .. ": an up-to-date standalone gets no notice")
+	check(sess.loader.Warning == nil or sess.loader.Warning() == nil, label .. ": and no warning")
+end
+
+-- The released 1.15.0 standalone: its revision 1 loader loads first and its pre-loader table is published at file load,
+-- so revision 1 adopts it as legacy at the first Begin. The newer embedded copy's supervisor shows the outdated
+-- notice once at the world entry.
+do
+	local sess = newSession("tests/fixtures/loader_revision1.lua")
+	local shown = {}
+	sess.env.StaticPopupDialogs = {}
+	sess.env.StaticPopup_Show = function(which, message)
+		shown[#shown + 1] = which .. ":" .. tostring(message)
+	end
+	sess.env.C_AddOns = {
+		GetAddOnMetadata = function()
+			return "v1.15.0"
+		end,
+	}
+	local supervisedStore = { outdatedNoticeVersion = "v1.14.0" }
+	sess.env.ForeverCoreDB = supervisedStore
+	sess.env.ForeverCore = legacy
+	sess:Candidate("Embedded", build(1, 16, 0))
+	equal(sess.loader.Selected() and sess.loader.Selected().mode, "legacy", "revision 1 adopts the standalone")
+	equal(#sess.boots, 0, "and runs no embedded copy beside it")
+	sess.Fire("PLAYER_LOGIN")
+	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+	sess.Tick()
+	equal(#shown, 1, "the outdated notice shows once")
+	check(shown[1]:find("v1.15.0", 1, true) and shown[1]:find("1.16.0", 1, true), "naming both versions")
+	check((sess.loader.Warning() or ""):find("Update or disable ForeverCore", 1, true), "and Warning reports it")
+	equal(supervisedStore.outdatedNoticeVersion, "v1.15.0", "the version it was shown for is remembered")
+	equal(#sess.boots, 0, "still no second runtime")
+end
+
+-- A host first loaded after login with an older standalone already adopted gets the notice without waiting for a
+-- loading screen.
+do
+	local count = 0
+	local sess = newSession(nil, function(env)
+		env.IsLoggedIn = function()
+			return true
+		end
+		env.StaticPopupDialogs = {}
+		env.StaticPopup_Show = function()
+			count = count + 1
+		end
+		env.C_AddOns = {
+			GetAddOnMetadata = function()
+				return "v1.15.0"
+			end,
+		}
+	end)
+	sess.env.ForeverCore = legacy
+	sess:Candidate("LoadedLate", build(1, 16, 0))
+	sess.Tick()
+	equal(count, 1, "a host loaded after login shows the notice on the next frame")
+end
+
+-- A revision 1 registry whose hosts both first load after login hears neither event; the newer copy settles it on the
+-- next frame instead of leaving it silent.
+do
+	local sess = newSession("tests/fixtures/loader_revision1.lua", function(env)
+		env.IsLoggedIn = function()
+			return true
+		end
+	end)
+	sess:Candidate("Embedded", build(1, 16, 0))
+	check(sess.loader.Selected() == nil and sess.loader.Error() == nil, "nothing has run inside the file load")
+	sess.Tick()
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "Embedded", "the copy activates on the next frame")
+	equal(#sess.logins, 1, "with one Login")
+	sess.Tick()
+	equal(#sess.boots, 1, "once")
+end
+
+-- A copy that began but never sealed is named in the report, and never counts as the newer build a notice names.
+do
+	local sess = newSession()
+	sess.loader.Begin("HalfLoaded", build(1, 20, 0))
+	sess:Candidate("Whole", build(1, 16, 0))
+	sess.Fire("PLAYER_LOGIN")
+	equal(sess.loader.Selected() and sess.loader.Selected().folder, "Whole", "the sealed copy runs")
+	local reasons = {}
+	for _, entry in ipairs(sess.loader.Rejections()) do
+		reasons[entry.folder .. ":" .. entry.reason] = true
+	end
+	check(reasons["HalfLoaded:unsealed"], "the unsealed copy is reported")
+
+	local legacySess = newSession()
+	legacySess.env.C_AddOns = {
+		GetAddOnMetadata = function()
+			return "v1.16.0"
+		end,
+	}
+	legacySess.env.ForeverCore = legacy
+	legacySess:Candidate("Current", build(1, 16, 0))
+	legacySess.loader.Begin("HalfNewer", build(1, 20, 0))
+	check(legacySess.loader.Warning() == nil, "an unsealed newer copy does not make the standalone outdated")
+end
 
 print(("embedded_loader_spec: %d checks passed"):format(checks))

@@ -610,42 +610,44 @@ local function IsRegisteredName(name)
 end
 
 -- Install the handler and event frame once for the whole client. Every registered addon shares it.
-previousHandler = type(geterrorhandler) == "function" and geterrorhandler() or nil
-local set = _G.seterrorhandler
-if type(set) == "function" then
-	set(Handler)
-end
-if type(geterrorhandler) == "function" and geterrorhandler() ~= Handler then
-	AttachBugGrabber()
-end
-if type(CreateFrame) == "function" then
-	local frame = CreateFrame("Frame")
-	frame:RegisterEvent("ADDON_ACTION_BLOCKED")
-	frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
-	frame:RegisterEvent("LUA_WARNING")
-	frame:RegisterEvent("ADDON_LOADED")
-	frame:RegisterEvent("PLAYER_LOGIN")
-	frame:SetScript("OnEvent", function(_, event, ...)
-		if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
-			AttachBugGrabber()
-		elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-			local blockedAddon, functionName = ...
-			local context = IsRegisteredName(blockedAddon) and registered[blockedAddon] or nil
-			if context then
-				local blocked = event == "ADDON_ACTION_BLOCKED"
-				local kind = blocked and "blocked" or "forbidden"
-				local action = ToString(functionName)
-				context:Record(kind, kind .. " action", (blocked and "Blocked: " or "Forbidden: ") .. action, nil)
+ns.AtStart(function()
+	previousHandler = type(geterrorhandler) == "function" and geterrorhandler() or nil
+	local set = _G.seterrorhandler
+	if type(set) == "function" then
+		set(Handler)
+	end
+	if type(geterrorhandler) == "function" and geterrorhandler() ~= Handler then
+		AttachBugGrabber()
+	end
+	if type(CreateFrame) == "function" then
+		local frame = CreateFrame("Frame")
+		frame:RegisterEvent("ADDON_ACTION_BLOCKED")
+		frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+		frame:RegisterEvent("LUA_WARNING")
+		frame:RegisterEvent("ADDON_LOADED")
+		frame:RegisterEvent("PLAYER_LOGIN")
+		frame:SetScript("OnEvent", function(_, event, ...)
+			if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
+				AttachBugGrabber()
+			elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+				local blockedAddon, functionName = ...
+				local context = IsRegisteredName(blockedAddon) and registered[blockedAddon] or nil
+				if context then
+					local blocked = event == "ADDON_ACTION_BLOCKED"
+					local kind = blocked and "blocked" or "forbidden"
+					local action = ToString(functionName)
+					context:Record(kind, kind .. " action", (blocked and "Blocked: " or "Forbidden: ") .. action, nil)
+				end
+			elseif event == "LUA_WARNING" then
+				local parts = {}
+				for index = 1, select("#", ...) do
+					parts[index] = ToString((select(index, ...)))
+				end
+				RecordMatching("warning", "Lua warning", table.concat(parts, " "), nil)
 			end
-		elseif event == "LUA_WARNING" then
-			local parts = {}
-			for index = 1, select("#", ...) do
-				parts[index] = ToString((select(index, ...)))
-			end
-			RecordMatching("warning", "Lua warning", table.concat(parts, " "), nil)
-		end
-	end)
-end
+		end)
+	end
+end)
 
 -- Core's own context: errors in ForeverCore's files are recorded under ForeverCore.
 local core = ns.SafeCallFor(coreName or "ForeverCore")

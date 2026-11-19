@@ -44,6 +44,10 @@ local ns = {
 		}
 	end,
 }
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = ns.AtStart or function(work)
+	work()
+end
 assert(loadfile("UI/MapCanvas.lua"))("CanvasSpec", ns)
 local changes = {}
 local canvas = ns.MapCanvasFor("CanvasSpec")

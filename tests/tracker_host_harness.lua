@@ -557,6 +557,10 @@ function harness.new(options)
 		end
 	end
 	function ctx.loadHost(namespace, path)
+		-- Start work runs at once, as in the unwrapped standalone.
+		namespace.AtStart = namespace.AtStart or function(work)
+			work()
+		end
 		setfenv(assert(loadfile("Core/Open.lua")), env)("Test", namespace)
 		path = path or "UI/TrackerHost.lua"
 		setfenv(assert(loadfile("UI/ContextMenu.lua")), env)("Test", namespace)

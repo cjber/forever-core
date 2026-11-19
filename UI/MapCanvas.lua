@@ -557,20 +557,22 @@ local function Click(pin, button)
 	end
 end
 
-clicks = CreateFrame("Frame")
-clicks:SetScript("OnEvent", function(_, event, button)
-	if event == "GLOBAL_MOUSE_DOWN" then
-		pressed, pressedButton = nil, button
-		if hovered and hovered:IsVisible() and hovered:IsMouseOver() then
-			pressed = hovered
+ns.AtStart(function()
+	clicks = CreateFrame("Frame")
+	clicks:SetScript("OnEvent", function(_, event, button)
+		if event == "GLOBAL_MOUSE_DOWN" then
+			pressed, pressedButton = nil, button
+			if hovered and hovered:IsVisible() and hovered:IsMouseOver() then
+				pressed = hovered
+			end
+			return
 		end
-		return
-	end
-	local pin = pressed
-	pressed = nil
-	if pin and pin == hovered and button == pressedButton and pin:IsVisible() and pin:IsMouseOver() then
-		pin.safe:SafeCall("map pin click", Click, pin, button)
-	end
+		local pin = pressed
+		pressed = nil
+		if pin and pin == hovered and button == pressedButton and pin:IsVisible() and pin:IsMouseOver() then
+			pin.safe:SafeCall("map pin click", Click, pin, button)
+		end
+	end)
 end)
 
 --[[ Markers ]]

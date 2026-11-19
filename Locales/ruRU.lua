@@ -132,4 +132,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"Ошибки не записаны. Включите ошибки Lua командой /console scriptErrors 1, выполните /reload и прочитайте первую ошибку с упоминанием %s." -- mt
 L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- mt
 L["Login error: %s"] = "Ошибка входа: %s" -- mt
+L["Warning: %s"] = "Предупреждение: %s" -- mt
 L["Copy %s: %s"] = "Копия %s: %s" -- mt

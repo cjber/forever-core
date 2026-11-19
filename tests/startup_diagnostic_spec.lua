@@ -116,6 +116,15 @@ env.ForeverCoreLoader.Selected = function()
 end
 output = run("report AddonB")
 check(output:find("Core: 1.23.4; API 2", 1, true), "the report identifies the elected runtime version")
+check(not output:find("Warning: ForeverCore", 1, true), "a session with no loader warning reports none")
+
+-- The loader's warning (an outdated standalone) stays in the report after its one on-screen notice.
+env.ForeverCoreLoader.Warning = function()
+	return "ForeverCore v1.15.0 is older than the ForeverCore 1.16.0 your addons include."
+end
+output = run("report")
+check(output:find("Warning: ForeverCore v1.15.0 is older", 1, true), "the report keeps the loader's warning")
+env.ForeverCoreLoader.Warning = nil
 
 -- Every shipped locale translates each diagnostic phrase with the same placeholders.
 local english = ns.L
@@ -150,6 +159,7 @@ for _, locale in ipairs({ "deDE", "esES", "esMX", "frFR", "koKR", "ptBR", "ruRU"
 		"No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s.",
 		"Callback error: %s",
 		"Login error: %s",
+		"Warning: %s",
 		"Copy %s: %s",
 	}) do
 		local translated = rawget(ns.L, phrase)

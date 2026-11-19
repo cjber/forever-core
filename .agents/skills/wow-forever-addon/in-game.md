@@ -162,7 +162,8 @@ FOREVER_CLIENT_CALLER=in-game python3 $FC smoke --repo legacy-forever --ref <sha
 
 `smoke` runs as one job. It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way
 `rebuild-dev.sh` did (the same code, `forever_client.py build-dev <repo> <ref>`, writes
-`test-artifacts/<repo>-dev` for a hand link), ensures a session, takes the job lock, points the build's addon
+`test-artifacts/<repo>-dev` for a hand link; `--core-ref <sha>` embeds that forever-core commit instead of the pinned
+release, to check a core candidate inside an embedding addon), ensures a session, takes the job lock, points the build's addon
 folders at it in `Interface/AddOns`, reloads so the client loads it, runs `/forever selftest` and `errors --addon
 <folder>` for each of the repo's addon folders, and puts the links back before it releases the lock. It posts the
 result with

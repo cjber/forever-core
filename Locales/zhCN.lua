@@ -122,4 +122,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"未记录错误。请用 /console scriptErrors 1 启用 Lua 错误，再执行 /reload，查看首个提到 %s 的错误。"
 L["Callback error: %s"] = "回调错误：%s"
 L["Login error: %s"] = "登录错误：%s"
+L["Warning: %s"] = "警告：%s" -- mt
 L["Copy %s: %s"] = "副本 %s：%s"

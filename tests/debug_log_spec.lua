@@ -51,6 +51,10 @@ local function Load(target, name)
 		end,
 	})
 	name = name or "LogAddon"
+	-- Start work runs at once, as in the unwrapped standalone.
+	target.AtStart = target.AtStart or function(work)
+		work()
+	end
 	assert(loadfile("Core/SafeCall.lua"))(name, target)
 	assert(loadfile("Core/Log.lua"))(name, target)
 end

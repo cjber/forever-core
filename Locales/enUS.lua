@@ -125,4 +125,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"No error captured. Use /console scriptErrors 1, then /reload and read the first error naming %s."
 L["Callback error: %s"] = "Callback error: %s"
 L["Login error: %s"] = "Login error: %s"
+L["Warning: %s"] = "Warning: %s"
 L["Copy %s: %s"] = "Copy %s: %s"

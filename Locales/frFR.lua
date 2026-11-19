@@ -125,4 +125,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"Aucune erreur capturée. Activez les erreurs Lua avec /console scriptErrors 1, utilisez /reload et lisez la première erreur mentionnant %s." -- mt
 L["Callback error: %s"] = "Erreur de callback : %s" -- mt
 L["Login error: %s"] = "Erreur de connexion : %s" -- mt
+L["Warning: %s"] = "Avertissement : %s" -- mt
 L["Copy %s: %s"] = "Copie %s : %s" -- mt

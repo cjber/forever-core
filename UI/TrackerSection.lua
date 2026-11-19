@@ -96,7 +96,7 @@ function TrackerSection.Create(name, mixin, opts)
 			legacy[opts.legacyKey] = nil
 		end
 	end
-	EventUtil.ContinueAfterAllEvents(function()
+	ns.AfterWorldEvents(function()
 		C_Timer.After(0, Attach)
 		C_Timer.After(5, function()
 			if type(opts.onUnattached) ~= "function" then
@@ -106,7 +106,7 @@ function TrackerSection.Create(name, mixin, opts)
 				opts.onUnattached(module)
 			end
 		end)
-	end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
+	end)
 	return module
 end
 

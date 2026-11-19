@@ -125,4 +125,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"기록된 오류가 없습니다. /console scriptErrors 1로 Lua 오류를 켜고 /reload 후 %s을(를) 언급하는 첫 오류를 확인하세요." -- mt
 L["Callback error: %s"] = "콜백 오류: %s" -- mt
 L["Login error: %s"] = "로그인 오류: %s" -- mt
+L["Warning: %s"] = "경고: %s" -- mt
 L["Copy %s: %s"] = "사본 %s: %s" -- mt
