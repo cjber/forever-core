@@ -186,7 +186,7 @@ function card(c) {
   function mark(s) {
     a.status = a.status === s ? null : s;
     paint();
-    send("answer", {check: c.id, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
+    send("answer", {check: c.id, sha: c.sha, digest: c.digest, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
     if (a.status === "fail") note.focus(); else if (a.status) move(1, true);
   }
   let timer;

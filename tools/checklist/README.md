@@ -45,8 +45,10 @@ Enter to open it again), and keeps a jump bar per addon with its answered count 
    PR's screenshot at its head SHA (or a headless capture) as `--picture`.
 2. The coordinator records each linked build with `checklist build`, runs `checklist serve` and opens the page.
 3. Read `checklist status` for results; a fail carries the user's note and screenshot.
-4. Record `--artifact` (the unpacked build linked into AddOns) and `--digest` (its runtime digest) with `checklist build`
-   so a pass binds to the exact runtime; `status --json` returns them under `build`.
+4. Record `--artifact` (the unpacked build linked into AddOns; its files are hashed), `--digest` (its runtime digest)
+   and `--client-build` (the client's version line) with `checklist build` so a pass binds to the exact runtime;
+   `status --json` returns them under `build`, with the artifact's hash now as `artifact_sha256_now`. A page left open
+   from an earlier build cannot record a status for the new one.
 5. `forever_client.py attest --repo X --ref S --checkout PATH` turns a passed build into its `.visual-proof.json`.
 6. Release tooling gates on `checklist status --addon X --sha S`: exit 0 when every check for that exact build passed (a
    skip passes only on a check marked optional), 1 when one did not, 2 when no round covers the build.

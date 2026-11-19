@@ -264,19 +264,24 @@ with no `--flow-click` is unchanged.
 
 When the user has tested a build in the live client from the checklist (`tools/checklist/README.md`), that pass is the
 proof: no headless run is needed. The in-game agent records each linked build with
-`checklist build --addon R --sha SHA --artifact test-artifacts/<dir> --digest <input_digest>`, where the digest is
-`visual_proof --digests`' `input_digest` of that commit. Once the round passes, anyone writes the proof without the
+`checklist build --addon R --sha SHA --artifact test-artifacts/<dir> --digest <input_digest> --client-build <build>`,
+where the digest is `visual_proof --digests`' `input_digest` of that commit and the client build is the client's
+version line (`1.60.1.70959 (Interface 16001)`). Recording `--artifact` also hashes every file of that unpacked build.
+Once the round passes, anyone writes the proof without the
 client:
 
 ```sh
 python3 $FC attest --repo shortest-path-forever --ref <sha> --checkout <worktree at that sha> [--shot <client screenshot>]
 ```
 
-`attest` reads `checklist status --addon R --sha SHA --json` and refuses unless every check for that build passed, the
-round recorded this commit, its digest equals the checkout's `input_digest`, and the recorded unpacked build still
-compares equal to the checkout (`visual_proof --compare`). Each passed check becomes a flow; the screenshots pasted
-into passed checks, plus any `--shot`, go to a new secret gist, at least one in total. The file carries
-`kind: user-checked` and the round, and is committed with the change like any proof.
+`attest` reads `checklist status --addon R --sha SHA --json` and refuses unless the build passed the gate (every check
+passed, or skipped where the check is optional, with at least one pass), each answer was given against this build, the
+round recorded this commit and a client build, its digest equals the checkout's `input_digest`, the unpacked build
+still hashes to what was recorded when it was linked, and it compares equal to the checkout (`visual_proof
+--compare`). Each passed check becomes a flow. The screenshots pasted into passed checks, plus any `--shot` from the
+client's Screenshots folder, are converted to PNG and go to a new secret gist, at least one in total. The file carries
+`kind: user-checked` and the round, and is committed with the change like any proof. A move-folders addon, whose proof
+must test a release package, cannot be attested from a source build.
 
 ### Behaviour and cost flows
 

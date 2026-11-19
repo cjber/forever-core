@@ -3789,9 +3789,18 @@ class AttestTest(unittest.TestCase):
         self.artifact = self.workspace / "test-artifacts/demo-forever-aaaaaaaa"
         (self.artifact / "DemoForever").mkdir(parents=True)
         (self.artifact / "DemoForever/DemoForever.toc").write_text("## Interface: 16001\n")
-        self.shot = self.root / "pasted.png"
-        self.shot.write_bytes(b"png")
-        for name, value in (("WORKSPACE", self.workspace), ("PROOF_SCRATCH", self.root / "scratch")):
+        self.results = self.root / "handoff/results"
+        self.results.mkdir(parents=True)
+        self.client = self.root / "client"
+        (self.client / "Screenshots").mkdir(parents=True)
+        self.shot = self.results / "pasted.png"
+        Image.new("RGB", (4, 4)).save(self.shot)
+        for name, value in (
+            ("WORKSPACE", self.workspace),
+            ("PROOF_SCRATCH", self.root / "scratch"),
+            ("CLIENT", self.client),
+            ("CHECKLIST_RESULTS", self.results),
+        ):
             patch = mock.patch.object(fc, name, value)
             patch.start()
             self.addCleanup(patch.stop)
@@ -3800,16 +3809,34 @@ class AttestTest(unittest.TestCase):
         return {
             "round": "2026-11-19-2",
             "passed": True,
-            "build": {"sha": self.SHA, "digest": "d" * 64, "artifact": "test-artifacts/demo-forever-aaaaaaaa", **build},
+            "build": {
+                "sha": self.SHA,
+                "digest": "d" * 64,
+                "artifact": "test-artifacts/demo-forever-aaaaaaaa",
+                "artifact_sha256": "f" * 64,
+                "artifact_sha256_now": "f" * 64,
+                "client_build": "1.60.1.70959 (Interface 16001)",
+                **build,
+            },
             "checks": [
                 {
                     "id": "c1",
                     "title": "Panel opens",
-                    "steps": ["Type /demo."],
+                    "steps": ["Type /demo.", "  "],
                     "status": "pass",
                     "images": [str(self.shot)],
+                    "sha": self.SHA,
+                    "digest": "d" * 64,
                 },
-                {"id": "c2", "title": "Optional", "steps": [], "status": "skip", "images": []},
+                {
+                    "id": "c2",
+                    "title": "Optional",
+                    "steps": [],
+                    "status": "skip",
+                    "images": [],
+                    "sha": self.SHA,
+                    "digest": "d" * 64,
+                },
             ],
         }
 
@@ -3824,7 +3851,7 @@ class AttestTest(unittest.TestCase):
             mock.patch.object(fc, "proof_digests", return_value={"input_digest": digest, "candidate": "c" * 64}),
             mock.patch.object(fc, "package_name", return_value="DemoForever"),
             mock.patch.object(fc, "proof_compare", return_value={"equivalent": True}) as compare,
-            mock.patch.object(fc, "client_build", return_value="1.60.1.70959 (Interface 16001)"),
+            mock.patch.object(fc, "client_build", side_effect=AssertionError("the round records the client build")),
             mock.patch.object(fc, "create_gist", return_value="gist1") as gist,
             mock.patch.object(
                 fc,
@@ -3848,22 +3875,39 @@ class AttestTest(unittest.TestCase):
         self.assertEqual(proof["input_digest"], "d" * 64)
         self.assertEqual(proof["runtime_sha256"], "d" * 64)
         self.assertEqual(proof["source_commit"], self.SHA)
+        self.assertEqual(proof["client_build"], "1.60.1.70959 (Interface 16001)")
         self.assertEqual(proof["flows"], [{"name": "Panel opens", "steps": ["Type /demo."], "result": "pass"}])
         self.assertEqual([image["url"] for image in proof["images"]], ["u/1-pasted.png"])
 
     def test_adds_client_screenshots_named_with_shot(self):
-        capture = self.root / "WoWScrnShot_111926_103244.jpg"
-        capture.write_bytes(b"jpg")
+        capture = self.client / "Screenshots/WoWScrnShot_111926_103244.jpg"
+        Image.new("RGB", (4, 4)).save(capture, "JPEG")
         report = self.report()
         report["checks"][0]["images"] = []
         self.run_attest(report, shots=[str(capture)])
         proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
-        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-wowscrnshot-111926-103244.jpg"])
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-wowscrnshot-111926-103244.png"])
+        staged = self.root / "scratch" / f"attest-demo-forever-{self.SHA[:7]}/1-wowscrnshot-111926-103244.png"
+        self.assertTrue(staged.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "the checker takes PNG only")
 
     def test_refuses_a_pass_for_another_runtime_or_without_evidence(self):
         no_images = self.report()
         no_images["checks"][0]["images"] = []
+        stale = self.report()
+        stale["checks"][1]["digest"] = "e" * 64
+        stray = self.report()
+        secret = self.root / "id_ed25519.png"
+        secret.write_bytes(b"key")
+        stray["checks"][0]["images"] = [str(secret)]
+        lua = self.report()
+        lua["checks"][0]["steps"] = ["/home/me/flow.lua"]
         cases = {
+            "not the one recorded": (self.report(artifact_sha256_now="0" * 64), "d" * 64),
+            "recorded before artifact hashing": (self.report(artifact_sha256=""), "d" * 64),
+            "were not answered for this build": (stale, "d" * 64),
+            "no client build": (self.report(client_build=""), "d" * 64),
+            "not a screenshot from the client": (stray, "d" * 64),
+            "absolute path": (lua, "d" * 64),
             "another build": (self.report(), "e" * 64),
             "no runtime digest": (self.report(digest=""), "d" * 64),
             "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),

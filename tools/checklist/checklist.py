@@ -9,6 +9,7 @@ import base64
 import contextlib
 import datetime as dt
 import fcntl
+import hashlib
 import html
 import json
 import os
@@ -225,10 +226,16 @@ def save_results(name: str, data: dict) -> None:
     tmp.replace(path)
 
 
-def record_answer(name: str, check: str, status: str | None, note: str | None) -> dict:
+def record_answer(
+    name: str, check: str, status: str | None, note: str | None, shown: tuple[str, str] | None = None
+) -> dict:
+    """Record an answer for the build now linked. `shown` is the (sha, digest) the page rendered; a status from a page
+    rendered for another build is refused, so a tab left open across a relink cannot pass the new build."""
     composed = {c["id"]: c for c in compose(name)["checks"]}
     if check not in composed:
         raise ValueError(f"no check {check} in round {name}")
+    if status and shown is not None and shown != (composed[check]["sha"], composed[check]["digest"]):
+        raise ValueError("the build for this check changed since the page loaded: reload the page and check again")
     if status not in (*STATUSES, None, ""):
         raise ValueError(f"status must be one of {', '.join(STATUSES)}")
     with locked(name):
@@ -548,7 +555,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict) or not isinstance(body.get("check", ""), str):
                 raise ValueError("expected a JSON object with a string check")
             if kind == "answer":
-                return self.send_json(record_answer(name, body["check"], body.get("status"), body.get("note")))
+                shown = (body.get("sha", ""), body.get("digest", ""))
+                return self.send_json(record_answer(name, body["check"], body.get("status"), body.get("note"), shown))
             if kind == "image":
                 return self.send_json({"file": record_image(name, body["check"], body["data"])})
             with locked(name):
@@ -638,6 +646,19 @@ def full_sha(addon: str, sha: str) -> str:
     raise SystemExit(f"cannot resolve {addon} {sha} to a full commit SHA: fetch the checkout or pass all 40 characters")
 
 
+def artifact_digest(artifact: str) -> str:
+    """The sha256 over every file of an unpacked build (relative path and bytes), so a later rebuild in place shows."""
+    root = Path(artifact)
+    root = root if root.is_absolute() else HANDOFF.parent / root
+    if not root.is_dir():
+        return ""
+    h = hashlib.sha256()
+    for f in sorted(p for p in root.rglob("*") if p.is_file()):
+        h.update(f.relative_to(root).as_posix().encode() + b"\0")
+        h.update(hashlib.sha256(f.read_bytes()).digest())
+    return h.hexdigest()
+
+
 def cmd_build(a):
     name = a.round or latest_round()
     data = load_round(name)
@@ -647,9 +668,13 @@ def cmd_build(a):
         data["builds"].append(build)
     if a.sha:
         a.sha = full_sha(a.addon, a.sha)
-    for key in ("sha", "version", "build", "artifact", "digest"):
+    for key in ("sha", "version", "build", "artifact", "digest", "client_build"):
         if getattr(a, key):
             build[key] = getattr(a, key)
+    if a.artifact:
+        build["artifact_sha256"] = artifact_digest(a.artifact)
+        if not build["artifact_sha256"]:
+            raise SystemExit(f"no unpacked build at {a.artifact}")
     if a.pr:
         build["prs"] = sorted(set(build.get("prs", [])) | set(a.pr), key=str)
     if a.no_regression:
@@ -740,6 +765,8 @@ def cmd_status(a):
             for r in rows:
                 r["images"] = [str(results_dir() / name / i) for i in r["images"]]
             build = next((b for b in load_round(name)["builds"] if b["addon"] == a.addon), {}) if name else {}
+            if build.get("artifact"):
+                build["artifact_sha256_now"] = artifact_digest(build["artifact"])
             out = {"round": name, "addon": a.addon, "sha": a.sha, "passed": ok, "build": build, "checks": rows}
             print(json.dumps(out, indent=2))
             raise SystemExit(0 if ok else (2 if not rows else 1))
@@ -827,6 +854,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--build", help="how it was built")
     p.add_argument("--artifact", help="the unpacked build linked into AddOns, such as test-artifacts/<repo>-<build>")
     p.add_argument("--digest", help="the runtime digest of that build (visual_proof --digests)")
+    p.add_argument("--client-build", help="the client build it was tested in, such as '1.60.1.70959 (Interface 16001)'")
     p.add_argument("--pr", action="append", help="a PR the build carries; repeat")
     p.add_argument("--linked", help="the round's 'builds linked' line")
     p.add_argument("--no-regression", action="store_true", help="leave this addon's regression suite out")

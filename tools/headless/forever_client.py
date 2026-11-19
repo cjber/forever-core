@@ -2874,6 +2874,8 @@ def proof(args: argparse.Namespace) -> int:
 
 
 CHECKLIST = Path(__file__).resolve().parents[1] / "checklist/checklist"
+CHECKLIST_RESULTS = Path(os.environ.get("CHECKLIST_HOME", WORKSPACE / "wow-handoff")) / "results"
+SHOT_SUFFIXES = {".png", ".jpg", ".jpeg", ".tga", ".webp"}
 
 
 def checklist_status(repo: str, commit: str, round_name: str | None = None) -> dict:
@@ -2951,7 +2953,20 @@ def attest(args: argparse.Namespace) -> int:
     folders = addon_folders(artifact, package_name(root, commit)) if build.get("artifact") and artifact.is_dir() else []
     if not folders:
         raise ClientError(f"{report['round']} names no unpacked build for {repo} to check ({build.get('artifact')!r})")
+    if not build.get("artifact_sha256") or build["artifact_sha256"] != build.get("artifact_sha256_now"):
+        raise ClientError(
+            f"{report['round']}: the unpacked build at {build.get('artifact')} is not the one recorded when it was "
+            "linked (rebuilt, removed or recorded before artifact hashing): relink, record it and test again"
+        )
+    stale = [row["id"] for row in report["checks"] if (row.get("sha"), row.get("digest")) != (commit, recorded)]
+    if stale:
+        raise ClientError(f"{report['round']}: checks {', '.join(stale)} were not answered for this build")
     proof_compare(checkout, folders[0][1])
+    tested_in = build.get("client_build")
+    if not tested_in:
+        raise ClientError(
+            f"{report['round']} recorded no client build for {repo}: record it with checklist build --client-build"
+        )
     passed = [row for row in report["checks"] if row.get("status") == "pass"]
     if not passed:
         raise ClientError(f"{report['round']}: no check for {repo}@{commit[:7]} was answered pass")
@@ -2959,6 +2974,28 @@ def attest(args: argparse.Namespace) -> int:
     missing = [str(s) for s in shots if not s.is_file()]
     if missing:
         raise ClientError(f"screenshot not found: {', '.join(missing)}")
+    # visual_proof refuses a Lua flow named by an absolute path (#591); a checklist step should be a slash command.
+    lua = [
+        s
+        for row in passed
+        for s in row.get("steps") or []
+        if s.strip().endswith(".lua") and Path(s.strip()).is_absolute()
+    ]
+    if lua:
+        raise ClientError(
+            f"a passed check names a Lua file by absolute path, which a public proof may not carry: {lua}"
+        )
+    # Evidence goes to a gist, so only an image from the client or the checklist's own results can be sent.
+    allowed = [(CLIENT / "Screenshots").resolve(), CHECKLIST_RESULTS.resolve()]
+    stray = [
+        str(s)
+        for s in shots
+        if s.suffix.lower() not in SHOT_SUFFIXES or not any(s.resolve().is_relative_to(base) for base in allowed)
+    ]
+    if stray:
+        raise ClientError(
+            f"not a screenshot from the client's Screenshots folder or the checklist results: {', '.join(stray)}"
+        )
     if not shots:
         raise ClientError(
             f"no screenshot for {repo}@{commit[:7]}: paste one into a passed check or name a client capture with --shot"
@@ -2968,8 +3005,13 @@ def attest(args: argparse.Namespace) -> int:
     staging.mkdir(parents=True)
     named = []
     for index, shot_path in enumerate(shots, start=1):
-        target = staging / f"{index}-{flow_slug(shot_path.stem)}{shot_path.suffix.lower()}"
-        shutil.copyfile(shot_path, target)
+        # The checker accepts PNG evidence only; client captures are JPEG or TGA and pasted ones may be JPEG or WebP.
+        target = staging / f"{index}-{flow_slug(shot_path.stem)}.png"
+        try:
+            with Image.open(shot_path) as image:
+                image.convert("RGB").save(target, "PNG")
+        except OSError as e:
+            raise ClientError(f"{shot_path} is not a readable image: {e}") from e
         named.append(target)
     description = f"User-checked visual proof for {repo} at {commit} ({report['round']})"
     gist = create_gist(description, staging)
@@ -2978,13 +3020,17 @@ def attest(args: argparse.Namespace) -> int:
         "input_digest": digests["input_digest"],
         "runtime_sha256": digests["input_digest"],
         "candidate": digests["candidate"],
-        "client_build": client_build(folders[0][1]),
+        "client_build": tested_in,
         "tested_artifact": "source-tree",
         "source_commit": commit,
         "kind": "user-checked",
         "round": report["round"],
         "flows": [
-            {"name": row["title"], "steps": row.get("steps") or [row.get("pass") or row["title"]], "result": "pass"}
+            {
+                "name": row["title"],
+                "steps": [s.strip() for s in row.get("steps") or [] if s.strip()] or [row.get("pass") or row["title"]],
+                "result": "pass",
+            }
             for row in passed
         ],
         "images": images,
