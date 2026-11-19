@@ -312,24 +312,25 @@ class LuaReader:
         raise ValueError(f"unexpected {c!r} at {self.i}")
 
     def string(self, quote: str) -> str:
+        """A quoted string; a decimal escape is one byte, so escaped UTF-8 sequences decode back to their text."""
         self.i += 1
-        out = []
+        out = bytearray()
         while True:
             c = self.s[self.i]
             if c == quote:
                 self.i += 1
-                return "".join(out)
+                return out.decode("utf-8", errors="replace")
             if c == "\\":
                 n = self.s[self.i + 1]
                 if n.isdigit():
                     m = re.compile(r"\d{1,3}").match(self.s, self.i + 1)
-                    out.append(chr(int(m.group())))
+                    out.append(int(m.group()) & 0xFF)
                     self.i = m.end()
                     continue
-                out.append(self.ESCAPES.get(n, n))
+                out += self.ESCAPES.get(n, n).encode()
                 self.i += 2
                 continue
-            out.append(c)
+            out += c.encode()
             self.i += 1
 
     def long_string(self) -> str:
@@ -662,6 +663,11 @@ def cmd_status(a):
         if not (a.addon and a.sha):
             raise SystemExit("--addon and --sha go together")
         ok, rows, name = gate(a.addon, a.sha, [a.round] if a.round else None)
+        if a.json:
+            for r in rows:
+                r["images"] = [str(results_dir() / name / i) for i in r["images"]]
+            print(json.dumps({"round": name, "addon": a.addon, "sha": a.sha, "passed": ok, "checks": rows}, indent=2))
+            raise SystemExit(0 if ok else (2 if not rows else 1))
         if not rows:
             print(f"no round has checks for {a.addon} at {a.sha}")
             raise SystemExit(2)

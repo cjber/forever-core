@@ -3,6 +3,8 @@
 The page the user works through in the live client before an addon release, and the results the coordinator reads.
 It is coordinator tooling: nothing here is vendored into an addon or loaded by the game.
 
+![The checklist page for a round, with one check passed and one failed](preview.png)
+
 ```sh
 tools/checklist/checklist new 2026-11-19-3 --title "Test round 3"     # start a round
 tools/checklist/checklist build --addon shortest-path-forever --sha <sha> --pr 1066 --build "PR head"
