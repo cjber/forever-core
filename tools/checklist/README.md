@@ -22,9 +22,10 @@ tools/checklist/checklist regression shortest-path-forever --issue shortest-path
 `checklist` runs `checklist.py` in `tools/pyproject.toml`'s environment. `--round` picks a round; the newest is the
 default.
 
-The page follows the system theme (dark when there is none), collapses a passed card to one line (click it or press
-Enter to open it again), and keeps a jump bar per addon with its answered count under the progress bar. A check's
-`--picture` repeats for several expected pictures, shown in a column beside its steps.
+The page follows the system theme (dark when there is none) and keeps each check to one row: Pass, Fail and Skip,
+the title, the setup and steps run together as one action line, the pass line, and a note box. A done row folds to its
+title (click it or press Enter to open it). A sticky bar jumps to each addon with its answered count, the builds sit
+behind one line, and expected pictures (`--picture`, repeatable) open on a click.
 
 ## Files
 
