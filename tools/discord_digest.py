@@ -261,7 +261,9 @@ def parse_changelog(text):
             image = picture.group(1)
             continue
         if line.startswith("### "):
-            collecting = False
+            # Player bullets sit under the changelog's Added/Changed/Fixed/Removed sections; only
+            # other subsections (For addon authors, Tooling, ...) stop collection.
+            collecting = line[4:].strip() in ("Added", "Changed", "Fixed", "Removed")
             continue
         if collecting:
             bullet = _PLAYER_BULLET.match(line)
@@ -392,6 +394,8 @@ def build_features(datasets, since, now):
             reverse=True,
         ):
             entry = data.changelog.get(release.version) or ChangelogEntry()
+            if not entry.headlines:
+                continue
             spec = PlannedEmbed(
                 color=data.addon.accent,
                 author_name=data.addon.name,
