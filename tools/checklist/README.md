@@ -3,7 +3,7 @@
 The page the user works through in the live client before an addon release, and the results the coordinator reads.
 It is coordinator tooling: nothing here is vendored into an addon or loaded by the game.
 
-![The checklist page for a round, with one check passed and one failed](preview.png)
+![The checklist page for a round: the addon jump bar, the builds and a check with its expected pictures](preview.png)
 
 ```sh
 tools/checklist/checklist new 2026-11-19-3 --title "Test round 3"     # start a round
@@ -21,6 +21,10 @@ tools/checklist/checklist regression shortest-path-forever --issue shortest-path
 
 `checklist` runs `checklist.py` in `tools/pyproject.toml`'s environment. `--round` picks a round; the newest is the
 default.
+
+The page follows the system theme (dark when there is none), collapses a passed card to one line (click it or press
+Enter to open it again), and keeps a jump bar per addon with its answered count under the progress bar. A check's
+`--picture` repeats for several expected pictures, shown in a column beside its steps.
 
 ## Files
 

@@ -138,7 +138,7 @@ def normalise_check(raw: dict, addon: str, sha: str, kind: str, digest: str = ""
         "setup": raw.get("setup", ""),
         "steps": [str(s) for s in steps],
         "pass": raw.get("pass", ""),
-        "picture": raw.get("picture", ""),
+        "picture": [raw["picture"]] if isinstance(raw.get("picture"), str) else list(raw.get("picture") or []),
         "pr": raw.get("pr", ""),
         "issue": raw.get("issue", ""),
         "minutes": int(raw.get("minutes") or DEFAULT_MINUTES),
@@ -439,7 +439,7 @@ def embed_picture(ref: str) -> str:
 def render(name: str, served: bool) -> str:
     composed = compose(name)
     for check in composed["checks"]:
-        check["picture"] = embed_picture(check["picture"])
+        check["picture"] = [embed_picture(p) for p in check["picture"]]
     results = load_results(name)
     by_id = {c["id"]: c for c in composed["checks"]}
     results["answers"] = {k: current(v, by_id[k]) for k, v in results["answers"].items() if k in by_id}
@@ -798,7 +798,11 @@ def check_args(p: argparse.ArgumentParser, regression: bool) -> None:
     p.add_argument("--setup", help="what to have in place first")
     p.add_argument("--step", action="append", help="one numbered step; repeat for each")
     p.add_argument("--pass", dest="pass_", required=True, help="what the user sees when it works")
-    p.add_argument("--picture", help="expected picture: a URL at an immutable SHA, or a local image path")
+    p.add_argument(
+        "--picture",
+        action="append",
+        help="expected picture (repeatable): a URL at an immutable SHA, or a local image path",
+    )
     p.add_argument("--minutes", type=int, help=f"estimated minutes (default {DEFAULT_MINUTES})")
     p.add_argument("--id", help="stable id (default: from the title)")
     p.add_argument("--issue", help="the issue this check guards, such as shortest-path-forever#978")
