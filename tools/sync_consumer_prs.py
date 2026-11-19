@@ -13,14 +13,13 @@ copy of this checkout's own `sync.py` so the updater that runs is the one being 
 `tools/check_family.py`, and, if anything changed, commits the result through the GraphQL `createCommitOnBranch`
 mutation and opens or refreshes the PR with squash auto-merge enabled.
 
-An open sync PR whose branch already contains `main` is updated in place: the sync runs on that PR's own head and the
-refreshed files are added on top of it, so any commit pushed to the PR since the last sync stays on the branch. Once
-`main` has moved past the branch, a branch holding only the sync's own commits is rebuilt from `main` like a new one:
-everything on it is regenerated, and the changelog and pin decisions are made against `main`'s own CHANGELOG and tags
-rather than the stale branch's, which would otherwise read the branch's marked entry as released by `main`'s tag of the
-same number and stack another entry on top. A branch behind `main` that also holds commits someone pushed to it is left
-for that person to merge `main` into. A PR the sync cannot update in place is left exactly as it is, with a comment
-that says why, and the branch is never forced anywhere else. A consumer with no open PR
+An open sync PR that holds a commit the sync did not make (a fix, a merge, a recorded proof) is held: the person who
+pushed it owns the PR, so the run neither commits to it nor comments, and the newer core lands with the next sync after
+it merges. A PR of sync commits only whose branch contains `main` is updated in place on its own head. Once `main` has
+moved past such a branch, it is rebuilt from `main` like a new one: the changelog and pin decisions are made against
+`main`'s own CHANGELOG and tags rather than the stale branch's, which would otherwise read the branch's marked entry as
+released by `main`'s tag of the same number and stack another entry on top. A PR the sync cannot update in place is left
+exactly as it is, with a comment that says why, and the branch is never forced anywhere else. A consumer with no open PR
 has its sync commit built on a scratch branch from `main` and moves `forever-core-sync` to it in one ref update; the
 scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR empty and have
 GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures` ruleset accepts the
@@ -995,17 +994,14 @@ def fetch_branch(root: Path, branch: str) -> str | None:
     return git(root, "rev-parse", "FETCH_HEAD").stdout.strip()
 
 
-def foreign_commits_behind_main(repo: str, main: str, head: str) -> list[str] | None:
-    """None when the sync branch at `head` already contains `main`; otherwise the commits on it the sync did not make.
+def sync_branch_state(repo: str, main: str, head: str) -> tuple[bool, list[str]]:
+    """Whether the sync branch at `head` is behind `main`, and the commits on it the sync did not make.
 
-    An empty list means the branch holds only sync commits, so it can be rebuilt from `main` with nothing lost. The
-    clone is one commit deep, so the comparison is GitHub's compare API on the two exact commits.
+    The clone is one commit deep, so the comparison is GitHub's compare API on the two exact commits.
     """
     if head == main:
-        return None
+        return False, []
     compared = api_json(f"repos/{OWNER}/{repo}/compare/{main}...{head}")
-    if int(compared["behind_by"]) == 0:
-        return None
     commits = compared.get("commits") or []
     foreign = [
         f"{entry['sha'][:7]} {entry['commit']['message'].splitlines()[0]}"
@@ -1015,7 +1011,7 @@ def foreign_commits_behind_main(repo: str, main: str, head: str) -> list[str] | 
     # The compare API lists at most 250 commits; any it leaves out cannot be shown to be the sync's own.
     if len(commits) < int(compared["ahead_by"]):
         foreign.append(f"{int(compared['ahead_by']) - len(commits)} commits the compare did not list")
-    return foreign
+    return int(compared["behind_by"]) > 0, foreign
 
 
 def comment(repo: str, number: int, body: str) -> None:
@@ -1111,11 +1107,10 @@ def sync_consumer(
 ) -> Result:
     """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
 
-    An open sync PR whose branch contains `main` is updated in place: the sync runs on that PR's own head and its
-    commit is added on top, so a commit pushed to the PR since the last sync is never dropped. The commit is made
-    straight on `forever-core-sync` with that head as its expected one, which GitHub refuses if the branch moved
-    meanwhile: then the branch is left untouched and a comment on the PR says why. Once `main` has moved past the
-    branch, a branch of sync commits only is rebuilt from `main` and a branch carrying other commits is left alone.
+    An open sync PR holding a commit the sync did not make is held and not touched. One of sync commits only whose
+    branch contains `main` is updated in place: the commit is made straight on `forever-core-sync` with its head as
+    the expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left untouched and a
+    comment on the PR says why. Once `main` has moved past a sync-only branch, it is rebuilt from `main`.
     A consumer with no open PR has its branch rebuilt from `main` on a scratch branch, which is safe because there is
     no PR whose commits could be lost. A PR that merges or closes while the sync runs takes its branch with it; then
     the sync starts over once from the new `main`, as if no PR were open.
@@ -1133,16 +1128,13 @@ def sync_consumer(
                 # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
                 pull = None
             else:
-                foreign = foreign_commits_behind_main(repo, main, head)
+                behind, foreign = sync_branch_state(repo, main, head)
                 if foreign:
-                    return left_alone(
-                        repo,
-                        pull,
-                        "main has moved past this branch, which also holds commits the sync did not make ("
-                        + "; ".join(foreign)
-                        + "). Merge main into it so the sync can continue on top.",
-                    )
-                if foreign is None:
+                    # Someone pushed to the PR (a fix, a merge, a recorded proof) and owns it now: a sync commit would
+                    # move the head they are testing or proving. The core lands with the next sync after it merges.
+                    detail = "the PR holds commits the sync did not make: " + "; ".join(foreign)
+                    return Result(repo, "held", url=pull.get("html_url"), detail=detail)
+                if not behind:
                     base, in_place = head, True
                 # Otherwise the branch holds only sync commits made against an older main: rebuild it from main.
         git(root, "checkout", "-B", BRANCH, base)
@@ -1204,6 +1196,8 @@ def summary_markdown(sha: str, results: list[Result]) -> str:
         "A PR left open is waiting on that addon's own checks; a red check keeps it open rather than landing.",
         "A PR reported as left alone was not touched: it keeps every commit it had, and its comment says what stopped"
         " the sync.",
+        "A PR reported as held carries commits someone pushed to it, so the sync leaves it to them; the newer core"
+        " lands with the next sync after it merges.",
     ]
     return "\n".join(lines) + "\n"
 
