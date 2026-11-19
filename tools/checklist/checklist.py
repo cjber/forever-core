@@ -42,6 +42,9 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("CHECKLIST_PORT", "8765"))
 DEFAULT_MINUTES = 2
 STATUSES = ("pass", "fail", "skip")
+# What an answer is bound to: the commit, its runtime digest, the hash of the unpacked build linked and the client
+# build. A change to any of them reopens the check, its screenshots included.
+BOUND = ("sha", "digest", "artifact_sha256", "client_build")
 ROUND_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d+)$")
 
 
@@ -147,6 +150,13 @@ def normalise_check(raw: dict, addon: str, sha: str, kind: str, digest: str = ""
     }
 
 
+def bind(check: dict, build: dict) -> dict:
+    """The check stamped with the linked build's artifact hash and client build (see BOUND)."""
+    check["artifact_sha256"] = str(build.get("artifact_sha256", ""))
+    check["client_build"] = str(build.get("client_build", ""))
+    return check
+
+
 def compose(name: str) -> dict:
     """The round as the page and the gate see it: its own checks, then each shipping addon's regression suite."""
     data = load_round(name)
@@ -156,13 +166,15 @@ def compose(name: str) -> dict:
     for raw in data["checks"]:
         addon = raw["addon"]
         build = builds.get(addon, {})
-        checks.append(normalise_check(raw, addon, build.get("sha", ""), "round", build.get("digest", "")))
+        checks.append(bind(normalise_check(raw, addon, build.get("sha", ""), "round", build.get("digest", "")), build))
     for addon, build in builds.items():
         if build.get("regression", True) is False:
             continue
         for raw in regression_suite(addon).get("checks", []):
             reg = dict(raw, id=f"reg:{addon}:{raw['id']}")
-            checks.append(normalise_check(reg, addon, build.get("sha", ""), "regression", build.get("digest", "")))
+            checks.append(
+                bind(normalise_check(reg, addon, build.get("sha", ""), "regression", build.get("digest", "")), build)
+            )
     order = list(builds) + [c["addon"] for c in checks if c["addon"] not in builds]
     groups = []
     for addon in dict.fromkeys(order):
@@ -226,16 +238,14 @@ def save_results(name: str, data: dict) -> None:
     tmp.replace(path)
 
 
-def record_answer(
-    name: str, check: str, status: str | None, note: str | None, shown: tuple[str, str] | None = None
-) -> dict:
-    """Record an answer for the build now linked. `shown` is the (sha, digest) the page rendered; a status from a page
-    rendered for another build is refused, so a tab left open across a relink cannot pass the new build."""
+def record_answer(name: str, check: str, status: str | None, note: str | None, shown: dict | None = None) -> dict:
+    """Record an answer for the build now linked. `shown` holds the BOUND values the page rendered; a status from a
+    page rendered for another build is refused, so a tab left open across a relink cannot pass the new build."""
     composed = {c["id"]: c for c in compose(name)["checks"]}
     if check not in composed:
         raise ValueError(f"no check {check} in round {name}")
-    if status and shown is not None and shown != (composed[check]["sha"], composed[check]["digest"]):
-        raise ValueError("the build for this check changed since the page loaded: reload the page and check again")
+    if status:
+        require_shown(composed[check], shown)
     if status not in (*STATUSES, None, ""):
         raise ValueError(f"status must be one of {', '.join(STATUSES)}")
     with locked(name):
@@ -248,16 +258,23 @@ def record_answer(
         if note is not None:
             answer["note"] = note
         answer["addon"] = composed[check]["addon"]
-        answer["sha"] = composed[check]["sha"]
-        answer["digest"] = composed[check]["digest"]
+        answer.update({k: composed[check][k] for k in BOUND})
         answer["at"] = now()
         save_results(name, data)
         return answer
 
 
-def record_image(name: str, check: str, data_url: str) -> str:
-    if check not in {c["id"] for c in compose(name)["checks"]}:
+def require_shown(check: dict, shown: dict | None) -> None:
+    """Refuse a page's write when it was rendered for another build than the one linked now. None is a CLI call."""
+    if shown is not None and any(str(shown.get(k) or "") != check[k] for k in BOUND):
+        raise ValueError("the build for this check changed since the page loaded: reload the page and check again")
+
+
+def record_image(name: str, check: str, data_url: str, shown: dict | None = None) -> str:
+    composed = {c["id"]: c for c in compose(name)["checks"]}
+    if check not in composed:
         raise ValueError(f"no check {check} in round {name}")
+    require_shown(composed[check], shown)
     m = re.match(r"^data:image/(png|jpeg|webp);base64,(.+)$", data_url, re.S)
     if not m:
         raise ValueError("expected a PNG, JPEG or WebP data URL")
@@ -266,7 +283,9 @@ def record_image(name: str, check: str, data_url: str) -> str:
     folder.mkdir(parents=True, exist_ok=True)
     with locked(name):
         data = load_results(name)
-        answer = data["answers"].setdefault(check, {"images": []})
+        # A screenshot taken for an earlier build is no evidence for this one.
+        answer = current(data["answers"].get(check, {"images": []}), composed[check])
+        data["answers"][check] = answer
         images = answer.setdefault("images", [])
         fname = f"{slug(check)}-{len(images) + 1}.{ext}"
         (folder / fname).write_bytes(base64.b64decode(m.group(2)))
@@ -555,10 +574,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict) or not isinstance(body.get("check", ""), str):
                 raise ValueError("expected a JSON object with a string check")
             if kind == "answer":
-                shown = (body.get("sha", ""), body.get("digest", ""))
+                shown = {k: body.get(k) for k in BOUND}
                 return self.send_json(record_answer(name, body["check"], body.get("status"), body.get("note"), shown))
             if kind == "image":
-                return self.send_json({"file": record_image(name, body["check"], body["data"])})
+                shown = {k: body.get(k) for k in BOUND}
+                return self.send_json({"file": record_image(name, body["check"], body["data"], shown)})
             with locked(name):
                 data = load_results(name)
                 data["submitted"] = now()
@@ -587,11 +607,11 @@ def build_matches(recorded: str, asked: str) -> bool:
 
 
 def current(answer: dict, check: dict) -> dict:
-    """The answer as it stands for the build now linked: a status given against another SHA or runtime digest no
-    longer counts."""
-    stale = answer.get("sha", "") != check["sha"] or answer.get("digest", "") != check["digest"]
-    if answer.get("status") and stale:
-        return {k: v for k, v in answer.items() if k not in ("status", "sha", "digest")}
+    """The answer as it stands for the build now linked: a status or screenshot given against another build (see BOUND)
+    no longer counts; the note stays."""
+    stale = any(answer.get(k, "") != check[k] for k in BOUND)
+    if stale and (answer.get("status") or answer.get("images")):
+        return {k: v for k, v in answer.items() if k not in ("status", "images", *BOUND)}
     return answer
 
 
@@ -646,10 +666,15 @@ def full_sha(addon: str, sha: str) -> str:
     raise SystemExit(f"cannot resolve {addon} {sha} to a full commit SHA: fetch the checkout or pass all 40 characters")
 
 
+def artifact_root(artifact: str) -> Path:
+    """A recorded artifact path; a relative one is under the workspace that holds the handoff folder."""
+    root = Path(artifact)
+    return root if root.is_absolute() else HANDOFF.parent / root
+
+
 def artifact_digest(artifact: str) -> str:
     """The sha256 over every file of an unpacked build (relative path and bytes), so a later rebuild in place shows."""
-    root = Path(artifact)
-    root = root if root.is_absolute() else HANDOFF.parent / root
+    root = artifact_root(artifact)
     if not root.is_dir():
         return ""
     h = hashlib.sha256()
@@ -766,6 +791,7 @@ def cmd_status(a):
                 r["images"] = [str(results_dir() / name / i) for i in r["images"]]
             build = next((b for b in load_round(name)["builds"] if b["addon"] == a.addon), {}) if name else {}
             if build.get("artifact"):
+                build["artifact_path"] = str(artifact_root(build["artifact"]))
                 build["artifact_sha256_now"] = artifact_digest(build["artifact"])
             out = {"round": name, "addon": a.addon, "sha": a.sha, "passed": ok, "build": build, "checks": rows}
             print(json.dumps(out, indent=2))

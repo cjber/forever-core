@@ -151,6 +151,8 @@ for (const b of R.builds) {
     el("td", {}, b.build || "")));
 }
 
+// The build the page shows for a check; the server refuses a write rendered for another build.
+function bound(c) { return {sha: c.sha, digest: c.digest, artifact_sha256: c.artifact_sha256, client_build: c.client_build}; }
 function post(kind, body) {
   if (!D.served) {
     try { localStorage.setItem(key, JSON.stringify(answers)); } catch (e) { return Promise.reject(new Error("this browser is out of room for it")); }
@@ -186,7 +188,7 @@ function card(c) {
   function mark(s) {
     a.status = a.status === s ? null : s;
     paint();
-    send("answer", {check: c.id, sha: c.sha, digest: c.digest, status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
+    send("answer", {check: c.id, ...bound(c), status: a.status || "", note: note.value}).then(() => tick("Saved")).catch(fail);
     if (a.status === "fail") note.focus(); else if (a.status) move(1, true);
   }
   let timer;
@@ -206,7 +208,7 @@ function card(c) {
           post().then(() => { paint(); tick("Screenshot kept in this browser"); }).catch((e) => { a.images.pop(); fail(e); });
           return;
         }
-        send("image", {check: c.id, data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
+        send("image", {check: c.id, ...bound(c), data: r.result}).then((j) => { a.images.push(j.file); paint(); tick("Screenshot saved"); }).catch(fail);
       };
       r.readAsDataURL(item.getAsFile());
     }

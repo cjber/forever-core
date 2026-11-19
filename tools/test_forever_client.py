@@ -3805,6 +3805,15 @@ class AttestTest(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
+    @property
+    def bound(self) -> dict:
+        return {
+            "sha": self.SHA,
+            "digest": "d" * 64,
+            "artifact_sha256": "f" * 64,
+            "client_build": "1.60.1.70959 (Interface 16001)",
+        }
+
     def report(self, **build) -> dict:
         return {
             "round": "2026-11-19-2",
@@ -3813,6 +3822,7 @@ class AttestTest(unittest.TestCase):
                 "sha": self.SHA,
                 "digest": "d" * 64,
                 "artifact": "test-artifacts/demo-forever-aaaaaaaa",
+                "artifact_path": str(self.artifact),
                 "artifact_sha256": "f" * 64,
                 "artifact_sha256_now": "f" * 64,
                 "client_build": "1.60.1.70959 (Interface 16001)",
@@ -3825,8 +3835,7 @@ class AttestTest(unittest.TestCase):
                     "steps": ["Type /demo.", "  "],
                     "status": "pass",
                     "images": [str(self.shot)],
-                    "sha": self.SHA,
-                    "digest": "d" * 64,
+                    **self.bound,
                 },
                 {
                     "id": "c2",
@@ -3834,8 +3843,7 @@ class AttestTest(unittest.TestCase):
                     "steps": [],
                     "status": "skip",
                     "images": [],
-                    "sha": self.SHA,
-                    "digest": "d" * 64,
+                    **self.bound,
                 },
             ],
         }
@@ -3900,7 +3908,9 @@ class AttestTest(unittest.TestCase):
         secret.write_bytes(b"key")
         stray["checks"][0]["images"] = [str(secret)]
         lua = self.report()
-        lua["checks"][0]["steps"] = ["/home/me/flow.lua"]
+        lua["checks"][0]["steps"] = ["C:\\flows\\demo.lua"]
+        pass_line = self.report()
+        pass_line["checks"][0].update(steps=[], **{"pass": "/home/me/flow.lua"})
         cases = {
             "not the one recorded": (self.report(artifact_sha256_now="0" * 64), "d" * 64),
             "recorded before artifact hashing": (self.report(artifact_sha256=""), "d" * 64),
@@ -3908,10 +3918,11 @@ class AttestTest(unittest.TestCase):
             "no client build": (self.report(client_build=""), "d" * 64),
             "not a screenshot from the client": (stray, "d" * 64),
             "absolute path": (lua, "d" * 64),
+            "absolute path, fallback": (pass_line, "d" * 64),
             "another build": (self.report(), "e" * 64),
             "no runtime digest": (self.report(digest=""), "d" * 64),
             "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),
-            "no unpacked build": (self.report(artifact="test-artifacts/missing"), "d" * 64),
+            "no unpacked build": (self.report(artifact_path=str(self.workspace / "missing")), "d" * 64),
             "no screenshot": (no_images, "d" * 64),
         }
         for message, (report, digest) in cases.items():

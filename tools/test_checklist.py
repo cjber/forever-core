@@ -135,12 +135,25 @@ class ChecklistTest(unittest.TestCase):
         self.assertEqual((a["status"], a["note"], a["sha"][:7]), ("fail", "clipped radios", "b2ba895"))
 
     def test_a_page_rendered_for_another_build_cannot_pass_this_one(self):
-        old = ("0" * 40, "")
+        shown = {"sha": "b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "digest": ""}
+        old = dict(shown, sha="0" * 40)
+        png = "data:image/png;base64,iVBORw0KGgo="
         with self.assertRaisesRegex(ValueError, "reload the page"):
             cl.record_answer("2026-11-19-2", "menus", "pass", None, old)
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_image("2026-11-19-2", "menus", png, old)
         cl.record_answer("2026-11-19-2", "menus", None, "a note is kept", old)
-        cl.record_answer("2026-11-19-2", "menus", "pass", None, ("b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ""))
+        cl.record_image("2026-11-19-2", "menus", png, shown)
+        cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
         self.assertEqual(cl.load_results("2026-11-19-2")["answers"]["menus"]["status"], "pass")
+        # The same commit and digest tested in another client build reopens the check and drops its screenshot.
+        with contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--client-build", "1.60.2.71000"])
+        _, rows = cl.status_rows("2026-11-19-2")
+        menus = next(r for r in rows if r["id"] == "menus")
+        self.assertEqual((menus["status"], menus["images"], menus["note"]), (None, [], "a note is kept"))
+        with self.assertRaisesRegex(ValueError, "reload the page"):
+            cl.record_answer("2026-11-19-2", "menus", "pass", None, shown)
 
     def test_buggrabber_reader_keeps_errors_since_the_round_started(self):
         path = self.home / "bugs.lua"
@@ -218,14 +231,21 @@ class ChecklistTest(unittest.TestCase):
         page = urllib.request.urlopen(base + "/round/2026-11-19-2").read().decode()
         self.assertIn("Menus match", page)
         self.assertIn("started", cl.load_results("2026-11-19-2"))
-        shown = {"sha": "b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "digest": ""}
+        shown = {
+            "sha": "b2ba8950aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "digest": "",
+            "artifact_sha256": "",
+            "client_build": "",
+        }
         with self.assertRaises(urllib.error.HTTPError) as e:
             post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass"}, origin=base)
         self.assertEqual(e.exception.code, 400)
         e.exception.close()
         post("/api/answer/2026-11-19-2", {"check": "menus", "status": "pass", **shown}, origin=base)
         png = "data:image/png;base64,iVBORw0KGgo="
-        self.assertEqual(post("/api/image/2026-11-19-2", {"check": "menus", "data": png})["file"], "menus-1.png")
+        self.assertEqual(
+            post("/api/image/2026-11-19-2", {"check": "menus", "data": png, **shown})["file"], "menus-1.png"
+        )
         self.assertTrue((self.home / "results" / "2026-11-19-2" / "menus-1.png").exists())
         with mock.patch.object(cl, "BUGGRABBER", self.home / "missing.lua"):
             self.assertEqual(post("/api/submit/2026-11-19-2", {})["bugs"], 0)

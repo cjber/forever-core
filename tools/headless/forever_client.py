@@ -154,7 +154,7 @@ import zlib
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
 
@@ -2947,26 +2947,31 @@ def attest(args: argparse.Namespace) -> int:
             f"{report['round']} tested {repo} runtime {recorded[:12]}, but {checkout} at {commit[:7]} is "
             f"{digests['input_digest'][:12]}: the user's pass is for another build"
         )
-    artifact = Path(build.get("artifact") or "")
-    if not artifact.is_absolute():
-        artifact = WORKSPACE / artifact
+    # The checklist resolves the recorded path and hashes it there; compare that same folder.
+    artifact = Path(build.get("artifact_path") or "")
     folders = addon_folders(artifact, package_name(root, commit)) if build.get("artifact") and artifact.is_dir() else []
     if not folders:
         raise ClientError(f"{report['round']} names no unpacked build for {repo} to check ({build.get('artifact')!r})")
-    if not build.get("artifact_sha256") or build["artifact_sha256"] != build.get("artifact_sha256_now"):
-        raise ClientError(
-            f"{report['round']}: the unpacked build at {build.get('artifact')} is not the one recorded when it was "
-            "linked (rebuilt, removed or recorded before artifact hashing): relink, record it and test again"
-        )
-    stale = [row["id"] for row in report["checks"] if (row.get("sha"), row.get("digest")) != (commit, recorded)]
-    if stale:
-        raise ClientError(f"{report['round']}: checks {', '.join(stale)} were not answered for this build")
-    proof_compare(checkout, folders[0][1])
     tested_in = build.get("client_build")
     if not tested_in:
         raise ClientError(
             f"{report['round']} recorded no client build for {repo}: record it with checklist build --client-build"
         )
+    if not build.get("artifact_sha256") or build["artifact_sha256"] != build.get("artifact_sha256_now"):
+        raise ClientError(
+            f"{report['round']}: the unpacked build at {build.get('artifact')} is not the one recorded when it was "
+            "linked (rebuilt, removed or recorded before artifact hashing): relink, record it and test again"
+        )
+    identity = {
+        "sha": commit,
+        "digest": recorded,
+        "artifact_sha256": build["artifact_sha256"],
+        "client_build": tested_in,
+    }
+    stale = [row["id"] for row in report["checks"] if any(row.get(k) != v for k, v in identity.items())]
+    if stale:
+        raise ClientError(f"{report['round']}: checks {', '.join(stale)} were not answered for this build")
+    proof_compare(checkout, folders[0][1])
     passed = [row for row in report["checks"] if row.get("status") == "pass"]
     if not passed:
         raise ClientError(f"{report['round']}: no check for {repo}@{commit[:7]} was answered pass")
@@ -2974,12 +2979,20 @@ def attest(args: argparse.Namespace) -> int:
     missing = [str(s) for s in shots if not s.is_file()]
     if missing:
         raise ClientError(f"screenshot not found: {', '.join(missing)}")
+    flows = [
+        {
+            "name": row["title"],
+            "steps": [s.strip() for s in row.get("steps") or [] if s.strip()] or [row.get("pass") or row["title"]],
+            "result": "pass",
+        }
+        for row in passed
+    ]
     # visual_proof refuses a Lua flow named by an absolute path (#591); a checklist step should be a slash command.
     lua = [
-        s
-        for row in passed
-        for s in row.get("steps") or []
-        if s.strip().endswith(".lua") and Path(s.strip()).is_absolute()
+        step
+        for flow in flows
+        for step in flow["steps"]
+        if step.endswith(".lua") and (PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute())
     ]
     if lua:
         raise ClientError(
@@ -3025,14 +3038,7 @@ def attest(args: argparse.Namespace) -> int:
         "source_commit": commit,
         "kind": "user-checked",
         "round": report["round"],
-        "flows": [
-            {
-                "name": row["title"],
-                "steps": [s.strip() for s in row.get("steps") or [] if s.strip()] or [row.get("pass") or row["title"]],
-                "result": "pass",
-            }
-            for row in passed
-        ],
+        "flows": flows,
         "images": images,
     }
     target = checkout / PROOF_FILE
