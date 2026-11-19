@@ -3069,12 +3069,28 @@ class ProofHelpersTest(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(fc.run_flow("state", "/cast Cooking"), "")
-            with self.assertRaises(fc.ClientError):
-                fc.run_flow("state", "/cast Cooking", (1, 2))
         tool.write_slash.assert_not_called()
         reload.assert_called_once_with("state")
         typed.assert_called_once_with("state", "/cast Cooking")
         settle.assert_called_once_with(fc.SECURE_SLASH_SETTLE_SECONDS)
+
+    def test_a_secure_slash_flow_clicks_its_point_after_the_typed_line_settles(self):
+        order = []
+        with (
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.png")),
+            mock.patch.object(fc, "slash", side_effect=lambda *a: order.append("typed")),
+            mock.patch.object(fc, "click", side_effect=lambda *a: order.append(("click", a))),
+            mock.patch.object(fc.time, "sleep", side_effect=lambda s: order.append("settle")),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(fc.run_flow("state", "/cast Cooking", (748, 505)), "")
+        self.assertEqual(order, ["typed", "settle", ("click", ("state", 748, 505, "1")), "settle"])
+        self.assertTrue((self.state / "last-shot").exists())
+        self.assertIn("clicked 748,505 after /cast Cooking", out.getvalue())
 
     def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
         tool = mock.Mock()

@@ -2648,11 +2648,10 @@ def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None =
     """Run a secure slash flow by typing it into chat, as the `slash` verb does, once the reload's world frame lands.
 
     A secure command cannot run from insecure Lua, so no snippet is written and the flow has no run token or ready
-    check: the capture follows a short fixed settle after the typed line (#901). Each flow reloads first, so a later
-    Lua flow starts from a fresh world; it does not continue from the window this one opened.
+    check: the capture follows a short fixed settle after the typed line (#901). `point` is clicked once that settle
+    ends, so a flow can open a protected window and then pick a tab inside it, then settles again before the capture.
+    Each flow reloads first, so a later Lua flow starts from a fresh world; it does not continue from this window.
     """
-    if point:
-        raise ClientError(f"the flow {action} is typed into chat: a secure slash flow takes no --flow-click")
     one_line_slash(action)
     before = screenshots()
     reload(state)
@@ -2666,6 +2665,12 @@ def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None =
     except ClientError as error:
         raise ClientError(f"the flow {action} could not be typed: {error}") from None
     time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    if point:
+        # The typed line is the last input, so mark a fresh frame before clicking, as the Lua flow path does.
+        (STATE_DIR / "last-shot").touch()
+        click(state, point[0], point[1], "1")
+        print(f"clicked {point[0]},{point[1]} after {action}", flush=True)
+        time.sleep(SECURE_SLASH_SETTLE_SECONDS)
     return ""
 
 
