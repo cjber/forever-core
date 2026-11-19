@@ -21,10 +21,11 @@ local _, ns = ...
 
 -- The client's own objective tracker. Its presence says Blizzard_ObjectiveTracker loaded, which defines the section
 -- template every Forever section is built from, and the column sits under its last line or pins left of it. The column
--- reads only where it is, whether it is shown and where its NineSlice, which ends under its last line, ends. It never
--- reads its contents and never writes to it or hooks it.
+-- reads only where it is, whether it is shown or collapsed, and where its NineSlice, which ends under its last line,
+-- and its header end. It never reads its contents and never writes to it or hooks it.
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field NineSlice Frame?
+---@field Header Frame?
 
 -- Keep our sections and their frame pools entirely outside the native module collection and its Edit Mode path.
 if not ObjectiveTrackerFrame then
