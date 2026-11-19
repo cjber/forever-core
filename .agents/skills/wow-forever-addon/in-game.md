@@ -345,6 +345,7 @@ typing a long `/run` line:
 | `/devsmoke versions` | one line per loaded addon depending on ForeverCore, plus ForeverCore and LibAHTab: folder, Version metadata, loaded state |
 | `/devsmoke errors` | this session's BugGrabber entries, leaving out the chat `/run` line's own errors: the count and the first 180 characters of each |
 | `/devsmoke eval` | runs the snippet the inbox loaded this session; a snippet written after that first load needs `/reload` |
+| `/devsmoke live RUN I/N BASE64` | what `eval --live` types: numbered base64 pieces of a snippet, run in this session when the last one arrives |
 | `/devsmoke thanks <addon title> [player]` | opens the Thanks page filtered to the addon, scrolled to the named player's row |
 | `/devsmoke prof <tab>` | opens the Cooking window when no profession window is open, then selects the addon's tab |
 | `/devsmoke close` | hides the Thanks window, the Professions window, the world map and the Settings panel, so Escape is never pressed |
@@ -360,7 +361,17 @@ for. Write the snippet to a file and run it as an eval instead:
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
 FOREVER_CLIENT_CALLER=in-game python3 $FC eval /tmp/probe.lua   # in a session: writes it, /reloads, prints DevSmokeDB.eval (exit 1 on failure)
+FOREVER_CLIENT_CALLER=in-game python3 $FC eval --live /tmp/helper.lua   # no reload: runs in the live UI, globals and open panels stay
 ```
+
+An `eval` leaves the UI as the snippet made it: one reload runs the snippet once the world has loaded, `!!DevSmoke`
+saves the result at once, and nothing reloads afterwards, so `eval` a file that opens a panel (`C_Map.OpenWorldMap(1436)`)
+and then `shot` shows it (#894). `eval --live FILE` skips even that reload. The compiled file is typed into the chat box
+as numbered `/devsmoke live` lines (base64, about 200 characters each) and runs when the last arrives; its printed and
+returned lines come back the same way as an eval's, from `DevSmokeDB.eval`, which `!!DevSmoke` saves immediately.
+Globals it sets stay for later `slash` commands, so load a helper library once with `--live` and drive it with short
+`/run` lines. Lines type at slash speed (`TYPE_DELAY_MS`), so keep the loaded file small: a 1 KB snippet is about 7
+lines. A live snippet is not a proof flow: it schedules no screenshot and a returned function is not polled.
 
 With a session already running, the steps by hand are:
 
@@ -382,8 +393,8 @@ printed: it is the flow's ready check, polled by `!!DevSmoke`, whose screenshot 
 
 The client reads the inbox once per session: the first `/devsmoke eval` or login loads it, and any snippet written
 after that needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the snippet it
-just wrote, then clears the inbox before reloading once more and reading the result that snippet's own run token
-names. The second reload therefore saves that one run instead of running the snippet again (#588).
+just wrote, then clears the inbox and reads the result that snippet's own run token names, so a later reload cannot
+run the snippet again (#588). Only a `!!DevSmoke` that did not save the result makes it reload once more to read it.
 
 `DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil>,
 ready = <"captured"|"failed"|"timeout"|nil>, readyErr = <string|nil> }`, where `out` holds the same lines the Agent

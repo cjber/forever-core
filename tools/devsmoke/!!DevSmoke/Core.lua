@@ -364,10 +364,10 @@ end
 -- can tell this snippet's own result from an earlier session's (#580). DevSmokeEvalCapture says whether this chunk
 -- is a proof flow: an eval chunk is false, because its delayed ready screenshot would race the reload that saves it
 -- (#588).
-local function runEval()
-	local chunk = DevSmokeEval
-	local token = DevSmokeEvalRun
-	local wantsCapture = _G.DevSmokeEvalCapture
+--
+-- A chunk that is not a proof flow also saves its result at once with SaveAddOns, so the reader needs no second reload:
+-- that reload rebuilt the UI and closed any panel the snippet had opened, which left a following `shot` blank.
+local function runEval(chunk, token, wantsCapture)
 	agentFrame()
 	local lines = {}
 	local original = _G.print
@@ -411,7 +411,78 @@ local function runEval()
 	end
 	if ok and wantsCapture ~= false then
 		captureFlow(ready)
+	elseif wantsCapture == false then
+		saveAddOns()
 	end
+end
+
+local function runInbox()
+	runEval(DevSmokeEval, DevSmokeEvalRun, _G.DevSmokeEvalCapture)
+end
+
+-- `/devsmoke live RUN I/N BASE64` runs Lua in this session, with no reload: forever_client.py `eval --live` sends the
+-- snippet as numbered base64 pieces, each short enough for one chat line, and the last piece compiles and runs it
+-- through the same runEval as the inbox. Globals it sets stay for the slash commands that follow, and the UI it
+-- opens is left as it is.
+local BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local base64Value = {}
+for index = 1, #BASE64 do
+	base64Value[BASE64:sub(index, index)] = index - 1
+end
+
+local function decodeBase64(text)
+	local out = {}
+	local bits, count = 0, 0
+	for char in text:gmatch("[^=]") do
+		local value = base64Value[char]
+		if not value then
+			return nil
+		end
+		bits = bits * 64 + value
+		count = count + 6
+		if count >= 8 then
+			count = count - 8
+			local divisor = 2 ^ count
+			out[#out + 1] = string.char(math.floor(bits / divisor))
+			bits = bits % divisor
+		end
+	end
+	return table.concat(out)
+end
+
+local livePieces
+local function sayLive(rest)
+	local token, index, total, piece = rest:match("^(%x+)%s+(%d+)/(%d+)%s+(%S+)$")
+	index, total = tonumber(index), tonumber(total)
+	if not token or index < 1 or index > total then
+		say("Dev Smoke: live takes RUN I/N BASE64")
+		return
+	end
+	if not livePieces or livePieces.token ~= token then
+		livePieces = { token = token, total = total, count = 0 }
+	end
+	if livePieces[index] == nil then
+		livePieces.count = livePieces.count + 1
+	end
+	livePieces[index] = piece
+	if livePieces.count < total then
+		return
+	end
+	local text = {}
+	for at = 1, total do
+		text[at] = livePieces[at]
+	end
+	livePieces = nil
+	local source = decodeBase64(table.concat(text))
+	local chunk, message
+	if source then
+		chunk, message = loadstring(source, "=devsmoke-live")
+	else
+		message = "the snippet was not valid base64"
+	end
+	runEval(chunk or function()
+		error(message, 0)
+	end, token, false)
 end
 
 -- The generated Inbox addon is load-on-demand, and the client reads its files only when it loads it: the first
@@ -447,7 +518,7 @@ local function sayEval()
 		say("Dev Smoke: no eval loaded; run tools/devsmoke/eval.py FILE, then /reload")
 		return
 	end
-	runEval()
+	runInbox()
 end
 
 local function selectChat(name)
@@ -742,9 +813,11 @@ local COMMANDS = {
 	prof = sayProf,
 	close = sayClose,
 	eval = sayEval,
+	live = sayLive,
 }
 
-local USAGE = "Dev Smoke: /devsmoke, tab [off], versions, errors, eval, thanks <addon> [player], prof <tab>, close"
+local USAGE = "Dev Smoke: /devsmoke, tab [off], versions, errors, eval, live, thanks <addon> [player], "
+	.. "prof <tab>, close"
 
 SLASH_DEVSMOKE1 = "/devsmoke"
 SlashCmdList["DEVSMOKE"] = function(message)
@@ -779,8 +852,15 @@ loader:SetScript("OnEvent", function()
 		end
 	end
 	loadInbox()
-	if type(DevSmokeEval) == "function" then
-		runEval()
+	if type(DevSmokeEval) ~= "function" then
+		return
+	end
+	-- An eval's snippet runs once the world is loaded: a panel it opens during login would be reset by the loading
+	-- screen that follows. A proof flow keeps its own timing, which captureFlow already holds until the world.
+	if _G.DevSmokeEvalCapture == false and not flowWorldLoaded then
+		flowWaiting[#flowWaiting + 1] = runInbox
+	else
+		runInbox()
 	end
 end)
 

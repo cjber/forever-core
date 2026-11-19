@@ -26,7 +26,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
-    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, run it, print its own result
+    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, reload to run it, print its own result
+    forever_client.py eval --live FILE    # run FILE in the running session, no reload: UI and globals stay
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
@@ -228,6 +229,7 @@ WIDTH, HEIGHT = 1920, 1080
 # never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is never cut off.
 IDLE_LIMIT = 10 * 60
 MAX_SESSION = 3 * 60 * 60
+EVAL_SAVE_WAIT = 10  # seconds an eval's saved result may take to reach disk before the saving reload is used
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
@@ -2615,14 +2617,45 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     return written["token"]
 
 
-def eval_result(state: Mapping, token: str) -> tuple[str, bool]:
-    """The report of the eval the run token wrote, read after the reload that saves this session to disk.
+def eval_result(state: Mapping, token: str, wait: float | None = None) -> tuple[str, bool]:
+    """The report of the eval the run token wrote.
 
-    SavedVariables are written at a reload or logout, so the file the snippet's own reload left behind still holds the
-    session before it: a second reload makes this run's own result the one on disk (#580).
+    A proof flow's result is final only after its screenshot, so with no `wait` this reloads to save it to disk
+    (SavedVariables are written at a reload or logout, #580). An eval is saved by !!DevSmoke the moment it runs: with
+    `wait` seconds to allow for that, its result is read without a reload, so the UI the snippet opened stays open
+    (#894), and the reload is only the fallback for a !!DevSmoke that did not save.
     """
+    if wait is not None:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                return format_eval(saved_eval(token))
+            except ClientError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(WAIT_POLL)
     reload(state)
     return format_eval(saved_eval(token))
+
+
+def live_eval(state: Mapping, source: Path) -> int:
+    """Run a Lua file in the running session with no reload, and report what it printed and returned.
+
+    The file travels as numbered `/devsmoke live` chat lines, so the UI stays as it is and globals the snippet sets
+    stay for the slash commands that follow (#894). Every line is typed at the speed of any slash command, so a long
+    helper costs time in proportion to its size: load it once, then drive it with short commands.
+    """
+    tool = devsmoke_eval()
+    try:
+        token, lines = tool.live_commands(source)
+    except tool.EvalError as error:
+        raise ClientError(str(error)) from None
+    print(f"sending {source} as {len(lines)} chat lines", flush=True)
+    for line in lines:
+        slash(state, line)
+    report, ok = eval_result(state, token, EVAL_SAVE_WAIT)
+    print(report)
+    return 0 if ok else 1
 
 
 def check_flow_eval(state: Mapping, action: str, token: str) -> None:
@@ -4434,6 +4467,8 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         slash(state, args.command)
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
+    elif args.verb == "eval" and args.live:
+        return live_eval(state, args.file)
     elif args.verb == "eval":
         tool = devsmoke_eval()
         cleared = False
@@ -4445,12 +4480,13 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
             except tool.EvalError as error:
                 raise ClientError(str(error)) from None
             print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-            # This reload runs the snippet once. Clearing the inbox before the next reload keeps that reload from
-            # running it a second time; that reload saves the first run's result for the reader (#580, #588).
+            # This reload runs the snippet once, after the world loads, and !!DevSmoke saves its result at once. The
+            # UI is left as the snippet made it, so a `shot` that follows shows a panel it opened (#894). Clearing the
+            # inbox keeps a later reload from running it a second time (#580, #588).
             reload(state)
             clear_eval_inbox()
             cleared = True
-            report, ok = eval_result(state, written["token"])
+            report, ok = eval_result(state, written["token"], EVAL_SAVE_WAIT)
             print(report)
             return 0 if ok else 1
         finally:
@@ -4552,7 +4588,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "slash":
             p.add_argument("command")
         elif name == "eval":
-            p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
+            p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke")
+            p.add_argument(
+                "--live",
+                action="store_true",
+                help="run it in the running session with no reload, so globals and open panels stay",
+            )
         elif name == "errors":
             p.add_argument("--addon")
     p = sub.add_parser("sv")
