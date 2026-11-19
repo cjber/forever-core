@@ -142,6 +142,15 @@ class ChecklistTest(unittest.TestCase):
         data = cl.load_round("2026-11-19-2")
         self.assertEqual(data["builds"][-1], {"addon": "shortest-path-forever", "sha": "abcdef1", "prs": ["1066"]})
         self.assertEqual(data["checks"][-1]["id"], "menus-match")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["build", "--addon", "forever-core", "--artifact", "test-artifacts/core-1", "--digest", "d1"])
+        out = io.StringIO()
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(out):
+            cl.main(["status", "--addon", "forever-core", "--sha", "b2ba895", "--json"])
+        build = json.loads(out.getvalue())["build"]
+        self.assertEqual((build["artifact"], build["digest"]), ("test-artifacts/core-1", "d1"))
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
+            cl.main(["add", "--addon", "forever-core", "--id", "menus", "--title", "Again", "--pass", "ok"])
 
     def test_server_saves_answers_and_refuses_cross_origin(self):
         server = cl.make_server(0)

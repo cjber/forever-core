@@ -620,7 +620,7 @@ def cmd_build(a):
     if build is None:
         build = {"addon": a.addon}
         data["builds"].append(build)
-    for key in ("sha", "version", "build"):
+    for key in ("sha", "version", "build", "artifact", "digest"):
         if getattr(a, key):
             build[key] = getattr(a, key)
     if a.pr:
@@ -712,7 +712,9 @@ def cmd_status(a):
         if a.json:
             for r in rows:
                 r["images"] = [str(results_dir() / name / i) for i in r["images"]]
-            print(json.dumps({"round": name, "addon": a.addon, "sha": a.sha, "passed": ok, "checks": rows}, indent=2))
+            build = next((b for b in load_round(name)["builds"] if b["addon"] == a.addon), {}) if name else {}
+            out = {"round": name, "addon": a.addon, "sha": a.sha, "passed": ok, "build": build, "checks": rows}
+            print(json.dumps(out, indent=2))
             raise SystemExit(0 if ok else (2 if not rows else 1))
         if not rows:
             print(f"no round has checks for {a.addon} at {a.sha}")
@@ -791,7 +793,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--addon", required=True)
     p.add_argument("--sha")
     p.add_argument("--version")
-    p.add_argument("--build", help="how it was built or where it is linked from")
+    p.add_argument("--build", help="how it was built")
+    p.add_argument("--artifact", help="the unpacked build linked into AddOns, such as test-artifacts/<repo>-<build>")
+    p.add_argument("--digest", help="the runtime digest of that build (visual_proof --digests)")
     p.add_argument("--pr", action="append", help="a PR the build carries; repeat")
     p.add_argument("--linked", help="the round's 'builds linked' line")
     p.add_argument("--no-regression", action="store_true", help="leave this addon's regression suite out")

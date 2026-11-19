@@ -41,7 +41,9 @@ default.
    PR's screenshot at its head SHA (or a headless capture) as `--picture`.
 2. The coordinator records each linked build with `checklist build`, runs `checklist serve` and opens the page.
 3. Read `checklist status` for results; a fail carries the user's note and screenshot.
-4. Release tooling gates on `checklist status --addon X --sha S`: exit 0 when every check for that exact build passed (a
+4. Record `--artifact` (the unpacked build linked into AddOns) and `--digest` (its runtime digest) with `checklist build`
+   so a pass binds to the exact runtime; `status --json` returns them under `build`.
+5. Release tooling gates on `checklist status --addon X --sha S`: exit 0 when every check for that exact build passed (a
    skip passes only on a check marked optional), 1 when one did not, 2 when no round covers the build.
 
 ## Rule: every bug the user finds becomes a regression check
