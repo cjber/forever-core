@@ -190,9 +190,10 @@ userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's 
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check, an anchor argument or one of the reads that place the column under it (#850), never another field,
--- a method call or an assignment.
-local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ".NineSlice" }
+-- a presence check, an anchor argument or one of the reads that place the column under it (#850, #883), never another
+-- field, a method call or an assignment.
+local reads =
+	{ ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()", ".NineSlice", ".Header" }
 local function Read(after)
 	for _, read in ipairs(reads) do
 		if after:sub(1, #read) == read and not after:sub(#read + 1):match("^%s*=[^=]") then

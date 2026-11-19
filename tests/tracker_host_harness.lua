@@ -316,6 +316,15 @@ function harness.new(options)
 		IsShown = function()
 			return nativeRect.shown
 		end,
+		IsCollapsed = function()
+			return nativeRect.collapsed == true
+		end,
+		Header = ReadOnly("tracker header", {
+			GetBottom = function()
+				return nativeRect.header
+			end,
+			GetEffectiveScale = NativeScale,
+		}),
 	})
 	parent = frame()
 	parent.width = 1200
