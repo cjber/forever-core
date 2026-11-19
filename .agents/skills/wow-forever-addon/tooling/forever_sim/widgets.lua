@@ -1935,6 +1935,8 @@ function M.build(sim)
 		if child and S[child] then
 			impl.Region.SetParent(child, self)
 		end
+		-- The child's implicit anchor follows the scroll frame, so cached rects are stale either way.
+		dirty()
 	end
 	impl.ScrollFrame.GetScrollChild = function(self)
 		return st(self).scrollChild

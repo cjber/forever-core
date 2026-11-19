@@ -47,6 +47,9 @@ local function region(kind, parent)
 		end
 		return rawget(self, "right") or 0
 	end
+	function methods:GetLeft()
+		return rawget(self, "left") or 0
+	end
 	function methods:GetBottom()
 		return rawget(self, "bottom") or 0
 	end
@@ -362,8 +365,21 @@ firstRow.mouseOver = true
 firstRow.scripts.OnEnter(firstRow)
 equal(env.ForeverCoreContextMenu2, nil, "a submenu waits for the pointer to rest")
 drain()
-firstRow.mouseOver = false
 local second = env.ForeverCoreContextMenu2
+firstRow.mouseOver = false
+firstRow.scripts.OnLeave(firstRow)
+drain()
+equal(second:IsShown(), false, "a submenu the pointer left without entering closes")
+equal(popup:IsShown(), true, "and the root stays")
+firstRow.mouseOver = true
+firstRow.scripts.OnEnter(firstRow)
+drain()
+firstRow.mouseOver = false
+firstRow.scripts.OnLeave(firstRow)
+second.mouseOver = true
+second.scripts.OnEnter(second)
+drain()
+second.mouseOver = false
 check(second ~= nil and second:IsShown(), "hovering a submenu row opens its level")
 equal(popup:IsShown(), true, "the parent level stays open beside it")
 equal(second.rows[1]:GetText(), "Second", "the submenu lists its own entries, with no Back row")
@@ -403,7 +419,7 @@ equal(second:IsShown() or third:IsShown(), false, "and every submenu")
 
 -- A submenu that would leave the screen opens to its row's left instead.
 env.UIParent.right = 1000
-firstRow.right = 950
+firstRow.left, firstRow.right = 600, 950
 ns.ContextMenu(owner, function(_, root)
 	root:CreateTitle("Title")
 	root:CreateButton("Disabled"):SetEnabled(false)
@@ -412,7 +428,11 @@ end)
 hover(popup.rows[3])
 equal(second.point[1], "TOPRIGHT", "an off-screen submenu flips")
 equal(second.point[3], "TOPLEFT", "to its row's left")
-env.UIParent.right, firstRow.right = 4000, nil
+firstRow.left = 20
+hover(popup.rows[2])
+hover(popup.rows[3])
+equal(second.point[1], "TOPLEFT", "a submenu with less room on the left stays on the right")
+env.UIParent.right, firstRow.left, firstRow.right = 4000, nil, nil
 popup:Hide()
 equal(second:IsShown(), false, "closing the root closes its submenus")
 

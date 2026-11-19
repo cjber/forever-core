@@ -128,10 +128,13 @@ local levels = {}
 local Draw
 ---@type table<Frame, boolean>
 local watchedOwners = setmetatable({}, { __mode = "k" })
--- Blizzard_Menu's MenuManagerMixin:RestartMouseEventTimer: a hovered row opens its submenu once the pointer has
--- rested on it this long, so a diagonal move toward an open submenu does not swap it for a row it crosses.
+-- Blizzard_Menu's mouse event timer (MenuManagerMixin:RestartMouseEventTimer): the pointer's last enter and leave are
+-- acted on once it has rested this long, so a diagonal move toward an open submenu does not swap it for a row it
+-- crosses, and a submenu the pointer left without entering closes (ProcessMouseEventLeaveData).
 local SUBMENU_DELAY = 0.33
-local hoverToken = 0
+---@type { token: integer, retain: integer, leave?: boolean, enter?: table }
+local pointer = { token = 0, retain = 1 }
+local RestartPointerTimer
 
 ---@param depth integer
 local function HideFrom(depth)
@@ -230,6 +233,13 @@ local function Ensure(depth)
 	-- The background reaches past the frame, so the clamp keeps that overhang on screen too.
 	popup:SetClampRectInsets(-BACKGROUND_X, BACKGROUND_X, BACKGROUND_Y, -BACKGROUND_Y)
 	popup:EnableMouse(true)
+	popup:SetScript("OnEnter", function()
+		pointer.retain = depth
+	end)
+	popup:SetScript("OnLeave", function()
+		pointer.leave = true
+		RestartPointerTimer()
+	end)
 	local background = popup:CreateTexture(nil, "BACKGROUND")
 	-- art-ok: common-dropdown-bg supplies native nine-slice margins for a resizing menu.
 	background:SetAtlas("common-dropdown-bg")
@@ -264,6 +274,7 @@ local function Ensure(depth)
 		end
 		self.description = nil
 		if depth == 1 then
+			pointer.token, pointer.enter, pointer.leave, pointer.retain = pointer.token + 1, nil, nil, 1
 			self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
 			self.owner = nil
 			GameTooltip_Hide()
@@ -294,8 +305,11 @@ local function PlaceSubmenu(frame, row)
 		end
 		return
 	end
-	local rowRight, screenRight = row:GetRight(), UIParent:GetRight()
-	if rowRight and screenRight and rowRight + frame:GetWidth() + BACKGROUND_X > screenRight then
+	-- Flipped only when the row's left has more room: Blizzard flips on any overflow, and the clamp then pulls a wide
+	-- submenu back across its parent's rows.
+	local rowLeft, rowRight, screenRight = row:GetLeft(), row:GetRight(), UIParent:GetRight()
+	local width = frame:GetWidth() + BACKGROUND_X
+	if rowLeft and rowRight and screenRight and rowRight + width > screenRight and rowLeft > screenRight - rowRight then
 		frame:SetPoint("TOPRIGHT", row, "TOPLEFT")
 	else
 		frame:SetPoint("TOPLEFT", row, "TOPRIGHT")
@@ -323,6 +337,31 @@ local function CheckForSubmenu(depth, row, entry)
 	frame.opener = row
 	row:LockHighlight()
 	frame:Show()
+end
+
+local function ProcessPointer(token)
+	if token ~= pointer.token then
+		return
+	end
+	if pointer.leave then
+		pointer.leave = false
+		if not OverMenu() then
+			HideFrom(pointer.retain + 1)
+		end
+	end
+	local enter = pointer.enter
+	pointer.enter = nil
+	if enter and enter.level.description == enter.root and enter.row:IsMouseOver() then
+		CheckForSubmenu(enter.level.depth, enter.row, enter.entry)
+	end
+end
+
+function RestartPointerTimer()
+	pointer.token = pointer.token + 1
+	local token = pointer.token
+	C_Timer.After(SUBMENU_DELAY, function()
+		ProcessPointer(token)
+	end)
 end
 
 ---@param frame ForeverContextPopup
@@ -435,13 +474,9 @@ function Draw(frame, root)
 		-- A row cut at the cap cannot show its whole line, so its tooltip does.
 		local truncated = entry.tooltip == nil and left + textWidth + right > BODY_MAX
 		row:SetScript("OnEnter", function(self)
-			hoverToken = hoverToken + 1
-			local token = hoverToken
-			C_Timer.After(SUBMENU_DELAY, function()
-				if token == hoverToken and frame.description == root and self:IsMouseOver() then
-					CheckForSubmenu(depth, self, entry)
-				end
-			end)
+			pointer.retain = depth
+			pointer.enter = { level = frame, row = self, entry = entry, root = root }
+			RestartPointerTimer()
 			if entry.tooltip then
 				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 				entry.tooltip(GameTooltip)
@@ -452,7 +487,11 @@ function Draw(frame, root)
 				GameTooltip:Show()
 			end
 		end)
-		row:SetScript("OnLeave", GameTooltip_Hide)
+		row:SetScript("OnLeave", function()
+			GameTooltip_Hide()
+			pointer.leave = true
+			RestartPointerTimer()
+		end)
 		row:Show()
 		y = y + height
 	end
