@@ -54,6 +54,9 @@ L["Tracker background"] = "Фон отслеживания"
 L["Tracker position"] = "Положение отслеживания"
 L["Under the quest tracker"] = "Под списком заданий"
 L["Left of the quest tracker"] = "Слева от списка заданий"
+L["Attach to quest tracker"] = "Прикрепить к списку заданий" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"Когда включено, общий трекер Forever стоит под списком заданий, а когда выключено, слева от него. Эта настройка одна для всех аддонов Forever." -- mt
 L["Tracker"] = "Отслеживание"
 L["Click to %s"] = "Нажмите, чтобы %s"
 L["Right-click for options"] =

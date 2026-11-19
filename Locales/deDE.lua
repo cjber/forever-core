@@ -52,6 +52,9 @@ L["Tracker background"] = "Hintergrund der Verfolgung"
 L["Tracker position"] = "Position der Verfolgung"
 L["Under the quest tracker"] = "Unter der Questverfolgung"
 L["Left of the quest tracker"] = "Links der Questverfolgung"
+L["Attach to quest tracker"] = "An Questverfolgung anheften" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"Die gemeinsame Forever-Verfolgung steht unter der Questverfolgung, wenn dies an ist, und links davon, wenn es aus ist. Jedes Forever-Addon zeigt dieselbe Einstellung." -- mt
 L["Tracker"] = "Verfolgung"
 L["Click to %s"] = "Klicken, um %s"
 L["Right-click for options"] = "Rechtsklick für Optionen"

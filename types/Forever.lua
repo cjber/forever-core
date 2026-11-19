@@ -56,10 +56,14 @@
 ---@field Register fun(name: string, build: function, L?: table<string, string>, safeCall?: function): table?, Frame?
 ---@field AddHeader fun(panel: Frame, label: string, tooltip?: string): Frame
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
+---@field AddTrackerAttach fun(panel: Frame): CheckButton? the shared tracker's "Attach to quest tracker" tick box
+---@field minor integer raised with each member the module adds
 
 -- UI/SettingsSections.lua, native vertical-list headings registered through Blizzard's Settings API.
 ---@class ForeverSettingsSectionsAPI
 ---@field Register fun(category: table, name: string, tooltip?: string, newTagID?: number): table?
+---@field RegisterTrackerAttach fun(category: table, variable: string): table?, table? the shared tracker's "Attach to quest tracker" row
+---@field minor integer raised with each member the module adds
 
 -- UI/ContextMenu.lua, the suite's one context menu.
 ---@alias ForeverMenuEntryKind "root"|"button"|"title"|"divider"|"checkbox"|"radio"

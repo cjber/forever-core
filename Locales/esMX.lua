@@ -52,6 +52,9 @@ L["Tracker background"] = "Fondo del rastreador"
 L["Tracker position"] = "Posición del rastreador"
 L["Under the quest tracker"] = "Debajo del rastreador de misiones"
 L["Left of the quest tracker"] = "A la izquierda del rastreador de misiones"
+L["Attach to quest tracker"] = "Anclar al rastreador de misiones" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"El rastreador compartido de Forever se coloca debajo del rastreador de misiones cuando está activado y a su izquierda cuando está desactivado. Todos los addons Forever muestran este mismo ajuste." -- mt
 L["Tracker"] = "Rastreador"
 L["Click to %s"] = "Haz clic para %s"
 L["Right-click for options"] = "Haz clic derecho para ver las opciones"

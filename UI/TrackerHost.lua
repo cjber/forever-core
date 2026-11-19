@@ -1018,10 +1018,25 @@ local function LayoutModules(width, available)
 	host:MarkDirty()
 	return hasSections
 end
--- What the game's quest tracker shows, which decides its last visible line: "hidden" with nothing to list, "collapsed"
--- to its header, or "list". Reads only.
----@return "hidden"|"collapsed"|"list"
+-- Questie's quest tracker, when it is the one on screen. Questie hides the game's tracker and draws its own list in
+-- Questie_BaseFrame, built a few seconds after login at the game's tracker's place and sized to its lines (#866). No
+-- client API names a replacement tracker, so the column knows this one by its frame's name; the column reads only
+-- where it is, as it does the game's tracker.
+---@return Frame?
+local function QuestieList()
+	local list = rawget(_G, "Questie_BaseFrame")
+	if type(list) == "table" and list.IsShown and list:IsShown() then
+		return list
+	end
+	return nil
+end
+-- What the quest tracker on screen shows, which decides its last visible line: "questie" for Questie's list, or for
+-- the game's tracker "hidden" with nothing to list, "collapsed" to its header, or "list". Reads only.
+---@return "questie"|"hidden"|"collapsed"|"list"
 local function TrackerShows()
+	if QuestieList() then
+		return "questie"
+	end
 	if not ObjectiveTrackerFrame:IsShown() then
 		return "hidden"
 	end
@@ -1035,9 +1050,19 @@ end
 -- while the player has it collapsed, since its sections hide then but the NineSlice keeps their old anchor; or the
 -- tracker's top while it is hidden with nothing to show. Returns that x and y in the host's own units, nil before the
 -- client has placed the tracker. These are reads only; nothing here writes to the tracker or hooks it.
----@param shows "hidden"|"collapsed"|"list"
+---@param shows "questie"|"hidden"|"collapsed"|"list"
 ---@return number? x, number? top
 local function TrackerEdge(shows)
+	local hostScale = host:GetEffectiveScale()
+	local list = shows == "questie" and QuestieList()
+	if list then
+		local listLeft, listBottom = list:GetLeft(), list:GetBottom()
+		if not (listLeft and listBottom) then
+			return nil
+		end
+		local listScale = list:GetEffectiveScale()
+		return listLeft * listScale / hostScale, listBottom * listScale / hostScale
+	end
 	local left = ObjectiveTrackerFrame:GetLeft()
 	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
 	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
@@ -1052,7 +1077,6 @@ local function TrackerEdge(shows)
 	if not (left and bottom) then
 		return nil
 	end
-	local hostScale = host:GetEffectiveScale()
 	return left * trackerScale / hostScale, bottom * scale / hostScale
 end
 local AddPlacementMenu
@@ -1075,7 +1099,7 @@ local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
 -- What the tracker showed when the column was last placed by it, so a change the probe cannot see places it again.
----@type "hidden"|"collapsed"|"list"|nil
+---@type "questie"|"hidden"|"collapsed"|"list"|nil
 local followedShows
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
@@ -1143,9 +1167,10 @@ local function Anchor(settings)
 		return width, screenHeight + y
 	end
 	if settings.placement == "under" then
-		local top = ObjectiveTrackerFrame:GetTop()
+		local tracker = QuestieList() or ObjectiveTrackerFrame
+		local top = tracker:GetTop()
 		if top then
-			return width, top * ObjectiveTrackerFrame:GetEffectiveScale() / host:GetEffectiveScale()
+			return width, top * tracker:GetEffectiveScale() / host:GetEffectiveScale()
 		end
 	end
 	PinLeft()
@@ -1693,15 +1718,29 @@ local probe = CreateFrame("Frame", nil, UIParent)
 probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
 probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
 probe:SetScript("OnSizeChanged", Follow)
+-- Questie's list gets a probe of its own the first time it is seen on screen, since it is built after login: its last
+-- line moving resizes that probe the same way.
+local questieProbe
+local function WatchQuestie()
+	local list = QuestieList()
+	if list and not questieProbe then
+		questieProbe = CreateFrame("Frame", nil, UIParent)
+		questieProbe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+		questieProbe:SetPoint("TOPRIGHT", list, "BOTTOMLEFT", 0, 0)
+		questieProbe:SetScript("OnSizeChanged", Follow)
+	end
+end
 -- Two changes move no line the probe can see. Collapsing the tracker hides its sections but leaves its NineSlice on
 -- their old anchor, and the tracker hiding with nothing left to list, or showing again, leaves the line where it was.
 -- The first comes from a click on its header's button and the second from the quest log or the tracked quests changing
 -- (a quest untracked, turned in or abandoned, or the log filling in at login), so each of those events reads what the
 -- tracker shows and places the column again when that changed, as a login would place it. The tracker lays itself out
--- on the frame after the event (DirtiableMixin's RunNextFrame), so the read waits a frame more than that.
+-- on the frame after the event (DirtiableMixin's RunNextFrame), so the read waits a frame more than that. Questie's
+-- list appearing after login, or turned on or off in its options, is read the same way.
 local watching = false
 local function Recheck()
 	watching = false
+	WatchQuestie()
 	if ready and TrackerShows() ~= followedShows then
 		Follow()
 	end

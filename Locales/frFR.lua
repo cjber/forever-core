@@ -52,6 +52,9 @@ L["Tracker background"] = "Fond du suivi"
 L["Tracker position"] = "Position du suivi"
 L["Under the quest tracker"] = "Sous le suivi des quêtes"
 L["Left of the quest tracker"] = "À gauche du suivi des quêtes"
+L["Attach to quest tracker"] = "Attacher au suivi des quêtes" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"Le suivi Forever partagé se place sous le suivi des quêtes quand cette option est active, et à sa gauche quand elle est désactivée. Chaque addon Forever affiche ce même réglage." -- mt
 L["Tracker"] = "Suivi"
 L["Click to %s"] = "Cliquez pour %s"
 L["Right-click for options"] = "Cliquez droit pour les options"
