@@ -625,6 +625,7 @@ class InPlaceSyncTest(unittest.TestCase):
         with (
             mock.patch.object(sync, "clone", return_value=root / "repo"),
             mock.patch.object(sync, "open_sync_prs", return_value=[] if pull is None else [pull]),
+            mock.patch.object(sync, "foreign_commits_behind_main", return_value=None),
             mock.patch.object(sync, "git", side_effect=git_calls),
             mock.patch.object(sync, "sync_checkout"),
             mock.patch.object(
@@ -728,6 +729,7 @@ class InPlaceSyncTest(unittest.TestCase):
             with (
                 mock.patch.object(sync, "clone", return_value=root / "repo"),
                 mock.patch.object(sync, "open_sync_prs", return_value=[self.PULL]),
+                mock.patch.object(sync, "foreign_commits_behind_main", return_value=None),
                 mock.patch.object(sync, "git", side_effect=fake_git),
                 mock.patch.object(sync, "sync_checkout"),
                 mock.patch.object(sync, "staged_changes", return_value=([], [])),
@@ -765,6 +767,7 @@ class InPlaceSyncTest(unittest.TestCase):
         with (
             mock.patch.object(sync, "clone", side_effect=lambda repo, workspace: workspace / repo),
             mock.patch.object(sync, "open_sync_prs", side_effect=listings),
+            mock.patch.object(sync, "foreign_commits_behind_main", return_value=None),
             mock.patch.object(sync, "git", side_effect=git_calls),
             mock.patch.object(sync, "sync_checkout"),
             mock.patch.object(
@@ -823,6 +826,101 @@ class InPlaceSyncTest(unittest.TestCase):
         self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "newmainoid"))
         alone.assert_not_called()
         self.assertIsNone(opened.call_args.args[2])
+
+
+class StaleBranchTest(unittest.TestCase):
+    """A sync PR whose branch `main` has moved past is synced from `main`, never from its stale head (#913)."""
+
+    PULL = InPlaceSyncTest.PULL
+
+    @staticmethod
+    def compared(behind, *titles):
+        commits = [
+            {"sha": f"{index:07d}abc", "commit": {"message": f"{title}\n\nbody"}} for index, title in enumerate(titles)
+        ]
+        return {"behind_by": behind, "ahead_by": len(titles), "commits": commits}
+
+    def run_sync(self, root, compare):
+        git_calls = []
+
+        def fake_git(root, *args, check=True):
+            git_calls.append(args)
+            if args[:2] == ("rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
+            if args[:2] == ("rev-parse", "FETCH_HEAD"):
+                return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def fake_api(path, *args, check=True):
+            if path == "repos/cjber/legacy-forever/compare/mainoid...proid":
+                return subprocess.CompletedProcess((path, *args), 0, json.dumps(compare), "")
+            raise AssertionError(f"unexpected API call {path}")
+
+        with (
+            mock.patch.object(sync, "clone", return_value=root / "repo"),
+            mock.patch.object(sync, "open_sync_prs", return_value=[self.PULL]),
+            mock.patch.object(sync, "git", side_effect=fake_git),
+            mock.patch.object(sync, "api", side_effect=fake_api),
+            mock.patch.object(sync, "sync_checkout"),
+            mock.patch.object(
+                sync, "staged_changes", return_value=([{"path": "CHANGELOG.md", "contents": "eA=="}], [])
+            ),
+            mock.patch.object(sync, "create_commit", return_value="commitoid") as create,
+            mock.patch.object(sync, "point_branch") as point,
+            mock.patch.object(sync, "delete_branch"),
+            mock.patch.object(sync, "left_alone", return_value=sync.Result("legacy-forever", "left alone")) as alone,
+            mock.patch.object(
+                sync, "open_or_update_pr", return_value=(7, "https://example.test/pull/7", "updated", None)
+            ) as opened,
+        ):
+            result = sync.sync_consumer("legacy-forever", root, root, "abc123")
+        return result, git_calls, create, point, alone, opened
+
+    def test_a_sync_only_branch_behind_main_is_rebuilt_from_main(self):
+        # skillup-forever#849: main released 1.14.2 on its own while the branch held a marked 1.14.2. Synced on the
+        # stale head, the sync read that marked entry as released by main's tag and stacked 1.14.3 on top, run after
+        # run. Built from main, the changelog decision sees main's own entries.
+        compare = self.compared(11, sync.TITLE, sync.TITLE)
+        with tempfile.TemporaryDirectory() as directory:
+            result, git_calls, create, point, alone, opened = self.run_sync(Path(directory), compare)
+
+        alone.assert_not_called()
+        self.assertEqual(result.status, "rebuilt from main")
+        self.assertIn(("checkout", "-B", sync.BRANCH, "mainoid"), git_calls)
+        self.assertNotIn(("checkout", "-B", sync.BRANCH, "proid"), git_calls)
+        self.assertEqual(create.call_args.args[1:3], (sync.SCRATCH_BRANCH, "mainoid"))
+        point.assert_any_call("legacy-forever", sync.BRANCH, "commitoid")
+        self.assertIs(opened.call_args.args[2], self.PULL, "the open PR is refreshed, not replaced")
+
+    def test_a_branch_behind_main_with_pushed_commits_is_left_alone(self):
+        compare = self.compared(2, sync.TITLE, "fix(require): pass the slash words", sync.TITLE)
+        with tempfile.TemporaryDirectory() as directory:
+            result, git_calls, create, point, alone, opened = self.run_sync(Path(directory), compare)
+
+        self.assertEqual(result.status, "left alone")
+        reason = alone.call_args.args[2]
+        self.assertIn("0000001 fix(require): pass the slash words", reason)
+        self.assertIn("Merge main into it", reason)
+        create.assert_not_called()
+        point.assert_not_called()
+        self.assertFalse([call for call in git_calls if call[0] == "checkout"])
+
+    def test_a_branch_containing_main_is_still_updated_in_place(self):
+        compare = self.compared(0, sync.TITLE, "fix: a hand fix")
+        with tempfile.TemporaryDirectory() as directory:
+            result, git_calls, create, point, alone, opened = self.run_sync(Path(directory), compare)
+
+        self.assertEqual(result.status, "updated in place")
+        self.assertIn(("checkout", "-B", sync.BRANCH, "proid"), git_calls)
+        self.assertEqual(create.call_args.args[1:3], (sync.BRANCH, "proid"))
+        point.assert_not_called()
+
+    def test_commits_the_compare_leaves_out_count_as_foreign(self):
+        compare = self.compared(1, sync.TITLE)
+        compare["ahead_by"] = 300
+        with mock.patch.object(sync, "api_json", return_value=compare):
+            foreign = sync.foreign_commits_behind_main("legacy-forever", "mainoid", "proid")
+        self.assertEqual(foreign, ["299 commits the compare did not list"])
 
 
 class ToolingTest(unittest.TestCase):

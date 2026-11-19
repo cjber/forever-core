@@ -13,9 +13,14 @@ copy of this checkout's own `sync.py` so the updater that runs is the one being 
 `tools/check_family.py`, and, if anything changed, commits the result through the GraphQL `createCommitOnBranch`
 mutation and opens or refreshes the PR with squash auto-merge enabled.
 
-An open sync PR is updated in place: the sync runs on that PR's own head and the refreshed files are added on top of it,
-so any commit pushed to the PR since the last sync stays on the branch. A PR the sync cannot update in place is left
-exactly as it is, with a comment that says why, and the branch is never forced anywhere else. A consumer with no open PR
+An open sync PR whose branch already contains `main` is updated in place: the sync runs on that PR's own head and the
+refreshed files are added on top of it, so any commit pushed to the PR since the last sync stays on the branch. Once
+`main` has moved past the branch, a branch holding only the sync's own commits is rebuilt from `main` like a new one:
+everything on it is regenerated, and the changelog and pin decisions are made against `main`'s own CHANGELOG and tags
+rather than the stale branch's, which would otherwise read the branch's marked entry as released by `main`'s tag of the
+same number and stack another entry on top. A branch behind `main` that also holds commits someone pushed to it is left
+for that person to merge `main` into. A PR the sync cannot update in place is left exactly as it is, with a comment
+that says why, and the branch is never forced anywhere else. A consumer with no open PR
 has its sync commit built on a scratch branch from `main` and moves `forever-core-sync` to it in one ref update; the
 scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR empty and have
 GitHub close it. GitHub signs commits made through the API, so the consumer's `required_signatures` ruleset accepts the
@@ -990,6 +995,29 @@ def fetch_branch(root: Path, branch: str) -> str | None:
     return git(root, "rev-parse", "FETCH_HEAD").stdout.strip()
 
 
+def foreign_commits_behind_main(repo: str, main: str, head: str) -> list[str] | None:
+    """None when the sync branch at `head` already contains `main`; otherwise the commits on it the sync did not make.
+
+    An empty list means the branch holds only sync commits, so it can be rebuilt from `main` with nothing lost. The
+    clone is one commit deep, so the comparison is GitHub's compare API on the two exact commits.
+    """
+    if head == main:
+        return None
+    compared = api_json(f"repos/{OWNER}/{repo}/compare/{main}...{head}")
+    if int(compared["behind_by"]) == 0:
+        return None
+    commits = compared.get("commits") or []
+    foreign = [
+        f"{entry['sha'][:7]} {entry['commit']['message'].splitlines()[0]}"
+        for entry in commits
+        if entry["commit"]["message"].splitlines()[0] != TITLE
+    ]
+    # The compare API lists at most 250 commits; any it leaves out cannot be shown to be the sync's own.
+    if len(commits) < int(compared["ahead_by"]):
+        foreign.append(f"{int(compared['ahead_by']) - len(commits)} commits the compare did not list")
+    return foreign
+
+
 def comment(repo: str, number: int, body: str) -> None:
     api(f"repos/{OWNER}/{repo}/issues/{number}/comments", "--method", "POST", "-f", f"body={body}")
 
@@ -1083,12 +1111,14 @@ def sync_consumer(
 ) -> Result:
     """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
 
-    An open sync PR is updated in place: the sync runs on that PR's own head and its commit is added on top, so a
-    commit pushed to the PR since the last sync is never dropped. The commit is made straight on `forever-core-sync`
-    with that head as its expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left
-    untouched and a comment on the PR says why. A consumer with no open PR has its branch rebuilt from `main` on a
-    scratch branch, which is safe because there is no PR whose commits could be lost. A PR that merges or closes while
-    the sync runs takes its branch with it; then the sync starts over once from the new `main`, as if no PR were open.
+    An open sync PR whose branch contains `main` is updated in place: the sync runs on that PR's own head and its
+    commit is added on top, so a commit pushed to the PR since the last sync is never dropped. The commit is made
+    straight on `forever-core-sync` with that head as its expected one, which GitHub refuses if the branch moved
+    meanwhile: then the branch is left untouched and a comment on the PR says why. Once `main` has moved past the
+    branch, a branch of sync commits only is rebuilt from `main` and a branch carrying other commits is left alone.
+    A consumer with no open PR has its branch rebuilt from `main` on a scratch branch, which is safe because there is
+    no PR whose commits could be lost. A PR that merges or closes while the sync runs takes its branch with it; then
+    the sync starts over once from the new `main`, as if no PR were open.
     """
     try:
         root = clone(repo, workspace)
@@ -1096,23 +1126,37 @@ def sync_consumer(
         listed = open_sync_prs(repo)
         pull = listed[0] if listed else None
         base = main
+        in_place = False
         if pull is not None:
-            base = fetch_branch(root, BRANCH)
-            if base is None:
+            head = fetch_branch(root, BRANCH)
+            if head is None:
                 # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
-                pull, base = None, main
+                pull = None
+            else:
+                foreign = foreign_commits_behind_main(repo, main, head)
+                if foreign:
+                    return left_alone(
+                        repo,
+                        pull,
+                        "main has moved past this branch, which also holds commits the sync did not make ("
+                        + "; ".join(foreign)
+                        + "). Merge main into it so the sync can continue on top.",
+                    )
+                if foreign is None:
+                    base, in_place = head, True
+                # Otherwise the branch holds only sync commits made against an older main: rebuild it from main.
         git(root, "checkout", "-B", BRANCH, base)
         bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
         if not additions and not deletions:
-            if pull is not None and base != main:
+            if in_place and base != main:
                 return Result(repo, "up to date", detail="the open PR already carries the newest shared files")
             closed = close_stale_prs(repo, sha)
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         pin_bump = (bumped, latest) if bumped and latest else None
         body = pr_body(sha, files, pin_bump, embeds_core(root))
-        if pull is not None:
+        if in_place:
             try:
                 oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
             except (SyncError, json.JSONDecodeError, OSError) as error:
@@ -1123,6 +1167,7 @@ def sync_consumer(
                 return left_alone(repo, pull, str(error))
             status = "updated in place"
         else:
+            # A new PR, or an open one whose sync-only branch is rebuilt from main because main moved past it.
             point_branch(repo, SCRATCH_BRANCH, main)
             try:
                 oid = create_commit(repo, SCRATCH_BRANCH, main, sha, additions, deletions, workspace)
@@ -1130,7 +1175,7 @@ def sync_consumer(
                 point_branch(repo, BRANCH, oid)
             finally:
                 delete_branch(repo, SCRATCH_BRANCH)
-            status = "opened"
+            status = "opened" if pull is None else "rebuilt from main"
         number, url, _, node_id = open_or_update_pr(repo, body, pull)
         warning = auto_merge_warning(node_id) if node_id else None
         if proof_needed(root, list(files)):
