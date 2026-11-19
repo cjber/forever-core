@@ -260,6 +260,24 @@ once `professions.lua`'s ready check sees it filled. `NAME` must match a
 `--flow` name, and the proof's flow entry records the point as `click`, so the evidence says what was clicked. A flow
 with no `--flow-click` is unchanged.
 
+### From the user's checklist pass
+
+When the user has tested a build in the live client from the checklist (`tools/checklist/README.md`), that pass is the
+proof: no headless run is needed. The in-game agent records each linked build with
+`checklist build --addon R --sha SHA --artifact test-artifacts/<dir> --digest <input_digest>`, where the digest is
+`visual_proof --digests`' `input_digest` of that commit. Once the round passes, anyone writes the proof without the
+client:
+
+```sh
+python3 $FC attest --repo shortest-path-forever --ref <sha> --checkout <worktree at that sha> [--shot <client screenshot>]
+```
+
+`attest` reads `checklist status --addon R --sha SHA --json` and refuses unless every check for that build passed, the
+round recorded this commit, its digest equals the checkout's `input_digest`, and the recorded unpacked build still
+compares equal to the checkout (`visual_proof --compare`). Each passed check becomes a flow; the screenshots pasted
+into passed checks, plus any `--shot`, go to a new secret gist, at least one in total. The file carries
+`kind: user-checked` and the round, and is committed with the change like any proof.
+
 ### Behaviour and cost flows
 
 A proof shows that the change works and what it costs, not only how it looks (WFA-40). Each flow is a Lua file that

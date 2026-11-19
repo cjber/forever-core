@@ -199,6 +199,8 @@ needs, so the required `visual-proof` check passes without an admin merge. Send 
 `INGAME ... kind: proof` request with the pull request's checkout and
 `flows: update notice=<the addon's slash command or Lua file>`. It builds and loads the commit, runs the flow, uploads
 the screenshots to a secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change.
+When the user has passed that exact build on the test checklist, `forever_client.py attest` writes the file from that
+pass instead, without the client ([in-game.md](../wow-forever-addon/in-game.md#from-the-users-checklist-pass)).
 
 A flow is the addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs. ForeverCore has no shared
 opener for an addon's update notice, so there is no default. `wow-forever-addon/in-game.md` has the full flow, including the sync pull request that moves the

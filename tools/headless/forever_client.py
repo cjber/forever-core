@@ -36,6 +36,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
                                           # the same with every consumer's latest released build linked beside core
     forever_client.py proof --repo R --ref SHA --checkout PATH --flow NAME=SLASH_OR_LUA_FILE
                                           # record the checkout's .visual-proof.json from a client session
+    forever_client.py attest --repo R --ref SHA --checkout PATH [--shot FILE]
+                                          # the same from the user's checklist pass, without the client
 
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
@@ -58,6 +60,10 @@ borrows is put back exactly as it was, including a store install it moved aside.
 handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`, `smoke`, `proof` or `build-dev` replays
 it under the job lock before it touches AddOns. A held job lock leaves the record untouched.
 A missing full commit SHA fetches origin once and retries resolution for smoke, proof and build-dev.
+
+`attest` writes the same file from the user's own checklist pass of that build (tools/checklist/README.md), without
+the client: the round must have passed every check for the commit and recorded a runtime digest equal to the
+checkout's `visual_proof --digests`, and the recorded unpacked build must still compare equal to the checkout.
 
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
@@ -2867,6 +2873,128 @@ def proof(args: argparse.Namespace) -> int:
     return 0
 
 
+CHECKLIST = Path(__file__).resolve().parents[1] / "checklist/checklist"
+
+
+def checklist_status(repo: str, commit: str, round_name: str | None = None) -> dict:
+    """`checklist status --json` for one build: the user's answers for it and the build the round recorded.
+
+    Exit 0 is a passed build, 1 a build with a check not passed, 2 a build no round covers (tools/checklist/README.md).
+    """
+    command = [str(CHECKLIST), "status", "--addon", repo, "--sha", commit, "--json"]
+    if round_name:
+        command += ["--round", round_name]
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    except OSError as error:
+        raise ClientError(f"cannot run {CHECKLIST}: {error}") from None
+    if completed.returncode == 2:
+        raise ClientError(f"no checklist round has checks for {repo}@{commit[:7]}: add them and test it first")
+    try:
+        report = json.loads(completed.stdout)
+    except ValueError:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"checklist status printed no JSON for {repo}@{commit[:7]}: {detail[:200]}") from None
+    if completed.returncode or not report.get("passed"):
+        open_checks = [
+            f"{row.get('id')} ({row.get('status') or 'open'})"
+            for row in report.get("checks", [])
+            if row.get("status") != "pass"
+        ]
+        raise ClientError(
+            f"{report.get('round')}: {repo}@{commit[:7]} has not passed the checklist: {', '.join(open_checks)}"
+        )
+    return report
+
+
+def attest(args: argparse.Namespace) -> int:
+    """Write a commit's `.visual-proof.json` from the user's own checklist pass in the live client (#874).
+
+    It never touches the client, so it runs while the user plays. The pass binds to the exact runtime that was tested:
+    the round's build must name this commit, its recorded runtime digest must equal the checkout's
+    `visual_proof --digests`, and the unpacked build it recorded must still compare equal to the checkout. The
+    screenshots are the ones the user pasted into the checklist plus any `--shot` from the client's Screenshots folder;
+    they go to a new secret gist like a proof's, and the record carries `kind: user-checked` and the round.
+    """
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    checkout = Path(args.checkout).resolve()
+    if not checkout.is_dir():
+        raise ClientError(f"no checkout at {checkout}: --checkout is the tree the proof is written to")
+    commit = resolve_commit(root, args.ref)
+    head = git(checkout, "rev-parse", "--verify", "HEAD")
+    if head != commit:
+        raise ClientError(f"{checkout} is at {head[:7]}, not {repo}@{commit[:7]}: check out the tested commit first")
+    report = checklist_status(repo, commit, args.round)
+    build = report.get("build") or {}
+    if build.get("sha") != commit:
+        raise ClientError(f"{report['round']} recorded {repo} at {str(build.get('sha'))[:7]}, not {commit[:7]}")
+    digests = proof_digests(checkout)
+    recorded = build.get("digest")
+    if not recorded:
+        raise ClientError(
+            f"{report['round']} recorded no runtime digest for {repo}: record it with checklist build --digest "
+            "when the build is linked, so the pass binds to what was tested"
+        )
+    if recorded != digests["input_digest"]:
+        raise ClientError(
+            f"{report['round']} tested {repo} runtime {recorded[:12]}, but {checkout} at {commit[:7]} is "
+            f"{digests['input_digest'][:12]}: the user's pass is for another build"
+        )
+    artifact = Path(build.get("artifact") or "")
+    if not artifact.is_absolute():
+        artifact = WORKSPACE / artifact
+    folders = addon_folders(artifact, package_name(root, commit)) if build.get("artifact") and artifact.is_dir() else []
+    if not folders:
+        raise ClientError(f"{report['round']} names no unpacked build for {repo} to check ({build.get('artifact')!r})")
+    proof_compare(checkout, folders[0][1])
+    passed = [row for row in report["checks"] if row.get("status") == "pass"]
+    if not passed:
+        raise ClientError(f"{report['round']}: no check for {repo}@{commit[:7]} was answered pass")
+    shots = [Path(image) for row in passed for image in row.get("images", [])] + [Path(s) for s in args.shot]
+    missing = [str(s) for s in shots if not s.is_file()]
+    if missing:
+        raise ClientError(f"screenshot not found: {', '.join(missing)}")
+    if not shots:
+        raise ClientError(
+            f"no screenshot for {repo}@{commit[:7]}: paste one into a passed check or name a client capture with --shot"
+        )
+    staging = PROOF_SCRATCH / f"attest-{repo}-{commit[:7]}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    named = []
+    for index, shot_path in enumerate(shots, start=1):
+        target = staging / f"{index}-{flow_slug(shot_path.stem)}{shot_path.suffix.lower()}"
+        shutil.copyfile(shot_path, target)
+        named.append(target)
+    description = f"User-checked visual proof for {repo} at {commit} ({report['round']})"
+    gist = create_gist(description, staging)
+    images = upload_screenshots(gist, named, description)
+    proof_data = {
+        "input_digest": digests["input_digest"],
+        "runtime_sha256": digests["input_digest"],
+        "candidate": digests["candidate"],
+        "client_build": client_build(folders[0][1]),
+        "tested_artifact": "source-tree",
+        "source_commit": commit,
+        "kind": "user-checked",
+        "round": report["round"],
+        "flows": [
+            {"name": row["title"], "steps": row.get("steps") or [row.get("pass") or row["title"]], "result": "pass"}
+            for row in passed
+        ],
+        "images": images,
+    }
+    target = checkout / PROOF_FILE
+    atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
+    print(f"{repo}@{commit[:7]}: wrote {target} from {report['round']} ({len(passed)} checks passed)", flush=True)
+    return 0
+
+
 # --- session lifecycle -----------------------------------------------------------------------------------------
 
 
@@ -4354,6 +4482,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="run the whole smoke and print its result without posting the headless-smoke commit status",
     )
+    p = sub.add_parser("attest", help="write .visual-proof.json from the user's checklist pass (no client)")
+    p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
+    p.add_argument("--ref", required=True, help="the commit the user tested")
+    p.add_argument("--checkout", required=True, type=Path, help="the checkout of that commit the proof is written to")
+    p.add_argument("--round", help="the checklist round (default: the newest round covering the build)")
+    p.add_argument(
+        "--shot", action="append", default=[], help="a client screenshot to add to the evidence; repeat for each"
+    )
     p = sub.add_parser("proof", help="record a commit's .visual-proof.json from a client session")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
     p.add_argument("--ref", required=True, help="the commit the proof is for")
@@ -4431,6 +4567,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return smoke(args)
         if args.verb == "proof":
             return proof(args)
+        if args.verb == "attest":
+            return attest(args)
         if args.verb in JOB_VERBS:
             state = load_state()
             if session_alive(state) and launcher_verb(state, args.verb, getattr(args, "button", None)):

@@ -268,7 +268,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   in-game agent an `INGAME ... kind: proof` request with the checkout and `flows: update notice=<the addon's slash
   command or Lua file>` ([in-game.md](in-game.md)). It builds the commit, runs the flow, uploads the screenshots to a
   secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change. The required
-  `visual-proof` check then passes without an admin merge.
+  `visual-proof` check then passes without an admin merge. A build the user passed on the test checklist gets the
+  file from `forever_client.py attest` instead ([in-game.md](in-game.md#from-the-users-checklist-pass)).
 - **WFA-39** A ForeverCore release keeps every consumer release already on the stores working, including one
   pinned to an older core: players and the CurseForge app update core on its own, before the sync re-releases reach
   them. Core changes are additive. A public function, field, event, slash command or saved-variable shape a released

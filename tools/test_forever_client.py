@@ -3773,6 +3773,138 @@ class ProofTest(unittest.TestCase):
         self.assertTrue(options.manual_launcher)
 
 
+class AttestTest(unittest.TestCase):
+    """`attest`: the user's checklist pass becomes the proof, bound to the tested runtime, without the client."""
+
+    SHA = "a" * 40
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.workspace = self.root / "ws"
+        (self.workspace / "demo-forever").mkdir(parents=True)
+        self.checkout = self.root / "checkout"
+        self.checkout.mkdir()
+        self.artifact = self.workspace / "test-artifacts/demo-forever-aaaaaaaa"
+        (self.artifact / "DemoForever").mkdir(parents=True)
+        (self.artifact / "DemoForever/DemoForever.toc").write_text("## Interface: 16001\n")
+        self.shot = self.root / "pasted.png"
+        self.shot.write_bytes(b"png")
+        for name, value in (("WORKSPACE", self.workspace), ("PROOF_SCRATCH", self.root / "scratch")):
+            patch = mock.patch.object(fc, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def report(self, **build) -> dict:
+        return {
+            "round": "2026-11-19-2",
+            "passed": True,
+            "build": {"sha": self.SHA, "digest": "d" * 64, "artifact": "test-artifacts/demo-forever-aaaaaaaa", **build},
+            "checks": [
+                {
+                    "id": "c1",
+                    "title": "Panel opens",
+                    "steps": ["Type /demo."],
+                    "status": "pass",
+                    "images": [str(self.shot)],
+                },
+                {"id": "c2", "title": "Optional", "steps": [], "status": "skip", "images": []},
+            ],
+        }
+
+    def run_attest(self, report: dict, shots: list[str] | None = None, digest: str = "d" * 64):
+        namespace = argparse.Namespace(
+            repo="demo-forever", ref=self.SHA, checkout=self.checkout, round=None, shot=shots or []
+        )
+        with (
+            mock.patch.object(fc, "resolve_commit", return_value=self.SHA),
+            mock.patch.object(fc, "git", return_value=self.SHA),
+            mock.patch.object(fc, "checklist_status", return_value=report),
+            mock.patch.object(fc, "proof_digests", return_value={"input_digest": digest, "candidate": "c" * 64}),
+            mock.patch.object(fc, "package_name", return_value="DemoForever"),
+            mock.patch.object(fc, "proof_compare", return_value={"equivalent": True}) as compare,
+            mock.patch.object(fc, "client_build", return_value="1.60.1.70959 (Interface 16001)"),
+            mock.patch.object(fc, "create_gist", return_value="gist1") as gist,
+            mock.patch.object(
+                fc,
+                "upload_screenshots",
+                side_effect=lambda g, shots, d: [{"url": f"u/{s.name}", "sha256": "0" * 64} for s in shots],
+            ),
+            mock.patch.object(fc, "acquire_job", side_effect=AssertionError("attest must not take the client")),
+            mock.patch.object(fc, "ensure_session", side_effect=AssertionError("attest must not start the client")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = fc.attest(namespace)
+        return result, compare, gist
+
+    def test_writes_a_user_checked_proof_from_the_passed_checks(self):
+        result, compare, _ = self.run_attest(self.report())
+        self.assertEqual(result, 0)
+        compare.assert_called_once_with(self.checkout, self.artifact / "DemoForever")
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual(proof["kind"], "user-checked")
+        self.assertEqual(proof["round"], "2026-11-19-2")
+        self.assertEqual(proof["input_digest"], "d" * 64)
+        self.assertEqual(proof["runtime_sha256"], "d" * 64)
+        self.assertEqual(proof["source_commit"], self.SHA)
+        self.assertEqual(proof["flows"], [{"name": "Panel opens", "steps": ["Type /demo."], "result": "pass"}])
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-pasted.png"])
+
+    def test_adds_client_screenshots_named_with_shot(self):
+        capture = self.root / "WoWScrnShot_111926_103244.jpg"
+        capture.write_bytes(b"jpg")
+        report = self.report()
+        report["checks"][0]["images"] = []
+        self.run_attest(report, shots=[str(capture)])
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-wowscrnshot-111926-103244.jpg"])
+
+    def test_refuses_a_pass_for_another_runtime_or_without_evidence(self):
+        no_images = self.report()
+        no_images["checks"][0]["images"] = []
+        cases = {
+            "another build": (self.report(), "e" * 64),
+            "no runtime digest": (self.report(digest=""), "d" * 64),
+            "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),
+            "no unpacked build": (self.report(artifact="test-artifacts/missing"), "d" * 64),
+            "no screenshot": (no_images, "d" * 64),
+        }
+        for message, (report, digest) in cases.items():
+            with self.subTest(message), self.assertRaisesRegex(fc.ClientError, message.split(", ")[0]):
+                self.run_attest(report, digest=digest)
+            self.assertFalse((self.checkout / fc.PROOF_FILE).exists())
+
+    def test_checklist_status_maps_the_gate_exit_codes(self):
+        passed = {"round": "r", "passed": True, "build": {}, "checks": []}
+        failed = {
+            "round": "r",
+            "passed": False,
+            "build": {},
+            "checks": [{"id": "c1", "status": "fail"}, {"id": "c2", "status": None}],
+        }
+        with mock.patch.object(
+            fc.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=json.dumps(passed), stderr="")
+        ) as run:
+            self.assertEqual(fc.checklist_status("demo-forever", self.SHA, "r"), passed)
+        self.assertEqual(
+            run.call_args.args[0][1:],
+            ["status", "--addon", "demo-forever", "--sha", self.SHA, "--json", "--round", "r"],
+        )
+        with (
+            mock.patch.object(
+                fc.subprocess, "run", return_value=mock.Mock(returncode=1, stdout=json.dumps(failed), stderr="")
+            ),
+            self.assertRaisesRegex(fc.ClientError, r"c1 \(fail\), c2 \(open\)"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=2, stdout="", stderr="")),
+            self.assertRaisesRegex(fc.ClientError, "no checklist round"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+
+
 class BrokerTest(unittest.TestCase):
     """The resident session and the short job lock: one client, several agents, no login per test."""
 
