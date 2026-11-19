@@ -212,6 +212,8 @@ SIGN_IN_MESSAGE = (
 LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
+# Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.
+LAUNCHER_LOGIN_LABELS = (("logging", "in"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
@@ -1254,7 +1256,8 @@ def press_play(state: dict) -> None:
         check=False,
     )
     if not found.stdout.split():
-        raise ClientError("Battle.net launcher window was not found")
+        # Battle.net can swap its login window for the main one; the startup loop retries until its deadline.
+        return
     if shutil.which("tesseract") is None:
         raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
     if client_pid():
@@ -1286,6 +1289,14 @@ def press_play(state: dict) -> None:
         )
     targets = play_targets(image)
     if not targets:
+        # The label trails its animated dots ("Logging in.."), which are not part of it.
+        label_words = [word.rstrip(".") for word in words]
+        if any(
+            label_words[index : index + len(phrase)] == list(phrase)
+            for phrase in LAUNCHER_LOGIN_LABELS
+            for index in range(len(label_words))
+        ):
+            return
         # A launcher dialog can cover the page. Dismiss it on the discovered
         # Battle.net window, then let the startup loop inspect a fresh frame.
         x(state, "key", "--window", found.stdout.split()[0], "Escape")
