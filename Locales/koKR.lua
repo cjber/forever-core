@@ -59,7 +59,6 @@ L["Unavailable in combat"] = "전투 중에는 사용할 수 없음"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"사용법: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "무슨 일이 있었는지 또는 원하는 기능"
-L["MENU_BACK"] = "뒤로"
 
 L["1 ms"] = "1 ms"
 L["5 ms"] = "5 ms"

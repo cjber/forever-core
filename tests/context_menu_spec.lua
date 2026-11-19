@@ -1,5 +1,5 @@
--- UI/ContextMenu.lua against a mocked client: the suite's own menu opens instead of Blizzard's, navigates nested
--- entries, scrolls a long level, and follows an owner's hide.
+-- UI/ContextMenu.lua against a mocked client: the suite's own menu opens instead of Blizzard's, cascades nested
+-- entries beside their rows, scrolls a long level, and follows an owner's hide.
 local checks = 0
 local function check(value, message)
 	checks = checks + 1
@@ -39,7 +39,10 @@ local function region(kind, parent)
 		return (rawget(self, "scale") or 1) * (self:GetParent() and self:GetParent():GetEffectiveScale() or 1)
 	end
 	function methods:GetRight()
-		if rawget(self, "point") then
+		if rawget(self, "right") then
+			return self.right
+		end
+		if rawget(self, "point") and type(self.point[2]) == "table" then
 			return self.point[2]:GetRight() + self.point[4]
 		end
 		return rawget(self, "right") or 0
@@ -192,6 +195,12 @@ local function region(kind, parent)
 		text.name, text.layer, text.font = name, layer, font
 		return text
 	end
+	function methods:LockHighlight()
+		self.highlightLocked = true
+	end
+	function methods:UnlockHighlight()
+		self.highlightLocked = false
+	end
 	function methods:SetScrollChild(child)
 		self.scrollChild = child
 	end
@@ -200,7 +209,8 @@ local function region(kind, parent)
 	end
 	setmetatable(widget, {
 		__index = function(_, key)
-			return methods[key] or function() end
+			-- An unknown method is a no-op; an unset field reads nil, as on a client frame.
+			return methods[key] or (type(key) == "string" and key:match("^%u") and function() end or nil)
 		end,
 	})
 	return widget
@@ -296,9 +306,6 @@ env.EventRegistry = {
 local ns = {
 	L = setmetatable({}, {
 		__index = function(_, key)
-			if key == "MENU_BACK" then
-				return "Back"
-			end
 			return key
 		end,
 	}),
@@ -313,6 +320,7 @@ env.MenuUtil = {
 }
 
 local owner = env.CreateFrame("Button", nil, env.UIParent)
+env.UIParent.right = 4000
 local calls = 0
 ns.ContextMenu(owner, function(_, root)
 	root:CreateTitle("Title")
@@ -341,18 +349,72 @@ equal(popup.rows[3].indicator.shown, false, "a plain submenu row carries no chec
 equal(popup:GetParent(), env.UIParent, "popup escapes owner scroll clipping")
 equal(popup.rows[1]:IsEnabled(), false, "title not actionable")
 equal(popup.rows[2]:IsEnabled(), false, "disabled action stays disabled")
-popup.rows[3].scripts.OnClick(popup.rows[3])
-equal(popup.rows[1]:GetText(), "Back", "submenu has back")
-popup.rows[2].scripts.OnClick(popup.rows[2])
-popup.rows[1].scripts.OnClick(popup.rows[1])
-equal(popup.rows[1]:GetText(), "Back", "deep back retains parent navigation")
-popup.rows[1].scripts.OnClick(popup.rows[1])
-equal(popup.rows[3]:GetText(), "First", "back returns root")
-popup.rows[3].scripts.OnClick(popup.rows[3])
-popup.rows[2].scripts.OnClick(popup.rows[2])
-popup.rows[2].scripts.OnClick(popup.rows[2])
+-- Submenus cascade as Blizzard_Menu's do: resting on a row opens its level beside it after 0.33 s, the parent stays
+-- open, and there is no Back row.
+local function hover(row)
+	row.mouseOver = true
+	row.scripts.OnEnter(row)
+	drain()
+	row.mouseOver = false
+end
+local firstRow = popup.rows[3]
+firstRow.mouseOver = true
+firstRow.scripts.OnEnter(firstRow)
+equal(env.ForeverCoreContextMenu2, nil, "a submenu waits for the pointer to rest")
+drain()
+firstRow.mouseOver = false
+local second = env.ForeverCoreContextMenu2
+check(second ~= nil and second:IsShown(), "hovering a submenu row opens its level")
+equal(popup:IsShown(), true, "the parent level stays open beside it")
+equal(second.rows[1]:GetText(), "Second", "the submenu lists its own entries, with no Back row")
+equal(second.point[1], "TOPLEFT", "the submenu's top-left corner")
+equal(second.point[2], firstRow, "meets its row")
+equal(second.point[3], "TOPRIGHT", "at the row's top-right corner")
+equal(firstRow.highlightLocked, true, "the opening row stays lit while its submenu is open")
+hover(second.rows[1])
+local third = env.ForeverCoreContextMenu3
+check(third ~= nil and third:IsShown(), "a deeper submenu cascades from the first")
+equal(third.rows[1]:GetText(), "Action", "with its own entries")
+equal(second:IsShown() and popup:IsShown(), true, "every level above stays open")
+hover(firstRow)
+equal(third:IsShown(), true, "resting on the open row again keeps its cascade")
+hover(popup.rows[2])
+equal(second:IsShown(), false, "resting on another row closes the submenu")
+equal(third:IsShown(), false, "and every level below it")
+equal(firstRow.highlightLocked, false, "and lets its row's highlight go")
+equal(popup:IsShown(), true, "the root stays open")
+firstRow.mouseOver = true
+firstRow.scripts.OnEnter(firstRow)
+firstRow.mouseOver = false
+drain()
+equal(second:IsShown(), false, "a pointer that moved on before the delay opens nothing")
+firstRow.scripts.OnClick(firstRow)
+equal(second:IsShown(), true, "a click or gamepad press on a submenu row opens it at once")
+equal(popup:IsShown(), true, "and keeps the root open")
+second.mouseOver = true
+popup.scripts.OnEvent(popup)
+equal(second:IsShown() and popup:IsShown(), true, "a click inside a submenu keeps the cascade open")
+second.mouseOver = false
+second.rows[1].scripts.OnClick(second.rows[1])
+third.rows[1].scripts.OnClick(third.rows[1])
 equal(calls, 1, "leaf executes once")
 equal(popup:IsShown(), false, "leaf closes menu")
+equal(second:IsShown() or third:IsShown(), false, "and every submenu")
+
+-- A submenu that would leave the screen opens to its row's left instead.
+env.UIParent.right = 1000
+firstRow.right = 950
+ns.ContextMenu(owner, function(_, root)
+	root:CreateTitle("Title")
+	root:CreateButton("Disabled"):SetEnabled(false)
+	root:CreateButton("First"):CreateButton("Second", function() end)
+end)
+hover(popup.rows[3])
+equal(second.point[1], "TOPRIGHT", "an off-screen submenu flips")
+equal(second.point[3], "TOPLEFT", "to its row's left")
+env.UIParent.right, firstRow.right = 4000, nil
+popup:Hide()
+equal(second:IsShown(), false, "closing the root closes its submenus")
 
 -- The menu opens at the cursor, as MenuUtil.CreateContextMenu does: a tracker passes its whole section as the owner,
 -- whose bottom-right corner can sit far below the clicked title (#850).
@@ -402,6 +464,14 @@ for _, case in ipairs({
 	equal(popup.point[2], owner, case[1] .. " owner: beside the owner, not the parked cursor")
 	equal(popup.point[3], case[3], case[1] .. " owner: the owner's facing corner")
 end
+env.quadrant = env.FrameUtilQuadrantEnum.TopRight
+ns.ContextMenu(owner, function(_, root)
+	root:CreateButton("Pad"):CreateButton("Inside", function() end)
+end)
+popup.rows[1].scripts.OnClick(popup.rows[1])
+local padSub = env.ForeverCoreContextMenu2
+equal(padSub.point[1], "TOPRIGHT", "a gamepad submenu opens toward the middle")
+equal(padSub.point[3], "TOPLEFT", "from its row's facing side")
 env.gamepad, env.quadrant = nil, nil
 popup:Hide()
 

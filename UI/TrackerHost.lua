@@ -1314,7 +1314,6 @@ local function NewTrackerMenu(root, module, target)
 	local menu = {}
 	local function Entry(text, fn, opts)
 		local entry = ns.NewMenuDescription("button", text)
-		entry.parent = root
 		if type(fn) ~= "function" then
 			return entry
 		end

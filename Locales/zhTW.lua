@@ -58,7 +58,6 @@ L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
 L["What happened, or what you would like"] = "請描述遇到的問題或希望新增的功能"
-L["MENU_BACK"] = "返回"
 
 L["1 ms"] = "1 毫秒"
 L["5 ms"] = "5 毫秒"

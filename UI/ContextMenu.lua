@@ -2,7 +2,8 @@
 local _, ns = ...
 
 -- Forever 70009 can assert in Blizzard_Menu.AcquireMenu, so the suite draws its context menus in frames of its own.
--- This is the one menu every Forever addon opens, with the same generator shape as MenuUtil.CreateContextMenu.
+-- This is the one menu every Forever addon opens, with the same generator shape as MenuUtil.CreateContextMenu, and its
+-- submenus cascade as Blizzard's do: each opens beside its row on hover and the levels above it stay open.
 local Description = {}
 Description.__index = Description
 
@@ -21,7 +22,7 @@ ns.NewMenuDescription = New
 ---@return ForeverMenuDescription
 function Description:CreateButton(text, action)
 	local entry = New("button", text)
-	entry.onClick, entry.parent = action, self --[[@as ForeverMenuDescription]]
+	entry.onClick = action
 	self.entries[#self.entries + 1] = entry
 	return entry
 end
@@ -117,16 +118,34 @@ local HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
 ---@field body Frame
 ---@field scroll ForeverMenuScrollFrame
 ---@field background Texture
----@type ForeverContextPopup?
-local popup
+---@field depth integer
+---@field description? ForeverMenuDescription
+---@field opener? ForeverContextMenuRow
+
+-- One frame per open level: levels[1] is the root, each deeper level a submenu cascading beside its parent's row.
+---@type ForeverContextPopup[]
+local levels = {}
 local Draw
 ---@type table<Frame, boolean>
 local watchedOwners = setmetatable({}, { __mode = "k" })
+-- Blizzard_Menu's MenuManagerMixin:RestartMouseEventTimer: a hovered row opens its submenu once the pointer has
+-- rested on it this long, so a diagonal move toward an open submenu does not swap it for a row it crosses.
+local SUBMENU_DELAY = 0.33
+local hoverToken = 0
+
+---@param depth integer
+local function HideFrom(depth)
+	for index = #levels, depth, -1 do
+		if levels[index]:IsShown() then
+			levels[index]:Hide()
+		end
+	end
+end
 
 ---@param owner Frame
 local function OwnerHidden(owner)
-	if popup and popup.owner == owner then
-		local menu = popup
+	local menu = levels[1]
+	if menu and menu.owner == owner then
 		C_Timer.After(0, function()
 			if menu.owner == owner and not owner:IsVisible() then
 				menu:Hide()
@@ -155,8 +174,9 @@ end
 ---@param _ table
 ---@param frame Frame
 local function PanelHidden(_, frame)
-	if popup and popup.owner and Inside(popup.owner, frame) then
-		popup:Hide()
+	local menu = levels[1]
+	if menu and menu.owner and Inside(menu.owner, frame) then
+		menu:Hide()
 	end
 end
 
@@ -184,14 +204,27 @@ local function UnderMap(frame)
 	return false
 end
 
----@return ForeverContextPopup
-local function Ensure()
-	if popup then
-		return popup
+-- Whether the pointer is over any open level: a click there keeps the whole cascade open.
+---@return boolean
+local function OverMenu()
+	for _, level in ipairs(levels) do
+		if level:IsShown() and level:IsMouseOver() then
+			return true
+		end
 	end
-	local frame = CreateFrame("Frame", "ForeverCoreContextMenu", UIParent)
-	popup = frame --[[@as ForeverContextPopup]]
-	popup.rows = {}
+	return false
+end
+
+---@param depth integer
+---@return ForeverContextPopup
+local function Ensure(depth)
+	if levels[depth] then
+		return levels[depth]
+	end
+	local frame =
+		CreateFrame("Frame", depth == 1 and "ForeverCoreContextMenu" or "ForeverCoreContextMenu" .. depth, UIParent)
+	local popup = frame --[[@as ForeverContextPopup]]
+	popup.rows, popup.depth = {}, depth
 	popup:SetFrameStrata("FULLSCREEN_DIALOG")
 	popup:SetClampedToScreen(true)
 	-- The background reaches past the frame, so the clamp keeps that overhang on screen too.
@@ -208,39 +241,96 @@ local function Ensure()
 	local body = CreateFrame("Frame", nil, scroll)
 	scroll:SetScrollChild(body)
 	popup.body, popup.scroll = body, scroll
-	popup:SetScript("OnShow", function(self)
-		self:RegisterEvent("GLOBAL_MOUSE_DOWN")
-	end)
+	if depth == 1 then
+		popup:SetScript("OnShow", function(self)
+			self:RegisterEvent("GLOBAL_MOUSE_DOWN")
+		end)
+		popup:SetScript("OnEvent", function(self)
+			if not OverMenu() and not (self.owner and self.owner:IsMouseOver()) then
+				self:Hide()
+			end
+		end)
+		table.insert(UISpecialFrames, "ForeverCoreContextMenu")
+	end
+	-- A level closes every level past it, and gives back its parent row's held highlight.
 	popup:SetScript("OnHide", function(self)
 		if self:IsShown() then
 			self:Hide()
 		end
-		self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
-		self.owner = nil
-		GameTooltip_Hide()
-	end)
-	popup:SetScript("OnEvent", function(self)
-		if not self:IsMouseOver() and not (self.owner and self.owner:IsMouseOver()) then
-			self:Hide()
+		HideFrom(depth + 1)
+		if self.opener then
+			self.opener:UnlockHighlight()
+			self.opener = nil
+		end
+		self.description = nil
+		if depth == 1 then
+			self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+			self.owner = nil
+			GameTooltip_Hide()
 		end
 	end)
 	popup:Hide()
-	table.insert(UISpecialFrames, "ForeverCoreContextMenu")
+	levels[depth] = popup
 	return popup
 end
 
+-- Blizzard_Menu's GenerateSubmenuInternal: with a mouse the submenu's top-left corner meets the row's top-right one and
+-- flips to the row's left when it would leave the screen; under the gamepad interface every level opens toward the
+-- screen's middle from the root owner's quadrant, inset by the menu's own margins.
+---@param frame ForeverContextPopup
+---@param row ForeverContextMenuRow
+local function PlaceSubmenu(frame, row)
+	frame:ClearAllPoints()
+	if InputUtil.IsGamepadUIEnabled() then
+		local quadrant = FrameUtil.GetScreenQuadrant(levels[1].owner or levels[1])
+		if quadrant == FrameUtilQuadrantEnum.BottomRight then
+			frame:SetPoint("BOTTOMRIGHT", row, "BOTTOMLEFT", -INSET_RIGHT, -INSET_BOTTOM)
+		elseif quadrant == FrameUtilQuadrantEnum.BottomLeft then
+			frame:SetPoint("BOTTOMLEFT", row, "BOTTOMRIGHT", INSET_LEFT, -INSET_BOTTOM)
+		elseif quadrant == FrameUtilQuadrantEnum.TopRight then
+			frame:SetPoint("TOPRIGHT", row, "TOPLEFT", -INSET_RIGHT, INSET_TOP)
+		else
+			frame:SetPoint("TOPLEFT", row, "TOPRIGHT", INSET_LEFT, INSET_TOP)
+		end
+		return
+	end
+	local rowRight, screenRight = row:GetRight(), UIParent:GetRight()
+	if rowRight and screenRight and rowRight + frame:GetWidth() + BACKGROUND_X > screenRight then
+		frame:SetPoint("TOPRIGHT", row, "TOPLEFT")
+	else
+		frame:SetPoint("TOPLEFT", row, "TOPRIGHT")
+	end
+end
+
+-- Blizzard_Menu's CheckForSubmenu: resting on a row closes the levels below it unless they are this row's own, and a
+-- row with entries opens them as the next level beside it; the parent stays open.
+---@param depth integer
+---@param row ForeverContextMenuRow
+---@param entry ForeverMenuDescription
+local function CheckForSubmenu(depth, row, entry)
+	local child = levels[depth + 1]
+	if child and child:IsShown() and child.description == entry then
+		return
+	end
+	HideFrom(depth + 1)
+	if #entry.entries == 0 or not row:IsEnabled() then
+		return
+	end
+	local frame = Ensure(depth + 1)
+	frame:SetFrameLevel((levels[depth]:GetFrameLevel() or 0) + 10)
+	Draw(frame, entry)
+	PlaceSubmenu(frame, row)
+	frame.opener = row
+	row:LockHighlight()
+	frame:Show()
+end
+
+---@param frame ForeverContextPopup
 ---@param root ForeverMenuDescription
-function Draw(root)
-	local frame = Ensure()
-	local entries = {}
-	if root.parent then
-		local back = New("button", ns.L.MENU_BACK)
-		back.back = root.parent
-		entries[1] = back
-	end
-	for _, entry in ipairs(root.entries) do
-		entries[#entries + 1] = entry
-	end
+function Draw(frame, root)
+	frame.description = root
+	local depth = frame.depth
+	local entries = root.entries
 	local y, bodyWidth = 0, 0
 	for index, entry in ipairs(entries) do
 		local row = frame.rows[index]
@@ -331,13 +421,12 @@ function Draw(root)
 		local passive = entry.kind == "title" or divider
 		row.highlight:SetAlpha(enabled and 1 or (passive and 0 or 0.4))
 		row:SetMotionScriptsWhileDisabled(true)
-		row:SetScript("OnClick", function()
-			if entry.back then
-				Draw(entry.back)
-			elseif #entry.entries > 0 then
-				Draw(entry)
+		-- A submenu row opens its level at once on a click or a gamepad press; any other row acts and closes the menu.
+		row:SetScript("OnClick", function(self)
+			if #entry.entries > 0 then
+				CheckForSubmenu(depth, self, entry)
 			else
-				frame:Hide()
+				HideFrom(1)
 				if entry.onClick then
 					entry.onClick()
 				end
@@ -346,6 +435,13 @@ function Draw(root)
 		-- A row cut at the cap cannot show its whole line, so its tooltip does.
 		local truncated = entry.tooltip == nil and left + textWidth + right > BODY_MAX
 		row:SetScript("OnEnter", function(self)
+			hoverToken = hoverToken + 1
+			local token = hoverToken
+			C_Timer.After(SUBMENU_DELAY, function()
+				if token == hoverToken and frame.description == root and self:IsMouseOver() then
+					CheckForSubmenu(depth, self, entry)
+				end
+			end)
 			if entry.tooltip then
 				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 				entry.tooltip(GameTooltip)
@@ -387,7 +483,7 @@ end
 function ns.ContextMenu(owner, generator)
 	local root = New("root")
 	generator(owner, root)
-	local frame = Ensure()
+	local frame = Ensure(1)
 	frame:Hide()
 	frame.owner = owner
 	WatchPanels()
@@ -417,7 +513,7 @@ function ns.ContextMenu(owner, generator)
 	else
 		InputUtil.AnchorRegionToCursor(frame, "TOPLEFT")
 	end
-	Draw(root)
+	Draw(frame, root)
 	frame:Show()
 	return root
 end
