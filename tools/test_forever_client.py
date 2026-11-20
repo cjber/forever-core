@@ -5713,24 +5713,19 @@ class FakeWorld:
             yards = fc.RUN_SPEED * seconds
             end = (self.x - math.sin(self.facing) * yards, self.y - math.cos(self.facing) * yards)
             walls = self.walls + ([] if "JUMP" in actions else self.low)
-            if not any(self.crosses((self.x, self.y), end, box) for box in walls):
-                self.x, self.y = end
-            elif self.slide:
-                # Blocked, the client runs the character up to the wall, then slides it along the wall with what is
-                # left of the step.
-                self.x, self.y = self.advance((self.x, self.y), end, walls)
-                for along in ((end[0], self.y), (self.x, end[1])):
-                    self.x, self.y = self.advance((self.x, self.y), along, walls)
-
-    def advance(self, start, end, walls):
-        """The last of 40 points from start toward end that no wall stops."""
-        point = start
-        for step in range(1, 41):
-            ahead = (start[0] + (end[0] - start[0]) * step / 40, start[1] + (end[1] - start[1]) * step / 40)
-            if any(self.crosses(point, ahead, box) for box in walls):
-                break
-            point = ahead
-        return point
+            if not self.slide:
+                if not any(self.crosses((self.x, self.y), end, box) for box in walls):
+                    self.x, self.y = end
+                return
+            # The client moves in small ticks: a blocked tick slides along the wall with whichever part of it runs
+            # parallel, and the next tick tries the full heading again.
+            dx, dy = (end[0] - self.x) / 40, (end[1] - self.y) / 40
+            for _ in range(40):
+                for move in ((dx, dy), (dx, 0), (0, dy)):
+                    ahead = (self.x + move[0], self.y + move[1])
+                    if not any(self.crosses((self.x, self.y), ahead, box) for box in walls):
+                        self.x, self.y = ahead
+                        break
 
 
 class MovementTest(unittest.TestCase):
@@ -5795,6 +5790,13 @@ class MovementTest(unittest.TestCase):
         # time a step toward the wall regains the yards the step aside cost.
         walls = [(420, 495, 560, 497), (496, 497, 498, 530)]
         world = self.world(502, 500, 0.0, walls=walls, slide=True)
+        fc.walkto({}, 0.5, 0.40)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 400), fc.WALK_TOLERANCE)
+
+    def test_walkto_tries_the_other_side_with_the_steps_to_walk_back(self):
+        # The first side's end is far off and the other's near the first contact: the second side first walks back
+        # over the first side's steps, so it must not run out of steps on the way.
+        world = self.world(500, 500, 0.0, walls=[(300, 495, 530, 497)], slide=True)
         fc.walkto({}, 0.5, 0.40)
         self.assertLessEqual(math.hypot(world.x - 500, world.y - 400), fc.WALK_TOLERANCE)
 
