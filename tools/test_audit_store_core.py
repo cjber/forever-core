@@ -223,3 +223,7 @@ class StoreAuditTest(unittest.TestCase):
         audit.update_issue(["bad file"], api=empty)
         self.assertEqual(calls[-1][0:2], ("issues", "POST"))
         self.assertEqual(calls[-1][2]["title"], audit.ISSUE_TITLE)
+
+
+if __name__ == "__main__":
+    unittest.main()
