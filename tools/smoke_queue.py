@@ -49,8 +49,9 @@ def repositories() -> list[str]:
 
 def repo_name(value: str) -> str:
     """A `--repo` value as the bare repository name the queue uses: `skillup-forever` or `cjber/skillup-forever`."""
-    owner, _, name = value.rpartition("/")
-    if owner not in ("", OWNER) or not name:
+    parts = value.split("/")
+    name = parts[-1]
+    if parts[:-1] not in ([], [OWNER]) or not name:
         raise argparse.ArgumentTypeError(f"{value!r} is not a {OWNER} repository name")
     return name
 

@@ -82,12 +82,14 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(queue.main(["--repo", "skillup-forever"]), 0)
         run.assert_called_once_with("skillup-forever", SHA)
 
-    def test_repo_refuses_another_owner(self):
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as exit_:
-            queue.main(["--repo", "someone/skillup-forever"])
-        self.assertEqual(exit_.exception.code, 2)
-        self.assertIn("is not a cjber repository name", err.getvalue())
+    def test_repo_refuses_anything_but_name_or_cjber_name(self):
+        for value in ("someone/skillup-forever", "/skillup-forever", "cjber/", "cjber/skillup-forever/x", ""):
+            with self.subTest(value=value):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as exit_:
+                    queue.main(["--repo", value])
+                self.assertEqual(exit_.exception.code, 2)
+                self.assertIn("is not a cjber repository name", err.getvalue())
 
     def test_a_commit_that_already_has_a_status_is_left_alone(self):
         heads = {"forever-core": SHA, "legacy-forever": OTHER}
