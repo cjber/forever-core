@@ -1467,11 +1467,7 @@ class Walk:
         detour) or a straight step toward the point runs free past the line where the obstacle stopped the walk (a free
         step that starts from a step away from the obstacle has not got round it). It keeps to the side that last got
         round: starting each time from the same side swings the walker back and forth across a corner between two spots
-        (#923). Starting again where an earlier detour began, with no nearer point reached since, is a loop."""Follow the obstacle on one side, then the other, until the walk beats `best` (its nearest since the last
-        detour) or a straight step toward the point runs free past the line where the obstacle stopped the walk. A
-        free step that starts from a step away from the obstacle has not got round it. It keeps to the side that last got round: starting each
-        time from the same side swings the walker back and forth across a corner between two spots (#923). Starting
-        again where an earlier detour began, with no nearer point reached since, is a loop and counts as stuck."""
+        (#923). Starting again where an earlier detour began, with no nearer point reached since, is a loop."""
         here = self.motion
         if any(yards_between(here, spot) < ESCAPE_REVISIT and self.nearest >= nearest for spot, nearest in self.rounds):
             return False
