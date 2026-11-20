@@ -20,7 +20,7 @@ from forever_tools import core_archive, core_pin  # noqa: E402
 from released_consumers import (
     OWNER,
     ReleasedError,
-    addon_asset,
+    addon_assets,
     addon_folders,
     consumer_repos,
     discover_tooling_repos,
@@ -103,7 +103,7 @@ def extract_kiln(archive: Path, target: Path) -> Path:
     return target / "addon"
 
 
-def inspect_package(folder, latest, *, grace, allow_no_core=False):
+def inspect_package(folder, latest, *, core_grace, allow_no_core=False, awaiting_approval=False):
     copies, failures = core_archive.inspect(folder)
     addons = addon_folders(folder)
     if not addons:
@@ -127,9 +127,11 @@ def inspect_package(folder, latest, *, grace, allow_no_core=False):
         version = core_archive.version(copy.tag)
         if copy.layout == "bridge" and embedded:
             failures.append(f"{copy.path}: embed-only package still installs a top-level ForeverCore")
+        if awaiting_approval:
+            continue
         if version < core_archive.version(MIN_CORE):
             failures.append(f"{copy.path}: {copy.tag} is below the minimum {MIN_CORE}")
-        if version < latest_version and (copy.layout == "bridge" or not grace):
+        if version < latest_version and (copy.layout == "bridge" or not core_grace):
             failures.append(f"{copy.path}: {copy.tag} is older than latest {latest}")
     report = ", ".join(f"{copy.layout} {copy.tag} ({copy.path})" for copy in copies) or "no readable ForeverCore copies"
     return report, failures, projects
@@ -165,7 +167,7 @@ def audit(
         latest = core["tag_name"]
         core_archive.version(latest)
         published = datetime.fromisoformat(core["published_at"].replace("Z", "+00:00"))
-        grace = now - published < GRACE
+        core_grace = now - published < GRACE
         names = repos()
         if not names:
             raise ReleasedError("no consumer repositories discovered")
@@ -176,29 +178,49 @@ def audit(
         kiln = repo in KILN_CONSUMERS
         projects = set()
         release_tag = "(unavailable)"
-        asset = None
+        assets = []
+        recent_github = False
+        github_failures = []
         try:
             github = release(repo)
-            if not github or not github.get("tag_name"):
+            if github is None:
+                # Nothing is published, so no player download can carry a ForeverCore.
+                reports.append(f"{repo}: no published release")
+                continue
+            if not github.get("tag_name"):
                 raise ReleasedError("latest published release unavailable")
             release_tag = github["tag_name"]
-            asset = addon_asset(github)
-            if not asset and kiln:
+            assets = addon_assets(github)
+            if not assets and kiln:
                 filename = f"kiln-forever-{release_tag.removeprefix('v')}.tar.gz"
-                asset = next((file for file in github["assets"] if file["name"] == filename), None)
-            if not asset:
+                assets = [file for file in github["assets"] if file["name"] == filename]
+            if not assets:
                 raise ReleasedError(f"{release_tag} ships no downloadable addon archive")
-            archive = fetch_asset(asset, cache / f"{repo}.github")
-            folder = cache / f"{repo}-github"
-            if kiln and asset["name"].endswith(".tar.gz"):
-                folder = extract_kiln(archive, folder)
-            else:
-                extract(archive, folder)
-            report, problems, projects = inspect_package(folder, latest, grace=grace, allow_no_core=kiln)
-            reports.append(f"{repo} GitHub {release_tag}: {report}")
-            failures.extend(f"{repo} GitHub {release_tag}: {problem}" for problem in problems)
+            if github.get("published_at"):
+                published = datetime.fromisoformat(github["published_at"].replace("Z", "+00:00"))
+                recent_github = timedelta(0) <= now - published < GRACE
         except READ_ERRORS as error:
-            failures.append(f"{repo} GitHub {release_tag}: {error}")
+            github_failures.append(f"{repo} GitHub {release_tag}: {error}")
+
+        for index, asset in enumerate(assets):
+            label = f"{repo} GitHub {release_tag} ({asset['name']})"
+            try:
+                archive = fetch_asset(asset, cache / f"{repo}-{index}.github")
+                folder = cache / f"{repo}-{index}-github"
+                if kiln and asset["name"].endswith(".tar.gz"):
+                    folder = extract_kiln(archive, folder)
+                else:
+                    extract(archive, folder)
+                report, problems, asset_projects = inspect_package(
+                    folder, latest, core_grace=core_grace, allow_no_core=kiln
+                )
+                projects.update(asset_projects)
+                reports.append(f"{label}: {report}")
+                github_failures.extend(f"{label}: {problem}" for problem in problems)
+            except READ_ERRORS as error:
+                github_failures.append(f"{label}: {error}")
+        failures.extend(github_failures)
+        github_names = {asset["name"] for asset in assets}
         if not projects and not kiln:
             try:
                 projects.add(lookup_project(repo))
@@ -211,11 +233,16 @@ def audit(
                 archive = fetch_asset(cf, cache / f"{repo}-{project}.curseforge", request=urllib.request.Request)
                 folder = cache / f"{repo}-{project}-curseforge"
                 extract(archive, folder)
-                report, problems, _projects = inspect_package(folder, latest, grace=grace)
                 file_name = cf["name"]
+                mismatch = bool(github_names) and file_name not in github_names
+                awaiting_approval = mismatch and recent_github and not github_failures
+                report, problems, _projects = inspect_package(
+                    folder, latest, core_grace=core_grace, awaiting_approval=awaiting_approval
+                )
                 reports.append(f"{repo} CurseForge {file_name} (GitHub {release_tag}): {report}")
-                if asset and file_name != asset["name"] and not grace:
-                    problems.append(f"latest file is {file_name}, GitHub {release_tag} ships {asset['name']}")
+                if mismatch and not awaiting_approval:
+                    expected = ", ".join(sorted(github_names))
+                    problems.append(f"file-name parity mismatch with GitHub {release_tag}: expected one of {expected}")
                 failures.extend(f"{repo} CurseForge {file_name}: {problem}" for problem in problems)
             except READ_ERRORS as error:
                 failures.append(f"{repo} CurseForge project {project}: {error}")

@@ -9,7 +9,7 @@ import re
 import sys
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from . import core_pin
 
@@ -120,16 +120,12 @@ def check(root: Path, packaged, latest: str | None = None) -> list[str]:
     except (OSError, ValueError) as error:
         return [str(error)]
     embedded = core_pin.embeds(toc) or core_pin.embeds(built_toc)
-    requires_core = any(
-        item.strip().casefold() == "forevercore"
-        for field in ("dependencies", "requireddeps", "optionaldeps")
-        for item in fields.get(field, "").split(",")
-    )
     if embedded and name:
         expected = f"{Path(name).stem}/Libs/ForeverCore"
         if not any(copy.path.casefold() == expected.casefold() for copy in copies):
             failures.append(f"package must carry the opted-in ForeverCore at {expected}")
-    elif requires_core or fields.get("x-forever-core") or core_pin.external_tag(pkgmeta):
+    # A TOC dependency can point to an independently installed addon. Only bundle declarations require a copy.
+    elif fields.get("x-forever-core") or core_pin.external_line(pkgmeta):
         if not any(copy.layout == "bridge" for copy in copies):
             failures.append("package must carry the bridge ForeverCore at the top level")
     for copy in copies:
@@ -146,10 +142,12 @@ def check_zip(root: Path, data: bytes, latest: str) -> list[str]:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         paths = set()
         for info in archive.infolist():
-            path = PurePosixPath(info.filename)
-            key = tuple(installed_name(part) for part in path.parts)
-            if path.is_absolute() or ".." in path.parts or "\\" in info.filename or ":" in info.filename:
-                return [f"unsafe zip member {info.filename!r}"]
+            name = info.orig_filename
+            # Keep explicit directory entries, but reject aliases before zipfile.Path builds its tree.
+            parts = name.removesuffix("/").split("/")
+            if any(part in ("", ".", "..") for part in parts) or any(char in name for char in "\\\x00:"):
+                return [f"unsafe zip member {name!r}"]
+            key = tuple(installed_name(part) for part in parts)
             if key in paths:
                 return [f"duplicate installed zip member {info.filename!r}"]
             paths.add(key)

@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -21,7 +22,7 @@ class CoreArchiveTest(unittest.TestCase):
         self.pin = self.root / "tools/forever-core.txt"
         self.pin.write_text("v1.15.3\n")
         self.toc = self.root / "FieldGuideForever.toc"
-        self.toc.write_text("## OptionalDeps: ForeverCore\n")
+        self.toc.write_text("## OptionalDeps: ForeverCore\n## X-Forever-Core: v1.15.3\n")
 
     def bridge(self, version):
         core = self.release / "ForeverCore"
@@ -114,6 +115,25 @@ class CoreArchiveTest(unittest.TestCase):
         self.assertIn("must carry the opted-in", core_archive.check(self.root, self.release)[0])
         self.toc.write_text("## Title: Independent addon\n")
         self.assertEqual(core_archive.check(self.root, self.release), [])
+
+    def test_dependency_and_development_pin_do_not_imply_a_bundle(self):
+        for dependency in ("OptionalDeps", "Dependencies"):
+            with self.subTest(dependency=dependency):
+                self.toc.write_text(f"## {dependency}: ForeverCore\n")
+                self.assertEqual(core_archive.check(self.root, self.release), [])
+
+    def test_zip_refuses_noncanonical_member_paths(self):
+        self.embed()
+        self.zip()
+        original = next(self.release.glob("*.zip")).read_bytes()
+        self.assertEqual(core_archive.check_zip(self.root, original, "v1.15.3"), [])
+        for member in ("./ForeverCore/ForeverCore.toc", "Other/./file", "Other//file"):
+            with self.subTest(member=member):
+                data = io.BytesIO(original)
+                with zipfile.ZipFile(data, "a") as archive:
+                    archive.writestr(member, "## Version: 1.0.0")
+                failures = core_archive.check_zip(self.root, data.getvalue(), "v1.15.3")
+                self.assertTrue(any("unsafe zip member" in failure for failure in failures), failures)
 
     def test_latest_checks_zip_and_fails_closed_on_lookup_failure(self):
         self.bridge("v1.15.3")

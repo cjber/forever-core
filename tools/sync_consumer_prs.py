@@ -725,7 +725,10 @@ def discover_tooling_repos(*, strict: bool = False) -> set[str]:
     return {
         item["name"]
         for item in listed
-        if not item.get("archived") and item["name"] != CORE_REPO and repo_vendors_tooling(item["name"], strict=strict)
+        if not item.get("archived")
+        and not item.get("disabled")
+        and item["name"] != CORE_REPO
+        and repo_vendors_tooling(item["name"], strict=strict)
     }
 
 

@@ -18,11 +18,13 @@ class StoreAuditTest(unittest.TestCase):
         self.now = datetime(2026, 11, 20, tzinfo=timezone.utc)
         self.github = {"name": "FieldGuideForever-v0.8.15-forever.zip"}
         self.curseforge = self.github.copy()
+        self.assets = [self.github]
+        self.consumer_published = self.now - timedelta(hours=48)
 
     def release(self, repo):
         if repo == "forever-core":
             return {"tag_name": "v1.15.3", "published_at": self.now.isoformat()}
-        return {"tag_name": "v0.8.15", "assets": [self.github]}
+        return {"tag_name": "v0.8.15", "assets": self.assets, "published_at": self.consumer_published.isoformat()}
 
     def run_audit(self, hours=0):
         return audit.audit(
@@ -95,7 +97,38 @@ class StoreAuditTest(unittest.TestCase):
         _, failures = self.run_audit(hours=25)
         self.assertEqual(len(failures), 2)
         self.assertTrue(all("CurseForge" in row for row in failures))
-        self.assertTrue(any("GitHub v0.8.15 ships" in row for row in failures))
+        self.assertTrue(any("file-name parity" in row and "GitHub v0.8.15" in row for row in failures))
+
+    def test_all_forever_assets_are_inspected_and_can_match_curseforge(self):
+        self.github["embed"] = "1.15.3"
+        second = {"name": "Other-v0.8.15-forever.zip", "bridge": "v1.14.5"}
+        self.assets.append(second)
+        self.curseforge.update(name=second["name"], embed="1.15.3")
+        reports, failures = self.run_audit(hours=25)
+        self.assertEqual(len(reports), 3)
+        self.assertTrue(any(second["name"] in row and "below the minimum" in row for row in failures))
+        self.assertFalse(any("file-name parity" in row for row in failures))
+
+    def test_fresh_clean_github_release_allows_previous_curseforge_file(self):
+        self.github["embed"] = "1.15.3"
+        self.consumer_published = self.now + timedelta(hours=25)
+        self.curseforge["name"] = "FieldGuideForever-v0.8.14-forever.zip"
+        for layout, version in (("bridge", "v1.14.5"), ("embed", "1.14.5")):
+            with self.subTest(layout=layout):
+                self.curseforge[layout] = version
+                self.assertEqual(self.run_audit(hours=48)[1], [])
+                failures = self.run_audit(hours=49)[1]
+                self.assertTrue(any("below the minimum" in row for row in failures))
+                self.assertTrue(any("file-name parity" in row for row in failures))
+                del self.curseforge[layout]
+
+    def test_fresh_unclean_github_does_not_excuse_curseforge(self):
+        self.consumer_published = self.now
+        self.github["embed"] = "1.14.5"
+        self.curseforge.update(name="FieldGuideForever-v0.8.14-forever.zip", bridge="v1.14.5")
+        _, failures = self.run_audit()
+        self.assertTrue(any("CurseForge" in row and "file-name parity" in row for row in failures))
+        self.assertTrue(any("CurseForge" in row and "below the minimum" in row for row in failures))
 
     def test_read_failure_and_missing_core_fail_the_audit(self):
         self.curseforge["unavailable"] = True
@@ -104,14 +137,26 @@ class StoreAuditTest(unittest.TestCase):
         self.assertIn("package carries no ForeverCore", failures[0])
         self.assertIn("CurseForge project 1: read unavailable", failures[1])
 
+    def test_a_consumer_with_no_release_is_reported_not_failed(self):
+        self.release = lambda repo: (
+            None if repo != "forever-core" else {"tag_name": "v1.15.3", "published_at": self.now.isoformat()}
+        )
+        reports, failures = self.run_audit()
+        self.assertEqual(failures, [])
+        self.assertEqual(reports, ["field-guide-forever: no published release"])
+
     def test_github_read_failure_still_audits_curseforge(self):
         self.github["unavailable"] = True
         self.curseforge["bridge"] = "v1.14.5"
         reports, failures = self.run_audit()
         self.assertEqual(len(reports), 1)
         self.assertIn("CurseForge", reports[0])
-        self.assertIn("GitHub v0.8.15: read unavailable", failures[0])
+        self.assertIn("GitHub v0.8.15 (FieldGuideForever-v0.8.15-forever.zip): read unavailable", failures[0])
         self.assertIn("below the minimum", failures[1])
+
+    def test_workflow_uses_the_repository_token_for_github_reads(self):
+        workflow = Path(audit.__file__).resolve().parents[1] / ".github/workflows/store-core-audit.yml"
+        self.assertIn("GH_TOKEN: ${{ github.token }}", workflow.read_text())
 
     def test_curseforge_selects_approved_stable_forever_and_uses_public_cdn(self):
         def fetch(url):

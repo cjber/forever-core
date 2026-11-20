@@ -54,6 +54,19 @@ class AssetTest(unittest.TestCase):
         self.assertEqual(released.tag_label({}), "latest")
 
 
+class DownloadTest(unittest.TestCase):
+    def test_download_rejects_oversized_response_without_writing_it(self):
+        destination = Path(self.enterContext(tempfile.TemporaryDirectory())) / "addon.zip"
+        asset = release("v1", "addon.zip")["assets"][0]
+        with (
+            mock.patch.object(released, "MAX_DOWNLOAD_BYTES", 3, create=True),
+            mock.patch.object(released.urllib.request, "urlopen", return_value=io.BytesIO(b"1234")),
+            self.assertRaisesRegex(released.ReleasedError, "download.*limit"),
+        ):
+            released.download(asset, destination)
+        self.assertFalse(destination.exists())
+
+
 class ExtractTest(unittest.TestCase):
     """The addon's own folder is what a release gives, and nothing escapes the cache folder."""
 
@@ -76,6 +89,22 @@ class ExtractTest(unittest.TestCase):
         )
         self.assertEqual([name for name, _folder in released.addon_folders(self.root)], ["LegacyForever"])
         self.assertTrue((self.root / "LegacyForever/UI/Map.lua").is_file())
+
+    def test_extract_rejects_excessive_member_count(self):
+        with (
+            mock.patch.object(released, "MAX_ZIP_MEMBERS", 1, create=True),
+            self.assertRaisesRegex(released.ReleasedError, "member count.*limit"),
+        ):
+            self.unpack({"Addon/": b"", "Addon/Addon.toc": b""})
+        self.assertFalse(self.root.exists())
+
+    def test_extract_rejects_excessive_cumulative_size(self):
+        with (
+            mock.patch.object(released, "MAX_EXTRACTED_BYTES", 3, create=True),
+            self.assertRaisesRegex(released.ReleasedError, "extracted size.*limit"),
+        ):
+            self.unpack({"Addon/first": b"12", "Addon/second": b"34"})
+        self.assertFalse(self.root.exists())
 
     def test_an_absolute_member_is_refused(self):
         with self.assertRaisesRegex(released.ReleasedError, "unsafe zip member"):
