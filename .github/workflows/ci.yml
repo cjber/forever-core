@@ -135,6 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # the wrap step numbers the build from the newest release tag
           persist-credentials: false
       - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -142,6 +143,9 @@ jobs:
           path: .cache/forever_sim
           key: forever-sim-${{ hashFiles('.agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py') }}
       - run: python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
+      # Players get the wrapped standalone (#946), so exercise that layout with the released consumers.
+      - name: Wrap the standalone for the loader
+        run: tools/wrap_standalone.sh
       - name: Exercise the released consumer builds
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,7 +172,7 @@ jobs:
         run: python3 -m forever_tools.toc_version
       # The release wraps the standalone for the loader (#946); package and exercise the same layout here.
       - name: Wrap the standalone for the loader
-        run: tools/wrap_standalone.sh "$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+        run: tools/wrap_standalone.sh
       - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:
           args: -d -z

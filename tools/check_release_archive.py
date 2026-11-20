@@ -42,9 +42,10 @@ def check_archive(archive: Path, scratch: Path, cache: Path) -> list[str]:
         # An unwrapped standalone publishes ForeverCore at file load, so the loader can only adopt it as legacy, and
         # a consumer embedding a newer core then runs on this older runtime (#946). Only the wrapped build that
         # tools/build_embedded_core.py --standalone writes joins the election.
-        headers = (folder / "ForeverCore.toc").read_text(encoding="utf-8").splitlines()
-        if not any(line.startswith("## X-Forever-Core-Loader:") for line in headers):
-            return [f"{archive}: ForeverCore.toc has no X-Forever-Core-Loader header; package the wrapped standalone"]
+        toc = {line.strip() for line in (folder / "ForeverCore.toc").read_text(encoding="utf-8").splitlines()}
+        loader = any(line.startswith("## X-Forever-Core-Loader:") for line in toc)
+        if not loader or not {"Begin.lua", "End.lua"} <= toc:
+            return [f"{archive}: ForeverCore.toc is not the wrapped standalone; package it with wrap_standalone.sh"]
         problems += lua51.check(folder)
         problems += widget_handlers.check_root(folder)
         if problems:

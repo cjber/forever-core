@@ -173,6 +173,17 @@ jobs:
       - uses: ./.github/actions/toolchain # zizmor: ignore[self-repository] actionlint 1.7.12 predates $/
         with:
           tools: lua
+      # The packager fills @project-version@ with the tag, v and all; write the bare version first.
+      - name: Write the bare version into the TOC
+        env:
+          PYTHONPATH: .agents/skills/wow-forever-addon/tooling
+        run: python3 -m forever_tools.toc_version
+      # The standalone ships wrapped like an embedded copy, so it joins the loader's election (#946). Wrap it before the
+      # released-consumer exercise, so that exercise loads the layout players get.
+      - name: Wrap the standalone for the loader
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+        run: tools/wrap_standalone.sh "$RELEASE_TAG"
       # A core release reaches players before the consumers are re-released, so the exact candidate is loaded with
       # every consumer's latest released build here, after CI passed and before anything is packaged or uploaded.
       - name: Exercise the released consumer builds
@@ -182,16 +193,6 @@ jobs:
         run: |
           python3 .agents/skills/wow-forever-addon/tooling/forever_sim/fetch.py
           python3 tools/suite_load.py --released -v
-      # The packager fills @project-version@ with the tag, v and all; write the bare version first.
-      - name: Write the bare version into the TOC
-        env:
-          PYTHONPATH: .agents/skills/wow-forever-addon/tooling
-        run: python3 -m forever_tools.toc_version
-      # The standalone ships wrapped like an embedded copy, so it joins the loader's election (#946).
-      - name: Wrap the standalone for the loader
-        env:
-          RELEASE_TAG: ${{ steps.target.outputs.tag }}
-        run: tools/wrap_standalone.sh "$RELEASE_TAG"
       - name: Build the release zip without uploading
         uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:
