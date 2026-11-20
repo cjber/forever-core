@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.5] - 2026-11-20
+
+### Fixed
+
+- **The outdated ForeverCore notice no longer blocks gamepad interactions.** The notice now closes with its OK button only, not with Escape or the gamepad confirm button. (#942)
+
+### For addon authors
+
+- **Addon releases check the ForeverCore they carry.** Each consumer ZIP's ForeverCore version is checked before upload, and published GitHub and CurseForge files are audited hourly.
+
 ## [1.15.4] - 2026-11-19
 
 ### Fixed
