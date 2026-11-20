@@ -102,21 +102,24 @@ local MOTION_CELLS = #MOTION_HEADER + FLAGS + FIELDS * 16 + 8
 motion:SetSize(MOTION_CELLS * 4, 4)
 motion:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, -4)
 -- Exactly 4 screen pixels a cell, whatever the screen's height: an unscaled frame is 768 units tall, so its scale is
--- 768 over the physical height. In UI units a 131-cell row would drift across cell edges on any screen not 768 tall.
-local function pixelExact()
+-- 768 over the physical height. In UI units a 131-cell row would drift across cell edges on any screen not 768 tall,
+-- and the readiness marker's cells would not be the 4 pixels forever_client reads.
+local function pixelExact(frame)
 	if type(_G.GetPhysicalScreenSize) ~= "function" then
 		return
 	end
 	local _, height = _G.GetPhysicalScreenSize()
 	if type(height) == "number" and height > 0 then
-		motion:SetScale(768 / height)
+		frame:SetScale(768 / height)
 	end
 end
-pixelExact()
+pixelExact(motion)
 local resized = CreateFrame("Frame")
 resized:RegisterEvent("DISPLAY_SIZE_CHANGED")
 resized:RegisterEvent("UI_SCALE_CHANGED")
-resized:SetScript("OnEvent", pixelExact)
+resized:SetScript("OnEvent", function()
+	pixelExact(motion)
+end)
 local motionCells = {}
 for column = 1, MOTION_CELLS do
 	local texture = motion:CreateTexture(nil, "OVERLAY")
@@ -270,6 +273,7 @@ frame:SetScript("OnEvent", function(_, event)
 		marker:SetIgnoreParentScale(true)
 		marker:SetFrameStrata("TOOLTIP")
 		marker:SetSize(32, 32)
+		pixelExact(marker)
 		marker:SetPoint("CENTER")
 		for row, bits in ipairs(MARKER) do
 			for column = 1, #bits do
