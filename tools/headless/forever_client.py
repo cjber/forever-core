@@ -1236,12 +1236,14 @@ WALK_BUDGET = 240.0  # seconds a walk may take before it reports where it got to
 STUCK_PROGRESS = 0.3  # yards a step must gain, or it counts toward stuck
 STUCK_STEPS = 2
 # A blocked straight line (a shop counter between the player and the point): follow the obstacle to one side, stepping
-# at ESCAPE_ANGLE off the line and trying the line again after every step, then to the other side. The client gives no
+# at ESCAPE_ANGLE off the line and probing the line after every step, then to the other side. The client gives no
 # collision geometry, so following the obstacle is how a walker without a map gets round it; it is bounded and
 # reports what it tried.
 ESCAPE_ANGLE = math.radians(80)
 ESCAPE_STEP = 1.0
-ESCAPE_STEPS = 12  # steps along the obstacle on each side
+ESCAPE_STEPS = 20  # steps along the obstacle on each side, about 100 yd with the straight probes between
+ESCAPE_PROBE = 0.5  # seconds of the straight step after each step aside: short, as a blocked one slides back
+ESCAPE_REVISIT = 2.0  # yards: going round again from within this of an earlier start is a loop
 MOVED_MARK = "moved"
 PARK_FAILED_CODE = 3
 PARK_SPOTS = CONFIG.parent / "park.json"
@@ -1415,6 +1417,8 @@ class Walk:
         self.deadline = time.monotonic() + budget
         self.blocked: list[int] = []
         self.steps = 0
+        self.side = 1  # the side of the line go_round tries first: the one that last got round
+        self.rounds: list[Mapping] = []  # where each go_round began
         self.motion = read_motion(state)
         self.map = self.motion["map"] if map_id is None else map_id
         self.check(self.motion)
@@ -1456,19 +1460,41 @@ class Walk:
             f"blocked toward {', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
         )
 
-    def go_round(self) -> bool:
-        """Follow the obstacle across the line, one side then the other, until a straight step gains ground."""
-        for side in (1, -1):
+    def go_round(self, best: float) -> bool:
+        """Follow the obstacle on one side, then the other, until the walk beats `best` (its nearest so far) or a
+        straight step toward the point runs free past the obstacle's end. It keeps to the side that last got round:
+        starting each time from the same side swings the walker back and forth across a corner between two spots
+        (#923), and a walk that starts going round again where it already did is stuck."""
+        here = self.motion
+        if any(yards_between(here, spot) < ESCAPE_REVISIT for spot in self.rounds):
+            return False
+        self.rounds.append(here)
+        for side in (self.side, -self.side):
             for _ in range(ESCAPE_STEPS):
-                start = self.motion
-                aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
-                self.step(ESCAPE_STEP, heading=aside)
-                if yards_between(self.motion, start) < STUCK_PROGRESS:
-                    self.blocked.append(round(math.degrees(aside)) % 360)
+                if not self.step_aside(side):
                     break
-                if self.step() >= STUCK_PROGRESS:
+                start = self.motion
+                heading = heading_to(start, self.x, self.y)[0]
+                self.step(ESCAPE_PROBE, heading=heading)
+                if self.distance() <= best - STUCK_PROGRESS or self.ran_free(start, heading):
+                    self.side = side
                     return True
-                self.blocked.append(round(math.degrees(heading_to(self.motion, self.x, self.y)[0])) % 360)
+                self.blocked.append(round(math.degrees(heading)) % 360)
+        return False
+
+    def ran_free(self, start: Mapping, heading: float) -> bool:
+        """Whether the last ESCAPE_PROBE went most of its length along `heading`, not into or along a wall."""
+        moved, yards = heading_to(start, self.motion["x"], self.motion["y"])
+        return yards * math.cos(moved - heading) >= 0.8 * RUN_SPEED * ESCAPE_PROBE
+
+    def step_aside(self, side: int) -> bool:
+        """One step off the line on `side`; False when it does not move."""
+        start = self.motion
+        aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
+        self.step(ESCAPE_STEP, heading=aside)
+        if yards_between(self.motion, start) >= STUCK_PROGRESS:
+            return True
+        self.blocked.append(round(math.degrees(aside)) % 360)
         return False
 
 
@@ -1505,9 +1531,11 @@ def walkto(
         if not jumped:
             jumped = True
             walk.step(0.8, jump=True)
-        elif not walk.go_round():
+            best = min(best, walk.distance())
+        elif walk.go_round(best):
+            best = walk.distance()  # round the obstacle: progress counts from here, even if the way round led away
+        else:
             raise ClientError(walk.stuck("no way round"))
-        best = min(best, walk.distance())
     if walk.distance() <= tolerance:
         return walk.motion
     raise ClientError(walk.stuck(f"{WALK_STEPS} steps"))

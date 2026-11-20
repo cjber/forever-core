@@ -37,8 +37,9 @@ A second strip row, under the first, carries where the player stands: map, posit
 yards, whether the player is indoors, where the target's nameplate is across the screen and whether the target is
 within interact distance, as 16-bit fields closed by a checksum. `face X Y`, `face target`, `walkto X Y`, `walkto
 target`, `where` and `park` read it after every step, so movement is a closed loop on the measured facing and
-position rather than a timed key hold. `walkto` jumps forward once when blocked, then follows the obstacle to each
-side; when that gains nothing it stops and reports the position and the blocked headings. A job that moved the
+position rather than a timed key hold. `walkto` jumps forward once when blocked, then follows the obstacle, keeping
+to the side that last got round, until a straight step runs free; when neither side gets round, or it starts going round
+again where it already did, it stops and reports the position and the blocked headings. A job that moved the
 character ends with `park`: a walk to the nearest spot recorded with `park --add LABEL` on that map
 (`~/.config/forever-client/park.json`), which must be outdoors.
 
