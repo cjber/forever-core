@@ -3150,6 +3150,21 @@ def verify_links(records: Sequence[dict]) -> None:
             raise ClientError(f"{slot} no longer points at the candidate build: no proof recorded")
 
 
+def github_token_from_gh() -> None:
+    """Give this process's GitHub API reads the token of the `gh` login when neither GH_TOKEN nor GITHUB_TOKEN is set.
+
+    A core smoke reads every consumer's latest release through `check_consumers.authorized`, which sends only those
+    variables. CI sets them; the machine that smokes locally has a `gh` login instead, and without it the reads go out
+    anonymously and share the 60-an-hour limit with every session on the machine (#934).
+    """
+    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return
+    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+    token = result.stdout.strip()
+    if result.returncode == 0 and token:
+        os.environ["GH_TOKEN"] = token
+
+
 def smoke(args: argparse.Namespace) -> int:
     """Build a repository's commit, test it in the client as one job, and record the result as a commit status.
 
@@ -3173,6 +3188,7 @@ def smoke(args: argparse.Namespace) -> int:
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = resolve_commit(root, args.ref)
     post = not args.no_post
+    github_token_from_gh()
     recover_links()
     busy = foreign_client()
     if busy:
