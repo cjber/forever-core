@@ -4,8 +4,11 @@
 `API.Name = function`, or as `API.Name = value` for any name or member path (`hub.Subscribe`), except the two value
 fields docs/api-conventions.md defines, `version` and `minor`. `docs/api.md`
 must name each published function as `Name(`. The API table's `minor = N` must also appear in the docs near the word
-minor, so each addition's history is written down. An addon with no `Core/API.lua` passes, because ForeverCore itself
-publishes no addon API.
+minor, so each addition's history is written down. An addon with no `Core/API.lua` passes.
+
+The answers must follow docs/api-conventions.md too. A literal `return nil, "invalid"` fails, because a read that
+refuses its argument returns `APIKit.Invalid()`. Any other literal `return nil, "<reason>"` or `NotReady("<reason>")`
+must name a standard reason: `loading`, `disabled`, `none`, `combat` or `unreachable`.
 
     python3 tools/check_api_docs.py                # this repository's Core/API.lua and docs/api.md
     python3 tools/check_api_docs.py path/to/API.lua  # another file, checked against this repository's docs/api.md
@@ -26,6 +29,10 @@ ASSIGNED = re.compile(
 VALUE_FIELDS = {"version", "minor"}
 MINOR = re.compile(r"\bminor\s*=\s*(?P<minor>\d+)")
 MINOR_WORD = re.compile(r"\bminor\b", re.IGNORECASE)
+# The not-ready reasons docs/api-conventions.md defines; "invalid" is the error answer and has its own helper.
+REASONS = {"loading", "disabled", "none", "combat", "unreachable"}
+RETURNED_REASON = re.compile(r"\breturn\s+nil\s*,\s*[\"'](?P<reason>[^\"']*)[\"']")
+NOT_READY_REASON = re.compile(r"\bNotReady\s*\(\s*[\"'](?P<reason>[^\"']*)[\"']")
 # How far from the word minor a number may sit and still be its history. Adventure Guide's one-line history keeps
 # every entry within about 150 characters of the word.
 NEAR = 200
@@ -60,6 +67,23 @@ def minor_documented(docs: str, minor: int) -> bool:
     return False
 
 
+def answer_failures(source: str) -> list[str]:
+    """One line per hand-written invalid answer and per reason outside the documented set, with its line number."""
+    failures = []
+    for number, line in enumerate(source.splitlines(), 1):
+        code = line.split("--", 1)[0]
+        for match in RETURNED_REASON.finditer(code):
+            reason = match["reason"]
+            if reason == "invalid":
+                failures.append(f'line {number}: return APIKit.Invalid() instead of `return nil, "invalid"`')
+            elif reason not in REASONS:
+                failures.append(f'line {number}: reason "{reason}" is not one of {sorted(REASONS)}')
+        for match in NOT_READY_REASON.finditer(code):
+            if match["reason"] not in REASONS:
+                failures.append(f'line {number}: reason "{match["reason"]}" is not one of {sorted(REASONS)}')
+    return failures
+
+
 def check(root: Path, api: Path) -> int:
     """Fail for each published name or minor that docs/api.md does not document. A missing API file passes."""
     shown = api.relative_to(root) if api.is_relative_to(root) else api
@@ -81,6 +105,8 @@ def check(root: Path, api: Path) -> int:
     minor = minor_of(source)
     if minor is not None and not minor_documented(docs, minor):
         failures.append(f"docs/api.md's minor history does not mention minor {minor}")
+
+    failures += [f"{shown}: {failure}" for failure in answer_failures(source)]
 
     if failures:
         print("\n".join(failures))

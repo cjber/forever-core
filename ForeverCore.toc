@@ -44,7 +44,7 @@ UI\TrackerSection.xml
 UI\TrackerSection.lua
 UI\MapCanvas.lua
 Core\APIKit.lua
-Core\Journey.lua
+Core\API.lua
 UI\QuestLogTabs.lua
 UI\ProfessionTabs.lua
 Expose.lua

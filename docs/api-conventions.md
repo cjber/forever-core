@@ -20,6 +20,7 @@ added. A caller checks the member it wants before using it, because an older add
 
 - minor 1: `Hub` and `NotReady`.
 - minor 2: `Invalid`, `Publish` and `Addons`.
+- minor 3: `RegisterMapMarkers`, `MapMarkers` and the reasons `"combat"` and `"unreachable"`.
 
 An addon that uses a minor 2 member keeps working with an older core by checking it first:
 `if (ForeverCore.APIKit.minor or 1) >= 2 and ForeverCore.APIKit.Addons then ... end`.
@@ -46,7 +47,14 @@ end
 | `"loading"` | the addon is still building its data, so ask again later |
 | `"disabled"` | the player turned the feature off |
 | `"none"` | there is nothing to answer, for example no journey is chosen |
+| `"combat"` | the game refuses it in combat, so ask again once combat ends |
+| `"unreachable"` | there is no way there with what the character knows, so ask again after that changes |
 | `"invalid"` | the argument is wrong, so asking again with the same argument cannot help |
+
+These are the only reasons. A cause that fits none of them is `"none"`: a missing optional addon, a map or zone the
+addon has no data for, and a point it cannot guide to all answer `"none"`, with the specifics in the addon's own
+fields. `python3 tools/check_api_docs.py` fails a `return nil, "invalid"` written by hand and any other literal reason
+outside this table.
 
 `"invalid"` is an error answer, not a not-ready one, and it is the one reason `NotReady` does not take. A read that
 refuses its argument returns it through `APIKit.Invalid()`, so the answer is typed and the reason is spelled once:
@@ -123,6 +131,28 @@ end
 ```
 
 A published API is still a read: its hub is subscribed to and its reads answer as the rest of this document says.
+ForeverCore publishes its own the same way as `"ForeverCore"`, though `ForeverCore.API` itself stays the interface
+number; [`docs/api.md`](api.md) has the detail.
+
+## World map markers
+
+Every Forever addon draws its world map pins on frames of its own, so another addon cannot find them through the map's
+pin pools. An addon that wants the others to see its markers registers a reader once at load, and one that wants to
+keep clear of them asks the kit:
+
+```lua
+APIKit.RegisterMapMarkers("SomeAddonForever", function(map)
+	return { { x = 0.4, y = 0.6, kind = "dock" } }
+end)
+
+for _, marker in ipairs(APIKit.MapMarkers(WorldMapFrame, "SomeAddonForever")) do
+	-- marker.addon, marker.x, marker.y, marker.kind
+end
+```
+
+`read(map)` takes the map frame and returns the markers it shows on `map:GetMapID()`, `x` and `y` as fractions from 0
+to 1, in a fresh table. `MapMarkers(map, except?)` returns every other reader's markers in addon-name order and
+skips a reader that errors. Registering a name again replaces its reader.
 
 ## Reads, places and rows
 
@@ -143,4 +173,5 @@ shape.
 - A `### For addon authors` section in a `changes/<slug>.md` fragment for every API change.
 - `APIKit.Publish(addonName, API)` once at load, so `APIKit.Addons()` finds the addon's own table.
 - `python3 tools/check_api_docs.py` in the gate: it fails when `Core/API.lua` publishes a name that `docs/api.md`
-  does not mention as `Name(`, or a `minor` that the history does not mention.
+  does not mention as `Name(`, a `minor` that the history does not mention, a hand-written `return nil, "invalid"`
+  or a literal reason outside the table above.

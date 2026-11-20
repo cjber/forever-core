@@ -84,6 +84,7 @@ end
 ns.MapCanvasFor = function()
 	return {}
 end
+ns.CoreAPI = { version = 2, minor = 2 }
 ns.CutText = function(text)
 	return text
 end

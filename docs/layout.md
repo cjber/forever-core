@@ -57,8 +57,9 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   window at one width for every profession and tab.
 - `Core/APIKit.lua`: the shape every addon's own public API follows, published as `ForeverCore.APIKit`: `Hub` for a
   next-frame change dispatch, `NotReady` and `Invalid` for the two `nil, reason` answers, and `Publish` and `Addons`
-  for the suite's published API list. `docs/api-conventions.md` is the convention, `docs/api.md` is ForeverCore's own
-  page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
+  for the suite's published API list, plus `RegisterMapMarkers` and `MapMarkers` for the markers each addon draws on the
+  world map. `Core/API.lua` is ForeverCore's own published API. `docs/api-conventions.md` is the convention,
+  `docs/api.md` is ForeverCore's own page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
   `docs/api.md`.
 - `Core/Text.lua`: the shared search fold and ranking.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
