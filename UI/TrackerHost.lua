@@ -1095,6 +1095,64 @@ local function TrackerEdge(shows)
 	return left * trackerScale / hostScale, bottom * scale / hostScale
 end
 local AddPlacementMenu
+-- The bars the column keeps clear of: the main bar and the extra bars parked at the bottom of the screen, then the two
+-- parked on its right. A bar the player has not got, has hidden, or has parked elsewhere takes no room, so this reads
+-- whatever the player's own layout put on screen rather than assuming the default one.
+local ACTION_BARS = {
+	"MainMenuBar",
+	"MultiBarBottomLeft",
+	"MultiBarBottomRight",
+	"MultiBar5",
+	"MultiBar6",
+	"MultiBar7",
+	"MultiBarRight",
+	"MultiBarLeft",
+}
+-- How far down and how far right the column may reach from `top` without covering an action bar, both in the host's own
+-- units: `floor` is the top of the highest bar under the column's width, so the column stops above the bars the way
+-- TrackerEdge stops it at the tracker's line, and `right` is the left edge of the nearest bar beside the column's
+-- height, so a right-hand bar is never grown over. No bar in the way leaves `floor` at 0 and `right` at the screen's
+-- width, which is the room the column had before it read them. Bars are read through their own scale, as the tracker
+-- is, and nothing here anchors to one or hooks one: the column holds protected quest item buttons, so an anchor to a
+-- bar would bring the bar into the column's protected chain.
+---@param left number the column's left edge
+---@param width number
+---@param top number the column's top edge
+---@param height number
+---@return number floor, number right
+local function BarRoom(left, width, top, height)
+	local hostScale = host:GetEffectiveScale()
+	local floor, right = 0, UIParent:GetWidth() / (hostScale / UIParent:GetEffectiveScale())
+	-- A column the client has not placed yet has no rect to measure against, and takes no room from itself.
+	if type(left) ~= "number" or type(width) ~= "number" or type(top) ~= "number" or type(height) ~= "number" then
+		return floor, right
+	end
+	local low = top - height
+	for _, name in ipairs(ACTION_BARS) do
+		local bar = rawget(_G, name)
+		if type(bar) == "table" and bar.IsShown and bar:IsShown() then
+			local barLeft, barTop = bar:GetLeft(), bar:GetTop()
+			local barWidth, barHeight = bar:GetWidth(), bar:GetHeight()
+			if barLeft and barTop and barWidth and barHeight and barWidth > 0 and barHeight > 0 then
+				local scale = bar:GetEffectiveScale() / hostScale
+				local barLeftHost, barTopHost = barLeft * scale, barTop * scale
+				local barRightHost, barBottomHost = barLeftHost + barWidth * scale, barTopHost - barHeight * scale
+				-- A bar wider than it is tall lies across the screen and takes room from below; a taller one stands at a
+				-- side and takes room from beside. Orientation is the whole test, so a bar the player parked anywhere,
+				-- at the top, the bottom or either side, is judged by the shape it has rather than by where the default
+				-- layout would have put it.
+				if barWidth >= barHeight then
+					if barTopHost < top and barRightHost > left and barLeftHost < left + width then
+						floor = math.max(floor, barTopHost)
+					end
+				elseif barBottomHost < top and barTopHost > low and barLeftHost >= left then
+					right = math.min(right, barLeftHost)
+				end
+			end
+		end
+	end
+	return floor, right
+end
 -- Whether the column now sits under the quest tracker rather than at its pin to the left.
 local under = false
 local function PinLeft()
@@ -1129,7 +1187,8 @@ local function FollowTracker(settings)
 		if under then
 			local _, line = TrackerEdge(shows)
 			local height = host:GetHeight() or 0
-			if height > (line or math.huge) or height > (host:GetTop() or 0) then
+			local floor = BarRoom(host:GetLeft() or 0, host:GetWidth() or 0, host:GetTop() or 0, height)
+			if height > (line or math.huge) - floor or height > (host:GetTop() or 0) - floor then
 				PinLeft()
 			end
 		end
@@ -1145,13 +1204,16 @@ local function FollowTracker(settings)
 		return
 	end
 	placeAgain, followed, followedShows = false, true, shows
-	if (host:GetHeight() or 0) > top then
+	local width = host:GetWidth() or 0
+	local height = host:GetHeight() or 0
+	local floor, right = BarRoom(x, width, top, height)
+	if height > top - floor then
 		PinLeft()
 		return
 	end
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth = UIParent:GetWidth() / scale
-	x = math.max(0, math.min(x, math.max(0, screenWidth - (host:GetWidth() or 0))))
+	x = math.max(0, math.min(x, math.max(0, math.min(screenWidth, right) - width)))
 	host:ClearAllPoints()
 	host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, top)
 	under = true
@@ -1183,20 +1245,27 @@ local function Anchor(settings)
 	end
 	if settings.placement == "under" then
 		local tracker = QuestieList() or ObjectiveTrackerFrame
-		local top = tracker:GetTop()
+		local top, trackerLeft = tracker:GetTop(), tracker:GetLeft()
 		if top then
-			return width, top * tracker:GetEffectiveScale() / host:GetEffectiveScale()
+			local hostScale = host:GetEffectiveScale()
+			local trackerScale = tracker:GetEffectiveScale()
+			local hostTop = top * trackerScale / hostScale
+			local left = type(trackerLeft) == "number" and trackerLeft * trackerScale / hostScale or 0
+			local height = host:GetHeight() or screenHeight
+			local floor = BarRoom(left, width, hostTop, height)
+			return width, hostTop, floor
 		end
 	end
 	PinLeft()
-	return width, host:GetTop() or screenHeight
+	local pinnedTop = host:GetTop() or screenHeight
+	return width, pinnedTop, BarRoom(host:GetLeft() or 0, width, pinnedTop, host:GetHeight() or screenHeight)
 end
 
 -- With no section to show, the column hides entirely; the next layout with content shows it again.
 local function Place(settings)
 	host:Show()
-	local width, top = Anchor(settings)
-	host:SetShown(LayoutModules(width, math.max(24, top)))
+	local width, top, floor = Anchor(settings)
+	host:SetShown(LayoutModules(width, math.max(24, top - (floor or 0))))
 	FollowTracker(settings)
 end
 
