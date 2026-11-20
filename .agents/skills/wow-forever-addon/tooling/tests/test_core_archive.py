@@ -106,7 +106,8 @@ class CoreArchiveTest(unittest.TestCase):
         self.assertIn("disagree with Begin.lua", core_archive.check(self.root, self.release)[0])
 
     def test_embedded_stamp_before_chunk_counts(self):
-        # Packages built before ForeverCore 1.15.4 stamp Begin without the chunk count; the store audit still reads them.
+        # Packages built before ForeverCore 1.15.4 stamp Begin without the chunk count;
+        # the store audit still reads them.
         self.embed(chunks="")
         self.assertEqual(core_archive.check(self.root, self.release, "v1.15.3"), [])
 

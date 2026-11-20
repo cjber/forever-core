@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The fast local gate: luacheck, StyLua, every spec (about a second, in parallel) and ruff over tools/.
-# `tools/gate --changed` lints only the files changed against origin/main and skips ruff when no tools/ Python changed.
+# `tools/gate --changed` lints only the files changed against origin/main and skips ruff when no tools/ or vendored
+# tooling Python changed.
 # CI also runs the typecheck, the tools' unit tests, the native tracker spec and the project rules.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +16,7 @@ if [ "${1:-}" = "--changed" ]; then
       .luacheckrc | stylua.toml | .styluaignore | tools/gate) full=1 ;;
       tools/pyproject.toml | tools/uv.lock | ruff.toml) py=1 ;;
       *.lua) lua+=("$f") ;;
-      tools/*.py) py=1 ;;
+      tools/*.py | .agents/skills/wow-forever-addon/tooling/*.py) py=1 ;;
     esac
   done <<< "$changed"
   if [ "$full" = 1 ]; then
@@ -35,4 +36,8 @@ python3 .agents/skills/wow-forever-addon/tooling/forever_tools/specs.py
 if [ "$py" = 1 ]; then
   uv run --project tools --frozen --group dev ruff check tools
   uv run --project tools --frozen --group dev ruff format --check tools
+  # The vendored tooling has its own ruff settings, linted from its folder as forever-tools.yml does.
+  (cd .agents/skills/wow-forever-addon/tooling &&
+    uv run --project "$OLDPWD/tools" --frozen --group dev ruff check . &&
+    uv run --project "$OLDPWD/tools" --frozen --group dev ruff format --check .)
 fi
