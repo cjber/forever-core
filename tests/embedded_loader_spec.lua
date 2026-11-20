@@ -121,6 +121,65 @@ local function newSession(older, setup)
 	return session
 end
 
+-- Most loader tests have no UIParent. Notice tests opt in to recording the text actually shown.
+local function recordNotices(env)
+	local shown = {}
+	local create = env.CreateFrame
+	local noop = function() end
+	env.UIParent = {}
+	env.CreateFrame = function(kind, name, parent, template)
+		if parent == nil then
+			return create(kind, name, parent, template)
+		end
+		local text
+		return {
+			SetFrameStrata = noop,
+			SetPoint = noop,
+			SetWidth = noop,
+			CreateTexture = function()
+				return {
+					SetAtlas = noop,
+					SetPoint = noop,
+					SetAllPoints = noop,
+					SetTexture = noop,
+					SetTexCoord = noop,
+					SetBlendMode = noop,
+				}
+			end,
+			SetNormalTexture = noop,
+			SetPushedTexture = noop,
+			SetDisabledTexture = noop,
+			SetHighlightTexture = noop,
+			SetFontString = noop,
+			SetNormalFontObject = noop,
+			SetDisabledFontObject = noop,
+			SetHighlightFontObject = noop,
+			EnableMouse = noop,
+			SetHeight = noop,
+			SetSize = noop,
+			SetText = noop,
+			SetScript = noop,
+			CreateFontString = function()
+				return {
+					SetPoint = noop,
+					SetWidth = noop,
+					SetWordWrap = noop,
+					SetText = function(_, value)
+						text = value
+					end,
+					GetStringHeight = function()
+						return 20
+					end,
+				}
+			end,
+			Show = function()
+				shown[#shown + 1] = text
+			end,
+		}
+	end
+	return shown
+end
+
 -- One registry, one loading frame, however many copies ask for it.
 local shared = newSession()
 shared.ReloadLoader()
@@ -994,11 +1053,7 @@ do
 			return "v1.15.0"
 		end,
 	}
-	local shown = {}
-	sess.env.StaticPopupDialogs = {}
-	sess.env.StaticPopup_Show = function(which, message)
-		shown[#shown + 1] = which .. ":" .. tostring(message)
-	end
+	local shown = recordNotices(sess.env)
 	local store = {}
 	sess.env.ForeverCoreDB = store
 	sess.env.ForeverCore = legacy
@@ -1016,9 +1071,10 @@ do
 	sess.Tick()
 	equal(#shown, 0, "the notice waits for the world entry")
 	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
+	equal(#shown, 0, "the notice waits until the next frame")
 	sess.Tick()
 	equal(#shown, 1, "then shows once on screen")
-	check(shown[1]:find("FOREVERCORE_OUTDATED", 1, true) == 1, "as the loader's own notice")
+	equal(shown[1], warning, "with the full warning text")
 	sess:Candidate("EmbeddedNewer", build(1, 17, 0))
 	sess.Tick()
 	equal(#shown, 1, "and never a second time in the session")
@@ -1028,11 +1084,7 @@ do
 	-- installed version shows it once again.
 	for _, case in ipairs({ { version = "v1.15.0", expect = 0 }, { version = "v1.15.1", expect = 1 } }) do
 		local nextSession = newSession()
-		local laterShown = 0
-		nextSession.env.StaticPopupDialogs = {}
-		nextSession.env.StaticPopup_Show = function()
-			laterShown = laterShown + 1
-		end
+		local laterShown = recordNotices(nextSession.env)
 		nextSession.env.C_AddOns = {
 			GetAddOnMetadata = function()
 				return case.version
@@ -1043,7 +1095,7 @@ do
 		nextSession:Candidate("Embedded", build(1, 16, 0))
 		nextSession.Fire("PLAYER_ENTERING_WORLD", false, true)
 		nextSession.Tick()
-		equal(laterShown, case.expect, case.version .. ": the notice shows once per standalone version")
+		equal(#laterShown, case.expect, case.version .. ": the notice shows once per standalone version")
 		check(nextSession.loader.Warning() ~= nil, case.version .. ": Warning still reports it")
 	end
 end
@@ -1224,11 +1276,7 @@ end
 for _, older in ipairs({ false, "tests/fixtures/loader_revision1.lua" }) do
 	local label = older and "revision 1 registry" or "this registry"
 	local sess = newSession(older or nil)
-	local count = 0
-	sess.env.StaticPopupDialogs = {}
-	sess.env.StaticPopup_Show = function()
-		count = count + 1
-	end
+	local shown = recordNotices(sess.env)
 	sess.env.C_AddOns = {
 		GetAddOnMetadata = function()
 			return "v1.16.0"
@@ -1240,7 +1288,7 @@ for _, older in ipairs({ false, "tests/fixtures/loader_revision1.lua" }) do
 	sess.Fire("PLAYER_LOGIN")
 	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
 	sess.Tick()
-	equal(count, 0, label .. ": an up-to-date standalone gets no notice")
+	equal(#shown, 0, label .. ": an up-to-date standalone gets no notice")
 	check(sess.loader.Warning == nil or sess.loader.Warning() == nil, label .. ": and no warning")
 end
 
@@ -1249,11 +1297,7 @@ end
 -- notice once at the world entry.
 do
 	local sess = newSession("tests/fixtures/loader_revision1.lua")
-	local shown = {}
-	sess.env.StaticPopupDialogs = {}
-	sess.env.StaticPopup_Show = function(which, message)
-		shown[#shown + 1] = which .. ":" .. tostring(message)
-	end
+	local shown = recordNotices(sess.env)
 	sess.env.C_AddOns = {
 		GetAddOnMetadata = function()
 			return "v1.15.0"
@@ -1281,15 +1325,12 @@ end
 -- A host first loaded after login with an older standalone already adopted gets the notice without waiting for a
 -- loading screen.
 do
-	local count = 0
+	local shown
 	local sess = newSession(nil, function(env)
 		env.IsLoggedIn = function()
 			return true
 		end
-		env.StaticPopupDialogs = {}
-		env.StaticPopup_Show = function()
-			count = count + 1
-		end
+		shown = recordNotices(env)
 		env.C_AddOns = {
 			GetAddOnMetadata = function()
 				return "v1.15.0"
@@ -1299,7 +1340,7 @@ do
 	sess.env.ForeverCore = legacy
 	sess:Candidate("LoadedLate", build(1, 16, 0))
 	sess.Tick()
-	equal(count, 1, "a host loaded after login shows the notice on the next frame")
+	equal(#shown, 1, "a host loaded after login shows the notice on the next frame")
 end
 
 -- A revision 1 registry whose hosts both first load after login hears neither event; the newer copy settles it on the
