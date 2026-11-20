@@ -12,7 +12,7 @@
     "core_load.lua": "a2c6b4146b0f6a56c34dca6263b0cccd0c2c4a20c12982151bab1600e9adfa90",
     "docs.lua": "2d47348e20f34b1274d857b46b0ed4cc12ced502f16034271303565c3d248e04",
     "fetch.py": "45fb5d4b8abf143051f3d385036835af851cac2f24b6fadf9f87bba56bf6288f",
-    "gen_client_surface.py": "2cf7d09e109ac87dde4d1e9b92a36cd29cac61ec1907e4e6db501e77daeafd54",
+    "gen_client_surface.py": "2803ac32ded2bfddbef883042d666c3f6fe9b17bc4d2ce8fcadc39d96b39be2e",
     "instrument.lua": "0458145c18888024db1b7aa9919ba4f462714348c27bebe3a97bbc4fd222c31c",
     "layout.lua": "2310ddc299e8fab165249b2378ae4b7f451f008c97078ad7f2dcbccad57b9ae2",
     "loader.lua": "3d5867bd931571b07a46a5d8160b392a135331a0bf1eb46c18c7175998799a7c",

@@ -190,6 +190,13 @@ class ClientSurfaceTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 gen_client_surface.read(dump)
 
+    def test_a_dump_with_a_failed_half_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text(self.DUMP.replace("build = 16001,", 'build = 16001, errors = { cvars = "boom" },'))
+            with self.assertRaises(SystemExit):
+                gen_client_surface.read(dump)
+
 
 if __name__ == "__main__":
     unittest.main()

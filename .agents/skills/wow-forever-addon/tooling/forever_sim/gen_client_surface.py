@@ -27,6 +27,9 @@ local path = assert(os.getenv("FOREVER_PROBE_FILE"), "no probe file")
 assert(loadfile(path))()
 local surface = assert(ForeverProbeDB and ForeverProbeDB.clientSurface, "the dump has no ForeverProbeDB.clientSurface")
 assert(not surface.error, "the probe failed in the client: " .. tostring(surface.error))
+for half, err in pairs(surface.errors or {}) do
+	error("the probe's " .. half .. " half failed in the client: " .. tostring(err))
+end
 -- Every byte outside printable ASCII, and the backslash, as a Lua \\ddd escape: lines split only on "\\n" and the
 -- Python side writes each value into a Lua literal as is.
 local function esc(value)
