@@ -105,7 +105,8 @@ end)
 
 - **API**: every `C_*` namespace, global function, Enum and Constants table comes from
   `Blizzard_APIDocumentationGenerated`, with the documented arguments, return shapes and flags. Functions
-  Blizzard's own Lua calls that the documentation omits exist and answer nothing. Every widget method the
+  Blizzard's own Lua calls that the documentation omits exist; the ones the pinned annotations type answer with
+  those returns (`undocumented_returns.lua`, from `gen_undocumented_returns.py`). Every widget method the
   documentation lists exists on its widget type.
 - **Scripts and CVars**: `client_surface.lua` holds what the Forever client itself reports, from a ForeverProbe
   dump (cjber/forever-dev): for each widget type, every script its `HasScript` accepts, and every cvar with its
@@ -166,7 +167,8 @@ end)
 
 - Layout is our own anchor solver: no text measurement (a character is half the font height wide), no clamping,
   strata draw order or hit testing.
-- Functions the documentation leaves out answer by their name: counts 0, predicates false, the rest nil.
+- Functions neither the documentation nor the annotations type answer by their name: counts 0, predicates false,
+  the rest nil.
   Placeholders that Blizzard code reads for undocumented enums, constants and LE_* values are listed in
   `sim.gaps`.
 - FrameXML proper, action bars, unit frames, chat and the shop are not booted (`loader.lua` SKIP_DEPS); a scenario
