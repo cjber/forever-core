@@ -1,10 +1,11 @@
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from forever_sim import fetch, sync
+from forever_sim import fetch, gen_client_surface, sync
 
 PACKAGE = Path(__file__).resolve().parent.parent / "forever_sim"
 
@@ -160,3 +161,32 @@ class FetchTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClientSurfaceTest(unittest.TestCase):
+    DUMP = """ForeverProbeDB = { clientSurface = { build = 16001,
+  cvars = { userFontScale = { default = "1" }, odd = { default = 'a"b\\\\c\\nd' }, hidden = { default = "<secret>" } },
+  scripts = { FontString = { "OnEnter", "OnLeave" }, Frame = { "OnEvent" } },
+  failedWidgets = { ModelSceneActor = "no actor" } } }
+"""
+
+    def test_a_dump_becomes_lua_the_simulator_reads_back_exactly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text(self.DUMP)
+            out = Path(directory) / "client_surface.lua"
+            out.write_text(gen_client_surface.render(*gen_client_surface.read(dump)))
+            check = (
+                f'local t = dofile("{out}"); assert(t.interface == 16001); '
+                'assert(t.cvars.userFontScale == "1"); assert(t.cvars.odd == "a\\"b\\\\c\\nd"); '
+                'assert(t.cvars.hidden == nil, "a secret default is left out"); '
+                'assert(t.scripts.FontString[1] == "OnEnter"); assert(t.unmade.ModelSceneActor == "no actor")'
+            )
+            subprocess.run(["luajit", "-e", check], check=True)
+
+    def test_a_dump_without_the_record_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text("ForeverProbeDB = {}\n")
+            with self.assertRaises(SystemExit):
+                gen_client_surface.read(dump)

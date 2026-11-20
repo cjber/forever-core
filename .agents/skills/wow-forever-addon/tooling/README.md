@@ -9,8 +9,8 @@ the producer commit the copy came from.
 
 The same sync also copies core's `tools/toolchain.json` (every tool pin, with how to find its newer version),
 `tools/pyproject.toml` and `tools/uv.lock` (ruff, ty, zizmor, actionlint-py and Pillow as a `[dependency-groups] dev`
-group) to the repository's `tools/`, because the vendored `tools/typecheck.sh`, `tools/forever_sim/gen_script_types.py`
-and `tools/forever_tools/doctor.py` read them. They sit under `tools/`, the folder every addon's `.pkgmeta` already
+group) to the repository's `tools/`, because the vendored `tools/typecheck.sh` and
+`tools/forever_tools/doctor.py` read them. They sit under `tools/`, the folder every addon's `.pkgmeta` already
 ignores, so vendoring a development file never changes what a release ships or invalidates a recorded visual proof.
 The scripts name a tool, never a version: CI's `cjber/forever-core/.github/actions/toolchain@<sha>` reads this
 repository's own `tools/toolchain.json` through its `manifest` input, so the tools it installs are the ones those

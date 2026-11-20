@@ -80,7 +80,7 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   the line it tracks, so `lua51` stays on 5.1 with a `note` saying why (the client is Lua 5.1), while `node` may
   propose a newer major for review. It sits under `tools/` with the project below, the folder `.pkgmeta` already
   ignores, so vendoring it never changes a package selection or a recorded visual proof. Consumers vendor it because
-  their `tools/typecheck.sh`, `tools/forever_sim/gen_script_types.py` and `tools/forever_tools/doctor.py` read it.
+  their `tools/typecheck.sh` and `tools/forever_tools/doctor.py` read it.
 - `tools/pyproject.toml` and `tools/uv.lock`: ruff, ty, zizmor, actionlint-py and Pillow (the wowmock tests draw
   images) as a `[dependency-groups] dev` group, run from the repository root as
   `uv run --project tools --frozen --group dev <tool>`, which keeps uv's environment at `tools/.venv`. Not a package

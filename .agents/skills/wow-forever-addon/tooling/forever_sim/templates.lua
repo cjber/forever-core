@@ -704,7 +704,18 @@ function M.build(sim)
 		for _, scripts in ipairs(childrenNamed(node, "Scripts")) do
 			for _, sn in ipairs(scripts.children) do
 				local f = handlerFor(sn, ctx)
-				if f and ctx.intrinsic then
+				if s.kind and not Widgets.scriptName(s.kind, sn.tag) then
+					-- The client leaves a script its type does not take unset and logs it to FrameXML.log.
+					warn(
+						string.format(
+							"%s:%s: %s does not take script %s; ignored",
+							ctx.file,
+							tostring(sn.line),
+							s.kind,
+							sn.tag
+						)
+					)
+				elseif f and ctx.intrinsic then
 					-- An intrinsic's handlers always run, before (default) or after the frame's own.
 					s.intrinsic = s.intrinsic or {}
 					s.intrinsic[sn.tag] = s.intrinsic[sn.tag] or {}
