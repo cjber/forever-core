@@ -1,3 +1,4 @@
+-- luacheck: globals SimStrandedWaitEarly SimStrandedWaitLogin SimStrandedWaitWorld
 -- A wait made at file load, before the login, calls back.
 EventUtil.ContinueAfterAllEvents(function()
 	SimStrandedWaitEarly = true
