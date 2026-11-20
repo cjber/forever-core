@@ -41,6 +41,8 @@ ADDONS = (
     ("macro-assist-forever", "MacroAssistForever"),
     ("adventure-guide-forever", "AdventureGuideForever"),
     ("gathering-guide-forever", "GatheringGuideForever"),
+    ("ledger-forever", "LedgerForever"),
+    ("tradewind-forever", "TradewindForever"),
 )
 
 
