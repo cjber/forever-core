@@ -627,13 +627,36 @@ def screenshots() -> set[Path]:
 
 
 def wait_for_world(
-    before: set[Path], timeout: float, nudge=None, *, require_marker: bool = False, safety_state: Mapping | None = None
+    before: set[Path],
+    timeout: float,
+    nudge=None,
+    *,
+    require_marker: bool = False,
+    safety_state: Mapping | None = None,
+    handshake_state: Mapping | None = None,
 ) -> Path:
-    """Block until the dev addon's screenshot appears: the world has loaded. `nudge` runs every 15 s meanwhile."""
+    """Block until the dev addon's screenshot appears: the world has loaded. `nudge` runs every 15 s meanwhile.
+
+    With `handshake_state`, a world that stays loaded HANDSHAKE_WAIT without the marker screenshot is a refusal:
+    !!ForeverHeadless withholds the marker when the character is not the approved one or is unsafe, and waiting out
+    the whole timeout would leave that character parked in the world.
+    """
     deadline, next_nudge = time.monotonic() + timeout, time.monotonic() + 20
+    in_world_since = next_handshake_check = None
     while time.monotonic() < deadline:
         if safety_state is not None:
             require_safe(safety_state, waiting=True)
+        if handshake_state is not None and time.monotonic() >= (next_handshake_check or 0):
+            next_handshake_check = time.monotonic() + 5
+            if client_ui(handshake_state).get("world"):
+                in_world_since = in_world_since or time.monotonic()
+                if time.monotonic() - in_world_since >= HANDSHAKE_WAIT:
+                    raise SafetyRefusal(
+                        f"the world loaded but !!ForeverHeadless sent no readiness marker within {HANDSHAKE_WAIT} s: "
+                        "the character is not the approved one, or is dead or in combat"
+                    )
+            else:
+                in_world_since = None
         new = screenshots() - before
         if new:
             candidates = []
@@ -1884,6 +1907,8 @@ def slash(state: Mapping, command: str) -> None:
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PNG_CHANNELS = {2: 3, 6: 4}  # truecolour, and truecolour with alpha
+# !!ForeverHeadless takes its marker screenshot 2 s after the world loads; a world without one for this long refused.
+HANDSHAKE_WAIT = 30
 HEADLESS_MARKER = (
     "10011001",
     "01100110",
@@ -2271,14 +2296,46 @@ def enter_world_targets(image: Path) -> list[tuple[int, int, int, int, float]]:
     return list(dict.fromkeys(targets))
 
 
+def character_targets(image: Path, name: str) -> list[tuple[int, int, int, int]]:
+    """Every OCR word on the character list that reads exactly as the approved character's name."""
+    width, height, channels, rows = png_pixels(image)
+    channel = STATE_DIR / "character-select-green.pgm"
+    write_pgm_channel(channel, width, height, channels, rows, 1)
+    wanted = name.strip().casefold()
+    return [
+        (word[2], word[3], word[4], word[5])
+        for word in ocr_words_with_lines(channel, psm=11)
+        if word[1] >= 0 and word[0].strip().casefold() == wanted
+    ]
+
+
 def enter_world(state: Mapping) -> None:
-    """Click Enter World only when the current game frame visibly contains that label."""
+    """Select the approved character, then click Enter World, only when the frame visibly shows both.
+
+    Enter World alone enters with whichever character the client selected last, often the player's own, so the
+    approved name is clicked first and a list without exactly one reading of it is never entered.
+    """
     if not game_focused(state):
         return
     image = shot(state, STATE_DIR / "character-select.png")
     targets = enter_world_targets(image)
     if len(targets) != 1:
         return
+    name = approved_character()
+    characters = character_targets(image, name) if name else []
+    if len(characters) != 1:
+        print(
+            f"forever_client: character select shows {len(characters)} entries reading {name!r}; "
+            f"not entering the world (frame: {image})",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    left, top, width, height = characters[0]
+    x(state, "mousemove", str(left + width // 2), str(top + height // 2))
+    time.sleep(0.5)
+    x(state, "click", "1")
+    time.sleep(1)
     left, top, width, height, _ = targets[0]
     x(state, "mousemove", str(left + width // 2), str(top + height // 2))
     time.sleep(0.5)
@@ -4998,7 +5055,7 @@ def reach_world(state: dict, before: set[Path], timeout: float, manual_launcher:
     for key in ("play_clicks", "last_play_click", "play_target_missing_reported"):
         state.pop(key, None)
     try:
-        ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True)
+        ready_shot = wait_for_world(before, timeout, nudge=nudge, require_marker=True, handshake_state=state)
     except SignInRequired:
         raise
     except ClientError as error:

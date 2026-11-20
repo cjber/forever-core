@@ -446,7 +446,7 @@ class ForeverClientTest(unittest.TestCase):
         ):
             spawn.return_value.pid = 123
 
-            def waiting(*unused, nudge, require_marker):
+            def waiting(*unused, nudge, require_marker, handshake_state):
                 self.assertTrue(require_marker)
                 nudge()
                 press_play.assert_not_called()
@@ -1211,6 +1211,64 @@ class ForeverClientTest(unittest.TestCase):
         ):
             fc.enter_world(state)
         x.assert_not_called()
+
+    def test_enter_world_selects_the_approved_character_first(self):
+        state = {"display": ":1"}
+        with (
+            mock.patch.object(fc, "game_focused", return_value=True),
+            mock.patch.object(fc, "shot", return_value=Path("frame.png")),
+            mock.patch.object(fc, "enter_world_targets", return_value=[(896, 716, 127, 30, 51.4)]),
+            mock.patch.object(fc, "approved_character", return_value="Hel"),
+            mock.patch.object(fc, "character_targets", return_value=[(1600, 200, 40, 20)]) as characters,
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.enter_world(state)
+        characters.assert_called_once_with(Path("frame.png"), "Hel")
+        moves = [call.args[1:] for call in x.call_args_list if call.args[1] == "mousemove"]
+        self.assertEqual(moves, [("mousemove", "1620", "210"), ("mousemove", "959", "731")])
+
+    def test_enter_world_refuses_without_exactly_one_approved_name(self):
+        state = {"display": ":1"}
+        for found in ([], [(1600, 200, 40, 20), (1600, 300, 40, 20)]):
+            with (
+                mock.patch.object(fc, "game_focused", return_value=True),
+                mock.patch.object(fc, "shot", return_value=Path("frame.png")),
+                mock.patch.object(fc, "enter_world_targets", return_value=[(896, 716, 127, 30, 51.4)]),
+                mock.patch.object(fc, "approved_character", return_value="Hel"),
+                mock.patch.object(fc, "character_targets", return_value=found),
+                mock.patch.object(fc, "x") as x,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                fc.enter_world(state)
+            x.assert_not_called()
+
+    def test_character_targets_match_the_whole_name_only(self):
+        with (
+            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(fc, "write_pgm_channel"),
+            mock.patch.object(
+                fc,
+                "ocr_words_with_lines",
+                return_value=[
+                    ("Hel", 90.0, 1600, 200, 40, 20, (1, 1, 1)),
+                    ("Helga", 90.0, 1600, 300, 60, 20, (1, 1, 2)),
+                    ("Berry", 90.0, 1600, 400, 60, 20, (1, 1, 3)),
+                ],
+            ),
+        ):
+            self.assertEqual(fc.character_targets(Path("frame.png"), "Hel"), [(1600, 200, 40, 20)])
+
+    def test_world_without_the_marker_is_refused_before_the_timeout(self):
+        clock = iter(range(0, 1000, 5))
+        with (
+            mock.patch.object(fc.time, "monotonic", side_effect=lambda: next(clock)),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "client_ui", return_value={"world": True, "safety": True}),
+        ):
+            with self.assertRaisesRegex(fc.SafetyRefusal, "not the approved one"):
+                fc.wait_for_world(set(), 900, require_marker=True, handshake_state={})
 
     def test_enter_world_targets_requires_adjacent_enter_and_world_words(self):
         with (
