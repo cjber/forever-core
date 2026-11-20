@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.7] - 2026-11-20
+
+### Fixed
+
+- **An addon that carries its own ForeverCore no longer loses what it does at login.** Since 1.15.6 such an addon's files run at login even with the separate ForeverCore installed, after the game's login event, and a file waiting for that event with `EventUtil.ContinueAfterAllEvents` was never called back: Adventure Guide Forever stayed on "Loading quest data..." with no route and did not pick up RestedXP guides. Files now wait with `ns.AfterEvents`, which waits only for the events still to come, and the package step refuses a file that waits the old way. (#980, cjber/adventure-guide-forever#892)
+- **Tracker sections and the error grabber start when an addon's own ForeverCore runs after login.** A tracker section created after the world loaded, and the error grabber's login hook, no longer wait on loading events that already fired. (#984)
+
 ## [1.15.6] - 2026-11-20
 
 ### Fixed
