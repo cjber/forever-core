@@ -2025,6 +2025,56 @@ class BuildDevTest(unittest.TestCase):
         built = fc.build_dev("legacy-forever", "HEAD")
         self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: v0\.0\.0-dev\+")
 
+    def test_embed_core_archives_the_core_ref_instead_of_the_pin(self):
+        staging = self.workspace / "staging"
+        (staging / "tools/forever_tools").mkdir(parents=True)
+        (staging / "tools/forever_tools/embed.py").write_text("")
+        (staging / "tools/forever-core.txt").write_text("v1.15.0\n")
+        archived = []
+
+        def run(args, **_):
+            if args[:1] == ["git"]:
+                archived.append(args[-1])
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.object(fc.subprocess, "run", side_effect=run), mock.patch.object(fc, "unpack"):
+            fc.embed_core(staging, core_root=self.workspace, core_ref="abc1234")
+            fc.embed_core(staging, core_root=self.workspace)
+        self.assertEqual(archived, ["abc1234", "v1.15.0"])
+
+    def test_embed_core_uses_the_candidate_cores_tooling_for_a_core_ref(self):
+        staging = self.workspace / "staging"
+        (staging / "tools/forever_tools").mkdir(parents=True)
+        (staging / "tools/forever_tools/embed.py").write_text("# the build's own\n")
+        (staging / "tools/forever-core.txt").write_text("v1.15.0\n")
+
+        def unpack(_archive, core):
+            (core / fc.CORE_TOOLING).mkdir(parents=True)
+            (core / fc.CORE_TOOLING / "embed.py").write_text("# the candidate's\n")
+
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+            mock.patch.object(fc, "unpack", side_effect=unpack),
+        ):
+            fc.embed_core(staging, core_root=self.workspace, core_ref="abc1234")
+        self.assertEqual((staging / "tools/forever_tools/embed.py").read_text(), "# the candidate's\n")
+
+    def test_build_dev_cli_embeds_a_resolved_core_ref(self):
+        (self.repo / "Core/Core.lua").write_text("-- after the release\n")
+        self.git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qam", "two")
+        with (
+            mock.patch.object(fc, "build_dev") as build,
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(
+                fc,
+                "resolve_commit",
+                side_effect=lambda root, ref: "c" * 40 if root.name == "forever-core" else "a" * 40,
+            ),
+            mock.patch.object(fc, "tag_name", return_value=None),
+        ):
+            self.assertEqual(fc.main(["build-dev", "legacy-forever", "HEAD", "--core-ref", "cb/loader"]), 0)
+        self.assertEqual(build.call_args.kwargs["core_ref"], "c" * 40)
+
     def test_build_dev_cli_refuses_a_release_tag(self):
         out = io.StringIO()
         with (
@@ -2594,6 +2644,20 @@ class SmokeTest(unittest.TestCase):
         self.posted.assert_not_called()
         self.assertIn("nothing posted: slash refused", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_smoke_reads_github_with_the_gh_login_when_no_token_is_set(self):
+        # #934: a core smoke reads every consumer's latest release; anonymous reads hit the shared rate limit.
+        login = subprocess.CompletedProcess(["gh"], 0, stdout="gho_login\n", stderr="")
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(fc.subprocess, "run", return_value=login):
+            os.environ.pop("GH_TOKEN", None)
+            os.environ.pop("GITHUB_TOKEN", None)
+            fc.github_token_from_gh()
+            self.assertEqual(os.environ["GH_TOKEN"], "gho_login")
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ci"}), mock.patch.object(fc.subprocess, "run") as run:
+            os.environ.pop("GH_TOKEN", None)
+            fc.github_token_from_gh()
+            run.assert_not_called()
+            self.assertNotIn("GH_TOKEN", os.environ)
 
     def test_a_client_that_is_not_in_use_smokes(self):
         # A resident session's own Wine processes are not a busy client: only the player's game is.

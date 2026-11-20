@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.15.4] - 2026-11-19
+
+### Fixed
+
+- **The attached Forever tracker sits under Questie's quest tracker.** With Questie's tracker on, the column now goes under Questie's list and follows it as quests are added or finished, instead of covering it at the game tracker's place. (#866)
+- **Attach to quest tracker reads the same in every Forever addon.** ForeverCore now provides the setting, with one label and tooltip in every language, so each addon that draws in the shared Forever tracker can show it in its own settings. The tooltip now says what the setting does: on keeps the tracker under the quest tracker, off moves it to the left of it. (#910)
+- **An addon carrying its own ForeverCore starts it in every case.** It also starts when the addon is turned on after you log in, and in a session where the game's login event did not reach it. Before, it could stay waiting with no error, leaving no Forever tracker column or settings page. (#837)
+- **An outdated ForeverCore install is named.** If the separate ForeverCore you have installed is too old for the addons that carry their own copy, the error now names its version and says to update it or delete its folder, since your addons carry their own copy, instead of the addons failing one by one. (#837)
+- **Search ranking no longer builds a blanked copy of every title it ranks.** Ranking a name in a search list (Adventure Guide Forever) rebuilt the title with punctuation blanked, and a word list for the query, on every call. It now scans the title's own word starts directly, at the same ranking.
+- **Contribution counts in the credits are translated.** German, Spanish, French, Korean, Portuguese and Russian showed "contributions" in English.
+
 ## [1.15.3] - 2026-11-19
 
 ### Fixed

@@ -172,6 +172,46 @@ migrated.ns.TrackerHost.SetAttached(false)
 migrated.drain()
 migrated.check(settings.placement == "left" and notified == false, "SetAttached(false) picks Left")
 
+-- With Questie's tracker on, Questie hides the game's tracker and draws its own list, Questie_BaseFrame, a few seconds
+-- after login. The attached column sits under that list, not on it at the hidden tracker's place, and follows its last
+-- line (#866).
+local function QuestieCase()
+	local q = harness.new({ hostSettings = { attached = true, placement = "under" } })
+	local list = q.env.CreateFrame("Frame", nil, q.parent)
+	list.left, list.top, list.height = 900, 860, 200
+	q.showTracker(false)
+	q.env.Questie_BaseFrame = list
+	-- Questie's list appearing is read on the next quest log event, as the tracker showing or hiding is.
+	local function Event(event)
+		for _, f in ipairs(q.frames) do
+			if f ~= q.host and f.events and f.events[event] and f.scripts.OnEvent then
+				f.scripts.OnEvent(f, event)
+			end
+		end
+		q.drain()
+		q.drain()
+	end
+	Event("QUEST_LOG_UPDATE")
+	local function UnderList()
+		local spot = q.host.point
+		return spot[1] == "TOPLEFT"
+			and spot[2] == q.parent
+			and spot[3] == "BOTTOMLEFT"
+			and spot[4] == list.left
+			and spot[5] == list.top - list.height
+	end
+	q.check(UnderList(), "the attached column sits under Questie's list")
+	list.height = 320
+	q.moveLine(q.nativeRect.line)
+	q.check(UnderList(), "and follows its last line as it grows")
+	-- Questie's tracker turned off: the game's tracker is back, and the column goes back under it.
+	list.shown = false
+	q.showTracker(true)
+	Event("QUEST_LOG_UPDATE")
+	q.check(Under(q), "with Questie's list gone the column returns under the game's tracker")
+end
+QuestieCase()
+
 -- A layout during a drag leaves the column where the drag holds it.
 local dragged = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
 dragged.drag(dragged.first.Header)

@@ -136,6 +136,10 @@ local ns = {
 	}),
 	Art = { Icon = function() end },
 }
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = ns.AtStart or function(work)
+	work()
+end
 assert(loadfile("Core/SafeCall.lua"))("ExampleAddon", ns)
 assert(loadfile("Core/Log.lua"))("ExampleAddon", ns)
 assert(loadfile("Core/Performance.lua"))("ExampleAddon", ns)

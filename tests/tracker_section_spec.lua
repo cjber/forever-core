@@ -361,4 +361,37 @@ do
 	check(t.second.updates > before, "the next section still lays out")
 end
 
+-- A copy the loader boots after a loading event has fired (Loader.Seen) waits only for the events still to come; with
+-- both past it runs at once. Without a loader, as in the unwrapped standalone, it waits for both.
+for _, case in ipairs({
+	{ name = "no loader", loader = nil, waits = "PLAYER_ENTERING_WORLD,VARIABLES_LOADED" },
+	{ name = "nothing seen", seen = {}, waits = "PLAYER_ENTERING_WORLD,VARIABLES_LOADED" },
+	{ name = "world entered", seen = { PLAYER_ENTERING_WORLD = true }, waits = "VARIABLES_LOADED" },
+	{ name = "variables loaded", seen = { VARIABLES_LOADED = true }, waits = "PLAYER_ENTERING_WORLD" },
+	{ name = "both past", seen = { PLAYER_ENTERING_WORLD = true, VARIABLES_LOADED = true }, waits = nil },
+}) do
+	local t = harness.new()
+	local check = t.check
+	if case.seen then
+		t.env.ForeverCoreLoader = {
+			Seen = function(event)
+				return case.seen[event] == true
+			end,
+		}
+	end
+	local before = t.initializationEvents()
+	local ran = false
+	t.ns.AfterWorldEvents(function()
+		ran = true
+	end)
+	local after = t.initializationEvents()
+	if case.waits == nil then
+		check(ran, case.name .. ": runs at once")
+		check(after == before, case.name .. ": registers no wait")
+	else
+		check(not ran, case.name .. ": waits")
+		check(table.concat(after, ",") == case.waits, case.name .. ": waits only for " .. case.waits)
+	end
+end
+
 print("tracker_section_spec: checks passed")

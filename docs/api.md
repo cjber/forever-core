@@ -273,6 +273,13 @@ Both phrases read through that page's `L`, falling back to the supplied text. Ad
 45-unit height and expanding for wrapped headings. It does not read or change saved settings. Consumers keep their
 heading phrases in their own locale files. On older core builds, check `page.AddHeader` before calling it.
 
+Every addon that draws in the shared tracker shows its "Attach to quest tracker" setting through core, so the row has
+the same words everywhere and the player finds it in whichever addon they open. A native settings list calls
+`SettingsSections.RegisterTrackerAttach(category, variable)` (module minor 1) with a variable name of its own, in the
+section that holds its other tracker settings; a canvas page calls `page.AddTrackerAttach(panel)` (`SettingsPage`
+minor 1). On is the Under placement and off is Left, the same choice as the column's Tracker position menu, and the row
+redraws when a drag or another addon changes it. Core owns the label and tooltip, so a consumer adds no phrase for it.
+
 ## `ForeverCore.Open`
 
 `ForeverCore.Open(addon, where?) --> accepted, reason` (core minor 2).

@@ -32,6 +32,34 @@ function Text.Fold(text)
 	return (tostring(text or ""):lower():gsub("[\195\197][\128-\191]", FOLD))
 end
 
+-- Whether `word` starts a word of `folded`: at its first byte, or right after a space or punctuation, which is
+-- where the old copy with punctuation blanked to spaces found it. Scans the word's own occurrences only, so
+-- ranking a title builds no blanked copy of it and no word list.
+---@param folded string
+---@param word string
+---@return boolean
+local function StartsWord(folded, word)
+	-- A query word carrying punctuation never matched the blanked copy, whose punctuation was spaces.
+	if word:find("%p") then
+		return false
+	end
+	local at = 1
+	while true do
+		local found = folded:find(word, at, true)
+		if not found then
+			return false
+		end
+		if found == 1 then
+			return true
+		end
+		local before = folded:sub(found - 1, found - 1)
+		if before == " " or before:match("%p") then
+			return true
+		end
+		at = found + 1
+	end
+end
+
 -- How well a folded title matches a folded query, lower is better:
 --   0  the query is empty: everything matches equally, so nothing is filtered
 --   1  the whole title, exactly
@@ -49,12 +77,10 @@ function Text.Rank(folded, query)
 	if query == "" then
 		return 0
 	end
-	local words = {}
 	for word in query:gmatch("%S+") do
 		if not folded:find(word, 1, true) then
 			return nil
 		end
-		words[#words + 1] = word
 	end
 	if folded == query then
 		return 1
@@ -62,11 +88,10 @@ function Text.Rank(folded, query)
 	if folded:sub(1, #query) == query then
 		return 2
 	end
-	-- Every word of the title starts after a space once punctuation is a space too, so "garok" starts the second word
-	-- of "dûn garok's camp" and not the tail of "vargarok".
-	local starts = " " .. folded:gsub("%p", " ")
-	for _, word in ipairs(words) do
-		if not starts:find(" " .. word, 1, true) then
+	-- Every word of the title starts after a space once punctuation counts as a break too, so "garok" starts the
+	-- second word of "dûn garok's camp" and not the tail of "vargarok".
+	for word in query:gmatch("%S+") do
+		if not StartsWord(folded, word) then
 			return 4
 		end
 	end

@@ -8,8 +8,13 @@ every consumer, reads that commit, and for each one with no status yet builds it
 `tools/headless/forever_client.py smoke`, which posts the status itself. A commit that already carries a status of any
 kind is left alone, so a green main head costs nothing and a failed one is not retried behind the maintainer's back.
 
-    python3 tools/smoke_queue.py             # smoke every commit that needs it, then stop
-    python3 tools/smoke_queue.py --dry-run   # print the commits that would be smoked
+    python3 tools/smoke_queue.py                         # smoke every commit that needs it, then stop
+    python3 tools/smoke_queue.py --dry-run               # print the commits that would be smoked
+    python3 tools/smoke_queue.py --repo skillup-forever  # only these repositories, in the order given
+
+The queue runs in release order: forever-core first, since every consumer pins a released core, then SkillUp and
+Shortest Path, the most downloaded addons, then every other consumer. One client session runs one smoke at a time, so
+the order decides which release stops waiting first.
 
 `tools/systemd/forever-smoke.timer` runs it every 30 minutes at `Nice=10` on the machine that has the client; see
 `wow-forever-addon/in-game.md` for installing it. One client means one session, shared with an agent's jobs: a smoke
@@ -26,14 +31,29 @@ import sys
 from pathlib import Path
 
 from release_consumers import SyncError, consumer_repos, discover_tooling_repos, main_head, smoke_status
-from sync_consumer_prs import CORE_REPO
+from sync_consumer_prs import CORE_REPO, OWNER
 
 CLIENT = Path(__file__).resolve().parent / "headless/forever_client.py"
 
+# The repositories smoked before the rest, in this order: the core every consumer pins, then the most downloaded
+# addons. The others follow in the order the sync lists them.
+PRIORITY = (CORE_REPO, "skillup-forever", "shortest-path-forever")
+
 
 def repositories() -> list[str]:
-    """Every repository a release ships: core itself, then the consumers the sync keeps."""
-    return [CORE_REPO, *consumer_repos(discover_tooling_repos())]
+    """Every repository a release ships, in release order: PRIORITY first, then the other consumers the sync keeps."""
+    found = [CORE_REPO, *consumer_repos(discover_tooling_repos())]
+    first = [repo for repo in PRIORITY if repo in found]
+    return first + [repo for repo in found if repo not in first]
+
+
+def repo_name(value: str) -> str:
+    """A `--repo` value as the bare repository name the queue uses: `skillup-forever` or `cjber/skillup-forever`."""
+    parts = value.split("/")
+    name = parts[-1]
+    if parts[:-1] not in ([], [OWNER]) or not name:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a {OWNER} repository name")
+    return name
 
 
 def next_release(repo: str) -> str:
@@ -60,9 +80,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="print the commits that would be smoked and write nothing"
     )
+    parser.add_argument(
+        "--repo",
+        action="append",
+        type=repo_name,
+        metavar="NAME",
+        help="smoke only this repository; repeat it for several, smoked in the order given",
+    )
     args = parser.parse_args(argv)
     try:
-        repos = repositories()
+        repos = list(dict.fromkeys(args.repo)) if args.repo else repositories()
     except SyncError as error:
         print(f"::error::{error}")
         return 1

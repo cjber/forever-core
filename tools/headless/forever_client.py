@@ -33,6 +33,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
+    forever_client.py build-dev REPO REF --core-ref SHA  # the same, embedding a forever-core candidate commit
     forever_client.py smoke --repo R --ref SHA [--no-post]
                                           # build the commit, selftest it, post its status (--no-post prints instead)
     forever_client.py smoke --repo forever-core --ref SHA
@@ -2265,11 +2266,18 @@ def unpack(archive: Path, destination: Path) -> None:
             tree.extractall(destination)
 
 
-def embed_core(staging: Path, core_root: Path | None = None) -> None:
+# Where the core checkout keeps the tooling each consumer vendors as tools/forever_tools.
+CORE_TOOLING = Path(".agents/skills/wow-forever-addon/tooling/forever_tools")
+
+
+def embed_core(staging: Path, core_root: Path | None = None, core_ref: str | None = None) -> None:
     """Run the build's own `forever_tools.embed` when its TOC opts in, as the consumer's release does.
 
     The core it embeds is a git archive of the `forever-core` checkout at the tag `tools/forever-core.txt` pins, so the
-    dev build carries the same `Libs/ForeverCore/` bytes the release zip will.
+    dev build carries the same `Libs/ForeverCore/` bytes the release zip will. `core_ref` embeds that core commit
+    instead, to test an unreleased core candidate inside a consumer; the build number still comes from the pin. The
+    candidate's own vendored tooling replaces the build's first, as the consumer's tooling sync will, so its embed step
+    and generated files are the candidate's too.
     """
     tool = staging / "tools" / "forever_tools" / "embed.py"
     pin = staging / "tools" / "forever-core.txt"
@@ -2290,7 +2298,7 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
                     "archive",
                     "--format=tar",
                     f"--output={archive}",
-                    pin.read_text().strip(),
+                    core_ref or pin.read_text().strip(),
                 ],
                 check=True,
                 capture_output=True,
@@ -2299,9 +2307,12 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
         except (OSError, subprocess.CalledProcessError) as error:
             detail = getattr(error, "stderr", "") or str(error)
             raise ClientError(
-                f"git archive of ForeverCore {pin.read_text().strip()} failed: {detail.strip()}"
+                f"git archive of ForeverCore {core_ref or pin.read_text().strip()} failed: {detail.strip()}"
             ) from None
         unpack(archive, core)
+        tooling = core / CORE_TOOLING
+        if core_ref and tooling.is_dir():
+            shutil.copytree(tooling, staging / "tools" / "forever_tools", dirs_exist_ok=True)
         done = subprocess.run(
             [sys.executable, "-m", "tools.forever_tools.embed", "--core", str(core), str(staging)],
             cwd=staging,
@@ -2317,7 +2328,13 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
         shutil.rmtree(core, ignore_errors=True)
 
 
-def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root: Path | None = None) -> Path:
+def build_dev(
+    repo: str,
+    commit: str,
+    destination: Path | None = None,
+    repo_root: Path | None = None,
+    core_ref: str | None = None,
+) -> Path:
     """Write the dev build of `commit` to `test-artifacts/<repo>-dev`, as `rebuild-dev.sh` did.
 
     The build is the commit's own tree without the development folders, with every TOC stamped `<tag>-dev+<sha>`, so
@@ -2355,7 +2372,7 @@ def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root
     finally:
         archive.unlink(missing_ok=True)
     try:
-        embed_core(staging)
+        embed_core(staging, core_ref=core_ref)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -3163,6 +3180,21 @@ def verify_links(records: Sequence[dict]) -> None:
             raise ClientError(f"{slot} no longer points at the candidate build: no proof recorded")
 
 
+def github_token_from_gh() -> None:
+    """Give this process's GitHub API reads the token of the `gh` login when neither GH_TOKEN nor GITHUB_TOKEN is set.
+
+    A core smoke reads every consumer's latest release through `check_consumers.authorized`, which sends only those
+    variables. CI sets them; the machine that smokes locally has a `gh` login instead, and without it the reads go out
+    anonymously and share the 60-an-hour limit with every session on the machine (#934).
+    """
+    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return
+    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+    token = result.stdout.strip()
+    if result.returncode == 0 and token:
+        os.environ["GH_TOKEN"] = token
+
+
 def smoke(args: argparse.Namespace) -> int:
     """Build a repository's commit, test it in the client as one job, and record the result as a commit status.
 
@@ -3186,6 +3218,7 @@ def smoke(args: argparse.Namespace) -> int:
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = resolve_commit(root, args.ref)
     post = not args.no_post
+    github_token_from_gh()
     recover_links()
     busy = foreign_client()
     if busy:
@@ -5733,6 +5766,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = sub.add_parser("build-dev", help="write test-artifacts/<repo>-dev from a ref")
     p.add_argument("repo", help="the repository under ~/drive/proj/wow")
     p.add_argument("ref")
+    p.add_argument(
+        "--core-ref",
+        help="embed this forever-core commit instead of the pinned release, to test a core candidate in the addon",
+    )
     p = sub.add_parser("smoke", help="build the commit a release would ship, test it, and post its status")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
     p.add_argument("--ref", required=True, help="the commit the next release would ship")
@@ -5831,7 +5868,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "run: wowaddon --flavor forever sync after removing its dev link"
                 )
                 return 0
-            build_dev(args.repo, commit, repo_root=root)
+            core_ref = None
+            if args.core_ref:
+                core_ref = resolve_commit(WORKSPACE / "forever-core", args.core_ref)
+            build_dev(args.repo, commit, repo_root=root, core_ref=core_ref)
             return 0
         if args.verb == "smoke":
             return smoke(args)

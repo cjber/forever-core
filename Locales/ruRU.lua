@@ -10,6 +10,7 @@ L["%s and %s"] = "%s и %s"
 L["%s, %s and %s"] = "%s, %s и %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s и ещё %d"
 L["+%d more"] = "+%d ещё"
+L["%d contributions"] = "вкладов: %d" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (последние %d):"
 L["%s: no lines yet."] = "%s: строк пока нет."
@@ -54,6 +55,9 @@ L["Tracker background"] = "Фон отслеживания"
 L["Tracker position"] = "Положение отслеживания"
 L["Under the quest tracker"] = "Под списком заданий"
 L["Left of the quest tracker"] = "Слева от списка заданий"
+L["Attach to quest tracker"] = "Прикрепить к списку заданий" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"Когда включено, общий трекер Forever стоит под списком заданий, а когда выключено, слева от него. Эта настройка одна для всех аддонов Forever." -- mt
 L["Tracker"] = "Отслеживание"
 L["Click to %s"] = "Нажмите, чтобы %s"
 L["Right-click for options"] =
@@ -129,4 +133,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"Ошибки не записаны. Включите ошибки Lua командой /console scriptErrors 1, выполните /reload и прочитайте первую ошибку с упоминанием %s." -- mt
 L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- mt
 L["Login error: %s"] = "Ошибка входа: %s" -- mt
+L["Warning: %s"] = "Предупреждение: %s" -- mt
 L["Copy %s: %s"] = "Копия %s: %s" -- mt

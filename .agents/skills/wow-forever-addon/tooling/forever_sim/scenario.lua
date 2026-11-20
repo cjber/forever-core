@@ -457,6 +457,73 @@ function M.install(Sim)
 		return self
 	end
 
+	-- An item in a bag slot, as the client would hold it: BAG_UPDATE for that bag, then BAG_UPDATE_DELAYED. The item
+	-- must exist in the client's data (or sim.world.items); nil count empties the slot.
+	function Sim:putInBag(bag, slot, itemID, count)
+		local b = self.world.bags[bag] or { size = 0 }
+		self.world.bags[bag] = b
+		assert(slot >= 1 and slot <= (b.size or 0), "bag " .. bag .. " has no slot " .. slot)
+		if itemID then
+			assert(self.item(itemID), "no client data has item " .. tostring(itemID))
+			b[slot] = { itemID = itemID, count = count or 1 }
+		else
+			b[slot] = nil
+		end
+		self.events.fire("BAG_UPDATE", bag)
+		self.events.fire("BAG_UPDATE_DELAYED")
+		self:advance(0.02)
+		return self
+	end
+
+	-- A quest giver's reward panel: QuestFrame shows, QUEST_COMPLETE draws the reward panel through the client's
+	-- QuestInfo. reward = { title, text, choices = { itemID or {itemID, count} }, rewards = { ... }, money, xp }.
+	function Sim:openQuestReward(questID, reward)
+		reward = reward or {}
+		local function entries(list)
+			local out = {}
+			for i, entry in ipairs(list or {}) do
+				entry = type(entry) == "table" and entry or { entry, 1 }
+				assert(self.item(entry[1]), "quest reward item " .. tostring(entry[1]) .. " has no client data")
+				out[i] = { entry[1], entry[2] or 1 }
+			end
+			return out
+		end
+		self.world.questReward = {
+			questID = questID,
+			title = reward.title or ("Quest " .. questID),
+			text = reward.text or "",
+			choices = entries(reward.choices),
+			rewards = entries(reward.rewards),
+			money = reward.money or 0,
+			xp = reward.xp or 0,
+		}
+		local frame = self.G.QuestFrame
+		if frame then
+			self:showPanel(frame)
+			self.events.fire("QUEST_COMPLETE")
+			self:advance(0.1)
+		end
+		return frame
+	end
+
+	-- Turn the quest in from the reward panel: pick choice (1-based, nil when there is none) and press Complete.
+	function Sim:completeQuestReward(choice)
+		local G = self.G
+		self.run(function()
+			G.QuestInfoFrame.itemChoice = choice or 0
+		end)
+		self:click(G.QuestFrameCompleteQuestButton)
+		self:advance(0.1)
+		return self
+	end
+
+	function Sim:closeQuestReward()
+		self.run(function()
+			self.G.CloseQuest()
+		end)
+		self:advance(0.1)
+	end
+
 	function Sim:closeMerchant()
 		local frame = self.G.MerchantFrame
 		if frame then

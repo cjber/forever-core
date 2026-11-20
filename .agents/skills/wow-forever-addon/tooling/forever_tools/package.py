@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import core_pin, lua51, widget_handlers
+from . import core_archive, core_pin, lua51, widget_handlers
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -389,6 +389,8 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     # PR CI compares the three committed copies offline. The release workflow checks --latest immediately
     # before uploading, so a new core awaiting store moderation does not block an unrelated addon PR.
     problems += core_pin.check(root)
+    if policy.addons != (core_pin.CORE_FOLDER,):
+        problems += core_archive.check(root, args.release_dir)
     # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
     problems += widget_handlers.check_root(args.release_dir, policy.addons)
     for addon in policy.addons:

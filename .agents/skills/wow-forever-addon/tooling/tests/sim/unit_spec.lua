@@ -493,6 +493,18 @@ test("widgets: a Frame refuses OnClick, as the client does", function()
 	eq(ok, false, "SetScript OnClick nil")
 end)
 
+test("widgets: a FontString takes OnEnter and OnLeave, as every StaticPopup's Text does", function()
+	Taint.current = nil
+	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
+	widgets.finalize()
+	local text = widgets.new("FontString")
+	local enter = function() end
+	text:SetScript("OnEnter", enter)
+	text:SetScript("OnLeave", nil)
+	eq(text:GetScript("OnEnter"), enter, "FontString OnEnter")
+	eq(pcall(text.SetScript, text, "OnClick", nil), false, "FontString OnClick")
+end)
+
 test("widgets: a Button supports OnClick and the scripts it inherits, in any case", function()
 	Taint.current = nil
 	local widgets = require("widgets").build({ G = {}, env = {}, taint = Taint, docs = { enums = {}, widgets = {} } })
