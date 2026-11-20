@@ -76,15 +76,33 @@ class RateLimitTest(unittest.TestCase):
                 self.assertEqual([call.args[0] for call in sleep.call_args_list], [60, 60, 60])
                 self.assertEqual(run.call_count, 3)
 
-    def test_graphql_errors_of_other_types_do_not_retry(self):
+    def test_other_graphql_errors_and_odd_bodies_do_not_retry(self):
+        forbidden = '{"errors": [{"type": "FORBIDDEN"}]}'
+        for status, headers, body in (
+            (200, "", forbidden),
+            (403, "Retry-After: 5\r\n", forbidden),
+            (200, "", '{"errors": 1}'),
+            (200, "", '["errors"]'),
+            (502, "", "not json"),
+        ):
+            with (
+                self.subTest(status=status, body=body),
+                mock.patch.object(sync, "run", return_value=self.response(status, headers, body, "error")) as run,
+                mock.patch.object(time, "sleep") as sleep,
+                self.assertRaises(sync.SyncError),
+            ):
+                sync.api("graphql", "--input", "body.json")
+            run.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_rest_bodies_are_not_read_as_graphql(self):
+        limited = '{"errors": [{"type": "RATE_LIMITED"}]}'
         with (
-            mock.patch.object(
-                sync, "run", return_value=self.response(200, body='{"errors": [{"type": "FORBIDDEN"}]}')
-            ) as run,
+            mock.patch.object(sync, "run", return_value=self.response(200, body=limited)) as run,
             mock.patch.object(time, "sleep") as sleep,
             self.assertRaises(sync.SyncError),
         ):
-            sync.api("graphql", "--input", "body.json")
+            sync.gh("api", "repos/cjber/test")
         run.assert_called_once()
         sleep.assert_not_called()
 

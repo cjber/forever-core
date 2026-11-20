@@ -164,13 +164,15 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return run(["git", *args], cwd=root, check=check)
 
 
-def graphql_rate_limited(body: str) -> bool:
-    """Whether a GraphQL response body carries a RATE_LIMITED error, the field GitHub sets for either rate limit."""
+def graphql_error_types(body: str) -> set[str] | None:
+    """The errors[].type values of a GraphQL response body, or None when it carries no error list."""
     try:
-        errors = json.loads(body).get("errors") or []
+        errors = json.loads(body).get("errors")
     except (json.JSONDecodeError, AttributeError):
-        return False
-    return any(isinstance(error, dict) and error.get("type") == "RATE_LIMITED" for error in errors)
+        return None
+    if not isinstance(errors, list) or not errors:
+        return None
+    return {error.get("type") for error in errors if isinstance(error, dict)}
 
 
 def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -190,9 +192,11 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
             }
             result = subprocess.CompletedProcess(result.args, result.returncode, body, result.stderr)
         delay = None
-        # GraphQL reports a rate limit as status 200 or 403 with a RATE_LIMITED error, often without retry-after.
-        limited = status == 429 or (status in (200, 403) and graphql_rate_limited(result.stdout))
-        if result.returncode and (status in (403, 429) or limited):
+        # GraphQL reports a rate limit as status 200 or 403 with a RATE_LIMITED error, often without retry-after;
+        # any other GraphQL error (FORBIDDEN, NOT_FOUND) is final whatever its headers say.
+        types = graphql_error_types(result.stdout) if args[1:2] == ("graphql",) else None
+        limited = status == 429 or (types is not None and "RATE_LIMITED" in types)
+        if result.returncode and (limited or (status == 403 and types is None)):
             try:
                 if "retry-after" in headers:
                     delay = max(0, float(headers["retry-after"]))
