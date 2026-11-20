@@ -823,19 +823,26 @@ function M.build(sim)
 	-- dump). A name the client does not define reads nil, as in the client, and RegisterCVar adds one.
 	local cvarDefaults = {}
 	sim.cvars = {}
+	-- The client matches cvar names in any case; values are kept under the client's own spelling.
+	local spelling = {}
 	for name, value in pairs(Surface.cvars) do
-		cvarDefaults[name], sim.cvars[name] = value, value
+		cvarDefaults[name], sim.cvars[name], spelling[name:lower()] = value, value, name
+	end
+	local function known(name)
+		return type(name) == "string" and spelling[name:lower()] or nil
 	end
 	local function cvar(name)
-		return sim.cvars[name]
+		local key = known(name)
+		return key and sim.cvars[key]
 	end
 	sim.impl["C_CVar.GetCVar"] = cvar
 	-- Setting a name the client does not define changes nothing and reports false.
 	sim.impl["C_CVar.SetCVar"] = function(name, value)
-		if cvarDefaults[name] == nil then
+		local key = known(name)
+		if not key then
 			return false
 		end
-		sim.cvars[name] = value ~= nil and tostring(value) or nil
+		sim.cvars[key] = value ~= nil and tostring(value) or nil
 		return true
 	end
 	sim.impl["C_CVar.GetCVarBool"] = function(name)
@@ -843,11 +850,13 @@ function M.build(sim)
 		return v == "1" or v == "true"
 	end
 	sim.impl["C_CVar.GetCVarDefault"] = function(name)
-		return cvarDefaults[name]
+		local key = known(name)
+		return key and cvarDefaults[key]
 	end
 	-- A registered cvar's value is also its default, as GetCVarDefault reports in the client.
 	sim.impl["C_CVar.RegisterCVar"] = function(name, value)
-		if sim.cvars[name] == nil then
+		if not known(name) then
+			spelling[name:lower()] = name
 			sim.cvars[name] = value ~= nil and tostring(value) or nil
 			cvarDefaults[name] = sim.cvars[name]
 		end

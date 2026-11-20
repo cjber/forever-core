@@ -51,17 +51,21 @@ local CVAR_READS = {
 }
 
 test("every cvar the loaded Blizzard code reads by name is one the client defines", function()
-	local registered, missing = {}, {}
+	-- The client matches cvar names in any case.
+	local defined, missing = {}, {}
+	for name in pairs(Surface.cvars) do
+		defined[name:lower()] = true
+	end
 	for _, path in ipairs(files) do
 		for name in read(path):gmatch('RegisterCVar%(%s*"([%w_]+)"') do
-			registered[name] = true
+			defined[name:lower()] = true
 		end
 	end
 	for _, path in ipairs(files) do
 		local text = read(path)
 		for _, pattern in ipairs(CVAR_READS) do
 			for name in text:gmatch(pattern) do
-				if Surface.cvars[name] == nil and not registered[name] then
+				if not defined[name:lower()] then
 					missing[#missing + 1] = name .. " (" .. path:gsub(".*/Interface/", "") .. ")"
 				end
 			end
@@ -96,6 +100,7 @@ end)
 test("the sim reads cvars as the client does", function()
 	local G = sim.G
 	assert(G.GetCVar("userFontScale") == Surface.cvars.userFontScale, "a defined cvar reads its default")
+	assert(G.GetCVar("USERFONTSCALE") == Surface.cvars.userFontScale, "cvar names match in any case")
 	assert(G.GetCVar("notACVarTheClientDefines") == nil, "an undefined cvar reads nil")
 	assert(G.SetCVar("notACVarTheClientDefines", "1") == false, "setting an undefined cvar changes nothing")
 	assert(G.GetCVar("notACVarTheClientDefines") == nil)

@@ -7,7 +7,7 @@
   },
   "files": {
     "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "client.lua": "f39eda8e01cc1d0db306be6ff4164fe961cc9e142dcb12a8bcb4c08b931748b0",
+    "client.lua": "1622ccd680f95ed5f440800b7c0de2f7e6b58d5a263aa3a50a8c3ad0924e07d6",
     "clientdata.lua": "303930badfe8576b9e05cba367709e5a34e414074c6d2c7e418d81405ca3f6f1",
     "core_load.lua": "a2c6b4146b0f6a56c34dca6263b0cccd0c2c4a20c12982151bab1600e9adfa90",
     "docs.lua": "2d47348e20f34b1274d857b46b0ed4cc12ced502f16034271303565c3d248e04",
