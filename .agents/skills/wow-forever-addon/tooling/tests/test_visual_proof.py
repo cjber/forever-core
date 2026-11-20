@@ -1127,6 +1127,30 @@ class VisualProofTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "git cannot read the work tree"):
                 pkgmeta.read(root)
 
+    def test_every_repository_layout_git_accepts_is_a_work_tree(self):
+        failed = subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: detected dubious ownership")
+        for layout in ("unborn symlinked HEAD", "GIT_OBJECT_DIRECTORY", "gitdir file"):
+            with self.subTest(layout=layout):
+                root = self.checkout()
+                git = root / ".git"
+                environment = {}
+                if layout == "gitdir file":
+                    git.write_text("gitdir: ../elsewhere/.git/worktrees/Addon\n", encoding="utf-8")
+                else:
+                    (git / "refs").mkdir(parents=True)
+                    if layout == "unborn symlinked HEAD":
+                        (git / "objects").mkdir()
+                        (git / "HEAD").symlink_to("refs/heads/main")
+                    else:
+                        (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+                        environment["GIT_OBJECT_DIRECTORY"] = str(self.elsewhere())
+                with (
+                    mock.patch.dict(os.environ, environment),
+                    mock.patch.object(pkgmeta.subprocess, "run", return_value=failed),
+                ):
+                    with self.assertRaisesRegex(ValueError, "git cannot read the work tree"):
+                        pkgmeta.read(root)
+
     def test_a_non_git_fixture_ignores_a_git_rev_parse_failure(self):
         root = self.checkout()
         failed = subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: not a git repository")

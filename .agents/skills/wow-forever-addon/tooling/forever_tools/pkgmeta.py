@@ -14,6 +14,7 @@ paths and is read as-is.
 """
 
 import fnmatch
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -304,8 +305,9 @@ def _globs(root: Path, entries: list[str]) -> tuple[str, ...]:
 def _repository(directory: Path) -> bool:
     """Whether `directory/.git` is one git's discovery accepts, by git's own test (`setup.c`).
 
-    A `.git` file must name its git directory with `gitdir:`; a `.git` directory must hold `HEAD`, `objects` and
-    `refs`. Any other `.git` (a stray empty folder, say) git walks past, so it marks no work tree here either.
+    A `.git` file must name its git directory with `gitdir:`; a `.git` directory must hold `refs`, `objects` (or the
+    `GIT_OBJECT_DIRECTORY` git reads instead) and `HEAD`, a file or a symlink into `refs/` (an unborn branch's
+    dangles). Any other `.git` (a stray empty folder, say) git walks past, so it marks no work tree here either.
     """
     entry = directory / ".git"
     if entry.is_file():
@@ -313,7 +315,16 @@ def _repository(directory: Path) -> bool:
             return entry.read_text(encoding="utf-8", errors="replace").startswith("gitdir:")
         except OSError:
             return False
-    return (entry / "HEAD").is_file() and (entry / "objects").is_dir() and (entry / "refs").is_dir()
+    head = entry / "HEAD"
+    if head.is_symlink():
+        try:
+            valid_head = os.readlink(head).startswith("refs/")
+        except OSError:
+            valid_head = False
+    else:
+        valid_head = head.is_file()
+    objects = os.environ.get("GIT_OBJECT_DIRECTORY") or entry / "objects"
+    return valid_head and Path(objects).is_dir() and (entry / "refs").is_dir()
 
 
 def _work_tree(root: Path) -> bool:
