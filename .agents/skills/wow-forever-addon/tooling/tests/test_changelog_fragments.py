@@ -98,6 +98,18 @@ class FragmentsTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "newer than every existing section"):
             changelog.main(root, ["release", "1.0.1"])
 
+    def test_first_changelog_on_a_new_repository_passes(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.git(root, "init", "-b", "main")
+        (root / "README.md").write_text("Fresh.\n")
+        self.commit(root)
+        self.git(root, "checkout", "-b", "first")
+        (root / "CHANGELOG.md").write_text(BASE)
+        self.commit(root)
+        changelog.check_base(root, "main")
+
     def test_history_edits_rejected(self):
         for text in [
             BASE + "- Bad.\n",

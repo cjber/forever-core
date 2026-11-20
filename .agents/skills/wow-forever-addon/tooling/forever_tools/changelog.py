@@ -249,6 +249,9 @@ def check_base(root: Path, base: str) -> None:
         return subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=True).stdout
 
     ancestor = git("merge-base", base, "HEAD").strip()
+    # A new repository's first pull request adds the changelog: the base has no released history to protect.
+    if subprocess.run(["git", "cat-file", "-e", f"{ancestor}:CHANGELOG.md"], cwd=root, capture_output=True).returncode:
+        return
     before = git("show", f"{ancestor}:CHANGELOG.md")
     match = UNRELEASED.search(before)
     if match is not None:
