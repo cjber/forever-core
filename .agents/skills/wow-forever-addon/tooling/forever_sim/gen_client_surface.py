@@ -70,7 +70,7 @@ end
 """
 
 
-def read(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]], dict[str, str], dict[str, str]]:
+def read(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]], dict[str, str], dict[str, str], list[str]]:
     """The dump's interface, cvar defaults (Lua \\ddd escaped), scripts per widget type, and what it could not read."""
     result = subprocess.run(
         ["luajit", "-e", READER],
