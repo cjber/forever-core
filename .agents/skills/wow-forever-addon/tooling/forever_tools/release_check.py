@@ -5,6 +5,11 @@ on main, and the `headless-smoke` commit status the headless client posts after 
 `/forever selftest` and found no Lua errors. A missing or pending status waits for `forever_client.py smoke`, and a
 failed one prints what it found, so a release never ships a build nobody loaded.
 
+A version publishes once. The tag names one build, so a release whose GitHub release already carries a package, or
+whose version CurseForge already lists, is refused: a re-tagged or re-run version would put a second, different build
+under a number players already installed, and their clients never replace it (cjber/skillup-forever#901). Ship the
+change as the next version instead.
+
 A manual release may add `--skip-visual-proof` when the only job that failed is `visual-proof`, the recorded client
 session a maintainer waives on purpose. Every other job must still pass, and the headless smoke is never skipped.
 """
@@ -14,7 +19,9 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 
 CI_WORKFLOW = ".github/workflows/ci.yml"
 # The commit status `python3 tools/headless/forever_client.py smoke --repo R --ref SHA` posts, which
@@ -106,6 +113,88 @@ def jobs(repository: str, run_id: int) -> list[dict]:
     return [job for page in pages for job in page["jobs"]]
 
 
+def release_tag(environ: dict) -> str | None:
+    """The tag this run publishes: the pushed tag, or `v` and the version a manual run was given."""
+    if environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+        return environ.get("GITHUB_REF_NAME") or None
+    event = environ.get("GITHUB_EVENT_PATH")
+    if not event:
+        return None
+    version = (json.loads(Path(event).read_text(encoding="utf-8")).get("inputs") or {}).get("version")
+    return f"v{version}" if version else None
+
+
+def curseforge_projects(root: Path) -> list[str]:
+    """The CurseForge project IDs the root TOC files name; none for an addon that ships only on GitHub."""
+    projects = set()
+    for toc in sorted(root.glob("*.toc")):
+        for line in toc.read_text(encoding="utf-8-sig").splitlines():
+            key, _, value = line.removeprefix("##").partition(":")
+            if line.startswith("##") and key.strip() == "X-Curse-Project-ID" and value.strip():
+                projects.add(value.strip())
+    return sorted(projects)
+
+
+def names_version(file_name: str, tag: str) -> bool:
+    """Whether a package name carries this tag: the packager names files `<Package>-<tag>[-<label>].zip`."""
+    return tag in file_name.removesuffix(".zip").split("-")
+
+
+def curseforge_json(url: str) -> dict:
+    """One page of CurseForge's public file listing, the one the store audit reads without a key."""
+    with urllib.request.urlopen(urllib.request.Request(url), timeout=60) as response:
+        return json.load(response)
+
+
+# Reads one URL's JSON, so `curseforge_files` stays testable over recorded pages.
+Fetch = Callable[[str], dict]
+
+
+def curseforge_files(project: str, fetch: Fetch = curseforge_json) -> list[str]:
+    """Every file name the project lists, in any release type or review state."""
+    names, page = [], 0
+    while True:
+        # pageIndex counts pages, not files.
+        listing = fetch(f"https://www.curseforge.com/api/v1/mods/{project}/files?pageIndex={page}&pageSize=50")
+        names.extend(item["fileName"] for item in listing["data"])
+        page += 1
+        if not listing["data"] or len(names) >= listing["pagination"]["totalCount"]:
+            return names
+
+
+def github_release_assets(repository: str, tag: str) -> list[str] | None:
+    """The asset names on the GitHub release for this tag, or None when it has no release, drafts included."""
+    pages = json.loads(
+        subprocess.check_output(
+            ["gh", "api", "--paginate", "--slurp", f"repos/{repository}/releases?per_page=100"],
+            text=True,
+        )
+    )
+    for release in (release for page in pages for release in page):
+        if release.get("tag_name") == tag:
+            return [asset["name"] for asset in release.get("assets", [])]
+    return None
+
+
+def published_refusal(
+    tag: str,
+    github_assets: list[str] | None,
+    store_files: dict[str, list[str]],
+) -> str | None:
+    """Why this version may not publish, or None when no GitHub package and no CurseForge file carries it yet."""
+    packages = [name for name in github_assets or [] if name.endswith(".zip")]
+    if packages:
+        return f"{tag} is already published on GitHub ({', '.join(packages)}); release the change as the next version"
+    for project, names in store_files.items():
+        listed = [name for name in names if names_version(name, tag)]
+        if listed:
+            return (
+                f"{tag} is already on CurseForge project {project} ({', '.join(listed)}); "
+                "release the change as the next version"
+            )
+    return None
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -144,7 +233,17 @@ def main(argv: list[str] | None = None) -> None:
     refusal = smoke_refusal(headless_smoke(statuses(repository, commit)), repository, commit)
     if refusal:
         sys.exit(f"Release blocked: {refusal}")
+    tag = release_tag(dict(os.environ))
+    if tag is None:
+        sys.exit("Release blocked: neither a pushed tag nor a manual run's version names the release")
+    store = {project: curseforge_files(project) for project in curseforge_projects(Path.cwd())}
+    refusal = published_refusal(tag, github_release_assets(repository, tag), store)
+    if refusal:
+        sys.exit(f"Release blocked: {refusal}")
     if skipped:
         print(f"Release skips the failed {VISUAL_PROOF_JOB} job on {commit}: --skip-visual-proof was given")
     detail = f" (skipping {VISUAL_PROOF_JOB})" if skipped else ""
-    print(f"Release verified: full CI passed on main{detail} and {SMOKE_CONTEXT} passed at {commit}")
+    print(
+        f"Release verified: full CI passed on main{detail} and {SMOKE_CONTEXT} passed at {commit}, "
+        f"and {tag} is not published yet"
+    )

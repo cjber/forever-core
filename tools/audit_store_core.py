@@ -63,9 +63,10 @@ def cf_json(url, *, headers=None):
 def curseforge_asset(project, *, fetch=cf_json, key=None):
     """Resolve the newest stable Forever file players can download from this project."""
     base = f"https://www.curseforge.com/api/v1/mods/{project}/files"
-    page = 0
+    page = seen = 0
     while True:
         listing = fetch(f"{base}?pageIndex={page}&pageSize=50&releaseType=1")
+        seen += len(listing["data"])
         for item in listing["data"]:
             if (
                 item["releaseType"] != CF_RELEASE
@@ -83,8 +84,9 @@ def curseforge_asset(project, *, fetch=cf_json, key=None):
                 # The public listing includes no download URL. ForgeCDN splits the file ID into two path segments.
                 url = f"https://edge.forgecdn.net/files/{file_id // 1000}/{file_id % 1000}/{quote(name, safe='')}"
             return {"name": name, "browser_download_url": url}
-        page += len(listing["data"])
-        if not listing["data"] or page >= listing["pagination"]["totalCount"]:
+        # pageIndex counts pages, not files.
+        page += 1
+        if not listing["data"] or seen >= listing["pagination"]["totalCount"]:
             raise ReleasedError(f"CurseForge project {project} has no approved Forever release")
 
 
