@@ -43,6 +43,9 @@ CACHE = REPO / "tools/.cache/released"
 # The packager names a release's addon asset `<Folder>-<tag>-forever.zip` and also uploads `release.json`, its metadata.
 ARCHIVE = ".zip"
 ASSET = "-forever.zip"
+MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
+MAX_ZIP_MEMBERS = 20_000
 # A consumer bundles core in its zip; the candidate core is the one under test, so that folder is dropped. Top-level
 # library folders are dropped too: they are not the addon whose release behaviour this checks.
 BUNDLED = "ForeverCore"
@@ -74,26 +77,33 @@ def latest_release(repo: str) -> dict | None:
         raise ReleasedError(f"could not read {OWNER}/{repo}'s latest release: {error}") from None
 
 
-def addon_asset(release: dict) -> dict | None:
-    """The release's addon zip, or None when it shipped none.
+def addon_assets(release: dict) -> list[dict]:
+    """The release's Forever addon zips, falling back to other zip assets.
 
     The packager's `-forever.zip` asset is preferred; any other `.zip` is the next choice. `release.json` and every
     other asset the packager uploads are never the addon.
     """
     assets = [asset for asset in release.get("assets") or [] if str(asset.get("name") or "").endswith(ARCHIVE)]
     forever = [asset for asset in assets if str(asset.get("name") or "").endswith(ASSET)]
-    chosen = forever or assets
-    return sorted(chosen, key=lambda asset: str(asset.get("name")))[0] if chosen else None
+    return sorted(forever or assets, key=lambda asset: str(asset.get("name")))
 
 
-def download(asset: dict, destination: Path) -> Path:
+def addon_asset(release: dict) -> dict | None:
+    """Choose one addon zip for the released suite loader."""
+    return next(iter(addon_assets(release)), None)
+
+
+def download(asset: dict, destination: Path, request=authorized) -> Path:
     """Fetch one release asset to `destination`, authenticated only when a token is set."""
     url = asset.get("browser_download_url") or asset.get("url")
     if not url:
         raise ReleasedError(f"release asset {asset.get('name')!r} has no download URL")
     try:
-        with urllib.request.urlopen(authorized(url), timeout=120) as response:
-            destination.write_bytes(response.read())
+        with urllib.request.urlopen(request(url), timeout=120) as response:
+            data = response.read(MAX_DOWNLOAD_BYTES + 1)
+        if len(data) > MAX_DOWNLOAD_BYTES:
+            raise ReleasedError(f"{asset.get('name')}: download exceeds {MAX_DOWNLOAD_BYTES} byte limit")
+        destination.write_bytes(data)
     except (OSError, urllib.error.URLError, TimeoutError) as error:
         raise ReleasedError(f"could not download {asset.get('name')}: {error}") from None
     return destination
@@ -114,16 +124,29 @@ def extract(archive: Path, destination: Path) -> None:
     Nothing is written outside `destination`: a member is joined to it only after `member_path` accepted it, and every
     entry is written as a regular file, so an archive cannot create a link out of the cache.
     """
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.mkdir(parents=True)
     try:
         with zipfile.ZipFile(archive) as package:
-            members = [(member_path(info.filename), info) for info in package.infolist()]
+            infos = package.infolist()
+            if len(infos) > MAX_ZIP_MEMBERS:
+                raise ReleasedError(f"{archive.name}: member count exceeds {MAX_ZIP_MEMBERS} limit")
+            if sum(info.file_size for info in infos) > MAX_EXTRACTED_BYTES:
+                raise ReleasedError(f"{archive.name}: extracted size exceeds {MAX_EXTRACTED_BYTES} byte limit")
+            members = [(member_path(info.filename), info) for info in infos]
+            if destination.exists():
+                shutil.rmtree(destination)
+            destination.mkdir(parents=True)
+            installed = set()
             for path, info in members:
-                if info.is_dir() or not path.parts:
+                if not path.parts:
                     continue
+                key = tuple(part.rstrip(" .").casefold() for part in path.parts)
+                if key in installed:
+                    raise ReleasedError(f"refusing duplicate installed member {info.filename!r}")
+                installed.add(key)
                 target = destination.joinpath(*path.parts)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with package.open(info) as source, target.open("wb") as sink:
                     shutil.copyfileobj(source, sink)

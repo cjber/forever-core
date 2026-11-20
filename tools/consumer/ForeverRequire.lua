@@ -146,14 +146,29 @@ local function answer(text, slash)
 		_G.SlashCmdList[slash.key] = repeatLine
 	end
 end
----@param ready boolean
----@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key
-function ns.ForeverRequire(ready, slash)
-	if ready then
-		return true
+-- An addon that carries its own ForeverCore (Libs/ForeverCore) needs no separate install: its copy registered with the
+-- loader. When it could not start, an older standalone ForeverCore that the loader would not adopt is the one install
+-- to fix; anything else is a broken package, which reinstalling the addon fixes. Nil when the addon carries no copy.
+local function embeddedFailure(own)
+	local loader = rawget(_G, "ForeverCoreLoader")
+	if type(loader) ~= "table" or type(loader.Candidates) ~= "function" then
+		return nil
 	end
-	ns.broken = true
-	local own = title(addonName, addonName)
+	local carried = false
+	for _, copy in ipairs(loader.Candidates()) do
+		carried = carried or copy.folder == addonName
+	end
+	if not carried then
+		return nil
+	end
+	local published = rawget(_G, "ForeverCore")
+	if type(published) == "table" and published.loaderSchema ~= 1 and installed() then
+		return phrase("%s: %s is out of date. Update it to fix this.", own, "ForeverCore")
+	end
+	return phrase("%s could not start. Reinstall %s to fix this.", own, own)
+end
+-- The line for an addon that relies on a separately installed ForeverCore.
+local function standaloneFailure(own)
 	local core = installed()
 	local other = foreign()
 	local text
@@ -182,6 +197,17 @@ function ns.ForeverRequire(ready, slash)
 			text = phrase("%s could not start. Reinstall %s to fix this.", own, own)
 		end
 	end
+	return text
+end
+---@param ready boolean
+---@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key
+function ns.ForeverRequire(ready, slash)
+	if ready then
+		return true
+	end
+	ns.broken = true
+	local own = title(addonName, addonName)
+	local text = embeddedFailure(own) or standaloneFailure(own)
 	answer(text, slash)
 	-- This runs while the addon's files load, so the loading screen covers the line and it has faded before the world is
 	-- drawn (#659). A player who is still logging in sees it on the first PLAYER_ENTERING_WORLD instead, once.

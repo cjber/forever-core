@@ -12,18 +12,42 @@ local function session(order, saved)
 	setfenv(loaderChunk, env)()
 	local loader = env.ForeverCoreLoader
 	local boots = 0
+	-- Defining the runtime must leave the client untouched, so the loader can refuse a copy after its chunks ran and
+	-- before its Start: every frame, frame pool and secure hook a core file makes is made by Start or later.
+	local defining, effects = false, {}
+	for _, name in ipairs({ "CreateFrame", "CreateFramePoolCollection", "hooksecurefunc", "seterrorhandler" }) do
+		local original = env[name] or function() end
+		env[name] = function(...)
+			if defining then
+				effects[#effects + 1] = name .. "(" .. tostring((select(2, ...))) .. ")"
+			end
+			return original(...)
+		end
+	end
 	for _, folder in ipairs(order) do
 		local build = folder == "A" and 1012001 or 1012002
 		local copy = loader.Begin(folder, build, "build-" .. build)
 		copy:Define(function()
 			boots = boots + 1
+			defining = true
 		end)
 		for _, entry in ipairs(Toc.files(".", "ForeverCore.toc")) do
 			if entry.kind == "lua" and entry.path ~= "Core/Loader.lua" then
 				local chunk = setfenv(assert(loadfile(entry.path)), env)
-				copy:Define(chunk)
+				copy:Define(function(...)
+					local before = #effects
+					chunk(...)
+					for index = before + 1, #effects do
+						effects[index] = entry.path .. ": " .. effects[index]
+					end
+				end)
 			end
 		end
+		copy:Define(function(_, ns)
+			defining = false
+			-- What the generated End.lua defines: the copy's own tracker line template.
+			ns.TrackerLine.template = folder .. "_ForeverCore_ForeverTrackerLineTemplate"
+		end)
 		check(copy:Seal(), "real runtime seals")
 		local name = folder .. "DB"
 		env[name] = saved and saved[folder] or {}
@@ -54,6 +78,7 @@ local function session(order, saved)
 	check(loader.Error() == nil, "real runtime boots: " .. tostring(loader.Error()))
 	check(loader.LoginError() == nil, "real runtime logs in: " .. tostring(loader.LoginError()))
 	check(boots == 1 and callbacks == 1, "only one runtime and consumer startup run")
+	check(#effects == 0, "defining the runtime creates nothing before Start: " .. table.concat(effects, ", "))
 	check(loader.Namespace().loginDone, "explicit Login does not depend on redispatch")
 	local runtime = loader.Namespace()
 	local stack = "@" .. loader.Selected().root:gsub("\\", "/") .. "/Core/Log.lua:3"

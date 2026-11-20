@@ -569,9 +569,56 @@ class ReleaseGateCheckTest(unittest.TestCase):
             stream.write("          WAGO_API_TOKEN: token\n")
         self.assertTrue(any("retired WAGO_API_TOKEN" in failure for failure in self.check()))
 
-    def test_the_gate_above_the_packager_passes(self):
+    def test_unadopted_release_warns_without_failing(self):
         self.write()
-        self.assertEqual(self.check(), [])
+        with self.workflow.open("a") as stream:
+            stream.write(f"      # run: {check_consumers.ARCHIVE_COMMAND}\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.check(), [])
+        self.assertIn("::warning::legacy-forever: .github/workflows/release.yml", out.getvalue())
+        self.assertIn("docs/dependency-transition.md#check-the-built-consumer-zip", out.getvalue())
+
+    def test_documented_release_sequence_passes_and_each_bypass_fails(self):
+        example = (check_consumers.CORE_ROOT / "docs/dependency-transition.md").read_text().split("```yaml\n")[-1]
+        steps = example.split("```", 1)[0]
+        self.write(packager=False)
+        prelude = self.workflow.read_text()
+
+        def check(sequence):
+            self.workflow.write_text(prelude + "\n".join(f"      {line}" for line in sequence.splitlines()) + "\n")
+            return self.check()
+
+        self.assertEqual(check(steps), [])
+        for mutation in (
+            steps.replace("--latest", ""),
+            steps.replace("- name: Upload the validated ZIP", "- name: Upload the validated ZIP\n  if: false"),
+            steps.replace("  id: validated", "  if: false\n  id: validated"),
+            steps.replace("  id: validated", "  continue-on-error: true\n  id: validated"),
+            steps.replace("args: -d", "args: -z"),
+            steps.replace("args: -c -z", "args: -c"),
+            steps.replace("outputs.archive }}", "outputs.unchecked_archive }}"),
+            steps.replace("sha256sum --check --status", "cat"),
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertTrue(check(mutation))
+
+    def test_quoted_workflow_accepts_validator_and_counts_second_upload(self):
+        example = (check_consumers.CORE_ROOT / "docs/dependency-transition.md").read_text().split("```yaml\n")[-1]
+        steps = example.split("```", 1)[0]
+        command = check_consumers.ARCHIVE_COMMAND
+        steps = steps.replace(f"run: {command}", f"'run': \"{command}\"")
+        steps = steps.replace("uses: BigWigsMods/packager@", '"uses": BigWigsMods/packager@')
+        self.write(packager=False)
+        prelude = self.workflow.read_text().replace("jobs:", '"jobs":').replace("steps:", "'steps':")
+        self.workflow.write_text(prelude + "\n".join(f"      {line}" for line in steps.splitlines()) + "\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.check(), [])
+        self.assertEqual(out.getvalue(), "")
+        with self.workflow.open("a") as stream:
+            stream.write('      - "uses": "BigWigsMods/packager@unchecked" # second upload\n')
+        self.assertIn("upload must use the validated ZIP", self.check()[0])
 
     def test_a_missing_gate_fails(self):
         self.write(gate=False)

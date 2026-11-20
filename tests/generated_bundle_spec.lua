@@ -157,6 +157,10 @@ end
 -- as a compatible legacy runtime or replaced with a second active runtime.
 do
 	local env = FakeClient.new()
+	local handled = {}
+	env.errorHandler = function(message)
+		handled[#handled + 1] = tostring(message)
+	end
 	local legacy = {
 		API = 1,
 		Register = function()
@@ -173,8 +177,66 @@ do
 	check(env.ForeverCore == legacy, "unsupported existing facade is never overwritten")
 	check(env.ConsumerStarts == nil, "unsupported API cannot initialize consumer")
 	check(
-		string.find(env.ForeverCoreLoader.CallbackError() or "", "incompatible ForeverCore API", 1, true),
+		string.find(env.ForeverCoreLoader.Error() or "", "too old for the embedded copies", 1, true),
 		"unsupported legacy API is reported"
+	)
+	check(env.ForeverCoreLoader.Selected() == nil, "an unsupported legacy facade is never selected")
+	check(#handled == 1 and handled[1]:find("too old", 1, true), "the client error handler gets the named failure once")
+	check(env.ForeverCoreLoader.CallbackError() == nil, "and the consumer's ready step stays quiet")
+end
+-- A host loaded after another copy is running (load on demand) joins that copy. Its own copy is recorded as late, its
+-- files load without a packaging error, its ready entry starts once its own ADDON_LOADED has restored its account
+-- table, and on the next frame that table gets the live store's mirror.
+do
+	local env, frames = FakeClient.new()
+	env.ObjectiveTrackerFrame = nil
+	local function event(name, addon)
+		local listeners = {}
+		for _, frame in ipairs(frames) do
+			if frame.events[name] then
+				listeners[#listeners + 1] = frame
+			end
+		end
+		for _, frame in ipairs(listeners) do
+			frame.scripts.OnEvent(frame, name, addon)
+		end
+	end
+	local function load(folder)
+		local host = {}
+		for _, file in ipairs(Toc.files(root .. "/" .. folder, folder .. ".toc")) do
+			if file.kind == "lua" then
+				setfenv(assert(loadfile(file.path)), env)(folder, host)
+			end
+		end
+	end
+	load("ConsumerA")
+	event("ADDON_LOADED", "ConsumerA")
+	event("VARIABLES_LOADED")
+	event("PLAYER_LOGIN")
+	local loader = env.ForeverCoreLoader
+	check(loader.Selected().folder == "ConsumerA", "the first host runs")
+	env.IsLoggedIn = function()
+		return true
+	end
+	local loaded, err = pcall(load, "ConsumerB")
+	check(loaded, "a late host loads without a packaging error: " .. tostring(err))
+	event("ADDON_LOADED", "ConsumerB")
+	check(env.ConsumerStarts == 2, "the late host's ready entry starts once, against the running copy")
+	check(loader.Selected().folder == "ConsumerA", "the running copy stays")
+	local late = 0
+	for _, rejection in ipairs(loader.Rejections()) do
+		check(rejection.folder == "ConsumerB" and rejection.reason == "late", "only the late host is recorded, as late")
+		late = late + 1
+	end
+	check(late > 0, "the late copy is recorded")
+	local timers = env.timers
+	env.timers = {}
+	for _, timer in ipairs(timers) do
+		timer()
+	end
+	check(
+		type(env.ConsumerBDB) == "table" and env.ConsumerBDB.ForeverCoreStore == loader.Namespace().Store(),
+		"the late host's account table mirrors the live store"
 	)
 end
 -- Real unwrapped canonical source is the supported API2 legacy facade fixture.

@@ -378,6 +378,10 @@ local function StartupReport(focus)
 		if login then
 			lines[#lines + 1] = L["Login error: %s"]:format(login)
 		end
+		local warning = type(loader.Warning) == "function" and loader.Warning() or nil
+		if warning then
+			lines[#lines + 1] = L["Warning: %s"]:format(warning)
+		end
 		local rejections = type(loader.Rejections) == "function" and loader.Rejections() or {}
 		for _, rejection in ipairs(rejections) do
 			lines[#lines + 1] = L["Copy %s: %s"]:format(tostring(rejection.folder), tostring(rejection.reason))

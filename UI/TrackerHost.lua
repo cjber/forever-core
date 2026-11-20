@@ -89,6 +89,27 @@ local function OfferLegacy(module)
 	return false
 end
 
+-- Runs `callback` once the world is entered and saved variables are loaded. Defined before the foreign-column branch
+-- below, since core's tracker sections wait on it with either column. A copy the loader boots after one of those
+-- events has fired (Loader.Seen) waits only for the rest: EventUtil.ContinueAfterAllEvents never completes for an
+-- event that came before it was registered. The unwrapped standalone loads before both and waits for both.
+---@param callback fun()
+function ns.AfterWorldEvents(callback)
+	local loader = rawget(_G, "ForeverCoreLoader")
+	local seen = type(loader) == "table" and type(loader.Seen) == "function" and loader.Seen or nil
+	local pending = {}
+	for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED" }) do
+		if not (seen and seen(event)) then
+			pending[#pending + 1] = event
+		end
+	end
+	if #pending == 0 then
+		callback()
+	else
+		EventUtil.ContinueAfterAllEvents(callback, unpack(pending))
+	end
+end
+
 -- A store build that still vendors UI/TrackerHost.lua can load before ForeverCore (Adventure Guide, Commissions and
 -- Field Guide load before it alphabetically). That copy registers the one companion column in ForeverTrackerHost and
 -- reuses whatever is already there, so adopt the existing column instead of drawing a second one over it: every call
@@ -142,7 +163,13 @@ if type(existing) == "table" then
 	return
 end
 
-local host = CreateFrame("Frame", "ForeverTrackerCompanion", UIParent)
+-- The column frame, its pools and its events are made at Start (end of file): defining the runtime touches nothing.
+---@class ForeverTrackerColumn: Frame
+---@field MarkDirty fun(self: ForeverTrackerColumn)
+---@field IsCollapsed fun(self: ForeverTrackerColumn): boolean
+---@field ForceExpand fun(self: ForeverTrackerColumn)
+---@type ForeverTrackerColumn
+local host
 ---@class ForeverTrackerHostAPI
 local api = {}
 local MIN_SCALE, MAX_SCALE = 0.5, 2
@@ -190,33 +217,21 @@ end
 -- The column's width in its own units: the 260 of the client's ObjectiveTrackerContainer header template, so a Forever
 -- section reads at the width its template was drawn for.
 local WIDTH = 260
--- The column starts at its pin, so it never shows anywhere else before the store's anchor below (#795).
-host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
 -- The column is a child of UIParent, so its scale is only the player's own tracker scale.
 local function MatchScale()
 	-- Saved variables, and with them the user's scale, are not ready while the files load.
 	host:SetScale(ready and Settings().scale or 1)
 end
-MatchScale()
-host:SetWidth(WIDTH)
-host:SetHeight(1)
-host:SetMovable(true)
-host:SetClampedToScreen(true)
 -- A header drag moves the column, and the Lock switch stops it; both live in UI/TrackerLock.lua, which the TOC loads
 -- before this one.
-local Drag = ns.TrackerLock.Drag(host, api)
+local Drag
 -- The optional backdrop spans the whole private column, so every Forever section sits on it at once. It is one
 -- texture on the host rather than chrome each addon draws, and it uses the game's own tooltip background art, tinted
 -- the way the tooltip tints it. Off is simply opacity 0; drawing it only changes a texture, never a frame, so the
 -- slider is safe to move in combat.
 local BACKDROP_ATLAS = "Tooltip-NineSlice-Center"
 local BACKDROP_INSET = 6
-local backdrop = host:CreateTexture(nil, "BACKGROUND")
--- art-ok: the tooltip's own centre fill, a tiling texture stretched to the column by design
-backdrop:SetAtlas(BACKDROP_ATLAS)
-backdrop:SetPoint("TOPLEFT", host, "TOPLEFT", -BACKDROP_INSET, BACKDROP_INSET)
-backdrop:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", BACKDROP_INSET, -BACKDROP_INSET)
-backdrop:Hide()
+local backdrop
 
 local function BackdropTint()
 	local color = rawget(_G, "TOOLTIP_DEFAULT_BACKGROUND_COLOR")
@@ -249,7 +264,7 @@ local function IsLocked()
 end
 local modules, queued = {}, false
 local pendingAttachments = {}
-local pools = CreateFramePoolCollection()
+local pools
 
 local function Acquire(parent, template)
 	local info = C_XMLUtil.GetTemplateInfo(template)
@@ -1018,10 +1033,25 @@ local function LayoutModules(width, available)
 	host:MarkDirty()
 	return hasSections
 end
--- What the game's quest tracker shows, which decides its last visible line: "hidden" with nothing to list, "collapsed"
--- to its header, or "list". Reads only.
----@return "hidden"|"collapsed"|"list"
+-- Questie's quest tracker, when it is the one on screen. Questie hides the game's tracker and draws its own list in
+-- Questie_BaseFrame, built a few seconds after login at the game's tracker's place and sized to its lines (#866). No
+-- client API names a replacement tracker, so the column knows this one by its frame's name; the column reads only
+-- where it is, as it does the game's tracker.
+---@return Frame?
+local function QuestieList()
+	local list = rawget(_G, "Questie_BaseFrame")
+	if type(list) == "table" and list.IsShown and list:IsShown() then
+		return list
+	end
+	return nil
+end
+-- What the quest tracker on screen shows, which decides its last visible line: "questie" for Questie's list, or for
+-- the game's tracker "hidden" with nothing to list, "collapsed" to its header, or "list". Reads only.
+---@return "questie"|"hidden"|"collapsed"|"list"
 local function TrackerShows()
+	if QuestieList() then
+		return "questie"
+	end
 	if not ObjectiveTrackerFrame:IsShown() then
 		return "hidden"
 	end
@@ -1035,9 +1065,19 @@ end
 -- while the player has it collapsed, since its sections hide then but the NineSlice keeps their old anchor; or the
 -- tracker's top while it is hidden with nothing to show. Returns that x and y in the host's own units, nil before the
 -- client has placed the tracker. These are reads only; nothing here writes to the tracker or hooks it.
----@param shows "hidden"|"collapsed"|"list"
+---@param shows "questie"|"hidden"|"collapsed"|"list"
 ---@return number? x, number? top
 local function TrackerEdge(shows)
+	local hostScale = host:GetEffectiveScale()
+	local list = shows == "questie" and QuestieList()
+	if list then
+		local listLeft, listBottom = list:GetLeft(), list:GetBottom()
+		if not (listLeft and listBottom) then
+			return nil
+		end
+		local listScale = list:GetEffectiveScale()
+		return listLeft * listScale / hostScale, listBottom * listScale / hostScale
+	end
 	local left = ObjectiveTrackerFrame:GetLeft()
 	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
 	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
@@ -1052,7 +1092,6 @@ local function TrackerEdge(shows)
 	if not (left and bottom) then
 		return nil
 	end
-	local hostScale = host:GetEffectiveScale()
 	return left * trackerScale / hostScale, bottom * scale / hostScale
 end
 local AddPlacementMenu
@@ -1075,7 +1114,7 @@ local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
 -- What the tracker showed when the column was last placed by it, so a change the probe cannot see places it again.
----@type "hidden"|"collapsed"|"list"|nil
+---@type "questie"|"hidden"|"collapsed"|"list"|nil
 local followedShows
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
@@ -1143,9 +1182,10 @@ local function Anchor(settings)
 		return width, screenHeight + y
 	end
 	if settings.placement == "under" then
-		local top = ObjectiveTrackerFrame:GetTop()
+		local tracker = QuestieList() or ObjectiveTrackerFrame
+		local top = tracker:GetTop()
 		if top then
-			return width, top * ObjectiveTrackerFrame:GetEffectiveScale() / host:GetEffectiveScale()
+			return width, top * tracker:GetEffectiveScale() / host:GetEffectiveScale()
 		end
 	end
 	PinLeft()
@@ -1174,7 +1214,10 @@ local function Layout()
 	Place(settings)
 end
 
-function host.MarkDirty(_)
+-- The column's own methods, given to the frame when Start makes it.
+---@class ForeverTrackerColumnMethods
+local column = {}
+function column.MarkDirty(_)
 	-- Combat queues nothing: the column holds its last layout until PLAYER_REGEN_ENABLED runs the deferred pass.
 	-- The protected quest item buttons, and every ancestor that moves with them, stay where the player last saw them.
 	if ready and not queued and not InCombatLockdown() then
@@ -1183,10 +1226,10 @@ function host.MarkDirty(_)
 	end
 end
 -- The column has no collapse of its own; each section folds itself.
-function host.IsCollapsed(_)
+function column.IsCollapsed(_)
 	return false
 end
-function host:ForceExpand()
+function column:ForceExpand()
 	self:MarkDirty()
 end
 
@@ -1671,70 +1714,86 @@ function api.IsAttached(module)
 end
 -- Combat ending attaches the sections combat held back. Combat starting freezes every section's scrollbar, so
 -- each secure item button stays beside its quest.
-host:RegisterEvent("PLAYER_REGEN_ENABLED")
-host:RegisterEvent("PLAYER_REGEN_DISABLED")
-host:RegisterEvent("DISPLAY_SIZE_CHANGED")
-host:RegisterEvent("UI_SCALE_CHANGED")
--- A pinned column hangs off the game's tracker, which Edit Mode places after login and the player can move, so each
--- layout Edit Mode applies lays the column out again where it now has room. No hook touches the tracker's own methods.
-host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
--- Under the quest tracker, the column follows the tracker's last line with no event of the tracker's own and no hook.
--- An addon-owned probe with no children spans from the screen's bottom left corner to that line, so the line moving, a
--- quest added, completed or collapsed or the tracker moved, resizes the probe, and its OnSizeChanged places the column
--- again. It is not protected, nothing is anchored to it, and FollowTracker only reads the tracker. The tracker showing
--- or hiding moves no line, so the column holds its place then until its own next layout, which places it again: a
--- frame of ours parented to the tracker would hear it, but that adds a child to Blizzard's frame.
-local function Follow()
-	if ready then
-		FollowTracker(Settings())
-	end
-end
-local probe = CreateFrame("Frame", nil, UIParent)
-probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
-probe:SetScript("OnSizeChanged", Follow)
--- Two changes move no line the probe can see. Collapsing the tracker hides its sections but leaves its NineSlice on
--- their old anchor, and the tracker hiding with nothing left to list, or showing again, leaves the line where it was.
--- The first comes from a click on its header's button and the second from the quest log or the tracked quests changing
--- (a quest untracked, turned in or abandoned, or the log filling in at login), so each of those events reads what the
--- tracker shows and places the column again when that changed, as a login would place it. The tracker lays itself out
--- on the frame after the event (DirtiableMixin's RunNextFrame), so the read waits a frame more than that.
-local watching = false
-local function Recheck()
-	watching = false
-	if ready and TrackerShows() ~= followedShows then
-		Follow()
-	end
-end
-local watch = CreateFrame("Frame")
-watch:RegisterEvent("GLOBAL_MOUSE_UP")
-watch:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
-watch:RegisterEvent("QUEST_LOG_UPDATE")
-watch:SetScript("OnEvent", function()
-	if not watching and ready then
-		watching = true
-		C_Timer.After(0, function()
-			C_Timer.After(0, Recheck)
-		end)
-	end
-end)
-host:SetScript("OnEvent", function(_, event)
-	if event == "PLAYER_REGEN_ENABLED" then
-		for module, attachment in pairs(pendingAttachments) do
-			pendingAttachments[module] = nil
-			api.Attach(module, attachment.show, attachment.contract)
+local function Listen()
+	host:RegisterEvent("PLAYER_REGEN_ENABLED")
+	host:RegisterEvent("PLAYER_REGEN_DISABLED")
+	host:RegisterEvent("DISPLAY_SIZE_CHANGED")
+	host:RegisterEvent("UI_SCALE_CHANGED")
+	-- A pinned column hangs off the game's tracker, which Edit Mode places after login and the player can move, so each
+	-- layout Edit Mode applies lays the column out again where it now has room. No hook touches the tracker's own methods.
+	host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+	-- Under the quest tracker, the column follows the tracker's last line with no event of the tracker's own and no hook.
+	-- An addon-owned probe with no children spans from the screen's bottom left corner to that line, so the line moving, a
+	-- quest added, completed or collapsed or the tracker moved, resizes the probe, and its OnSizeChanged places the column
+	-- again. It is not protected, nothing is anchored to it, and FollowTracker only reads the tracker. The tracker showing
+	-- or hiding moves no line, so the column holds its place then until its own next layout, which places it again: a
+	-- frame of ours parented to the tracker would hear it, but that adds a child to Blizzard's frame.
+	local function Follow()
+		if ready then
+			FollowTracker(Settings())
 		end
 	end
-	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
-		local frozen = event == "PLAYER_REGEN_DISABLED"
-		for _, module in ipairs(modules) do
-			if module.SetScrollFrozen then
-				module:SetScrollFrozen(frozen)
+	local probe = CreateFrame("Frame", nil, UIParent)
+	probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+	probe:SetPoint("TOPRIGHT", ObjectiveTrackerFrame.NineSlice or ObjectiveTrackerFrame, "BOTTOMLEFT", 0, 0)
+	probe:SetScript("OnSizeChanged", Follow)
+	-- Questie's list gets a probe of its own the first time it is seen on screen, since it is built after login: its
+	-- last line moving resizes that probe the same way.
+	local questieProbe
+	local function WatchQuestie()
+		local list = QuestieList()
+		if list and not questieProbe then
+			questieProbe = CreateFrame("Frame", nil, UIParent)
+			questieProbe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+			questieProbe:SetPoint("TOPRIGHT", list, "BOTTOMLEFT", 0, 0)
+			questieProbe:SetScript("OnSizeChanged", Follow)
+		end
+	end
+	-- Two changes move no line the probe can see. Collapsing the tracker hides its sections but leaves its NineSlice on
+	-- their old anchor, and the tracker hiding with nothing left to list, or showing again, leaves the line where it was.
+	-- The first comes from a click on its header's button and the second from the quest log or the tracked quests changing
+	-- (a quest untracked, turned in or abandoned, or the log filling in at login), so each of those events reads what the
+	-- tracker shows and places the column again when that changed, as a login would place it. The tracker lays itself out
+	-- on the frame after the event (DirtiableMixin's RunNextFrame), so the read waits a frame more than that. Questie's
+	-- list appearing after login, or turned on or off in its options, is read the same way.
+	local watching = false
+	local function Recheck()
+		watching = false
+		WatchQuestie()
+		if ready and TrackerShows() ~= followedShows then
+			Follow()
+		end
+	end
+	local watch = CreateFrame("Frame")
+	watch:RegisterEvent("GLOBAL_MOUSE_UP")
+	watch:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
+	watch:RegisterEvent("QUEST_LOG_UPDATE")
+	watch:SetScript("OnEvent", function()
+		if not watching and ready then
+			watching = true
+			C_Timer.After(0, function()
+				C_Timer.After(0, Recheck)
+			end)
+		end
+	end)
+	host:SetScript("OnEvent", function(_, event)
+		if event == "PLAYER_REGEN_ENABLED" then
+			for module, attachment in pairs(pendingAttachments) do
+				pendingAttachments[module] = nil
+				api.Attach(module, attachment.show, attachment.contract)
 			end
 		end
-	end
-	host:MarkDirty()
-end)
+		if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+			local frozen = event == "PLAYER_REGEN_DISABLED"
+			for _, module in ipairs(modules) do
+				if module.SetScrollFrozen then
+					module:SetScrollFrozen(frozen)
+				end
+			end
+		end
+		host:MarkDirty()
+	end)
+end
 -- A developer diagnostic for the tracker stack (/agf tracker). The combat overlap is otherwise invisible headlessly: it
 -- prints both frames' anchors, heights and who each is anchored to.
 ---@return string
@@ -1772,10 +1831,32 @@ function api.Debug()
 	)
 end
 
-EventUtil.ContinueAfterAllEvents(function()
-	ready = true
-	host:MarkDirty()
-end, "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
-
-ForeverTrackerHost = api -- taint-ok: addon-owned companion tracker registry
 ns.TrackerHost = api
+
+ns.AtStart(function()
+	host = CreateFrame("Frame", "ForeverTrackerCompanion", UIParent) --[[@as ForeverTrackerColumn]]
+	for key, method in pairs(column) do
+		host[key] = method
+	end
+	-- The column starts at its pin, so it never shows anywhere else before the store's anchor (#795).
+	host:SetPoint("TOPRIGHT", ObjectiveTrackerFrame, "TOPLEFT", 0, 0)
+	MatchScale()
+	host:SetWidth(WIDTH)
+	host:SetHeight(1)
+	host:SetMovable(true)
+	host:SetClampedToScreen(true)
+	Drag = ns.TrackerLock.Drag(host, api)
+	backdrop = host:CreateTexture(nil, "BACKGROUND")
+	-- art-ok: the tooltip's own centre fill, a tiling texture stretched to the column by design
+	backdrop:SetAtlas(BACKDROP_ATLAS)
+	backdrop:SetPoint("TOPLEFT", host, "TOPLEFT", -BACKDROP_INSET, BACKDROP_INSET)
+	backdrop:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", BACKDROP_INSET, -BACKDROP_INSET)
+	backdrop:Hide()
+	pools = CreateFramePoolCollection()
+	Listen()
+	ns.AfterWorldEvents(function()
+		ready = true
+		host:MarkDirty()
+	end)
+	ForeverTrackerHost = api -- taint-ok: addon-owned companion tracker registry
+end)

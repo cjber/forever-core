@@ -214,6 +214,10 @@ env._G = env
 -- In TOC order: UI/TrackerLock.lua, then the host that hands it each section header.
 setfenv(assert(loadfile("UI/TrackerLock.lua")), env)("Test", ns)
 setfenv(assert(loadfile("UI/TrackerOrder.lua")), env)("Test", ns) -- the section order, loaded before the host
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = ns.AtStart or function(work)
+	work()
+end
 setfenv(assert(loadfile("UI/TrackerHost.lua")), env)("Test", ns)
 local host = frames[6]
 -- One section, so there is a header to drag. It draws nothing: the lock cases need no layout.

@@ -632,15 +632,124 @@ function M.build(sim)
 		sim.events.fire("TRADE_SKILL_CLOSE")
 	end
 
-	-- Items.
+	-- Items. A scenario's sim.world.items[id] wins; any other item ID answers from the client's own Item and
+	-- ItemSparse rows at the pinned build (fetch.py writes items-<locale>.lua), loaded on the first read.
+	local EQUIP_LOC = {
+		[1] = "INVTYPE_HEAD",
+		[2] = "INVTYPE_NECK",
+		[3] = "INVTYPE_SHOULDER",
+		[4] = "INVTYPE_BODY",
+		[5] = "INVTYPE_CHEST",
+		[6] = "INVTYPE_WAIST",
+		[7] = "INVTYPE_LEGS",
+		[8] = "INVTYPE_FEET",
+		[9] = "INVTYPE_WRIST",
+		[10] = "INVTYPE_HAND",
+		[11] = "INVTYPE_FINGER",
+		[12] = "INVTYPE_TRINKET",
+		[13] = "INVTYPE_WEAPON",
+		[14] = "INVTYPE_SHIELD",
+		[15] = "INVTYPE_RANGED",
+		[16] = "INVTYPE_CLOAK",
+		[17] = "INVTYPE_2HWEAPON",
+		[18] = "INVTYPE_BAG",
+		[19] = "INVTYPE_TABARD",
+		[20] = "INVTYPE_ROBE",
+		[21] = "INVTYPE_WEAPONMAINHAND",
+		[22] = "INVTYPE_WEAPONOFFHAND",
+		[23] = "INVTYPE_HOLDABLE",
+		[24] = "INVTYPE_AMMO",
+		[25] = "INVTYPE_THROWN",
+		[26] = "INVTYPE_RANGEDRIGHT",
+		[27] = "INVTYPE_QUIVER",
+		[28] = "INVTYPE_RELIC",
+	}
+	local QUALITY_HEX = { "ffffff", "1eff00", "0070dd", "a335ee", "ff8000", "e6cc80", "00ccff", [0] = "9d9d9d" }
+	local clientRows, clientItems = nil, {}
+	local function clientItem(id)
+		if clientItems[id] then
+			return clientItems[id]
+		end
+		-- A bare world built for a unit fixture has no data directory, so only its scenario items exist.
+		if not sim.dataDir then
+			return nil
+		end
+		if not clientRows then
+			local path = sim.dataDir .. "/items-" .. sim.locale .. ".lua"
+			local chunk = loadfile(path)
+			if not chunk then
+				error(
+					string.format(
+						"no item data for %s in %s: run python3 tools/forever_sim/fetch.py --locale %s",
+						sim.locale,
+						sim.dataDir,
+						sim.locale
+					)
+				)
+			end
+			clientRows = chunk()
+		end
+		local row = clientRows.items[id]
+		if row then
+			local class = clientRows.classes[row[6]]
+			clientItems[id] = {
+				name = row[1],
+				quality = row[2],
+				sell = row[3],
+				level = row[4],
+				stack = row[5],
+				classID = row[6],
+				subClassID = row[7],
+				itemEquipLoc = EQUIP_LOC[row[8]] or "",
+				icon = row[9],
+				minLevel = row[10],
+				bindType = row[11],
+				expansionID = row[12],
+				setID = row[13] ~= 0 and row[13] or nil,
+				description = row[14],
+				itemType = class and class.name or "",
+				itemSubType = class and class.subs[row[7]] or "",
+			}
+		end
+		return clientItems[id]
+	end
+	function sim.item(id)
+		id = tonumber(Secret.unwrap(id))
+		return id and (W.items[id] or clientItem(id))
+	end
+	function sim.itemLink(id)
+		local item = assert(sim.item(id), "no item " .. tostring(id))
+		return item.link
+			or string.format(
+				"|cff%s|Hitem:%d::::::::%d:::::::::|h[%s]|h|r",
+				QUALITY_HEX[item.quality or 1] or "ffffff",
+				id,
+				W.player.level,
+				item.name
+			)
+	end
 	local function resolveItemInfo(info)
+		info = Secret.unwrap(info)
 		if type(info) == "number" then
-			return info, W.items[info]
+			return info, sim.item(info)
 		end
 		if type(info) == "string" then
 			for id, item in pairs(W.items) do
 				if info == item.link or info == item.name or info == "item:" .. id then
 					return id, item
+				end
+			end
+			local id = tonumber(info:match("^item:(%d+)") or info:match("^|c%x+|Hitem:(%d+)") or info:match("^(%d+)$"))
+			if id then
+				return id, sim.item(id)
+			end
+			-- The client resolves a name only for an item it has cached; the sim's cache is what the bags hold.
+			for _, b in pairs(W.bags) do
+				for slot = 1, b.size or 0 do
+					local held = b[slot] and sim.item(b[slot].itemID)
+					if held and held.name == info then
+						return b[slot].itemID, held
+					end
 				end
 			end
 		end
@@ -661,19 +770,27 @@ function M.build(sim)
 		return resolveItemInfo(info) or 0
 	end
 	impl["C_Item.GetItemInfo"] = function(info)
-		local _, item = resolveItemInfo(info)
+		local id, item = resolveItemInfo(info)
 		if item then
+			-- isCraftingReagent: the client derives it from item flags the sim does not decode.
 			return item.name,
-				item.link,
+				sim.itemLink(id),
 				item.quality or 1,
 				item.level or 1,
-				0,
-				"",
-				"",
-				20,
-				"",
+				item.minLevel or 0,
+				item.itemType or "",
+				item.itemSubType or "",
+				item.stack or 20,
+				item.itemEquipLoc or "",
 				item.icon or 134400,
-				item.sell or 0
+				item.sell or 0,
+				item.classID or 0,
+				item.subClassID or 0,
+				item.bindType or 0,
+				item.expansionID or 0,
+				item.setID,
+				false,
+				item.description or ""
 		end
 	end
 	G.GetItemInfo = G.C_Item.GetItemInfo
@@ -689,8 +806,13 @@ function M.build(sim)
 		local _, item = resolveItemInfo(info)
 		return item and (item.icon or 134400)
 	end
+	-- The bags hold what the client counts; a scenario item with no bag slot keeps its own count.
 	impl["C_Item.GetItemCount"] = function(info)
-		local _, item = resolveItemInfo(info)
+		local id, item = resolveItemInfo(info)
+		local held = sim.bagCount(id)
+		if held then
+			return held
+		end
 		return item and item.count or 0
 	end
 	G.GetItemCount = G.C_Item.GetItemCount
@@ -1036,6 +1158,223 @@ function M.build(sim)
 	impl["C_AddOns.IsAddOnLoadOnDemand"] = function()
 		return false
 	end
+	-- Bags: sim.world.bags[bag] = { size = n, [slot] = { itemID = id, count = n } }, bag 0 the backpack (16 slots).
+	-- Each slot's item answers from sim.item, so a slot naming an item the client does not have fails the read.
+	W.bags = W.bags or { [0] = { size = 16 } }
+	local function bagSlot(bag, slot)
+		local b = W.bags[tonumber(Secret.unwrap(bag))]
+		local s = b and b[tonumber(Secret.unwrap(slot))]
+		if s then
+			return s,
+				assert(
+					sim.item(s.itemID),
+					"sim.world.bags holds item " .. tostring(s.itemID) .. ", which no client data has"
+				)
+		end
+	end
+	function sim.bagCount(id)
+		local total
+		for _, b in pairs(W.bags) do
+			for slot = 1, b.size or 0 do
+				local s = b[slot]
+				if s and s.itemID == id then
+					total = (total or 0) + (s.count or 1)
+				end
+			end
+		end
+		return total
+	end
+	impl["C_Container.GetContainerNumSlots"] = function(bag)
+		local b = W.bags[tonumber(Secret.unwrap(bag))]
+		return b and b.size or 0
+	end
+	impl["C_Container.GetContainerNumFreeSlots"] = function(bag)
+		local b = W.bags[tonumber(Secret.unwrap(bag))]
+		local free = 0
+		for slot = 1, b and b.size or 0 do
+			if not b[slot] then
+				free = free + 1
+			end
+		end
+		return free, 0
+	end
+	impl["C_Container.GetContainerItemID"] = function(bag, slot)
+		local s = bagSlot(bag, slot)
+		return s and s.itemID
+	end
+	impl["C_Container.GetContainerItemLink"] = function(bag, slot)
+		local s = bagSlot(bag, slot)
+		return s and sim.itemLink(s.itemID)
+	end
+	impl["C_Container.GetContainerItemInfo"] = function(bag, slot)
+		local s, item = bagSlot(bag, slot)
+		if not s then
+			return nil
+		end
+		return {
+			iconFileID = item.icon or 134400,
+			stackCount = s.count or 1,
+			isLocked = false,
+			quality = item.quality or 1,
+			isReadable = false,
+			hasLoot = false,
+			hyperlink = sim.itemLink(s.itemID),
+			itemName = item.name,
+			isFiltered = false,
+			hasNoValue = (item.sell or 0) == 0,
+			itemID = s.itemID,
+			isBound = false,
+		}
+	end
+	-- With a merchant open, using a bag item sells it: the slot empties and the player gets its sell price per unit.
+	impl["C_Container.UseContainerItem"] = function(bag, slot)
+		local s, item = bagSlot(bag, slot)
+		local merchant = G.MerchantFrame
+		if not s or not (merchant and merchant:IsShown()) or (item.sell or 0) == 0 then
+			return
+		end
+		bag, slot = tonumber(Secret.unwrap(bag)), tonumber(Secret.unwrap(slot))
+		W.bags[bag][slot] = nil
+		W.player.money = W.player.money + item.sell * (s.count or 1)
+		sim.events.fire("BAG_UPDATE", bag)
+		sim.events.fire("PLAYER_MONEY")
+		sim.events.fire("BAG_UPDATE_DELAYED")
+	end
+	-- Items the player receives in one transaction, each { itemID, count } in the first empty slot from the backpack
+	-- up: BAG_UPDATE for each bag that changed, then one BAG_UPDATE_DELAYED. Stacks are not merged. Nothing moves and
+	-- false returns when the free slots cannot hold them all, as the client refuses a loot or reward into full bags.
+	function sim.giveItems(entries)
+		local free = {}
+		for bag = 0, 4 do
+			local b = W.bags[bag]
+			for slot = 1, b and b.size or 0 do
+				if not b[slot] then
+					free[#free + 1] = { bag, slot }
+				end
+			end
+		end
+		if #entries > #free then
+			return false
+		end
+		local changed = {}
+		for i, entry in ipairs(entries) do
+			assert(sim.item(entry[1]), "no client data has item " .. tostring(entry[1]))
+			local bag, slot = free[i][1], free[i][2]
+			W.bags[bag][slot] = { itemID = entry[1], count = entry[2] or 1 }
+			changed[bag] = true
+		end
+		for bag = 0, 4 do
+			if changed[bag] then
+				sim.events.fire("BAG_UPDATE", bag)
+			end
+		end
+		if next(changed) then
+			sim.events.fire("BAG_UPDATE_DELAYED")
+		end
+		return true
+	end
+
+	-- The quest giver's reward panel: sim.world.questReward = { questID, title, text, choices = { {itemID, count} },
+	-- rewards = { {itemID, count} }, money, xp }, read through the client's legacy quest-frame natives.
+	local function questItem(kind, index)
+		local q = W.questReward
+		local list = q and (Secret.unwrap(kind) == "choice" and q.choices or q.rewards)
+		local entry = list and list[tonumber(Secret.unwrap(index))]
+		if entry then
+			return entry,
+				assert(sim.item(entry[1]), "quest reward item " .. tostring(entry[1]) .. " has no client data")
+		end
+	end
+	impl.GetQuestID = function()
+		return W.questReward and W.questReward.questID or 0
+	end
+	impl.GetTitleText = function()
+		return W.questReward and W.questReward.title or ""
+	end
+	impl.GetRewardText = function()
+		return W.questReward and W.questReward.text or ""
+	end
+	impl.GetNumQuestChoices = function()
+		return W.questReward and #(W.questReward.choices or {}) or 0
+	end
+	impl.GetNumQuestRewards = function()
+		return W.questReward and #(W.questReward.rewards or {}) or 0
+	end
+	impl.GetQuestItemInfo = function(kind, index)
+		local entry, item = questItem(kind, index)
+		if entry then
+			return item.name, item.icon or 134400, entry[2] or 1, item.quality or 1, true, entry[1]
+		end
+	end
+	impl.GetQuestItemLink = function(kind, index)
+		local entry = questItem(kind, index)
+		return entry and sim.itemLink(entry[1])
+	end
+	impl.GetQuestItemInfoLootType = function()
+		return 0
+	end
+	impl.GetRewardMoney = function()
+		return W.questReward and W.questReward.money or 0
+	end
+	impl.GetRewardXP = function()
+		return W.questReward and W.questReward.xp or 0
+	end
+	impl.GetQuestMoneyToGet = function()
+		return 0
+	end
+	-- Rewards a scenario does not model: none of them.
+	impl.GetRewardSkillPoints = function()
+		return nil
+	end
+	impl.GetRewardArtifactXP = function()
+		return 0, 0
+	end
+	impl.GetRewardHonor = function()
+		return 0
+	end
+	impl.GetRewardTitle = function()
+		return nil
+	end
+	impl.GetQuestPortraitTurnIn = function()
+		return 0, "", ""
+	end
+	-- No giver-specific parchment: the frame draws its default.
+	impl.GetQuestBackgroundMaterial = function()
+		return nil
+	end
+	-- Turning the quest in: the chosen item and every fixed reward go to the bags, the money to the player.
+	impl.GetQuestReward = function(choice)
+		local q = W.questReward
+		if not q then
+			return
+		end
+		choice = tonumber(Secret.unwrap(choice)) or 0
+		local items = {}
+		if #(q.choices or {}) > 0 then
+			items[1] = q.choices[choice]
+			assert(items[1], "GetQuestReward needs a choice between 1 and " .. #q.choices)
+		end
+		for _, entry in ipairs(q.rewards or {}) do
+			items[#items + 1] = entry
+		end
+		-- Bags too full for the rewards: the quest stays open, as the client keeps it.
+		if not sim.giveItems(items) then
+			return
+		end
+		W.questReward = nil
+		if (q.money or 0) > 0 then
+			W.player.money = W.player.money + q.money
+			sim.events.fire("PLAYER_MONEY")
+		end
+		sim.events.fire("QUEST_FINISHED")
+	end
+	impl.CloseQuest = function()
+		if W.questReward then
+			W.questReward = nil
+			sim.events.fire("QUEST_FINISHED")
+		end
+	end
+
 	-- Undocumented globals implemented above get a plain function.
 	for k in pairs(impl) do
 		if not k:find(".", 1, true) and G[k] == nil then

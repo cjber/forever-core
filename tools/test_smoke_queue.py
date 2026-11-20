@@ -42,6 +42,55 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(smoked, [("forever-core", SHA), ("legacy-forever", OTHER)])
         self.assertIn(f"forever-core: {SHA[:7]} is smoked", printed)
 
+    def test_skillup_and_shortest_path_follow_core_before_every_other_consumer(self):
+        heads = {
+            repo: SHA
+            for repo in (
+                "forever-core",
+                "adventure-guide-forever",
+                "legacy-forever",
+                "shortest-path-forever",
+                "skillup-forever",
+            )
+        }
+        states = dict.fromkeys(heads, "missing")
+        _code, _printed, smoked, _run = self.run_queue(heads, states)
+        self.assertEqual(
+            [repo for repo, _sha in smoked],
+            ["forever-core", "skillup-forever", "shortest-path-forever", "adventure-guide-forever", "legacy-forever"],
+        )
+
+    def test_repo_smokes_only_the_named_repositories_in_the_order_given(self):
+        heads = {"forever-core": SHA, "legacy-forever": OTHER, "skillup-forever": SHA}
+        states = dict.fromkeys(heads, "missing")
+        _code, _printed, smoked, _run = self.run_queue(
+            heads,
+            states,
+            argv=("--repo", "skillup-forever", "--repo", "cjber/forever-core", "--repo", "skillup-forever"),
+        )
+        self.assertEqual(smoked, [("skillup-forever", SHA), ("forever-core", SHA)])
+
+    def test_repo_needs_no_discovery(self):
+        out = io.StringIO()
+        with (
+            mock.patch.object(queue, "discover_tooling_repos", side_effect=queue.SyncError("no token access")),
+            mock.patch.object(queue, "main_head", return_value=SHA),
+            mock.patch.object(queue, "smoke_status", return_value="missing"),
+            mock.patch.object(queue, "smoke", return_value=0) as run,
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertEqual(queue.main(["--repo", "skillup-forever"]), 0)
+        run.assert_called_once_with("skillup-forever", SHA)
+
+    def test_repo_refuses_anything_but_name_or_cjber_name(self):
+        for value in ("someone/skillup-forever", "/skillup-forever", "cjber/", "cjber/skillup-forever/x", ""):
+            with self.subTest(value=value):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as exit_:
+                    queue.main(["--repo", value])
+                self.assertEqual(exit_.exception.code, 2)
+                self.assertIn("is not a cjber repository name", err.getvalue())
+
     def test_a_commit_that_already_has_a_status_is_left_alone(self):
         heads = {"forever-core": SHA, "legacy-forever": OTHER}
         states = {"forever-core": "success", "legacy-forever": "failure"}

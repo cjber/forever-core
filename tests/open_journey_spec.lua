@@ -5,6 +5,10 @@ local ns = { L = setmetatable({}, {
 		return key
 	end,
 }) }
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = function(work)
+	work()
+end
 for _, path in ipairs({ "Core/SafeCall.lua", "Core/APIKit.lua", "Core/Open.lua", "Core/Journey.lua" }) do
 	setfenv(assert(loadfile(path)), env)("ForeverCore", ns)
 end

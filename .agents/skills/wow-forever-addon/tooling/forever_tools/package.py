@@ -5,6 +5,8 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 `args: -d -z`), then this reads its release directory and fails on:
 
 - an addon folder that is missing, or has no TOC of its own name;
+- a TOC whose `## Version` is the tag with its `v` (`v1.2.3`) or the unfilled `@project-version@`: every addon
+  compares `GetAddOnMetadata(addon, "Version")` with a bare version, and `forever_tools.toc_version` writes it;
 - a file a TOC or its XML loads (`Script`, `Include`), or an `Interface\\AddOns\\<packaged folder>\\...` path a TOC
   tag, XML attribute or whole Lua string names, that is not in the package;
 - a development file or folder that shipped at an addon folder's top level (`tests`, `tools`, `types`, `docs`,
@@ -35,7 +37,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import core_pin, lua51, widget_handlers
+from . import core_archive, core_pin, lua51, widget_handlers
 from .lua import LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
@@ -215,6 +217,10 @@ def check(release: Path, policy: Policy) -> list[str]:
             problems.append(f"{addon}/{addon}.toc: missing")
         for toc in tocs:
             problems += check_loaded(release, folder, toc, policy.addons)
+            # Only the addon this repository builds: a bundled folder (ForeverCore) is an external release zip that
+            # carries whatever version its own release wrote.
+            if addon == policy.addons[0]:
+                problems += check_version(release, toc)
         if not any(child.is_file() and licence_file(child.name) for child in folder.iterdir()):
             problems.append(f"{addon}/LICENSE: missing; every packaged folder ships its licence")
     if policy.addons and (release / policy.addons[0]).is_dir():
@@ -241,6 +247,28 @@ def check(release: Path, policy: Policy) -> list[str]:
                 shown = "` or `".join(wanted)
                 problems.append(f"{name}/{file}: no `{shown}` section with text; credit what the addon uses")
     return problems
+
+
+VERSION_FIELD = re.compile(r"^##\s*Version\s*:\s*(?P<value>.*?)\s*$", re.IGNORECASE)
+
+
+def check_version(release: Path, toc: Path) -> list[str]:
+    """A packaged `## Version` is the bare release version that `GetAddOnMetadata` hands every reader: never the
+    tag's `v` the packager writes on its own, and never its unfilled keyword."""
+    for line in toc.read_text(encoding="utf-8-sig").splitlines():
+        found = VERSION_FIELD.match(line.strip())
+        if found is None:
+            continue
+        value, where = found["value"], toc.relative_to(release).as_posix()
+        if "@project-version@" in value:
+            return [f"{where}: ## Version still holds @project-version@; the packager did not fill it in"]
+        if value[:1] in ("v", "V") and value[1:2].isdigit():
+            return [
+                f"{where}: ## Version is {value}, the tag with its v; run python3 -m tools.forever_tools.toc_version"
+                " before the packager"
+            ]
+        return []
+    return []
 
 
 def check_loaded(release: Path, folder: Path, toc: Path, addons: tuple[str, ...]) -> list[str]:
@@ -389,6 +417,8 @@ def main(root: Path, policy: Policy, argv: list[str] | None = None) -> int:
     # PR CI compares the three committed copies offline. The release workflow checks --latest immediately
     # before uploading, so a new core awaiting store moderation does not block an unrelated addon PR.
     problems += core_pin.check(root)
+    if policy.addons != (core_pin.CORE_FOLDER,):
+        problems += core_archive.check(root, args.release_dir)
     # A widget method passed straight as a script handler raises on the client's first call; lint what ships.
     problems += widget_handlers.check_root(args.release_dir, policy.addons)
     for addon in policy.addons:

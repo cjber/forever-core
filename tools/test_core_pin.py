@@ -240,8 +240,14 @@ class CorePinTest(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("pin v1.3.2, core's latest release is v1.4.0", failures[0])
 
-    def test_the_package_job_passes_three_copies_of_one_release(self):
+    def write_packaged_bridge(self, version="v1.4.0"):
+        folder = self.root / ".release/ForeverCore"
+        folder.mkdir(parents=True)
+        (folder / "ForeverCore.toc").write_text(f"## Version: {version}\n", encoding="utf-8")
+
+    def test_the_package_job_passes_four_copies_of_one_release(self):
         self.write()
+        self.write_packaged_bridge()
         policy = package.Policy(addons=("LegacyForever",))
         with (
             mock.patch.object(package, "check", return_value=[]),
@@ -254,6 +260,7 @@ class CorePinTest(unittest.TestCase):
 
     def test_the_package_job_fails_a_disagreeing_bundle(self):
         self.write(external="v1.4.1")
+        self.write_packaged_bridge("v1.4.1")
         policy = package.Policy(addons=("LegacyForever",))
         out = io.StringIO()
         with (
@@ -271,6 +278,7 @@ class CorePinTest(unittest.TestCase):
 
     def test_the_package_job_passes_an_agreeing_older_pin_without_network(self):
         self.write()
+        self.write_packaged_bridge()
         policy = package.Policy(addons=("LegacyForever",))
         with (
             mock.patch.object(package, "check", return_value=[]),
