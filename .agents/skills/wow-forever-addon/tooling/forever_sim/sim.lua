@@ -103,12 +103,18 @@ Sim.CORE = {
 	"Blizzard_SharedXML/ClassColors.lua",
 	"Blizzard_FrameXML/EquipmentFlyout.lua",
 	"Blizzard_FrameXML/EquipmentFlyout.xml",
+	-- MerchantFrame's BAG_UPDATE closes this split frame, open or not.
+	"Blizzard_FrameXML/Mainline/StackSplitFrame.lua",
+	"Blizzard_FrameXML/Mainline/StackSplitFrame.xml",
+	-- QuestFrame's OnShow reads the tutorial frame's id.
+	"Blizzard_FrameXML/Mainline/TutorialFrame.lua",
+	"Blizzard_FrameXML/Mainline/TutorialFrame.xml",
 	"Blizzard_TextStatusBar",
 	"Blizzard_StatusTrackingBar",
 	"Blizzard_UIPanels_Game:PlayerInteractionFrameManager|ScrollingFlatPanel|WarCampaignTemplates|WorldMap"
 		.. "|MapLegend|QuestMap|FogOfWar|UnitPosition|CastingBarFrame|ContainerFrame|Bank"
-		.. "|QuestFrameTemplates|QuestFrame|QuestInfo|DressUpFrames|CharacterFrame|AzeritePaperDoll|PaperDoll"
-		.. "|ReputationFrame|MerchantFrame|SkillsFrame",
+		.. "|QuestFrameTemplates|FriendshipStatusBar|QuestFrame|QuestInfo|DressUpFrames|CharacterFrame"
+		.. "|AzeritePaperDoll|PaperDoll|ReputationFrame|MerchantFrame|SkillsFrame",
 	-- Loaded at startup by the client, and what most Forever addons draw on.
 	-- EncounterBar lives in Blizzard_UnitFrame's UnitPowerBarAlt files; UIWidgets' power-bar layout anchors to it.
 	"Blizzard_UnitFrame/Mainline/UnitPowerBarAlt.lua",

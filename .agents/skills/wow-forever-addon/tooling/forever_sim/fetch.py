@@ -10,7 +10,8 @@
 
 * Blizzard's UI source: Gethe/wow-ui-source at the pinned revision (the Forever build's), a shallow git fetch
   checked by commit hash.
-* Client tables from wago.tools at the pinned build: GlobalStrings (per locale), GlobalColor, and the texture
+* Client tables from wago.tools at the pinned build: GlobalStrings and items (Item, ItemSparse; per locale),
+  GlobalColor, and the texture
   atlas elements and members with their logical sizes, written as Lua data files the simulator loads. A copy
   already in the wow-mock-screenshots cache (~/.cache/wowmock/<build>/) is reused. atlas.lua carries a schema
   marker, so a cache written by an older generator is rebuilt instead of read with stale keys.
@@ -229,6 +230,32 @@ def flyout_data(flyouts: list[dict[str, str]], slots: list[dict[str, str]]) -> s
     return "\n".join(lines) + "\n"
 
 
+def item_data(items: list[dict[str, str]], sparse: list[dict[str, str]]) -> str:
+    # [itemID] = { name, quality, sell price, item level, stack size, class, subclass, inventory type, icon }: what
+    # the client's item reads answer, from Item and ItemSparse at the pinned build. A row with no name is dropped.
+    base = {row["ID"]: row for row in items}
+    lines = ["return {"]
+    for row in sorted(sparse, key=lambda r: int(r["ID"])):
+        item = base.get(row["ID"])
+        name = row.get("Display_lang") or ""
+        if not item or not name:
+            continue
+        fields = (
+            lua_string(name),
+            row["OverallQualityID"],
+            row["SellPrice"],
+            row["ItemLevel"],
+            row["Stackable"],
+            item["ClassID"],
+            item["SubclassID"],
+            item["InventoryType"],
+            item["IconFileDataID"],
+        )
+        lines.append(f"[{row['ID']}]={{{','.join(fields)}}},")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 def build_data(root: Path, locales: list[str], offline: bool) -> None:
     out = root / "data" / BUILD
     for locale in locales:
@@ -259,6 +286,10 @@ def build_data(root: Path, locales: list[str], offline: bool) -> None:
     target = out / "flyouts.lua"
     if not target.exists():
         write(target, flyout_data(db2(root, "SpellFlyout", offline), db2(root, "SpellFlyoutItem", offline)))
+    for locale in locales:
+        target = out / f"items-{locale}.lua"
+        if not target.exists():
+            write(target, item_data(db2(root, "Item", offline), db2(root, "ItemSparse", offline, locale)))
 
 
 API_CALL = re.compile(r"\b(C_[A-Za-z0-9]+)\.([A-Za-z0-9_]+)\s*\(")
