@@ -162,6 +162,8 @@ ForeverCoreLoader.OnReady(function()
 	local after = {}
 	if not runInline then
 		host.ForeverCoreHostAfter = after
+		-- For the rest of the session: these files ran at or after PLAYER_LOGIN (ns.AfterEvents).
+		host.ForeverCoreHostDeferred = true
 	end
 	-- One file's error stops that file only, as the client's own file loading does.
 	for index = 1, #chunks do

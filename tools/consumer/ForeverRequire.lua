@@ -212,11 +212,12 @@ function ns.OnFilesLoaded(callback)
 	end
 	_G.EventUtil.ContinueOnAddOnLoaded(addonName, callback)
 end
--- Whether a loading event has already fired this session. `deferred` is the package runner's own word that the
--- files ran at activation, which is at PLAYER_LOGIN or after it; the loader records the other two as it sees them.
-local function fired(event, deferred)
+-- Whether a loading event has already fired this session. The package's runner marks files it ran at activation,
+-- which is at PLAYER_LOGIN or after it, so the login is past for them even while that event is still being
+-- dispatched; the loader records the other two as it sees them.
+local function fired(event)
 	if event == "PLAYER_LOGIN" then
-		return deferred or (type(_G.IsLoggedIn) == "function" and _G.IsLoggedIn() == true)
+		return ns.ForeverCoreHostDeferred == true or (type(_G.IsLoggedIn) == "function" and _G.IsLoggedIn() == true)
 	end
 	local loader = rawget(_G, "ForeverCoreLoader")
 	return type(loader) == "table" and type(loader.Seen) == "function" and loader.Seen(event) == true
@@ -230,10 +231,10 @@ end
 ---@param ... string event names
 function ns.AfterEvents(callback, ...)
 	local events = { ... }
-	local function wait(deferred)
+	local function wait()
 		local pending = {}
 		for _, event in ipairs(events) do
-			if not fired(event, deferred) then
+			if not fired(event) then
 				pending[#pending + 1] = event
 			end
 		end
@@ -245,12 +246,10 @@ function ns.AfterEvents(callback, ...)
 	end
 	local queue = ns.ForeverCoreHostAfter
 	if type(queue) == "table" then
-		queue[#queue + 1] = function()
-			wait(true)
-		end
+		queue[#queue + 1] = wait
 		return
 	end
-	wait(false)
+	wait()
 end
 ---@param ready boolean
 ---@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key

@@ -595,7 +595,7 @@ do
 
 	-- Run by the package's runner at activation: PLAYER_LOGIN is past whatever the client says, and the wait starts
 	-- after the last file.
-	ns.ForeverCoreHostAfter = {}
+	ns.ForeverCoreHostAfter, ns.ForeverCoreHostDeferred = {}, true
 	ns.AfterEvents(callback, "PLAYER_LOGIN")
 	ns.AfterEvents(callback, "PLAYER_LOGIN", "VARIABLES_LOADED", "PLAYER_ENTERING_WORLD")
 	equal(calls, 0, "a deferred file's callback never runs inside the file that asked")
@@ -609,7 +609,13 @@ do
 	equal(calls, 1, "a wait with an event still to come does not")
 	equal(waits[2].events, "PLAYER_ENTERING_WORLD", "the client waits for that event only")
 
-	-- Asked later in the session (a startup callback, a button): the client and the loader say what is past.
+	-- Asked from a startup callback while PLAYER_LOGIN is still dispatching: the runner's mark holds.
+	ns.AfterEvents(callback, "PLAYER_LOGIN")
+	equal(calls, 2, "a deferred addon's later wait on the login calls back at once")
+	calls = 1
+
+	-- Asked later in the session: the client and the loader say what is past.
+	ns.ForeverCoreHostDeferred = nil
 	inWorld, seen.PLAYER_ENTERING_WORLD = true, true
 	ns.AfterEvents(callback, "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
 	equal(calls, 2, "everything past: called at once")
