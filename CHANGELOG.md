@@ -6,21 +6,15 @@
 
 - **Addon versions read without a leading v.** A packaged TOC now carries `## Version: 1.2.3` instead of the release tag `v1.2.3`, so every Forever addon's "updated to" line, report and saved version match the version they compare with. Release and CI builds write the version before packaging and fail a package whose version still starts with v. (#855)
 - **An addon that carries its own ForeverCore finishes loading before its saved settings are applied.** With no separate ForeverCore installed the addon's files run at login, and a file waiting for its own addon to load was called back at once, before the files after it: Adventure Guide Forever 1.12.2 raised `Core.lua:1306: attempt to index field 'QuestieOptions'`. Files now wait with `ns.OnFilesLoaded`, which calls back after the last file, and the package step refuses a file that waits the old way. A package with a file the game did not load stops with its usual line instead of a Lua error. (cjber/adventure-guide-forever#886)
+- **Clickable tracker lines work with the ForeverCore an addon carries.** `ForeverCore.TrackerLine.template` now names the clickable line template whichever ForeverCore runs, including an older separate ForeverCore install, and the embed step refuses an addon file that writes the template's name out instead of reading it there. SkillUp's trainer and vendor lines raised "Couldn't find inherited node" without a separate ForeverCore install. (#964)
+- **An older separate ForeverCore no longer holds back newer addons.** The ForeverCore download now loads the same way as the copy each Forever addon carries, so when both are installed the newest one runs. Before, an installed ForeverCore always ran even when an addon carried a newer one, and that addon could raise a Lua error at login. (#946)
+- **The outdated ForeverCore notice no longer blocks gamepad interactions.** The notice now closes with its OK button only, not with Escape or the gamepad confirm button. (#942)
 
 ### For addon authors
 
 - **The API kit shares world map markers and two more not-ready reasons.** `APIKit.RegisterMapMarkers(addonName, read)` and `APIKit.MapMarkers(map, except?)` replace the `ForeverMapMarkers` global each addon copied. `NotReady` also takes `"combat"` and `"unreachable"`, and `docs/api-conventions.md` says to answer anything else with `"none"`. `check_api_docs.py` now fails a hand-written `return nil, "invalid"` and any literal reason outside that set. (cjber/forever-core#961)
 - **ForeverCore publishes its own API.** It is the `"ForeverCore"` entry of `APIKit.Addons()`; `ForeverCore.API` stays a number.
 - **`ForeverCore.Journey` is removed.** No addon called it.
-
-## [1.15.5] - 2026-11-20
-
-### Fixed
-
-- **The outdated ForeverCore notice no longer blocks gamepad interactions.** The notice now closes with its OK button only, not with Escape or the gamepad confirm button. (#942)
-
-### For addon authors
-
 - **Addon releases check the ForeverCore they carry.** Each consumer ZIP's ForeverCore version is checked before upload, and published GitHub and CurseForge files are audited hourly.
 
 ## [1.15.4] - 2026-11-19
