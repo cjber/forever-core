@@ -1258,7 +1258,8 @@ local function Anchor(settings)
 	end
 	PinLeft()
 	local pinnedTop = host:GetTop() or screenHeight
-	return width, pinnedTop, BarRoom(host:GetLeft() or 0, width, pinnedTop, host:GetHeight() or screenHeight)
+	local pinnedFloor = BarRoom(host:GetLeft() or 0, width, pinnedTop, host:GetHeight() or screenHeight)
+	return width, pinnedTop, pinnedFloor
 end
 
 -- With no section to show, the column hides entirely; the next layout with content shows it again.
