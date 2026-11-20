@@ -35,6 +35,7 @@ FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --r
                                           # record the checkout's .visual-proof.json from a client session
 python3 tools/headless/forever_client.py attest --repo R --ref SHA --checkout PATH
                                           # the same from the user's passed checklist round, without the client
+python3 tools/audit_store_core.py --cache DIR # check the latest GitHub and CurseForge consumer downloads
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
@@ -73,6 +74,12 @@ entry and from those two scripts, and the runner's apt mirror is never touched. 
 `.github/workflows/bump-toolchain.yml` runs `tools/bump_toolchain.py` daily and opens or refreshes one `toolchain-bump`
 PR, and `.github/workflows/dependabot-merge.yml` runs `tools/dependabot_merge.py` hourly: a Dependabot patch or minor
 gets squash auto-merge in core and every consumer, and a major waits for review with the `major` label.
+`.github/workflows/store-core-audit.yml` checks the latest published consumer downloads hourly and on demand.
+A bridge copy behind core or any copy below v1.15.0 fails immediately. An older embedded copy at or above that floor
+gets 24 hours from core's publication for the sync PR, CI, release dispatch and store moderation. Read failures also
+fail the run. CI uses CurseForge's public file listing and CDN, opens or updates one issue, and leaves it open for
+review.
+
 Dependabot itself (`/.github/dependabot.yml`) updates the actions and the `uv` group daily with a one-day cooldown.
 `.github/workflows/suite.yml` runs `tools/suite_load.py` daily and on demand (`gh workflow run suite.yml`): it clones
 ForeverCore and every published addon's main and runs `tests/suite/suite_scenario.lua`, which loads ForeverCore first

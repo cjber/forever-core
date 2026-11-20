@@ -86,13 +86,13 @@ def addon_asset(release: dict) -> dict | None:
     return sorted(chosen, key=lambda asset: str(asset.get("name")))[0] if chosen else None
 
 
-def download(asset: dict, destination: Path) -> Path:
+def download(asset: dict, destination: Path, request=authorized) -> Path:
     """Fetch one release asset to `destination`, authenticated only when a token is set."""
     url = asset.get("browser_download_url") or asset.get("url")
     if not url:
         raise ReleasedError(f"release asset {asset.get('name')!r} has no download URL")
     try:
-        with urllib.request.urlopen(authorized(url), timeout=120) as response:
+        with urllib.request.urlopen(request(url), timeout=120) as response:
             destination.write_bytes(response.read())
     except (OSError, urllib.error.URLError, TimeoutError) as error:
         raise ReleasedError(f"could not download {asset.get('name')}: {error}") from None
@@ -120,10 +120,18 @@ def extract(archive: Path, destination: Path) -> None:
     try:
         with zipfile.ZipFile(archive) as package:
             members = [(member_path(info.filename), info) for info in package.infolist()]
+            installed = set()
             for path, info in members:
-                if info.is_dir() or not path.parts:
+                if not path.parts:
                     continue
+                key = tuple(part.rstrip(" .").casefold() for part in path.parts)
+                if key in installed:
+                    raise ReleasedError(f"refusing duplicate installed member {info.filename!r}")
+                installed.add(key)
                 target = destination.joinpath(*path.parts)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with package.open(info) as source, target.open("wb") as sink:
                     shutil.copyfileobj(source, sink)

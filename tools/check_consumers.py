@@ -441,7 +441,63 @@ def check_release_gate(repo, branch, local):
             f"{repo}: {path}: the ForeverCore pin gate must run `python3 -m {RELEASE_GATE_COMMAND}` directly above"
             " the packager"
         ]
-    return []
+    return [f"{repo}: {path}: {problem}" for problem in archive_release_problems(text)]
+
+
+ARCHIVE_COMMAND = "python3 -m tools.forever_tools.core_archive --release-dir .release --latest"
+ARCHIVE_CHECKSUM = """printf '%s  %s\\n' "$ARCHIVE_SHA256" "$ARCHIVE" | sha256sum --check --status"""
+
+
+def archive_release_problems(text):
+    """Require the same job to build, check and upload the checked ZIP."""
+    failures = []
+    uploads = 0
+    for steps in workflow_steps(text):
+        built = validated = False
+        validator_id = ""
+        previous = {}
+        for step in steps:
+            before, previous = previous, step
+            if (
+                built
+                and step.get("run", "").strip() == ARCHIVE_COMMAND
+                and not step.get("if")
+                and step.get("continue-on-error", "false") == "false"
+                and not step.get("working-directory")
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", step.get("id", ""))
+            ):
+                validated = True
+                validator_id = step["id"]
+            if not step_packages(step):
+                continue
+            args = step.get("args", "").split()
+            if args == ["-d"]:
+                built = not step.get("if") and step.get("continue-on-error", "false") == "false"
+                validated = False
+                continue
+            uploads += 1
+            output = f"${{{{ steps.{validator_id}.outputs.archive }}}}"
+            name = f"${{{{ steps.{validator_id}.outputs.archive_name }}}}"
+            if (
+                not validated
+                or set(args) != {"-c", "-z"}
+                or step.get("archive") != output
+                or step.get("archive_name") != name
+                or step.get("if")
+                or before.get("run", "").strip() != ARCHIVE_CHECKSUM
+                or before.get("ARCHIVE") != output
+                or before.get("ARCHIVE_SHA256") != f"${{{{ steps.{validator_id}.outputs.sha256 }}}}"
+                or before.get("if")
+                or before.get("continue-on-error", "false") != "false"
+            ):
+                failures.append(
+                    f"upload must use the validated ZIP: build with args: -d, run `{ARCHIVE_COMMAND}`"
+                    " in the same job, verify its SHA-256, then upload with args: -c -z and the"
+                    " validator's archive outputs"
+                )
+    if not uploads:
+        failures.append("release workflow has no BigWigs upload of the validated ZIP")
+    return failures
 
 
 EMBED_COMMAND = "tools.forever_tools.embed"
@@ -550,6 +606,7 @@ def workflow_steps(text):
     item_indent = None
     step = None
     block = None
+    mapping = None
     for line in lines[start + 1 :]:
         if not line.strip():
             if block is not None:
@@ -586,6 +643,7 @@ def workflow_steps(text):
         if body.startswith("- ") and (item_indent is None or width == item_indent):
             item_indent = width
             step = {}
+            mapping = None
             jobs[-1].append(step)
             body = body[2:].strip()
             width += 2
@@ -593,7 +651,17 @@ def workflow_steps(text):
             continue
         key, separator, value = body.partition(":")
         key = key.strip()
-        if not separator or key not in ("uses", "run", "if"):
+        if not separator:
+            continue
+        if width == item_indent + 2:
+            mapping = key if key in ("with", "env") else None
+            if key not in ("uses", "run", "if", "id", "continue-on-error", "working-directory"):
+                continue
+        elif mapping == "with" and key == "args":
+            pass
+        elif mapping == "env" and key in ("archive", "archive_name", "ARCHIVE", "ARCHIVE_SHA256"):
+            pass
+        else:
             continue
         value = value.strip()
         if key == "run" and value[:1] in ("|", ">"):

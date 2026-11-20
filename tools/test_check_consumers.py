@@ -569,9 +569,32 @@ class ReleaseGateCheckTest(unittest.TestCase):
             stream.write("          WAGO_API_TOKEN: token\n")
         self.assertTrue(any("retired WAGO_API_TOKEN" in failure for failure in self.check()))
 
-    def test_the_gate_above_the_packager_passes(self):
+    def test_pin_check_without_built_zip_fails(self):
         self.write()
-        self.assertEqual(self.check(), [])
+        self.assertIn("upload must use the validated ZIP", self.check()[0])
+
+    def test_documented_release_sequence_passes_and_each_bypass_fails(self):
+        example = (check_consumers.CORE_ROOT / "docs/dependency-transition.md").read_text().split("```yaml\n")[-1]
+        steps = example.split("```", 1)[0]
+        self.write(packager=False)
+        prelude = self.workflow.read_text()
+
+        def check(sequence):
+            self.workflow.write_text(prelude + "\n".join(f"      {line}" for line in sequence.splitlines()) + "\n")
+            return self.check()
+
+        self.assertEqual(check(steps), [])
+        for mutation in (
+            steps.replace("--latest", ""),
+            steps.replace("  id: validated", "  if: false\n  id: validated"),
+            steps.replace("  id: validated", "  continue-on-error: true\n  id: validated"),
+            steps.replace("args: -d", "args: -z"),
+            steps.replace("args: -c -z", "args: -c"),
+            steps.replace("outputs.archive }}", "outputs.unchecked_archive }}"),
+            steps.replace("sha256sum --check --status", "cat"),
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertTrue(check(mutation))
 
     def test_a_missing_gate_fails(self):
         self.write(gate=False)
