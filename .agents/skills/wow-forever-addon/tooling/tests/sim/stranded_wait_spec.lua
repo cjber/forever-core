@@ -21,12 +21,12 @@ for _, wait in ipairs(waits) do
 end
 table.sort(found)
 assert(
-	table.concat(found, ", ") == "callback PLAYER_LOGIN 11, frame VARIABLES_LOADED 15",
+	table.concat(found, ", ") == "callback PLAYER_LOGIN 12, frame VARIABLES_LOADED 16",
 	"stranded waits: " .. table.concat(found, ", ")
 )
 assert(#sim:strandedWaits("SomeOtherAddon") == 0, "filtered by addon")
 local ok, err = pcall(sim.expectNoStrandedWaits, sim, "SimStrandedWait")
-assert(not ok and err:find("SimStrandedWait.lua:11: SimStrandedWait waits for PLAYER_LOGIN", 1, true), tostring(err))
+assert(not ok and err:find("SimStrandedWait.lua:12: SimStrandedWait waits for PLAYER_LOGIN", 1, true), tostring(err))
 
 -- The login again (a scenario's sim:event) reaches every pending wait, so none is stranded any more.
 sim:event("PLAYER_LOGIN")
