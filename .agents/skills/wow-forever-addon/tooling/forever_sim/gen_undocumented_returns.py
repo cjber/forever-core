@@ -28,7 +28,7 @@ DOC_FUNCTION = re.compile(r'Name = "(\w+)",\s*\n\s*Type = "Function"')
 ANNOTATED = re.compile(r"((?:---[^\n]*\n)+)function ([\w.]+)\(")
 RETURN = re.compile(r"^---@return\s+(\S+)", re.M)
 # Annotation types and the docs type stubgen's zero value takes for each; any other name is a docs structure or enum.
-PLAIN = {"number": "number", "boolean": "bool", "string": "string", "table": "table", "any": "table"}
+PLAIN = {"number": "number", "boolean": "bool", "string": "string", "table": "table"}
 
 
 def doc_type(annotation: str) -> tuple[str, bool]:
