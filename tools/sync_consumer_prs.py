@@ -164,6 +164,15 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return run(["git", *args], cwd=root, check=check)
 
 
+def graphql_rate_limited(body: str) -> bool:
+    """Whether a GraphQL response body carries a RATE_LIMITED error, the field GitHub sets for either rate limit."""
+    try:
+        errors = json.loads(body).get("errors") or []
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    return any(isinstance(error, dict) and error.get("type") == "RATE_LIMITED" for error in errors)
+
+
 def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     # Include headers on API calls so rate-limit decisions use the response, never error-message matching.
     command = ["gh", *args, "--include"] if args and args[0] == "api" else ["gh", *args]
@@ -181,13 +190,16 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
             }
             result = subprocess.CompletedProcess(result.args, result.returncode, body, result.stderr)
         delay = None
-        if result.returncode and status in (403, 429):
+        # GraphQL reports a rate limit as status 200 or 403 with a RATE_LIMITED error, often without retry-after.
+        limited = status == 429 or (status in (200, 403) and graphql_rate_limited(result.stdout))
+        if result.returncode and (status in (403, 429) or limited):
             try:
                 if "retry-after" in headers:
                     delay = max(0, float(headers["retry-after"]))
                 elif headers.get("x-ratelimit-remaining") == "0":
                     delay = max(0, float(headers["x-ratelimit-reset"]) - time.time()) + 1
-                elif status == 429:
+                elif limited:
+                    # GitHub's guidance with no retry-after: wait at least a minute, backing off exponentially.
                     delay = 60 * 2**attempt
             except (KeyError, ValueError):
                 delay = None
