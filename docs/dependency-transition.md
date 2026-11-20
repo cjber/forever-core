@@ -63,7 +63,7 @@ The embed step also refuses a TOC whose `## SavedVariables` does not name exactl
 its account store into that one global, and a per-character global or a choice of several cannot hold it.
 
 An already-released standalone (any 1.14.x and 1.15.x up to 1.15.4) that is enabled publishes its table while it loads.
-Releases from 1.15.5 package the standalone wrapped (`build_embedded_core.py --standalone`), so it joins the election
+Releases after 1.15.4 package the standalone wrapped (`build_embedded_core.py --standalone`), so it joins the election
 as mode `standalone` instead, and `tools/check_release_archive.py` refuses a standalone zip without the
 `X-Forever-Core-Loader` header. A consumer still guards any facade member newer than 1.15.3, the oldest standalone a
 player may keep. The loader
