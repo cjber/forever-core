@@ -73,7 +73,19 @@ _ESCAPES = {
 }
 _NUMBER = re.compile(r"0[xX][0-9a-fA-F]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 _ADDON_PATH = re.compile(r"Interface[/\\]AddOns[/\\]([A-Za-z0-9_]+)[/\\]")
-_TAINT_STAMP = re.compile(r"^(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{2}):(\d{2})\.(\d{3})\s+(.*)$")
+# The client stamps every taint.log line, separates a record's header from the stamp by two spaces and
+# indents each stack frame under it further.
+_TAINT_STAMP = re.compile(r"^(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{2}):(\d{2})\.(\d{3})( +)(.*)$")
+_HEADER_GAP = "  "
+# The client's taint record headers. A write or read names the addon whose taint it is and the code
+# that ran; a blocked action names the addon and the protected function.
+_TAINT_WRITE = re.compile(r"^(?:Tainted value written to global .+? by|Global variable .+? tainted by) (\S+) - (.+)$")
+_TAINT_READ = re.compile(r"^Execution tainted by (\S+) while reading .+ - (.+)$")
+_TAINT_BLOCKED = re.compile(r"^An action was blocked(?: in combat)? because of taint from (\S+) - (.+)$")
+# Blizzard's own code, the secure code taint can harm: its Blizzard_ addons and the FrameXML folders.
+_SECURE_CODE = re.compile(r"^Interface[/\\](?:AddOns[/\\]Blizzard_|FrameXML[/\\]|SharedXML[/\\]|GlueXML[/\\])")
+# The client's secure call boundaries: taint picked up inside one is dropped when it returns.
+_SECURE_BOUNDARIES = frozenset({"securecall()", "securecallfunction()", "secureexecuterange()", "secureexecutenext()"})
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]+")
 _DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _COUNT_MARKER = re.compile(r"forever-errors:.*?\bcount=(\d+)")
@@ -354,6 +366,7 @@ class LogLine:
     when: datetime | None
     text: str
     raw: str
+    frame: bool = False
 
 
 def folder_for_global(name: str) -> str | None:
@@ -588,19 +601,73 @@ def read_taint_log(path: Path, reference: datetime | None = None) -> list[LogLin
         lines.append(
             LogLine(
                 _log_datetime(reference, month, day, hour, minute, second, millisecond),
-                match.group(7),
+                match.group(8),
                 raw,
+                frame=match.group(7) != _HEADER_GAP,
             )
         )
     return lines
 
 
+@dataclass(frozen=True)
+class TaintRecord:
+    """One taint.log record: the client's header line and the stack frames under it."""
+
+    header: LogLine
+    frames: tuple[str, ...]
+
+
+def taint_records(lines: Sequence[LogLine]) -> list[TaintRecord]:
+    records: list[TaintRecord] = []
+    for line in lines:
+        if line.when is None:
+            continue
+        if line.frame and records:
+            last = records[-1]
+            records[-1] = TaintRecord(last.header, (*last.frames, line.text.strip()))
+        elif not line.frame:
+            records.append(TaintRecord(line, ()))
+    return records
+
+
+def _contained(frames: Sequence[str]) -> bool:
+    return any(frame in _SECURE_BOUNDARIES for frame in frames)
+
+
+def taint_defect(record: TaintRecord) -> str | None:
+    """The folder of ours whose taint this record shows harming secure code, or None.
+
+    The client logs every change of taint, including one addon's code reading a value another addon
+    wrote. Addon code is insecure already, so that changes nothing a player can see: ForeverCore's
+    loader running an addon's files, or an addon reading ForeverCore's global, is not a defect. A
+    record is one only when secure code is harmed: a protected action was blocked, Blizzard code wrote
+    a global under an addon's taint (the tainted value outlives the call), or Blizzard code ran tainted
+    outside a secure call boundary (inside one, the client drops the taint on return, and anything
+    harmful it did there is logged as its own write or blocked record). A header outside this grammar
+    counts when it names one of our folders, so a record the client words differently stays red.
+    """
+    text = record.header.text.strip()
+    if match := _TAINT_BLOCKED.match(text):
+        addon = match.group(1)
+        return addon if addon in FOLDERS else None
+    if match := _TAINT_WRITE.match(text):
+        addon, where = match.groups()
+        secure = _SECURE_CODE.match(where) is not None
+        return addon if secure and addon in FOLDERS else None
+    if match := _TAINT_READ.match(text):
+        addon, where = match.groups()
+        secure = _SECURE_CODE.match(where) is not None and not _contained(record.frames)
+        return addon if secure and addon in FOLDERS else None
+    return folder_in(text) or next((f for f in map(folder_in, record.frames) if f), None)
+
+
 def _taint_entries(lines: Sequence[LogLine]) -> list[Entry]:
     entries: list[Entry] = []
-    for line in lines:
-        folder = folder_in(line.text)
+    for record in taint_records(lines):
+        folder = taint_defect(record)
         if folder is None:
             continue
+        line = record.header
         message = line.text.strip()
         signature = signature_for("taint", message, "")
         when = line.when.timestamp() if line.when is not None else None
@@ -612,7 +679,7 @@ def _taint_entries(lines: Sequence[LogLine]) -> list[Entry]:
                 signature=signature,
                 kind="taint",
                 message=message,
-                stack="",
+                stack="\n".join(record.frames),
                 count=1,
                 first_seen=when,
                 last_seen=when,
@@ -661,8 +728,9 @@ def load_sources(wtf: Path, logs: Path, reference: datetime | None = None) -> Lo
             entries.extend(_journal_entries(folder, data))
             journal_log.extend(_journal_log_lines(data))
     entries.extend(_buggrabber_entries(wtf, warnings))
-    log_lines = journal_log + read_taint_log(logs / "taint.log", reference)
-    entries.extend(_taint_entries(log_lines))
+    taint_lines = read_taint_log(logs / "taint.log", reference)
+    entries.extend(_taint_entries(taint_lines))
+    log_lines = journal_log + taint_lines
     return Loaded(tuple(entries), tuple(log_lines), tuple(warnings))
 
 
