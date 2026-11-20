@@ -664,6 +664,10 @@ do
 		return {}
 	end)
 	equal(#kit.MapMarkers(map), 1, "registering a name again replaces its reader")
+	kit.RegisterMapMarkers("LoopForever", function()
+		return kit.MapMarkers(map, "LoopForever")
+	end)
+	equal(#kit.MapMarkers(map), 1, "a reader that asks for the others while read gets none, and the read ends")
 	check(not pcall(kit.RegisterMapMarkers, "", function() end), "an empty name is refused")
 	check(not pcall(kit.RegisterMapMarkers, "X", "no"), "a reader that is not a function is refused")
 end

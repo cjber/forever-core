@@ -212,10 +212,18 @@ end
 -- The shown markers of every registered addon on `map`, a fresh list of fresh `{ addon, x, y, kind }` entries, without
 -- the addon named `except` (a reader leaves out its own). A reader that errors, or an entry with no numeric place, is
 -- left out rather than failing the caller.
+-- A reader that asks for the others' markers while it is being read gets none, so two readers cannot call each other
+-- without end.
+local reading = false
+
 ---@param map table
 ---@param except? string
 ---@return ForeverCoreMapMarker[]
 function APIKit.MapMarkers(map, except)
+	if reading then
+		return {}
+	end
+	reading = true
 	local names = {}
 	for name in pairs(markerReaders) do
 		if name ~= except then
@@ -235,6 +243,7 @@ function APIKit.MapMarkers(map, except)
 			end
 		end
 	end
+	reading = false
 	return all
 end
 
