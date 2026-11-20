@@ -231,8 +231,6 @@ LAUNCHER_SIGN_IN_LABELS = (
 )
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
-# Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.
-LAUNCHER_LOGIN_LABELS = (("logging", "in"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
@@ -2225,17 +2223,9 @@ def press_play(state: dict) -> None:
         )
     targets = play_targets(image)
     if not targets:
-        # The label trails its animated dots ("Logging in.."), which are not part of it.
-        label_words = [word.rstrip(".") for word in words]
-        if any(
-            label_words[index : index + len(phrase)] == list(phrase)
-            for phrase in LAUNCHER_LOGIN_LABELS
-            for index in range(len(label_words))
-        ):
-            return
-        # A launcher dialog can cover the page. Dismiss it on the discovered
-        # Battle.net window, then let the startup loop inspect a fresh frame.
-        x(state, "key", "--window", found.stdout.split()[0], "Escape")
+        # No input while Play is not drawn: the launcher shows its own splash and pop-ups first, and Blizzard's
+        # token-security-checkpoint pop-up passes by itself within a second. A key sent to it cancels that check, and
+        # Battle.net then deletes the saved login token, logging the player out.
         if not state.get("play_target_missing_reported"):
             # Every retry overwrites launcher.png, so by the time anyone reads this line the file shows a later
             # frame (often one with Play drawn). Keep the frame this report is about under its own name.

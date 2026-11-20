@@ -1008,20 +1008,7 @@ class ForeverClientTest(unittest.TestCase):
         shot.assert_not_called()
         x.assert_not_called()
 
-    def test_press_play_sends_no_escape_on_the_logging_in_splash(self):
-        with (
-            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345\n")),
-            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
-            mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
-            mock.patch.object(fc, "ocr_words", return_value=[(w, 95.0, 0, 0, 20, 20) for w in ("Logging", "in..")]),
-            mock.patch.object(fc, "play_targets", return_value=[]),
-            mock.patch.object(fc, "x") as x,
-        ):
-            fc.press_play({"display": ":1"})
-        x.assert_not_called()
-
-    def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
+    def test_press_play_sends_no_input_until_play_is_drawn(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
         (self.state / "launcher.png").write_bytes(b"frame")
@@ -1030,17 +1017,17 @@ class ForeverClientTest(unittest.TestCase):
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
             mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
             mock.patch.object(fc, "client_pid", return_value=None),
-            mock.patch.object(fc, "ocr_words", return_value=[]),
+            mock.patch.object(
+                fc, "ocr_words", side_effect=[[], [(w, 95.0, 0, 0, 20, 20) for w in ("Logging", "in..")]]
+            ),
             mock.patch.object(fc, "play_targets", return_value=[]),
             mock.patch.object(fc, "x") as x,
             contextlib.redirect_stderr(io.StringIO()) as warning,
         ):
+            # A security-checkpoint pop-up, then the login splash: a key would cancel the check and log the player out.
             fc.press_play(state)
             fc.press_play(state)
-        self.assertEqual(
-            x.call_args_list,
-            [mock.call(state, "key", "--window", "12345", "Escape")] * 2,
-        )
+        x.assert_not_called()
         self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
         self.assertIn(str(self.state / "launcher-no-play.png"), warning.getvalue())
         self.assertEqual((self.state / "launcher-no-play.png").read_bytes(), b"frame")
