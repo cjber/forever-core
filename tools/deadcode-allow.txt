@@ -1,2 +1,3 @@
 # Dynamic runtime dispatch and cross-addon reporting API members retained intentionally.
 Core/ForeverRequire.lua:OnFilesLoaded # shared file, the same in every addon: only an addon with a startup callback calls it
+Core/ForeverRequire.lua:AfterEvents # shared file, the same in every addon: only an addon that waits for a loading event calls it
