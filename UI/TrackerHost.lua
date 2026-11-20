@@ -92,9 +92,10 @@ end
 -- Runs `callback` once the world is entered and saved variables are loaded. Defined before the foreign-column branch
 -- below, since core's tracker sections wait on it with either column. A copy the loader boots after one of those
 -- events has fired (Loader.Seen) waits only for the rest: EventUtil.ContinueAfterAllEvents never completes for an
--- event that came before it was registered. The unwrapped standalone loads before both and waits for both.
----@param callback fun()
-function ns.AfterWorldEvents(callback)
+-- event that came before it was registered. The one wait starts as this file runs, so a section created after login
+-- (in an unwrapped load no loader saw the events) joins it instead of waiting on an event already past.
+local worldReady, worldWaiting = false, {}
+do
 	local loader = rawget(_G, "ForeverCoreLoader")
 	local seen = type(loader) == "table" and type(loader.Seen) == "function" and loader.Seen or nil
 	local pending = {}
@@ -103,10 +104,32 @@ function ns.AfterWorldEvents(callback)
 			pending[#pending + 1] = event
 		end
 	end
+	local function Ready()
+		worldReady = true
+		local waiting = worldWaiting
+		worldWaiting = {}
+		-- One failing section must not strand the rest; without the client's handler (offline specs) errors raise.
+		local getHandler = rawget(_G, "geterrorhandler")
+		for _, callback in ipairs(waiting) do
+			if getHandler then
+				xpcall(callback, getHandler())
+			else
+				callback()
+			end
+		end
+	end
 	if #pending == 0 then
+		worldReady = true
+	else
+		EventUtil.ContinueAfterAllEvents(Ready, unpack(pending))
+	end
+end
+---@param callback fun()
+function ns.AfterWorldEvents(callback)
+	if worldReady then
 		callback()
 	else
-		EventUtil.ContinueAfterAllEvents(callback, unpack(pending))
+		worldWaiting[#worldWaiting + 1] = callback
 	end
 end
 
