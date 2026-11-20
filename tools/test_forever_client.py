@@ -107,7 +107,7 @@ class ForeverClientTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "nvidia_mismatch", return_value=None))
 
     def test_sign_in_labels_persist_and_block_later_starts(self):
-        for label in ("Welcome back", "Email a code", "Use password", "Use passkey"):
+        for label in ("Welcome back", "Email a code", "Use password", "Use passkey", "Log in or sign up"):
             with (
                 self.subTest(label=label),
                 mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),

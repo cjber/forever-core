@@ -18,9 +18,10 @@ the order decides which release stops waiting first.
 
 `tools/systemd/forever-smoke.timer` runs it every 30 minutes at `Nice=10` on the machine that has the client; see
 `wow-forever-addon/in-game.md` for installing it. One client means one session, shared with an agent's jobs: a smoke
-that exits 3 (the player's own client is running) stops the run at once and leaves every later commit for the next
-timer, so the queue never queues behind the player. It reads the same repository list, head commit and status as
-`tools/release_consumers.py`, so a new addon needs no edit here.
+that exits 3 (the player's own client is running, or Battle.net needs the player's sign-in) stops the run at once and
+leaves every later commit for the next timer, so the queue never queues behind the player or a logged-out launcher.
+It reads the same repository list, head commit and status as `tools/release_consumers.py`, so a new addon needs no
+edit here.
 """
 
 import argparse
@@ -110,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         code = smoke(repo, commit)
         if code == 3:
-            print(f"{repo}: the client is in use; stopping until the next run")
+            print(f"{repo}: the client is in use or needs a sign-in; stopping until the next run")
             return 0
         if code == 1:
             failures += 1

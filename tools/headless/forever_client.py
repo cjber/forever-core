@@ -220,7 +220,15 @@ SIGN_IN_MESSAGE = (
     "Battle.net needs the player's sign-in; start with --manual-launcher while the player is present, "
     "sign in, and reach READY to clear the block"
 )
-LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
+# Battle.net's own exact labels on its sign-in pages: the returning-account page and the logged-out "Log in or sign up"
+# page (#951). Neither has a Play button, so the startup loop would otherwise press Escape until its deadline.
+LAUNCHER_SIGN_IN_LABELS = (
+    ("welcome", "back"),
+    ("email", "a", "code"),
+    ("use", "password"),
+    ("use", "passkey"),
+    ("log", "in", "or", "sign", "up"),
+)
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
 # Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.

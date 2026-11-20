@@ -106,7 +106,7 @@ class QueueTest(unittest.TestCase):
         code, printed, smoked, _run = self.run_queue(heads, states, codes=(3,))
         self.assertEqual(code, 0)
         self.assertEqual(smoked, [("forever-core", SHA)])
-        self.assertIn("the client is in use; stopping until the next run", printed)
+        self.assertIn("the client is in use or needs a sign-in; stopping until the next run", printed)
 
     def test_a_recorded_failure_does_not_stop_the_next_repository(self):
         heads = {"forever-core": SHA, "legacy-forever": OTHER}
