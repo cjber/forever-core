@@ -19,7 +19,17 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-__all__ = ["FILES", "Layout", "Manifest", "layout", "localization_toc_files", "project_toc_files", "read"]
+__all__ = [
+    "FILES",
+    "Layout",
+    "Manifest",
+    "Packaging",
+    "layout",
+    "localization_toc_files",
+    "packaging",
+    "project_toc_files",
+    "read",
+]
 
 PKGMETA = ".pkgmeta"
 FALLBACK = "pkgmeta.yaml"
@@ -182,43 +192,93 @@ def _raw_move_syntax(text: str) -> tuple[dict[str, str], dict[str, str]]:
     return bad_sources, bad_targets
 
 
-def _external_entries(text: str) -> tuple[tuple[str, str], ...]:
-    """One top-level `externals:` mapping's first-level `(key, url)` pairs.
+# The block-form properties release.sh reads under one external. It does not track indentation under `externals:`:
+# every other key, at any depth, starts a new external that it checks out.
+EXTERNAL_PROPERTIES = frozenset({"url", "tag", "branch", "commit", "type", "curse-slug", "path"})
 
-    BigWigs accepts both `ForeverCore: <url>` and a `ForeverCore:` block holding `url:` and `tag:` children. Only
-    the first-level names are externals; a child key names a property, not a second addon. The first indented
-    entry fixes the block's key indentation, so a nested child is never mistaken for a top-level key. A block
-    form's `url:` child supplies that entry's URL.
+
+def _external_entries(text: str) -> tuple[tuple[str, str], ...]:
+    """One top-level `externals:` mapping's `(key, url)` pairs, read as release.sh reads them.
+
+    BigWigs accepts both `ForeverCore: <url>` and a `ForeverCore:` block holding `url:` and `tag:` children. The
+    packager flattens the indentation: a known property (`EXTERNAL_PROPERTIES`) belongs to the external above it, and
+    any other key is a new external whatever its indent, so a key nested deeper than its siblings is still checked
+    out. A block form's `url:` child supplies that entry's URL.
     """
     entries: list[list[str]] = []
     phase = ""
-    base = None
     current: list[str] | None = None
     for line in _lines(text):
         previous = phase
         phase = _phase(line, phase)
         if phase != previous:
-            base = None
             current = None
         if phase != "externals" or not line.startswith(" "):
             continue
         stripped = line.lstrip(" ")
         if stripped.startswith("- "):
             continue
-        indent = len(line) - len(stripped)
-        if base is None:
-            base = indent
         name, found, value = stripped.partition(":")
         if not found:
             continue
-        if indent == base:
-            key = _unquote(name.strip())
-            if key:
-                current = [key, _unquote(value.strip())]
-                entries.append(current)
-        elif current is not None and _unquote(name.strip()).casefold() == "url" and not current[1]:
-            current[1] = _unquote(value.strip())
+        key = _unquote(name.strip())
+        if not key:
+            continue
+        if key.casefold() in EXTERNAL_PROPERTIES and current is not None:
+            if key.casefold() == "url" and not current[1]:
+                current[1] = _unquote(value.strip())
+            continue
+        current = [key, _unquote(value.strip())]
+        entries.append(current)
     return tuple((key, value) for key, value in entries)
+
+
+@dataclass(frozen=True)
+class Packaging:
+    """Where a `.pkgmeta` ships folders and which store relations it declares, read as release.sh reads them.
+
+    `externals` are `(path, url)` pairs in the scalar or block form, `moves` are `(source, destination)` pairs, and
+    `embedded` and `required` are the `embedded-libraries` and `required-dependencies` list entries exactly as the
+    uploader keeps them: a trailing space stays part of the name, and a flow list or a mapping is no entry at all.
+    """
+
+    externals: tuple[tuple[str, str], ...]
+    moves: tuple[tuple[str, str], ...]
+    embedded: tuple[str, ...]
+    required: tuple[str, ...]
+    # Every `(relation, slug)` list entry under a store relation key, in file order. The uploader keeps one relation
+    # per slug, the last one it reads.
+    relations: tuple[tuple[str, str], ...] = ()
+
+
+# The store relation keys release.sh uploads, each a list of project slugs.
+RELATIONS = ("required-dependencies", "optional-dependencies", "embedded-libraries", "tools-used", "incompatible")
+
+
+def _relations(text: str) -> tuple[tuple[str, str], ...]:
+    """Every relation list entry as `(relation, slug)`, in the order the file declares them."""
+    entries = []
+    phase = ""
+    for line in _lines(text):
+        phase = _phase(line, phase)
+        if phase not in RELATIONS or not line.startswith(" ") or not line.lstrip(" ").startswith("- "):
+            continue
+        entry = _unquote(line.lstrip(" ")[1:].lstrip())
+        if entry:
+            entries.append((phase, entry))
+    return tuple(entries)
+
+
+def packaging(text: str) -> Packaging:
+    """The `.pkgmeta` text's externals, moves and store relations. Raises ValueError on a leading tab, which the
+    packager refuses before it reads anything."""
+    return Packaging(
+        _external_entries(text),
+        _mapping(text, "move-folders"),
+        tuple(_entries(text, "embedded-libraries")),
+        tuple(_entries(text, "required-dependencies")),
+        _relations(text),
+    )
 
 
 def _external_keys(text: str) -> tuple[str, ...]:

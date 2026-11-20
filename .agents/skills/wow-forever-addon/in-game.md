@@ -16,7 +16,14 @@ another from one queue instead of racing for the job lock, the sign-in and the A
      "Read ~/.agents/skills/sweep/profiles/wow-ingame.md and follow it. Resume ~/.local/state/sweep/wow/ingame-queue.md."
    ```
 
-2. Push the candidate commit, then send one request:
+2. Cover every logic check offline first: busted specs plus the vendored `tools/forever_sim`, which stubs the
+   client API. Ask the client only for what only it can show: real layout and pixels, Blizzard frame interplay
+   (tracker, map, Questie), taint, load order, real game data, motion over reload, zone change or a taxi flight.
+   The PR says which checks the specs or sim cover.
+
+   Testing runs in rounds: all coding first, then one round tests every addon. Push the code-complete commit, then
+   append the request below as one block to `~/.local/state/sweep/wow/notes/ingame/round-next.md`. The coordinator
+   cuts the round; a request outside a sweep goes to the in-game session directly and joins the next round.
 
    ```
    INGAME <repo> <full sha> from <your kiln id>
@@ -24,11 +31,23 @@ another from one queue instead of racing for the job lock, the sign-in and the A
    checkout: <worktree path>                       (proof and check)
    flows: <name>=<slash or lua file>; ...          (proof)
    check: <what to verify, steps, expected result> (check)
+   changelog: <bullet> => <flow name>; ...         (proof)
    needs: <third-party addons, character, place>   (optional)
    ```
 
+   A proof's flows follow [Behaviour and cost flows](#behaviour-and-cost-flows): one per changed surface, each doing
+   what a player does there and raising on an unexpected result or a handler over one frame. `changelog:` maps every
+   `CHANGELOG.md` bullet the change adds to the flow that proves it; a bullet with no flow sends the request back.
+
    The ref is the full 40-character SHA of a pushed commit. Every check one commit needs goes in one message, as
-   several `kind:` blocks one after another, so the in-game agent loads that build once. A `check` names
+   several `kind:` blocks one after another, so the in-game agent loads that build once.
+
+   A round is one logged-in session: it links one build per addon together, runs every block in one pass and posts
+   each proof to its own PR. A request that arrives mid-round waits for the next. Split a batch only for a real
+   conflict (two builds of one addon, incompatible characters or places) and say the reason in the reply.
+
+   The client stays logged in while any work is queued. Never `down` it between checks or batches; send the
+   request and the live session picks it up. A `check` names
    everything the in-game agent needs to judge it without asking back: the steps, the expected result, and the frame
    or text that shows it.
 
@@ -76,7 +95,7 @@ them where it can:
    `walkto`, `where`, `park`) runs
    inside a job, so run a test as `job -- <script>` (or `run -- <script>`, the name it had before); the one exception
    is the `shot` and button-1 `click` that click Play for a `--manual-launcher` session, which run without the job
-   lock. The session ends 10 minutes after the last job and 3 hours after it started, and every ending types `/quit`
+   lock. The session ends 60 minutes after the last job (never while a request is queued or a lease is live) and 3 hours after it started, and every ending types `/quit`
    so the character logs out, then stops the client.
 3. **Human pace.** Inputs are at least 1.5 s apart across invocations and slash commands type at 120 ms a key.
    Never loop inputs: take a shot, read it, decide the next action.
@@ -134,8 +153,8 @@ FOREVER_CLIENT_JOB=$TOKEN FOREVER_CLIENT_CALLER=in-game python3 $FC click 960 54
 FOREVER_CLIENT_CALLER=in-game python3 $FC release $TOKEN
 ```
 
-A session ends 10 minutes after the last job ended (or after READY when none has run) and never later than 3 hours
-from its start. At either end it takes the job lock first, so a job in flight is never cut off; `down` does the
+A session ends 60 minutes after the last job ended (or after READY when none has run), unless a request is queued or
+a lease is live, and never later than 3 hours from its start. At either end it takes the job lock first, so a job in flight is never cut off; `down` does the
 same. Every ending logs the character out and stops the client.
 
 ## Smoking a release commit
@@ -248,6 +267,12 @@ true writes the client's own reason to `DevSmokeDB.eval` and saves it; `proof` r
 `ChatEdit_SendText` in the same `!!DevSmoke` route, so its capture follows a confirmed run and its own eval result is
 checked; there is no fixed settle. Name a Lua flow for anything that must wait on data.
 
+A secure slash flow (`--flow "route=/cast Cooking"`; also `/use`, `/click`, `/target`, ...: the client's secure
+words, listed as `SECURE_SLASH_WORDS` in `forever_client.py`) cannot run from Lua at all, so the proof types it into
+chat as the `slash` verb does, after the reload's world screenshot, then settles 3 s before the capture. It has no ready
+check, no eval result and no `--flow-click`. Each flow reloads first, so a later Lua flow starts from a fresh world and
+does not continue from the window the secure flow opened.
+
 A flow whose window only a real click opens names that click with `--flow-click "NAME=X,Y"`, where `X,Y` are the same
 screenshot coordinates `click` takes:
 
@@ -262,6 +287,75 @@ screenshot is waited for. Opening a profession window is a protected action no L
 once `professions.lua`'s ready check sees it filled. `NAME` must match a
 `--flow` name, and the proof's flow entry records the point as `click`, so the evidence says what was clicked. A flow
 with no `--flow-click` is unchanged.
+
+### From the user's checklist pass
+
+When the user has tested a build in the live client from the checklist (`tools/checklist/README.md`), that pass is the
+proof: no headless run is needed. The in-game agent records each linked build with
+`checklist build --addon R --sha SHA --artifact test-artifacts/<dir> --digest <input_digest> --client-build <build>`,
+where the digest is `visual_proof --digests`' `input_digest` of that commit and the client build is the client's
+version line (`1.60.1.70959 (Interface 16001)`). Recording `--artifact` also hashes every file of that unpacked build.
+Once the round passes, anyone writes the proof without the
+client:
+
+```sh
+python3 $FC attest --repo shortest-path-forever --ref <sha> --checkout <worktree at that sha> [--shot <client screenshot>]
+```
+
+`attest` reads `checklist status --addon R --sha SHA --json` and refuses unless the build passed the gate (every check
+passed, or skipped where the check is optional, with at least one pass), each answer was given against this build, the
+round recorded this commit and a client build, its digest equals the checkout's `input_digest`, the unpacked build
+still hashes to what was recorded when it was linked, and it compares equal to the checkout (`visual_proof
+--compare`). Each passed check becomes a flow. The screenshots pasted into passed checks, plus any `--shot` from the
+client's Screenshots folder, are converted to PNG and go to a new secret gist, at least one in total. The file carries
+`kind: user-checked` and the round, and is committed with the change like any proof. A move-folders addon, whose proof
+must test a release package, cannot be attested from a source build.
+
+### Behaviour and cost flows
+
+A proof shows that the change works and what it costs, not only how it looks (WFA-40). Each flow is a Lua file that
+does what a player does on the changed surface, then checks the result and the cost from its ready function. A raise
+there fails the proof with its message, so the message says what was expected and what happened. The cost comes from
+`!!DevPerf`'s per-event split: `/devperf events reset` at the start scopes it to the flow, and the session's
+`events` table (format in forever-dev's `!!DevPerf/AGENTS.md`) holds every Forever handler's peak and its calls
+over one frame.
+
+```lua
+-- sorted-recipe.lua: with the Professions window open (the flow's --flow-click), sort by skill-up and pick a recipe.
+SlashCmdList.DEVPERF("events reset")
+local events = DevPerfDB.sessions[#DevPerfDB.sessions].events
+SkillUpForever.SortBy("skillup")
+SkillUpForever.SelectRow(1)
+local started = GetTime()
+return function()
+	-- Expected result: the window stays open on the chosen recipe.
+	if not ProfessionsFrame:IsShown() then
+		error("expected ProfessionsFrame open after picking a sorted recipe, it closed")
+	end
+	-- Cost: no Forever handler call or tick over one frame during the flow.
+	for addon, handlers in pairs(events.handlers or {}) do
+		for key, stat in pairs(handlers) do
+			if stat.over > 0 then
+				error(("%s %s took %.1f ms, over one frame"):format(addon, key, stat.peakMs))
+			end
+		end
+	end
+	local spike = events.spikes and events.spikes[1]
+	if spike then
+		error(("%s spent %.1f ms in one tick (%s)"):format(spike.addon, spike.ms, spike.source))
+	end
+	-- Give late events a second to land before passing.
+	return GetTime() - started > 1
+end
+```
+
+- One flow per changed surface, named for it, and every action a player takes there: a list sorted and clicked, a
+  purchase, the bags opened at a merchant, the camera turned with a route loaded. A flow that only opens a window
+  proves only that it opens.
+- Each action states its expected result in the check that raises, the frame or value a player would see.
+- `events.off` set means the build cannot time handlers: report it, since the cost half of the proof is missing.
+- The `SkillUpForever` calls above stand for the addon's own entry points: drive the addon through its real
+  functions or widgets, never a test-only path.
 
 `tools/sync_consumer_prs.py` cannot drive the client itself, so for a sync pull request whose changed files need a
 proof it prints this command for the pull request's head, and the release session runs it and commits the result.

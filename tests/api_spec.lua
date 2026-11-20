@@ -182,6 +182,16 @@ later.legacySettings = { scale = 0.5, attached = true }
 host.Attach(later)
 equal(env.ForeverCoreDB.trackerHost.scale, 1.5, "a later offer changes nothing")
 
+-- An attached legacy table's spot is dropped, and a place the store already has is kept.
+env.ForeverCoreDB.trackerHost = { placement = "left" }
+local attachedLegacy = widget("Frame")
+attachedLegacy.legacySettings = { scale = 0.8, attached = true, x = 7, y = -7 }
+host.Attach(attachedLegacy)
+settings = env.ForeverCoreDB.trackerHost
+equal(settings.placement, "left", "a legacy offer keeps the store's place")
+equal(settings.x, nil, "an attached legacy spot is not copied")
+equal(settings.scale, 0.8, "but its scale is")
+
 print(("api_spec: %d checks passed"):format(checks))
 
 check(type(ForeverCore.Open) == "function", "Open is published")

@@ -355,7 +355,9 @@ function M.build(sim)
 		return W.openProfession and profession(W.openProfession)
 	end
 	sim.profession = open
-	local function professionInfo(p)
+	-- A profession's child skill line (Cooking 185, child 2939) shows only where Forever reports it: by recipe. The open
+	-- window reports the base line with no parent, and GetProfessionChildSkillLineID is 0 (cjber/forever-core#831).
+	local function professionInfo(p, child)
 		local info = sim.api.zero({ Type = "ProfessionInfo" })
 		if not p then
 			return info
@@ -364,6 +366,11 @@ function M.build(sim)
 		info.professionName = p.name
 		info.parentProfessionName = nil
 		info.parentProfessionID = nil
+		if child and p.childSkillLineID then
+			info.professionID = p.childSkillLineID
+			info.parentProfessionID = p.skillLineID
+			info.parentProfessionName = p.name
+		end
 		info.skillLevel = p.skill
 		info.maxSkillLevel = p.max
 		info.skillModifier = p.modifier or 0
@@ -378,13 +385,36 @@ function M.build(sim)
 		for i in ipairs(W.professions) do
 			idx[i] = i
 		end
-		return idx[1], idx[2], idx[3], idx[4], idx[5], idx[6]
+		return idx[1], idx[2], idx[3], idx[4], idx[5], idx[6], idx[7]
 	end
 	impl.GetProfessionInfo = function(index)
 		local p = W.professions[index]
 		if p then
-			return p.name, p.icon or 136241, p.skill, p.max, 0, 0, p.skillLineID, p.modifier or 0, 0, 0, p.name
+			return p.name, p.icon or 136241, p.skill, p.max, 1, index - 1, p.skillLineID, p.modifier or 0, 0, 0, p.name
 		end
+	end
+	-- Each profession's spell sits in the player's spellbook at its profession index, so the client's right-hand
+	-- profession tabs show one per profession that has a crafting window (p.craftingUI false: Herbalism, Skinning).
+	local function spellProfession(spellID)
+		for index, p in ipairs(W.professions) do
+			if (p.spellID or 900000 + index) == spellID then
+				return p
+			end
+		end
+	end
+	impl["C_SpellBook.GetSpellBookItemInfo"] = function(slot)
+		local index = W.professions[slot] and slot
+		if index then
+			local p = W.professions[index]
+			local info = sim.api.zero({ Type = "SpellBookItemInfo" })
+			info.spellID = p.spellID or 900000 + index
+			info.name = p.name
+			return info
+		end
+	end
+	impl["C_TradeSkillUI.CanTradeSkillShowCraftingUI"] = function(spellID)
+		local p = spellProfession(spellID)
+		return p ~= nil and p.craftingUI ~= false
 	end
 	impl["C_TradeSkillUI.GetBaseProfessionInfo"] = function()
 		return professionInfo(open())
@@ -403,7 +433,7 @@ function M.build(sim)
 		for _, p in ipairs(W.professions) do
 			for _, r in ipairs(p.recipes or {}) do
 				if r.id == recipeID then
-					return professionInfo(p)
+					return professionInfo(p, true)
 				end
 			end
 		end
@@ -559,6 +589,39 @@ function M.build(sim)
 		end
 		return false
 	end
+	impl["C_TradeSkillUI.GetProfessionChildSkillLineID"] = function()
+		return 0
+	end
+	local function recipeProfession(recipeID)
+		for _, p in ipairs(W.professions) do
+			for _, r in ipairs(p.recipes or {}) do
+				if r.id == recipeID then
+					return p
+				end
+			end
+		end
+	end
+	local function openRecipeResponse(recipeID)
+		local p = recipeProfession(recipeID)
+		if p then
+			sim.events.queue("OPEN_RECIPE_RESPONSE", recipeID, p.skillLineID, p.childSkillLineID or p.skillLineID)
+		end
+	end
+	-- Forever's OpenRecipe, recorded live (cjber/forever-core#831, cjber/skillup-forever#840), where retail selects the
+	-- recipe in the open window: the window closes, with three TRADE_SKILL_CLOSE in one frame, and then
+	-- OPEN_RECIPE_RESPONSE(recipeID, base, child) fires; the window never reopens.
+	impl["C_TradeSkillUI.OpenRecipe"] = function(recipeID)
+		if W.openProfession then
+			W.openProfession = nil
+			for _ = 1, 3 do
+				sim.events.queue("TRADE_SKILL_CLOSE")
+			end
+		end
+		openRecipeResponse(recipeID)
+	end
+	-- Refused to tainted code outside a hardware event, the response still fires and the window stays open.
+	sim.refusedImpl = sim.refusedImpl or {}
+	sim.refusedImpl["C_TradeSkillUI.OpenRecipe"] = openRecipeResponse
 	impl["C_TradeSkillUI.CloseTradeSkill"] = function()
 		if not W.openProfession then
 			return
@@ -666,7 +729,11 @@ function M.build(sim)
 			return W.spells[id]
 		end
 		local r = recipe(id)
-		return r and { name = r.name, icon = r.icon or 134400 }
+		if r then
+			return { name = r.name, icon = r.icon or 134400 }
+		end
+		local p = spellProfession(id)
+		return p and { name = p.name, icon = p.icon or 136241 }
 	end
 	-- Flyout definitions exist before their spells are learned. Blizzard's class action button enumerates
 	-- these slots at PLAYER_LOGIN even when none are known; an unknown flyout ID still returns nothing.
@@ -727,7 +794,10 @@ function M.build(sim)
 		return ""
 	end
 	impl["C_Item.RequestLoadItemDataByID"] = function(id)
-		sim.events.queue("ITEM_DATA_LOAD_RESULT", id, W.items[tonumber(id) or 0] ~= nil)
+		local known = W.items[tonumber(id) or 0] ~= nil
+		-- A noisy client fails some loads of items it does know (sim:noisy).
+		local failed = known and sim.noise and sim.noise.fails()
+		sim.events.queue("ITEM_DATA_LOAD_RESULT", id, known and not failed)
 	end
 
 	-- Maps: the player's position and the map tree (fill sim.world.maps[id] = { name, parent, mapType }).

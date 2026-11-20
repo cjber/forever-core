@@ -1,0 +1,9 @@
+name: Kiln
+checks:
+  - id: loads
+    title: Loads clean and /kiln opens the window
+    steps:
+      - Type /reload.
+      - Type /kiln.
+    pass: No Lua error, and the Kiln window opens with the session list.
+    minutes: 1

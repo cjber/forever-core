@@ -468,6 +468,69 @@ function M.install(Sim)
 		end
 	end
 
+	-- A noisy client: every frame, the item, bag and merchant traffic a live client raises that no addon asked for.
+	-- GET_ITEM_INFO_RECEIVED and ITEM_DATA_LOAD_RESULT for random item IDs (known ones and unknown ones, some loads
+	-- failed), BAG_UPDATE for random bags then one BAG_UPDATE_DELAYED, and MERCHANT_UPDATE while the merchant is
+	-- open. A requested load of a known item fails at the same rate. The stream is seeded, so a spec is
+	-- reproducible; sim.noise.fired counts what it raised by event. sim:noisy(false) turns it off.
+	function Sim:noisy(opts)
+		if opts == false then
+			self.noise = nil
+			return self
+		end
+		opts = opts or {}
+		local sim = self
+		local state = (opts.seed or 1) % 2147483646 + 1
+		local function random(n)
+			-- Park and Miller's generator, exact in doubles, so math.random's state stays the scenario's own.
+			state = state * 16807 % 2147483647
+			return state % n + 1
+		end
+		local itemsPerFrame = opts.itemsPerFrame or 4
+		local failPercent = opts.failPercent or 20
+		local bagPercent = opts.bagPercent or 50
+		local merchantPercent = opts.merchantPercent or 50
+		local noise = { fired = {} }
+		local function raise(event, ...)
+			noise.fired[event] = (noise.fired[event] or 0) + 1
+			sim.events.queue(event, ...)
+		end
+		function noise.fails()
+			return random(100) <= failPercent
+		end
+		function noise.frame()
+			local known = {}
+			for id in pairs(sim.world.items) do
+				known[#known + 1] = id
+			end
+			table.sort(known)
+			for _ = 1, itemsPerFrame do
+				local id, success
+				if #known > 0 and random(2) == 1 then
+					id = known[random(#known)]
+					success = not noise.fails()
+				else
+					id = random(250000)
+					success = sim.world.items[id] ~= nil and not noise.fails()
+				end
+				raise("GET_ITEM_INFO_RECEIVED", id, success)
+				raise("ITEM_DATA_LOAD_RESULT", id, success)
+			end
+			if random(100) <= bagPercent then
+				for _ = 1, random(3) do
+					raise("BAG_UPDATE", random(5) - 1)
+				end
+				raise("BAG_UPDATE_DELAYED")
+			end
+			local merchant = sim.G.MerchantFrame
+			if merchant and merchant:IsShown() and random(100) <= merchantPercent then
+				raise("MERCHANT_UPDATE")
+			end
+		end
+		self.noise = noise
+		return self
+	end
+
 	function Sim:openBags()
 		ensureBagTracker(self)
 		local frame = self.G.ContainerFrame1

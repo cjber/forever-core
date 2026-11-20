@@ -36,6 +36,93 @@ class CorePinTest(unittest.TestCase):
         )
         self.toc.write_text(f"## Interface: 16001\n## Dependencies: ForeverCore\n## X-Forever-Core: {toc}\n")
 
+    def write_embedded(self, pin="v1.4.0", toc="v1.4.0"):
+        if pin is None:
+            if self.pin.exists():
+                self.pin.unlink()
+        else:
+            self.pin.write_text(f"{pin}\n", encoding="utf-8")
+        self.pkgmeta.write_text("package-as: LegacyForever\n\nembedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        field = f"## X-Forever-Core: {toc}\n" if toc else ""
+        self.toc.write_text(f"## Interface: 16001\n## OptionalDeps: ForeverCore\n{field}## X-Forever-Core-Embed: 1\n")
+
+    def test_an_embedding_consumer_with_an_agreeing_toc_field_passes(self):
+        self.write_embedded()
+        self.assertEqual(core_pin.check(self.root), [])
+
+    def test_an_embedding_consumer_whose_toc_field_lags_fails(self):
+        self.write_embedded(toc="v1.3.0")
+        self.assertTrue(any("must be v1.4.0" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_a_toc_field_fails(self):
+        self.write_embedded(toc=None)
+        self.assertTrue(any("(missing)" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_a_pin_fails_the_release_gate_offline(self):
+        self.write_embedded(pin=None)
+        failures = core_pin.check_latest(self.root, fetch=lambda *_: self.fail("no network read without a pin"))
+        self.assertTrue(any("no pin names the release to embed" in failure for failure in failures))
+
+    def test_the_opt_in_is_the_last_field_value_and_exactly_one(self):
+        for toc, embedded in (
+            ("## X-Forever-Core-Embed: 1\n## X-Forever-Core-Embed: 0\n", False),
+            ("## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n", True),
+            ("## X-Forever-Core-Embed: 1, 1\n", False),
+            ("##X-Forever-Core-Embed: 1\n", True),
+            ("  ## X-Forever-Core-Embed: 1\n", True),
+            ("\ufeff## X-Forever-Core-Embed: 1\n", True),
+            (b"\xef\xbb\xbf## X-Forever-Core-Embed: 1\n", True),
+        ):
+            with self.subTest(toc=toc):
+                self.assertIs(core_pin.embeds(toc), embedded)
+
+    def test_a_pkgmeta_yaml_embedding_consumer_is_checked(self):
+        self.write_embedded(toc="v1.3.0")
+        self.pkgmeta.rename(self.root / "pkgmeta.yaml")
+        self.assertTrue(any("must be v1.4.0" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_consumer_without_package_as_uses_the_shortest_root_toc(self):
+        self.write_embedded(toc="v1.3.0")
+        self.pkgmeta.write_text("embedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        (self.root / "LegacyForever_Vanilla.toc").write_text("## Interface: 11507\n", encoding="utf-8")
+        failures = core_pin.check(self.root)
+        self.assertTrue(any("LegacyForever.toc" in failure and "must be v1.4.0" in failure for failure in failures))
+
+    def test_a_flavor_suffixed_only_root_toc_without_package_as_fails(self):
+        self.write_embedded()
+        self.pkgmeta.write_text("embedded-libraries:\n  - forevercore\n", encoding="utf-8")
+        self.toc.rename(self.root / "LegacyForever_Mainline.toc")
+        self.assertTrue(any("flavor-suffixed" in failure for failure in core_pin.check(self.root)))
+
+    def test_the_consumers_own_gate_refuses_a_bridge_policy_for_an_embedding_toc(self):
+        for extra, expected in (
+            ("required-dependencies:\n  - forevercore\n", "required-dependencies"),
+            (
+                "externals:\n  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.0/x.zip\n",
+                "second ForeverCore",
+            ),
+            ("move-folders:\n  LegacyForever/Libs/ForeverCore: ForeverCore\n", "Libs/ForeverCore"),
+        ):
+            with self.subTest(expected=expected):
+                self.write_embedded()
+                self.pkgmeta.write_text(self.pkgmeta.read_text(encoding="utf-8") + extra, encoding="utf-8")
+                self.assertTrue(any(expected in failure for failure in core_pin.check(self.root)))
+
+    def test_an_opt_in_value_other_than_1_fails_the_gate(self):
+        self.write_embedded()
+        self.toc.write_text(self.toc.read_text().replace("Embed: 1", "Embed: yes"))
+        self.assertTrue(any("exactly 1" in failure for failure in core_pin.check(self.root)))
+
+    def test_an_embedding_toc_without_a_policy_fails(self):
+        self.write_embedded()
+        self.pkgmeta.unlink()
+        self.assertTrue(any("no .pkgmeta or pkgmeta.yaml" in failure for failure in core_pin.check(self.root)))
+
+    def test_package_as_twice_fails(self):
+        self.write_embedded()
+        self.pkgmeta.write_text("package-as: Wrong\n" + self.pkgmeta.read_text(encoding="utf-8"), encoding="utf-8")
+        self.assertTrue(any("set 2 times" in failure for failure in core_pin.check(self.root)))
+
     def test_three_copies_of_one_release_pass(self):
         self.write()
         self.assertEqual(core_pin.check(self.root), [])
@@ -148,6 +235,7 @@ class CorePinTest(unittest.TestCase):
     def test_a_consumer_without_a_bundle_still_checks_its_pin(self):
         self.pin.write_text("v1.3.2\n", encoding="utf-8")
         self.pkgmeta.write_text("package-as: KilnForever\n", encoding="utf-8")
+        (self.root / "KilnForever.toc").write_text("## Interface: 16001\n", encoding="utf-8")
         failures = core_pin.check(self.root, "v1.4.0")
         self.assertEqual(len(failures), 1)
         self.assertIn("pin v1.3.2, core's latest release is v1.4.0", failures[0])

@@ -38,16 +38,17 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
+from . import core_pin
+
 __all__ = ["EMBED_FIELD", "EmbedError", "enabled", "main", "transform", "wrap"]
 
-EMBED_FIELD = "X-Forever-Core-Embed"
+EMBED_FIELD = core_pin.EMBED_FIELD
 PREFIX = "Libs/ForeverCore/"
 HOST_BEGIN = "ForeverCoreHost.lua"
 HOST_RUN = "ForeverCoreRun.lua"
 READY = "ForeverCoreReady.lua"
 PIN_PATH = "tools/forever-core.txt"
 BOM = b"\xef\xbb\xbf"
-FIELD = re.compile(r"^##\s*(?P<name>[^:]+?)\s*:\s*(?P<value>.*?)\s*$")
 LOAD_TAGS = {"Include", "Script"}
 
 # The deferred wrapper. The header ends without a newline so the source's first line stays line 1; the footer
@@ -136,24 +137,33 @@ class EmbedError(ValueError):
 
 
 def _toc_path(root: Path) -> Path:
-    tocs = sorted(root.glob("*.toc"))
-    if len(tocs) != 1:
-        raise EmbedError(f"{root}: expected one root TOC, found {[path.name for path in tocs]}")
-    return tocs[0]
+    """The root TOC the packager ships, resolved by `core_pin.toc_name_for` as every checker resolves it."""
+    policy = core_pin.policy_path(root)
+    try:
+        package = core_pin.policy_package(policy.read_text(encoding="utf-8", errors="replace") if policy else "")
+        name = core_pin.toc_name_for(package, [path.name for path in root.glob("*.toc")])
+    except ValueError as error:
+        raise EmbedError(f"{root}: {error}") from None
+    if name is None or not (root / name).is_file():
+        raise EmbedError(f"{root}: no root TOC {name or '(none found)'}")
+    return root / name
 
 
-def _fields(toc_text: str) -> dict[str, str]:
-    fields = {}
-    for line in toc_text.splitlines():
-        match = FIELD.match(line.strip())
-        if match:
-            fields[match["name"].strip().lower()] = match["value"]
-    return fields
+_fields = core_pin.toc_fields
 
 
 def enabled(root: Path) -> bool:
-    """True when the root TOC opts in with `## X-Forever-Core-Embed: 1`."""
-    return _fields(_toc_path(root).read_text(encoding="utf-8-sig")).get(EMBED_FIELD.lower()) == "1"
+    """True when the root TOC opts in with `## X-Forever-Core-Embed: 1` (`core_pin.embeds`).
+
+    An opt-in line with any other value is an error, not a quiet "no": a consumer that meant to embed would otherwise
+    ship without its copy.
+    """
+    toc_path = _toc_path(root)
+    toc_text = toc_path.read_text(encoding="utf-8-sig")
+    problem = core_pin.embed_problem(toc_text, toc_path.name)
+    if problem:
+        raise EmbedError(problem)
+    return core_pin.embeds(toc_text)
 
 
 def wrap(data: bytes) -> bytes:
@@ -230,8 +240,14 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
     folder = toc_path.stem
     toc_text = toc_path.read_text(encoding="utf-8-sig")
     fields = _fields(toc_text)
-    if fields.get(EMBED_FIELD.lower()) != "1":
+    if not core_pin.embeds(toc_text):
         raise EmbedError(f"{toc_path.name}: no `## {EMBED_FIELD}: 1`; nothing to embed")
+    others = sorted(path.name for path in root.glob("*.toc") if path.name != toc_path.name)
+    if others:
+        raise EmbedError(
+            f"{toc_path.name}: the embed step rewrites one root TOC, but the checkout also has {', '.join(others)};"
+            " an addon loaded from another TOC would run without its core"
+        )
     dependencies = {
         name.strip()
         for name in re.split(r"[,\s]+", fields.get("dependencies", "") + " " + fields.get("requireddeps", ""))
@@ -240,7 +256,20 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
         raise EmbedError(f"{toc_path.name}: ForeverCore is a required dependency; move it to ## OptionalDeps")
     saved = [name.strip() for name in fields.get("savedvariables", "").split(",") if name.strip()]
     if not saved:
-        raise EmbedError(f"{toc_path.name}: no ## SavedVariables; the embedded copy mirrors its store into one")
+        scope = (
+            " (## SavedVariablesPerCharacter is saved per character; core's store is account-wide)"
+            if "savedvariablespercharacter" in fields
+            else ""
+        )
+        raise EmbedError(
+            f"{toc_path.name}: no ## SavedVariables{scope}; the embedded copy mirrors core's account store into one"
+            " account global, so add one"
+        )
+    if len(saved) > 1:
+        raise EmbedError(
+            f"{toc_path.name}: ## SavedVariables lists {', '.join(saved)}; the embedded copy mirrors core's store into"
+            " one account global, and which one cannot be told from the TOC, so list exactly one"
+        )
     if (root / PREFIX).exists():
         raise EmbedError(f"{PREFIX}: already in the checkout; embed runs once, on a fresh checkout")
     builder = _builder(core)

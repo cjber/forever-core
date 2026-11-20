@@ -25,7 +25,7 @@ check(t.pending() == 1, "first layout is deferred")
 drain()
 check(first.point[5] == 0 and second.point[5] == -90, "sections follow uiOrder from the column's top")
 check(host.width == 260, "the column takes the section template's width")
--- By default the column's top right corner is pinned to the game tracker's top left corner.
+-- Left of the game tracker, the column's top right corner is pinned to the tracker's top left corner.
 local function Pinned(ctx)
 	local point = ctx.host.point
 	return point[1] == "TOPRIGHT"
@@ -33,6 +33,15 @@ local function Pinned(ctx)
 		and point[3] == "TOPLEFT"
 		and point[4] == 0
 		and point[5] == 0
+end
+-- Under it, the column's top left corner is on the tracker's last line, placed on UIParent.
+local function Under(ctx)
+	local point, rect = ctx.host.point, ctx.nativeRect
+	return point[1] == "TOPLEFT"
+		and point[2] == ctx.parent
+		and point[3] == "BOTTOMLEFT"
+		and point[4] == rect.left
+		and point[5] == (rect.shown and rect.line or rect.top)
 end
 local function CornersTouch(ctx)
 	local right, top = ctx.host:GetRight(), ctx.host:GetTop()
@@ -128,14 +137,14 @@ pinned.check(Entry(entries, "Reset position") == nil, "and no Reset entry")
 -- a beside one never had one.
 local migrated = harness.new({ hostSettings = { attached = true, locked = true, x = 10, y = -20 } })
 settings = migrated.hostSettings
-migrated.check(settings.attached == false, "an attached placement is marked migrated")
+migrated.check(settings.placement == "under", "an attached placement is given a place")
 migrated.check(settings.x == nil and settings.y == nil, "the attached placement's old spot is dropped")
 migrated.check(settings.locked == true, "the player's Lock choice survives the migration")
-migrated.check(Pinned(migrated), "a migrated attached column is pinned")
+migrated.check(Under(migrated), "a migrated attached column sits under the game tracker, the default place")
 local unset = harness.new({ hostSettings = { x = 30, y = -40 } })
-unset.check(unset.hostSettings.x == nil and Pinned(unset), "a missing attached flag was the old default and migrates")
+unset.check(unset.hostSettings.x == nil and Under(unset), "a missing attached flag was the old default and migrates")
 local beside = harness.new({ hostSettings = { attached = false, locked = true } })
-beside.check(Pinned(beside) and beside.hostSettings.locked == true, "a beside placement migrates to the pin")
+beside.check(Under(beside) and beside.hostSettings.locked == true, "a beside placement goes to the default place")
 -- Once the store exists, a dragged column goes straight to its saved spot, before any layout pass could move it.
 local early = harness.new({ deferReady = true, hostSettings = { attached = false, x = 50, y = -60 } })
 early.ns.MigrateTrackerSettings()
@@ -149,18 +158,19 @@ migrated.ns.TrackerHost.SavePosition(50, -60)
 migrated.drain()
 migrated.check(settings.x == 50 and settings.y == -60, "a position saved after the migration is kept")
 migrated.check(migrated.host.point[4] == 50 and migrated.host.point[5] == -60, "the column moves to the saved spot")
--- The retired attach switch answers false and changes nothing.
+-- The attach checkbox: a dragged column reports not attached, and turning it on puts the column under the tracker.
+migrated.check(migrated.ns.TrackerHost.IsAttachedToQuestTracker() == false, "a dragged column reports not attached")
+local notified
+migrated.ns.TrackerHost.OnAttachmentChanged(function(attached)
+	notified = attached
+end)
 migrated.ns.TrackerHost.SetAttached(true)
 migrated.drain()
-migrated.check(migrated.ns.TrackerHost.IsAttachedToQuestTracker() == false, "the column never reports attached")
-migrated.check(settings.attached == false and settings.x == 50, "SetAttached changes no saved setting")
-migrated.check(migrated.host.point[4] == 50 and migrated.host.point[5] == -60, "SetAttached moves nothing")
-local notified = false
-migrated.ns.TrackerHost.OnAttachmentChanged(function()
-	notified = true
-end)
+migrated.check(settings.attached == true and settings.x == nil, "SetAttached(true) releases the drag")
+migrated.check(Under(migrated) and notified == true, "moves the column under and tells the checkbox")
 migrated.ns.TrackerHost.SetAttached(false)
-migrated.check(not notified, "an attachment callback is never called")
+migrated.drain()
+migrated.check(settings.placement == "left" and notified == false, "SetAttached(false) picks Left")
 
 -- A layout during a drag leaves the column where the drag holds it.
 local dragged = harness.new({ hostSettings = { attached = false, x = 100, y = -200 } })
@@ -175,12 +185,42 @@ local free = harness.new({ hostSettings = { attached = false, x = 100, y = -200 
 free.check(free.host.point[4] == 100 and free.host.point[5] == -200, "a saved free position is kept")
 
 -- The column's scale is only the player's own, and the pin keeps its corner whatever the scale.
-local userScaled = harness.new({ hostSettings = { attached = false, scale = 1.5 } })
+local userScaled = harness.new({ hostSettings = { attached = false, placement = "left", scale = 1.5 } })
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's scale sets the column's scale")
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check or an anchor argument, never a field, a method call or an assignment.
+-- a presence check, an anchor argument or one of the reads that place the column under it (#850, #883), never another
+-- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
+local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+local function Starts(text, list)
+	for _, read in ipairs(list) do
+		if text:sub(1, #read) == read then
+			return read
+		end
+	end
+end
+local function Read(after)
+	local read = Starts(after, reads)
+	if not read then
+		local child = after:match("^%.NineSlice") or after:match("^%.Header")
+		if not child then
+			return false
+		end
+		local rest = after:sub(#child + 1)
+		read = child .. (Starts(rest, { ":GetBottom()", ":GetEffectiveScale()" }) or "")
+		if read == child and rest:match("^%s*[%.:%[]") then
+			return false
+		end
+	end
+	return not after:sub(#read + 1):match("^%s*=[^=]")
+end
+assert(Read(".Header:GetBottom()") and Read(".NineSlice or x") and Read(":IsCollapsed()"), "the reads pass")
+assert(
+	not Read(".Header:Hide()") and not Read(".NineSlice:SetPoint(") and not Read(".Header.Text"),
+	"a child write fails"
+)
+assert(not Read(".Header = nil") and not Read(":SetCollapsed(true)"), "an assignment or another method fails")
 local writes = {}
 for line in io.lines("ForeverCore.toc") do
 	local path = line:match("^([%w_\\/]+%.lua)%s*$")
@@ -197,7 +237,10 @@ for line in io.lines("ForeverCore.toc") do
 					break
 				end
 				local after = code:sub(finish + 1)
-				if after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")) then
+				if
+					not Read(after)
+					and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
+				then
 					writes[#writes + 1] = path .. ":" .. number
 				end
 				init = finish + 1
@@ -205,7 +248,7 @@ for line in io.lines("ForeverCore.toc") do
 		end
 	end
 end
-check(#writes == 0, "nothing in core touches ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
+check(#writes == 0, "nothing in core writes, hooks or calls ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks
 -- releases every block, so a second layout would replay each header's add animation and rebuild every block. Issue

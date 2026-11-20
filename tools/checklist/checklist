@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Runs the checklist tool from tools/pyproject.toml's environment, from any directory.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+exec uv run --project "$here/.." --frozen --group dev python "$here/checklist.py" "$@"
