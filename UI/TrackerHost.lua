@@ -1225,7 +1225,7 @@ end
 -- tracker's top to the screen's bottom, so the column's height never depends on where the quest list ends and moving
 -- between the two places is never a layout. Returns the column's width and top, both in its own units.
 ---@param settings ForeverTrackerSettings
----@return number width, number top
+---@return number width, number top, number? floor
 local function Anchor(settings)
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale

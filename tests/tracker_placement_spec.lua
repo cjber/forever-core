@@ -253,22 +253,22 @@ scaled.check(point[4] == 200 and point[5] == 600, "the line is read in the colum
 -- lying across the column's width caps how far down it reaches, and a bar standing at its side caps how far right, so
 -- the column stops at the bars rather than laying out into them.
 local bars = harness.new({ hostSettings = { attached = false } })
-local function Bar(name, left, top, width, height, shown)
+local function Bar(name, barLeft, barTop, barWidth, barHeight, shown)
 	bars.env[name] = {
 		IsShown = function()
 			return shown ~= false
 		end,
 		GetLeft = function()
-			return left
+			return barLeft
 		end,
 		GetTop = function()
-			return top
+			return barTop
 		end,
 		GetWidth = function()
-			return width
+			return barWidth
 		end,
 		GetHeight = function()
-			return height
+			return barHeight
 		end,
 		GetEffectiveScale = function()
 			return 1
