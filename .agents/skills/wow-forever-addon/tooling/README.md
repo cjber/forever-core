@@ -34,6 +34,7 @@ version that either one proposes waits for review.
 | `package` | The packaged-zip check: TOC/XML-loaded files and addon paths present, no development folders, a licence file (LICENSE, LICENCE, COPYING or UNLICENSE) in every folder and THIRD_PARTY.md ship, README's `## Credits` and THIRD_PARTY's `## Players` (or the older `## Ideas and contributors`) ship with text under them, the ForeverCore pin, `.pkgmeta` external and TOC field agree, no widget method that takes parameters is passed straight as a script handler, specs pass on the packaged files |
 | `widget_handlers` | The script-handler lint: a `SetScript`/`HookScript` handler that is a widget's own client method read taking parameters (`edit.HighlightText`, `frame["SetText"]`) rather than a function the addon wrote fails, with the wrapping closure as its fix; a method that declares none (`frame.StopMovingOrSizing`) ignores the handler's arguments and passes. The method set comes from `widget_methods.txt`, generated in forever-core by `tools/gen_widget_methods.py` from the pinned Ketho API annotations |
 | `core_pin` | PR packaging compares a consumer's ForeverCore pin (`tools/forever-core.txt`) with the `.pkgmeta` external and `## X-Forever-Core:` offline; the release workflow's `--latest` gate requires core's latest published GitHub release and fails closed when that release cannot be read, and an addon with no external is exempt only from the bundle comparison |
+| `core_archive` | Inspect every packaged ForeverCore copy, check its carried version against the pin and reject shared folders in embed-only packages. Release CI adds `--latest` and checks the ZIP before upload. |
 | `doctor` | Every tool pin in the vendored `tools/toolchain.json` and `tools/pyproject.toml` checked on this machine, each problem with its fix |
 | `screens` | `docs/screenshots/scenes.sha256`: each image's hash beside its scene dump's, and the CI check for a stale image |
 | `editorconfig` | The family `.editorconfig` template and its check against `stylua.toml` and `ruff.toml` |
@@ -73,6 +74,10 @@ The packaged-zip check runs in its own CI job, after the pinned packager builds 
           args: -d -z
       - run: python3 tools/check_package.py
 ```
+Release jobs build with `args: -d`, run
+`python3 -m tools.forever_tools.core_archive --release-dir .release --latest`, verify the output checksum,
+and upload the same ZIP with `args: -c -z`. See the
+[release workflow example](https://github.com/cjber/forever-core/blob/main/docs/dependency-transition.md#check-the-built-consumer-zip).
 Addon-specific generators and hints stay in the repo.
 
 ## Change and update

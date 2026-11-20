@@ -66,7 +66,7 @@ end
 -- The extra addon the automatic exercise loads beside the repository's own: an addon whose TOC names ForeverCore in
 -- its dependency headers stops at its dependency guard without it, so its UI is never built and the exercise proves
 -- nothing. Consumers name it in `## OptionalDeps` and an older release in `## Dependencies`. The checkout is
--- $FOREVER_CORE, else the sibling forever-core.
+-- Sim.foreverCoreDir: $FOREVER_CORE, else the sibling forever-core, and none for a package that embeds core.
 local function dependencyAddons(file)
 	if not file then
 		return nil
@@ -80,11 +80,8 @@ local function dependencyAddons(file)
 	for _, list in ipairs({ toc and toc.deps or {}, toc and toc.optional or {} }) do
 		for _, dep in ipairs(list) do
 			if dep == "ForeverCore" then
-				local directory = os.getenv("FOREVER_CORE")
-				if directory == nil or directory == "" then
-					directory = "../forever-core"
-				end
-				return { { directory, "ForeverCore" } }
+				local directory = Sim.foreverCoreDir()
+				return directory and { { directory, "ForeverCore" } } or nil
 			end
 		end
 	end

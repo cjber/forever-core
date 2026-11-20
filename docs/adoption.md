@@ -184,12 +184,15 @@ required before them or stubbed with the one module the spec exercises. A spec t
 `ForeverCore.toc`'s files in order into one fake client, registers its own addon with `ForeverCore.Register`, and then
 runs the addon's files. `tests/api_spec.lua` in this repo is the worked example.
 
-A consumer's `tests/forever_core.lua` reads that TOC with the shared reader in its vendored
-`tools/forever_sim/toc.lua`: `local Toc = dofile("tools/forever_sim/toc.lua")`, then
-`Toc.files(directory, "ForeverCore.toc")`. Each entry is `{ path, kind }`: `loadfile` the `kind == "lua"` entries, and
-register the `Toc.templates(entry.path)` of each `kind == "xml"` entry before loading that XML's scripts. The reader
-expands an XML file into its `Script` and `Include` children in the client's order, so `UI/TrackerSection.xml` and any
-later XML file need no special case in the loader.
+A consumer's `tests/forever_core.lua` loads core through the vendored `tools/forever_sim/core_load.lua`:
+`CoreLoad.load(env, { names = ..., ns = ..., templates = ... })` runs the TOC's Lua entries in order and hands each XML
+entry's virtual templates to `templates` (the shared reader, `tools/forever_sim/toc.lua`, expands an XML file into
+its `Script` and `Include` children in the client's order). A load of chosen files (`names`) leaves out files whose
+functions the chosen ones call, so it first gets `CoreLoad.standIns`: `ns.AtStart` (Core.lua) runs its work at once
+and `ns.AfterWorldEvents` (UI/TrackerHost.lua) waits for PLAYER_ENTERING_WORLD and VARIABLES_LOADED. A spec that
+builds its own namespace beside one real file, such as a stubbed host beside `UI/TrackerSection.lua`, runs that file
+with `CoreLoad.file(env, "UI/TrackerSection.lua", ns)`, which fills the same stand-ins. A new cross-file call between
+core files gets its stand-in there, in one place, not in each addon's specs.
 
 ## Changing a shared file
 

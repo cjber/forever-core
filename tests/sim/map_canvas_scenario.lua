@@ -9,6 +9,10 @@ scenario("shared canvas stays outside the gamepad map tables", { addon = false }
 			}
 		end,
 	}
+	-- Start work runs at once, as in the unwrapped standalone.
+	ns.AtStart = function(work)
+		work()
+	end
 	sim:runAs(ADDON, "")
 	assert(sim.templates.loadLua("UI/MapCanvas.lua", ADDON .. "/UI/MapCanvas.lua", ADDON, ns))
 	sim.world.maps[1454] = { name = "Orgrimmar", parent = 1411 }

@@ -500,4 +500,38 @@ do
 	_G.MyAddon_OnCompartmentClick, _G.MyAddon_OnCompartmentEnter, _G.SlashCmdList = nil, nil, nil
 end
 
+-- An addon carrying its own ForeverCore needs no separate install. When its copy could not start, an older standalone
+-- the loader would not adopt is named as the install to update; otherwise the addon is reinstalled. Either way the
+-- slash words answer with that line.
+do
+	_G.ForeverCoreLoader = {
+		Candidates = function()
+			return { { folder = "MyAddon", build = 1016000, sealed = true } }
+		end,
+	}
+	local _, result, text = run({}, false, nil, false)
+	equal(result, false, "a failed embedded start returns false")
+	equal(
+		text,
+		"My Addon could not start. Reinstall My Addon to fix this.",
+		"with no standalone it asks for a reinstall"
+	)
+
+	local old = { name = "ForeverCore", title = "ForeverCore", loaded = true, enabled = 2, project = "1796337" }
+	_G.ForeverCore = { API = 1 }
+	_G.SlashCmdList = {}
+	local _, _, outdated = run({}, false, nil, old, true, { key = "MYADDON", "/myaddon" })
+	equal(outdated, "My Addon: ForeverCore is out of date. Update it to fix this.", "an old standalone is named")
+	_G.SlashCmdList.MYADDON("")
+	equal(messages[#messages].text, outdated, "and the slash command repeats it")
+
+	_G.ForeverCoreLoader.Candidates = function()
+		return { { folder = "OtherAddon", build = 1016000, sealed = true } }
+	end
+	_G.ForeverCore = nil
+	local _, _, standalone = run({}, false, nil, false)
+	equal(standalone, MISSING, "an addon carrying no copy still names the install")
+	_G.ForeverCoreLoader, _G.SlashCmdList, _G.SLASH_MYADDON1 = nil, nil, nil
+end
+
 print(("forever_require_spec: %d checks passed"):format(checks))

@@ -170,6 +170,7 @@
 ---@class ForeverTrackerNamespace
 ---@field NewMenuDescription fun(kind: ForeverMenuEntryKind, text?: string): ForeverMenuDescription
 ---@field TrackerHost? ForeverTrackerHostAPI
+---@field AfterWorldEvents fun(callback: fun()) runs `callback` once the world is entered and saved variables are loaded
 ---@field TrackerSection? ForeverTrackerSectionAPI
 ---@field TrackerLine? ForeverTrackerLineAPI
 ---@field TrackerHostForeign? boolean true when a vendored host loaded first and core forwarded to it

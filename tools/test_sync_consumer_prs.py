@@ -115,6 +115,15 @@ class DiscoveryTest(unittest.TestCase):
                 found = sync.discover_tooling_repos()
         self.assertEqual(found, {"new-addon"})
 
+    def test_strict_discovery_does_not_probe_disabled_repositories(self):
+        repositories = [{"name": "disabled-addon", "disabled": True}, {"name": "live-addon", "disabled": False}]
+        with (
+            mock.patch.object(sync, "list_repositories", return_value=repositories),
+            mock.patch.object(sync, "repo_vendors_tooling", return_value=True) as vendors,
+        ):
+            self.assertEqual(sync.discover_tooling_repos(strict=True), {"live-addon"})
+        vendors.assert_called_once_with("live-addon", strict=True)
+
     def test_a_failed_repo_listing_falls_back_to_the_vendoring_map(self):
         def fake_gh(*args, check=True):
             raise sync.SyncError("no token access")

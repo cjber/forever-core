@@ -10,6 +10,7 @@ L["%s and %s"] = "%s e %s"
 L["%s, %s and %s"] = "%s, %s e %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s e mais %d"
 L["+%d more"] = "+%d mais"
+L["%d contributions"] = "%d contribuições" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (últimas %d):"
 L["%s: no lines yet."] = "%s: ainda não há linhas."
@@ -52,6 +53,9 @@ L["Tracker background"] = "Fundo do rastreador"
 L["Tracker position"] = "Posição do rastreador"
 L["Under the quest tracker"] = "Abaixo do rastreador de missões"
 L["Left of the quest tracker"] = "À esquerda do rastreador de missões"
+L["Attach to quest tracker"] = "Fixar no rastreador de missões" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"O rastreador compartilhado do Forever fica abaixo do rastreador de missões quando ativado e à esquerda dele quando desativado. Todos os addons Forever mostram esta mesma opção." -- mt
 L["Tracker"] = "Rastreador"
 L["Click to %s"] = "Clique para %s"
 L["Right-click for options"] = "Clique com o botão direito para ver opções"
@@ -122,4 +126,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"Nenhum erro capturado. Ative os erros Lua com /console scriptErrors 1, use /reload e leia o primeiro erro que mencionar %s." -- mt
 L["Callback error: %s"] = "Erro de callback: %s" -- mt
 L["Login error: %s"] = "Erro de login: %s" -- mt
+L["Warning: %s"] = "Aviso: %s" -- mt
 L["Copy %s: %s"] = "Cópia %s: %s" -- mt

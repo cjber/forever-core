@@ -10,6 +10,7 @@ L["%s and %s"] = "%s 및 %s"
 L["%s, %s and %s"] = "%s, %s 및 %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s 및 %d명 더"
 L["+%d more"] = "+%d개 더"
+L["%d contributions"] = "기여 %d건" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (최근 %d개):"
 L["%s: no lines yet."] = "%s: 아직 줄이 없습니다."
@@ -52,6 +53,9 @@ L["Tracker background"] = "추적기 배경"
 L["Tracker position"] = "추적기 위치"
 L["Under the quest tracker"] = "퀘스트 추적기 아래"
 L["Left of the quest tracker"] = "퀘스트 추적기 왼쪽"
+L["Attach to quest tracker"] = "퀘스트 추적기에 붙이기" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"켜면 공용 Forever 추적기가 퀘스트 추적기 아래에, 끄면 왼쪽에 놓입니다. 모든 Forever 애드온에 같은 설정이 있습니다." -- mt
 L["Tracker"] = "추적기"
 L["Click to %s"] = "%s하려면 클릭"
 L["Right-click for options"] = "우클릭하여 옵션 보기"
@@ -122,4 +126,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"기록된 오류가 없습니다. /console scriptErrors 1로 Lua 오류를 켜고 /reload 후 %s을(를) 언급하는 첫 오류를 확인하세요." -- mt
 L["Callback error: %s"] = "콜백 오류: %s" -- mt
 L["Login error: %s"] = "로그인 오류: %s" -- mt
+L["Warning: %s"] = "경고: %s" -- mt
 L["Copy %s: %s"] = "사본 %s: %s" -- mt

@@ -1395,6 +1395,96 @@ class ForeverClientTest(unittest.TestCase):
             self.assertEqual(fc.main(["scroll", "960", "540", "-4"]), 0)
         scroll.assert_called_once_with(state, 960, 540, -4, [])
 
+    def test_drag_presses_moves_in_steps_and_releases_at_a_freshly_seen_point(self):
+        with (
+            mock.patch.object(
+                fc, "mark", side_effect=lambda name: fc.time.time() + (0.1 if name == "last-shot" else 0)
+            ),
+            mock.patch.object(fc, "send") as send,
+        ):
+            fc.drag({}, 100, 200, 140, 180, steps=2)
+        pause = fc.DRAG_STEP_DELAY
+        send.assert_called_once_with(
+            {},
+            *("mousemove", "100", "200", "mousedown", "1"),
+            *("sleep", pause, "mousemove", "120", "190"),
+            *("sleep", pause, "mousemove", "140", "180"),
+            *("sleep", pause, "mouseup", "1"),
+            hold=[],
+        )
+
+    def test_drag_points_end_exactly_on_the_end_point(self):
+        self.assertEqual(fc.drag_points(0, 0, 10, -5, 3), [(3, -2), (7, -3), (10, -5)])
+        self.assertEqual(fc.drag_points(5, 5, 5, 5, 1), [(5, 5)])
+
+    def test_drag_needs_a_shot_points_in_the_frame_and_a_step_count(self):
+        with (
+            mock.patch.object(fc, "mark", return_value=0),
+            mock.patch.object(fc, "send") as send,
+            self.assertRaisesRegex(fc.ClientError, "take a `shot`"),
+        ):
+            fc.drag({}, 10, 10, 20, 20)
+        fresh = mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1)
+        for kwargs, message in (
+            ({"x2": fc.WIDTH}, "outside"),
+            ({"y1": -1}, "outside"),
+            ({"steps": 0}, "--steps"),
+            ({"steps": fc.DRAG_STEPS_MAX + 1}, "--steps"),
+            ({"button": "2"}, "--button"),
+        ):
+            values = {"x1": 10, "y1": 10, "x2": 20, "y2": 20, **kwargs}
+            with self.subTest(kwargs=kwargs), fresh, self.assertRaisesRegex(fc.ClientError, message):
+                fc.drag({}, **values)
+        send.assert_not_called()
+
+    def test_a_drag_that_fails_or_is_stopped_releases_its_button(self):
+        for error in (fc.subprocess.CalledProcessError(1, "xdotool"), KeyboardInterrupt()):
+            with (
+                self.subTest(error=type(error).__name__),
+                tempfile.TemporaryDirectory() as folder,
+                mock.patch.object(fc, "STATE_DIR", Path(folder)),
+                mock.patch.object(fc, "mark", side_effect=lambda name: 2 if name == "last-shot" else 1),
+                mock.patch.object(fc, "send", side_effect=error),
+                mock.patch.object(fc.subprocess, "run") as run,
+                self.assertRaises(type(error)),
+            ):
+                fc.drag({"display": ":2"}, 10, 10, 20, 20, button="3")
+            self.assertEqual(run.call_args.args[0], ["xdotool", "mouseup", "3"])
+            self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":2")
+            self.assertFalse((Path(folder) / fc.HELD_BUTTON).exists())
+
+    def test_a_drag_killed_mid_chain_is_released_by_the_next_jobs_cleanup(self):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.object(fc, "STATE_DIR", Path(folder)),
+            mock.patch.object(fc.subprocess, "run") as run,
+        ):
+            (Path(folder) / fc.HELD_BUTTON).write_text("1")
+            fc.release_session_modifiers({"display": ":2"})
+            self.assertFalse((Path(folder) / fc.HELD_BUTTON).exists())
+            fc.release_session_modifiers({"display": ":2"})
+        mouseups = [call.args[0] for call in run.call_args_list if call.args[0][1] == "mouseup"]
+        self.assertEqual(mouseups, [["xdotool", "mouseup", "1"]], "released once, and only the recorded button")
+
+    def test_drag_cli_reaches_the_drag_verb(self):
+        state = live_state(ready=1.0)
+        with (
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "acquire_job", return_value=(mock.Mock(), "own")),
+            mock.patch.object(fc, "release_job"),
+            mock.patch.object(fc, "drag") as drag,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.main(["drag", "10", "20", "300", "400", "--steps", "5", "--hold", "shift"]), 0)
+            self.assertEqual(fc.main(["drag", "1", "2", "3", "4"]), 0)
+        self.assertEqual(
+            drag.call_args_list,
+            [
+                mock.call(state, 10, 20, 300, 400, "1", 5, ["shift"]),
+                mock.call(state, 1, 2, 3, 4, "1", fc.DRAG_STEPS, []),
+            ],
+        )
+
     def test_inputs_are_spaced_out(self):
         sleeps = []
         with mock.patch.object(fc, "x"), mock.patch.object(fc.time, "sleep", sleeps.append):
@@ -1713,6 +1803,124 @@ class ForeverClientTest(unittest.TestCase):
         self.assertIn("wrote /checkout/!!DevSmokeInbox/Eval.lua from probe.lua (2 lines)", printed)
         self.assertIn("DevSmokeDB.eval: ok, ran 1763000000\na printed line\n42", printed)
 
+    def test_eval_of_two_files_takes_two_reloads_and_reports_each_ones_own_result(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("b.lua"), "lines": 1, "token": "run-b"},
+        ]
+        order = []
+        records = {
+            "run-a": {"run": "run-a", "ok": False, "err": "a.lua:1: boom"},
+            "run-b": {"run": "run-b", "ok": True},
+        }
+        state = live_state(ready=1.0)
+        out = io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: order.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: order.append("clear")),
+            mock.patch.object(fc, "saved_eval", side_effect=lambda token: order.append(token) or records[token]),
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "b.lua"]), 1, "one snippet failed")
+        # b's reload saves a's result, and !!DevSmoke saved b's at once (#894), so b's is read with no reload of its
+        # own and the UI b opened stays open.
+        self.assertEqual(order, ["reload", "clear", "reload", "clear", "run-a", "run-b", "run-b"])
+        printed = out.getvalue()
+        self.assertIn("== a.lua\nDevSmokeDB.eval: failed", printed)
+        self.assertIn("a.lua:1: boom", printed)
+        self.assertIn("== b.lua\nDevSmokeDB.eval: ok", printed)
+
+    def test_eval_prints_an_earlier_files_result_before_a_later_file_is_refused(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            tool.EvalError("missing.lua: no such file"),
+        ]
+        order = []
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: order.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: order.append("clear")),
+            mock.patch.object(
+                fc, "saved_eval", side_effect=lambda token: order.append(token) or {"run": token, "ok": True}
+            ),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "missing.lua"]), 2)
+        # a ran at the first reload; the refusal still saves and prints it, and runs nothing more.
+        self.assertEqual(order, ["reload", "clear", "clear", "reload", "run-a"])
+        self.assertIn("== a.lua\nDevSmokeDB.eval: ok", out.getvalue())
+        self.assertIn("missing.lua: no such file", err.getvalue())
+
+    def test_eval_names_a_file_whose_result_is_missing_and_runs_the_rest(self):
+        tool = self.eval_tool()
+        tool.write_snippet.side_effect = [
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("a.lua"), "lines": 1, "token": "run-a"},
+            {"chunk": Path("/x/Eval.lua"), "snippet": Path("b.lua"), "lines": 1, "token": "run-b"},
+        ]
+
+        def read(token):
+            if token == "run-a":
+                raise fc.ClientError("DevSmokeDB.eval is missing")
+            return {"run": token, "ok": True}
+
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "load_state", return_value=live_state(ready=1.0)),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "saved_eval", side_effect=read),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["eval", "a.lua", "b.lua"]), 2, "a missing result is a client error")
+        self.assertIn("a.lua: DevSmokeDB.eval is missing", err.getvalue())
+        self.assertIn("== b.lua\nDevSmokeDB.eval: ok", out.getvalue(), "and the files after it still ran")
+
+    def test_a_state_directory_fault_never_ends_the_session_from_the_idle_check(self):
+        with mock.patch.object(fc, "live_tickets", side_effect=PermissionError("queue")):
+            self.assertFalse(fc.pending_work({"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}))
+
+    def test_the_idle_check_skips_a_ticket_or_lease_the_broker_could_not_use(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 9, "boot_id": "b"}
+        queue = fc.STATE_DIR / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        for name, text in (("1.json", "[]"), ("2.json", "{trunc")):
+            ticket = queue / name
+            ticket.write_text(text)
+        handles = [open(queue / name) for name in ("1.json", "2.json")]
+        self.addCleanup(lambda: [handle.close() for handle in handles])
+        for handle in handles:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        # A locked ticket is a caller still waiting, whatever its record holds; the scan neither raises nor drops it.
+        self.assertEqual([path.name for path in fc.job_queue()], ["1.json", "2.json"])
+        self.assertTrue(fc.pending_work(state))
+        for handle in handles:
+            handle.close()
+        leases = fc.STATE_DIR / "leases"
+        leases.mkdir(parents=True, exist_ok=True)
+        identity = fc.session_identity(state)
+        for record in (
+            {"expires": time.time() + 600, "session": identity},
+            {"token": "other", "expires": time.time() + 600, "session": identity},
+            {"token": "t", "expires": float("inf"), "session": identity},
+            {"token": "t", "expires": True, "session": identity},
+        ):
+            with self.subTest(record=record):
+                (leases / "t.json").write_text(json.dumps(record))
+                self.assertFalse(fc.pending_work(state))
+                self.assertFalse(fc.usable_lease(record, "t", identity))
+
     def test_eval_never_reports_an_earlier_runs_result(self):
         # The SavedVariables file holds the session before this one until the next reload, and the first reader
         # answered with it: a passing snippet was called failed, and a failing one passed (#580).
@@ -1912,7 +2120,7 @@ class BuildDevTest(unittest.TestCase):
         stamped = (built / "LegacyForever.toc").read_bytes()
         self.assertNotIn(b"@project-version@", stamped)
         self.assertTrue(stamped.endswith(b"Core\\Core.lua\r\n"), stamped)
-        self.assertRegex(stamped, rb"## Version: v1\.2\.3-dev\+[0-9a-f]{1,}\r\n")
+        self.assertRegex(stamped, rb"## Version: 1\.2\.3-dev\+[0-9a-f]{1,}\r\n")
 
     def test_the_build_replaces_the_previous_one_atomically(self):
         first = fc.build_dev("legacy-forever", "HEAD")
@@ -1930,10 +2138,60 @@ class BuildDevTest(unittest.TestCase):
             fc.build_dev("legacy-forever", "no-such-ref")
         self.assertEqual((built / "Core/Core.lua").read_text(), "-- the addon\n")
 
-    def test_a_repository_with_no_release_is_stamped_v0_0_0(self):
+    def test_a_repository_with_no_release_is_stamped_0_0_0(self):
         self.git("tag", "-d", "v1.2.3")
         built = fc.build_dev("legacy-forever", "HEAD")
-        self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: v0\.0\.0-dev\+")
+        self.assertRegex((built / "LegacyForever.toc").read_bytes(), rb"## Version: 0\.0\.0-dev\+")
+
+    def test_embed_core_archives_the_core_ref_instead_of_the_pin(self):
+        staging = self.workspace / "staging"
+        (staging / "tools/forever_tools").mkdir(parents=True)
+        (staging / "tools/forever_tools/embed.py").write_text("")
+        (staging / "tools/forever-core.txt").write_text("v1.15.0\n")
+        archived = []
+
+        def run(args, **_):
+            if args[:1] == ["git"]:
+                archived.append(args[-1])
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.object(fc.subprocess, "run", side_effect=run), mock.patch.object(fc, "unpack"):
+            fc.embed_core(staging, core_root=self.workspace, core_ref="abc1234")
+            fc.embed_core(staging, core_root=self.workspace)
+        self.assertEqual(archived, ["abc1234", "v1.15.0"])
+
+    def test_embed_core_uses_the_candidate_cores_tooling_for_a_core_ref(self):
+        staging = self.workspace / "staging"
+        (staging / "tools/forever_tools").mkdir(parents=True)
+        (staging / "tools/forever_tools/embed.py").write_text("# the build's own\n")
+        (staging / "tools/forever-core.txt").write_text("v1.15.0\n")
+
+        def unpack(_archive, core):
+            (core / fc.CORE_TOOLING).mkdir(parents=True)
+            (core / fc.CORE_TOOLING / "embed.py").write_text("# the candidate's\n")
+
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+            mock.patch.object(fc, "unpack", side_effect=unpack),
+        ):
+            fc.embed_core(staging, core_root=self.workspace, core_ref="abc1234")
+        self.assertEqual((staging / "tools/forever_tools/embed.py").read_text(), "# the candidate's\n")
+
+    def test_build_dev_cli_embeds_a_resolved_core_ref(self):
+        (self.repo / "Core/Core.lua").write_text("-- after the release\n")
+        self.git("-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qam", "two")
+        with (
+            mock.patch.object(fc, "build_dev") as build,
+            mock.patch.object(fc, "recover_links"),
+            mock.patch.object(
+                fc,
+                "resolve_commit",
+                side_effect=lambda root, ref: "c" * 40 if root.name == "forever-core" else "a" * 40,
+            ),
+            mock.patch.object(fc, "tag_name", return_value=None),
+        ):
+            self.assertEqual(fc.main(["build-dev", "legacy-forever", "HEAD", "--core-ref", "cb/loader"]), 0)
+        self.assertEqual(build.call_args.kwargs["core_ref"], "c" * 40)
 
     def test_build_dev_cli_refuses_a_release_tag(self):
         out = io.StringIO()
@@ -2372,7 +2630,7 @@ class SmokeTest(unittest.TestCase):
             mock.Mock(returncode=1 if count else 0, stdout=json.dumps([{"signature": "x"}] * count), stderr="")
             for count in counts
         ]
-        return mock.patch.object(fc, "errors", side_effect=answers)
+        return mock.patch.object(fc, "saved_errors", side_effect=answers)
 
     def smoke(self, argv=None):
         options = {
@@ -2397,6 +2655,7 @@ class SmokeTest(unittest.TestCase):
         registrations=None,
         startup=None,
         slash=None,
+        stage=None,
     ):
         folders = folders or [("LegacyForever", self.build)]
         startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
@@ -2416,6 +2675,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
             mock.patch.object(fc, "smoke_registrations", startup),
+            mock.patch.object(fc, "stage_registrations", stage or mock.Mock(return_value="startup-token")),
             self.report(*answers),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
@@ -2441,14 +2701,16 @@ class SmokeTest(unittest.TestCase):
         )
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
-        self.reload.assert_called_once()
+        self.assertEqual(
+            self.reload.call_count, 2, "the one that loads the candidate and the one that saves its errors"
+        )
         self.released.assert_called_once()
 
     def test_a_smoke_clears_the_eval_inbox_when_it_starts_and_ends(self):
         with mock.patch.object(fc, "clear_eval_inbox") as clear:
             code, _printed, _build = self.run_smoke()
         self.assertEqual(code, 0)
-        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(quiet=True)])
+        self.assertEqual(clear.call_args_list, [mock.call(), mock.call(), mock.call(quiet=True)])
 
     def test_manual_launcher_flag_reaches_the_session(self):
         argv = ["smoke", "--repo", "legacy-forever", "--ref", "main"]
@@ -2500,6 +2762,20 @@ class SmokeTest(unittest.TestCase):
         self.posted.assert_not_called()
         self.assertIn("nothing posted: slash refused", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
+
+    def test_a_smoke_reads_github_with_the_gh_login_when_no_token_is_set(self):
+        # #934: a core smoke reads every consumer's latest release; anonymous reads hit the shared rate limit.
+        login = subprocess.CompletedProcess(["gh"], 0, stdout="gho_login\n", stderr="")
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(fc.subprocess, "run", return_value=login):
+            os.environ.pop("GH_TOKEN", None)
+            os.environ.pop("GITHUB_TOKEN", None)
+            fc.github_token_from_gh()
+            self.assertEqual(os.environ["GH_TOKEN"], "gho_login")
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ci"}), mock.patch.object(fc.subprocess, "run") as run:
+            os.environ.pop("GH_TOKEN", None)
+            fc.github_token_from_gh()
+            run.assert_not_called()
+            self.assertNotIn("GH_TOKEN", os.environ)
 
     def test_a_client_that_is_not_in_use_smokes(self):
         # A resident session's own Wine processes are not a busy client: only the player's game is.
@@ -2609,7 +2885,7 @@ class SmokeTest(unittest.TestCase):
         lines = ["not registered: TweaksForever", "something else", "not registered: LegacyForever", 7]
         self.assertEqual(fc.not_registered(lines), ["TweaksForever", "LegacyForever"])
 
-    def test_smoke_registrations_reads_the_snippet_own_eval_record(self):
+    def test_the_startup_check_is_staged_without_a_reload_and_read_by_its_run_token(self):
         class Tool:
             class EvalError(RuntimeError):
                 pass
@@ -2630,35 +2906,48 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "clear_eval_inbox") as cleared,
             mock.patch.object(fc, "saved_eval", return_value=record) as saved,
         ):
-            names = fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+            token = fc.stage_registrations([("TweaksForever", self.released_folder)])
+            names = fc.smoke_registrations(token)
         self.assertEqual(names, ["TweaksForever"])
-        self.assertEqual(reloaded.call_count, 2)
-        self.assertEqual(cleared.call_count, 2)
+        reloaded.assert_not_called()
+        cleared.assert_not_called()
         saved.assert_called_once_with("run-token")
 
     def test_a_startup_check_snippet_that_raises_is_an_error(self):
-        class Tool:
-            class EvalError(RuntimeError):
-                pass
-
-            @staticmethod
-            def lua_string(value):
-                return f'"{value}"'
-
-            @staticmethod
-            def write_snippet(path, addons=None, capture=False):
-                return {"token": "run-token"}
-
         with (
-            mock.patch.object(fc, "devsmoke_eval", return_value=Tool),
-            mock.patch.object(fc, "reload"),
-            mock.patch.object(fc, "clear_eval_inbox"),
             mock.patch.object(
                 fc, "saved_eval", return_value={"ok": False, "out": [], "err": "ForeverCore.Registered is missing"}
             ),
             self.assertRaisesRegex(fc.ClientError, "startup check failed"),
         ):
-            fc.smoke_registrations({"started": 1.0}, [("TweaksForever", self.released_folder)])
+            fc.smoke_registrations("run-token")
+
+    def test_a_core_smoke_reloads_twice_and_runs_the_startup_check_at_the_candidates_login(self):
+        core = self.state / "core"
+        core.mkdir()
+        calls = []
+        self.reload.side_effect = lambda _state: calls.append("reload")
+        stage = mock.Mock(side_effect=lambda _folders: calls.append("stage") or "startup-token")
+        startup = mock.Mock(side_effect=lambda _token: calls.append("read startup") or [])
+        with (
+            mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool),
+            mock.patch.object(fc, "clear_eval_inbox", side_effect=lambda **_kw: calls.append("clear")),
+        ):
+            code, _printed, _build = self.run_smoke(
+                answers=(0, 0),
+                repo="forever-core",
+                folders=[("ForeverCore", core)],
+                slash=mock.Mock(side_effect=lambda _state, command: calls.append(command)),
+                stage=stage,
+                startup=startup,
+            )
+        self.assertEqual(code, 0)
+        # One reload loads the candidate and runs the staged snippet; one saves the errors and its record together,
+        # and the record is read only after it.
+        self.assertEqual(
+            calls, ["clear", "stage", "reload", "clear", "/forever selftest", "reload", "read startup", "clear"]
+        )
+        stage.assert_called_once_with([("LegacyForever", self.released_folder)])
 
     def test_the_startup_check_runs_for_released_folders_only(self):
         core = self.state / "core"
@@ -2666,8 +2955,7 @@ class SmokeTest(unittest.TestCase):
         registrations = mock.Mock(return_value=[])
         with mock.patch.object(fc, "released_consumers_tool", side_effect=self.released_tool):
             self.run_smoke(answers=(0, 0), repo="forever-core", folders=[("ForeverCore", core)], startup=registrations)
-        registrations.assert_called_once()
-        self.assertEqual(registrations.call_args.args[1], [("LegacyForever", self.released_folder)])
+        registrations.assert_called_once_with("startup-token")
 
     def test_a_startup_check_that_could_not_run_fails_the_status(self):
         core = self.state / "core"
@@ -2811,14 +3099,14 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "reload", side_effect=lambda _state: calls.append("reload")),
             mock.patch.object(fc, "slash", side_effect=selftest),
-            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
+            mock.patch.object(fc, "saved_errors", return_value=mock.Mock(returncode=0, stdout="[]", stderr="")) as read,
             mock.patch.object(fc, "post_status"),
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(self.smoke(), 0)
-        self.assertEqual(calls, ["reload", "/forever selftest"])
+        self.assertEqual(calls, ["reload", "/forever selftest", "reload"])
         read.assert_called_once_with(mock.ANY, "LegacyForever", as_json=True)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
@@ -2842,7 +3130,7 @@ class SmokeTest(unittest.TestCase):
             mock.patch.object(fc, "release_job"),
             mock.patch.object(fc, "reload"),
             mock.patch.object(fc, "slash"),
-            mock.patch.object(fc, "errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
+            mock.patch.object(fc, "saved_errors", return_value=mock.Mock(returncode=0, stdout="oops", stderr="")),
             mock.patch.object(fc, "post_status") as posted,
             mock.patch.object(fc, "stop_handlers", return_value={}),
             mock.patch.object(fc, "restore_handlers"),
@@ -2961,26 +3249,77 @@ class ProofHelpersTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
                 fc.parse_flows([bad])
 
-    def test_parse_flow_clicks_takes_a_named_point_in_screenshot_coordinates(self):
-        flows = [("update notice", "/lf"), ("professions", "/sf")]
-        self.assertEqual(fc.parse_flow_clicks([], flows), {})
+    def test_parse_flow_inputs_keeps_each_flows_inputs_in_command_line_order(self):
+        flows = [("update notice", "/lf"), ("merchant", "/sf")]
+        self.assertEqual(fc.parse_flow_inputs([], flows), {})
         self.assertEqual(
-            fc.parse_flow_clicks(["professions=400, 300", "update notice = 12,34"], flows),
-            {"professions": (400, 300), "update notice": (12, 34)},
+            fc.parse_flow_inputs(
+                [
+                    ("type", "merchant=/tar Thurman Mullby"),
+                    ("click", "update notice = 12,34"),
+                    ("key", "merchant=INTERACTTARGET"),
+                    ("drag", "merchant=10, 20,30,40"),
+                ],
+                flows,
+            ),
+            {
+                "merchant": [
+                    ("type", "/tar Thurman Mullby"),
+                    ("key", "INTERACTTARGET"),
+                    ("drag", (10, 20, 30, 40)),
+                ],
+                "update notice": [("click", (12, 34))],
+            },
         )
 
-    def test_parse_flow_clicks_refuses_a_name_no_flow_has(self):
+    def test_parse_flow_inputs_refuses_a_name_no_flow_has(self):
         flows = [("update notice", "/lf")]
-        with self.assertRaisesRegex(fc.ClientError, r"no --flow of that name \(update notice\)"):
-            fc.parse_flow_clicks(["profession=400,300"], flows)
+        for kind in fc.FLOW_INPUT_FORMS:
+            with self.subTest(kind=kind), self.assertRaisesRegex(fc.ClientError, r"no --flow of that name \(update"):
+                fc.parse_flow_inputs([(kind, "profession=1,2")], flows)
 
-    def test_parse_flow_clicks_refuses_a_point_that_is_not_two_integers(self):
+    def test_parse_flow_inputs_refuses_malformed_points(self):
         flows = [("professions", "/sf"), ("update notice", "/lf")]
-        for bad in ("professions", "professions=", "=1,2", "professions=1", "professions=1,2,3", "professions=a,b"):
+        for kind, bad in (
+            ("click", "professions"),
+            ("click", "professions="),
+            ("click", "=1,2"),
+            ("click", "professions=1"),
+            ("click", "professions=1,2,3"),
+            ("click", "professions=a,b"),
+            ("drag", "professions=1,2"),
+            ("drag", "professions=1,2,3,4,5"),
+            ("drag", "professions=1,2,x,4"),
+        ):
             with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
-                fc.parse_flow_clicks([bad], flows)
+                fc.parse_flow_inputs([(kind, bad)], flows)
         with self.assertRaisesRegex(fc.ClientError, "outside the"):
-            fc.parse_flow_clicks([f"professions={fc.WIDTH},10"], flows)
+            fc.parse_flow_inputs([("click", f"professions={fc.WIDTH},10")], flows)
+        with self.assertRaisesRegex(fc.ClientError, r"--flow-drag professions: \(10, 1080\) is outside the"):
+            fc.parse_flow_inputs([("drag", f"professions=1,1,10,{fc.HEIGHT}")], flows)
+
+    def test_parse_flow_inputs_takes_only_a_bound_action_and_one_slash_line(self):
+        flows = [("merchant", "/sf")]
+        with self.assertRaisesRegex(fc.ClientError, "MOVEUP is not an action; it takes MOVEFORWARD"):
+            fc.parse_flow_inputs([("key", "merchant=MOVEUP")], flows)
+        with mock.patch.object(fc, "one_line_slash", wraps=fc.one_line_slash):
+            for bad in ("merchant=hello", "merchant=/tar a\n/reload"):
+                with self.subTest(bad=bad), self.assertRaises(fc.ClientError):
+                    fc.parse_flow_inputs([("type", bad)], flows)
+
+    def test_flow_record_lists_its_inputs_in_order(self):
+        self.assertEqual(
+            fc.flow_record(
+                "merchant", "/sf", [("type", "/tar Bob"), ("key", "INTERACTTARGET"), ("drag", (1, 2, 3, 4))]
+            ),
+            {
+                "name": "merchant",
+                "steps": ["/sf"],
+                "inputs": [{"type": "/tar Bob"}, {"key": "INTERACTTARGET"}, {"drag": [1, 2, 3, 4]}],
+                "result": "pass",
+            },
+        )
+        self.assertEqual(fc.flow_record("notice", "/lf"), {"name": "notice", "steps": ["/lf"], "result": "pass"})
 
     def test_flow_slug_is_a_file_name(self):
         self.assertEqual(fc.flow_slug("Update notice!"), "update-notice")
@@ -3044,12 +3383,99 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc, "clear_eval_inbox"),
             mock.patch.object(fc, "client_ui", return_value={"world": True, "menu": False}),
             mock.patch.object(fc, "x", side_effect=fake_x),
+            mock.patch.object(fc, "world_load_shot", return_value=False),
             mock.patch.object(fc.time, "sleep", side_effect=fake_sleep),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            self.assertEqual(fc.run_flow({"ready": True}, "/sf", (400, 300)), "run-1")
+            self.assertEqual(fc.run_flow({"ready": True}, "/sf", [("click", (400, 300))]), "run-1")
         self.assertEqual(events, ["reload", "click"])
-        self.assertIn("clicked 400,300 after 1-world.png", out.getvalue())
+        self.assertIn("sending 1 input(s) after 1-world.png", out.getvalue())
+        self.assertIn("clicked 400,300", out.getvalue())
+
+    def test_a_flows_keys_resolve_before_its_reload_and_its_inputs_run_in_order_before_ready(self):
+        events = []
+        tool = mock.Mock()
+        tool.EvalError = Exception
+
+        def written(*_args, **_kwargs):
+            events.append("write")
+            return {"chunk": Path("/x/Eval.lua"), "snippet": Path("/sf"), "lines": 5, "token": "run-1"}
+
+        def bindings(_state, actions):
+            # A lookup that is not cached reloads through an eval of its own: it must finish before the flow's snippet.
+            events.append(f"bindings {' '.join(actions)}")
+            return [["Control_L", "f9"]]
+
+        tool.write_slash.side_effect = written
+        inputs = [("type", "/tar Thurman Mullby"), ("key", "INTERACTTARGET"), ("drag", (10, 20, 30, 40))]
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "action_keys", side_effect=bindings),
+            mock.patch.object(fc, "reload", side_effect=lambda _state: events.append("reload")),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(
+                fc, "wait_for_flow_world", side_effect=lambda *_a, **_k: events.append("world") or Path("1-world.png")
+            ),
+            mock.patch.object(fc, "slash", side_effect=lambda _state, command: events.append(f"type {command}")),
+            mock.patch.object(fc, "send", side_effect=lambda _state, *args: events.append(" ".join(args))),
+            mock.patch.object(fc, "shot", side_effect=lambda *_a, **_k: events.append("shot")),
+            mock.patch.object(fc, "drag", side_effect=lambda _state, *points: events.append(f"drag {points}")),
+            mock.patch.object(fc, "mark_moved") as moved,
+            mock.patch.object(
+                fc, "wait_for_flow_ready", side_effect=lambda *_a, **_k: events.append("ready") or Path("2-ready.png")
+            ),
+            mock.patch.object(fc, "world_load_shot", return_value=False),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(fc.run_flow({"ready": True}, "/sf", inputs), "run-1")
+        self.assertEqual(
+            events,
+            [
+                "bindings INTERACTTARGET",
+                "write",
+                "reload",
+                "world",
+                "type /tar Thurman Mullby",
+                "key Control_L+f9",
+                "shot",
+                "drag (10, 20, 30, 40)",
+                "ready",
+            ],
+        )
+        moved.assert_not_called()
+        self.assertIn("pressed INTERACTTARGET (Control_L+f9)", out.getvalue())
+
+    def test_a_flow_whose_inputs_reload_the_client_fails_instead_of_capturing_the_world(self):
+        tool = mock.Mock()
+        tool.EvalError = Exception
+        tool.write_slash.return_value = {"chunk": Path("/x/Eval.lua"), "snippet": Path("/sf"), "lines": 5, "token": "t"}
+        with (
+            mock.patch.object(fc, "CLIENT", self.state / "client"),
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.jpg")),
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "wait_for_flow_ready", return_value=Path("2-world.jpg")),
+            mock.patch.object(fc, "world_load_shot", return_value=True) as world_load,
+            mock.patch.object(fc, "flow_capture_failure", side_effect=lambda _s, _a, _t, error: error),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(fc.ClientError, "inputs reloaded the client"),
+        ):
+            fc.run_flow({"ready": True}, "/sf", [("type", "/reload")])
+        world_load.assert_called_once_with(Path("2-world.jpg"))
+
+    def test_a_flow_without_keys_never_reads_the_bindings(self):
+        with mock.patch.object(fc, "action_keys") as keys:
+            self.assertEqual(fc.flow_key_combos("state", [("click", (1, 2)), ("type", "/tar Bob")]), [])
+        keys.assert_not_called()
 
     def test_a_flow_without_a_click_never_clicks_nor_waits_for_the_world_frame(self):
         tool = mock.Mock()
@@ -3138,7 +3564,7 @@ class ProofHelpersTest(unittest.TestCase):
             mock.patch.object(fc.time, "sleep", side_effect=lambda s: order.append("settle")),
             contextlib.redirect_stdout(io.StringIO()) as out,
         ):
-            self.assertEqual(fc.run_flow("state", "/cast Cooking", (748, 505)), "")
+            self.assertEqual(fc.run_flow("state", "/cast Cooking", [("click", (748, 505))]), "")
         self.assertEqual(order, ["typed", "settle", ("click", ("state", 748, 505, "1")), "settle"])
         self.assertTrue((self.state / "last-shot").exists())
         self.assertIn("clicked 748,505 after /cast Cooking", out.getvalue())
@@ -3566,7 +3992,7 @@ class ProofTest(unittest.TestCase):
             "ref": "main",
             "checkout": self.checkout,
             "flow": ["update notice=/lf"],
-            "flow_click": [],
+            "flow_inputs": [],
             "timeout": 600,
             "manual_launcher": False,
         }
@@ -3610,6 +4036,7 @@ class ProofTest(unittest.TestCase):
 
     def run_proof(self, **overrides):
         ensure = overrides.pop("ensure", None)
+        ready_patched = overrides.pop("ready_patched", False)
         overrides.pop("up", None)
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(fc, "git", side_effect=self.fake_git))
@@ -3624,8 +4051,10 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "reload", self.reload))
             stack.enter_context(mock.patch.object(fc, "job_started", return_value=3.0))
             stack.enter_context(mock.patch.object(fc, "slash", side_effect=self.fake_slash))
-            stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
+            if not ready_patched:
+                stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", return_value=self.state / "flow.jpg"))
             stack.enter_context(mock.patch.object(fc, "wait_for_flow_world", return_value=self.state / "world.jpg"))
+            stack.enter_context(mock.patch.object(fc, "world_load_shot", return_value=False))
             stack.enter_context(mock.patch.object(fc, "click", self.click))
             stack.enter_context(mock.patch.object(fc, "devsmoke_eval", return_value=self.eval_tool))
             stack.enter_context(mock.patch.object(fc, "shot", side_effect=self.fake_shot))
@@ -3710,6 +4139,104 @@ class ProofTest(unittest.TestCase):
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
 
+    def one_eval_slot(self, outcomes: dict[str, bool], order: list) -> contextlib.ExitStack:
+        """A client with one inbox, one DevSmokeDB.eval in memory and one on disk, as the real one has.
+
+        A reload first writes the session's memory to disk, then the new login runs whatever the inbox holds, once. A
+        read finds only the record on disk, so a token read before the reload that saves it is missing.
+        """
+        client = {"inbox": None, "memory": None, "disk": None}
+
+        def stage(action, **_kw):
+            token = f"run-{action.strip('/')}"
+            client["inbox"] = token
+            return {"chunk": Path("/x/Eval.lua"), "snippet": Path(action), "lines": 1, "token": token}
+
+        def reload(_state):
+            order.append("reload")
+            client["disk"] = client["memory"]
+            if client["inbox"]:
+                client["memory"] = {"run": client["inbox"], "ok": outcomes[client["inbox"]], "err": "boom"}
+
+        def clear(**_kw):
+            client["inbox"] = None
+
+        def read(token):
+            order.append(f"read {token}")
+            if (client["disk"] or {}).get("run") != token:
+                raise fc.ClientError(f"{token} is not on disk yet")
+            return client["disk"]
+
+        def ready(*_args, **_kw):
+            order.append("ready")
+            return self.state / "flow.jpg"
+
+        self.eval_tool.write_slash.side_effect = stage
+        self.reload.side_effect = reload
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(fc, "clear_eval_inbox", side_effect=clear))
+        stack.enter_context(mock.patch.object(fc, "saved_eval", side_effect=read))
+        stack.enter_context(mock.patch.object(fc, "wait_for_flow_ready", side_effect=ready))
+        return stack
+
+    def test_a_flow_whose_result_is_missing_is_named_in_the_error(self):
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=fc.ClientError("DevSmokeDB.eval is missing")),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: DevSmokeDB.eval is missing"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True)
+
+    def test_two_flows_take_four_reloads_the_second_flows_saving_the_firsts_eval(self):
+        order = []
+        with self.one_eval_slot({"run-a": True, "run-b": True}, order):
+            code, _printed, _err = self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
+        self.assertEqual(code, 0)
+        self.assertEqual([path.name for path in self.shot_paths], ["1-one.png", "2-two.png"])
+        # The proof's own reload, each flow's, and one more that saves the last flow's eval: N + 2, not 2N + 1. Each
+        # read follows the reload that put its token on disk, and the first flow is read before the second waits.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a", "ready", "reload", "read run-b"])
+
+    def test_a_first_flow_whose_snippet_raised_fails_the_proof_before_the_next_flow_waits(self):
+        order = []
+        with (
+            self.one_eval_slot({"run-a": False, "run-b": True}, order),
+            self.assertRaisesRegex(fc.ClientError, "flow snippet /a failed"),
+        ):
+            self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
+        # Reported against the flow that raised, before the second flow sends input or waits on its capture.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a"])
+        self.create_gist.assert_not_called()
+        self.assertFalse((self.checkout / ".visual-proof.json").exists())
+
+    def test_a_refused_flow_still_saves_and_reports_the_flow_before_it(self):
+        order = []
+        with self.one_eval_slot({"run-a": False}, order):
+            stage = self.eval_tool.write_slash.side_effect
+
+            def refuse_b(action, **kw):
+                if action == "/b":
+                    raise RuntimeError("/b: refused")
+                return stage(action, **kw)
+
+            self.eval_tool.write_slash.side_effect = refuse_b
+            with self.assertRaisesRegex(fc.ClientError, "flow snippet /a failed"):
+                self.run_proof(flow=["one=/a", "two=/b"], ready_patched=True)
+        # The refusal of the second flow neither skips nor hides the first flow's failure: one more reload saves it.
+        self.assertEqual(order, ["reload", "reload", "ready", "reload", "read run-a"])
+
+    def test_a_flow_result_overwritten_by_the_next_flow_says_so(self):
+        mismatch = fc.EvalMismatch("run-b", "DevSmokeDB.eval holds the run 'run-b'")
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=mismatch),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: its result was overwritten by flow /b"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True, next_flow=("/b", "run-b"))
+        with (
+            mock.patch.object(fc, "saved_eval", side_effect=fc.EvalMismatch("run-z", "holds the run 'run-z'")),
+            self.assertRaisesRegex(fc.ClientError, "flow /a: holds the run 'run-z'"),
+        ):
+            fc.check_flow_eval({}, "/a", "run-a", saved=True, next_flow=("/b", "run-b"))
+
     def test_shared_build_reads_finish_before_the_job_lock_is_released(self):
         def read_while_locked(*_args):
             self.released.assert_not_called()
@@ -3730,26 +4257,46 @@ class ProofTest(unittest.TestCase):
         self.released.assert_called_once()
 
     def test_a_proof_clicks_the_point_its_flow_names_and_records_it(self):
-        code, printed, _err = self.run_proof(flow_click=["update notice=400, 300"])
+        code, printed, _err = self.run_proof(flow_inputs=[("click", "update notice=400, 300")])
         self.assertEqual(code, 0)
         self.click.assert_called_once_with(mock.ANY, 400, 300, "1")
         self.assertIn("clicked 400,300", printed)
         proof = json.loads((self.checkout / ".visual-proof.json").read_text())
         self.assertEqual(
             proof["flows"],
-            [{"name": "update notice", "steps": ["/lf"], "click": [400, 300], "result": "pass"}],
+            [{"name": "update notice", "steps": ["/lf"], "inputs": [{"click": [400, 300]}], "result": "pass"}],
         )
+
+    def test_a_proof_types_and_presses_a_bound_key_after_its_flows_reload(self):
+        reloads_at_press = []
+        with (
+            mock.patch.object(fc, "action_keys", return_value=[["f9"]]) as keys,
+            mock.patch.object(
+                fc, "send", side_effect=lambda *_a, **_k: reloads_at_press.append(self.reload.call_count)
+            ),
+        ):
+            code, printed, _err = self.run_proof(
+                flow_inputs=[("type", "update notice=/tar Thurman Mullby"), ("key", "update notice=INTERACTTARGET")]
+            )
+        self.assertEqual(code, 0)
+        keys.assert_called_once_with(mock.ANY, ["INTERACTTARGET"])
+        self.assertEqual(self.slashes, ["/tar Thurman Mullby"])
+        self.assertEqual(reloads_at_press, [2], "after the proof's reload and the flow's, before the eval's")
+        self.assertEqual(self.reload.call_count, 3)
+        self.assertIn("pressed INTERACTTARGET (f9)", printed)
+        proof = json.loads((self.checkout / ".visual-proof.json").read_text())
+        self.assertEqual(proof["flows"][0]["inputs"], [{"type": "/tar Thurman Mullby"}, {"key": "INTERACTTARGET"}])
 
     def test_a_proof_without_a_flow_click_clicks_nothing(self):
         code, _printed, _err = self.run_proof()
         self.assertEqual(code, 0)
         self.click.assert_not_called()
         proof = json.loads((self.checkout / ".visual-proof.json").read_text())
-        self.assertNotIn("click", proof["flows"][0])
+        self.assertNotIn("inputs", proof["flows"][0])
 
     def test_a_flow_click_that_names_no_flow_is_refused_before_the_build(self):
         with self.assertRaisesRegex(fc.ClientError, "no --flow of that name"):
-            self.run_proof(flow_click=["profession=400,300"])
+            self.run_proof(flow_inputs=[("click", "profession=400,300")])
         self.build_dev.assert_not_called()
 
     def test_a_proof_compare_that_fails_removes_a_stale_proof(self):
@@ -3924,6 +4471,8 @@ class ProofTest(unittest.TestCase):
                     "update notice=/lf",
                     "--flow-click",
                     "update notice=400,300",
+                    "--flow-key",
+                    "update notice=JUMP",
                     "--manual-launcher",
                 ]
             )
@@ -3932,7 +4481,7 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(options.repo, "legacy-forever")
         self.assertEqual(options.checkout, self.checkout)
         self.assertEqual(options.flow, ["update notice=/lf"])
-        self.assertEqual(options.flow_click, ["update notice=400,300"])
+        self.assertEqual(options.flow_inputs, [("click", "update notice=400,300"), ("key", "update notice=JUMP")])
         self.assertTrue(options.manual_launcher)
 
 
@@ -4847,6 +5396,18 @@ class HyprlandJobTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0], ["xdotool", "mousemove", "1290", "20", "click", "1"])
         self.assertEqual(run.call_args_list[1].args[0], ["xdotool", "mousemove", "10", "20"])
 
+    def test_every_move_in_a_pointer_chain_gets_the_nested_offset(self):
+        with mock.patch.object(fc.subprocess, "run") as run:
+            fc.x(
+                {"display": ":3", "origin": [1280, 40]},
+                *("mousemove", "10", "20", "mousedown", "1", "sleep", "0.03", "mousemove", "30", "40", "mouseup", "1"),
+            )
+        self.assertEqual(
+            run.call_args.args[0],
+            ["xdotool", "mousemove", "1290", "60", "mousedown", "1", "sleep", "0.03", "mousemove", "1310", "80"]
+            + ["mouseup", "1"],
+        )
+
     def nested(self, *, start_error=None):
         module = mock.Mock()
         module.NestedError = type("NestedError", (Exception,), {})
@@ -5323,36 +5884,6 @@ class ModifierHoldTest(unittest.TestCase):
                 )
         self.assertEqual(set(self.displays), {":9"})
 
-    def test_drag_presses_moves_in_steps_and_releases(self):
-        self.record()
-        (self.state / "last-shot").touch()
-        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
-        fc.drag({"display": ":9"}, (100, 200), (180, 120))
-        chain, release = self.sent
-        self.assertEqual(chain[1:6], ["mousemove", "100", "200", "mousedown", "1"])
-        moves = [chain[i + 1 : i + 3] for i, arg in enumerate(chain) if arg == "mousemove"][1:]
-        self.assertEqual(len(moves), fc.DRAG_STEPS)
-        self.assertEqual(moves[-1], ["180", "120"])
-        self.assertEqual(release, ["xdotool", "mouseup", "1"])
-
-    def test_a_failed_drag_still_releases_the_button(self):
-        self.record(fail_on="mousemove")
-        (self.state / "last-shot").touch()
-        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
-        with self.assertRaises(subprocess.CalledProcessError):
-            fc.drag({"display": ":9"}, (100, 200), (180, 120))
-        self.assertEqual(self.sent[-1], ["xdotool", "mouseup", "1"])
-
-    def test_a_drag_needs_a_fresh_shot_and_points_in_the_frame(self):
-        run = self.record()
-        with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
-            fc.drag({"display": ":9"}, (1, 2), (3, 4))
-        (self.state / "last-shot").touch()
-        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
-        with self.assertRaisesRegex(fc.ClientError, "outside"):
-            fc.drag({"display": ":9"}, (1, 2), (fc.WIDTH, 4))
-        run.assert_not_called()
-
     def test_keyup_still_runs_when_the_action_raises(self):
         self.record(fail_on="mousemove")
         (self.state / "last-shot").touch()
@@ -5688,9 +6219,11 @@ class FakeWorld:
     """A character on a 1000 by 1000 yard map with walls: turn keys turn it, the forward key runs it, a jump clears a
     low wall. Movement verbs see it only through the motion row's values, as they see the client."""
 
-    def __init__(self, x, y, facing, walls=(), low=(), turn_rate=math.pi, indoors=lambda x, y: False):
+    def __init__(self, x, y, facing, walls=(), low=(), turn_rate=math.pi, indoors=lambda x, y: False, slide=False):
         self.x, self.y, self.facing, self.map, self.size = x, y, facing, 1453, 1000
         self.walls, self.low, self.turn_rate, self.indoors = list(walls), list(low), turn_rate, indoors
+        # Off, a blocked step does not move at all; on, it slides along the wall as the client does.
+        self.slide = slide
         self.held: list[tuple[tuple[str, ...], float]] = []
         self.target = None
 
@@ -5738,8 +6271,19 @@ class FakeWorld:
             yards = fc.RUN_SPEED * seconds
             end = (self.x - math.sin(self.facing) * yards, self.y - math.cos(self.facing) * yards)
             walls = self.walls + ([] if "JUMP" in actions else self.low)
-            if not any(self.crosses((self.x, self.y), end, box) for box in walls):
-                self.x, self.y = end
+            if not self.slide:
+                if not any(self.crosses((self.x, self.y), end, box) for box in walls):
+                    self.x, self.y = end
+                return
+            # The client moves in small ticks: a blocked tick slides along the wall with whichever part of it runs
+            # parallel, and the next tick tries the full heading again.
+            dx, dy = (end[0] - self.x) / 40, (end[1] - self.y) / 40
+            for _ in range(40):
+                for move in ((dx, dy), (dx, 0), (0, dy)):
+                    ahead = (self.x + move[0], self.y + move[1])
+                    if not any(self.crosses((self.x, self.y), ahead, box) for box in walls):
+                        self.x, self.y = ahead
+                        break
 
 
 class MovementTest(unittest.TestCase):
@@ -5797,6 +6341,31 @@ class MovementTest(unittest.TestCase):
             fc.walkto({}, 0.5, 0.48)
         walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
         self.assertLessEqual(walks, fc.STUCK_STEPS * 3 + 1 + 2 * fc.ESCAPE_STEPS * 2, "bounded, not a loop")
+
+    def test_walkto_follows_a_wall_from_a_corner_instead_of_rocking_between_two_spots(self):
+        # #923: a long wall across the line with a corner just west of the player. Going round it on the west side
+        # is blocked at once; the walker must keep to the east side until the wall ends, not step back west each
+        # time a step toward the wall regains the yards the step aside cost.
+        walls = [(420, 495, 560, 497), (496, 497, 498, 530)]
+        world = self.world(502, 500, 0.0, walls=walls, slide=True)
+        fc.walkto({}, 0.5, 0.40)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 400), fc.WALK_TOLERANCE)
+
+    def test_walkto_tries_the_other_side_with_the_steps_to_walk_back(self):
+        # The first side's end is far off and the other's near the first contact: the second side first walks back
+        # over the first side's steps, so it must not run out of steps on the way.
+        world = self.world(500, 500, 0.0, walls=[(300, 495, 530, 497)], slide=True)
+        fc.walkto({}, 0.5, 0.40)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 400), fc.WALK_TOLERANCE)
+
+    def test_walkto_gives_up_once_both_sides_of_a_wall_are_spent(self):
+        # A wall too long to get round: once both sides are spent, it reports stuck rather than walking on until
+        # the step limit or the time budget ends the walk.
+        world = self.world(500, 500, 0.0, walls=[(0, 495, 1000, 497)], slide=True)
+        with self.assertRaisesRegex(fc.ClientError, r"stuck \(no way round\)"):
+            fc.walkto({}, 0.5, 0.40)
+        walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
+        self.assertLessEqual(walks, fc.STUCK_STEPS * 3 + 1 + 2 * fc.ESCAPE_STEPS * 3, "bounded, not a loop")
 
     def test_walkto_sliding_along_a_wall_without_closing_in_counts_as_stuck(self):
         # A long wall across the line: each step slides sideways a little but never gets nearer than the best so far.

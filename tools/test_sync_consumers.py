@@ -352,3 +352,74 @@ class TagStepTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionStepTest(unittest.TestCase):
+    """The sync writes the bare version step above every packager in a consumer's release and CI workflows."""
+
+    CI = """jobs:
+  package:
+    steps:
+      - name: Package this commit as an untagged build
+        run: git tag --points-at HEAD | xargs -r git tag --delete
+      - name: Embed ForeverCore
+        run: python3 -m tools.forever_tools.embed
+      - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -d -z
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.root = self.checkouts / "legacy-forever"
+        (self.root / ".github/workflows").mkdir(parents=True)
+        (self.root / sync.RELEASE_WORKFLOW).write_text(RELEASE_WORKFLOW, encoding="utf-8")
+        (self.root / sync.CI_WORKFLOW).write_text(self.CI, encoding="utf-8")
+
+    def check(self):
+        return check_consumers.check_version_step("legacy-forever", "main", self.checkouts)
+
+    def run_sync(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sync.sync_version_step(self.root, "legacy-forever", dry_run=False)
+
+    def test_the_sync_inserts_the_step_above_each_packager_once(self):
+        self.assertEqual(len(self.check()), 2)
+        self.assertEqual(self.run_sync(), 2)
+        self.assertEqual(self.check(), [])
+        step = sync.version_step()
+        release = (self.root / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8")
+        self.assertIn(step + "      - uses: BigWigsMods/packager@", release)
+        ci = (self.root / sync.CI_WORKFLOW).read_text(encoding="utf-8")
+        # The embed step keeps its place; the version step sits between it and the packager.
+        self.assertIn("python3 -m tools.forever_tools.embed\n" + step + "      - uses: BigWigsMods/packager@", ci)
+        self.assertEqual(self.run_sync(), 0)
+
+    def test_a_commented_out_step_does_not_count(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        packager = "      - uses: BigWigsMods/packager@"
+        commented = "      # - run: python3 -m tools.forever_tools.toc_version\n"
+        path.write_text(RELEASE_WORKFLOW.replace(packager, commented + packager), encoding="utf-8")
+        self.assertIn("release.yml: a packager step with no", self.check()[0])
+        self.run_sync()
+        self.assertIn(sync.version_step() + packager, path.read_text(encoding="utf-8"))
+        self.assertEqual(self.check(), [])
+
+    def test_the_pin_gate_stays_directly_above_the_packager(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        packager = "      - uses: BigWigsMods/packager@"
+        path.write_text(RELEASE_WORKFLOW.replace(packager, sync.release_gate_step() + packager), encoding="utf-8")
+        self.run_sync()
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(sync.version_step() + sync.release_gate_step() + packager, text)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(check_consumers.check_release_gate("legacy-forever", "main", self.checkouts), [])
+
+    def test_a_workflow_without_a_packager_is_left_alone(self):
+        (self.root / sync.RELEASE_WORKFLOW).write_text(KILN_RELEASE_WORKFLOW, encoding="utf-8")
+        (self.root / sync.CI_WORKFLOW).unlink()
+        self.assertEqual(self.check(), [])
+        self.assertEqual(self.run_sync(), 0)
+        self.assertEqual((self.root / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)

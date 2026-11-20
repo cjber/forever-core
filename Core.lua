@@ -11,6 +11,27 @@ function ns.Store()
 	return ns.store
 end
 
+-- Work that changes the client (frames, frame pools, event registrations, hooks, the error handler) is queued here
+-- and runs first in ns.Start, so defining a converted copy leaves the client untouched and the loader can still refuse
+-- it. The unwrapped standalone has no step between its files and Start, so its work runs at once, as before.
+local startWork = {}
+---@param work fun()
+function ns.AtStart(work)
+	if ns.copy == nil or ns.started then
+		work()
+	else
+		startWork[#startWork + 1] = work
+	end
+end
+local function RunStartWork()
+	ns.started = true
+	local queued = startWork
+	startWork = {}
+	for index = 1, #queued do
+		queued[index]()
+	end
+end
+
 -- The standalone addon is a participant too: its ForeverCoreDB is offered by name so an embedded election can merge
 -- it with the consumers' mirrors. A converted standalone does the same, and an elected copy never offers its host's
 -- account table under the wrong name.
@@ -934,6 +955,7 @@ end
 -- survive. Only the standalone copy may adopt ForeverCoreDB, and only here.
 function ns.Start()
 	if ns.copy ~= nil then
+		RunStartWork()
 		if ns.mode == "standalone" then
 			-- The converted standalone starts after election at PLAYER_LOGIN, with SavedVariables available.
 			if type(ForeverCoreDB) ~= "table" then
@@ -970,6 +992,9 @@ function ns.Login()
 	ns.RefreshStore()
 	if ns.AttachCoreDb then
 		ns.AttachCoreDb()
+	end
+	if ns.copy ~= nil and ns.DebugCaptureCatchUp then
+		ns.DebugCaptureCatchUp()
 	end
 end
 

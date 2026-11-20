@@ -8,7 +8,7 @@ same way as `forever_tools` (`python3 tools/forever_sim/sync.py check|update|pin
 Nothing of Blizzard's or of a third-party addon is committed. `restrictions.txt` is the one committed list: the
 `restrictedapi` class of each documented function and method, derived from warcraft.wiki.gg (CC BY-SA 4.0), with the
 generator beside it. `fetch.py` downloads Blizzard's UI source (Gethe/wow-ui-source at
-the Forever build's revision, by commit hash) and the client's global strings, colours and atlas sizes
+the Forever build's revision, by commit hash) and the client's global strings, items, colours and atlas sizes
 (wago.tools, at the pinned build) into `tools/.cache/forever_sim/`. The Questie, TomTom, Auctionator and Polestar
 in `stubs/` are our own stand-ins, written from what those addons do in public.
 
@@ -66,6 +66,8 @@ means something; the walk still covers only the repository's own widgets.
 | `sim:stub("Questie", options)` | a third-party stand-in, loaded with the addons |
 | `sim:slashCommands(addon)` | the slash commands `addon` registered, as their first aliases, sorted |
 | `sim:slash("/cmd rest")` | a typed slash command as the chat box runs it: aliases match in any case, the handler gets the remainder as fresh input |
+| `sim:putInBag(bag, slot, itemID, count)` | a bag slot's contents (`nil` itemID empties it), then BAG_UPDATE(bag) and BAG_UPDATE_DELAYED; the backpack is bag 0 with 16 slots. With the merchant open, `C_Container.UseContainerItem` sells the slot |
+| `sim:openQuestReward(questID, { title, text, choices, rewards, money, xp })`, `sim:completeQuestReward(choice)`, `sim:closeQuestReward()` | the quest giver's reward panel: QuestFrame shows and QUEST_COMPLETE draws it through the client's QuestInfo; each of `choices` and `rewards` is an item ID or `{ itemID, count }`. Completing puts the chosen item, the fixed rewards and the money in the player's bags and purse |
 | `sim:reload()` | a fresh client with the same options, addons and stubs, logged in with what `/reload` would have saved |
 | `sim:exercise{ ... }` | every surface twice (gamepad interface off then on): commands in and out of combat, Professions with every side tab and a recipe, trainer, merchant tabs, bags, character tabs, tracker, quest log, world map, Escape, and a target, soft-interact and binding-set change after each; the addon's own buttons are hovered, clicked and left after every command and every surface that opens; then the same after a reload |
 | `sim:exerciseWidgets(addons)` | every shown Button the named addons' own code created (menu rows and check boxes included): OnEnter, a left click, OnLeave, once each and in the current combat state, with frames a click opens walked in the same pass |
@@ -139,6 +141,12 @@ end)
   `CraftRecipe` is refused to tainted code at any time. A profession's `childSkillLineID` (Cooking 185, child 2939)
   is reported only by recipe, with the base line as parent; `GetProfessionChildSkillLineID` is 0. A refused call's
   recorded side effects live in `sim.refusedImpl`.
+- **Items**: every item ID answers from the client's own Item, ItemSparse, ItemClass and ItemSubClass rows at the
+  pinned build (every `GetItemInfo` return; `items-<locale>.lua` from `fetch.py`). A name resolves only for an
+  item the bags hold, as the client resolves only cached items.
+  A scenario's `sim.world.items[id]` wins over the client row, for an item the build lacks or a link a spec fixes.
+  Bags (`sim.world.bags`), merchant sales and quest rewards hold only items one of the two knows, so a scenario
+  cannot invent an item the client would never show.
 - **Work per path**: `sim.work` counts, per event and per path a spec wraps in `measure`, the handlers dispatched and
   the documented API calls tainted code made, nested paths counting in their parent too. Counts are deterministic, so
   a bench asserts an upper bound on one path's work; the in-game per-frame cost is !!DevPerf's per-event split.
@@ -161,7 +169,9 @@ end)
 - FrameXML proper, action bars, unit frames, chat and the shop are not booted (`loader.lua` SKIP_DEPS); a scenario
   can load one by name. The gamepad action bars and the action-button templates they inherit are booted.
 - `secret == x` is always false, and a secret used as a table key is not caught.
-- Units, recipes, items and maps are scenario data, not the game's databases.
+- Units, recipes and maps are scenario data, not the game's databases.
+- `GetItemInfo`'s `isCraftingReagent` is always false (the client derives it from item flags), and items given to
+  the bags never merge into an existing stack.
 - A client boots in about 2-4 s of CPU time. A suite belongs in its own CI job, not the fast gate.
 
 ## Profession recipe search

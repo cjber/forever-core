@@ -20,7 +20,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
     forever_client.py hover X Y           # move the pointer to a point in the frame (after a fresh shot)
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
-    forever_client.py drag X1 Y1 X2 Y2    # left-button drag from one point to another (after a fresh shot)
+    forever_client.py drag X1 Y1 X2 Y2 [--button 1] [--steps N]
+                                          # press at one point, move in steps, release at the other (after a fresh shot)
     forever_client.py click X Y --hold shift [--hold ctrl]
                                           # hold shift, ctrl or alt through any pointer verb; released after
     forever_client.py key Escape          # any key xdotool names
@@ -29,11 +30,12 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
-    forever_client.py eval FILE           # write FILE into !!DevSmoke's inbox, reload to run it, print its own result
+    forever_client.py eval FILE...        # run each FILE through !!DevSmoke's inbox, print each one's own result
     forever_client.py eval --live FILE    # run FILE in the running session, no reload: UI and globals stay
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
+    forever_client.py build-dev REPO REF --core-ref SHA  # the same, embedding a forever-core candidate commit
     forever_client.py smoke --repo R --ref SHA [--no-post]
                                           # build the commit, selftest it, post its status (--no-post prints instead)
     forever_client.py smoke --repo forever-core --ref SHA
@@ -77,9 +79,12 @@ each image's sha256, then checks the installed folder with `visual_proof --compa
 checkout. A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
 run rather than a fixed pause (#573). A flow that returns a ready check is captured once `!!DevSmoke` has polled it
 true, so a window filled in from late data is not photographed empty (#593); a check that raises or never turns true
-records its reason and fails the proof with it. A flow whose window needs a real click names it with
-`--flow-click "NAME=X,Y"`: once that reload's world screenshot has landed, `proof` clicks the point inside its own job
-and then waits for the flow's ready screenshot as any other flow does (#655). There is no default flow: ForeverCore has
+records its reason and fails the proof with it. A flow that needs real input names it with `--flow-click "NAME=X,Y"`,
+`--flow-drag "NAME=X1,Y1,X2,Y2"`, `--flow-key "NAME=ACTION"` (the key the client binds to that action, as `key
+--action` presses it) or `--flow-type "NAME=/COMMAND"` (typed into chat, so a protected command such as `/tar` runs):
+once that reload's world screenshot has landed, `proof` sends them in order inside its own job and then waits for the
+flow's ready screenshot as any other flow does, so a merchant window a key opens is still open for the capture (#655,
+#857, #860). There is no default flow: ForeverCore has
 no shared opener for an addon's update notice, so the flow is named on the command line and
 `wow-forever-addon/in-game.md` shows both. A flow's own result is read after its screenshot, and a snippet that raised
 fails the proof before any gist or `.visual-proof.json` exists (#580). Proof verifies its candidate links before
@@ -246,6 +251,11 @@ STOP_WAIT = 30 * 60
 INPUT_GAP = 1.5
 TYPE_DELAY_MS = "120"
 WHEEL_DELAY_MS = "120"
+# A drag moves in this many steps by default, at most DRAG_STEPS_MAX, pausing DRAG_STEP_DELAY seconds around each so
+# the client sees the button go down, the pointer travel over several frames, and the button come up at the end.
+DRAG_STEPS = 10
+DRAG_STEPS_MAX = 100
+DRAG_STEP_DELAY = "0.03"
 # Seconds a proof waits for a flow's screenshot, or for !!DevSmoke's failure record. Its own ready check stops at
 # 60 s; the extra 5 s only lets that failure reach SavedVariables before the proof falls back to its final reload.
 FLOW_READY_SECONDS = 65
@@ -331,6 +341,8 @@ GAME_MODIFIERS = {"SHIFT": "Shift_L", "CTRL": "Control_L", "ALT": "Alt_L"}
 BINDINGS_CACHE = "bindings.json"
 # The hold in progress, its token and keys, so a job end or the hold's watchdog releases them after a killed verb.
 HELD_KEYS = "held-keys"
+# The mouse button a drag holds down, recorded so a drag killed mid-chain is released by the next job's cleanup.
+HELD_BUTTON = "held-button"
 HOLD_MAX = 10.0  # seconds one `key --for` may hold; longer walks go through `walkto`, which re-reads as it goes
 HOLD_SLICE = 0.25  # seconds between safety checks while keys are held
 HOLD_GRACE = 2.0  # seconds past a hold's end before its watchdog releases what is still down
@@ -645,9 +657,15 @@ def x(state: Mapping, *args: str) -> None:
     require_safe(state, waiting=not state.get("ready"))
     # Under a nested Hyprland, XWayland puts the client's output at its own root offset; a point is in the output's
     # pixels, the same pixels a screenshot of it shows, so the offset is added here, once, for every absolute move.
+    # A pointer chain (one that starts with a move, as a drag does) carries no typed text, so every move in it is one.
     origin = state.get("origin")
     if origin and args and args[0] == "mousemove":
-        args = ("mousemove", str(int(args[1]) + origin[0]), str(int(args[2]) + origin[1]), *args[3:])
+        moved = list(args)
+        for index, word in enumerate(moved):
+            if word == "mousemove":
+                moved[index + 1] = str(int(moved[index + 1]) + origin[0])
+                moved[index + 2] = str(int(moved[index + 2]) + origin[1])
+        args = tuple(moved)
     subprocess.run(["xdotool", *args], env={**os.environ, "DISPLAY": state["display"]}, check=True)
 
 
@@ -701,16 +719,44 @@ def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.v
     return None
 
 
+def release_button(display: str | None) -> str | None:
+    """Send mouseup for the button a drag recorded as down, if any; the failure as text, or None. It never raises.
+
+    A drag stopped between its press and its release (a job timeout's SIGTERM kills its xdotool chain) leaves the
+    button down in the client, so every later pointer move would drag; the record says which button to let go.
+    """
+    record = STATE_DIR / HELD_BUTTON
+    try:
+        button = record.read_text().strip()
+    except OSError:
+        return None
+    if display and button in ("1", "3"):
+        try:
+            subprocess.run(
+                ["xdotool", "mouseup", button],
+                env={**os.environ, "DISPLAY": display},
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            return f"mouseup {button} on {display} failed: {error}"
+    record.unlink(missing_ok=True)
+    return None
+
+
 def release_session_modifiers(state: Mapping | None) -> None:
-    """Release shift, ctrl, alt and any key a verb was holding on the session's display, so no job inherits a key an
-    ended one held."""
+    """Release shift, ctrl, alt, any key a verb was holding and a dragged button on the session's display, so no job
+    inherits an input an ended one held."""
+    display = (state or {}).get("display")
     keys = list(MODIFIER_KEYS.values())
     keys += [key for key in held_record()[1] if key not in keys]
-    failure = release_modifiers((state or {}).get("display"), keys)
+    failure = release_modifiers(display, keys)
     if not failure:
         (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
-    if failure:
-        print(f"forever_client: {failure}", file=sys.stderr, flush=True)
+    for problem in (failure, release_button(display)):
+        if problem:
+            print(f"forever_client: {problem}", file=sys.stderr, flush=True)
 
 
 def held_record() -> tuple[str | None, list[str]]:
@@ -937,33 +983,6 @@ def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
     send(state, "mousemove", str(px), str(py), hold=keys)
-
-
-def drag(state: Mapping, start: tuple[int, int], end: tuple[int, int], hold: Sequence[str] = ()) -> None:
-    """Press the left button at `start`, move to `end` in steps, release: a window or slider drag, screenshot-bound.
-
-    WoW starts a drag (OnDragStart, StartMoving) only once the pointer moves with the button down, and reads the drop
-    on release, so the press, the moves and the release are separate xdotool steps with a short pause between them.
-    The button is released even when a step fails, so a failed drag never leaves the client with the button held.
-    """
-    keys = modifier_keys(hold)
-    if mark("last-shot") <= mark("last-input"):
-        raise ClientError("take a `shot` and read it first: a drag must start on addon UI in the current frame")
-    for px, py in (start, end):
-        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
-            raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
-    if state.get("ready"):
-        close_game_menu(state)
-    steps = [
-        (start[0] + (end[0] - start[0]) * i // DRAG_STEPS, start[1] + (end[1] - start[1]) * i // DRAG_STEPS)
-        for i in range(1, DRAG_STEPS + 1)
-    ]
-    moves = [arg for px, py in steps for arg in ("sleep", DRAG_PAUSE_S, "mousemove", str(px), str(py))]
-    try:
-        press = ("mousemove", str(start[0]), str(start[1]), "mousedown", "1")
-        send(state, *press, *moves, "sleep", DRAG_PAUSE_S, hold=keys)
-    finally:
-        x(state, "mouseup", "1")
 
 
 def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = ()) -> None:
@@ -1204,10 +1223,15 @@ def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:
     return pressed
 
 
+def moving_action(action: str) -> bool:
+    """Whether pressing a game action moves the character, which marks the job as having moved it."""
+    return action.startswith(("MOVE", "TURN", "STRAFE", "JUMP"))
+
+
 def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None = None) -> None:
     """Press game actions by the keys the running client binds to them: tapped, or with `hold_for` held together."""
     combos = action_keys(state, actions)
-    if any(action.startswith(("MOVE", "TURN", "STRAFE", "JUMP")) for action in actions):
+    if any(map(moving_action, actions)):
         mark_moved()
     if hold_for is None:
         for combo in combos:
@@ -1238,12 +1262,14 @@ WALK_BUDGET = 240.0  # seconds a walk may take before it reports where it got to
 STUCK_PROGRESS = 0.3  # yards a step must gain, or it counts toward stuck
 STUCK_STEPS = 2
 # A blocked straight line (a shop counter between the player and the point): follow the obstacle to one side, stepping
-# at ESCAPE_ANGLE off the line and trying the line again after every step, then to the other side. The client gives no
+# at ESCAPE_ANGLE off the line and probing the line after every step, then to the other side. The client gives no
 # collision geometry, so following the obstacle is how a walker without a map gets round it; it is bounded and
 # reports what it tried.
 ESCAPE_ANGLE = math.radians(80)
 ESCAPE_STEP = 1.0
-ESCAPE_STEPS = 12  # steps along the obstacle on each side
+ESCAPE_STEPS = 20  # steps along the obstacle on each side, about 100 yd with the straight probes between
+ESCAPE_PROBE = 0.5  # seconds of the straight step after each step aside: short, as a blocked one slides back
+ESCAPE_REVISIT = 2.0  # yards: going round again from within this of an earlier start is a loop
 MOVED_MARK = "moved"
 PARK_FAILED_CODE = 3
 PARK_SPOTS = CONFIG.parent / "park.json"
@@ -1417,7 +1443,10 @@ class Walk:
         self.deadline = time.monotonic() + budget
         self.blocked: list[int] = []
         self.steps = 0
+        self.side = 1  # the side of the line go_round tries first: the one that last got round
+        self.rounds: list[tuple[Mapping, float]] = []  # where each go_round began, and the nearest the walk had been
         self.motion = read_motion(state)
+        self.nearest = self.distance()
         self.map = self.motion["map"] if map_id is None else map_id
         self.check(self.motion)
 
@@ -1433,6 +1462,7 @@ class Walk:
     def read(self, motion: dict) -> dict:
         self.check(motion)
         self.motion = motion
+        self.nearest = min(self.nearest, self.distance())
         return motion
 
     def step(self, seconds: float | None = None, *, jump: bool = False, heading: float | None = None) -> float:
@@ -1458,19 +1488,50 @@ class Walk:
             f"blocked toward {', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
         )
 
-    def go_round(self) -> bool:
-        """Follow the obstacle across the line, one side then the other, until a straight step gains ground."""
-        for side in (1, -1):
-            for _ in range(ESCAPE_STEPS):
+    def go_round(self, best: float) -> bool:
+        """Follow the obstacle on one side, then the other, until the walk beats `best` (its nearest since the last
+        detour) or a straight step toward the point runs free past the line where the obstacle stopped the walk (a free
+        step that starts from a step away from the obstacle has not got round it). It keeps to the side that last got
+        round: starting each time from the same side swings the walker back and forth across a corner between two spots
+        (#923). Starting again where an earlier detour began, with no nearer point reached since, is a loop."""
+        here = self.motion
+        if any(yards_between(here, spot) < ESCAPE_REVISIT and self.nearest >= nearest for spot, nearest in self.rounds):
+            return False
+        self.rounds.append((here, self.nearest))
+        line = heading_to(here, self.x, self.y)[0]
+        budget = ESCAPE_STEPS
+        for side in (self.side, -self.side):
+            taken = 0
+            while taken < budget and self.step_aside(side):
+                taken += 1
                 start = self.motion
-                aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
-                self.step(ESCAPE_STEP, heading=aside)
-                if yards_between(self.motion, start) < STUCK_PROGRESS:
-                    self.blocked.append(round(math.degrees(aside)) % 360)
-                    break
-                if self.step() >= STUCK_PROGRESS:
+                heading = heading_to(start, self.x, self.y)[0]
+                # Never past the point: a probe that overshoots it can end outside the arrival tolerance.
+                probe = min(ESCAPE_PROBE, self.distance() / RUN_SPEED)
+                self.step(probe, heading=heading)
+                past = self.forward(here, line) >= STUCK_PROGRESS
+                if self.distance() <= best - STUCK_PROGRESS or (
+                    past and self.forward(start, heading) >= 0.8 * RUN_SPEED * probe
+                ):
+                    self.side = side
                     return True
-                self.blocked.append(round(math.degrees(heading_to(self.motion, self.x, self.y)[0])) % 360)
+                self.blocked.append(round(math.degrees(heading)) % 360)
+            budget = ESCAPE_STEPS + taken  # the other side first walks back over the steps this one took
+        return False
+
+    def forward(self, start: Mapping, heading: float) -> float:
+        """Yards the player now stands from `start` along `heading`."""
+        moved, yards = heading_to(start, self.motion["x"], self.motion["y"])
+        return yards * math.cos(moved - heading)
+
+    def step_aside(self, side: int) -> bool:
+        """One step off the line on `side`; False when it does not move."""
+        start = self.motion
+        aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
+        self.step(ESCAPE_STEP, heading=aside)
+        if yards_between(self.motion, start) >= STUCK_PROGRESS:
+            return True
+        self.blocked.append(round(math.degrees(aside)) % 360)
         return False
 
 
@@ -1507,9 +1568,11 @@ def walkto(
         if not jumped:
             jumped = True
             walk.step(0.8, jump=True)
-        elif not walk.go_round():
+            best = min(best, walk.distance())
+        elif walk.go_round(best):
+            best = walk.distance()  # round the obstacle: progress counts from here, even if the way round led away
+        else:
             raise ClientError(walk.stuck("no way round"))
-        best = min(best, walk.distance())
     if walk.distance() <= tolerance:
         return walk.motion
     raise ClientError(walk.stuck(f"{WALK_STEPS} steps"))
@@ -1607,6 +1670,54 @@ def map_point(value: float) -> float:
     if not 0 <= value <= 100:
         raise ClientError(f"map coordinates run 0 to 100, as the map shows them: refused {value:g}")
     return value / 100
+
+
+def drag_points(x1: int, y1: int, x2: int, y2: int, steps: int) -> list[tuple[int, int]]:
+    """The points a drag passes through after its start, evenly spaced, ending exactly on the end point."""
+    return [
+        (round(x1 + (x2 - x1) * step / steps), round(y1 + (y2 - y1) * step / steps)) for step in range(1, steps + 1)
+    ]
+
+
+def drag(
+    state: Mapping,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    button: str = "1",
+    steps: int = DRAG_STEPS,
+    hold: Sequence[str] = (),
+) -> None:
+    """Press a mouse button at one point, move to another in steps and release it there, as a player drags (#857).
+
+    It is the same screenshot-bound input as `click`. The button is recorded as down for the length of the chain: a
+    chain that fails or is interrupted is followed by a release here, and one whose process is killed outright is
+    released by the next job's cleanup (`release_session_modifiers`).
+    """
+    if button not in ("1", "3"):
+        raise ClientError("drag takes --button 1 (left) or 3 (right)")
+    if not 1 <= steps <= DRAG_STEPS_MAX:
+        raise ClientError(f"drag takes --steps from 1 to {DRAG_STEPS_MAX}, not {steps}")
+    keys = modifier_keys(hold)
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a drag must aim at addon UI in the current frame")
+    for px, py in ((x1, y1), (x2, y2)):
+        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+            raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    if state.get("ready"):
+        close_game_menu(state)
+    chain = ["mousemove", str(x1), str(y1), "mousedown", button]
+    for px, py in drag_points(x1, y1, x2, y2, steps):
+        chain += ["sleep", DRAG_STEP_DELAY, "mousemove", str(px), str(py)]
+    chain += ["sleep", DRAG_STEP_DELAY, "mouseup", button]
+    (STATE_DIR / HELD_BUTTON).write_text(button)
+    try:
+        send(state, *chain, hold=keys)
+    except BaseException:
+        release_button(state["display"])
+        raise
+    (STATE_DIR / HELD_BUTTON).unlink(missing_ok=True)
 
 
 def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
@@ -2238,7 +2349,8 @@ def tag_name(repo_root: Path, commit: str) -> str | None:
 
 
 def dev_version(repo_root: Path, commit: str) -> str:
-    """`<tag>-dev+<sha>`, so wowaddon returns the dev link to the store release once a newer one ships."""
+    """`<version>-dev+<sha>`, the tag without its `v` as a release TOC carries it, so wowaddon returns the dev link to
+    the store release once a newer one ships."""
     try:
         tag = subprocess.check_output(
             ["git", "-C", str(repo_root), "describe", "--tags", "--abbrev=0", commit],
@@ -2247,7 +2359,8 @@ def dev_version(repo_root: Path, commit: str) -> str:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         tag = "v0.0.0"  # a repository with no release yet
-    return f"{tag}-dev+{git(repo_root, 'rev-parse', '--short', commit)}"
+    version = tag[1:] if re.match(r"[vV]\d", tag) else tag
+    return f"{version}-dev+{git(repo_root, 'rev-parse', '--short', commit)}"
 
 
 def stamp_tocs(build: Path, version: str) -> None:
@@ -2267,11 +2380,18 @@ def unpack(archive: Path, destination: Path) -> None:
             tree.extractall(destination)
 
 
-def embed_core(staging: Path, core_root: Path | None = None) -> None:
+# Where the core checkout keeps the tooling each consumer vendors as tools/forever_tools.
+CORE_TOOLING = Path(".agents/skills/wow-forever-addon/tooling/forever_tools")
+
+
+def embed_core(staging: Path, core_root: Path | None = None, core_ref: str | None = None) -> None:
     """Run the build's own `forever_tools.embed` when its TOC opts in, as the consumer's release does.
 
     The core it embeds is a git archive of the `forever-core` checkout at the tag `tools/forever-core.txt` pins, so the
-    dev build carries the same `Libs/ForeverCore/` bytes the release zip will.
+    dev build carries the same `Libs/ForeverCore/` bytes the release zip will. `core_ref` embeds that core commit
+    instead, to test an unreleased core candidate inside a consumer; the build number still comes from the pin. The
+    candidate's own vendored tooling replaces the build's first, as the consumer's tooling sync will, so its embed step
+    and generated files are the candidate's too.
     """
     tool = staging / "tools" / "forever_tools" / "embed.py"
     pin = staging / "tools" / "forever-core.txt"
@@ -2292,7 +2412,7 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
                     "archive",
                     "--format=tar",
                     f"--output={archive}",
-                    pin.read_text().strip(),
+                    core_ref or pin.read_text().strip(),
                 ],
                 check=True,
                 capture_output=True,
@@ -2301,9 +2421,12 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
         except (OSError, subprocess.CalledProcessError) as error:
             detail = getattr(error, "stderr", "") or str(error)
             raise ClientError(
-                f"git archive of ForeverCore {pin.read_text().strip()} failed: {detail.strip()}"
+                f"git archive of ForeverCore {core_ref or pin.read_text().strip()} failed: {detail.strip()}"
             ) from None
         unpack(archive, core)
+        tooling = core / CORE_TOOLING
+        if core_ref and tooling.is_dir():
+            shutil.copytree(tooling, staging / "tools" / "forever_tools", dirs_exist_ok=True)
         done = subprocess.run(
             [sys.executable, "-m", "tools.forever_tools.embed", "--core", str(core), str(staging)],
             cwd=staging,
@@ -2319,7 +2442,13 @@ def embed_core(staging: Path, core_root: Path | None = None) -> None:
         shutil.rmtree(core, ignore_errors=True)
 
 
-def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root: Path | None = None) -> Path:
+def build_dev(
+    repo: str,
+    commit: str,
+    destination: Path | None = None,
+    repo_root: Path | None = None,
+    core_ref: str | None = None,
+) -> Path:
     """Write the dev build of `commit` to `test-artifacts/<repo>-dev`, as `rebuild-dev.sh` did.
 
     The build is the commit's own tree without the development folders, with every TOC stamped `<tag>-dev+<sha>`, so
@@ -2357,7 +2486,7 @@ def build_dev(repo: str, commit: str, destination: Path | None = None, repo_root
     finally:
         archive.unlink(missing_ok=True)
     try:
-        embed_core(staging)
+        embed_core(staging, core_ref=core_ref)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -2755,6 +2884,15 @@ def enqueue_job(*, session_end: bool = False) -> tuple[Path, object]:
 
 def job_queue() -> list[Path]:
     """Live tickets in arrival order, with serve teardown ahead of ordinary callers."""
+    return [path for _ordinary, path in live_tickets()]
+
+
+def live_tickets() -> list[tuple[bool, Path]]:
+    """(ordinary, path) of each ticket whose caller still holds it, teardown first, then in arrival order.
+
+    A ticket is live while its caller holds its lock, so a locked ticket whose record cannot be read is still a caller
+    waiting: it counts as ordinary rather than ending the scan, which the serve loop's idle check and teardown share.
+    """
     live = []
     directory = STATE_DIR / "queue"
     directory.mkdir(parents=True, exist_ok=True)
@@ -2766,13 +2904,20 @@ def job_queue() -> list[Path]:
                     try:
                         fcntl.flock(ticket, fcntl.LOCK_SH | fcntl.LOCK_NB)
                     except BlockingIOError:
-                        record = json.load(ticket)
-                        live.append((not record.get("session_end", False), path))
+                        try:
+                            record = json.load(ticket)
+                        except ValueError:
+                            record = {}
+                        ending = isinstance(record, dict) and record.get("session_end", False) is True
+                        live.append((not ending, path))
                     else:
                         path.unlink(missing_ok=True)
             except FileNotFoundError:
                 continue
-    return [path for _ordinary, path in sorted(live)]
+            except OSError:
+                # Unreadable by this process: a caller's lock cannot be seen, so it is neither queued nor pruned.
+                continue
+    return sorted(live)
 
 
 def acquire_job(timeout: float | None, label: str, *, session_end: bool = False) -> tuple[object, str]:
@@ -2911,6 +3056,11 @@ def restore_handlers(previous: Mapping[int, object]) -> None:
 def errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -> subprocess.CompletedProcess:
     """Reload so the client writes its SavedVariables, then read this session's Lua errors (exit 1 when any)."""
     reload(state)
+    return saved_errors(state, addon, as_json=as_json)
+
+
+def saved_errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -> subprocess.CompletedProcess:
+    """This session's Lua errors as the last reload saved them, read without another reload (exit 1 when any)."""
     tool = Path(__file__).resolve().parents[1] / "forever_errors.py"
     command = [sys.executable, str(tool), "--since", str(state["started"])]
     if addon:
@@ -2921,10 +3071,17 @@ def errors(state: Mapping, addon: str | None = None, *, as_json: bool = False) -
 
 
 def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[str, int]:
-    """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run."""
+    """`errors --addon <folder>` for each folder, counted once `/forever selftest` has run.
+
+    One reload saves every folder's errors, so each folder is read from that one save: a reload per folder only
+    repeated the same login, and a core smoke with its released consumers spent one on each. Every folder is counted
+    over the same session, the candidate's login and the selftest. Before, the first folder covered that session and
+    each later one also covered the logins of the reloads before it, so coverage depended on a folder's place.
+    """
+    reload(state)
     counts: dict[str, int] = {}
     for name, _folder in folders:
-        completed = errors(state, name, as_json=True)
+        completed = saved_errors(state, name, as_json=True)
         if completed.returncode not in (0, 1):
             raise ClientError(f"errors --addon {name} failed ({completed.returncode}): {completed.stderr.strip()}")
         try:
@@ -3100,11 +3257,11 @@ def not_registered(lines: Sequence) -> list[str]:
     return [line[len(prefix) :] for line in lines if isinstance(line, str) and line.startswith(prefix)]
 
 
-def smoke_registrations(state: Mapping, folders: Sequence[tuple[str, Path]]) -> list[str]:
-    """Each folder that never called ForeverCore.Register, read through one !!DevSmoke eval after the selftest.
+def stage_registrations(folders: Sequence[tuple[str, Path]]) -> str:
+    """Write the !!DevSmoke snippet that asks ForeverCore.Registered for each folder; answer its run token.
 
-    The snippet prints a line per unregistered folder. The eval route reloads twice: the first reload runs the snippet
-    at login, and the second saves its record to disk, because SavedVariables reach disk only at a reload (#580).
+    The smoke writes it before the reload that loads the candidate, so it runs at that login, and the reload
+    `smoke_counts` makes saves its record with the errors: no reload of its own (#580 is why one save is needed).
     """
     names = [name for name, _folder in folders]
     snippet = STATE_DIR / "smoke-registered.lua"
@@ -3115,13 +3272,15 @@ def smoke_registrations(state: Mapping, folders: Sequence[tuple[str, Path]]) -> 
         written = tool.write_snippet(snippet, addons=CLIENT / "Interface/AddOns", capture=False)
     except tool.EvalError as error:
         raise ClientError(f"could not check the released addons' startup: {error}") from None
-    try:
-        reload(state)
-        clear_eval_inbox()
-        reload(state)
-        data = saved_eval(written["token"])
-    finally:
-        clear_eval_inbox(quiet=True)
+    return written["token"]
+
+
+def smoke_registrations(token: str) -> list[str]:
+    """Each folder that never called ForeverCore.Register, from the staged snippet's saved record.
+
+    The snippet prints a line per unregistered folder; its record is on disk once a reload after its login has run.
+    """
+    data = saved_eval(token)
     report, ok = format_eval(data)
     if not ok:
         raise ClientError(f"the released addons' startup check failed: {report}")
@@ -3133,6 +3292,21 @@ def verify_links(records: Sequence[dict]) -> None:
         slot = Path(record["slot"])
         if not slot.is_symlink() or slot.resolve() != Path(record["target"]).resolve():
             raise ClientError(f"{slot} no longer points at the candidate build: no proof recorded")
+
+
+def github_token_from_gh() -> None:
+    """Give this process's GitHub API reads the token of the `gh` login when neither GH_TOKEN nor GITHUB_TOKEN is set.
+
+    A core smoke reads every consumer's latest release through `check_consumers.authorized`, which sends only those
+    variables. CI sets them; the machine that smokes locally has a `gh` login instead, and without it the reads go out
+    anonymously and share the 60-an-hour limit with every session on the machine (#934).
+    """
+    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return
+    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
+    token = result.stdout.strip()
+    if result.returncode == 0 and token:
+        os.environ["GH_TOKEN"] = token
 
 
 def smoke(args: argparse.Namespace) -> int:
@@ -3158,6 +3332,7 @@ def smoke(args: argparse.Namespace) -> int:
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = resolve_commit(root, args.ref)
     post = not args.no_post
+    github_token_from_gh()
     recover_links()
     busy = foreign_client()
     if busy:
@@ -3194,12 +3369,15 @@ def smoke(args: argparse.Namespace) -> int:
             clear_eval_inbox()
             records = link_build(folders, addons_dir())
             try:
+                startup = stage_registrations(released) if released else None
                 reload(state)
+                # The startup snippet ran at this login; a later login must not run it again.
+                clear_eval_inbox()
                 slash(state, "/forever selftest")
-                # The selftest is synchronous Lua; the reload `errors` makes settles it and writes SavedVariables.
+                # The selftest is synchronous Lua; the reload `smoke_counts` makes settles it and writes SavedVariables.
                 outcome["counts"] = smoke_counts(state, folders)
-                if released:
-                    outcome["not_started"] = smoke_registrations(state, released)
+                if startup:
+                    outcome["not_started"] = smoke_registrations(startup)
             finally:
                 restore_links(records)
         except SafetyRefusal:
@@ -3370,37 +3548,70 @@ def parse_flows(values: Sequence[str]) -> list[tuple[str, str]]:
     return flows
 
 
-def parse_flow_clicks(values: Sequence[str], flows: Sequence[tuple[str, str]]) -> dict[str, tuple[int, int]]:
-    """`--flow-click NAME=X,Y` entries: where a named flow clicks, in the screenshot coordinates `click` takes.
+# One input a proof flow sends: its kind and its points (click, drag) or its text (key action, typed command).
+FlowInput = tuple[str, tuple[int, ...] | str]
+# What each `--flow-<kind>` input takes after its flow's name, for the message that refuses a malformed one.
+FLOW_INPUT_FORMS = {"click": "X,Y", "drag": "X1,Y1,X2,Y2", "key": "ACTION", "type": "/COMMAND"}
 
-    A click belongs to a flow by name, so a name that matches no `--flow` is a typo the caller must hear about before
-    the build takes the client rather than a flow that quietly never clicks.
+
+def flow_points(option: str, name: str, spec: str, count: int) -> tuple[int, ...]:
+    """`count` X,Y points in screenshot coordinates, each inside the frame, as one flat tuple."""
+    form = FLOW_INPUT_FORMS[option.removeprefix("--flow-")]
+    parts = spec.split(",")
+    try:
+        if len(parts) != 2 * count:
+            raise ValueError
+        numbers = tuple(int(part.strip()) for part in parts)
+    except ValueError:
+        raise ClientError(f"{option} {name}: {form} takes {2 * count} integers, not {spec!r}") from None
+    for px, py in zip(numbers[::2], numbers[1::2], strict=True):
+        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+            raise ClientError(f"{option} {name}: ({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    return numbers
+
+
+def parse_flow_inputs(
+    values: Sequence[tuple[str, str]], flows: Sequence[tuple[str, str]]
+) -> dict[str, list[FlowInput]]:
+    """The input each named flow sends once its reload's world screenshot has landed, in command-line order.
+
+    `values` are (kind, "NAME=SPEC") pairs from `--flow-click NAME=X,Y`, `--flow-drag NAME=X1,Y1,X2,Y2`,
+    `--flow-key NAME=ACTION` and `--flow-type NAME=/COMMAND`. An input belongs to a flow by name, so a name that
+    matches no `--flow`, a point outside the frame or an action `key --action` does not press is refused here,
+    before the build takes the client, rather than a flow that quietly sends nothing.
     """
     names = [name for name, _ in flows]
-    clicks: dict[str, tuple[int, int]] = {}
-    for value in values:
-        name, separator, point = value.partition("=")
-        name = name.strip()
-        if not separator or not name or not point.strip():
-            raise ClientError(f"--flow-click takes NAME=X,Y, not {value!r}")
+    inputs: dict[str, list[FlowInput]] = {}
+    for kind, value in values:
+        option = f"--flow-{kind}"
+        name, separator, spec = value.partition("=")
+        name, spec = name.strip(), spec.strip()
+        if not separator or not name or not spec:
+            raise ClientError(f"{option} takes NAME={FLOW_INPUT_FORMS[kind]}, not {value!r}")
         if name not in names:
             known = ", ".join(names) if names else "no flow is named"
-            raise ClientError(f"--flow-click {name}: no --flow of that name ({known})")
-        try:
-            px, py = (int(part.strip()) for part in point.split(","))
-        except ValueError:
-            raise ClientError(f"--flow-click {name}: X,Y takes two integers, not {point.strip()!r}") from None
-        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
-            raise ClientError(f"--flow-click {name}: ({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
-        clicks[name] = (px, py)
-    return clicks
+            raise ClientError(f"{option} {name}: no --flow of that name ({known})")
+        parsed: tuple[int, ...] | str
+        if kind == "click":
+            parsed = flow_points(option, name, spec, 1)
+        elif kind == "drag":
+            parsed = flow_points(option, name, spec, 2)
+        elif kind == "key":
+            if spec not in ACTIONS:
+                raise ClientError(f"{option} {name}: {spec} is not an action; it takes {', '.join(ACTIONS)}")
+            parsed = spec
+        else:
+            one_line_slash(spec)
+            parsed = spec
+        inputs.setdefault(name, []).append((kind, parsed))
+    return inputs
 
 
-def flow_record(name: str, action: str, point: tuple[int, int] | None) -> dict:
-    """One entry in the proof's `flows`: what ran, where it clicked, and that it was captured."""
+def flow_record(name: str, action: str, inputs: Sequence[FlowInput] = ()) -> dict:
+    """One entry in the proof's `flows`: what ran, the input it sent in order, and that it was captured."""
     record: dict = {"name": name, "steps": [flow_step(action)]}
-    if point:
-        record["click"] = list(point)
+    if inputs:
+        record["inputs"] = [{kind: list(value) if isinstance(value, tuple) else value} for kind, value in inputs]
     record["result"] = "pass"
     return record
 
@@ -3426,19 +3637,96 @@ def flow_capture_failure(state: Mapping, action: str, token: str, timeout: Clien
     return timeout
 
 
-def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
+def flow_key_combos(state: Mapping, inputs: Sequence[FlowInput]) -> list[list[str]]:
+    """The keysyms for a flow's `--flow-key` actions, resolved before its snippet is written and its reload runs.
+
+    Resolving may itself write an eval and reload when the client's bindings are not on disk yet (`action_bindings`),
+    which would overwrite the flow's snippet in the inbox or close the window the flow opened, so it runs first (#860).
+    """
+    actions = [value for kind, value in inputs if kind == "key" and isinstance(value, str)]
+    return action_keys(state, actions) if actions else []
+
+
+def run_flow_inputs(state: Mapping, inputs: Sequence[FlowInput], combos: Sequence[Sequence[str]]) -> None:
+    """Send a flow's inputs in order through the verbs an agent uses: `click`, `drag`, a bound key, a typed slash.
+
+    The first aimed input aims at the reload's world screenshot, which has just landed. A later one aims at a fresh
+    `shot`, since the input before it may have changed the frame, and `click` and `drag` refuse an older one.
+    """
+    keys = iter(combos)
+    sent = False
+    for kind, value in inputs:
+        if kind in ("click", "drag"):
+            if sent:
+                shot(state, STATE_DIR / "flow-input.png")
+            else:
+                (STATE_DIR / "last-shot").touch()
+        if isinstance(value, tuple):
+            if kind == "click":
+                px, py = value
+                click(state, px, py, "1")
+                print(f"clicked {px},{py}", flush=True)
+            else:
+                x1, y1, x2, y2 = value
+                drag(state, x1, y1, x2, y2)
+                print(f"dragged {x1},{y1} to {x2},{y2}", flush=True)
+        elif kind == "key":
+            combo = next(keys)
+            if moving_action(value):
+                mark_moved()
+            send(state, "key", "+".join(combo))
+            print(f"pressed {value} ({'+'.join(combo)})", flush=True)
+        else:
+            slash(state, value)
+            print(f"typed {value}", flush=True)
+        sent = True
+
+
+def world_load_shot(path: Path, timeout: float = 5.0) -> bool:
+    """Whether a client screenshot is a world load's, by the marker !!DevSmoke draws only then; waits for a file the
+    client is still writing."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return has_headless_marker(path)
+        except ClientError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
+def secure_point(inputs: Sequence[FlowInput]) -> tuple[int, int] | None:
+    """The one click a secure slash flow may take, sent after its typed line settles (`run_secure_flow`)."""
+    if not inputs:
+        return None
+    kind, value = inputs[0]
+    if len(inputs) == 1 and kind == "click" and isinstance(value, tuple):
+        return value[0], value[1]
+    raise ClientError("a secure slash flow takes at most one --flow-click and no other flow input")
+
+
+def run_flow(
+    state: Mapping, action: str, inputs: Sequence[FlowInput] = (), previous: tuple[str, str] | None = None
+) -> str:
     """Run one proof flow through !!DevSmoke: a slash command, or a Lua file.
 
     Both routes write a snippet whose own run token `check_flow_eval` reads once the screenshot is taken: the reload
     that saves the result to disk would close the window the flow just opened (#580). A slash command runs through
     `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed run rather than a fixed pause
     (#573). The flow's ready check is polled by !!DevSmoke, whose screenshot then says the window has drawn, so the
-    capture waits for that file instead of a pause (#593). `point` is a click in screenshot coordinates that runs
-    between the reload's world screenshot and the flow's own: opening a protected window is not something a Lua
-    snippet can do, and since #648 no outside `click` can reach the client while this job holds it (#655).
+    capture waits for that file instead of a pause (#593). `inputs` are clicks, drags, bound keys and typed slash
+    commands, sent in order between the flow's reload's world screenshot and its ready one: the snippet has run by
+    then, and nothing reloads after them, so a merchant or trainer window a key opens is still open for the capture
+    (#655, #857, #860). Opening a protected window is not something a Lua snippet can do, and since #648 no outside
+    input can reach the client while this job holds it.
+
+    `previous` is the earlier flow's (action, token): this flow's reload saves that flow's eval, which is checked
+    straight after it, before this flow sends any input or waits on its own capture, so a failure is reported against
+    the flow that caused it.
     """
     if secure_slash(action):
-        return run_secure_flow(state, action, point)
+        return run_secure_flow(state, action, secure_point(inputs))
+    combos = flow_key_combos(state, inputs)
     tool = devsmoke_eval()
     try:
         if lua_flow(action):
@@ -3447,6 +3735,13 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
             one_line_slash(action)
             written = tool.write_slash(action, addons=CLIENT / "Interface/AddOns", capture=True)
     except tool.EvalError as error:
+        if previous:
+            # The earlier flow has run, but only a reload saves its result: report that flow too, so this refusal
+            # never hides its failure.
+            print(f"flow {action} refused: {error}", file=sys.stderr, flush=True)
+            clear_eval_inbox(quiet=True)
+            reload(state)
+            check_flow_eval(state, *previous, saved=True)
         raise ClientError(str(error)) from None
     print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
     # The snippet runs at login of this reload. Clearing the inbox afterwards keeps the later reloads a proof makes
@@ -3454,15 +3749,19 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     before = screenshots()
     reload(state)
     clear_eval_inbox()
+    if previous:
+        check_flow_eval(state, *previous, saved=True, next_flow=(action, written["token"]))
     try:
-        if point:
+        if inputs:
             world = wait_for_flow_world(before, action, written["token"], state=state)
-            # A click must aim at a screenshot newer than the last input; the flow's own world frame is that
-            # screenshot, so the proof clicks through the same `click` an agent uses instead of a second input path.
-            (STATE_DIR / "last-shot").touch()
-            click(state, point[0], point[1], "1")
-            print(f"clicked {point[0]},{point[1]} after {world.name}", flush=True)
-        wait_for_flow_ready(before, action, written["token"], state=state)
+            print(f"sending {len(inputs)} input(s) after {world.name}", flush=True)
+            run_flow_inputs(state, inputs, combos)
+        ready = wait_for_flow_ready(before, action, written["token"], state=state)
+        if inputs and world_load_shot(ready):
+            raise ClientError(
+                f"the flow {action}: its inputs reloaded the client, which closes any window they opened, so the "
+                "screenshot after them is a fresh world load rather than the flow's ready one"
+            )
     except SafetyRefusal:
         raise
     except ClientError as error:
@@ -3500,24 +3799,30 @@ def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None =
     return ""
 
 
-def eval_result(state: Mapping, token: str, wait: float | None = None) -> tuple[str, bool]:
+def saved_within(token: str, wait: float) -> bool:
+    """Whether the eval the run token names is on disk within `wait` seconds: !!DevSmoke saves an eval the moment it
+    runs, so no reload is needed to read it, and the UI the snippet opened stays open (#894)."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            saved_eval(token)
+            return True
+        except ClientError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(WAIT_POLL)
+
+
+def eval_result(state: Mapping, token: str, *, saved: bool = False, wait: float | None = None) -> tuple[str, bool]:
     """The report of the eval the run token wrote.
 
-    A proof flow's result is final only after its screenshot, so with no `wait` this reloads to save it to disk
-    (SavedVariables are written at a reload or logout, #580). An eval is saved by !!DevSmoke the moment it runs: with
-    `wait` seconds to allow for that, its result is read without a reload, so the UI the snippet opened stays open
-    (#894), and the reload is only the fallback for a !!DevSmoke that did not save.
+    SavedVariables are written at a reload or logout, so a proof flow's result reaches disk only at the reload after
+    its own (#580). `saved` says a later reload, such as the next flow's, has already done that. An eval is saved by
+    !!DevSmoke the moment it runs: `wait` seconds allow for that, and the reload is only the fallback for a
+    !!DevSmoke that did not save (#894).
     """
-    if wait is not None:
-        deadline = time.monotonic() + wait
-        while True:
-            try:
-                return format_eval(saved_eval(token))
-            except ClientError:
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(WAIT_POLL)
-    reload(state)
+    if not saved and not (wait is not None and saved_within(token, wait)):
+        reload(state)
     return format_eval(saved_eval(token))
 
 
@@ -3536,14 +3841,32 @@ def live_eval(state: Mapping, source: Path) -> int:
     print(f"sending {source} as {len(lines)} chat lines", flush=True)
     for line in lines:
         slash(state, line)
-    report, ok = eval_result(state, token, EVAL_SAVE_WAIT)
+    report, ok = eval_result(state, token, wait=EVAL_SAVE_WAIT)
     print(report)
     return 0 if ok else 1
 
 
-def check_flow_eval(state: Mapping, action: str, token: str) -> None:
-    """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's."""
-    report, ok = eval_result(state, token)
+def check_flow_eval(
+    state: Mapping, action: str, token: str, *, saved: bool = False, next_flow: tuple[str, str] | None = None
+) -> None:
+    """Fail on a flow whose own snippet raised, quoting that snippet's error and nothing else's.
+
+    `next_flow` is the (action, token) of the flow whose reload saved this one: !!DevSmoke saves that flow's own record
+    over this one when its ready check fails before this read, and the error says so instead of "not saved".
+    """
+    try:
+        report, ok = eval_result(state, token, saved=saved)
+    except SafetyRefusal:
+        raise
+    except EvalMismatch as error:
+        if next_flow and error.seen == next_flow[1]:
+            raise ClientError(
+                f"flow {action}: its result was overwritten by flow {next_flow[0]}'s own record, saved when that "
+                "flow's ready check failed; rerun the proof with the flows apart to read it"
+            ) from None
+        raise ClientError(f"flow {action}: {error}") from None
+    except ClientError as error:
+        raise ClientError(f"flow {action}: {error}") from None
     print(report, flush=True)
     if not ok:
         raise ClientError(f"flow snippet {action} failed: {report}")
@@ -3738,7 +4061,8 @@ def proof(args: argparse.Namespace) -> int:
 
     It runs as one job: the build and the AddOns links are the smoke's, so every borrowed slot is put back on any
     exit. The job reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist.
-    A flow named in `--flow-click` clicks its point inside this job once its reload's world screenshot has landed.
+    A flow's `--flow-click`, `--flow-drag`, `--flow-key` and `--flow-type` inputs run inside this job, in order, once
+    its reload's world screenshot has landed.
     The proof is written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
     """
     flows = parse_flows(args.flow)
@@ -3747,7 +4071,7 @@ def proof(args: argparse.Namespace) -> int:
             "proof needs at least one --flow: ForeverCore has no shared opener for an addon's update notice, so name "
             'it here, such as --flow "update notice=/lf" or --flow "update notice=notice.lua"'
         )
-    clicks = parse_flow_clicks(args.flow_click, flows)
+    inputs = parse_flow_inputs(args.flow_inputs, flows)
     repo = args.repo
     if not SMOKE_REPO.fullmatch(repo):
         raise ClientError(f"--repo takes a repository name, not {repo!r}")
@@ -3795,15 +4119,18 @@ def proof(args: argparse.Namespace) -> int:
             records = link_build(folders, addons_dir())
             try:
                 reload(state)
+                # A flow's eval is read after the shot, once a reload has saved it: the reload that saves it opens the
+                # world again, which would close what the flow showed (#580). The next flow's own reload is that
+                # save, so only the last flow needs a reload of its own: N flows take N + 2 reloads, not 2N + 1.
+                unread: tuple[str, str] | None = None
                 for index, (name, action) in enumerate(flows, start=1):
                     verify_links(records)
-                    flow_token = run_flow(state, action, clicks.get(name))
+                    flow_token = run_flow(state, action, inputs.get(name, ()), unread)
                     verify_links(records)
                     screenshots.append(shot(state, shots_folder / f"{index}-{flow_slug(name)}.png"))
-                    if flow_token:
-                        # After the shot: the reload that saves the eval opens the world again, which would close
-                        # what the flow showed (#580).
-                        check_flow_eval(state, action, flow_token)
+                    unread = (action, flow_token) if flow_token else None
+                if unread:
+                    check_flow_eval(state, *unread)
             finally:
                 try:
                     verify_links(records)
@@ -3841,7 +4168,7 @@ def proof(args: argparse.Namespace) -> int:
         "client_build": build,
         "tested_artifact": "source-tree",
         "source_commit": commit,
-        "flows": [flow_record(name, action, clicks.get(name)) for name, action in flows],
+        "flows": [flow_record(name, action, inputs.get(name, ())) for name, action in flows],
         "images": images,
     }
     target = checkout / PROOF_FILE
@@ -4291,26 +4618,27 @@ def at_character_select(state: dict, manual_launcher: bool) -> None:
 
 
 def pending_work(state: Mapping) -> str | None:
-    """What still needs this session, or None: a waiter in the job queue or a live lease of this session.
+    """What still needs this session, or None: a queued ticket that is not the session's own end, or a usable lease
+    on this session.
 
-    A lease holder works between verbs (building a test addon, reading a screenshot), so no job ends in that
-    time; the lease's own TTL (LEASE_MAX) bounds how long it can keep the session up.
+    A lease holder works between verbs (building a test addon, reading a screenshot), so no job ends in that time; the
+    lease expires on its own, so a forgotten one costs at most LEASE_MAX.
     """
-    if job_queue():
-        return "a request is queued"
-    directory = STATE_DIR / "leases"
-    for path in directory.glob("*.json") if directory.exists() else ():
+    try:
+        if any(ordinary for ordinary, _path in live_tickets()):
+            return "a request is queued"
+        leases = list((STATE_DIR / "leases").glob("*.json"))
+    except OSError:
+        # The idle check must never end a healthy session on a state-directory fault; a queued job re-checks the
+        # session under the job lock before teardown.
+        return None
+    identity = session_identity(state)
+    for path in leases:
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
-        expires = record.get("expires") if isinstance(record, dict) else None
-        if (
-            isinstance(expires, (int, float))
-            and expires > time.time()
-            and not record.get("ended")
-            and record.get("session") == session_identity(state)
-        ):
+        if usable_lease(record, path.stem, identity):
             return "a lease is live"
     return None
 
@@ -5156,12 +5484,31 @@ def live_lease(token: str) -> dict:
         raise ClientError("lease ended: unreadable record, run lease again")
     if record.get("ended"):
         raise ClientError(f"lease ended: {record['ended']}")
-    expires = record.get("expires")
-    if record.get("token") != token or not isinstance(expires, (int, float)) or expires <= time.time():
+    if not unexpired_lease(record, token):
         raise ClientError("lease expired: run lease again")
     if record.get("session") != session_identity(current_session() or {}):
         raise ClientError("lease ended: session replaced or stopped, run lease again")
     return record
+
+
+def unexpired_lease(record: Mapping, token: str) -> bool:
+    expires = record.get("expires")
+    return (
+        record.get("token") == token
+        and isinstance(expires, (int, float))
+        and not isinstance(expires, bool)
+        and time.time() < expires <= time.time() + LEASE_MAX
+    )
+
+
+def usable_lease(record: object, token: str, identity: Mapping) -> bool:
+    """The checks `live_lease` makes, without raising: the idle limit waits only on a lease a caller could use."""
+    return (
+        isinstance(record, dict)
+        and not record.get("ended")
+        and unexpired_lease(record, token)
+        and record.get("session") == identity
+    )
 
 
 def clear_leases(reason: str = "session ended because teardown stopped the client") -> None:
@@ -5302,6 +5649,14 @@ def clear_eval_inbox(*, quiet: bool = False) -> None:
         raise ClientError(str(error)) from None
 
 
+class EvalMismatch(ClientError):
+    """DevSmokeDB.eval on disk holds another run's record; `seen` is that run's token."""
+
+    def __init__(self, seen: object, message: str):
+        super().__init__(message)
+        self.seen = seen
+
+
 def saved_eval(token: str | None = None) -> dict:
     """DevSmokeDB.eval from the newest SavedVariables file the client wrote for !!DevSmoke.
 
@@ -5329,9 +5684,10 @@ def saved_eval(token: str | None = None) -> dict:
             seen = data
     if seen is None:
         raise ClientError("DevSmokeDB.eval is missing: the snippet did not run (is !!DevSmoke linked and loaded?)")
-    raise ClientError(
+    raise EvalMismatch(
+        seen.get("run"),
         f"DevSmokeDB.eval holds the run {_text(seen.get('run'))!r}, not this snippet's {token!r}: the snippet's own "
-        "result was not saved (did the inbox load, and is !!DevSmoke linked and loaded?)"
+        "result was not saved (did the inbox load, and is !!DevSmoke linked and loaded?)",
     )
 
 
@@ -5367,6 +5723,65 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
         lines.append("error:")
         lines.extend(error.splitlines())
     return "\n".join(lines), ok
+
+
+def eval_files(state: Mapping, files: Sequence[Path]) -> int:
+    """Run each snippet through !!DevSmoke at a login of its own and print each one's own result; 1 when any failed.
+
+    A snippet's result reaches disk at the reload after its own (#580). The next snippet's reload is that save, so N
+    snippets take N + 1 reloads instead of 2N. Clearing the inbox after each run keeps a later reload from running a
+    snippet twice (#588), and an eval is not a proof flow, so it schedules no ready screenshot (#588).
+    """
+    tool = devsmoke_eval()
+    failed = False
+    missing: list[str] = []
+    cleared = True
+    unread: tuple[Path, str] | None = None
+
+    def report(path: Path, token: str) -> None:
+        nonlocal failed
+        try:
+            text, ok = format_eval(saved_eval(token))
+        except SafetyRefusal:
+            raise
+        except ClientError as error:
+            # A result missing from disk is named against its file, and the files after it still run; the eval then
+            # ends as a client error, since nothing says whether that snippet passed.
+            missing.append(f"{path}: {error}")
+            return
+        print(f"== {path}\n{text}" if len(files) > 1 else text, flush=True)
+        failed = failed or not ok
+
+    try:
+        for path in files:
+            cleared = False
+            try:
+                written = tool.write_snippet(path, addons=CLIENT / "Interface/AddOns", capture=False)
+            except tool.EvalError as error:
+                if unread:
+                    # The earlier snippet has run: save and print its result before reporting this one's refusal.
+                    clear_eval_inbox(quiet=True)
+                    cleared = True
+                    reload(state)
+                    report(*unread)
+                raise ClientError(str(error)) from None
+            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
+            reload(state)
+            clear_eval_inbox()
+            cleared = True
+            if unread:
+                report(*unread)
+            unread = (path, written["token"])
+        if unread:
+            if not saved_within(unread[1], EVAL_SAVE_WAIT):
+                reload(state)
+            report(*unread)
+    finally:
+        if not cleared:
+            clear_eval_inbox(quiet=True)
+    if missing:
+        raise ClientError("; ".join(missing))
+    return 1 if failed else 0
 
 
 JOB_VERBS = {
@@ -5414,10 +5829,10 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         click(state, args.x, args.y, args.button, args.hold)
     elif args.verb == "hover":
         hover(state, args.x, args.y, args.hold)
-    elif args.verb == "drag":
-        drag(state, (args.x1, args.y1), (args.x2, args.y2), args.hold)
     elif args.verb == "scroll":
         scroll(state, args.x, args.y, args.ticks, args.hold)
+    elif args.verb == "drag":
+        drag(state, args.x1, args.y1, args.x2, args.y2, args.button, args.steps, args.hold)
     elif args.verb == "key":
         if args.action and args.keys:
             raise ClientError("key takes key names or --action, not both")
@@ -5457,30 +5872,11 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
     elif args.verb == "eval" and args.live:
-        return live_eval(state, args.file)
+        if len(args.file) != 1:
+            raise ClientError("eval --live runs one file")
+        return live_eval(state, args.file[0])
     elif args.verb == "eval":
-        tool = devsmoke_eval()
-        cleared = False
-        try:
-            try:
-                # An eval is not a proof flow: it must not schedule a ready screenshot that would race the reload
-                # saving its result (#588).
-                written = tool.write_snippet(args.file, addons=CLIENT / "Interface/AddOns", capture=False)
-            except tool.EvalError as error:
-                raise ClientError(str(error)) from None
-            print(f"wrote {written['chunk']} from {written['snippet']} ({written['lines']} lines)", flush=True)
-            # This reload runs the snippet once, after the world loads, and !!DevSmoke saves its result at once. The
-            # UI is left as the snippet made it, so a `shot` that follows shows a panel it opened (#894). Clearing the
-            # inbox keeps a later reload from running it a second time (#580, #588).
-            reload(state)
-            clear_eval_inbox()
-            cleared = True
-            report, ok = eval_result(state, written["token"], EVAL_SAVE_WAIT)
-            print(report)
-            return 0 if ok else 1
-        finally:
-            if not cleared:
-                clear_eval_inbox(quiet=True)
+        return eval_files(state, args.file)
     elif args.verb == "errors":
         # A shared session's log holds every job's lines: read from where this job's own work started.
         completed = errors({**state, "started": job_started()}, args.addon)
@@ -5590,6 +5986,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "drag":
             for coord in ("x1", "y1", "x2", "y2"):
                 p.add_argument(coord, type=int)
+            p.add_argument("--button", default="1", choices=("1", "3"))
+            p.add_argument(
+                "--steps",
+                type=int,
+                default=DRAG_STEPS,
+                help=f"moves between press and release, 1 to {DRAG_STEPS_MAX}",
+            )
         elif name == "scroll":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
@@ -5621,7 +6024,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "park":
             p.add_argument("--add", metavar="LABEL", help="record where the player stands as a park spot")
         elif name == "eval":
-            p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke")
+            p.add_argument(
+                "file", type=Path, nargs="+", help="Lua snippets to run through !!DevSmoke, each at a reload of its own"
+            )
             p.add_argument(
                 "--live",
                 action="store_true",
@@ -5634,6 +6039,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = sub.add_parser("build-dev", help="write test-artifacts/<repo>-dev from a ref")
     p.add_argument("repo", help="the repository under ~/drive/proj/wow")
     p.add_argument("ref")
+    p.add_argument(
+        "--core-ref",
+        help="embed this forever-core commit instead of the pinned release, to test a core candidate in the addon",
+    )
     p = sub.add_parser("smoke", help="build the commit a release would ship, test it, and post its status")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
     p.add_argument("--ref", required=True, help="the commit the next release would ship")
@@ -5672,14 +6081,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="NAME=SLASH_OR_LUA_FILE",
         help="one flow to capture: a Forever addon slash command, or a Lua file run through !!DevSmoke",
     )
-    p.add_argument(
-        "--flow-click",
-        action="append",
-        default=[],
-        metavar="NAME=X,Y",
-        help="left click X,Y (screenshot coordinates) for the flow called NAME, after its reload's world screenshot "
-        "and before its ready screenshot; a flow that needs a real click to open a protected window",
-    )
+    # Every flow input shares one list, so a flow's clicks, drags, keys and typed commands run in the order given.
+    for option, kind, metavar, text in (
+        ("--flow-click", "click", "NAME=X,Y", "left click X,Y (screenshot coordinates)"),
+        ("--flow-drag", "drag", "NAME=X1,Y1,X2,Y2", "drag with the left button from X1,Y1 to X2,Y2"),
+        (
+            "--flow-key",
+            "key",
+            "NAME=ACTION",
+            f"press the key this client binds to ACTION, as `key --action` does ({', '.join(ACTIONS)})",
+        ),
+        ("--flow-type", "type", "NAME=/COMMAND", "type a slash command into chat as a player does, such as /tar NPC"),
+    ):
+        p.add_argument(
+            option,
+            dest="flow_inputs",
+            action="append",
+            default=[],
+            type=lambda value, kind=kind: (kind, value),
+            metavar=metavar,
+            help=f"{text} for the flow called NAME, after its reload's world screenshot and before its ready "
+            "screenshot; repeat for more, all inputs run in the order given",
+        )
     p.add_argument(
         "--timeout",
         type=float,
@@ -5732,7 +6155,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "run: wowaddon --flavor forever sync after removing its dev link"
                 )
                 return 0
-            build_dev(args.repo, commit, repo_root=root)
+            core_ref = None
+            if args.core_ref:
+                core_ref = resolve_commit(WORKSPACE / "forever-core", args.core_ref)
+            build_dev(args.repo, commit, repo_root=root, core_ref=core_ref)
             return 0
         if args.verb == "smoke":
             return smoke(args)

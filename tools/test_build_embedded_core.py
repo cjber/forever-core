@@ -4,11 +4,15 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from build_embedded_core import check_bundle, compose_bundle, plan, release_build, write_bundle
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".agents/skills/wow-forever-addon/tooling"))
+from forever_tools import core_archive  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "tools" / ".cache"
@@ -145,6 +149,14 @@ class GeneratedBundleTests(unittest.TestCase):
                 json.loads(original["Libs/ForeverCore/bundle.json"])["source_digest"],
                 json.loads(sibling["Libs/ForeverCore/bundle.json"])["source_digest"],
             )
+
+    def test_consumer_archive_check_reads_the_producer_stamp(self):
+        # Consumers' release gate (forever_tools.core_archive) reads this producer's Begin.lua and bundle.json; a
+        # change to either stamp must keep the gate reading it.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "ConsumerA"
+            write_bundle(folder, plan(ROOT, "ConsumerA", "1.12.1", "ConsumerADB", ENTRY))
+            self.assertEqual(core_archive.embedded_tag(folder / "Libs/ForeverCore"), "v1.12.1")
 
     def test_deterministic_owned_load_graph(self):
         files = plan(ROOT, "ConsumerA", "1.12.1", "ConsumerADB", ENTRY)
