@@ -42,6 +42,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
 from . import core_pin
+from .lua import tokenize
+from .luadata import unescape
 
 __all__ = ["EMBED_FIELD", "EmbedError", "enabled", "main", "own_load_waits", "transform", "wrap"]
 
@@ -244,20 +246,29 @@ def wrap(data: bytes) -> bytes:
 
 # The shared consumer file that defines ns.OnFilesLoaded, the one caller of the client's wait this step allows.
 OWN_LOAD_HELPER = "Core/ForeverRequire.lua"
-_VARARG_NAME = re.compile(rb"^local\s+([A-Za-z_]\w*)\s*(?:,\s*[A-Za-z_]\w*\s*)?=\s*\.\.\.", re.M)
-_CLIENT_WAIT = re.compile(rb"\bContinueOnAddOnLoaded\s*\(\s*(?:([A-Za-z_]\w*)|\"([^\"]*)\"|'([^']*)')\s*,")
 
 
 def own_load_waits(data: bytes, folder: str) -> list[int]:
     """The lines where a file waits for its own addon's load through the client, by the addon name its `...` gives
     or by the folder's name as a string. Deferred to login, the file runs after the client counts the addon as loaded,
-    so that wait calls back inside the file, before the files after it; `ns.OnFilesLoaded` is the wait that holds."""
-    own = {match.group(1) for match in _VARARG_NAME.finditer(data)}
+    so that wait calls back inside the file, before the files after it; `ns.OnFilesLoaded` is the wait that holds.
+    Read from the file's Lua tokens, so a comment or a string that mentions the call is not one."""
+    tokens, _ = tokenize(data.decode("utf-8-sig"))
+    texts = [token.text for token in tokens]
+    own = set()
+    for index, token in enumerate(tokens):
+        if token.kind == "keyword" and token.text == "local" and tokens[index + 1].kind == "name":
+            after = index + 4 if texts[index + 2] == "," and tokens[index + 3].kind == "name" else index + 2
+            if texts[after : after + 2] == ["=", "..."]:
+                own.add(texts[index + 1])
     lines = []
-    for match in _CLIENT_WAIT.finditer(data):
-        name, *literals = match.groups()
-        if (name and name in own) or folder.encode() in literals:
-            lines.append(data.count(b"\n", 0, match.start()) + 1)
+    for index, token in enumerate(tokens):
+        if token.kind != "name" or token.text != "ContinueOnAddOnLoaded" or texts[index + 1] != "(":
+            continue
+        argument = tokens[index + 2]
+        named = argument.kind == "name" and argument.text in own
+        if texts[index + 3] == "," and (named or (argument.kind == "string" and unescape(argument.text) == folder)):
+            lines.append(token.line)
     return lines
 
 

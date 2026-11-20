@@ -114,15 +114,17 @@ class EmbedTest(unittest.TestCase):
             'EventUtil.ContinueOnAddOnLoaded("DemoForever", function() end)',
         )
         for wait in waits:
-            (self.root / "Main.lua").write_text(f"local addon, ns = ...\nns.main = addon\n{wait}\n")
+            (self.root / "Main.lua").write_text(f"\tlocal addon, ns = ...\nns.main = addon\n{wait}\n")
             with self.assertRaisesRegex(embed.EmbedError, r"Main\.lua:3: .*ns\.OnFilesLoaded"):
                 self.run_embed()
             self.assertFalse((self.root / "Main.lua").read_bytes().startswith(embed.HEADER), "nothing was rewritten")
         (self.root / "Main.lua").write_text(
             'local addon, ns = ...\nEventUtil.ContinueOnAddOnLoaded("OtherAddon", function() end)\n'
+            "-- not EventUtil.ContinueOnAddOnLoaded(addon, callback): it calls back before the later files\n"
+            'ns.note = "ContinueOnAddOnLoaded(addon, callback)"\n'
             "ns.OnFilesLoaded(function() end)\n"
         )
-        self.assertEqual(self.run_embed()["wrapped"], 2, "another addon's load and the shared wait both embed")
+        self.assertEqual(self.run_embed()["wrapped"], 2, "another addon's load, a mention and the shared wait embed")
 
     @unittest.skipUnless(shutil.which("git"), "git not on PATH")
     def test_in_a_git_checkout_the_new_files_are_tracked_for_the_packager(self):
