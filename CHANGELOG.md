@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.15.8] - 2026-11-20
+
+### Fixed
+
+- **Per-character settings save on Forever realms.** A Forever realm has no name, so a key built from the realm was empty or shared between characters with the same first name. `ForeverCore.CharacterKey()` gives every addon one key: `Name-Realm` on a named realm, as before, and the full name with the server number on a Forever realm. (#999)
+
+### For addon authors
+
+- **`ForeverCore.CharacterKey()` is the one per-character key (core minor 3).** Use it for every per-character saved table instead of a key built from `GetRealmName` or `UnitName`'s second return, which is the surname on Forever. It is `Name-NormalizedRealm` on a named realm, so existing saves keep matching, and `Name Surname-<server>` from `UnitGUID("player")` on a Forever realm. It is nil until the client knows the character, so ask again later; check `(ForeverCore.minor or 0) >= 3` first. (#999)
+- **`forever_sim` and the fake client play on a Forever realm.** They answer no realm name, realm ID 0 and the surname as `UnitName`'s second value, as the live client does; a scenario sets `sim.world.player.realm` for a named realm. After syncing, a scenario that relied on a realm name fails until its addon uses `CharacterKey`. (#997)
+
 ## [1.15.7] - 2026-11-20
 
 ### Fixed
