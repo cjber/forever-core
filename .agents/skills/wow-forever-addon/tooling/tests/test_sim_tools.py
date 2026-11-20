@@ -59,7 +59,8 @@ class FetchTest(unittest.TestCase):
             self.assertIn('["pin-big"]={32,48},', (out / "atlas.lua").read_text())
             self.assertEqual(
                 (out / "items-enUS.lua").read_text(),
-                'return {\n[25]={"Worn \\"Short\\" Sword",1,7,2,1,2,7,21,135274},\n}\n',
+                'return {\nitems = {\n[25]={"Worn \\"Short\\" Sword",1,7,2,1,2,7,21,135274,1,0,0,0,""},\n},\n'
+                'classes = {\n[2]={name="Weapon",subs={[0]="Axe",[7]="Sword"}},\n},\n}\n',
             )
             self.assertEqual(
                 (out / "flyouts.lua").read_text(),
@@ -74,9 +75,11 @@ class FetchTest(unittest.TestCase):
         )
         # Item 26 has no name in ItemSparse, so the client shows nothing for it.
         (db2 / "ItemSparse.csv").write_text(
-            "ID,Display_lang,OverallQualityID,SellPrice,ItemLevel,Stackable\n"
-            '25,"Worn ""Short"" Sword",1,7,2,1\n26,,1,1,1,1\n'
+            "ID,Display_lang,OverallQualityID,SellPrice,ItemLevel,Stackable,RequiredLevel,Bonding,ExpansionID,ItemSet,"
+            'Description_lang\n25,"Worn ""Short"" Sword",1,7,2,1,1,0,0,0,\n26,,1,1,1,1,1,0,0,0,\n'
         )
+        (db2 / "ItemClass.csv").write_text("ID,ClassName_lang,ClassID\n3,Weapon,2\n")
+        (db2 / "ItemSubClass.csv").write_text("DisplayName_lang,ClassID,SubClassID\nSword,2,7\nAxe,2,0\n")
         (db2 / "SpellFlyout.csv").write_text(
             "ID,Name_lang,Description_lang\n7,Stances,Choose a stance\n8,Empty,No spells\n"
         )

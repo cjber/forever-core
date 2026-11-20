@@ -10,11 +10,11 @@
 
 * Blizzard's UI source: Gethe/wow-ui-source at the pinned revision (the Forever build's), a shallow git fetch
   checked by commit hash.
-* Client tables from wago.tools at the pinned build: GlobalStrings and items (Item, ItemSparse; per locale),
-  GlobalColor, and the texture
-  atlas elements and members with their logical sizes, written as Lua data files the simulator loads. A copy
-  already in the wow-mock-screenshots cache (~/.cache/wowmock/<build>/) is reused. atlas.lua carries a schema
-  marker, so a cache written by an older generator is rebuilt instead of read with stale keys.
+* Client tables from wago.tools at the pinned build: GlobalStrings and items (Item, ItemSparse, ItemClass,
+  ItemSubClass; per locale), GlobalColor, and the texture atlas elements and members with their logical sizes,
+  written as Lua data files the simulator loads. A copy already in the wow-mock-screenshots cache
+  (~/.cache/wowmock/<build>/) is reused. atlas.lua carries a schema marker, so a cache written by an older generator
+  is rebuilt instead of read with stale keys.
 
 Nothing fetched here may be committed: the owner owns the game, and Blizzard's files stay test-time only.
 """
@@ -230,11 +230,18 @@ def flyout_data(flyouts: list[dict[str, str]], slots: list[dict[str, str]]) -> s
     return "\n".join(lines) + "\n"
 
 
-def item_data(items: list[dict[str, str]], sparse: list[dict[str, str]]) -> str:
-    # [itemID] = { name, quality, sell price, item level, stack size, class, subclass, inventory type, icon }: what
-    # the client's item reads answer, from Item and ItemSparse at the pinned build. A row with no name is dropped.
+def item_data(
+    items: list[dict[str, str]],
+    sparse: list[dict[str, str]],
+    classes: list[dict[str, str]],
+    subclasses: list[dict[str, str]],
+) -> str:
+    # items[itemID] = { name, quality, sell price, item level, stack size, class, subclass, inventory type, icon,
+    # required level, bind type, expansion, item set, description }: what the client's item reads answer, from Item and
+    # ItemSparse at the pinned build; a row with no name is dropped. classes[classID] = { name, subs = { [subclassID] =
+    # name } } names an item's type and subtype, from ItemClass and ItemSubClass.
     base = {row["ID"]: row for row in items}
-    lines = ["return {"]
+    lines = ["return {", "items = {"]
     for row in sorted(sparse, key=lambda r: int(r["ID"])):
         item = base.get(row["ID"])
         name = row.get("Display_lang") or ""
@@ -250,9 +257,21 @@ def item_data(items: list[dict[str, str]], sparse: list[dict[str, str]]) -> str:
             item["SubclassID"],
             item["InventoryType"],
             item["IconFileDataID"],
+            row["RequiredLevel"],
+            row["Bonding"],
+            row["ExpansionID"],
+            row["ItemSet"],
+            lua_string(row.get("Description_lang") or ""),
         )
         lines.append(f"[{row['ID']}]={{{','.join(fields)}}},")
-    lines.append("}")
+    lines += ["},", "classes = {"]
+    subs: dict[str, list[str]] = {}
+    for row in sorted(subclasses, key=lambda r: (int(r["ClassID"]), int(r["SubClassID"]))):
+        subs.setdefault(row["ClassID"], []).append(f"[{row['SubClassID']}]={lua_string(row['DisplayName_lang'])}")
+    for row in sorted(classes, key=lambda r: int(r["ClassID"])):
+        named = ",".join(subs.get(row["ClassID"], []))
+        lines.append(f"[{row['ClassID']}]={{name={lua_string(row['ClassName_lang'])},subs={{{named}}}}},")
+    lines += ["},", "}"]
     return "\n".join(lines) + "\n"
 
 
@@ -289,7 +308,8 @@ def build_data(root: Path, locales: list[str], offline: bool) -> None:
     for locale in locales:
         target = out / f"items-{locale}.lua"
         if not target.exists():
-            write(target, item_data(db2(root, "Item", offline), db2(root, "ItemSparse", offline, locale)))
+            named = [db2(root, name, offline, locale) for name in ("ItemSparse", "ItemClass", "ItemSubClass")]
+            write(target, item_data(db2(root, "Item", offline), *named))
 
 
 API_CALL = re.compile(r"\b(C_[A-Za-z0-9]+)\.([A-Za-z0-9_]+)\s*\(")

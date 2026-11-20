@@ -689,8 +689,9 @@ function M.build(sim)
 			end
 			clientRows = chunk()
 		end
-		local row = clientRows[id]
+		local row = clientRows.items[id]
 		if row then
+			local class = clientRows.classes[row[6]]
 			clientItems[id] = {
 				name = row[1],
 				quality = row[2],
@@ -701,6 +702,13 @@ function M.build(sim)
 				subClassID = row[7],
 				itemEquipLoc = EQUIP_LOC[row[8]] or "",
 				icon = row[9],
+				minLevel = row[10],
+				bindType = row[11],
+				expansionID = row[12],
+				setID = row[13] ~= 0 and row[13] or nil,
+				description = row[14],
+				itemType = class and class.name or "",
+				itemSubType = class and class.subs[row[7]] or "",
 			}
 		end
 		return clientItems[id]
@@ -735,6 +743,15 @@ function M.build(sim)
 			if id then
 				return id, sim.item(id)
 			end
+			-- The client resolves a name only for an item it has cached; the sim's cache is what the bags hold.
+			for _, b in pairs(W.bags) do
+				for slot = 1, b.size or 0 do
+					local held = b[slot] and sim.item(b[slot].itemID)
+					if held and held.name == info then
+						return b[slot].itemID, held
+					end
+				end
+			end
 		end
 	end
 	impl["C_Item.GetItemInfoInstant"] = function(info)
@@ -755,19 +772,25 @@ function M.build(sim)
 	impl["C_Item.GetItemInfo"] = function(info)
 		local id, item = resolveItemInfo(info)
 		if item then
+			-- isCraftingReagent: the client derives it from item flags the sim does not decode.
 			return item.name,
 				sim.itemLink(id),
 				item.quality or 1,
 				item.level or 1,
-				0,
-				"",
-				"",
+				item.minLevel or 0,
+				item.itemType or "",
+				item.itemSubType or "",
 				item.stack or 20,
 				item.itemEquipLoc or "",
 				item.icon or 134400,
 				item.sell or 0,
 				item.classID or 0,
-				item.subClassID or 0
+				item.subClassID or 0,
+				item.bindType or 0,
+				item.expansionID or 0,
+				item.setID,
+				false,
+				item.description or ""
 		end
 	end
 	G.GetItemInfo = G.C_Item.GetItemInfo
@@ -1196,6 +1219,7 @@ function M.build(sim)
 			isReadable = false,
 			hasLoot = false,
 			hyperlink = sim.itemLink(s.itemID),
+			itemName = item.name,
 			isFiltered = false,
 			hasNoValue = (item.sell or 0) == 0,
 			itemID = s.itemID,
@@ -1216,20 +1240,38 @@ function M.build(sim)
 		sim.events.fire("PLAYER_MONEY")
 		sim.events.fire("BAG_UPDATE_DELAYED")
 	end
-	-- The first empty slot from the backpack up, for an item the player receives.
-	function sim.giveItem(id, count)
-		assert(sim.item(id), "no client data has item " .. tostring(id))
+	-- Items the player receives in one transaction, each { itemID, count } in the first empty slot from the backpack
+	-- up: BAG_UPDATE for each bag that changed, then one BAG_UPDATE_DELAYED. Stacks are not merged. Nothing moves and
+	-- false returns when the free slots cannot hold them all, as the client refuses a loot or reward into full bags.
+	function sim.giveItems(entries)
+		local free = {}
 		for bag = 0, 4 do
 			local b = W.bags[bag]
 			for slot = 1, b and b.size or 0 do
 				if not b[slot] then
-					b[slot] = { itemID = id, count = count or 1 }
-					sim.events.fire("BAG_UPDATE", bag)
-					sim.events.fire("BAG_UPDATE_DELAYED")
-					return bag, slot
+					free[#free + 1] = { bag, slot }
 				end
 			end
 		end
+		if #entries > #free then
+			return false
+		end
+		local changed = {}
+		for i, entry in ipairs(entries) do
+			assert(sim.item(entry[1]), "no client data has item " .. tostring(entry[1]))
+			local bag, slot = free[i][1], free[i][2]
+			W.bags[bag][slot] = { itemID = entry[1], count = entry[2] or 1 }
+			changed[bag] = true
+		end
+		for bag = 0, 4 do
+			if changed[bag] then
+				sim.events.fire("BAG_UPDATE", bag)
+			end
+		end
+		if next(changed) then
+			sim.events.fire("BAG_UPDATE_DELAYED")
+		end
+		return true
 	end
 
 	-- The quest giver's reward panel: sim.world.questReward = { questID, title, text, choices = { {itemID, count} },
@@ -1307,17 +1349,23 @@ function M.build(sim)
 			return
 		end
 		choice = tonumber(Secret.unwrap(choice)) or 0
+		local items = {}
 		if #(q.choices or {}) > 0 then
-			local picked = q.choices[choice]
-			assert(picked, "GetQuestReward needs a choice between 1 and " .. #q.choices)
-			sim.giveItem(picked[1], picked[2])
+			items[1] = q.choices[choice]
+			assert(items[1], "GetQuestReward needs a choice between 1 and " .. #q.choices)
 		end
 		for _, entry in ipairs(q.rewards or {}) do
-			sim.giveItem(entry[1], entry[2])
+			items[#items + 1] = entry
 		end
-		W.player.money = W.player.money + (q.money or 0)
+		-- Bags too full for the rewards: the quest stays open, as the client keeps it.
+		if not sim.giveItems(items) then
+			return
+		end
 		W.questReward = nil
-		sim.events.fire("PLAYER_MONEY")
+		if (q.money or 0) > 0 then
+			W.player.money = W.player.money + q.money
+			sim.events.fire("PLAYER_MONEY")
+		end
 		sim.events.fire("QUEST_FINISHED")
 	end
 	impl.CloseQuest = function()

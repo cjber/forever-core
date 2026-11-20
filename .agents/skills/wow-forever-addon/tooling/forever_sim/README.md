@@ -141,8 +141,9 @@ end)
   `CraftRecipe` is refused to tainted code at any time. A profession's `childSkillLineID` (Cooking 185, child 2939)
   is reported only by recipe, with the base line as parent; `GetProfessionChildSkillLineID` is 0. A refused call's
   recorded side effects live in `sim.refusedImpl`.
-- **Items**: every item ID answers from the client's own Item and ItemSparse rows at the pinned build (name,
-  quality, sell price, item level, stack size, class, subclass, equip slot, icon; `items-<locale>.lua` from `fetch.py`).
+- **Items**: every item ID answers from the client's own Item, ItemSparse, ItemClass and ItemSubClass rows at the
+  pinned build (every `GetItemInfo` return; `items-<locale>.lua` from `fetch.py`). A name resolves only for an
+  item the bags hold, as the client resolves only cached items.
   A scenario's `sim.world.items[id]` wins over the client row, for an item the build lacks or a link a spec fixes.
   Bags (`sim.world.bags`), merchant sales and quest rewards hold only items one of the two knows, so a scenario
   cannot invent an item the client would never show.
@@ -169,6 +170,8 @@ end)
   can load one by name. The gamepad action bars and the action-button templates they inherit are booted.
 - `secret == x` is always false, and a secret used as a table key is not caught.
 - Units, recipes and maps are scenario data, not the game's databases.
+- `GetItemInfo`'s `isCraftingReagent` is always false (the client derives it from item flags), and items given to
+  the bags never merge into an existing stack.
 - A client boots in about 2-4 s of CPU time. A suite belongs in its own CI job, not the fast gate.
 
 ## Profession recipe search
