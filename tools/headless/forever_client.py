@@ -1413,6 +1413,7 @@ def face(state: Mapping, heading: float, motion: dict | None = None) -> dict:
     """Turn until the measured facing is within FACE_TOLERANCE of `heading`; the motion state when it is."""
     rate = TURN_RATE
     motion = motion or read_motion(state)
+    moved = False
     for _ in range(TURN_TRIES):
         turn = angle_between(heading, motion["facing"])
         if abs(turn) <= FACE_TOLERANCE:
@@ -1422,11 +1423,19 @@ def face(state: Mapping, heading: float, motion: dict | None = None) -> dict:
         after = read_motion(state)
         turned = abs(angle_between(after["facing"], motion["facing"]))
         if turned > 0.01:
-            rate = turned / seconds
+            rate, moved = turned / seconds, True
         motion = after
+    if abs(angle_between(heading, motion["facing"])) <= FACE_TOLERANCE:
+        return motion
+    facing, goal = math.degrees(motion["facing"]), math.degrees(heading)
+    if moved:
+        raise ClientError(
+            f"facing ended at {facing:.0f} deg after {TURN_TRIES} turns toward {goal:.0f} deg: the character turns "
+            f"but never settled within {math.degrees(FACE_TOLERANCE):.0f} deg"
+        )
     raise ClientError(
-        f"facing stayed {math.degrees(motion['facing']):.0f} deg after {TURN_TRIES} turns toward "
-        f"{math.degrees(heading):.0f} deg: TURNLEFT and TURNRIGHT do not turn this character"
+        f"facing stayed {facing:.0f} deg after {TURN_TRIES} turns toward {goal:.0f} deg: "
+        f"TURNLEFT and TURNRIGHT do not turn this character"
     )
 
 

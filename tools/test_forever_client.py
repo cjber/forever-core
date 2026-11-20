@@ -6358,6 +6358,18 @@ class MovementTest(unittest.TestCase):
         with self.assertRaisesRegex(fc.ClientError, "do not turn this character"):
             fc.face({}, 2.0)
 
+    def test_face_accepts_a_last_turn_that_lands_in_tolerance(self):
+        # #990: the tolerance was only checked before each turn, so a last turn that landed still raised.
+        world = self.world(500, 500, 0.0)
+        with mock.patch.object(fc, "TURN_TRIES", 1):
+            fc.face({}, 0.5)
+        self.assertLessEqual(abs(fc.angle_between(0.5, world.facing)), fc.FACE_TOLERANCE)
+
+    def test_face_that_turns_but_misses_does_not_blame_the_bindings(self):
+        self.world(500, 500, 0.0)
+        with mock.patch.object(fc, "TURN_TRIES", 1), self.assertRaisesRegex(fc.ClientError, "never settled"):
+            fc.face({}, 3.0)
+
     def test_walkto_arrives_across_open_ground(self):
         world = self.world(500, 500, 0.0)
         fc.walkto({}, 0.52, 0.47)
