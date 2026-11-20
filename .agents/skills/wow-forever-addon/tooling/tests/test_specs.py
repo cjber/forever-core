@@ -90,6 +90,7 @@ def core_repository(root):
     git(root, "init", "-q")
     git(root, "config", "user.email", "t@example.com")
     git(root, "config", "user.name", "t")
+    (root / "ForeverCore.toc").write_text("## Title: ForeverCore\n")
     for text in ("pinned", "branch"):
         (root / "release.txt").write_text(text)
         git(root, "add", "-A")
@@ -152,14 +153,31 @@ class PinnedCoreTest(unittest.TestCase):
         self.assertNotIn("specs load", out)
         self.assertFalse((self.base / "cache").exists())
 
-    def test_the_export_is_reused_and_can_be_named_directly(self):
+    def test_the_export_is_reused_only_for_the_same_release(self):
         self.assertEqual(self.run_specs()[0], 0)
         exports = list((self.base / "cache" / "forever-core").iterdir())
         self.assertEqual(len(exports), 1)
-        os.environ["FOREVER_CORE"] = str(exports[0])
-        code, out, _ = self.run_specs()
-        self.assertEqual(code, 0, out)
-        self.assertIn("core: pinned", out)
+        self.assertEqual(self.run_specs()[0], 0)
+        self.assertEqual(list((self.base / "cache" / "forever-core").iterdir()), exports)
+        (exports[0] / specs.EXPORT_MARKER).write_text("v1.0.0 0000000\n")
+        code, _, err = self.run_specs()
+        self.assertEqual(code, 1)
+        self.assertIn("does not hold ForeverCore v1.0.0", err)
+
+    def test_a_branch_named_like_the_pin_is_not_the_release(self):
+        git(self.core, "tag", "-d", "v1.0.0")
+        git(self.core, "branch", "v1.0.0")
+        code, out, err = self.run_specs()
+        self.assertEqual(code, 1)
+        self.assertIn("is not a tag", err)
+        self.assertNotIn("core:", out)
+
+    def test_a_checkout_of_another_repository_stops_before_any_spec(self):
+        (self.core / "ForeverCore.toc").unlink()
+        git(self.core, "-c", "commit.gpgsign=false", "commit", "-qam", "not core")
+        code, _, err = self.run_specs()
+        self.assertEqual(code, 1)
+        self.assertIn("no ForeverCore.toc", err)
 
     def test_unpinned_runs_against_the_checkout_and_says_so(self):
         os.environ[specs.UNPINNED] = "1"
@@ -178,6 +196,7 @@ class PinnedCoreTest(unittest.TestCase):
     def test_a_folder_that_is_not_a_checkout_stops_before_any_spec(self):
         plain = self.base / "plain"
         plain.mkdir()
+        (plain / "ForeverCore.toc").write_text("## Title: ForeverCore\n")
         os.environ["FOREVER_CORE"] = str(plain)
         code, _, err = self.run_specs()
         self.assertEqual(code, 1)
