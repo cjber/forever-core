@@ -98,27 +98,12 @@ local function ShowNotice(text)
 		message:SetWidth(290)
 		message:SetWordWrap(true)
 		message:SetText(text)
-		frame:SetHeight(message:GetStringHeight() + 62)
+		frame:SetHeight(message:GetStringHeight() + 63)
 
-		local button = create("Button", nil, frame)
-		button:SetSize(120, 21)
+		-- The popup's own button uses loose legacy art and registers with the text-size manager.
+		local button = create("Button", nil, frame, "SharedButtonSmallTemplate")
+		button:SetSize(120, 22)
 		button:SetPoint("TOP", message, "BOTTOM", 0, -9)
-		for _, state in ipairs({ "Normal", "Pushed", "Highlight" }) do
-			local file = ({ Normal = "Up", Pushed = "Down" })[state] or state
-			local texture = button:CreateTexture(nil, state == "Highlight" and "HIGHLIGHT" or "ARTWORK")
-			texture:SetAllPoints()
-			texture:SetTexture("Interface\\Buttons\\UI-DialogBox-Button-" .. file) -- art-ok: StaticPopupButtonTemplate crop
-			texture:SetTexCoord(0, 1, 0, 0.71875)
-			button["Set" .. state .. "Texture"](button, texture)
-			if state == "Highlight" then
-				texture:SetBlendMode("ADD")
-			end
-		end
-		local label = button:CreateFontString(nil, "ARTWORK", "UserScaledFontGameNormal")
-		label:SetPoint("CENTER", 0, 1)
-		button:SetFontString(label)
-		button:SetNormalFontObject("UserScaledFontGameNormal")
-		button:SetHighlightFontObject("UserScaledFontGameHighlight")
 		button:SetText(rawget(_G, "OKAY") or "OK")
 		button:SetScript("OnClick", function()
 			frame:Hide()
