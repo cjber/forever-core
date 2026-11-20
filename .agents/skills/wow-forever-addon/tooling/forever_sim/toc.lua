@@ -34,6 +34,9 @@ local function clean(path)
 	return joined
 end
 
+-- A path with \ as / and each . and .. step resolved: the form every path files() returns takes.
+M.clean = clean
+
 local function join(base, path)
 	path = clean(path)
 	if path:sub(1, 1) == "/" then
