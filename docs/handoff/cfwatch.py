@@ -370,11 +370,14 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
         cache.pop(key, None)
     events = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}/timeline", "--paginate")
     sha = close_commit(events, closed_at)
+    # Only a pull request in the issue's own repository can carry the fix into that repository's tags; a cross-repo
+    # reference's number means a different pull request here.
     closing = []
     for event in events:
         source = (event.get("source") or {}).get("issue") or {}
         merged_at = (source.get("pull_request") or {}).get("merged_at")
-        if event.get("event") == "cross-referenced" and merged_at and merged_at <= closed_at:
+        same_repo = (source.get("repository") or {}).get("full_name") == f"{OWNER}/{repo}"
+        if event.get("event") == "cross-referenced" and same_repo and merged_at and merged_at <= closed_at:
             closing.append((merged_at, source.get("number")))
     if sha is None and closing:
         sha = gh_json("api", f"repos/{OWNER}/{repo}/pulls/{max(closing)[1]}").get("merge_commit_sha")
