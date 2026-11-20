@@ -22,7 +22,6 @@ function M.build(sim)
 			name = "Syrberus",
 			surname = "Ironhide",
 			realm = "",
-			realmID = 0,
 			level = 60,
 			race = "Orc",
 			raceFile = "Orc",
@@ -66,7 +65,8 @@ function M.build(sim)
 			local p = W.player
 			return {
 				name = p.name,
-				surname = p.surname,
+				-- UnitName's second return: the surname on a Forever realm, none for a player on a named realm.
+				surname = p.realm == "" and p.surname or nil,
 				level = p.level,
 				guid = p.guid,
 				isPlayer = true,
@@ -325,8 +325,9 @@ function M.build(sim)
 		return W.player.realm
 	end
 	impl.GetRealmName = impl.GetNormalizedRealmName
+	-- 0 on a Forever realm; a named realm's own ID, or 1 when the scenario names none.
 	impl.GetRealmID = function()
-		return W.player.realmID or 0
+		return W.player.realmID or (W.player.realm == "" and 0 or 1)
 	end
 	impl.GetMoney = function()
 		return W.player.money

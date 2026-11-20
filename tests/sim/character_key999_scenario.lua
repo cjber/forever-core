@@ -21,6 +21,8 @@ scenario("the character key on a Forever realm with no name", function(sim)
 
 	-- A named realm keeps the key addons have always saved under.
 	sim.world.player.realm = "Firemaw"
+	local _, second = G.UnitName("player")
+	assert(second == nil and G.GetRealmID() ~= 0, "a named realm has an ID and no surname return")
 	key = ns.CharacterKey()
 	assert(key == "Syrberus-Firemaw", "a named realm keeps Name-Realm: " .. tostring(key))
 	sim:expectNoErrors(ADDON)
