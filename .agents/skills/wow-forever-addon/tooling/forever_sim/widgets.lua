@@ -5,7 +5,7 @@
 -- secret arguments add aspects, secret aspects and secret anchoring make getters return secrets, and protected
 -- methods on protected frames are blocked for tainted code in combat.
 local Secret = require("veil")
-local ScriptTypes = require("script_types")
+local Surface = require("client_surface")
 local Docs = require("docs")
 
 local M = {}
@@ -135,24 +135,24 @@ local function isA(typeName, ancestor)
 end
 M.isA = isA
 
--- Widget type -> its supported scripts, lower-case name -> the client's spelling. Each type unions its TYPES
--- parent's set with the set it declares itself (script_types.lua, generated from the pinned annotations), so a
--- CheckButton supports Button's scripts and every Frame supports the ScriptRegion ones without a second list.
+-- Widget type -> its supported scripts, lower-case name -> the client's spelling. A type the client makes has the
+-- full set its HasScript accepts (client_surface.lua, generated from a ForeverProbe dump); one the probe could not
+-- make, or an abstract one, takes its TYPES parent's set.
 local SCRIPT_SETS = {}
 local function scriptSet(kind)
 	local set = SCRIPT_SETS[kind]
 	if set then
 		return set
 	end
-	set = {}
-	local parent = TYPES[kind] and TYPES[kind][1]
-	if parent then
-		for name, canonical in pairs(scriptSet(parent)) do
-			set[name] = canonical
+	local names = Surface.scripts[kind]
+	if names then
+		set = {}
+		for _, name in ipairs(names) do
+			set[name:lower()] = name
 		end
-	end
-	for name, canonical in pairs(ScriptTypes[kind] or {}) do
-		set[name] = canonical
+	else
+		local parent = TYPES[kind] and TYPES[kind][1]
+		set = parent and scriptSet(parent) or {}
 	end
 	SCRIPT_SETS[kind] = set
 	return set

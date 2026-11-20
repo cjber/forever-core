@@ -534,4 +534,33 @@ do
 	_G.ForeverCoreLoader, _G.SlashCmdList, _G.SLASH_MYADDON1 = nil, nil, nil
 end
 
+-- A file waits for its own addon's load through ns.OnFilesLoaded: the client's wait while the addon loads, the
+-- package runner's queue when the files run after the client already counts the addon as loaded.
+do
+	local ns = {}
+	assert(loadfile("tools/consumer/ForeverRequire.lua"))("MyAddon", ns)
+	local waited = {}
+	_G.EventUtil = {
+		ContinueOnAddOnLoaded = function(name, callback)
+			waited[#waited + 1] = { name = name, callback = callback }
+		end,
+	}
+	local function callback() end
+	ns.OnFilesLoaded(callback)
+	equal(#waited, 1, "while the addon loads the client holds the callback")
+	equal(waited[1].name, "MyAddon", "for this addon")
+	equal(waited[1].callback, callback, "unchanged")
+	ns.ForeverCoreHostAfter = {}
+	ns.OnFilesLoaded(callback)
+	equal(#waited, 1, "deferred files do not ask the client, which would call back at once")
+	equal(ns.ForeverCoreHostAfter[1], callback, "the runner's queue holds it until the last file has run")
+	ns.ForeverCoreHostAfter = nil
+
+	equal(ns.ForeverRequire(true), true, "a ready addon starts")
+	ns.ForeverCoreHostIncomplete = true
+	equal(ns.ForeverRequire(true), false, "a package with a file the client did not load stops at the gate")
+	equal(ns.broken, true, "and every later file stops on ns.broken")
+	_G.EventUtil = nil
+end
+
 print(("forever_require_spec: %d checks passed"):format(checks))

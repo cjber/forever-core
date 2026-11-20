@@ -111,7 +111,7 @@
 ---@field Attach fun(db: table) the addon's saved table, once it loads
 
 -- Core/APIKit.lua, the shape every addon's own API follows (docs/api-conventions.md).
----@alias ForeverCoreAPIReason "loading"|"disabled"|"none"
+---@alias ForeverCoreAPIReason "loading"|"disabled"|"none"|"combat"|"unreachable"
 ---@alias ForeverCoreAPIInvalid "invalid"
 ---@alias ForeverCoreAPIAnswer ForeverCoreAPIReason|ForeverCoreAPIInvalid
 ---@alias ForeverCoreAPIChannel fun(): string|number|boolean|false
@@ -128,6 +128,12 @@
 ---@field minor integer the api table's minor, read at call time; 0 when it has none
 ---@field api table the addon's own table, not a copy: it is the callable API
 
+---@class ForeverCoreMapMarker
+---@field addon string the addon that drew it
+---@field x number a fraction of the map's width
+---@field y number a fraction of the map's height
+---@field kind? string what the marker is, named by the addon that drew it
+
 ---@class ForeverCoreAPIKit
 ---@field minor integer raised with each addition, so a caller can check a member before using it
 ---@field Hub fun(addonName: string, channels: ForeverCoreAPIChannels, ready?: fun(): boolean): ForeverCoreAPIHub
@@ -135,6 +141,8 @@
 ---@field Invalid fun(): nil, ForeverCoreAPIInvalid
 ---@field Publish fun(addonName: string, api: table)
 ---@field Addons fun(): ForeverCoreAPIEntry[]
+---@field RegisterMapMarkers fun(addonName: string, read: fun(map: table): table)
+---@field MapMarkers fun(map: table, except?: string): ForeverCoreMapMarker[]
 
 ---@class ForeverCoreAPI
 ---@field API integer the interface version; 2 retired leaderboards and peer stats
@@ -154,7 +162,6 @@
 ---@field Text? table
 ---@field APIKit? ForeverCoreAPIKit
 ---@field Open fun(addon: string, where?: any): boolean?, string?
----@field Journey ForeverCoreJourney
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field Family? ForeverFamilyAPI the retired Forever addons page's members, answering without drawing
@@ -257,6 +264,8 @@ ForeverCore = nil
 ---@field AtStart fun(work: fun())
 ---@field started? boolean
 ---@field ReportRefusal fun(reason: any)
+---@field CoreAPI ForeverCorePublishedAPI
+---@field Registered fun(addonName: string): boolean
 ---@field RegisterOpener fun(addon: string, callback: ForeverCoreOpenCallback, secure?: boolean)
 ---@field folder? string
 ---@field root? string
@@ -268,7 +277,6 @@ ForeverCore = nil
 ---@field Login fun()
 ---@field ForeverCore? ForeverCoreAPI
 ---@field Open fun(addon: string, where?: any): boolean?, string?
----@field Journey ForeverCoreJourney
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
 ---@field SettingsPage? ForeverSettingsPageModule
@@ -282,11 +290,3 @@ ForeverCore = nil
 ---@class ForeverCoreReconcileOptions
 ---@field NextNode? fun(): string
 ---@field preferredFolder? string
-
----@class ForeverCoreJourney
----@field minor integer
----@field Claim fun(addon: string, label: string, finish: fun(reason: string)): boolean?, string?
----@field Owner fun(): string?, string?
----@field End fun(owner?: string): boolean?, string?
----@field Release fun(addon: string): boolean?, string?
----@field Subscribe fun(callback: fun(changes: ForeverCoreAPIChanges)): fun()

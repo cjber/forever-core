@@ -256,6 +256,7 @@ ns.DebugCommand = function()
 end
 
 env.SlashCmdList = {}
+ns.CoreAPI = { version = 2, minor = 2 }
 local framesBeforeExpose = #coreFrames
 local expose = assert(loadfile("Expose.lua"))
 setfenv(expose, env)

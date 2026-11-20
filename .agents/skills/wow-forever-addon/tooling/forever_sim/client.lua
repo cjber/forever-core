@@ -2,6 +2,7 @@
 -- timers and OnUpdate, CVars, the error handler, and ADDON_ACTION_BLOCKED / ADDON_ACTION_FORBIDDEN.
 local Secret = require("veil")
 local Docs = require("docs")
+local Surface = require("client_surface")
 
 local M = {}
 
@@ -818,36 +819,30 @@ function M.build(sim)
 		return false
 	end
 
-	-- CVars.
-	-- Numeric CVars client code reads through GetCVarNumberOrDefault even when tainted (an unset one reads nil
-	-- then, and tonumber(nil) errors). The gamepad interface transition reads the Gamepad ones (stand-in values);
-	-- every StaticPopup reads userFontScale through TextSizeManager, at the client default of 1.
-	local cvarDefaults = {
-		GamepadMapScrollSpeed = "1",
-		GamepadMapScrollSpeedFullScreen = "1",
-		GamepadMapZoomSpeed = "1",
-		GamepadMapEdgePanDistance = "40",
-		GamepadTargetingModifierVisualDelay = "0.5",
-		GamepadPossessBarOverride = "1",
-		GamepadStanceBarOverride = "1",
-		userFontScale = "1",
-	}
+	-- CVars: every one the client defines starts at its default (client_surface.lua, generated from a ForeverProbe
+	-- dump). A name the client does not define reads nil, as in the client, and RegisterCVar adds one.
+	local cvarDefaults = {}
 	sim.cvars = {}
-	for name, value in pairs(cvarDefaults) do
-		sim.cvars[name] = value
+	-- The client matches cvar names in any case; values are kept under the client's own spelling.
+	local spelling = {}
+	for name, value in pairs(Surface.cvars) do
+		cvarDefaults[name], sim.cvars[name], spelling[name:lower()] = value, value, name
 	end
-	-- Client code reads CVars the client always defines; an unset one reads "0" for it (recorded as a gap).
+	local function known(name)
+		return type(name) == "string" and spelling[name:lower()] or nil
+	end
 	local function cvar(name)
-		local v = sim.cvars[name]
-		if v == nil and not Taint.current and type(name) == "string" then
-			sim.gaps["CVar " .. name] = true
-			return "0"
-		end
-		return v
+		local key = known(name)
+		return key and sim.cvars[key]
 	end
 	sim.impl["C_CVar.GetCVar"] = cvar
+	-- Setting a name the client does not define changes nothing and reports false.
 	sim.impl["C_CVar.SetCVar"] = function(name, value)
-		sim.cvars[name] = value ~= nil and tostring(value) or nil
+		local key = known(name)
+		if not key then
+			return false
+		end
+		sim.cvars[key] = value ~= nil and tostring(value) or nil
 		return true
 	end
 	sim.impl["C_CVar.GetCVarBool"] = function(name)
@@ -855,28 +850,22 @@ function M.build(sim)
 		return v == "1" or v == "true"
 	end
 	sim.impl["C_CVar.GetCVarDefault"] = function(name)
-		return cvarDefaults[name] or sim.cvars[name]
+		local key = known(name)
+		return key and cvarDefaults[key]
 	end
+	-- A registered cvar's value is also its default, as GetCVarDefault reports in the client.
 	sim.impl["C_CVar.RegisterCVar"] = function(name, value)
-		if sim.cvars[name] == nil then
+		if not known(name) then
+			spelling[name:lower()] = name
 			sim.cvars[name] = value ~= nil and tostring(value) or nil
+			cvarDefaults[name] = sim.cvars[name]
 		end
 	end
 	G.GetCVar = cvar
-	G.SetCVar = function(name, value)
-		sim.cvars[name] = value ~= nil and tostring(value) or nil
-		return true
-	end
-	G.GetCVarBool = function(name)
-		local v = sim.cvars[name]
-		return v == "1" or v == "true"
-	end
-	G.GetCVarDefault = G.GetCVar
-	G.RegisterCVar = function(name, value)
-		if sim.cvars[name] == nil then
-			sim.cvars[name] = value
-		end
-	end
+	G.SetCVar = sim.impl["C_CVar.SetCVar"]
+	G.GetCVarBool = sim.impl["C_CVar.GetCVarBool"]
+	G.GetCVarDefault = sim.impl["C_CVar.GetCVarDefault"]
+	G.RegisterCVar = sim.impl["C_CVar.RegisterCVar"]
 
 	-- Bindings, sound, misc. engine calls that only need to exist.
 	for _, name in ipairs({

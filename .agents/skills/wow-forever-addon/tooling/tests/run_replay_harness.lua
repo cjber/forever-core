@@ -56,9 +56,24 @@ local function Session(opts)
 		end,
 	}
 	local got = {}
+	local order = {}
 	local host = {
 		ForeverCoreHostChunks = {
+			-- A file waiting for its own addon's load, as ns.OnFilesLoaded does: on the runner's queue when there is
+			-- one, else through the client, which calls back at ADDON_LOADED.
+			function(_, ns)
+				local function callback()
+					order[#order + 1] = "callback"
+				end
+				if ns.ForeverCoreHostAfter then
+					table.insert(ns.ForeverCoreHostAfter, callback)
+				else
+					order[#order + 1] = "client"
+				end
+				order[#order + 1] = "first file"
+			end,
 			function(addon)
+				order[#order + 1] = "last file"
 				local listener = env.CreateFrame()
 				for _, event in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD" }) do
 					listener:RegisterEvent(event)
@@ -72,7 +87,7 @@ local function Session(opts)
 	}
 	local chunk = assert(loadfile(runPath))
 	setfenv(chunk, env)("Demo", host)
-	local session = { got = got }
+	local session = { got = got, order = order, host = host }
 	function session.Activate()
 		ready({}, {})
 	end
@@ -101,6 +116,14 @@ end
 local login = Session({})
 login.Activate()
 expect(login, "ADDON_LOADED:Demo:nil PLAYER_LOGIN:nil:nil", "activated at login")
+-- The client already counts the addon as loaded, so a file waiting for its own load is called by the runner, after
+-- the last file and not inside the file that asked.
+assert(
+	table.concat(login.order, ", ") == "first file, last file, callback",
+	"a file's own-load callback runs after every file, got: " .. table.concat(login.order, ", ")
+)
+assert(login.host.ForeverCoreHostAfter == nil, "the queue is gone once it has run")
+assert(login.host.ForeverCoreHostIncomplete == nil, "every wrapped file registered")
 
 -- Activated after the first world entry (a missed login, or after combat): the world entry with its arguments too.
 local world = Session({ worldSeen = true, loggedIn = true })
@@ -113,6 +136,7 @@ expect(
 
 -- The standalone already running at startup: the files run inline and the client delivers every event itself.
 local startup = Session({ inline = true })
+assert(table.concat(startup.order, ", ") == "client, first file, last file", "inline, the client's own wait is used")
 startup.Fire("ADDON_LOADED", "Demo")
 startup.Tick()
 expect(startup, "ADDON_LOADED:Demo:nil", "inline at startup misses nothing")

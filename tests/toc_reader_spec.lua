@@ -61,7 +61,7 @@ equal(
 		"lua UI/TrackerSection.lua",
 		"lua UI/MapCanvas.lua",
 		"lua Core/APIKit.lua",
-		"lua Core/Journey.lua",
+		"lua Core/API.lua",
 		"lua UI/QuestLogTabs.lua",
 		"lua UI/ProfessionTabs.lua",
 		"lua Expose.lua",

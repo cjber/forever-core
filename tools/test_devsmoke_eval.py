@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import importlib.util
 import io
@@ -277,6 +278,25 @@ assert(snippet()(), 'cached parser commands work')
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(ev.main([str(self.root / "missing.lua")]), 2)
         self.assertIn("is not a file", err.getvalue())
+
+    def test_live_commands_carry_the_whole_snippet_in_short_numbered_lines(self):
+        source = self.root / "helper.lua"
+        source.write_text("R3 = {}\n" + "-- padding\n" * 60)
+        token, lines = ev.live_commands(source)
+        self.assertTrue(all(len(line) < 255 for line in lines))
+        self.assertGreater(len(lines), 1)
+        prefix = f"/devsmoke live {token} "
+        self.assertTrue(all(line.startswith(prefix) for line in lines))
+        numbers = [line[len(prefix) :].split(" ")[0] for line in lines]
+        self.assertEqual(numbers, [f"{n}/{len(lines)}" for n in range(1, len(lines) + 1)])
+        joined = "".join(line.rsplit(" ", 1)[1] for line in lines)
+        self.assertEqual(base64.b64decode(joined), source.read_bytes())
+
+    def test_live_commands_refuse_an_empty_snippet(self):
+        source = self.root / "empty.lua"
+        source.write_text("\n")
+        with self.assertRaisesRegex(ev.EvalError, "empty"):
+            ev.live_commands(source)
 
 
 if __name__ == "__main__":

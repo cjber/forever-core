@@ -1,10 +1,11 @@
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from forever_sim import fetch, sync
+from forever_sim import fetch, gen_client_surface, gen_undocumented_returns, sync
 
 PACKAGE = Path(__file__).resolve().parent.parent / "forever_sim"
 
@@ -156,6 +157,80 @@ class FetchTest(unittest.TestCase):
     def test_offline_refuses_to_download(self):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(SystemExit):
             fetch.db2(Path(directory), "GlobalStrings", offline=True, locale="deDE")
+
+
+class ClientSurfaceTest(unittest.TestCase):
+    DUMP = """ForeverProbeDB = { clientSurface = { build = 16001,
+  cvars = { userFontScale = { default = "1" }, odd = { default = 'a"b\\\\c\\nd' },
+    tab = { default = "p\\vq\\194\\133r" }, hidden = { default = "<secret>" },
+    valueOnly = { value = "7" } },
+  scripts = { FontString = { "OnEnter", "OnLeave" }, Frame = { "OnEvent" } },
+  undefinedCvars = { "gone" },
+  failedWidgets = { ModelSceneActor = "no actor", Foo = "bad \\"Interface\\\\Foo\\"" } } }
+"""
+
+    def test_a_dump_becomes_lua_the_simulator_reads_back_exactly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text(self.DUMP)
+            out = Path(directory) / "client_surface.lua"
+            out.write_text(gen_client_surface.render(*gen_client_surface.read(dump)))
+            check = (
+                f'local t = dofile("{out}"); assert(t.interface == 16001); '
+                'assert(t.cvars.userFontScale == "1"); assert(t.cvars.odd == "a\\"b\\\\c\\nd"); '
+                'assert(t.cvars.hidden == nil, "a secret default is left out"); assert(t.undefined[1] == "gone"); '
+                'assert(t.cvars.valueOnly == "7", "no default: the reported value"); '
+                'assert(t.scripts.FontString[1] == "OnEnter"); assert(t.unmade.ModelSceneActor == "no actor"); '
+                'assert(t.cvars.tab == "p\\vq\\194\\133r", "control and non-ASCII bytes survive"); '
+                'assert(t.unmade.Foo == "bad \\"Interface\\\\Foo\\"", "an error with a backslash survives")'
+            )
+            subprocess.run(["luajit", "-e", check], check=True)
+
+    def test_a_dump_without_the_record_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text("ForeverProbeDB = {}\n")
+            with self.assertRaises(SystemExit):
+                gen_client_surface.read(dump)
+
+    def test_a_dump_with_a_failed_half_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "ForeverProbe.lua"
+            dump.write_text(self.DUMP.replace("build = 16001,", 'build = 16001, errors = { cvars = "boom" },'))
+            with self.assertRaises(SystemExit):
+                gen_client_surface.read(dump)
+
+
+class UndocumentedReturnsTest(unittest.TestCase):
+    def test_only_called_undocumented_functions_take_the_annotated_returns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            addons = root / "ui" / "Interface" / "AddOns"
+            (addons / "Blizzard_APIDocumentationGenerated").mkdir(parents=True)
+            (addons / "Blizzard_APIDocumentationGenerated" / "PetDocumentation.lua").write_text(
+                'local P = { Namespace = "C_PetJournal", Functions = {\n'
+                '{\n\tName = "GetNumPetTypes",\n\tType = "Function",\n} } }\n'
+            )
+            (addons / "Blizzard_Collections").mkdir()
+            (addons / "Blizzard_Collections" / "Pets.lua").write_text(
+                "local a, b = C_PetJournal.GetNumPets()\nC_PetJournal.GetNumPetTypes()\nC_Foo.Missing()\n"
+            )
+            (root / "ann" / "Annotations").mkdir(parents=True)
+            (root / "ann" / "Annotations" / "Wiki.lua").write_text(
+                "---@return number numPets\n---@return number numOwned\nfunction C_PetJournal.GetNumPets() end\n"
+                "---@return number n\nfunction C_PetJournal.GetNumPetTypes() end\n"
+                "---@return string? name\n---@return Enum.ItemQuality q\n---@return Foo[] list\n"
+                "function C_PetJournal.Unused() end\n"
+            )
+            returns = gen_undocumented_returns.read(root / "ann", root / "ui")
+            self.assertEqual(returns, {"C_PetJournal.GetNumPets": [("number", False), ("number", False)]})
+            self.assertEqual(gen_undocumented_returns.doc_type("string?"), ("string", True))
+            self.assertEqual(gen_undocumented_returns.doc_type("Enum.ItemQuality"), ("ItemQuality", False))
+            self.assertEqual(gen_undocumented_returns.doc_type("Foo[]"), ("table", False))
+            out = root / "returns.lua"
+            out.write_text(gen_undocumented_returns.render(returns))
+            check = f'local t = dofile("{out}"); assert(#t["C_PetJournal.GetNumPets"] == 2)'
+            subprocess.run(["luajit", "-e", check], check=True)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
     forever_client.py eval FILE...        # run each FILE through !!DevSmoke's inbox, print each one's own result
+    forever_client.py eval --live FILE    # run FILE in the running session, no reload: UI and globals stay
     forever_client.py errors [--addon X]  # reload, then the Lua errors this session raised (forever_errors.py)
     forever_client.py capture-env         # record the launch from the player's client started in Faugus
     forever_client.py build-dev REPO REF  # test-artifacts/<repo>-dev from a ref, the dev build rebuild-dev.sh made
@@ -219,11 +220,17 @@ SIGN_IN_MESSAGE = (
     "Battle.net needs the player's sign-in; start with --manual-launcher while the player is present, "
     "sign in, and reach READY to clear the block"
 )
-LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
+# Battle.net's own exact labels on its sign-in pages: the returning-account page and the logged-out "Log in or sign up"
+# page (#951). Neither has a Play button, so the startup loop would otherwise press Escape until its deadline.
+LAUNCHER_SIGN_IN_LABELS = (
+    ("welcome", "back"),
+    ("email", "a", "code"),
+    ("use", "password"),
+    ("use", "passkey"),
+    ("log", "in", "or", "sign", "up"),
+)
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
-# Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.
-LAUNCHER_LOGIN_LABELS = (("logging", "in"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
@@ -241,6 +248,7 @@ WIDTH, HEIGHT = 1920, 1080
 # never cut off.
 IDLE_LIMIT = 60 * 60
 MAX_SESSION = 3 * 60 * 60
+EVAL_SAVE_WAIT = 10  # seconds an eval's saved result may take to reach disk before the saving reload is used
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
@@ -2215,17 +2223,9 @@ def press_play(state: dict) -> None:
         )
     targets = play_targets(image)
     if not targets:
-        # The label trails its animated dots ("Logging in.."), which are not part of it.
-        label_words = [word.rstrip(".") for word in words]
-        if any(
-            label_words[index : index + len(phrase)] == list(phrase)
-            for phrase in LAUNCHER_LOGIN_LABELS
-            for index in range(len(label_words))
-        ):
-            return
-        # A launcher dialog can cover the page. Dismiss it on the discovered
-        # Battle.net window, then let the startup loop inspect a fresh frame.
-        x(state, "key", "--window", found.stdout.split()[0], "Escape")
+        # No input while Play is not drawn: the launcher shows its own splash and pop-ups first, and Blizzard's
+        # token-security-checkpoint pop-up passes by itself within a second. A key sent to it cancels that check, and
+        # Battle.net then deletes the saved login token, logging the player out.
         if not state.get("play_target_missing_reported"):
             # Every retry overwrites launcher.png, so by the time anyone reads this line the file shows a later
             # frame (often one with Play drawn). Keep the frame this report is about under its own name.
@@ -3797,16 +3797,51 @@ def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None =
     return ""
 
 
-def eval_result(state: Mapping, token: str, *, saved: bool = False) -> tuple[str, bool]:
-    """The report of the eval the run token wrote, read after the reload that saves this session to disk.
+def saved_within(token: str, wait: float) -> bool:
+    """Whether the eval the run token names is on disk within `wait` seconds: !!DevSmoke saves an eval the moment it
+    runs, so no reload is needed to read it, and the UI the snippet opened stays open (#894)."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            saved_eval(token)
+            return True
+        except ClientError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(WAIT_POLL)
 
-    SavedVariables are written at a reload or logout, so the file the snippet's own reload left behind still holds the
-    session before it: a second reload makes this run's own result the one on disk (#580). `saved` says a later
-    reload, such as the next flow's, has already done that, so no reload of its own is needed.
+
+def eval_result(state: Mapping, token: str, *, saved: bool = False, wait: float | None = None) -> tuple[str, bool]:
+    """The report of the eval the run token wrote.
+
+    SavedVariables are written at a reload or logout, so a proof flow's result reaches disk only at the reload after
+    its own (#580). `saved` says a later reload, such as the next flow's, has already done that. An eval is saved by
+    !!DevSmoke the moment it runs: `wait` seconds allow for that, and the reload is only the fallback for a
+    !!DevSmoke that did not save (#894).
     """
-    if not saved:
+    if not saved and not (wait is not None and saved_within(token, wait)):
         reload(state)
     return format_eval(saved_eval(token))
+
+
+def live_eval(state: Mapping, source: Path) -> int:
+    """Run a Lua file in the running session with no reload, and report what it printed and returned.
+
+    The file travels as numbered `/devsmoke live` chat lines, so the UI stays as it is and globals the snippet sets
+    stay for the slash commands that follow (#894). Every line is typed at the speed of any slash command, so a long
+    helper costs time in proportion to its size: load it once, then drive it with short commands.
+    """
+    tool = devsmoke_eval()
+    try:
+        token, lines = tool.live_commands(source)
+    except tool.EvalError as error:
+        raise ClientError(str(error)) from None
+    print(f"sending {source} as {len(lines)} chat lines", flush=True)
+    for line in lines:
+        slash(state, line)
+    report, ok = eval_result(state, token, wait=EVAL_SAVE_WAIT)
+    print(report)
+    return 0 if ok else 1
 
 
 def check_flow_eval(
@@ -5736,7 +5771,8 @@ def eval_files(state: Mapping, files: Sequence[Path]) -> int:
                 report(*unread)
             unread = (path, written["token"])
         if unread:
-            reload(state)
+            if not saved_within(unread[1], EVAL_SAVE_WAIT):
+                reload(state)
             report(*unread)
     finally:
         if not cleared:
@@ -5833,6 +5869,10 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
             print(f"parked at {park(state)['label']}")
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
+    elif args.verb == "eval" and args.live:
+        if len(args.file) != 1:
+            raise ClientError("eval --live runs one file")
+        return live_eval(state, args.file[0])
     elif args.verb == "eval":
         return eval_files(state, args.file)
     elif args.verb == "errors":
@@ -5984,6 +6024,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "eval":
             p.add_argument(
                 "file", type=Path, nargs="+", help="Lua snippets to run through !!DevSmoke, each at a reload of its own"
+            )
+            p.add_argument(
+                "--live",
+                action="store_true",
+                help="run it in the running session with no reload, so globals and open panels stay",
             )
         elif name == "errors":
             p.add_argument("--addon")

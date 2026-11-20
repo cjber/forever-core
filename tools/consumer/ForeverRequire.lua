@@ -199,10 +199,24 @@ local function standaloneFailure(own)
 	end
 	return text
 end
+-- Calls back once every file of this addon has run and its saved variables are loaded. A file uses this, never
+-- EventUtil.ContinueOnAddOnLoaded on its own addon's name: in a package that carries ForeverCore the files can run
+-- at login, after the client counts the addon as loaded, and that call would run the callback inside the file that
+-- asked, before the files after it (cjber/adventure-guide-forever#886). The package's runner sets the queue then.
+---@param callback fun()
+function ns.OnFilesLoaded(callback)
+	local queue = ns.ForeverCoreHostAfter
+	if type(queue) == "table" then
+		queue[#queue + 1] = callback
+		return
+	end
+	_G.EventUtil.ContinueOnAddOnLoaded(addonName, callback)
+end
 ---@param ready boolean
 ---@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key
 function ns.ForeverRequire(ready, slash)
-	if ready then
+	-- The package's runner found a file of this addon the client did not load: the rest cannot run without it.
+	if ready and not ns.ForeverCoreHostIncomplete then
 		return true
 	end
 	ns.broken = true

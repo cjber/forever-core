@@ -779,7 +779,7 @@ equal(#DevSmokeDB.runs, runsBeforeUnknown, "an unknown subcommand starts no run"
 equal(unknown[1], "Dev Smoke: unknown command wat", "an unknown subcommand is reported")
 equal(
 	unknown[2],
-	"Dev Smoke: /devsmoke, tab [off], versions, errors, eval, thanks <addon> [player], prof <tab>, close",
+	"Dev Smoke: /devsmoke, tab [off], versions, errors, eval, live, thanks <addon> [player], prof <tab>, close",
 	"the usage lists every command"
 )
 
@@ -1024,6 +1024,24 @@ end
 evalLines = command("eval")
 equal(DevSmokeDB.eval.run, "run-3", "a snippet that writes the token's name cannot change its own attribution")
 equal(evalLines[2], "sneaky", "the snippet still runs and returns its value")
+
+-- `/devsmoke live` runs a snippet sent in numbered base64 pieces in this session, with no reload: its globals stay, it
+-- saves its own result at once, and a bad snippet is reported like an eval error (#894).
+local savesBeforeLive = saves
+equal(command("live nonsense")[1], "Dev Smoke: live takes RUN I/N BASE64", "a malformed live line says its form")
+equal(#command("live abc123 1/2 TElWRV9HTE9CQUwgPSA3CnByaW50KCJzaG93"), 0, "a live piece waits for the rest")
+evalLines = command("live abc123 2/2 biIpCnJldHVybiAibGl2ZSAiIC4uIDYgKiA3")
+equal(evalLines[1], "Dev Smoke: eval ok, 2 lines", "the last piece runs the snippet")
+equal(evalLines[2], "shown", "a live snippet's print reaches the tab")
+equal(evalLines[3], "live 42", "a live snippet's return reaches the tab")
+equal(_G.LIVE_GLOBAL, 7, "a global a live snippet sets stays for the next command")
+equal(DevSmokeDB.eval.run, "abc123", "the live result carries the token its sender chose")
+equal(saves, savesBeforeLive + 1, "a live result is saved without a reload")
+_G.LIVE_GLOBAL = nil
+evalLines = command("live def456 1/1 bm90IGx1YSAh")
+equal(evalLines[1], "Dev Smoke: eval failed, 2 lines", "a snippet that does not compile fails the eval")
+check(evalLines[2]:find("devsmoke-live", 1, true) ~= nil, "the compile error names the live chunk")
+equal(DevSmokeDB.eval.ok, false, "the compile failure is recorded")
 
 DevSmokeEval = nil
 DevSmokeEvalRun = nil

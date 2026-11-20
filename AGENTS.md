@@ -20,7 +20,7 @@ the suite skills in `.agents/skills`.
 4. **Vendored tooling is edited here only.** `tools/forever_tools` and `tools/forever_sim` (from
    `.agents/skills/wow-forever-addon/tooling`) reach consumers with `python3 tools/sync_consumers.py ..`, never by
    editing a consumer's copy. `tools/check_core_shared.py` fails a PR that does.
-5. **Raise `ForeverCore.API`** only when the public table or `Register` breaks. A core release reaches consumers
+5. **Raise `ForeverCore.API`** (a number, read by every released addon; never make it a table) only when the public table or `Register` breaks. A core release reaches consumers
    through the stores: nothing is copied into them.
 6. **Game-client checks go through the `wow in-game` agent.** Send it an `INGAME` request
    (`.agents/skills/wow-forever-addon/in-game.md#requesting-a-check`); never run `tools/headless/forever_client.py`

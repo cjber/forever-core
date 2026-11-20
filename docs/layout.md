@@ -57,8 +57,9 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   window at one width for every profession and tab.
 - `Core/APIKit.lua`: the shape every addon's own public API follows, published as `ForeverCore.APIKit`: `Hub` for a
   next-frame change dispatch, `NotReady` and `Invalid` for the two `nil, reason` answers, and `Publish` and `Addons`
-  for the suite's published API list. `docs/api-conventions.md` is the convention, `docs/api.md` is ForeverCore's own
-  page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
+  for the suite's published API list, plus `RegisterMapMarkers` and `MapMarkers` for the markers each addon draws on the
+  world map. `Core/API.lua` is ForeverCore's own published API. `docs/api-conventions.md` is the convention,
+  `docs/api.md` is ForeverCore's own page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
   `docs/api.md`.
 - `Core/Text.lua`: the shared search fold and ranking.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
@@ -80,7 +81,7 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   the line it tracks, so `lua51` stays on 5.1 with a `note` saying why (the client is Lua 5.1), while `node` may
   propose a newer major for review. It sits under `tools/` with the project below, the folder `.pkgmeta` already
   ignores, so vendoring it never changes a package selection or a recorded visual proof. Consumers vendor it because
-  their `tools/typecheck.sh`, `tools/forever_sim/gen_script_types.py` and `tools/forever_tools/doctor.py` read it.
+  their `tools/typecheck.sh` and `tools/forever_tools/doctor.py` read it.
 - `tools/pyproject.toml` and `tools/uv.lock`: ruff, ty, zizmor, actionlint-py and Pillow (the wowmock tests draw
   images) as a `[dependency-groups] dev` group, run from the repository root as
   `uv run --project tools --frozen --group dev <tool>`, which keeps uv's environment at `tools/.venv`. Not a package

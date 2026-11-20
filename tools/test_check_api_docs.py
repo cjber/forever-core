@@ -133,5 +133,39 @@ class CheckTest(unittest.TestCase):
         self.assertIn("3 published names", output.getvalue())
 
 
+class AnswerTest(unittest.TestCase):
+    def test_a_hand_written_invalid_answer_fails(self):
+        failures = docs_contract.answer_failures('function API.Stop(step)\n\treturn nil, "invalid"\nend\n')
+        self.assertEqual(len(failures), 1)
+        self.assertIn("line 2", failures[0])
+        self.assertIn("APIKit.Invalid()", failures[0])
+
+    def test_a_reason_outside_the_documented_set_fails(self):
+        for source in ('return nil, "unsupported"', 'return APIKit.NotReady("busy")', "return nil, 'unavailable'"):
+            self.assertEqual(len(docs_contract.answer_failures(source)), 1, source)
+
+    def test_every_documented_reason_passes(self):
+        for reason in ("loading", "disabled", "none", "combat", "unreachable"):
+            self.assertEqual(docs_contract.answer_failures(f'return nil, "{reason}"'), [])
+            self.assertEqual(docs_contract.answer_failures(f'return APIKit.NotReady("{reason}")'), [])
+
+    def test_the_invalid_helper_and_comments_pass(self):
+        self.assertEqual(docs_contract.answer_failures('return APIKit.Invalid() -- not return nil, "invalid"'), [])
+        self.assertEqual(docs_contract.answer_failures('-- return nil, "busy"'), [])
+
+    def test_check_reports_the_answers_with_the_file_name(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Core").mkdir()
+            (root / "Core" / "API.lua").write_text('function API.Stop()\n\treturn nil, "invalid"\nend\n')
+            (root / "docs").mkdir()
+            (root / "docs" / "api.md").write_text("`Stop()`\n")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = docs_contract.check(root, root / "Core" / "API.lua")
+        self.assertEqual(code, 1)
+        self.assertIn("Core/API.lua: line 2", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

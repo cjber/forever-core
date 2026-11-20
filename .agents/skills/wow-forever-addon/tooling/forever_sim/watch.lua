@@ -137,8 +137,8 @@ function M.build(sim)
 	function sim.setGamepad(_, on)
 		local was = sim.gamepad == true
 		sim.gamepad = on and true or false
-		sim.cvars.GamePadEnable = on and "1" or "0"
-		sim.events.fire("CVAR_UPDATE", "GamePadEnable", sim.cvars.GamePadEnable)
+		sim.impl["C_CVar.SetCVar"]("GamePadEnable", on and "1" or "0")
+		sim.events.fire("CVAR_UPDATE", "GamePadEnable", sim.impl["C_CVar.GetCVar"]("GamePadEnable"))
 		sim.events.fire("ACTIVE_INPUT_DEVICE_TYPE_CHANGED")
 		if was ~= sim.gamepad then
 			sim.events.fire("INPUT_DEVICE_INTERFACE_TRANSITION", interfaceStyle(sim.gamepad), interfaceStyle(was))

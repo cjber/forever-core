@@ -44,6 +44,7 @@ At the client: /reload, then read DevSmokeDB.eval, or the Agent chat tab, which 
 from __future__ import annotations
 
 import argparse
+import base64
 import re
 import secrets
 import shutil
@@ -64,6 +65,11 @@ CAPTURE = "DevSmokeEvalCapture"
 CAPTURE_PROTOCOL = 1
 # Stay below !!DevSmoke FLOW_READY_LIMIT so readyErr names the missing command.
 SLASH_READY_LIMIT = 55
+
+
+# The live route sends a snippet as `/devsmoke live RUN I/N BASE64` chat lines, each under the client's 255 character
+# limit with room for the command's own words.
+LIVE_PIECE = 200
 
 
 class EvalError(Exception):
@@ -265,6 +271,25 @@ def write_snippet(source: Path, addons: Path | None = None, capture: bool = True
 def write_source(source: str, origin: str, addons: Path | None = None) -> dict[str, object]:
     """Write Lua source the caller generated, not a file, as an eval chunk (no proof screenshot)."""
     return _write(source, origin, Path(origin), addons, False)
+
+
+def live_commands(source: Path) -> tuple[str, list[str]]:
+    """The run token and the numbered `/devsmoke live` chat lines that carry `source` into the running session.
+
+    Nothing is written to disk: no reload loads the snippet, so the session keeps its UI and its globals. The snippet
+    is compiled here first, so a parse error is refused before any line is typed.
+    """
+    check_source(source)
+    try:
+        body = source.read_bytes()
+    except OSError as error:
+        raise EvalError(f"cannot read {source}: {error}") from None
+    if not body.strip():
+        raise EvalError(f"{source} is empty: there is nothing to run")
+    text = base64.b64encode(body).decode("ascii")
+    pieces = [text[at : at + LIVE_PIECE] for at in range(0, len(text), LIVE_PIECE)]
+    token = secrets.token_hex(8)
+    return token, [f"/devsmoke live {token} {number}/{len(pieces)} {piece}" for number, piece in enumerate(pieces, 1)]
 
 
 def write_slash(command: str, addons: Path | None = None, capture: bool = True) -> dict[str, object]:

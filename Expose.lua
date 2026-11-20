@@ -8,10 +8,10 @@ local core = {}
 core.name = "ForeverCore"
 -- Raised when a change breaks the interface below, so an addon can refuse to run against an older core. Version 2
 -- retired Forever Leaderboards and peer stats.
-core.API = 2
+core.API = ns.CoreAPI.version
 -- The core table's own minor, raised with each member added here outside a module. `Registered` arrived in minor 1;
 -- a caller that needs it checks this first, the way a module member checks that module's minor.
-core.minor = 2
+core.minor = ns.CoreAPI.minor
 
 core.TrackerHost = ns.TrackerHost
 core.TrackerSection = ns.TrackerSection
@@ -34,7 +34,6 @@ core.SettingsSections = ns.SettingsSections
 core.Text = ns.Text
 core.APIKit = ns.APIKit
 core.Open = ns.Open
-core.Journey = ns.Journey
 core.OpenMap = ns.OpenMap
 core.OpenSettingsPanel = ns.OpenSettingsPanel
 -- The Forever addons page is gone. An addon release from before that still calls these members while it loads, so
@@ -180,6 +179,7 @@ function core.Registered(addonName)
 	end
 	return contexts[addonName] ~= nil
 end
+ns.Registered = core.Registered
 
 -- Core's own errors and lines are recorded under ForeverCore. Core.lua's Start (converted copies) or its one
 -- ADDON_LOADED handler (transitional unwrapped standalone) calls this once the store exists, so a first install

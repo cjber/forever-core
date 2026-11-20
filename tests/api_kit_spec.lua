@@ -564,12 +564,13 @@ local ForeverCore = env.ForeverCore
 local kit = ForeverCore.APIKit
 check(kit ~= nil, "the TOC publishes the API kit")
 check(kit == ns.APIKit, "and it is the module Core/APIKit.lua built")
-equal(kit.minor, 2, "the kit's minor is 2")
+equal(kit.minor, 3, "the kit's minor is 3")
 check(type(kit.Hub) == "function", "Hub builds an addon's hub")
 check(type(kit.NotReady) == "function", "NotReady answers a read with nothing to say")
 check(type(kit.Invalid) == "function", "Invalid answers a read that refuses its argument")
 check(type(kit.Publish) == "function", "Publish takes an addon's own API table")
 check(type(kit.Addons) == "function", "Addons lists every published API")
+check(type(kit.RegisterMapMarkers) == "function" and type(kit.MapMarkers) == "function", "map markers are shared")
 
 -- NotReady ------------------------------------------------------------------------------------------------------
 do
@@ -580,6 +581,10 @@ do
 	equal(disabled, "disabled", "a disabled feature says so")
 	local _, none = kit.NotReady("none")
 	equal(none, "none", "an empty answer says so")
+	local _, combat = kit.NotReady("combat")
+	equal(combat, "combat", "a read the game refuses in combat says so")
+	local _, unreachable = kit.NotReady("unreachable")
+	equal(unreachable, "unreachable", "a route with no way there says so")
 end
 
 -- Invalid -------------------------------------------------------------------------------------------------------
@@ -593,39 +598,78 @@ end
 
 -- Publish and Addons --------------------------------------------------------------------------------------------
 do
-	equal(#kit.Addons(), 0, "nothing is published before an addon hands its table over")
+	equal(#kit.Addons(), 1, "only core has published before an addon hands its table over")
 	local api = { version = 1, minor = 3 }
 	kit.Publish("ZetaForever", api)
 	kit.Publish("AlphaForever", { version = 2 })
 	local entries = kit.Addons()
-	equal(#entries, 2, "both published addons are listed")
+	equal(#entries, 3, "core and both published addons are listed")
 	equal(entries[1].name, "AlphaForever", "the list is sorted by name")
-	equal(entries[2].name, "ZetaForever", "however they were published")
+	equal(entries[2].name, "ForeverCore", "core is listed like the rest")
+	equal(entries[3].name, "ZetaForever", "however they were published")
 	equal(entries[1].version, 2, "the version is read from the api table")
 	equal(entries[1].minor, 0, "a table with no minor reads as 0")
-	equal(entries[2].version, 1, "each entry carries its own version")
-	equal(entries[2].minor, 3, "and its own minor")
-	check(entries[2].api == api, "api is the addon's own table, not a copy")
+	equal(entries[3].version, 1, "each entry carries its own version")
+	equal(entries[3].minor, 3, "and its own minor")
+	check(entries[3].api == api, "api is the addon's own table, not a copy")
 
 	-- The fields are read at call time, not captured when published.
 	api.minor = 7
 	api.version = 3
 	local later = kit.Addons()
-	equal(later[2].minor, 7, "a changed minor is seen by the next call")
-	equal(later[2].version, 3, "and so is a changed version")
+	equal(later[3].minor, 7, "a changed minor is seen by the next call")
+	equal(later[3].version, 3, "and so is a changed version")
 
 	-- A second publish of the same name replaces the entry rather than adding one.
 	kit.Publish("AlphaForever", { version = 4, minor = 1 })
 	local replaced = kit.Addons()
-	equal(#replaced, 2, "publishing a name twice keeps one entry")
+	equal(#replaced, 3, "publishing a name twice keeps one entry")
 	equal(replaced[1].version, 4, "and the later table is the one listed")
 	equal(replaced[1].minor, 1, "with the later minor")
 
 	-- The list is fresh on every call, so changing it changes nothing else.
 	table.remove(replaced, 1)
 	replaced[1].name = "Changed"
-	equal(#kit.Addons(), 2, "removing from a returned list leaves the next call whole")
+	equal(#kit.Addons(), 3, "removing from a returned list leaves the next call whole")
 	equal(kit.Addons()[1].name, "AlphaForever", "and the entries are rebuilt, not shared")
+end
+
+-- Map markers ---------------------------------------------------------------------------------------------------
+do
+	local map = {}
+	equal(#kit.MapMarkers(map), 0, "no marker reader, no markers")
+	kit.RegisterMapMarkers("BetaForever", function(shown)
+		check(shown == map, "a reader is handed the map frame")
+		return { { x = 0.2, y = 0.3, kind = "dock" }, { x = "bad", y = 0.1 }, "junk" }
+	end)
+	kit.RegisterMapMarkers("AlphaForever", function()
+		return { { x = 0.5, y = 0.6, kind = "stop" } }
+	end)
+	kit.RegisterMapMarkers("BrokenForever", function()
+		error("reader failed")
+	end)
+	kit.RegisterMapMarkers("EmptyForever", function()
+		return nil
+	end)
+	local all = kit.MapMarkers(map)
+	equal(#all, 2, "only entries with a numeric place are listed, and a failing or empty reader adds none")
+	equal(all[1].addon, "AlphaForever", "markers come in addon order")
+	equal(all[1].kind, "stop", "with their kind")
+	equal(all[2].addon, "BetaForever", "and the addon that drew them")
+	equal(all[2].x, 0.2, "and their place")
+	local others = kit.MapMarkers(map, "AlphaForever")
+	equal(#others, 1, "a reader can leave out its own")
+	equal(others[1].addon, "BetaForever", "and hears the others")
+	kit.RegisterMapMarkers("AlphaForever", function()
+		return {}
+	end)
+	equal(#kit.MapMarkers(map), 1, "registering a name again replaces its reader")
+	kit.RegisterMapMarkers("LoopForever", function()
+		return kit.MapMarkers(map, "LoopForever")
+	end)
+	equal(#kit.MapMarkers(map), 1, "a reader that asks for the others while read gets none, and the read ends")
+	check(not pcall(kit.RegisterMapMarkers, "", function() end), "an empty name is refused")
+	check(not pcall(kit.RegisterMapMarkers, "X", "no"), "a reader that is not a function is refused")
 end
 
 -- Publish refuses a programming error ---------------------------------------------------------------------------

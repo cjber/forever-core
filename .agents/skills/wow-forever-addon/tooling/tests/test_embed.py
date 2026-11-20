@@ -87,6 +87,45 @@ class EmbedTest(unittest.TestCase):
         harness = Path(__file__).with_name("run_replay_harness.lua")
         subprocess.run(["luajit", str(harness), str(run)], check=True)
 
+    @unittest.skipUnless(shutil.which("luajit"), "luajit not on PATH")
+    def test_a_wrapped_file_the_client_did_not_load_stops_the_addon_at_its_require_gate(self):
+        self.run_embed()
+        run = self.root / embed.HOST_RUN
+        require = CORE / "tools" / "consumer" / "ForeverRequire.lua"
+        script = (
+            "ForeverCoreLoader = { OnReady = function(callback) callback() end } "
+            "local function load(chunks) "
+            "  local ns = { ForeverCoreHostChunks = chunks } "
+            f"  assert(loadfile({str(require)!r}))('DemoForever', ns) "
+            f"  assert(loadfile({str(run)!r}))('DemoForever', ns) "
+            "  return ns "
+            "end "
+            "local function gate(_, ns) ns.started = ns.ForeverRequire(true) end "
+            "local whole = load({ gate, function() end }) "
+            "assert(whole.started == true and not whole.broken, 'both wrapped files loaded: the addon starts') "
+            "local short = load({ gate }) "
+            "assert(short.broken == true and short.started ~= true, 'one missing: the require gate stops the addon') "
+        )
+        subprocess.run(["luajit", "-e", script], check=True)
+
+    def test_a_file_waiting_for_its_own_addon_through_the_client_is_refused(self):
+        waits = (
+            "EventUtil.ContinueOnAddOnLoaded(addon, function() end)",
+            'EventUtil.ContinueOnAddOnLoaded("DemoForever", function() end)',
+        )
+        for wait in waits:
+            (self.root / "Main.lua").write_text(f"\tlocal addon, ns = ...\nns.main = addon\n{wait}\n")
+            with self.assertRaisesRegex(embed.EmbedError, r"Main\.lua:3: .*ns\.OnFilesLoaded"):
+                self.run_embed()
+            self.assertFalse((self.root / "Main.lua").read_bytes().startswith(embed.HEADER), "nothing was rewritten")
+        (self.root / "Main.lua").write_text(
+            'local addon, ns = ...\nEventUtil.ContinueOnAddOnLoaded("OtherAddon", function() end)\n'
+            "-- not EventUtil.ContinueOnAddOnLoaded(addon, callback): it calls back before the later files\n"
+            'ns.note = "ContinueOnAddOnLoaded(addon, callback)"\n'
+            "ns.OnFilesLoaded(function() end)\n"
+        )
+        self.assertEqual(self.run_embed()["wrapped"], 2, "another addon's load, a mention and the shared wait embed")
+
     @unittest.skipUnless(shutil.which("git"), "git not on PATH")
     def test_in_a_git_checkout_the_new_files_are_tracked_for_the_packager(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)

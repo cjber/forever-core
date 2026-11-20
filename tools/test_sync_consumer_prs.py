@@ -29,9 +29,9 @@ def listed(*names, archived=()):
 class RateLimitTest(unittest.TestCase):
     @staticmethod
     def response(status, headers="", body="{}", error=""):
-        return subprocess.CompletedProcess(
-            [], int(status >= 400), f"HTTP/2.0 {status} Test\r\n{headers}\r\n{body}", error
-        )
+        # gh exits 1 on an HTTP error status and on a GraphQL response carrying errors.
+        code = int(status >= 400 or '"errors"' in body)
+        return subprocess.CompletedProcess([], code, f"HTTP/2.0 {status} Test\r\n{headers}\r\n{body}", error)
 
     def test_reset_and_retry_after_are_honoured_and_json_has_no_headers(self):
         for status, headers, delay in (
@@ -50,6 +50,91 @@ class RateLimitTest(unittest.TestCase):
                 self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), delay)
                 self.assertEqual(run.call_count, 2)
                 self.assertIn("--include", run.call_args.args[0])
+
+    def test_graphql_rate_limited_error_backs_off_and_retries(self):
+        # GraphQL reports a rate limit as status 200 (or 403) with a RATE_LIMITED error in the body, often with no
+        # retry-after; GitHub's guidance is then to wait at least a minute and back off (cjber/forever-core#949).
+        limited = '{"errors": [{"type": "RATE_LIMITED", "message": "API rate limit already exceeded"}]}'
+        done = '{"data": {"createCommitOnBranch": {"commit": {"oid": "abc"}}}}'
+        for status in (200, 403):
+            with (
+                self.subTest(status=status),
+                mock.patch.object(
+                    sync,
+                    "run",
+                    side_effect=[
+                        self.response(status, "X-Ratelimit-Remaining: 4500\r\n", limited),
+                        self.response(200, body=limited),
+                        self.response(200, body=done),
+                    ],
+                ) as run,
+                mock.patch.object(time, "sleep") as sleep,
+            ):
+                result = sync.api("graphql", "--input", "body.json")
+                self.assertEqual(sync.created_oid(result), "abc")
+                # One minute, then two, slept in one-minute steps.
+                self.assertEqual([call.args[0] for call in sleep.call_args_list], [60, 60, 60])
+                self.assertEqual(run.call_count, 3)
+
+    def test_an_empty_graphql_bucket_waits_for_its_reset(self):
+        # The response Sync consumers run 44728473633 got for every commit (cjber/forever-core#949).
+        limited = (
+            '{"errors":[{"type":"RATE_LIMIT","code":"graphql_rate_limit",'
+            '"message":"API rate limit already exceeded for user ID 44099524."}]}'
+        )
+        headers = "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 1300\r\nX-Ratelimit-Resource: graphql\r\n"
+        done = '{"data": {"createCommitOnBranch": {"commit": {"oid": "abc"}}}}'
+        with (
+            mock.patch.object(
+                sync, "run", side_effect=[self.response(200, headers, limited), self.response(200, body=done)]
+            ) as run,
+            mock.patch.object(time, "time", return_value=1000),
+            mock.patch.object(time, "sleep") as sleep,
+        ):
+            self.assertEqual(sync.created_oid(sync.api("graphql", "--input", "body.json")), "abc")
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 301)
+        self.assertEqual(run.call_count, 2)
+
+    def test_other_graphql_errors_and_odd_bodies_do_not_retry(self):
+        forbidden = '{"errors": [{"type": "FORBIDDEN"}]}'
+        for status, headers, body in (
+            (200, "", forbidden),
+            (403, "Retry-After: 5\r\n", forbidden),
+            (200, "", '{"errors": 1}'),
+            (200, "", '["errors"]'),
+            (502, "", "not json"),
+        ):
+            with (
+                self.subTest(status=status, body=body),
+                mock.patch.object(sync, "run", return_value=self.response(status, headers, body, "error")) as run,
+                mock.patch.object(time, "sleep") as sleep,
+                self.assertRaises(sync.SyncError),
+            ):
+                sync.api("graphql", "--input", "body.json")
+            run.assert_called_once()
+            sleep.assert_not_called()
+
+    def test_a_final_api_failure_reports_status_limits_and_body(self):
+        body = '{"errors": [{"message": "limited"}]}'
+        with (
+            mock.patch.object(
+                sync, "run", return_value=self.response(200, "X-Ratelimit-Remaining: 4500\r\n", body, "gh: limited")
+            ),
+            self.assertRaises(sync.SyncError) as raised,
+        ):
+            sync.api("graphql", "--input", "body.json")
+        self.assertIn(f"gh: limited [HTTP 200; x-ratelimit-remaining=4500; body {body}]", str(raised.exception))
+
+    def test_rest_bodies_are_not_read_as_graphql(self):
+        limited = '{"errors": [{"type": "RATE_LIMITED"}]}'
+        with (
+            mock.patch.object(sync, "run", return_value=self.response(200, body=limited)) as run,
+            mock.patch.object(time, "sleep") as sleep,
+            self.assertRaises(sync.SyncError),
+        ):
+            sync.gh("api", "repos/cjber/test")
+        run.assert_called_once()
+        sleep.assert_not_called()
 
     def test_permission_denied_and_excessive_reset_do_not_retry(self):
         for headers in ("", "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 99999\r\n"):

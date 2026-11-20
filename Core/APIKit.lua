@@ -7,7 +7,7 @@ local _, ns = ...
 
 local APIKit = {}
 -- Raised with each addition to the kit, so a caller can check a member before using it.
-APIKit.minor = 2
+APIKit.minor = 3
 
 -- A hub for `addonName`. `channels` maps a change name to a function returning a comparable key, and the optional
 -- `ready` returns false while the addon is still working, so no key is read until it settles.
@@ -126,7 +126,8 @@ end
 
 -- Every read that has nothing to answer returns `nil, reason`, so a caller can tell "ask again later" from "there is
 -- nothing to ask about". The reasons are "loading" (the data is not built yet), "disabled" (the player turned the
--- feature off) and "none" (nothing to answer, for example no journey is chosen).
+-- feature off), "none" (nothing to answer, for example no journey is chosen), "combat" (the game refuses it in combat,
+-- so ask again after) and "unreachable" (no way there with what the character knows).
 ---@param reason ForeverCoreAPIReason
 ---@return nil, ForeverCoreAPIReason
 function APIKit.NotReady(reason)
@@ -187,6 +188,63 @@ function APIKit.Addons()
 		entries[index] = { name = name, version = api.version, minor = api.minor or 0, api = api }
 	end
 	return entries
+end
+
+-- Every addon's world map markers reader by addon name (docs/api-conventions.md, World map markers).
+---@type table<string, fun(map: table): table>
+local markerReaders = {}
+
+-- An addon registers the function that lists its own shown markers on a map, once at load. Registering the same name
+-- again replaces it. `read(map)` takes the map frame and returns `{ x, y, kind }` entries, x and y being fractions of
+-- `map:GetMapID()`.
+---@param addonName string
+---@param read fun(map: table): table
+function APIKit.RegisterMapMarkers(addonName, read)
+	if type(addonName) ~= "string" or addonName == "" then
+		error("ForeverCore.APIKit.RegisterMapMarkers: addonName must be a non-empty string", 2)
+	end
+	if type(read) ~= "function" then
+		error("ForeverCore.APIKit.RegisterMapMarkers: read must be a function", 2)
+	end
+	markerReaders[addonName] = read
+end
+
+-- The shown markers of every registered addon on `map`, a fresh list of fresh `{ addon, x, y, kind }` entries, without
+-- the addon named `except` (a reader leaves out its own). A reader that errors, or an entry with no numeric place, is
+-- left out rather than failing the caller.
+-- A reader that asks for the others' markers while it is being read gets none, so two readers cannot call each other
+-- without end.
+local reading = false
+
+---@param map table
+---@param except? string
+---@return ForeverCoreMapMarker[]
+function APIKit.MapMarkers(map, except)
+	if reading then
+		return {}
+	end
+	reading = true
+	local names = {}
+	for name in pairs(markerReaders) do
+		if name ~= except then
+			names[#names + 1] = name
+		end
+	end
+	table.sort(names)
+	---@type ForeverCoreMapMarker[]
+	local all = {}
+	for _, name in ipairs(names) do
+		local ok, list = pcall(markerReaders[name], map)
+		if ok and type(list) == "table" then
+			for _, marker in ipairs(list) do
+				if type(marker) == "table" and type(marker.x) == "number" and type(marker.y) == "number" then
+					all[#all + 1] = { addon = name, x = marker.x, y = marker.y, kind = marker.kind }
+				end
+			end
+		end
+	end
+	reading = false
+	return all
 end
 
 ns.APIKit = APIKit
