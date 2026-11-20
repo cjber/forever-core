@@ -95,6 +95,17 @@ class RateLimitTest(unittest.TestCase):
             run.assert_called_once()
             sleep.assert_not_called()
 
+    def test_a_final_api_failure_reports_status_limits_and_body(self):
+        body = '{"errors": [{"message": "limited"}]}'
+        with (
+            mock.patch.object(
+                sync, "run", return_value=self.response(200, "X-Ratelimit-Remaining: 4500\r\n", body, "gh: limited")
+            ),
+            self.assertRaises(sync.SyncError) as raised,
+        ):
+            sync.api("graphql", "--input", "body.json")
+        self.assertIn(f"gh: limited [HTTP 200; x-ratelimit-remaining=4500; body {body}]", str(raised.exception))
+
     def test_rest_bodies_are_not_read_as_graphql(self):
         limited = '{"errors": [{"type": "RATE_LIMITED"}]}'
         with (

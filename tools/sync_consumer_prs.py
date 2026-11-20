@@ -218,6 +218,12 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
             delay -= pause
     if check and result.returncode:
         detail = (result.stderr or result.stdout).strip()
+        if args and args[0] == "api":
+            # The response itself, so a refusal names its kind (status, limit headers, error type) in the run log.
+            limits = " ".join(
+                f"{key}={value}" for key, value in sorted(headers.items()) if "ratelimit" in key or key == "retry-after"
+            )
+            detail += f" [HTTP {status}; {limits or 'no limit headers'}; body {result.stdout.strip()[:500] or 'empty'}]"
         raise SyncError(f"{' '.join(command)} failed: {detail}")
     return result
 
