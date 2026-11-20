@@ -45,7 +45,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   scans the TOC's files for one. There is no Forever quest list: quests show in the game's tracker or a quest
   addon's.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on
-  this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
+  this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does. It copies
+  the Mainline MenuStyle1 metrics and art from the Blizzard source, so it looks like the game's own menus.
 - `UI/TrackerLock.lua`: the header drag and the Lock switch that stops it, which load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,
@@ -177,10 +178,11 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   `setup-*` actions. Consumers call it by SHA, replacing their apt, curl and pipx lines.
 - `tools/check_consumers.py`, `tools/sync_consumers.py`: the tooling gate and its fix, both reading the map above.
   Beyond the file copies, the gate checks each consumer once: its `tools/forever-core.txt` must name core's latest
-  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag), and a consumer whose root TOC names
-  ForeverCore in `## OptionalDeps` must ship it in its own zip (`externals:` at the pin and
-  `move-folders:` `<package-as>/ForeverCore: ForeverCore`), must not also list `- forevercore` under
-  `required-dependencies:`, and must carry `## X-Forever-Core: <pin>` in that TOC, the tag a sibling addon compares.
+  release tag (the GitHub API, or with `--local` this checkout's newest `v*` tag). A consumer that embeds core
+  (`## X-Forever-Core-Embed: 1`) lists `forevercore` under `embedded-libraries:`, ships no top-level ForeverCore
+  external or `move-folders:` rule, does not list it under `required-dependencies:`, and carries
+  `## X-Forever-Core: <pin>`, the tag a sibling addon compares. A consumer that has not opted in yet keeps the bridge
+  bundle: `externals:` at the pin and `move-folders:` `<package-as>/ForeverCore: ForeverCore`.
   A `## Dependencies` line naming ForeverCore fails, because the client would skip the addon and it could never say
   core is missing.
   The pin, the external and the TOC field are compared by `forever_tools/core_pin.py`, whose `--latest` form also
@@ -221,7 +223,7 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   commit. A commit the smoke has not reached yet is reported as waiting and retried by the next run, never as failed; a
   consumer whose release already failed at main's head is reported as failed, so the job goes red instead of retrying
   every 20 minutes, and the maintainer fixes it and dispatches by hand.
-  Every core release therefore re-releases every consumer, whose zips all carry the same `ForeverCore` folder. It is
+  Every core release therefore re-releases every consumer, because each zip carries its own copy of the pinned core. It is
   dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
   prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
 - `tools/headless/forever_client.py`: the one way the `wow in-game` agent touches the client; every other agent sends

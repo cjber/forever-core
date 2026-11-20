@@ -48,6 +48,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"文字已選取。按 Ctrl+C（Mac 上為 Cmd+C）複製，然後貼到你的錯誤回報中。"
 L["Title"] = "標題"
 L["Tracker background"] = "追蹤器背景"
+L["Tracker position"] = "追蹤器位置"
+L["Under the quest tracker"] = "任務追蹤器下方"
+L["Left of the quest tracker"] = "任務追蹤器左側"
 L["Tracker"] = "追蹤器"
 L["Click to %s"] = "點擊 %s"
 L["Right-click for options"] = "右鍵查看選項"
@@ -55,7 +58,6 @@ L["Unavailable in combat"] = "戰鬥中無法使用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
 L["What happened, or what you would like"] = "請描述遇到的問題或希望新增的功能"
-L["MENU_BACK"] = "返回"
 
 L["1 ms"] = "1 毫秒"
 L["5 ms"] = "5 毫秒"

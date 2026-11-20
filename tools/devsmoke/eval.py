@@ -262,6 +262,11 @@ def write_snippet(source: Path, addons: Path | None = None, capture: bool = True
     return _write(body, source.name, source, addons, capture)
 
 
+def write_source(source: str, origin: str, addons: Path | None = None) -> dict[str, object]:
+    """Write Lua source the caller generated, not a file, as an eval chunk (no proof screenshot)."""
+    return _write(source, origin, Path(origin), addons, False)
+
+
 def write_slash(command: str, addons: Path | None = None, capture: bool = True) -> dict[str, object]:
     """Write a slash proof flow as a chunk that runs it through the client's chat parser (#573)."""
     return _write(slash_source(command), f"slash flow {command}", Path(command), addons, capture)

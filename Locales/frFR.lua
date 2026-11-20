@@ -49,6 +49,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"Le texte est sélectionné. Appuyez sur Ctrl+C (Cmd+C sur Mac) pour le copier, puis collez-le dans votre rapport de bug."
 L["Title"] = "Titre"
 L["Tracker background"] = "Fond du suivi"
+L["Tracker position"] = "Position du suivi"
+L["Under the quest tracker"] = "Sous le suivi des quêtes"
+L["Left of the quest tracker"] = "À gauche du suivi des quêtes"
 L["Tracker"] = "Suivi"
 L["Click to %s"] = "Cliquez pour %s"
 L["Right-click for options"] = "Cliquez droit pour les options"
@@ -56,7 +59,6 @@ L["Unavailable in combat"] = "Indisponible en combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Utilisation : /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "Ce qui s’est passé, ou ce que vous souhaitez"
-L["MENU_BACK"] = "Retour"
 
 L["1 ms"] = "1 ms"
 L["5 ms"] = "5 ms"

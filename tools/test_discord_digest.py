@@ -69,6 +69,46 @@ class ChangelogTest(unittest.TestCase):
         self.assertEqual(entries["1.1.6"].image, "docs/screenshots/new.png")
         self.assertEqual(entries["1.1.5"].headlines, ("An older headline.",))
 
+    def test_player_bullets_under_changelog_sections(self):
+        text = """# Changelog
+
+## [1.14.0] - 2026-11-18
+
+<!-- discord-image: docs/screenshots/route.png -->
+
+### Changed
+
+- **A changed headline.**
+
+### Fixed
+
+- **A fixed headline.**
+
+### For addon authors
+
+- **An API note, not a player line.**
+
+### Tooling
+
+- **A tooling note, not a player line.**
+"""
+        entries = digest.parse_changelog(text)
+        self.assertEqual(entries["1.14.0"].headlines, ("A changed headline.", "A fixed headline."))
+        self.assertEqual(entries["1.14.0"].image, "docs/screenshots/route.png")
+
+    def test_player_bullets_with_any_list_marker(self):
+        text = """# Changelog
+
+## [1.14.0] - 2026-11-18
+
+### Fixed
+
+* **A star headline.**
++ **A plus headline.**
+"""
+        entries = digest.parse_changelog(text)
+        self.assertEqual(entries["1.14.0"].headlines, ("A star headline.", "A plus headline."))
+
 
 class ClassificationTest(unittest.TestCase):
     def test_major_and_minor_rises_are_features(self):
@@ -255,6 +295,13 @@ class FeatureTest(unittest.TestCase):
         self.assertIn("• The first feature.", embed["description"])
         self.assertIn("• The second feature.", embed["description"])
         self.assertIn("[Full notes](", embed["description"])
+
+    def test_feature_release_without_headlines_posts_nothing(self):
+        data = dataset(
+            [release("1.0.0", NOW - timedelta(days=2)), release("1.1.0", NOW - timedelta(minutes=30))],
+            {"1.1.0": digest.ChangelogEntry((), "docs/screenshots/feature.png")},
+        )
+        self.assertEqual(digest.build_features([data], NOW - timedelta(hours=1), NOW), [])
 
     def test_only_feature_releases_inside_the_hour_are_posted(self):
         data = dataset(

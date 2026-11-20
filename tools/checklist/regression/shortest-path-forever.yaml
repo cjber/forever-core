@@ -1,0 +1,44 @@
+name: Shortest Path
+checks:
+  - id: loads
+    title: Loads clean and /path opens its settings
+    steps:
+      - Type /reload.
+      - Type /path.
+    pass: No Lua error, and the Shortest Path settings open.
+    minutes: 1
+  - id: city-journey
+    title: A journey inside a city
+    setup: Stand in Stormwind.
+    steps:
+      - Open the world map and Shift-click the Stormwind auction house.
+      - Follow the arrow there.
+    pass: The route settles fast, the arrow follows you along the streets and through the canal area, and the tracker steps update as you go.
+    minutes: 3
+  - id: cave-journey
+    title: A journey into a cave
+    steps:
+      - Shift-click a spot inside a nearby cave on the world map (Jasperlode Mine in Elwynn Forest works).
+      - Follow the arrow to the entrance and inside.
+    pass: The arrow leads to the cave mouth, then on inside, never to a spot on the ground above.
+    minutes: 4
+  - id: boat-journey
+    title: A journey that needs a boat
+    steps:
+      - Shift-click a point across the sea, such as Auberdine from Menethil Harbor.
+    pass: The route takes the boat, the tracker's dock line names each stop and counts down to the next sailing.
+    minutes: 2
+  - id: flight-journey
+    title: A journey that needs a flight
+    steps:
+      - Shift-click a town in a far zone you have the flight point for.
+      - Take the flight it suggests.
+    pass: The route names the flight master and the landing, and the next step appears when you land.
+    minutes: 4
+  - id: spfnear
+    title: Nearby services finds a vendor
+    steps:
+      - Type /spfnear in a city.
+      - Search for a vendor type and click its row.
+    pass: The list shows the nearest ones with travel times, and clicking one plans a journey there.
+    minutes: 2

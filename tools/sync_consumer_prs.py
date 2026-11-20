@@ -13,8 +13,12 @@ copy of this checkout's own `sync.py` so the updater that runs is the one being 
 `tools/check_family.py`, and, if anything changed, commits the result through the GraphQL `createCommitOnBranch`
 mutation and opens or refreshes the PR with squash auto-merge enabled.
 
-An open sync PR is updated in place: the sync runs on that PR's own head and the refreshed files are added on top of it,
-so any commit pushed to the PR since the last sync stays on the branch. A PR the sync cannot update in place is left
+An open sync PR that holds a commit the sync did not make (a fix, a merge, a recorded proof) is held: the person who
+pushed it owns the PR, so the run neither commits to it nor comments, and the newer core lands with the next sync after
+it merges. A PR of sync commits only whose branch contains `main` is updated in place on its own head. Once `main` has
+moved past such a branch, it is rebuilt from `main` like a new one: the changelog and pin decisions are made against
+`main`'s own CHANGELOG and tags rather than the stale branch's, which would otherwise read the branch's marked entry as
+released by `main`'s tag of the same number and stack another entry on top. A PR the sync cannot update in place is left
 exactly as it is, with a comment that says why, and the branch is never forced anywhere else. A consumer with no open PR
 has its sync commit built on a scratch branch from `main` and moves `forever-core-sync` to it in one ref update; the
 scratch branch keeps `forever-core-sync` away from a commit that equals `main`, which would make the PR empty and have
@@ -32,28 +36,30 @@ needs, because this script never drives the client. When the tree the PR now car
 digest, the run prints the `INGAME ... kind: proof` request for that PR's head, and the release session sends it to
 the in-game agent and commits the `.visual-proof.json` it writes.
 
-The sync also adds the standalone `forevercore` required store dependency to bundled consumers, retaining their
-pinned external and move rule. See docs/dependency-transition.md for the gates before any bundle removal.
+A consumer that still ships the bridge `.pkgmeta` ForeverCore external also gets the standalone `forevercore`
+required store dependency, retaining its pinned external and move rule. A consumer whose root TOC sets
+`## X-Forever-Core-Embed: 1` carries core under `Libs/ForeverCore/` and lists it under `embedded-libraries:`, so it
+never gets the required relation (docs/dependency-transition.md).
 
-The pin is the whole bundle, because every consumer's release zip carries ForeverCore in one folder and the addons share
-it: every run points the `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:` line
-(adding it after `## OptionalDeps:` when absent), so a consumer that pins v1.5.0 while its zip still downloads v1.4.1 is
-repaired even when the pin does not move. Every run also moves a TOC that still names ForeverCore in
+The pin is the whole bundle, because every consumer's release zip carries its own ForeverCore copy from that pin: every
+run points a bridge consumer's `.pkgmeta` ForeverCore external at the pin and sets the root TOC's `## X-Forever-Core:`
+line (adding it after `## OptionalDeps:` when absent), so a consumer that pins v1.5.0 while its zip still downloads
+v1.4.1 is repaired even when the pin does not move. Every run also moves a TOC that still names ForeverCore in
 `## Dependencies` to `## OptionalDeps`, keeping every other name on the line, so the addon loads when core is missing
-and can say what is. The changelog decision is that same fact rather than whether this run moved
-the pin: the run reads the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta`
-ForeverCore external, or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from
-the pin, so a re-run repairs a consumer whose `main` already pins the new core while its last release still ships an
-older one. A consumer whose `.pkgmeta` ships no ForeverCore external (kiln-forever has none) bundles no core, so its pin
-and TOC field move with no changelog change. A consumer whose `## [Unreleased]` section holds notes gets no release
-entry: the plain shared-code bullet joins those notes, so the core ships in that addon's own next release. Pending
-`changes/*.md` fragments instead get a `changes/forever-core-sync.md` fragment. With no pending fragments or
-Unreleased notes, the consumer gets a marked release entry above the newest release, that patch raised by one
-and carrying the `<!-- forever-core-sync -->` marker, and
-`tools/release_consumers.py` releases every consumer whose newest entry carries it. A consumer whose newest entry
-already carries the marker gets no second entry only while its own `vX.Y.Z` tag is missing from the consumer's remote;
-once that entry is released, a newer core gets a new entry above it, the patch raised by one. A consumer with no
-`CHANGELOG.md` or no release entry gets a notice and no entry.
+and can say what is. The changelog decision is that same fact rather than whether this run moved the pin: the run reads
+the consumer's newest released tag on `origin` and the core that release bundles (its `.pkgmeta` ForeverCore external,
+or its root TOC's `## X-Forever-Core:` field) and adds a release entry when that core differs from the pin, so a re-run
+repairs a consumer whose `main` already pins the new core while its last release still ships an older one. A consumer
+that neither ships the external nor embeds core (kiln-forever) bundles no core, so its pin and TOC field move with no
+changelog change; an embedded consumer bundles the pin's core and gets the entry. A consumer whose `## [Unreleased]`
+section holds notes gets no release entry: the plain shared-code bullet joins those notes, so the core ships in that
+addon's own next release. Pending `changes/*.md` fragments instead get a `changes/forever-core-sync.md` fragment. With
+no pending fragments or Unreleased notes, the consumer gets a marked release entry above the newest release, that patch
+raised by one and carrying the `<!-- forever-core-sync -->` marker, and `tools/release_consumers.py` releases every
+consumer whose newest entry carries it. A consumer whose newest entry already carries the marker gets no second entry
+only while its own `vX.Y.Z` tag is missing from the consumer's remote; once that entry is released, a newer core gets a
+new entry above it, the patch raised by one. A consumer with no `CHANGELOG.md` or no release entry gets a notice and no
+entry.
 
     python3 tools/sync_consumer_prs.py
 
@@ -86,9 +92,9 @@ from check_consumers import (
     block_entries,
     core_external,
     pkgmeta_blocks,
-    pkgmeta_field,
 )
 from check_core_shared import VENDORED, consumer_path
+from forever_tools import core_pin
 from forever_tools.visual_proof import input_digest, requires_proof
 
 OWNER = "cjber"
@@ -308,15 +314,22 @@ def released_core_tag(root: Path, tag: str) -> str | None:
     """
     repo = root.name
     fetch_tag(root, tag)
-    pkgmeta = file_at_tag(root, tag, consumer_path(repo, PKGMETA))
-    if pkgmeta is None:
-        return None
-    external = CORE_EXTERNAL.search(pkgmeta)
+    pkgmeta = next(
+        (text for name in POLICY_FILES if (text := file_at_tag(root, tag, consumer_path(repo, name))) is not None),
+        None,
+    )
+    external = CORE_EXTERNAL.search(pkgmeta or "")
     core = EXTERNAL_TAG.search(external.group(0)) if external else None
     if core:
         return core["tag"]
-    package = pkgmeta_field(pkgmeta, "package-as")
-    toc = file_at_tag(root, tag, consumer_path(repo, f"{package}.toc")) if package else None
+    folder = consumer_path(repo, "").rstrip("/")
+    listed = git(root, "ls-tree", "--name-only", tag, f"{folder}/" if folder else ".", check=False)
+    names = [Path(line).name for line in listed.stdout.splitlines()] if listed.returncode == 0 else []
+    try:
+        toc_name = core_pin.toc_name_for(core_pin.policy_package(pkgmeta or ""), names)
+    except ValueError as error:
+        raise SyncError(f"{repo}: {tag}: {error}") from None
+    toc = file_at_tag(root, tag, consumer_path(repo, toc_name)) if toc_name else None
     return toc_core_tag(toc) if toc is not None else None
 
 
@@ -354,9 +367,15 @@ def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str |
     return bumped
 
 
+# The packager reads `.pkgmeta`, else `pkgmeta.yaml`.
+POLICY_FILES = (PKGMETA, "pkgmeta.yaml")
+
+
 def pkgmeta_path(root: Path) -> Path:
-    """Where the consumer keeps its `.pkgmeta`, below its addon folder when that is not the repo root."""
-    return root / consumer_path(root.name, PKGMETA)
+    """The consumer's packager policy (`.pkgmeta`, else `pkgmeta.yaml`), below its addon folder when that is not the
+    repo root. A consumer with neither gets the `.pkgmeta` path, which does not exist."""
+    folder = root / consumer_path(root.name, ".")
+    return core_pin.policy_path(folder) or root / consumer_path(root.name, PKGMETA)
 
 
 def rewrite_core_external(root: Path, pin: str) -> bool:
@@ -379,8 +398,12 @@ def rewrite_core_external(root: Path, pin: str) -> bool:
 
 
 def ensure_core_dependency(root: Path) -> bool:
-    """Declare the standalone store dependency while retaining the existing pinned ZIP fallback."""
-    if not ships_core(root):
+    """Declare the standalone store dependency while retaining the existing pinned ZIP fallback.
+
+    Only a bridge consumer gets it. A consumer that embeds core never does, even while its `.pkgmeta` still carries
+    the bridge external: the end state lists core under `embedded-libraries:`, and check_consumers fails the external.
+    """
+    if not ships_core(root) or embeds_core(root):
         return False
     path = pkgmeta_path(root)
     text = path.read_text(encoding="utf-8")
@@ -400,12 +423,19 @@ def ensure_core_dependency(root: Path) -> bool:
 
 
 def root_toc_path(root: Path) -> Path | None:
-    """The consumer's root TOC, named after `package-as` as the packager names it, or None when that is unknown."""
+    """The consumer's root TOC as the packager names it (`core_pin.toc_name_for`), or None when it has none.
+
+    `package-as` names it; without one the shortest root TOC is the packager's choice. A policy that sets `package-as`
+    twice, or a flavor-only root, is a SyncError rather than a guess.
+    """
     path = pkgmeta_path(root)
-    if not path.is_file():
-        return None
-    package = pkgmeta_field(path.read_text(encoding="utf-8"), "package-as")
-    return root / consumer_path(root.name, f"{package}.toc") if package else None
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    folder = root / consumer_path(root.name, ".")
+    try:
+        name = core_pin.toc_name_for(core_pin.policy_package(text), [toc.name for toc in folder.glob("*.toc")])
+    except ValueError as error:
+        raise SyncError(f"{root.name}: {path.name}: {error}") from None
+    return root / consumer_path(root.name, name) if name else None
 
 
 def dependency_names(value: str) -> list[str]:
@@ -637,6 +667,12 @@ def ships_core(root: Path) -> bool:
     return path.is_file() and CORE_EXTERNAL.search(path.read_text(encoding="utf-8")) is not None
 
 
+def embeds_core(root: Path) -> bool:
+    """Whether the consumer's root TOC opts in to carrying core under Libs/ForeverCore, so its release zip does."""
+    path = root_toc_path(root)
+    return path is not None and path.is_file() and core_pin.embeds(path.read_text(encoding="utf-8-sig"))
+
+
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
     """Point the bundle at `pin`, touching the changelog when the consumer's latest release ships another core.
 
@@ -647,7 +683,9 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     core while the latest release still ships the old one, and a re-run has to repair that. A consumer that has never
     released has no tag to compare, so a bundle tag this run changed is what needs carrying.
     """
-    bundles = ships_core(root)
+    # Either way the release zip carries core: as the bridge external or as the embedded copy the embed step makes from
+    # the pin. Only the bridge external gets the required relation; an embedded consumer lists it as embedded.
+    bundles = ships_core(root) or embeds_core(root)
     dependency_changed = ensure_core_dependency(root)
     rewrite_toc_dependencies(root)
     before = bundle_tag(root) or previous_pin
@@ -902,15 +940,21 @@ def proof_hint(repo: str, ref: str) -> str:
     )
 
 
-def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None) -> str:
+def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None = None, embedded: bool = False) -> str:
     lines = ["Syncs this addon's copy of ForeverCore's development tooling.", ""]
     if pin_bump:
         lines += [
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
             " latest release.",
             "",
-            "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and adds a"
-            " marked CHANGELOG.md release entry for the release-consumers workflow to publish.",
+            (
+                "The same commit points `## X-Forever-Core:` at that tag, which the embed step copies into"
+                " `Libs/ForeverCore/`, and adds a marked CHANGELOG.md release entry for the release-consumers workflow"
+                " to publish."
+                if embedded
+                else "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and"
+                " adds a marked CHANGELOG.md release entry for the release-consumers workflow to publish."
+            ),
             "",
         ]
     if RELEASE_WORKFLOW in files:
@@ -948,6 +992,26 @@ def fetch_branch(root: Path, branch: str) -> str | None:
             return None
         raise SyncError(f"{root.name}: could not fetch {branch}: {detail}")
     return git(root, "rev-parse", "FETCH_HEAD").stdout.strip()
+
+
+def sync_branch_state(repo: str, main: str, head: str) -> tuple[bool, list[str]]:
+    """Whether the sync branch at `head` is behind `main`, and the commits on it the sync did not make.
+
+    The clone is one commit deep, so the comparison is GitHub's compare API on the two exact commits.
+    """
+    if head == main:
+        return False, []
+    compared = api_json(f"repos/{OWNER}/{repo}/compare/{main}...{head}")
+    commits = compared.get("commits") or []
+    foreign = [
+        f"{entry['sha'][:7]} {entry['commit']['message'].splitlines()[0]}"
+        for entry in commits
+        if entry["commit"]["message"].splitlines()[0] != TITLE
+    ]
+    # The compare API lists at most 250 commits; any it leaves out cannot be shown to be the sync's own.
+    if len(commits) < int(compared["ahead_by"]):
+        foreign.append(f"{int(compared['ahead_by']) - len(commits)} commits the compare did not list")
+    return int(compared["behind_by"]) > 0, foreign
 
 
 def comment(repo: str, number: int, body: str) -> None:
@@ -1043,12 +1107,13 @@ def sync_consumer(
 ) -> Result:
     """Sync one consumer; `latest` is core's newest release tag, whose pin bump rides in the same commit.
 
-    An open sync PR is updated in place: the sync runs on that PR's own head and its commit is added on top, so a
-    commit pushed to the PR since the last sync is never dropped. The commit is made straight on `forever-core-sync`
-    with that head as its expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left
-    untouched and a comment on the PR says why. A consumer with no open PR has its branch rebuilt from `main` on a
-    scratch branch, which is safe because there is no PR whose commits could be lost. A PR that merges or closes while
-    the sync runs takes its branch with it; then the sync starts over once from the new `main`, as if no PR were open.
+    An open sync PR holding a commit the sync did not make is held and not touched. One of sync commits only whose
+    branch contains `main` is updated in place: the commit is made straight on `forever-core-sync` with its head as
+    the expected one, which GitHub refuses if the branch moved meanwhile: then the branch is left untouched and a
+    comment on the PR says why. Once `main` has moved past a sync-only branch, it is rebuilt from `main`.
+    A consumer with no open PR has its branch rebuilt from `main` on a scratch branch, which is safe because there is
+    no PR whose commits could be lost. A PR that merges or closes while the sync runs takes its branch with it; then
+    the sync starts over once from the new `main`, as if no PR were open.
     """
     try:
         root = clone(repo, workspace)
@@ -1056,23 +1121,34 @@ def sync_consumer(
         listed = open_sync_prs(repo)
         pull = listed[0] if listed else None
         base = main
+        in_place = False
         if pull is not None:
-            base = fetch_branch(root, BRANCH)
-            if base is None:
+            head = fetch_branch(root, BRANCH)
+            if head is None:
                 # The PR's branch is gone: it merged or closed after the listing, so it has no commits left to keep.
-                pull, base = None, main
+                pull = None
+            else:
+                behind, foreign = sync_branch_state(repo, main, head)
+                if foreign:
+                    # Someone pushed to the PR (a fix, a merge, a recorded proof) and owns it now: a sync commit would
+                    # move the head they are testing or proving. The core lands with the next sync after it merges.
+                    detail = "the PR holds commits the sync did not make: " + "; ".join(foreign)
+                    return Result(repo, "held", url=pull.get("html_url"), detail=detail)
+                if not behind:
+                    base, in_place = head, True
+                # Otherwise the branch holds only sync commits made against an older main: rebuild it from main.
         git(root, "checkout", "-B", BRANCH, base)
         bumped = sync_checkout(root, core_root, latest)
         additions, deletions = staged_changes(root)
         if not additions and not deletions:
-            if pull is not None and base != main:
+            if in_place and base != main:
                 return Result(repo, "up to date", detail="the open PR already carries the newest shared files")
             closed = close_stale_prs(repo, sha)
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         pin_bump = (bumped, latest) if bumped and latest else None
-        body = pr_body(sha, files, pin_bump)
-        if pull is not None:
+        body = pr_body(sha, files, pin_bump, embeds_core(root))
+        if in_place:
             try:
                 oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)
             except (SyncError, json.JSONDecodeError, OSError) as error:
@@ -1083,6 +1159,7 @@ def sync_consumer(
                 return left_alone(repo, pull, str(error))
             status = "updated in place"
         else:
+            # A new PR, or an open one whose sync-only branch is rebuilt from main because main moved past it.
             point_branch(repo, SCRATCH_BRANCH, main)
             try:
                 oid = create_commit(repo, SCRATCH_BRANCH, main, sha, additions, deletions, workspace)
@@ -1090,7 +1167,7 @@ def sync_consumer(
                 point_branch(repo, BRANCH, oid)
             finally:
                 delete_branch(repo, SCRATCH_BRANCH)
-            status = "opened"
+            status = "opened" if pull is None else "rebuilt from main"
         number, url, _, node_id = open_or_update_pr(repo, body, pull)
         warning = auto_merge_warning(node_id) if node_id else None
         if proof_needed(root, list(files)):
@@ -1119,6 +1196,8 @@ def summary_markdown(sha: str, results: list[Result]) -> str:
         "A PR left open is waiting on that addon's own checks; a red check keeps it open rather than landing.",
         "A PR reported as left alone was not touched: it keeps every commit it had, and its comment says what stopped"
         " the sync.",
+        "A PR reported as held carries commits someone pushed to it, so the sync leaves it to them; the newer core"
+        " lands with the next sync after it merges.",
     ]
     return "\n".join(lines) + "\n"
 

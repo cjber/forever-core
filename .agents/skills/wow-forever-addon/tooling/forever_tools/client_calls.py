@@ -19,8 +19,14 @@ the pinned Blizzard UI source and an optional ForeverProbe dump.
   does not list.
 - `client-optional-unused`: a declared name the addon never calls.
 - `client-waiver-unused`: a `client-ok` waiver that excuses nothing.
+- `client-forbidden`: any mention of a function or library that sends data to another player: an addon message, a
+  chat line, a community or Battle.net message or whisper, or a comms library (`FORBIDDEN`, `FORBIDDEN_FIELDS`).
+  Forever addons send nothing to other players, so a call, a field read (`C_ChatInfo.SendAddonMessage`,
+  `api.SendAddonMessage`), a local alias or the name as a string (`LibStub("AceComm-3.0")`) all fail. No `client-ok`
+  waiver excuses one.
 
-An exception carries `-- client-ok: <reason>` on its line or the line above.
+
+An exception to the other rules carries `-- client-ok: <reason>` on its line or the line above.
 """
 
 from __future__ import annotations
@@ -40,6 +46,8 @@ __all__ = [
     "Analysis",
     "Declaration",
     "Environment",
+    "FORBIDDEN",
+    "FORBIDDEN_FIELDS",
     "NAMING_HELPERS",
     "NamingHelper",
     "Read",
@@ -67,6 +75,33 @@ DECLARATION = re.compile(r"^(\S+)\s+(\S+)$")
 BINARY = frozenset({"+", "-", "*", "/", "%", "^", "..", "==", "~=", "<", "<=", ">", ">=", "and", "or"})
 UNARY = frozenset({"not", "-", "#"})
 CLOSING = {"{": "}", "(": ")", "[": "]"}
+# Every client function or library that sends to another player, by the name an addon writes. Forever addons send
+# nothing to other players (no stats, departures or leaderboards), so any mention of one fails, waiver or not.
+#   Addon messages: C_ChatInfo.SendAddonMessage, SendAddonMessageLogged, RegisterAddonMessagePrefix (the bare globals
+#     are the pre-C_ChatInfo spellings).
+#   Chat lines: SendChatMessage (bare and C_ChatInfo), and ChatEdit_SendText, which sends a chat box's text.
+#   Battle.net: BNSendGameData, BNSendWhisper, C_BattleNet.SendGameData, C_BattleNet.SendWhisper.
+#   Comms libraries: AceComm-3.0 (SendCommMessage, RegisterComm) and ChatThrottleLib, which wrap the calls above.
+FORBIDDEN = frozenset(
+    {
+        "SendAddonMessage",
+        "SendAddonMessageLogged",
+        "RegisterAddonMessagePrefix",
+        "SendChatMessage",
+        "BNSendGameData",
+        "BNSendWhisper",
+        "SendGameData",
+        "SendWhisper",
+        "SendCommMessage",
+        "RegisterComm",
+        "AceComm-3.0",
+        "ChatThrottleLib",
+        "ChatEdit_SendText",
+    }
+)
+# Sends under a field name too common to ban bare (`SendMessage` is also a method on many frames), matched as the
+# qualified read: a community or club chat line, and a Group Finder whisper.
+FORBIDDEN_FIELDS = frozenset({"C_Club.SendMessage", "C_ClubFinder.SendChatWhisper"})
 
 
 @dataclass(frozen=True)
@@ -648,8 +683,26 @@ def _analysed(source: str) -> Analysis:
         raise LuaSyntaxError("unexpected end of file") from error
 
 
+def _forbidden(source: str, result: Analysis) -> list[tuple[int, str]]:
+    """`(line, message)` for each name or string in `source` that is one of `FORBIDDEN`, and each read of one of
+    `FORBIDDEN_FIELDS`."""
+    found = [
+        (read.line, f"client-forbidden: {read.qualified} sends to other players; Forever addons send nothing to them")
+        for read in result.reads
+        if read.qualified in FORBIDDEN_FIELDS
+    ]
+    for token in _tokens(source):
+        text = token.text if token.kind == "name" else unescape(token.text) if token.kind == "string" else None
+        if text in FORBIDDEN:
+            found.append(
+                (token.line, f"client-forbidden: {text} sends to other players; Forever addons send nothing to them")
+            )
+    return found
+
+
 def _findings(source: str, environment: Environment) -> list[tuple[int, str]]:
-    """`(line, message)` for each call of a name the client does not answer in `source`."""
+    """`(line, message)` for each call of a name the client does not answer in `source`, and each mention of a
+    function that sends to another player."""
     result = _analysed(source)
     lines = source.splitlines()
     known = environment.api | environment.globals | environment.defined | environment.optional | result.definitions
@@ -672,20 +725,22 @@ def _findings(source: str, environment: Environment) -> list[tuple[int, str]]:
                     f"client-missing: {read.name} is not defined by the Forever client, this addon or ForeverCore",
                 )
             )
+    forbidden = _forbidden(source, result)
     found, excused = [], set()
-    for number, message in sorted(set(raw)):
+    # A waiver on a forbidden send excuses nothing, but it is reported once, as the send, not again as unused.
+    for number, message in sorted(set(raw)) + forbidden:
         waiver = next(
             (at for at in (number, number - 1) if at >= 1 and at <= len(lines) and WAIVER.search(lines[at - 1])), None
         )
-        if waiver is None:
-            found.append((number, message))
-        else:
+        if waiver is not None:
             excused.add(waiver)
+        if waiver is None or message.startswith("client-forbidden"):
+            found.append((number, message))
     for number, line in enumerate(lines, 1):
         if MARK.search(line) and number not in excused:
             reason = "names no reason" if not WAIVER.search(line) else "excuses no missing client call"
             found.append((number, f"client-waiver-unused: this client-ok {reason}"))
-    return sorted(found)
+    return sorted(set(found))
 
 
 def check(source: str, environment: Environment = DEFAULT_ENVIRONMENT) -> list[tuple[int, str]]:

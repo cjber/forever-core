@@ -1,0 +1,22 @@
+name: Tweaks
+checks:
+  - id: loads
+    title: Loads clean and /tweaks opens its settings
+    steps:
+      - Type /reload.
+      - Type /tweaks.
+    pass: No Lua error, and the Tweaks settings open.
+    minutes: 1
+  - id: merchant
+    title: Repair and junk selling at a merchant
+    setup: A grey item in your bags and some gear damage.
+    steps:
+      - Talk to a merchant who repairs.
+    pass: Junk sells and gear repairs, and the alert shows on screen, not as a chat line.
+    minutes: 2
+  - id: plural
+    title: Counts read naturally
+    steps:
+      - Sell exactly one junk item, or loot one of something Tweaks counts.
+    pass: The text reads "1 item", not "1 items".
+    minutes: 1
