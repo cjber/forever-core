@@ -19,19 +19,10 @@ local function test(name, fn)
 	end
 end
 
--- Every Blizzard file a login loads, recorded as the loader reads it.
+-- Every Blizzard file the sim loaded, in load order (templates.lua records each as it reads it).
 local sim = Sim.new()
-local files = {}
-local loadLua, loadXML = sim.templates.loadLua, sim.templates.loadXML
-sim.templates.loadLua = function(path, ...)
-	files[#files + 1] = path
-	return loadLua(path, ...)
-end
-sim.templates.loadXML = function(path, ...)
-	files[#files + 1] = path
-	return loadXML(path, ...)
-end
 sim:login()
+local files = sim.templates.files
 assert(#files > 100, "a login loads Blizzard's UI files, got " .. #files)
 
 local function read(path)

@@ -1030,6 +1030,7 @@ function M.build(sim)
 			warn("missing file " .. path)
 			return false
 		end
+		T.files[#T.files + 1] = path
 		local chunk, err = T.compile(text, chunkName)
 		if not chunk then
 			sim.reportError(err, "", nil)
@@ -1097,6 +1098,7 @@ function M.build(sim)
 			warn("missing file " .. path)
 			return false
 		end
+		T.files[#T.files + 1] = path
 		local root = xmlCache[text]
 		if not root then
 			local ok

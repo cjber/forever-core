@@ -159,15 +159,12 @@ class FetchTest(unittest.TestCase):
             fetch.db2(Path(directory), "GlobalStrings", offline=True, locale="deDE")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ClientSurfaceTest(unittest.TestCase):
     DUMP = """ForeverProbeDB = { clientSurface = { build = 16001,
-  cvars = { userFontScale = { default = "1" }, odd = { default = 'a"b\\\\c\\nd' }, hidden = { default = "<secret>" } },
+  cvars = { userFontScale = { default = "1" }, odd = { default = 'a"b\\\\c\\nd' },
+    tab = { default = "p\\vq\\194\\133r" }, hidden = { default = "<secret>" } },
   scripts = { FontString = { "OnEnter", "OnLeave" }, Frame = { "OnEvent" } },
-  failedWidgets = { ModelSceneActor = "no actor" } } }
+  failedWidgets = { ModelSceneActor = "no actor", Foo = "bad \\"Interface\\\\Foo\\"" } } }
 """
 
     def test_a_dump_becomes_lua_the_simulator_reads_back_exactly(self):
@@ -180,7 +177,9 @@ class ClientSurfaceTest(unittest.TestCase):
                 f'local t = dofile("{out}"); assert(t.interface == 16001); '
                 'assert(t.cvars.userFontScale == "1"); assert(t.cvars.odd == "a\\"b\\\\c\\nd"); '
                 'assert(t.cvars.hidden == nil, "a secret default is left out"); '
-                'assert(t.scripts.FontString[1] == "OnEnter"); assert(t.unmade.ModelSceneActor == "no actor")'
+                'assert(t.scripts.FontString[1] == "OnEnter"); assert(t.unmade.ModelSceneActor == "no actor"); '
+                'assert(t.cvars.tab == "p\\vq\\194\\133r", "control and non-ASCII bytes survive"); '
+                'assert(t.unmade.Foo == "bad \\"Interface\\\\Foo\\"", "an error with a backslash survives")'
             )
             subprocess.run(["luajit", "-e", check], check=True)
 
@@ -190,3 +189,7 @@ class ClientSurfaceTest(unittest.TestCase):
             dump.write_text("ForeverProbeDB = {}\n")
             with self.assertRaises(SystemExit):
                 gen_client_surface.read(dump)
+
+
+if __name__ == "__main__":
+    unittest.main()

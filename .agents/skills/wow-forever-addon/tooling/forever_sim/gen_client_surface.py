@@ -27,24 +27,32 @@ local path = assert(os.getenv("FOREVER_PROBE_FILE"), "no probe file")
 assert(loadfile(path))()
 local surface = assert(ForeverProbeDB and ForeverProbeDB.clientSurface, "the dump has no ForeverProbeDB.clientSurface")
 assert(not surface.error, "the probe failed in the client: " .. tostring(surface.error))
+-- Every byte outside printable ASCII, and the backslash, as a Lua \\ddd escape: lines split only on "\\n" and the
+-- Python side writes each value into a Lua literal as is.
+local function esc(value)
+	return (tostring(value):gsub(".", function(c)
+		local b = c:byte()
+		if b < 32 or b > 126 or c == "\\\\" then
+			return string.format("\\\\%03d", b)
+		end
+	end))
+end
 print("interface\\t" .. tostring(surface.build))
 for name, info in pairs(surface.cvars or {}) do
 	if type(info.default) == "string" and info.default ~= "<secret>" then
-		print("cvar\\t" .. name .. "\\t" .. info.default:gsub("[\\\\\\t\\r\\n]", function(c)
-			return string.format("\\\\%03d", c:byte())
-		end))
+		print("cvar\\t" .. esc(name) .. "\\t" .. esc(info.default))
 	else
-		print("nodefault\\t" .. name .. "\\t" .. tostring(info.error or info.default))
+		print("nodefault\\t" .. esc(name) .. "\\t" .. esc(info.error or info.default))
 	end
 end
 for kind, names in pairs(surface.scripts or {}) do
-	print("widget\\t" .. kind)
+	print("widget\\t" .. esc(kind))
 	for _, name in ipairs(names) do
-		print("script\\t" .. kind .. "\\t" .. name)
+		print("script\\t" .. esc(kind) .. "\\t" .. esc(name))
 	end
 end
 for kind, err in pairs(surface.failedWidgets or {}) do
-	print("failed\\t" .. kind .. "\\t" .. tostring(err):gsub("[\\t\\r\\n]", " "))
+	print("failed\\t" .. esc(kind) .. "\\t" .. esc(err))
 end
 """
 
@@ -61,7 +69,7 @@ def read(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]], dict[st
     if result.returncode:
         raise SystemExit(f"could not read the probe at {path}:\n" + result.stderr)
     interface, cvars, scripts, nodefault, failed = "", {}, {}, {}, {}
-    for line in result.stdout.splitlines():
+    for line in result.stdout.split("\n"):
         kind, _, rest = line.partition("\t")
         if kind == "interface":
             interface = rest
@@ -85,7 +93,7 @@ def read(path: Path) -> tuple[str, dict[str, str], dict[str, list[str]], dict[st
 
 
 def quote(value: str) -> str:
-    """A Lua string literal in StyLua's quote style; the reader already wrote backslashes and newlines as \\ddd."""
+    """A Lua string literal in StyLua's quote style; the reader already wrote backslashes and control bytes as \\ddd."""
     if '"' in value and "'" not in value:
         return "'" + value + "'"
     return '"' + value.replace('"', '\\"') + '"'
