@@ -19,7 +19,8 @@ function harness.new(options)
 	-- The native tracker's geometry, which only the spec reads and moves. A frame anchored to the native tracker
 	-- resolves through it, as the engine resolves an anchor, so the host never has to read the tracker itself.
 	local native
-	local nativeRect = { left = 1200 - 260, top = 880, width = 260, height = 300 }
+	-- `line` is the bottom of its last visible line, where its NineSlice ends; `shown` false hides it.
+	local nativeRect = { left = 1200 - 260, top = 880, width = 260, height = 300, line = 880 - 120, shown = true }
 	local function Along(name, low, size)
 		if name:find("LEFT") or name:find("BOTTOM") then
 			return low
@@ -148,6 +149,9 @@ function harness.new(options)
 		function f:ClearAllPoints()
 			self.point, self.points = nil, nil
 		end
+		function f:GetNumPoints()
+			return self.point and 1 or 0
+		end
 		function f:SetAlpha(value)
 			self.alpha = value
 		end
@@ -274,15 +278,53 @@ function harness.new(options)
 		frames[#frames + 1] = f
 		return f
 	end
-	-- The client's tracker exists, which says its section template loaded, and the column may name it as an anchor. It
-	-- never reads, writes or hooks it, so any field access fails the spec.
-	native = setmetatable({}, {
-		__index = function(_, key)
-			error("the host read the native tracker: " .. tostring(key))
+	-- The client's tracker exists, which says its section template loaded, and the column may name it as an anchor. The
+	-- host may read where it is and where its last line ends, and nothing else: any other field, a write or a hook (its
+	-- HookScript, SetPoint or any setter) fails the spec.
+	local function ReadOnly(name, reads)
+		return setmetatable({}, {
+			__index = function(_, key)
+				local value = reads[key]
+				if value == nil then
+					error("the host read the native " .. name .. ": " .. tostring(key))
+				end
+				return value
+			end,
+			__newindex = function(_, key)
+				error("the host wrote the native " .. name .. ": " .. tostring(key))
+			end,
+		})
+	end
+	local function NativeScale()
+		return nativeRect.scale or 1
+	end
+	local nineSlice = ReadOnly("tracker NineSlice", {
+		GetBottom = function()
+			return nativeRect.line
 		end,
-		__newindex = function(_, key)
-			error("the host wrote the native tracker: " .. tostring(key))
+		GetEffectiveScale = NativeScale,
+	})
+	native = ReadOnly("tracker", {
+		NineSlice = nineSlice,
+		GetLeft = function()
+			return nativeRect.left
 		end,
+		GetTop = function()
+			return nativeRect.top
+		end,
+		GetEffectiveScale = NativeScale,
+		IsShown = function()
+			return nativeRect.shown
+		end,
+		IsCollapsed = function()
+			return nativeRect.collapsed == true
+		end,
+		Header = ReadOnly("tracker header", {
+			GetBottom = function()
+				return nativeRect.header
+			end,
+			GetEffectiveScale = NativeScale,
+		}),
 	})
 	parent = frame()
 	parent.width = 1200
@@ -295,8 +337,9 @@ function harness.new(options)
 			end,
 		}),
 	}
-	-- A table already past the one-time move off the quest tracker; a spec covers the migration itself.
-	local hostSettings = options.hostSettings or { attached = false }
+	-- A table already past the one-time move off the quest tracker, pinned left of it; a spec covers the migration and
+	-- the place under the tracker.
+	local hostSettings = options.hostSettings or { attached = false, placement = "left" }
 	function ns.TrackerHostSettings()
 		return hostSettings
 	end
@@ -340,9 +383,9 @@ function harness.new(options)
 		end,
 		ObjectiveTrackerFrame = native,
 		UIParent = parent,
-		CreateFrame = function(kind, _, _, template)
+		CreateFrame = function(kind, _, owner, template)
 			local f = frame()
-			f.kind, f.template = kind, template
+			f.kind, f.template, f.createdParent = kind, template, owner
 			return f
 		end,
 		C_Timer = {
@@ -481,6 +524,26 @@ function harness.new(options)
 		end,
 		setCombat = function(value)
 			combat = value
+		end,
+		-- The game's quest list ends at `line`, as a quest added, completed or collapsed leaves it: the host's probe,
+		-- which spans from the screen's bottom to that line, changes size.
+		moveLine = function(line)
+			nativeRect.line = line
+			for _, f in ipairs(frames) do
+				if f.createdParent == parent and f.scripts.OnSizeChanged then
+					f.scripts.OnSizeChanged(f)
+				end
+			end
+		end,
+		-- The game's tracker shows or hides, which its child frames hear.
+		showTracker = function(shown)
+			nativeRect.shown = shown
+			for _, f in ipairs(frames) do
+				local handler = f.createdParent == native and f.scripts[shown and "OnShow" or "OnHide"]
+				if handler then
+					handler(f)
+				end
+			end
 		end,
 		inCombat = function()
 			return combat

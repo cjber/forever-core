@@ -44,9 +44,9 @@ ALLOWLIST = {
     "interface/buttons/ui-checkbox-up": "wowmock's Edit Mode native checkbox face; no atlas is the 32x32 file",
     "interface/buttons/ui-checkbox-check": "wowmock's Edit Mode native checkbox tick; no atlas is the 32x32 file",
     "interface/buttons/ui-checkbox-check-disabled": "UICheckButtonArtTemplate's disabled tick; no equivalent atlas",
-    "interface/chatframe/chatframeexpandarrow": "wowmock's native menu submenu arrow",
+    "interface/chatframe/chatframeexpandarrow": "Blizzard_Menu's submenu arrow, in ContextMenu and wowmock",
     "interface/common/shadowoverlay-left": "wowmock's native world-map NavBar shadow",
-    "interface/common/ui-tooltipdivider-transparent": "wowmock's native menu divider",
+    "interface/common/ui-tooltipdivider-transparent": "Blizzard_Menu's divider, in ContextMenu and wowmock",
     "interface/common/whiteiconframe": "the client's unframed-icon border, sanctioned by the asset registry",
     "interface/framegeneral/ui-background-marble": "wowmock's BasicFrameTemplate marble; no equivalent atlas",
     "interface/framegeneral/ui-background-rock": "wowmock's world-map rock backdrop; no equivalent atlas",
@@ -56,7 +56,7 @@ ALLOWLIST = {
     "interface/minimap/ui-minimap-background": "LibDBIcon's button background art; no atlas is the same piece",
     "interface/minimap/ui-minimap-zoombutton-highlight": "LibDBIcon's button highlight art; no atlas is the same piece",
     "interface/questframe/ui-questlog-bookicon": "wowmock's native default world-map portrait",
-    "interface/questframe/ui-questtitlehighlight": "wowmock's native menu row highlight",
+    "interface/questframe/ui-questtitlehighlight": "Blizzard_Menu's row highlight, in ContextMenu and wowmock",
 }
 
 

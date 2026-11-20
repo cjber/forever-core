@@ -152,7 +152,8 @@ class PlannedEmbed:
 _VERSION = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?")
 _HEADING = re.compile(r"^##\s+\[([^\]]+)\]")
 _IMAGE_COMMENT = re.compile(r"^\s*<!--\s*discord-image:\s*(\S+)\s*-->\s*$")
-_PLAYER_BULLET = re.compile(r"^-\s+\*\*(.+?)\*\*")
+# Markdown list bullets: the changelog tool keeps whichever of -, * or + a fragment used.
+_PLAYER_BULLET = re.compile(r"^[-*+]\s+\*\*(.+?)\*\*")
 _CURSE_ID = re.compile(r"^##\s*X-Curse-Project-ID\s*:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
 
 
@@ -261,7 +262,9 @@ def parse_changelog(text):
             image = picture.group(1)
             continue
         if line.startswith("### "):
-            collecting = False
+            # Player bullets sit under the changelog's Added/Changed/Fixed/Removed sections; only
+            # other subsections (For addon authors, Tooling, ...) stop collection.
+            collecting = line[4:].strip() in ("Added", "Changed", "Fixed", "Removed")
             continue
         if collecting:
             bullet = _PLAYER_BULLET.match(line)
@@ -392,6 +395,8 @@ def build_features(datasets, since, now):
             reverse=True,
         ):
             entry = data.changelog.get(release.version) or ChangelogEntry()
+            if not entry.headlines:
+                continue
             spec = PlannedEmbed(
                 color=data.addon.accent,
                 author_name=data.addon.name,

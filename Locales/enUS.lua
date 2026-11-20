@@ -84,6 +84,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it into your bug report."
 L["Title"] = "Title"
 L["Tracker background"] = "Tracker background"
+L["Tracker position"] = "Tracker position"
+L["Under the quest tracker"] = "Under the quest tracker"
+L["Left of the quest tracker"] = "Left of the quest tracker"
 L["Tracker"] = "Tracker"
 L["Click to %s"] = "Click to %s"
 L["Right-click for options"] = "Right-click for options"
@@ -91,7 +94,6 @@ L["Unavailable in combat"] = "Unavailable in combat"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "What happened, or what you would like"
-L["MENU_BACK"] = "Back"
 L["Quests"] = "Quests"
 
 L["ForeverCore startup report"] = "ForeverCore startup report"

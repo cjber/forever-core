@@ -16,6 +16,57 @@ def codes(source, environment=ENVIRONMENT):
 
 
 class ClientCallsTest(unittest.TestCase):
+    def test_a_send_to_another_player_is_forbidden(self):
+        environment = client_calls.Environment(
+            api=ENVIRONMENT.api
+            | {
+                "C_ChatInfo.SendAddonMessage",
+                "C_ChatInfo.RegisterAddonMessagePrefix",
+                "C_ChatInfo.SendChatMessage",
+                "C_BattleNet.SendGameData",
+            },
+            globals=ENVIRONMENT.globals | {"LibStub"},
+            defined=ENVIRONMENT.defined | {"SendChatMessage", "BNSendGameData", "ChatThrottleLib"},
+        )
+        for source in (
+            "C_ChatInfo.SendAddonMessage('P', 'x', 'PARTY')\n",
+            "C_ChatInfo.RegisterAddonMessagePrefix('P')\n",
+            "local send = C_ChatInfo.SendAddonMessage\n",
+            "local chat = C_ChatInfo\nchat.SendAddonMessage('P', 'x', 'PARTY')\n",
+            "C_ChatInfo.SendChatMessage('hi', 'SAY')\n",
+            "SendChatMessage('hi', 'SAY')\n",
+            "BNSendGameData(1, 'P', 'x')\n",
+            "C_BattleNet.SendGameData(1, 'P', 'x')\n",
+            "local comm = LibStub('AceComm-3.0')\n",
+            "MyAddon:SendCommMessage('P', 'x', 'PARTY')\n",
+            "ChatThrottleLib:SendAddonMessage('NORMAL', 'P', 'x', 'PARTY')\n",
+            "local name = _G['SendAddonMessage']\n",
+            "C_Club.SendMessage(1, 2, 'hi')\n",
+            "C_ClubFinder.SendChatWhisper('Ana', 'hi')\n",
+            "ChatEdit_SendText(box)\n",
+        ):
+            with self.subTest(source=source):
+                self.assertIn("client-forbidden", codes(source, environment))
+
+    def test_a_waiver_does_not_excuse_a_send(self):
+        source = "C_ChatInfo.SendAddonMessage('P', 'x', 'PARTY') -- client-ok: party sync\n"
+        environment = client_calls.Environment(api=ENVIRONMENT.api | {"C_ChatInfo.SendAddonMessage"})
+        self.assertEqual(codes(source, environment), ["client-forbidden"])
+
+    def test_reading_and_receiving_are_not_sends(self):
+        environment = client_calls.Environment(
+            api=ENVIRONMENT.api | {"C_QuestLog.IsUnitOnQuest", "C_ChatInfo.IsAddonMessagePrefixRegistered"},
+            globals=ENVIRONMENT.globals,
+        )
+        for source in (
+            "local on = C_QuestLog.IsUnitOnQuest('party1', 1)\n",
+            "local registered = C_ChatInfo.IsAddonMessagePrefixRegistered('P')\n",
+            "local text = 'party messages'\n",
+            "MyFrame:SendMessage('x')\n",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(codes(source, environment), [])
+
     def test_a_documented_c_namespace_read_passes(self):
         for source in (
             "local map = C_Map.GetBestMapForUnit('player')\n",

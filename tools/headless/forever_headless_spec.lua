@@ -1,8 +1,16 @@
 -- Lua 5.1 fixtures for the startup handshake. A missing character configuration must never signal readiness.
 local source = assert(io.open("tools/headless/!!ForeverHeadless/ForeverHeadless.lua")):read("*a")
+-- Every scale the addon set on a frame.
+local scales = {}
 
 local function run(config, name, guid, dead, combat, lockdown, screenshot)
-	local events, callback, update = {}, nil, nil
+	local events, callback, updates = {}, nil, {}
+	-- Every OnUpdate the addon set: the safety strip's and the motion row's.
+	local function update()
+		for _, fn in ipairs(updates) do
+			fn()
+		end
+	end
 	local textures = {}
 	_G.CreateFrame = function()
 		return {
@@ -11,7 +19,7 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 			end,
 			SetScript = function(_, script, fn)
 				if script == "OnUpdate" then
-					update = fn
+					updates[#updates + 1] = fn
 				else
 					callback = fn
 				end
@@ -19,6 +27,9 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 			SetSize = function() end,
 			SetPoint = function() end,
 			SetIgnoreParentScale = function() end,
+			SetScale = function(_, scale)
+				scales[#scales + 1] = scale
+			end,
 			SetFrameStrata = function() end,
 			Hide = function() end,
 			CreateTexture = function()
@@ -64,7 +75,11 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 	end
 	_G.print = function() end
 	assert(loadstring(source))()
-	assert(events[1] == "PLAYER_ENTERING_WORLD", "registers world readiness")
+	local registered = {}
+	for _, event in ipairs(events) do
+		registered[event] = true
+	end
+	assert(registered.PLAYER_ENTERING_WORLD, "registers world readiness")
 	callback(nil, "PLAYER_ENTERING_WORLD")
 	_G.GameMenuFrame = {
 		IsShown = function()
@@ -130,3 +145,141 @@ print("forever headless: identity handshake pass")
 run(nil, "Tester", "Player-1-2-3", nil, nil, nil, screenshot)
 run(nil, "Tester", "Player-1-2-3", false, nil, false, screenshot)
 run(nil, "Tester", "Player-1-2-3", false, false, nil, screenshot)
+
+-- The motion row under the safety strip: map, position, facing, map size, indoors and the target's nameplate, each
+-- 16 bits after an 8-cell header and four flags, then an 8-bit checksum, as forever_client decodes it.
+do
+	local textures, updates = {}, {}
+	_G.CreateFrame = function()
+		return {
+			RegisterEvent = function() end,
+			SetScript = function(_, script, fn)
+				if script == "OnUpdate" then
+					updates[#updates + 1] = fn
+				end
+			end,
+			SetSize = function() end,
+			SetPoint = function() end,
+			SetIgnoreParentScale = function() end,
+			SetScale = function(_, scale)
+				scales[#scales + 1] = scale
+			end,
+			SetFrameStrata = function() end,
+			CreateTexture = function()
+				local cell = {}
+				textures[#textures + 1] = cell
+				return {
+					SetColorTexture = function(_, value)
+						cell.value = value
+					end,
+					SetSize = function() end,
+					SetPoint = function() end,
+				}
+			end,
+		}
+	end
+	local function Vector(x, y)
+		return {
+			GetXY = function()
+				return x, y
+			end,
+		}
+	end
+	_G.CreateVector2D = Vector
+	_G.C_Map = {
+		GetBestMapForUnit = function()
+			return 1453
+		end,
+		GetPlayerMapPosition = function()
+			return Vector(0.652, 0.714)
+		end,
+		-- A map 1000 yards across and 600 down, its world axes swapped as the client's are.
+		GetWorldPosFromMapPos = function(_, at)
+			local x, y = at:GetXY()
+			return 0, Vector(-y * 600, -x * 1000)
+		end,
+	}
+	_G.GetPlayerFacing = function()
+		return math.pi / 2
+	end
+	_G.IsIndoors = function()
+		return true
+	end
+	_G.UIParent = {
+		GetWidth = function()
+			return 1000
+		end,
+		GetEffectiveScale = function()
+			return 1
+		end,
+	}
+	_G.C_NamePlate = {
+		GetNamePlateForUnit = function()
+			return {
+				IsVisible = function()
+					return true
+				end,
+				GetCenter = function()
+					return 250
+				end,
+				GetEffectiveScale = function()
+					return 1
+				end,
+			}
+		end,
+	}
+	_G.UnitExists = function()
+		return true
+	end
+	local bound = { MOVEFORWARD = { "S" }, MOVEBACKWARD = { "DOWN" }, TURNLEFT = { "LEFT" }, JUMP = { "SPACE" } }
+	_G.GetBindingKey = function(action)
+		return unpack(bound[action] or {})
+	end
+	_G.CheckInteractDistance = function()
+		return true
+	end
+	_G.GetPhysicalScreenSize = function()
+		return 1920, 804
+	end
+	scales = {}
+	assert(loadstring(source))()
+	assert(scales[1] == 768 / 804, "the motion row is scaled to exactly 4 screen pixels a cell")
+	for _, fn in ipairs(updates) do
+		fn()
+	end
+	local row = {}
+	for index = 14, #textures do
+		row[#row + 1] = textures[index].value == 1
+	end
+	local at = 1
+	local function read(bits)
+		local value = 0
+		for _ = 1, bits do
+			value = value * 2 + (row[at] and 1 or 0)
+			at = at + 1
+		end
+		return value
+	end
+	assert(read(8) == 155, "the motion header 10011011")
+	local flags = { read(1), read(1), read(1), read(1) }
+	assert(flags[1] == 1 and flags[2] == 1 and flags[3] == 1 and flags[4] == 1, "known, indoors, plate, near")
+	local fields = {}
+	for index = 1, 8 do
+		fields[index] = read(16)
+	end
+	assert(fields[1] == 1453, "the map")
+	assert(fields[2] == math.floor(0.652 * 65535 + 0.5) and fields[3] == math.floor(0.714 * 65535 + 0.5), "x, y")
+	assert(fields[4] == math.floor(65535 / 4 + 0.5), "facing a quarter turn")
+	assert(fields[5] == 1000 and fields[6] == 600, "the map's size in yards")
+	assert(fields[7] == math.floor(0.25 * 65535 + 0.5), "the target's plate a quarter across the screen")
+	-- forever_client hashes "MOVEFORWARD=S,;MOVEBACKWARD=DOWN,;..." the same way; tools/test_forever_client.py
+	-- checks the same string gives the same number.
+	assert(fields[8] == 30719, "the movement bindings hash")
+	local sum = 1 + 2 + 3 + 4
+	for _, value in ipairs(fields) do
+		sum = sum + value
+	end
+	assert(read(8) == sum % 256, "the checksum")
+	assert(at == #row + 1, "nothing after the checksum")
+	print("forever headless: motion row pass")
+end

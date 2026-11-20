@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.15.3] - 2026-11-19
+
+### Fixed
+
+- **Right-click menus open at the cursor.** The tracker's block and section menus opened below the section's bottom-right corner, far from the click. (#868)
+- **Right-click menus look like the game's own.** Every Forever right-click menu now uses the same font, row height, spacing, divider, submenu arrow and hover as the quest tracker's menu, and its last row is no longer cut off at the bottom. (#875)
+- **Lock the tracker is on every tracker right-click menu.** It was only inside the Tracker submenu, so a locked tracker can now be unlocked from any section or entry. (#875)
+- **Right-clicking a tracker line opens its entry's menu.** A right-click on a line such as a journey step or a reagent did nothing; it now opens the same menu as the entry's title, with Lock and the entry's end action. (#875)
+- **Submenus open beside the menu.** Resting on a row with an arrow opens its submenu next to it, as the game's own menus do, and the menu above stays open; there is no Back row to step through. (#875)
+- **The tracker column follows the game's quest tracker as it changes.** Collapsing the quest tracker moves the column under its header, and expanding it puts the column back. When the quest tracker hides with nothing left to list, the column takes its place at once, as a reload would, instead of keeping its old spot until something else moved it. (#883, #885)
+
+## [1.15.2] - 2026-11-18
+
+### Added
+
+- **The Forever tracker column sits under the quest tracker.** By default the column now starts on the last line of the game's quest list and follows it as quests are accepted, completed or collapsed, without redrawing its sections. When the column no longer fits between that line and the bottom of the screen, it sits left of the quest tracker instead, and returns under it once there is room. Right-click any Forever section and pick **Tracker position** to keep it under or left of the quest tracker; dragging the column still places it anywhere, and a locked column holds the place it has, moving left only when it no longer fits under the quest list. The "Attach to quest tracker" checkbox in Forever addons' settings works again: on keeps the column under the quest tracker, off puts it left of it, and the choice stays after a reload. During combat the column holds its place and catches up when combat ends. (#850, Refs #792, #802)
+
+### Fixed
+
+- **The profession side tabs stay under the game's profession tabs.** A frame another addon places at the bottom right of the Professions window no longer pulls the SkillUp and Commissions tabs to the window's bottom or off screen. (#862, Refs cjber/skillup-forever#807)
+
+### For addon authors
+
+- `ForeverCore.TrackerHost.GetPlacement()` and `SetPlacement("under" | "left")` read and set the column's place. Setting one releases a dragged position. `SetAttached(true)` picks Under and `SetAttached(false)` picks Left. `IsAttachedToQuestTracker()` and `GetSettings().attached` are true while the column follows the quest tracker under it, undragged, and `OnAttachmentChanged` callbacks hear each change, so an existing "Attach to quest tracker" checkbox keeps working.
+
 ## [1.15.1] - 2026-11-18
 
 ### Fixed

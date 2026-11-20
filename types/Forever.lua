@@ -73,8 +73,6 @@
 ---@field isEnabled? boolean|fun(): boolean
 ---@field tooltip? fun(tooltip: GameTooltip)
 ---@field scrollExtent? number
----@field parent? ForeverMenuDescription
----@field back? ForeverMenuDescription
 ---@field CreateButton fun(self: ForeverMenuDescription, text: string, action?: fun()): ForeverMenuDescription
 ---@field CreateTitle fun(self: ForeverMenuDescription, text: string): ForeverMenuDescription
 ---@field CreateDivider fun(self: ForeverMenuDescription): ForeverMenuDescription

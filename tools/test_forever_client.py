@@ -8,6 +8,7 @@ import fcntl
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -957,6 +958,7 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_press_play_ignores_the_upgrade_available_banner(self):
         # The banner advertises an account upgrade beside a working Play button, so it must not stop startup.
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345")),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -996,9 +998,33 @@ class ForeverClientTest(unittest.TestCase):
                 fc.press_play(state)
         self.assertEqual(x.call_args_list.count(mock.call(state, "click", "1")), fc.MAX_PLAY_CLICKS)
 
+    def test_press_play_waits_when_the_battle_net_window_is_missing(self):
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="")),
+            mock.patch.object(fc, "shot") as shot,
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.press_play({"display": ":1"})
+        shot.assert_not_called()
+        x.assert_not_called()
+
+    def test_press_play_sends_no_escape_on_the_logging_in_splash(self):
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(stdout="12345\n")),
+            mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
+            mock.patch.object(fc, "client_pid", return_value=None),
+            mock.patch.object(fc, "shot", return_value=self.state / "launcher.png"),
+            mock.patch.object(fc, "ocr_words", return_value=[(w, 95.0, 0, 0, 20, 20) for w in ("Logging", "in..")]),
+            mock.patch.object(fc, "play_targets", return_value=[]),
+            mock.patch.object(fc, "x") as x,
+        ):
+            fc.press_play({"display": ":1"})
+        x.assert_not_called()
+
     def test_press_play_dismisses_a_launcher_dialog_before_retrying(self):
         state = {"display": ":1"}
         found = mock.Mock(stdout="12345\n")
+        (self.state / "launcher.png").write_bytes(b"frame")
         with (
             mock.patch.object(fc.subprocess, "run", side_effect=[found, found]),
             mock.patch.object(fc.shutil, "which", return_value="/usr/bin/tesseract"),
@@ -1016,7 +1042,8 @@ class ForeverClientTest(unittest.TestCase):
             [mock.call(state, "key", "--window", "12345", "Escape")] * 2,
         )
         self.assertEqual(warning.getvalue().count("no visible Play label"), 1)
-        self.assertIn(str(self.state / "launcher.png"), warning.getvalue())
+        self.assertIn(str(self.state / "launcher-no-play.png"), warning.getvalue())
+        self.assertEqual((self.state / "launcher-no-play.png").read_bytes(), b"frame")
         self.assertIn("--manual-launcher", warning.getvalue())
 
     def test_manual_launcher_cli_only_allows_shot_and_left_click_before_ready(self):
@@ -3050,6 +3077,45 @@ class ProofHelpersTest(unittest.TestCase):
         ready.assert_called_once_with(set(), "/lf", "run-slash", state="state")
         self.assertIn("wrote /x/!!DevSmokeInbox/Eval.lua from /lf (5 lines)", out.getvalue())
 
+    def test_a_secure_slash_flow_is_typed_into_chat_not_written_as_a_snippet(self):
+        self.assertTrue(fc.secure_slash("/cast Cooking"))
+        self.assertTrue(fc.secure_slash("/USE 12"))
+        self.assertFalse(fc.secure_slash("/lf"))
+        tool = mock.Mock()
+        with (
+            mock.patch.object(fc, "devsmoke_eval", return_value=tool),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload") as reload,
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.png")),
+            mock.patch.object(fc, "slash") as typed,
+            mock.patch.object(fc.time, "sleep") as settle,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(fc.run_flow("state", "/cast Cooking"), "")
+        tool.write_slash.assert_not_called()
+        reload.assert_called_once_with("state")
+        typed.assert_called_once_with("state", "/cast Cooking")
+        settle.assert_called_once_with(fc.SECURE_SLASH_SETTLE_SECONDS)
+
+    def test_a_secure_slash_flow_clicks_its_point_after_the_typed_line_settles(self):
+        order = []
+        with (
+            mock.patch.object(fc, "STATE_DIR", self.state),
+            mock.patch.object(fc, "screenshots", return_value=set()),
+            mock.patch.object(fc, "reload"),
+            mock.patch.object(fc, "clear_eval_inbox"),
+            mock.patch.object(fc, "wait_for_flow_world", return_value=Path("1-world.png")),
+            mock.patch.object(fc, "slash", side_effect=lambda *a: order.append("typed")),
+            mock.patch.object(fc, "click", side_effect=lambda *a: order.append(("click", a))),
+            mock.patch.object(fc.time, "sleep", side_effect=lambda s: order.append("settle")),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(fc.run_flow("state", "/cast Cooking", (748, 505)), "")
+        self.assertEqual(order, ["typed", "settle", ("click", ("state", 748, 505, "1")), "settle"])
+        self.assertTrue((self.state / "last-shot").exists())
+        self.assertIn("clicked 748,505 after /cast Cooking", out.getvalue())
+
     def test_run_flow_reports_a_ready_failure_with_the_flows_own_token(self):
         tool = mock.Mock()
         tool.EvalError = Exception
@@ -3305,6 +3371,76 @@ class ProofHelpersTest(unittest.TestCase):
                 self.assertRaises(fc.ClientError),
             ):
                 fc.proof_digests(self.state)
+
+    def embedding_checkout(self, field="## X-Forever-Core-Embed: 1\n"):
+        checkout = self.state / "macro-assist-forever"
+        checkout.mkdir()
+        (checkout / "MacroAssistForever.toc").write_text(f"## Interface: 16001\n{field}Main.lua\n")
+        (checkout / "Main.lua").write_text("print('edited, not committed')\n")
+        (checkout / "untracked.lua").write_text("not shipped\n")
+        return checkout
+
+    def test_a_checkout_without_the_embed_field_is_its_own_proof_source(self):
+        checkout = self.embedding_checkout(field="")
+        with mock.patch.object(fc, "embed_core", side_effect=AssertionError("no embed")):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(source, checkout)
+
+    def test_an_embedding_checkout_is_compared_after_the_same_embed_step(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "MacroAssistForever.toc\0Main.lua\0", "")
+        embedded = []
+
+        def embed(stage):
+            embedded.append(stage)
+            (stage / "Libs" / "ForeverCore").mkdir(parents=True)
+
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=embed),
+        ):
+            with fc.proof_source(checkout, "macro-assist-forever") as source:
+                self.assertEqual(embedded, [source])
+                self.assertNotEqual(source, checkout)
+                self.assertEqual((source / "Main.lua").read_text(), "print('edited, not committed')\n")
+                self.assertFalse((source / "untracked.lua").exists())
+                self.assertTrue((source / "Libs" / "ForeverCore").is_dir())
+            self.assertFalse(source.exists())
+        self.assertFalse((checkout / "Libs").exists())
+
+    def test_the_proof_stage_is_its_own_work_tree_with_nothing_untracked(self):
+        workspace = self.state / "workspace"
+        (workspace / ".git").mkdir(parents=True)
+        stage = workspace / "test-artifacts" / "stage"
+        (stage / "Libs" / "ForeverCore").mkdir(parents=True)
+        (stage / ".gitignore").write_text("Libs/\n")
+        (stage / "Main.lua").write_text("print(1)\n")
+        (stage / "Libs" / "ForeverCore" / "Core.lua").write_text("print(2)\n")
+        fc.track_stage(stage)
+        top = subprocess.run(
+            ["git", "-C", str(stage), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(Path(top.stdout.strip()).resolve(), stage.resolve())
+        others = subprocess.run(
+            ["git", "-C", str(stage), "ls-files", "--others", "--directory"], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(others.stdout, "")
+
+    def test_the_proof_stage_is_removed_when_the_embed_step_fails(self):
+        checkout = self.embedding_checkout()
+        builds = self.state / "builds"
+        listed = subprocess.CompletedProcess([], 0, "Main.lua\0", "")
+        with (
+            mock.patch.object(fc, "BUILD_ROOT", builds),
+            mock.patch.object(fc.subprocess, "run", return_value=listed),
+            mock.patch.object(fc, "embed_core", side_effect=fc.ClientError("embedding ForeverCore failed")),
+        ):
+            with self.assertRaises(fc.ClientError):
+                with fc.proof_source(checkout, "macro-assist-forever"):
+                    pass
+        self.assertFalse((builds / "macro-assist-forever-proof-source").exists())
 
     def test_proof_compare_accepts_only_an_equivalent_installed_folder(self):
         good = mock.Mock(returncode=0, stdout=json.dumps({"equivalent": True}), stderr="")
@@ -3773,6 +3909,196 @@ class ProofTest(unittest.TestCase):
         self.assertTrue(options.manual_launcher)
 
 
+class AttestTest(unittest.TestCase):
+    """`attest`: the user's checklist pass becomes the proof, bound to the tested runtime, without the client."""
+
+    SHA = "a" * 40
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.workspace = self.root / "ws"
+        (self.workspace / "demo-forever").mkdir(parents=True)
+        self.checkout = self.root / "checkout"
+        self.checkout.mkdir()
+        self.artifact = self.workspace / "test-artifacts/demo-forever-aaaaaaaa"
+        (self.artifact / "DemoForever").mkdir(parents=True)
+        (self.artifact / "DemoForever/DemoForever.toc").write_text("## Interface: 16001\n")
+        self.results = self.root / "handoff/results"
+        self.results.mkdir(parents=True)
+        self.client = self.root / "client"
+        (self.client / "Screenshots").mkdir(parents=True)
+        self.shot = self.results / "pasted.png"
+        Image.new("RGB", (4, 4)).save(self.shot)
+        for name, value in (
+            ("WORKSPACE", self.workspace),
+            ("PROOF_SCRATCH", self.root / "scratch"),
+            ("CLIENT", self.client),
+            ("CHECKLIST_RESULTS", self.results),
+        ):
+            patch = mock.patch.object(fc, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    @property
+    def bound(self) -> dict:
+        return {
+            "sha": self.SHA,
+            "digest": "d" * 64,
+            "artifact_sha256": "f" * 64,
+            "client_build": "1.60.1.70959 (Interface 16001)",
+        }
+
+    def report(self, **build) -> dict:
+        return {
+            "round": "2026-11-19-2",
+            "passed": True,
+            "build": {
+                "sha": self.SHA,
+                "digest": "d" * 64,
+                "artifact": "test-artifacts/demo-forever-aaaaaaaa",
+                "artifact_path": str(self.artifact),
+                "artifact_sha256": "f" * 64,
+                "artifact_sha256_now": "f" * 64,
+                "client_build": "1.60.1.70959 (Interface 16001)",
+                **build,
+            },
+            "checks": [
+                {
+                    "id": "c1",
+                    "title": "Panel opens",
+                    "steps": ["Type /demo.", "  "],
+                    "status": "pass",
+                    "images": [str(self.shot)],
+                    **self.bound,
+                },
+                {
+                    "id": "c2",
+                    "title": "Optional",
+                    "steps": [],
+                    "status": "skip",
+                    "images": [],
+                    **self.bound,
+                },
+            ],
+        }
+
+    def run_attest(self, report: dict, shots: list[str] | None = None, digest: str = "d" * 64):
+        namespace = argparse.Namespace(
+            repo="demo-forever", ref=self.SHA, checkout=self.checkout, round=None, shot=shots or []
+        )
+        with (
+            mock.patch.object(fc, "resolve_commit", return_value=self.SHA),
+            mock.patch.object(fc, "git", return_value=self.SHA),
+            mock.patch.object(fc, "checklist_status", return_value=report),
+            mock.patch.object(fc, "proof_digests", return_value={"input_digest": digest, "candidate": "c" * 64}),
+            mock.patch.object(fc, "package_name", return_value="DemoForever"),
+            mock.patch.object(fc, "proof_compare", return_value={"equivalent": True}) as compare,
+            mock.patch.object(fc, "client_build", side_effect=AssertionError("the round records the client build")),
+            mock.patch.object(fc, "create_gist", return_value="gist1") as gist,
+            mock.patch.object(
+                fc,
+                "upload_screenshots",
+                side_effect=lambda g, shots, d: [{"url": f"u/{s.name}", "sha256": "0" * 64} for s in shots],
+            ),
+            mock.patch.object(fc, "acquire_job", side_effect=AssertionError("attest must not take the client")),
+            mock.patch.object(fc, "ensure_session", side_effect=AssertionError("attest must not start the client")),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = fc.attest(namespace)
+        return result, compare, gist
+
+    def test_writes_a_user_checked_proof_from_the_passed_checks(self):
+        result, compare, _ = self.run_attest(self.report())
+        self.assertEqual(result, 0)
+        compare.assert_called_once_with(self.checkout, self.artifact / "DemoForever")
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual(proof["kind"], "user-checked")
+        self.assertEqual(proof["round"], "2026-11-19-2")
+        self.assertEqual(proof["input_digest"], "d" * 64)
+        self.assertEqual(proof["runtime_sha256"], "d" * 64)
+        self.assertEqual(proof["source_commit"], self.SHA)
+        self.assertEqual(proof["client_build"], "1.60.1.70959 (Interface 16001)")
+        self.assertEqual(proof["flows"], [{"name": "Panel opens", "steps": ["Type /demo."], "result": "pass"}])
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-pasted.png"])
+
+    def test_adds_client_screenshots_named_with_shot(self):
+        capture = self.client / "Screenshots/WoWScrnShot_111926_103244.jpg"
+        Image.new("RGB", (4, 4)).save(capture, "JPEG")
+        report = self.report()
+        report["checks"][0]["images"] = []
+        self.run_attest(report, shots=[str(capture)])
+        proof = json.loads((self.checkout / fc.PROOF_FILE).read_text())
+        self.assertEqual([image["url"] for image in proof["images"]], ["u/1-wowscrnshot-111926-103244.png"])
+        staged = self.root / "scratch" / f"attest-demo-forever-{self.SHA[:7]}/1-wowscrnshot-111926-103244.png"
+        self.assertTrue(staged.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "the checker takes PNG only")
+
+    def test_refuses_a_pass_for_another_runtime_or_without_evidence(self):
+        no_images = self.report()
+        no_images["checks"][0]["images"] = []
+        stale = self.report()
+        stale["checks"][1]["digest"] = "e" * 64
+        stray = self.report()
+        secret = self.root / "id_ed25519.png"
+        secret.write_bytes(b"key")
+        stray["checks"][0]["images"] = [str(secret)]
+        lua = self.report()
+        lua["checks"][0]["steps"] = ["C:\\flows\\demo.lua"]
+        annotated = self.report()
+        annotated["checks"][0]["steps"] = ["sha256:" + "0" * 64 + " /home/me/flow.lua"]
+        pass_line = self.report()
+        pass_line["checks"][0].update(steps=[], **{"pass": "/home/me/flow.lua"})
+        cases = {
+            "not the one recorded": (self.report(artifact_sha256_now="0" * 64), "d" * 64),
+            "recorded before artifact hashing": (self.report(artifact_sha256=""), "d" * 64),
+            "were not answered for this build": (stale, "d" * 64),
+            "no client build": (self.report(client_build=""), "d" * 64),
+            "not a screenshot from the client": (stray, "d" * 64),
+            "absolute path": (lua, "d" * 64),
+            "absolute path, fallback": (pass_line, "d" * 64),
+            "absolute path, annotated": (annotated, "d" * 64),
+            "another build": (self.report(), "e" * 64),
+            "no runtime digest": (self.report(digest=""), "d" * 64),
+            "not, " + "a" * 7: (self.report(sha="b" * 40), "d" * 64),
+            "no unpacked build": (self.report(artifact_path=str(self.workspace / "missing")), "d" * 64),
+            "no screenshot": (no_images, "d" * 64),
+        }
+        for message, (report, digest) in cases.items():
+            with self.subTest(message), self.assertRaisesRegex(fc.ClientError, message.split(", ")[0]):
+                self.run_attest(report, digest=digest)
+            self.assertFalse((self.checkout / fc.PROOF_FILE).exists())
+
+    def test_checklist_status_maps_the_gate_exit_codes(self):
+        passed = {"round": "r", "passed": True, "build": {}, "checks": []}
+        failed = {
+            "round": "r",
+            "passed": False,
+            "build": {},
+            "checks": [{"id": "c1", "status": "fail"}, {"id": "c2", "status": None}],
+        }
+        with mock.patch.object(
+            fc.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=json.dumps(passed), stderr="")
+        ) as run:
+            self.assertEqual(fc.checklist_status("demo-forever", self.SHA, "r"), passed)
+        self.assertEqual(
+            run.call_args.args[0][1:],
+            ["status", "--addon", "demo-forever", "--sha", self.SHA, "--json", "--round", "r"],
+        )
+        with (
+            mock.patch.object(
+                fc.subprocess, "run", return_value=mock.Mock(returncode=1, stdout=json.dumps(failed), stderr="")
+            ),
+            self.assertRaisesRegex(fc.ClientError, r"c1 \(fail\), c2 \(open\)"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+        with (
+            mock.patch.object(fc.subprocess, "run", return_value=mock.Mock(returncode=2, stdout="", stderr="")),
+            self.assertRaisesRegex(fc.ClientError, "no checklist round"),
+        ):
+            fc.checklist_status("demo-forever", self.SHA)
+
+
 class BrokerTest(unittest.TestCase):
     """The resident session and the short job lock: one client, several agents, no login per test."""
 
@@ -3849,6 +4175,29 @@ class BrokerTest(unittest.TestCase):
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, fc.MAX_SESSION - 1))
         # The lifetime cap wins when both limits are due, so the session never outlives it.
         self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0))
+
+    def test_the_idle_limit_waits_for_a_queued_request_or_a_live_lease(self):
+        state = {"pid": 7, "started": 1.0, "start_ticks": 2, "boot_id": "b"}
+        idle = fc.IDLE_LIMIT + 50
+        self.assertIsNone(fc.pending_work(state))
+        lease = self.state / "leases" / "tok.json"
+        lease.parent.mkdir(parents=True)
+        record = {"token": "tok", "expires": time.time() + 60, "session": fc.session_identity(state)}
+        lease.write_text(json.dumps(record))
+        self.assertEqual(fc.pending_work(state), "a lease is live")
+        self.assertIsNone(fc.session_end_reason(idle, 0, 50, 50, fc.pending_work(state)))
+        for change in ({"ended": "released by caller"}, {"expires": time.time() - 1}, {"session": {"pid": 8}}):
+            lease.write_text(json.dumps({**record, **change}))
+            self.assertIsNone(fc.pending_work(state))
+        lease.unlink()
+        ticket, handle = fc.enqueue_job()
+        try:
+            self.assertEqual(fc.pending_work(state), "a request is queued")
+        finally:
+            ticket.unlink(missing_ok=True)
+            handle.close()
+        # The lifetime cap still wins over pending work.
+        self.assertIn("lifetime cap", fc.session_end_reason(fc.MAX_SESSION, 0, 0, 0, "a lease is live"))
 
     def test_a_mark_from_an_earlier_session_starts_the_idle_limit_at_ready(self):
         stale = self.state / "last-job"
@@ -4309,7 +4658,7 @@ class BrokerTest(unittest.TestCase):
                 fc.serve(argparse.Namespace(wait=True, timeout=0))
             self.assertIn(expected, out.getvalue())
             self.assertIn("latest end 1970-01-01T03:01:40Z (177 min remaining)", out.getvalue())
-            self.assertIn("idle end 1970-01-01T00:13:20Z (8 min remaining)", out.getvalue())
+            self.assertIn("idle end 1970-01-01T01:03:20Z (58 min remaining)", out.getvalue())
             self.assertIn("job/lease run inside the resident session now without --wait", out.getvalue())
 
     def test_exited_job_leader_gives_its_child_time_to_handle_term(self):
@@ -4947,6 +5296,36 @@ class ModifierHoldTest(unittest.TestCase):
                 )
         self.assertEqual(set(self.displays), {":9"})
 
+    def test_drag_presses_moves_in_steps_and_releases(self):
+        self.record()
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        fc.drag({"display": ":9"}, (100, 200), (180, 120))
+        chain, release = self.sent
+        self.assertEqual(chain[1:6], ["mousemove", "100", "200", "mousedown", "1"])
+        moves = [chain[i + 1 : i + 3] for i, arg in enumerate(chain) if arg == "mousemove"][1:]
+        self.assertEqual(len(moves), fc.DRAG_STEPS)
+        self.assertEqual(moves[-1], ["180", "120"])
+        self.assertEqual(release, ["xdotool", "mouseup", "1"])
+
+    def test_a_failed_drag_still_releases_the_button(self):
+        self.record(fail_on="mousemove")
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        with self.assertRaises(subprocess.CalledProcessError):
+            fc.drag({"display": ":9"}, (100, 200), (180, 120))
+        self.assertEqual(self.sent[-1], ["xdotool", "mouseup", "1"])
+
+    def test_a_drag_needs_a_fresh_shot_and_points_in_the_frame(self):
+        run = self.record()
+        with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
+            fc.drag({"display": ":9"}, (1, 2), (3, 4))
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        with self.assertRaisesRegex(fc.ClientError, "outside"):
+            fc.drag({"display": ":9"}, (1, 2), (fc.WIDTH, 4))
+        run.assert_not_called()
+
     def test_keyup_still_runs_when_the_action_raises(self):
         self.record(fail_on="mousemove")
         (self.state / "last-shot").touch()
@@ -5045,6 +5424,81 @@ class ModifierHoldTest(unittest.TestCase):
         self.assertEqual(self.sent, [self.RELEASE_ALL])
         self.assertEqual(self.displays, [":5"])
 
+    def clock(self):
+        """A fake clock that time.sleep advances, so a hold's slices run instantly."""
+        now = [0.0]
+
+        def sleep(seconds):
+            self.sent.append(["slept", f"{seconds:g}"])
+            now[0] += seconds
+
+        self.enterContext(mock.patch.object(fc.time, "sleep", side_effect=sleep))
+        self.enterContext(mock.patch.object(fc.time, "monotonic", side_effect=lambda: now[0]))
+
+    def test_key_for_holds_every_key_down_together_then_releases_them(self):
+        self.record()
+        self.clock()
+        watchdog = self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
+        fc.press({"display": ":9"}, ["w", "a", "w"], 0.5)
+        self.assertEqual(
+            self.sent,
+            [
+                ["xdotool", "keydown", "w"],
+                ["xdotool", "keydown", "a"],
+                ["slept", "0.25"],
+                ["slept", "0.25"],
+                ["xdotool", "keyup", "w", "a"],
+            ],
+        )
+        self.assertEqual(watchdog.call_args.args[0][-4:], ["release-held", mock.ANY, "2.50", ":9"])
+        self.assertFalse((self.state / fc.HELD_KEYS).exists(), "the record goes once the keys are up")
+
+    def test_a_hold_lets_go_the_moment_the_character_is_unsafe(self):
+        self.record()
+        self.clock()
+        self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
+        checks = iter([None, None, fc.SafetyRefusal("player is in combat")])
+
+        def safe(_state, **_kwargs):
+            result = next(checks, None)
+            if isinstance(result, Exception):
+                raise result
+
+        self.enterContext(mock.patch.object(fc, "require_safe", side_effect=safe))
+        with self.assertRaisesRegex(fc.SafetyRefusal, "in combat"):
+            fc.press({"display": ":9"}, ["s"], 5)
+        self.assertEqual(self.sent[-1], ["xdotool", "keyup", "s"], "released at once")
+        self.assertLess(sum(float(argv[1]) for argv in self.sent if argv[0] == "slept"), 1, "not the whole hold")
+
+    def test_key_for_refuses_no_time_or_too_long_before_any_input(self):
+        run = self.record()
+        for seconds in (0, fc.HOLD_MAX + 1):
+            with self.assertRaisesRegex(fc.ClientError, "more than 0 and at most"):
+                fc.press({"display": ":9"}, ["w"], seconds)
+        run.assert_not_called()
+
+    def test_the_watchdog_releases_only_its_own_hold(self):
+        self.record()
+        self.enterContext(mock.patch.object(fc.time, "sleep"))
+        (self.state / fc.HELD_KEYS).write_text(json.dumps({"token": "mine", "keys": ["s"]}))
+        fc.release_held("other", 2, ":9")
+        self.assertEqual(self.sent, [], "a later hold's keys are not released by an earlier watchdog")
+        fc.main(["release-held", "mine", "2", ":9"])
+        self.assertEqual(self.sent, [["xdotool", "keyup", "s"]])
+        self.assertFalse((self.state / fc.HELD_KEYS).exists())
+
+    def test_numlock_is_the_key_xdotool_names_num_lock(self):
+        self.record()
+        fc.press({"display": ":9"}, ["NumLock"])
+        self.assertEqual(self.sent, [["xdotool", "key", "Num_Lock"]])
+
+    def test_a_key_held_by_a_killed_verb_is_released_at_the_next_job(self):
+        self.record()
+        (self.state / fc.HELD_KEYS).write_text(json.dumps({"token": "t", "keys": ["w", "a"]}))
+        fc.release_session_modifiers({"display": ":4"})
+        self.assertEqual(self.sent, [[*self.RELEASE_ALL, "w", "a"]])
+        self.assertFalse((self.state / fc.HELD_KEYS).exists())
+
     def test_serve_teardown_releases_every_modifier_before_the_client_stops(self):
         self.record()
         with (
@@ -5053,6 +5507,382 @@ class ModifierHoldTest(unittest.TestCase):
         ):
             fc.teardown(None, {}, None, {"display": ":3"})
         self.assertEqual(self.sent, [self.RELEASE_ALL, ["end_client"]])
+
+
+class ActionKeyTest(unittest.TestCase):
+    """`key --action` presses the key the running client binds to a game action, never a fixed key (#820). Every
+    source of bindings is checked against the hash of the client's live bindings on the motion row."""
+
+    # The headless account's own bindings-cache.wtf: forward moved to S, Up unbound, interact on F9.
+    CACHE = "bind S MOVEFORWARD\nbind BUTTON3 STARTAUTORUN\nbind UP NONE\nbind F9 INTERACTTARGET\nbind SPACE JUMP\n"
+    # What that file gives over the client's defaults (S joins W for forward, Up goes): the live bindings in most tests.
+    FROM_CACHE = fc.bindings_from_cache_file(CACHE)
+
+    def setUp(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.client, self.state = root / "client", root / "state"
+        self.state.mkdir()
+        config = root / "env.json"
+        config.write_text(json.dumps({"character": {"name": "Barry", "guid": "Player-1-0001"}}))
+        self.account = self.client / "WTF/Account/122785280#1"
+        (self.account / "93/Barry-Io").mkdir(parents=True)
+        (self.account / "SavedVariables").mkdir()
+        (self.client / "WTF/Account/OTHER/93/Barryish-Io").mkdir(parents=True)
+        for name, value in (("CLIENT", self.client), ("STATE_DIR", self.state), ("CONFIG", config)):
+            self.enterContext(mock.patch.object(fc, name, value))
+        self.enterContext(mock.patch.object(fc, "INPUT_GAP", 0))
+        self.enterContext(mock.patch.object(fc, "require_safe"))
+        self.enterContext(mock.patch.object(fc, "release_modifiers", REAL_RELEASE_MODIFIERS))
+        self.enterContext(mock.patch.object(fc.subprocess, "Popen"))
+        self.sent: list[list[str]] = []
+        self.enterContext(
+            mock.patch.object(
+                fc.subprocess,
+                "run",
+                side_effect=lambda argv, **_kw: self.sent.append(list(argv)) or mock.Mock(returncode=0),
+            )
+        )
+        self.reload = self.enterContext(mock.patch.object(fc, "reload"))
+        self.live = dict(self.FROM_CACHE)
+        self.enterContext(
+            mock.patch.object(fc, "read_motion", side_effect=lambda _state: {"bindings": fc.bindings_hash(self.live)})
+        )
+
+    def record(self, keys: dict[str, list[str]]) -> None:
+        body = "".join(
+            f'["{action}"] = {{\n' + "".join(f'"{key}",\n' for key in bound) + "},\n" for action, bound in keys.items()
+        )
+        (self.account / "SavedVariables/!!DevSmoke.lua").write_text(
+            'DevSmokeDB = {\n["bindings"] = {\n["keys"] = {\n' + body + '},\n["recorded"] = 1,\n},\n}\n'
+        )
+
+    def ask(self, answers: dict[str, list[str]]):
+        """The client's eval answer: one BIND line per action, as the lookup snippet prints it."""
+        tool = mock.Mock(EvalError=RuntimeError)
+        tool.write_source.return_value = {"token": "t1"}
+        self.enterContext(mock.patch.object(fc, "devsmoke_eval", return_value=tool))
+        self.enterContext(mock.patch.object(fc, "clear_eval_inbox"))
+        out = ["\t".join(["BIND", action, *(answers.get(action, []) + ["", ""])[:2]]) for action in fc.ACTIONS]
+        return self.enterContext(mock.patch.object(fc, "saved_eval", return_value={"run": "t1", "out": out}))
+
+    def test_a_rebound_action_resolves_to_the_clients_own_key(self):
+        self.record(self.live)
+        with mock.patch.object(fc.time, "sleep"):
+            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 2)
+        self.assertEqual(self.sent, [["xdotool", "keydown", "s"], ["xdotool", "keyup", "s"]], "S, never W")
+        self.sent.clear()
+        fc.press_actions({"display": ":9", "ready": True}, ["MOVEBACKWARD"])
+        self.assertEqual(self.sent, [["xdotool", "key", "Down"]])
+        self.reload.assert_not_called()
+
+    def test_a_stale_record_is_never_pressed(self):
+        # The record on disk still says W; the client moved forward to S since the last reload.
+        self.record(self.FROM_CACHE | {"MOVEFORWARD": ["W"], "MOVEBACKWARD": ["S", "DOWN"]})
+        self.live = self.live | {"MOVEFORWARD": ["S"]}
+        self.ask(self.live)
+        self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"]), [["s"]])
+        self.assertEqual(self.reload.call_count, 2, "the client was asked, not the stale record trusted")
+
+    def test_a_rebinding_in_the_session_replaces_the_cached_keys(self):
+        self.record(self.live)
+        state = {"ready": True, "display": ":9"}
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
+        self.live = self.live | {"MOVEFORWARD": ["W"]}
+        self.record(self.live)
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["w"]])
+
+    def test_the_bindings_file_is_used_only_when_it_matches_the_client(self):
+        (self.account / "bindings-cache.wtf").write_text(self.CACHE)
+        self.assertEqual(
+            fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD", "INTERACTTARGET"]), [["s"], ["F9"]]
+        )
+        self.reload.assert_not_called()
+        # Hel-Io's client turns on the arrows only, whatever its bindings-cache.wtf still lists.
+        self.live = self.live | {"TURNLEFT": ["LEFT"]}
+        (self.state / fc.BINDINGS_CACHE).unlink()
+        self.ask(self.live)
+        self.assertEqual(fc.action_keys({"ready": True, "display": ":9"}, ["TURNLEFT"]), [["Left"]])
+        self.assertEqual(self.reload.call_count, 2, "a file that disagrees with the client sends it to the client")
+
+    def test_the_client_is_asked_once_a_session(self):
+        saved = self.ask(self.live)
+        state = {"ready": True, "display": ":9"}
+        self.assertEqual(fc.action_keys(state, ["MOVEFORWARD"]), [["s"]])
+        saved.assert_called_once_with("t1")
+        self.assertEqual(fc.action_keys(state, ["INTERACTTARGET"]), [["F9"]])
+        self.assertEqual(self.reload.call_count, 2, "the answer is cached for the session")
+
+    def test_an_answer_that_disagrees_with_the_client_is_refused(self):
+        self.ask(self.live | {"MOVEFORWARD": ["W"]})
+        with self.assertRaisesRegex(fc.ClientError, "changed while they were read"):
+            fc.press_actions({"display": ":9", "ready": True}, ["MOVEFORWARD"], 1)
+        self.assertEqual(self.sent, [], "nothing pressed")
+
+    def test_a_partial_answer_is_not_trusted(self):
+        saved = self.ask({})
+        saved.return_value = {"run": "t1", "out": ["BIND\tMOVEFORWARD\tS\t"], "err": "boom"}
+        with self.assertRaisesRegex(fc.ClientError, "answered 1 of 9 actions"):
+            fc.action_keys({"ready": True, "display": ":9"}, ["MOVEFORWARD"])
+
+    def test_the_characters_own_bindings_win_over_the_accounts(self):
+        (self.account / "bindings-cache.wtf").write_text("bind W MOVEFORWARD\n")
+        (self.account / "93/Barry-Io/bindings-cache.wtf").write_text("bind W ACTIONBUTTON2\nbind S MOVEFORWARD\n")
+        keys = fc.file_bindings()
+        self.assertEqual((keys["MOVEFORWARD"], keys["MOVEBACKWARD"]), (["S", "UP"], ["DOWN"]))
+
+    def test_an_action_bound_only_to_a_mouse_button_is_refused(self):
+        self.live = self.live | {"JUMP": ["BUTTON4"]}
+        self.record(self.live)
+        with self.assertRaisesRegex(fc.ClientError, "JUMP is bound to BUTTON4"):
+            fc.press_actions({"display": ":9", "ready": True}, ["JUMP"])
+        self.assertEqual(self.sent, [])
+
+    def test_an_unbound_action_is_refused_by_name(self):
+        self.live = self.live | {"INTERACTTARGET": []}
+        self.record(self.live)
+        with self.assertRaisesRegex(fc.ClientError, "INTERACTTARGET is bound to no key"):
+            fc.press_actions({"display": ":9", "ready": True}, ["INTERACTTARGET"])
+
+    def test_game_key_names_become_xdotool_keysyms(self):
+        for binding, keysyms in (
+            ("S", ["s"]),
+            ("F9", ["F9"]),
+            ("CTRL-SHIFT-B", ["Control_L", "Shift_L", "b"]),
+            ("SHIFT--", ["Shift_L", "minus"]),
+            ("NUMPAD5", ["KP_5"]),
+            ("BUTTON3", None),
+            ("META-X", None),
+        ):
+            with self.subTest(binding=binding):
+                self.assertEqual(fc.game_keysyms(binding), keysyms)
+
+
+class FakeWorld:
+    """A character on a 1000 by 1000 yard map with walls: turn keys turn it, the forward key runs it, a jump clears a
+    low wall. Movement verbs see it only through the motion row's values, as they see the client."""
+
+    def __init__(self, x, y, facing, walls=(), low=(), turn_rate=math.pi, indoors=lambda x, y: False):
+        self.x, self.y, self.facing, self.map, self.size = x, y, facing, 1453, 1000
+        self.walls, self.low, self.turn_rate, self.indoors = list(walls), list(low), turn_rate, indoors
+        self.held: list[tuple[tuple[str, ...], float]] = []
+        self.target = None
+
+    def motion(self, _state=None):
+        plate, plate_x, near = False, 0.0, False
+        if self.target:
+            east, south = self.target[0] - self.x, self.target[1] - self.y
+            bearing = math.atan2(-east, -south) % (2 * math.pi)
+            off = fc.angle_between(bearing, self.facing)
+            plate = abs(off) < 0.75
+            plate_x = 0.5 - off / 1.5
+            near = math.hypot(east, south) <= 9.9
+        return {
+            "known": True,
+            "indoors": self.indoors(self.x, self.y),
+            "plate": plate,
+            "near": near,
+            "map": self.map,
+            "x": self.x / 1000,
+            "y": self.y / 1000,
+            "facing": self.facing,
+            "width": self.size,
+            "height": self.size,
+            "plate_x": plate_x,
+            "bindings": 0,
+        }
+
+    @staticmethod
+    def crosses(a, b, box):
+        left, top, right, bottom = box
+        for step in range(21):
+            x = a[0] + (b[0] - a[0]) * step / 20
+            y = a[1] + (b[1] - a[1]) * step / 20
+            if left <= x <= right and top <= y <= bottom:
+                return True
+        return False
+
+    def hold(self, _state, actions, seconds):
+        self.held.append((tuple(actions), seconds))
+        if "TURNLEFT" in actions:
+            self.facing = (self.facing + self.turn_rate * seconds) % (2 * math.pi)
+        if "TURNRIGHT" in actions:
+            self.facing = (self.facing - self.turn_rate * seconds) % (2 * math.pi)
+        if "MOVEFORWARD" in actions:
+            yards = fc.RUN_SPEED * seconds
+            end = (self.x - math.sin(self.facing) * yards, self.y - math.cos(self.facing) * yards)
+            walls = self.walls + ([] if "JUMP" in actions else self.low)
+            if not any(self.crosses((self.x, self.y), end, box) for box in walls):
+                self.x, self.y = end
+
+
+class MovementTest(unittest.TestCase):
+    """`face`, `walkto` and `park` close the loop on the measured position and facing (#820)."""
+
+    def setUp(self):
+        self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        self.enterContext(mock.patch.object(fc, "PARK_SPOTS", self.state / "park.json"))
+
+    def world(self, *args, **kwargs):
+        world = FakeWorld(*args, **kwargs)
+        self.enterContext(mock.patch.object(fc, "read_motion", side_effect=world.motion))
+        self.enterContext(mock.patch.object(fc, "press_actions", side_effect=world.hold))
+        return world
+
+    def test_face_turns_to_the_measured_heading_whatever_the_turn_rate(self):
+        for rate in (math.pi, 1.3, 5.0):
+            for start, heading in ((0.0, 3.0), (5.9, 0.2), (1.0, 1.0)):
+                with self.subTest(rate=rate, start=start, heading=heading):
+                    world = self.world(500, 500, start, turn_rate=rate)
+                    fc.face({}, heading)
+                    self.assertLessEqual(abs(fc.angle_between(heading, world.facing)), fc.FACE_TOLERANCE)
+
+    def test_face_reports_a_character_that_does_not_turn(self):
+        self.world(500, 500, 0.0, turn_rate=0.0)
+        with self.assertRaisesRegex(fc.ClientError, "do not turn this character"):
+            fc.face({}, 2.0)
+
+    def test_walkto_arrives_across_open_ground(self):
+        world = self.world(500, 500, 0.0)
+        fc.walkto({}, 0.52, 0.47)
+        self.assertLessEqual(math.hypot(world.x - 520, world.y - 470), fc.WALK_TOLERANCE)
+
+    def test_walkto_gets_round_a_counter_between_the_player_and_the_point(self):
+        # Behind a shop counter: a wall across the straight line, open at one end.
+        world = self.world(500, 500, 0.0, walls=[(490, 495, 506, 497)])
+        fc.walkto({}, 0.5, 0.48)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 480), fc.WALK_TOLERANCE)
+
+    def test_walkto_jumps_a_low_wall_once(self):
+        world = self.world(500, 500, 0.0, low=[(480, 496, 520, 496.5)])
+        fc.walkto({}, 0.5, 0.48)
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 480), fc.WALK_TOLERANCE)
+        self.assertEqual(sum("JUMP" in actions for actions, _ in world.held), 1, "one jump, then walking again")
+
+    def test_walkto_reports_stuck_with_position_and_blocked_headings_instead_of_looping(self):
+        walls = [(490, 490, 510, 492), (490, 508, 510, 510), (488, 490, 490, 510), (510, 490, 512, 510)]
+        world = self.world(500, 500, 0.0, walls=walls)
+        with self.assertRaisesRegex(
+            fc.ClientError,
+            r"stuck \(no way round\) at 5\d\.\d\d, 49\.\d\d on map 1453, [\d.]+ yd from 50\.00, 48\.00 "
+            r"\(heading \d+ deg\); blocked toward 0 deg, ",
+        ):
+            fc.walkto({}, 0.5, 0.48)
+        walks = sum("MOVEFORWARD" in actions for actions, _ in world.held)
+        self.assertLessEqual(walks, fc.STUCK_STEPS * 3 + 1 + 2 * fc.ESCAPE_STEPS * 2, "bounded, not a loop")
+
+    def test_walkto_sliding_along_a_wall_without_closing_in_counts_as_stuck(self):
+        # A long wall across the line: each step slides sideways a little but never gets nearer than the best so far.
+        self.world(500, 500, 0.0, walls=[(300, 495, 700, 497)])
+        with self.assertRaisesRegex(fc.ClientError, "stuck"):
+            fc.walkto({}, 0.5, 0.40)
+
+    def test_walkto_refuses_a_map_without_a_size_before_moving(self):
+        world = self.world(500, 500, 0.0)
+        world.size = 0
+        with self.assertRaisesRegex(fc.ClientError, "no size in yards for map 1453"):
+            fc.walkto({}, 0.9, 0.9)
+        self.assertEqual(world.held, [], "nothing pressed")
+
+    def test_walkto_stops_when_a_step_crosses_onto_another_map(self):
+        world = self.world(500, 500, 0.0)
+        hold = world.hold
+
+        def cross(state, actions, seconds):
+            hold(state, actions, seconds)
+            if "MOVEFORWARD" in actions:
+                world.map = 1429
+
+        self.enterContext(mock.patch.object(fc, "press_actions", side_effect=cross))
+        with self.assertRaisesRegex(fc.ClientError, "on map 1429, not 1453"):
+            fc.walkto({}, 0.5, 0.4)
+
+    def test_walkto_reports_where_it_got_when_time_runs_out(self):
+        self.world(500, 500, 0.0)
+        with self.assertRaisesRegex(fc.ClientError, r"stuck \(ran out of time\) at"):
+            fc.walkto({}, 0.5, 0.1, budget=0)
+
+    def test_walkto_target_carries_on_after_a_jump_clears_the_way(self):
+        world = self.world(500, 500, 0.0, low=[(480, 496, 520, 496.5)])
+        world.target = (500, 460)
+        fc.walkto_target({})
+        self.assertLessEqual(math.hypot(world.x - 500, world.y - 460), 9.9)
+
+    def test_walkto_target_walks_until_the_target_is_within_interact_distance(self):
+        world = self.world(500, 500, 1.0)
+        world.target = (530, 470)
+        fc.walkto_target({})
+        self.assertLessEqual(math.hypot(world.x - 530, world.y - 470), 9.9)
+
+    def test_face_target_centres_the_nameplate(self):
+        world = self.world(500, 500, 0.0)
+        world.target = (400, 500)  # due west: a quarter turn left
+        motion = fc.face_target({})
+        self.assertLessEqual(abs(motion["plate_x"] - 0.5), fc.PLATE_TOLERANCE)
+
+    def test_park_records_outdoor_spots_and_walks_to_the_nearest(self):
+        world = self.world(500, 500, 0.0, indoors=lambda x, y: x > 600)
+        world.x = 610
+        with self.assertRaisesRegex(fc.ClientError, "outdoors"):
+            fc.park_add({}, "inside")
+        world.x, world.y = 450, 450
+        fc.park_add({}, "trade district")
+        world.x, world.y = 300, 300
+        fc.park_add({}, "far gate")
+        world.x, world.y = 520, 520
+        (self.state / fc.MOVED_MARK).touch()
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            fc.park_after_job({})
+        self.assertIn("parked at trade district", stderr.getvalue())
+        self.assertLessEqual(math.hypot(world.x - 450, world.y - 450), fc.WALK_TOLERANCE)
+        self.assertFalse((self.state / fc.MOVED_MARK).exists())
+        world.held.clear()
+        self.assertTrue(fc.park_after_job({}))
+        self.assertEqual(world.held, [], "a job that did not move the character does not park it")
+
+    def test_a_failed_park_keeps_the_mark_and_says_so(self):
+        self.world(500, 500, 0.0)
+        (self.state / fc.MOVED_MARK).touch()
+        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            self.assertFalse(fc.park_after_job({}))
+        self.assertIn("PARK FAILED", out.getvalue())
+        self.assertTrue((self.state / fc.MOVED_MARK).exists(), "the next job end tries again")
+
+    def test_the_motion_row_decodes_only_with_its_header_and_checksum(self):
+        fields = [1453, 42730, 46793, 16384, 1000, 600, 16384, 30719]
+        flags = [True, True, False, False]
+        bits = list(fc.MOTION_HEADER) + flags
+        for value in fields:
+            bits += [bool(value >> shift & 1) for shift in range(15, -1, -1)]
+        checksum = (1 + 2 + sum(fields)) % 256
+        bits += [bool(checksum >> shift & 1) for shift in range(7, -1, -1)]
+        motion = fc.decode_motion(bits)
+        self.assertEqual((motion["map"], motion["width"], motion["height"]), (1453, 1000, 600))
+        self.assertAlmostEqual(motion["facing"], math.pi / 2, places=3)
+        self.assertTrue(motion["indoors"])
+        torn = list(bits)
+        torn[20] = not torn[20]
+        self.assertIsNone(fc.decode_motion(torn), "a torn frame decodes as nothing")
+        self.assertIsNone(fc.decode_motion([False] * len(bits)), "an older addon has no motion row")
+
+    def test_a_word_for_a_coordinate_is_refused_cleanly(self):
+        self.world(500, 500, 0.0)
+        with (
+            mock.patch.dict(os.environ, {"FOREVER_CLIENT_CALLER": "in-game"}),
+            mock.patch.object(fc, "with_job", side_effect=lambda _label, _timeout, action: action({"ready": True})),
+            mock.patch.object(fc, "require_safe"),
+            mock.patch.object(fc, "load_state", return_value={}),
+            mock.patch.object(fc, "session_alive", return_value=False),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+        ):
+            code = fc.main(["walkto", "north", "40"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("refused 'north'", err.getvalue())
+
+    def test_map_points_are_the_maps_own_0_to_100(self):
+        self.assertAlmostEqual(fc.map_point(65.2), 0.652)
+        with self.assertRaisesRegex(fc.ClientError, "0 to 100"):
+            fc.map_point(652)
 
 
 class NestedHyprlandTest(unittest.TestCase):

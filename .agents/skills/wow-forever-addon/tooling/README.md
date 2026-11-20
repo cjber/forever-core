@@ -46,7 +46,7 @@ version that either one proposes waits for review.
 | `fsio` | `atomic_write`, and `publish` for multi-output generators (stage all, replace, roll back on failure) |
 | `luadata`, `report` | Read generated Lua tables; the semantic change report |
 | `generated` | The fresh-then-offline generated-data gate, its two passes run at once, and `data_report` |
-| `specs` | Every `tests/*_spec.lua` under LuaJIT in parallel, reported in glob order with each spec's time |
+| `specs` | Every `tests/*_spec.lua` under LuaJIT in parallel, reported in glob order with each spec's time, against the ForeverCore release `tools/forever-core.txt` pins: a `FOREVER_CORE` checkout on another commit or with local edits is swapped for a cached export of the pinned tag, and one it cannot place stops the run (`FOREVER_CORE_UNPINNED=1` opts out) |
 | `sync` | `check`, `update`, `pin`, `manifest` |
 
 A repo's `tools/*.py` entry points stay thin (`changelog.py`, `release_check.py`, `lint_art.py`,

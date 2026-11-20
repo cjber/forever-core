@@ -20,9 +20,12 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
     forever_client.py hover X Y           # move the pointer to a point in the frame (after a fresh shot)
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
+    forever_client.py drag X1 Y1 X2 Y2    # left-button drag from one point to another (after a fresh shot)
     forever_client.py click X Y --hold shift [--hold ctrl]
-                                          # hold shift, ctrl or alt through a click, hover or scroll; released after
+                                          # hold shift, ctrl or alt through any pointer verb; released after
     forever_client.py key Escape          # any key xdotool names
+    forever_client.py key --action MOVEFORWARD --for 2
+                                          # hold the key this client binds to a game action: walk, turn, strafe
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
     forever_client.py sv ADDON            # print an addon's SavedVariables (after a reload, they are current)
@@ -36,6 +39,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
                                           # the same with every consumer's latest released build linked beside core
     forever_client.py proof --repo R --ref SHA --checkout PATH --flow NAME=SLASH_OR_LUA_FILE
                                           # record the checkout's .visual-proof.json from a client session
+    forever_client.py attest --repo R --ref SHA --checkout PATH [--shot FILE]
+                                          # the same from the user's checklist pass, without the client
 
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
@@ -59,6 +64,10 @@ handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`, `s
 it under the job lock before it touches AddOns. A held job lock leaves the record untouched.
 A missing full commit SHA fetches origin once and retries resolution for smoke, proof and build-dev.
 
+`attest` writes the same file from the user's own checklist pass of that build (tools/checklist/README.md), without
+the client: the round must have passed every check for the commit and recorded a runtime digest equal to the
+checkout's `visual_proof --digests`, and the recorded unpacked build must still compare equal to the checkout.
+
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
 `!!DevSmoke` (a slash command, or a Lua file), takes a screenshot after each, uploads the PNGs to a
@@ -81,7 +90,8 @@ Waiters hold exclusive locks on numbered ticket files and acquire in arrival ord
 Serve teardown takes priority over waiters without interrupting the holder. Wait logs update the holder and queue
 position; a timeout bounds the wait without guaranteeing acquisition. `STATE_DIR/job.json` names its holder
 (pid, token, label, start) so a waiter can say who it waits for. The session
-ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
+ends `IDLE_LIMIT` (60 min) after the last job ended, or after READY when none has run yet, and not while a request
+is queued or a lease is live, and never later than
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
 is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
@@ -132,6 +142,7 @@ import functools
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -148,7 +159,7 @@ import zlib
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
 
@@ -206,6 +217,8 @@ SIGN_IN_MESSAGE = (
 LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
+# Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.
+LAUNCHER_LOGIN_LABELS = (("logging", "in"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
@@ -218,9 +231,10 @@ CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "for
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
 WIDTH, HEIGHT = 1920, 1080
 # The session is shared, so the client stays up while jobs arrive instead of ending after one test. These are fixed
-# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY when none has run yet), and
-# never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is never cut off.
-IDLE_LIMIT = 10 * 60
+# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY; never while work is
+# pending), and never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is
+# never cut off.
+IDLE_LIMIT = 60 * 60
 MAX_SESSION = 3 * 60 * 60
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
@@ -251,6 +265,75 @@ WORLD_CHECK = 30  # Resident world checks are infrequent and never interrupt a j
 RELOAD_WAIT = 120  # how long a /reload's loading screen may hide the strip, the same bound `reload` waits for the world
 # The modifiers `--hold` takes, by the X keysym xdotool presses for each. Job end releases every one of them.
 MODIFIER_KEYS = {"shift": "Shift_L", "ctrl": "Control_L", "alt": "Alt_L"}
+# Key names people write that xdotool spells another way: the game binds autorun to Num Lock.
+KEY_ALIASES = {"NumLock": "Num_Lock"}
+# The game actions `key --action` presses. Each resolves to the key the running client binds to it, never a fixed key:
+# an account can rebind any of them (the headless account moves forward on S, so W does nothing there) (#820).
+ACTIONS = (
+    "MOVEFORWARD",
+    "MOVEBACKWARD",
+    "TURNLEFT",
+    "TURNRIGHT",
+    "STRAFELEFT",
+    "STRAFERIGHT",
+    "JUMP",
+    "INTERACTTARGET",
+    "TARGETNEARESTENEMY",
+)
+# The client's own default keys for those actions, as its Key Bindings "Reset to Default" sets them. The defaults live
+# in the client binary, not in its Bindings XML, so this is the one copy; it is read only when the running client's
+# answer is not on disk, and bindings-cache.wtf records every change from it.
+DEFAULT_BINDINGS: dict[str, tuple[str, ...]] = {
+    "MOVEFORWARD": ("W", "UP"),
+    "MOVEBACKWARD": ("S", "DOWN"),
+    "TURNLEFT": ("A", "LEFT"),
+    "TURNRIGHT": ("D", "RIGHT"),
+    "STRAFELEFT": ("Q",),
+    "STRAFERIGHT": ("E",),
+    "JUMP": ("SPACE",),
+    "INTERACTTARGET": (),
+    "TARGETNEARESTENEMY": ("TAB",),
+}
+# The game's names for keys xdotool spells another way; a single letter or digit is lowercased, F-keys stay as they are.
+GAME_KEYSYMS = {
+    "SPACE": "space",
+    "TAB": "Tab",
+    "UP": "Up",
+    "DOWN": "Down",
+    "LEFT": "Left",
+    "RIGHT": "Right",
+    "ENTER": "Return",
+    "ESCAPE": "Escape",
+    "BACKSPACE": "BackSpace",
+    "DELETE": "Delete",
+    "INSERT": "Insert",
+    "HOME": "Home",
+    "END": "End",
+    "PAGEUP": "Prior",
+    "PAGEDOWN": "Next",
+    "NUMLOCK": "Num_Lock",
+    "-": "minus",
+    "=": "equal",
+    "`": "grave",
+    "[": "bracketleft",
+    "]": "bracketright",
+    ";": "semicolon",
+    "'": "apostrophe",
+    ",": "comma",
+    ".": "period",
+    "/": "slash",
+    "\\": "backslash",
+}
+GAME_MODIFIERS = {"SHIFT": "Shift_L", "CTRL": "Control_L", "ALT": "Alt_L"}
+# The resolved keys, per session and per SavedVariables write, so one walk does not re-read the client each step.
+BINDINGS_CACHE = "bindings.json"
+# The hold in progress, its token and keys, so a job end or the hold's watchdog releases them after a killed verb.
+HELD_KEYS = "held-keys"
+HOLD_MAX = 10.0  # seconds one `key --for` may hold; longer walks go through `walkto`, which re-reads as it goes
+HOLD_SLICE = 0.25  # seconds between safety checks while keys are held
+HOLD_GRACE = 2.0  # seconds past a hold's end before its watchdog releases what is still down
+# Keys that move the character on the client's default bindings: a raw hold of one marks the job as having moved it.
+MOVEMENT_KEYSYMS = {"w", "a", "s", "d", "q", "e", "space", "Up", "Down", "Left", "Right"}
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -617,16 +700,68 @@ def release_modifiers(display: str | None, keys: Iterable[str] = MODIFIER_KEYS.v
 
 
 def release_session_modifiers(state: Mapping | None) -> None:
-    """Release shift, ctrl and alt on the session's display, so no job inherits a key an ended one held."""
-    failure = release_modifiers((state or {}).get("display"))
+    """Release shift, ctrl, alt and any key a verb was holding on the session's display, so no job inherits a key an
+    ended one held."""
+    keys = list(MODIFIER_KEYS.values())
+    keys += [key for key in held_record()[1] if key not in keys]
+    failure = release_modifiers((state or {}).get("display"), keys)
+    if not failure:
+        (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
     if failure:
         print(f"forever_client: {failure}", file=sys.stderr, flush=True)
 
 
+def held_record() -> tuple[str | None, list[str]]:
+    """The token and keys of the hold in progress, from its record; (None, []) when there is none."""
+    try:
+        record = json.loads((STATE_DIR / HELD_KEYS).read_text())
+    except (OSError, ValueError):
+        return None, []
+    keys = record.get("keys") if isinstance(record, dict) else None
+    if not isinstance(keys, list):
+        return None, []
+    return record.get("token"), [key for key in keys if isinstance(key, str)]
+
+
+def release_held_later(display: str, token: str, seconds: float) -> None:
+    """Start a detached watchdog that releases this hold's keys `seconds` from now if its record is still there: a verb
+    killed mid-hold has no process left to release them, and no job may start for a long time (#833 review)."""
+    try:
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "release-held", token, f"{seconds:.2f}", display],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise ClientError(f"cannot start the held-key watchdog: {error}") from None
+
+
+def release_held(token: str, seconds: float, display: str) -> int:
+    """The watchdog: after `seconds`, release the keys of hold `token` if that hold is still recorded."""
+    time.sleep(seconds)
+    recorded, keys = held_record()
+    if recorded == token and keys:
+        if release_modifiers(display, keys) is None:
+            (STATE_DIR / HELD_KEYS).unlink(missing_ok=True)
+    return 0
+
+
 @contextmanager
-def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
-    """Hold modifier keys down for the body, releasing every key pressed even when the body raises."""
+def held(state: Mapping, keys: Sequence[str], watchdog: float | None = None) -> Generator[None]:
+    """Hold keys down for the body, releasing every key pressed even when the body raises.
+
+    The keys are recorded under the state directory first, so the next job start or end releases them after a verb
+    killed while holding them; with `watchdog`, a detached process also releases them that many seconds on.
+    """
     pressed: list[str] = []
+    record = STATE_DIR / HELD_KEYS
+    if keys:
+        token = uuid.uuid4().hex
+        atomic_write(record, json.dumps({"token": token, "keys": list(keys)}))
+        if watchdog is not None:
+            release_held_later(str(state.get("display") or ""), token, watchdog)
     try:
         for key in keys:
             x(state, "keydown", key)
@@ -634,6 +769,8 @@ def held(state: Mapping, keys: Sequence[str]) -> Generator[None]:
         yield
     finally:
         failure = release_modifiers(state.get("display"), pressed)
+        if keys and not failure:
+            record.unlink(missing_ok=True)
     if failure:
         raise ClientError(failure)
 
@@ -772,6 +909,11 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
 # here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
 # X position to the point and must never be used.
+# A drag moves in this many steps, pausing between them, so the client sees the press, a move and the release apart.
+DRAG_STEPS = 8
+DRAG_PAUSE_S = "0.05"
+
+
 def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
@@ -793,6 +935,33 @@ def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
     send(state, "mousemove", str(px), str(py), hold=keys)
+
+
+def drag(state: Mapping, start: tuple[int, int], end: tuple[int, int], hold: Sequence[str] = ()) -> None:
+    """Press the left button at `start`, move to `end` in steps, release: a window or slider drag, screenshot-bound.
+
+    WoW starts a drag (OnDragStart, StartMoving) only once the pointer moves with the button down, and reads the drop
+    on release, so the press, the moves and the release are separate xdotool steps with a short pause between them.
+    The button is released even when a step fails, so a failed drag never leaves the client with the button held.
+    """
+    keys = modifier_keys(hold)
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a drag must start on addon UI in the current frame")
+    for px, py in (start, end):
+        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+            raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    if state.get("ready"):
+        close_game_menu(state)
+    steps = [
+        (start[0] + (end[0] - start[0]) * i // DRAG_STEPS, start[1] + (end[1] - start[1]) * i // DRAG_STEPS)
+        for i in range(1, DRAG_STEPS + 1)
+    ]
+    moves = [arg for px, py in steps for arg in ("sleep", DRAG_PAUSE_S, "mousemove", str(px), str(py))]
+    try:
+        press = ("mousemove", str(start[0]), str(start[1]), "mousedown", "1")
+        send(state, *press, *moves, "sleep", DRAG_PAUSE_S, hold=keys)
+    finally:
+        x(state, "mouseup", "1")
 
 
 def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = ()) -> None:
@@ -824,9 +993,646 @@ def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = (
     )
 
 
-def press(state: Mapping, keys: Sequence[str]) -> None:
-    for k in keys:
-        send(state, "key", k)
+def game_keysyms(binding: str) -> list[str] | None:
+    """The xdotool keysyms a game binding presses, modifiers first, or None for a mouse button or a key it cannot name.
+
+    The game writes a binding as its modifiers and key joined by `-`, as `CTRL-SHIFT-B`; the key `-` itself is the
+    last part, so `SHIFT--` is Shift and minus.
+    """
+    parts = binding.split("-")
+    if binding.endswith("-"):
+        parts = [*parts[:-2], "-"]
+    *modifiers, key = parts
+    if not key or any(modifier not in GAME_MODIFIERS for modifier in modifiers):
+        return None
+    if key.startswith("BUTTON") or key.startswith("MOUSEWHEEL"):
+        return None
+    if re.fullmatch(r"F\d{1,2}", key):
+        keysym = key
+    elif len(key) == 1 and key.isalnum():
+        keysym = key.lower()
+    elif key.startswith("NUMPAD") and key[6:].isdigit():
+        keysym = f"KP_{key[6:]}"
+    else:
+        keysym = GAME_KEYSYMS.get(key)
+    if keysym is None:
+        return None
+    return [GAME_MODIFIERS[modifier] for modifier in modifiers] + [keysym]
+
+
+def bindings_from_cache_file(text: str) -> dict[str, list[str]]:
+    """Each action's keys from the client's defaults changed by a bindings-cache.wtf: `bind KEY ACTION` moves the key
+    to that action, first in its list, and `bind KEY NONE` unbinds it."""
+    keys = {action: list(default) for action, default in DEFAULT_BINDINGS.items()}
+    for line in text.splitlines():
+        match = re.fullmatch(r"bind (\S+) (\S+)", line.strip())
+        if not match:
+            continue
+        key, action = match.groups()
+        for bound in keys.values():
+            if key in bound:
+                bound.remove(key)
+        if action in keys:
+            keys[action].insert(0, key)
+    return keys
+
+
+def approved_character() -> str | None:
+    """The approved character's name from the launch config, or None when there is none to read."""
+    try:
+        character = json.loads(CONFIG.read_text()).get("character")
+    except (OSError, ValueError, AttributeError):
+        return None
+    name = character.get("name") if isinstance(character, dict) else None
+    return name if isinstance(name, str) and name.strip() else None
+
+
+def character_folder() -> Path | None:
+    """The approved character's WTF folder, `Account/<account>/<realm>/<name>-<suffix>` or `.../<name>`, or None when
+    no folder or more than one matches."""
+    name = approved_character()
+    if not name:
+        return None
+    accounts = CLIENT / "WTF/Account"
+    found = sorted(
+        path
+        for path in accounts.glob("*/*/*")
+        if path.is_dir() and (path.name == name or path.name.startswith(f"{name}-"))
+    )
+    return found[0] if len(found) == 1 else None
+
+
+def account_folder() -> Path | None:
+    """The WTF account folder holding the approved character, or None when it cannot be told apart."""
+    character = character_folder()
+    return character.parent.parent if character else None
+
+
+def recorded_bindings() -> tuple[dict[str, list[str]], str] | None:
+    """The keys the running client gave GetBindingKey, from !!DevSmoke's SavedVariables, and the file's identity."""
+    folder = account_folder()
+    files = saved_variables("!!DevSmoke")
+    if folder is not None:
+        files = [path for path in files if folder in path.parents]
+    lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    for path in sorted(files, key=lambda candidate: candidate.stat().st_mtime, reverse=True):
+        try:
+            variables = lua.load_lua(path)
+        except (OSError, lua.LuaSyntaxError):
+            continue
+        smoke = variables.get("DevSmokeDB")
+        record = smoke.get("bindings") if isinstance(smoke, dict) else None
+        keys = record.get("keys") if isinstance(record, dict) else None
+        if not isinstance(keys, dict):
+            continue
+        resolved = {}
+        for action in ACTIONS:
+            bound = keys.get(action)
+            values = bound.values() if isinstance(bound, dict) else bound if isinstance(bound, list) else ()
+            resolved[action] = [value for value in values if isinstance(value, str)]
+        return resolved, f"{path}:{path.stat().st_mtime_ns}"
+    return None
+
+
+def file_bindings() -> dict[str, list[str]]:
+    """The client's defaults changed by the character's own bindings-cache.wtf when it keeps per-character bindings,
+    otherwise by the account's."""
+    character = character_folder()
+    if character is None:
+        raise ClientError("cannot tell which WTF folder is the session's character, so its bindings are unknown")
+    for path in (character / "bindings-cache.wtf", character.parent.parent / "bindings-cache.wtf"):
+        try:
+            return bindings_from_cache_file(path.read_text(errors="replace"))
+        except OSError:
+            continue
+    return bindings_from_cache_file("")
+
+
+def asked_bindings(state: Mapping) -> dict[str, list[str]]:
+    """Each action's keys from the running client's own GetBindingKey, asked through an eval: one reload runs it and a
+    second saves its answer."""
+    names = ", ".join(f'"{action}"' for action in ACTIONS)
+    source = (
+        f"for _, action in ipairs({{ {names} }}) do\n"
+        "\tlocal first, second = GetBindingKey(action)\n"
+        '\tprint("BIND", action, first or "", second or "")\n'
+        "end\n"
+    )
+    tool = devsmoke_eval()
+    try:
+        written = tool.write_source(source, "key binding lookup", addons=CLIENT / "Interface/AddOns")
+    except tool.EvalError as error:
+        raise ClientError(str(error)) from None
+    try:
+        reload(state)
+    finally:
+        clear_eval_inbox(quiet=True)
+    reload(state)
+    data = saved_eval(str(written["token"]))
+    out = data.get("out")
+    lines = out.values() if isinstance(out, dict) else out if isinstance(out, list) else []
+    keys: dict[str, list[str]] = {}
+    for line in lines:
+        parts = str(line).split("\t")
+        if len(parts) >= 2 and parts[0] == "BIND" and parts[1] in ACTIONS:
+            keys[parts[1]] = [part for part in parts[2:] if part]
+    if set(keys) != set(ACTIONS):
+        raise ClientError(f"the key binding lookup answered {len(keys)} of {len(ACTIONS)} actions: {data.get('err')}")
+    return keys
+
+
+def bindings_hash(keys: Mapping[str, Sequence[str]]) -> int:
+    """The 16-bit hash !!ForeverHeadless draws of the client's movement bindings: each action's first two keys."""
+    text = ""
+    for action in ACTIONS:
+        bound = [*keys.get(action, []), "", ""]
+        text += f"{action}={bound[0]},{bound[1]};"
+    return sum(ord(char) * index for index, char in enumerate(text, 1)) % 65536
+
+
+def action_bindings(state: Mapping) -> dict[str, list[str]]:
+    """Each action's keys in the running client. Every source is checked against the hash of the client's live
+    bindings that the motion row carries, so a stale one is never pressed: the session's cached answer, !!DevSmoke's
+    record (on disk only at a reload), the client's defaults changed by bindings-cache.wtf, and last the client itself
+    through an eval of GetBindingKey (two reloads). When none matches, the action is refused.
+    """
+    live = read_motion(state)["bindings"]
+    cache = STATE_DIR / BINDINGS_CACHE
+    session = str(state.get("pid") or state.get("display") or "")
+    try:
+        cached = json.loads(cache.read_text())
+    except (OSError, ValueError):
+        cached = {}
+    candidates = []
+    if cached.get("session") == session and isinstance(cached.get("keys"), dict):
+        candidates.append(cached["keys"])
+    recorded = recorded_bindings()
+    if recorded is not None:
+        candidates.append(recorded[0])
+    try:
+        candidates.append(file_bindings())
+    except ClientError:
+        pass
+    for keys in candidates:
+        if bindings_hash(keys) == live:
+            atomic_write(cache, json.dumps({"session": session, "keys": keys}))
+            return keys
+    keys = asked_bindings(state)
+    live = read_motion(state)["bindings"]
+    if bindings_hash(keys) != live:
+        raise ClientError("the client's key bindings changed while they were read: run the action again")
+    atomic_write(cache, json.dumps({"session": session, "keys": keys}))
+    return keys
+
+
+def action_keys(state: Mapping, actions: Sequence[str]) -> list[list[str]]:
+    """The keysyms to press for each action: its first binding xdotool can press, modifiers first."""
+    refused = [action for action in actions if action not in ACTIONS]
+    if refused:
+        raise ClientError(f"--action takes {', '.join(ACTIONS)}; refused {', '.join(refused)}")
+    bindings = action_bindings(state)
+    pressed = []
+    for action in actions:
+        bound = bindings.get(action) or []
+        keysyms = next((found for found in map(game_keysyms, bound) if found), None)
+        if keysyms is None:
+            shown = ", ".join(bound) or "no key"
+            raise ClientError(f"{action} is bound to {shown} in this client, which no key press reaches")
+        pressed.append(keysyms)
+    return pressed
+
+
+def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None = None) -> None:
+    """Press game actions by the keys the running client binds to them: tapped, or with `hold_for` held together."""
+    combos = action_keys(state, actions)
+    if any(action.startswith(("MOVE", "TURN", "STRAFE", "JUMP")) for action in actions):
+        mark_moved()
+    if hold_for is None:
+        for combo in combos:
+            send(state, "key", "+".join(combo))
+        return
+    press(state, [keysym for combo in combos for keysym in combo], hold_for)
+
+
+# The motion row the headless addon draws under the safety strip (forever-core#820): an 8-cell header, four flags, seven
+# 16-bit fields and an 8-bit checksum, one 4-pixel cell per bit on pixel row 4 to 7.
+MOTION_HEADER = [True, False, False, True, True, False, True, True]
+MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x", "bindings")
+MOTION_FLAGS = ("known", "indoors", "plate", "near")
+MOTION_ROW = 6
+STRIP_ROWS = 8  # both strips sit in the frame's top 8 pixel rows
+# Closed-loop movement. Each step reads the motion row again; these bound one step, not the result.
+FACE_TOLERANCE = math.radians(4)  # close enough to walk straight at a point
+PLATE_TOLERANCE = 0.03  # a target's nameplate this near the screen's middle is in front
+TURN_RATE = math.pi  # radians a second while a turn key is held, the client's own rate; each step re-measures it
+TURN_STEP_MIN, TURN_STEP_MAX = 0.04, 0.8
+TURN_TRIES = 16
+CAMERA_FOV = 1.5  # radians across the screen, for the first turn toward a nameplate; the loop corrects the rest
+RUN_SPEED = 7.0  # yards a second running, for one step's length
+WALK_STEP_MAX = 1.5
+WALK_TOLERANCE = 1.5  # yards from the point counts as arrived
+WALK_STEPS = 120
+WALK_BUDGET = 240.0  # seconds a walk may take before it reports where it got to
+STUCK_PROGRESS = 0.3  # yards a step must gain, or it counts toward stuck
+STUCK_STEPS = 2
+# A blocked straight line (a shop counter between the player and the point): follow the obstacle to one side, stepping
+# at ESCAPE_ANGLE off the line and trying the line again after every step, then to the other side. The client gives no
+# collision geometry, so following the obstacle is how a walker without a map gets round it; it is bounded and
+# reports what it tried.
+ESCAPE_ANGLE = math.radians(80)
+ESCAPE_STEP = 1.0
+ESCAPE_STEPS = 12  # steps along the obstacle on each side
+MOVED_MARK = "moved"
+PARK_FAILED_CODE = 3
+PARK_SPOTS = CONFIG.parent / "park.json"
+
+
+class MotionUnread(ClientError):
+    """The motion row is on screen but did not decode: a torn frame or cells that do not line up with the pixels."""
+
+
+def motion_state(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> dict | None:
+    """Where the player stands, from the motion row: map, x and y (0 to 1), facing (radians), the map's size in yards,
+    indoors, the target's nameplate across the screen (0 to 1), whether it is within interact distance and a hash of
+    the client's movement key bindings. None when the row is missing or from an older addon; MotionUnread when it is on
+    screen but fails its checksum."""
+    frame = frame or strip_rows(state)
+    if frame is None:
+        return None
+    channels, rows = frame
+    cells = len(MOTION_HEADER) + len(MOTION_FLAGS) + 16 * len(MOTION_FIELDS) + 8
+    try:
+        bits = [rows[MOTION_ROW][(column * 4 + 2) * channels] >= 128 for column in range(cells)]
+    except IndexError:
+        return None
+    motion = decode_motion(bits)
+    if motion is None and bits[: len(MOTION_HEADER)] == MOTION_HEADER:
+        raise MotionUnread("the motion row is on screen but fails its checksum")
+    return motion
+
+
+def decode_motion(bits: Sequence[bool]) -> dict | None:
+    """The motion row's bits as values, or None when the header or checksum does not match."""
+    if list(bits[: len(MOTION_HEADER)]) != MOTION_HEADER:
+        return None
+    at = len(MOTION_HEADER)
+    flags = list(bits[at : at + len(MOTION_FLAGS)])
+    at += len(MOTION_FLAGS)
+    fields = []
+    for _ in MOTION_FIELDS:
+        fields.append(int("".join("1" if bit else "0" for bit in bits[at : at + 16]), 2))
+        at += 16
+    checksum = int("".join("1" if bit else "0" for bit in bits[at : at + 8]), 2)
+    if checksum != (sum(index for index, flag in enumerate(flags, 1) if flag) + sum(fields)) % 256:
+        return None
+    values = dict(zip(MOTION_FLAGS, flags, strict=True)) | dict(zip(MOTION_FIELDS, fields, strict=True))
+    for name in ("x", "y", "plate_x"):
+        values[name] /= 65535
+    values["facing"] = values["facing"] / 65535 * 2 * math.pi
+    return values
+
+
+def read_motion(state: Mapping) -> dict:
+    """The motion state from one fresh frame, which must be safe and known: a dead or fighting character, a missing row
+    or an unknown position stops movement. A frame caught mid-paint fails its checksum, so a failed read is taken again,
+    up to three times."""
+    for attempt in range(3):
+        frame = strip_rows(state)
+        ui = client_ui(state, frame) if frame else {"safety": False}
+        if ui.get("safety") and (ui["dead"] or ui["combat"]):
+            raise SafetyRefusal("player is dead or a ghost" if ui["dead"] else "player is in combat")
+        try:
+            motion = motion_state(state, frame)
+            break
+        except MotionUnread:
+            if attempt == 2:
+                raise
+    if motion is None:
+        raise ClientError("no motion row on screen: the session's headless addon predates `face` and `walkto`")
+    if not motion["known"]:
+        raise ClientError("the client gives no position here (an instance or a loading screen)")
+    return motion
+
+
+def map_size(motion: Mapping) -> tuple[int, int]:
+    """The map's size in yards, which yard distances need: a map the client gives no size for refuses them."""
+    if not motion["width"] or not motion["height"]:
+        raise ClientError(f"the client gives no size in yards for map {motion['map']}, so distances there are unknown")
+    return motion["width"], motion["height"]
+
+
+def angle_between(heading: float, facing: float) -> float:
+    """The turn from facing to heading, in (-pi, pi]; positive turns left (the client's facing grows to the left)."""
+    turn = (heading - facing) % (2 * math.pi)
+    return turn - 2 * math.pi if turn > math.pi else turn
+
+
+def heading_to(motion: Mapping, x: float, y: float) -> tuple[float, float]:
+    """The facing that points from the player at map point (x, y), both 0 to 1, and the distance in yards.
+
+    Facing 0 is north and grows to the left (west); map x grows east and map y south.
+    """
+    width, height = map_size(motion)
+    east = (x - motion["x"]) * width
+    south = (y - motion["y"]) * height
+    return math.atan2(-east, -south) % (2 * math.pi), math.hypot(east, south)
+
+
+def mark_moved() -> None:
+    (STATE_DIR / MOVED_MARK).touch()
+
+
+def hold_action(state: Mapping, actions: Sequence[str], seconds: float) -> None:
+    mark_moved()
+    press_actions(state, actions, seconds)
+
+
+def progress(message: str) -> None:
+    """One line per movement step, so a caller sees a long walk advance rather than silence."""
+    print(f"forever_client: {message}", file=sys.stderr, flush=True)
+
+
+def face(state: Mapping, heading: float, motion: dict | None = None) -> dict:
+    """Turn until the measured facing is within FACE_TOLERANCE of `heading`; the motion state when it is."""
+    rate = TURN_RATE
+    motion = motion or read_motion(state)
+    for _ in range(TURN_TRIES):
+        turn = angle_between(heading, motion["facing"])
+        if abs(turn) <= FACE_TOLERANCE:
+            return motion
+        seconds = min(max(abs(turn) / rate, TURN_STEP_MIN), TURN_STEP_MAX)
+        hold_action(state, ["TURNLEFT" if turn > 0 else "TURNRIGHT"], seconds)
+        after = read_motion(state)
+        turned = abs(angle_between(after["facing"], motion["facing"]))
+        if turned > 0.01:
+            rate = turned / seconds
+        motion = after
+    raise ClientError(
+        f"facing stayed {math.degrees(motion['facing']):.0f} deg after {TURN_TRIES} turns toward "
+        f"{math.degrees(heading):.0f} deg: TURNLEFT and TURNRIGHT do not turn this character"
+    )
+
+
+def face_target(state: Mapping) -> dict:
+    """Turn until the target's nameplate is in the middle of the screen; a target off screen is searched for in
+    quarter turns."""
+    rate = TURN_RATE
+    motion = read_motion(state)
+    searched = 0
+    for _ in range(TURN_TRIES):
+        if not motion["plate"]:
+            if searched >= 4:
+                raise ClientError("no nameplate for the target after a full turn: target it and show nameplates")
+            hold_action(state, ["TURNLEFT"], min(math.pi / 2 / rate, TURN_STEP_MAX * 2))
+            searched += 1
+            motion = read_motion(state)
+            continue
+        off = motion["plate_x"] - 0.5
+        if abs(off) <= PLATE_TOLERANCE:
+            return motion
+        seconds = min(max(abs(off) * CAMERA_FOV / rate, TURN_STEP_MIN), TURN_STEP_MAX)
+        hold_action(state, ["TURNRIGHT" if off > 0 else "TURNLEFT"], seconds)
+        motion = read_motion(state)
+    raise ClientError("the target's nameplate never came to the middle of the screen")
+
+
+def walk_step(state: Mapping, seconds: float, *, jump: bool = False) -> dict:
+    hold_action(state, ["MOVEFORWARD", "JUMP"] if jump else ["MOVEFORWARD"], seconds)
+    return read_motion(state)
+
+
+def yards_between(a: Mapping, b: Mapping) -> float:
+    width, height = map_size(a)
+    return math.hypot((a["x"] - b["x"]) * width, (a["y"] - b["y"]) * height)
+
+
+class Walk:
+    """One walk to map point (x, y), 0 to 1, on one map: every read is checked against that map and the time budget,
+    and every step is reported."""
+
+    def __init__(self, state: Mapping, x: float, y: float, map_id: int | None, budget: float):
+        self.state, self.x, self.y = state, x, y
+        self.deadline = time.monotonic() + budget
+        self.blocked: list[int] = []
+        self.steps = 0
+        self.motion = read_motion(state)
+        self.map = self.motion["map"] if map_id is None else map_id
+        self.check(self.motion)
+
+    def check(self, motion: Mapping) -> None:
+        if motion["map"] != self.map:
+            raise ClientError(f"the player is on map {motion['map']}, not {self.map}: walkto stays on one map")
+        if time.monotonic() > self.deadline:
+            raise ClientError(self.stuck("ran out of time"))
+
+    def distance(self, motion: Mapping | None = None) -> float:
+        return heading_to(motion or self.motion, self.x, self.y)[1]
+
+    def read(self, motion: dict) -> dict:
+        self.check(motion)
+        self.motion = motion
+        return motion
+
+    def step(self, seconds: float | None = None, *, jump: bool = False, heading: float | None = None) -> float:
+        """Face the point (or `heading`), walk one step, and return the yards it gained toward the point."""
+        before = self.distance()
+        aim = heading if heading is not None else heading_to(self.motion, self.x, self.y)[0]
+        self.read(face(self.state, aim, self.motion))
+        length = seconds if seconds is not None else min(self.distance() / RUN_SPEED, WALK_STEP_MAX)
+        self.read(walk_step(self.state, max(length, 0.1), jump=jump))
+        self.steps += 1
+        progress(
+            f"step {self.steps}: {self.motion['x'] * 100:.2f}, {self.motion['y'] * 100:.2f}, "
+            f"{self.distance():.1f} yd to go"
+        )
+        return before - self.distance()
+
+    def stuck(self, why: str) -> str:
+        heading, distance = heading_to(self.motion, self.x, self.y)
+        seen = list(dict.fromkeys(self.blocked))
+        return (
+            f"stuck ({why}) at {self.motion['x'] * 100:.2f}, {self.motion['y'] * 100:.2f} on map {self.motion['map']}, "
+            f"{distance:.1f} yd from {self.x * 100:.2f}, {self.y * 100:.2f} (heading {math.degrees(heading):.0f} deg); "
+            f"blocked toward {', '.join(f'{angle} deg' for angle in seen) or 'nothing measured'} (0 north, 90 west)"
+        )
+
+    def go_round(self) -> bool:
+        """Follow the obstacle across the line, one side then the other, until a straight step gains ground."""
+        for side in (1, -1):
+            for _ in range(ESCAPE_STEPS):
+                start = self.motion
+                aside = (heading_to(start, self.x, self.y)[0] + side * ESCAPE_ANGLE) % (2 * math.pi)
+                self.step(ESCAPE_STEP, heading=aside)
+                if yards_between(self.motion, start) < STUCK_PROGRESS:
+                    self.blocked.append(round(math.degrees(aside)) % 360)
+                    break
+                if self.step() >= STUCK_PROGRESS:
+                    return True
+                self.blocked.append(round(math.degrees(heading_to(self.motion, self.x, self.y)[0])) % 360)
+        return False
+
+
+def walkto(
+    state: Mapping,
+    x: float,
+    y: float,
+    map_id: int | None = None,
+    tolerance: float = WALK_TOLERANCE,
+    budget: float = WALK_BUDGET,
+) -> dict:
+    """Walk to map point (x, y), 0 to 1, re-reading the position after every step and facing the point again.
+
+    Progress is the best distance so far: STUCK_STEPS steps that do not beat it by STUCK_PROGRESS yards (straight into
+    a wall, or sliding along one) count as stuck. Stuck, the walker jumps forward once, then follows the obstacle
+    (Walk.go_round). When that gains nothing, or the time budget runs out, it stops and reports where it is and which
+    headings were blocked, rather than looping.
+    """
+    walk = Walk(state, x, y, map_id, budget)
+    best, stalled, jumped = walk.distance(), 0, False
+    for _ in range(WALK_STEPS):
+        if walk.distance() <= tolerance:
+            return walk.motion
+        heading = heading_to(walk.motion, x, y)[0]
+        walk.step()
+        if walk.distance() <= best - STUCK_PROGRESS:
+            best, stalled = walk.distance(), 0
+            continue
+        stalled += 1
+        if stalled < STUCK_STEPS:
+            continue
+        stalled = 0
+        walk.blocked.append(round(math.degrees(heading)) % 360)
+        if not jumped:
+            jumped = True
+            walk.step(0.8, jump=True)
+        elif not walk.go_round():
+            raise ClientError(walk.stuck("no way round"))
+        best = min(best, walk.distance())
+    if walk.distance() <= tolerance:
+        return walk.motion
+    raise ClientError(walk.stuck(f"{WALK_STEPS} steps"))
+
+
+def walkto_target(state: Mapping, budget: float = WALK_BUDGET) -> dict:
+    """Walk to the target until it is within interact distance, facing its nameplate before every step. Stuck, it jumps
+    forward once and carries on; stuck again, it reports where it is."""
+    deadline = time.monotonic() + budget
+    stalled, jumped = 0, False
+    for step in range(1, WALK_STEPS + 1):
+        if time.monotonic() > deadline:
+            raise ClientError("ran out of time walking to the target")
+        motion = face_target(state)
+        if motion["near"]:
+            return motion
+        after = walk_step(state, 1.0)
+        progress(f"step {step}: {after['x'] * 100:.2f}, {after['y'] * 100:.2f} toward the target")
+        stalled = stalled + 1 if yards_between(after, motion) < STUCK_PROGRESS else 0
+        if stalled < STUCK_STEPS:
+            continue
+        stalled = 0
+        if jumped:
+            raise ClientError(
+                f"stuck at {after['x'] * 100:.2f}, {after['y'] * 100:.2f} on map {after['map']} walking to the "
+                f"target (heading {math.degrees(after['facing']):.0f} deg, 0 north, 90 west)"
+            )
+        jumped = True
+        walk_step(state, 0.8, jump=True)
+    raise ClientError("the target was never within interact distance")
+
+
+def park_spots() -> list[dict]:
+    try:
+        spots = json.loads(PARK_SPOTS.read_text())
+    except (OSError, ValueError):
+        return []
+    return [spot for spot in spots if isinstance(spot, dict)] if isinstance(spots, list) else []
+
+
+def park_add(state: Mapping, label: str) -> dict:
+    """Record where the player stands as a park spot: outdoors, with a merchant and creatures in reach."""
+    motion = read_motion(state)
+    if motion["indoors"]:
+        raise ClientError("a park spot is outdoors: the player is indoors here")
+    spot = {"label": label, "map": motion["map"], "x": round(motion["x"], 5), "y": round(motion["y"], 5)}
+    spots = [old for old in park_spots() if old.get("label") != label] + [spot]
+    PARK_SPOTS.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(PARK_SPOTS, json.dumps(spots, indent=1))
+    return spot
+
+
+def park(state: Mapping) -> dict:
+    """Walk to the nearest park spot on the player's map and check it is outdoors."""
+    motion = read_motion(state)
+    spots = [spot for spot in park_spots() if spot.get("map") == motion["map"]]
+    if not spots:
+        raise ClientError(f"no park spot on map {motion['map']}: stand at one and run `park --add LABEL`")
+    spot = min(spots, key=lambda spot: heading_to(motion, spot["x"], spot["y"])[1])
+    progress(f"parking at {spot['label']}")
+    motion = walkto(state, spot["x"], spot["y"], spot["map"])
+    if motion["indoors"]:
+        raise ClientError(f"park spot {spot['label']} reads as indoors")
+    (STATE_DIR / MOVED_MARK).unlink(missing_ok=True)
+    return spot
+
+
+def park_after_job(state: Mapping) -> bool:
+    """At the end of a job that moved the character, walk it back to a park spot. A failure is printed on stdout and
+    stderr and keeps the moved mark, so the next job end tries again; True when the character is parked or never
+    moved."""
+    if not (STATE_DIR / MOVED_MARK).exists():
+        return True
+    try:
+        spot = park(state)
+    except (ClientError, SafetyRefusal) as error:
+        line = f"forever_client: PARK FAILED, the character is not parked: {error}"
+        print(line, flush=True)
+        print(line, file=sys.stderr, flush=True)
+        return False
+    print(f"forever_client: parked at {spot['label']}", file=sys.stderr, flush=True)
+    return True
+
+
+def describe_motion(motion: Mapping) -> str:
+    return (
+        f"map {motion['map']} at {motion['x'] * 100:.2f}, {motion['y'] * 100:.2f} facing "
+        f"{math.degrees(motion['facing']):.0f} deg (0 north, 90 west){', indoors' if motion['indoors'] else ''}"
+        f"{', target within interact distance' if motion['near'] else ''}"
+    )
+
+
+def map_point(value: float) -> float:
+    """A map coordinate as the game's map shows it, 0 to 100, as the 0 to 1 the client's API uses."""
+    if not 0 <= value <= 100:
+        raise ClientError(f"map coordinates run 0 to 100, as the map shows them: refused {value:g}")
+    return value / 100
+
+
+def press(state: Mapping, keys: Sequence[str], hold_for: float | None = None) -> None:
+    """Tap each key in turn, or with `hold_for`, hold them all down together for that many seconds.
+
+    A tap is a press and release with no time between, which the game reads as a key event but not as movement: a
+    held key is how the character walks (w), turns (a, d) or strafes, for as long as it is held (#820).
+    """
+    keys = [KEY_ALIASES.get(key, key) for key in keys]
+    if hold_for is None:
+        for k in keys:
+            send(state, "key", k)
+        return
+    if not 0 < hold_for <= HOLD_MAX:
+        raise ClientError(f"--for takes more than 0 and at most {HOLD_MAX:g} seconds; walk further with `walkto`")
+    wait = INPUT_GAP - (time.time() - mark("last-input"))
+    if wait > 0:
+        time.sleep(wait)
+    if any(key in MOVEMENT_KEYSYMS for key in keys):
+        mark_moved()
+    with held(state, list(dict.fromkeys(keys)), watchdog=hold_for + HOLD_GRACE):
+        # The character can be pulled into a fight or die mid-hold: check between slices and let go at once.
+        end = time.monotonic() + hold_for
+        while (left := end - time.monotonic()) > 0:
+            time.sleep(min(HOLD_SLICE, left))
+            if time.monotonic() < end:
+                require_safe(state)
+    (STATE_DIR / "last-input").touch()
 
 
 def one_line_slash(command: str) -> None:
@@ -837,14 +1643,28 @@ def one_line_slash(command: str) -> None:
         raise ClientError(f"slash sends a slash command, not chat text: refused {command.strip() or 'an empty line'!r}")
 
 
-def client_ui(state: Mapping) -> dict[str, bool]:
-    """Decode live safety, identifying older strips for guarded session replacement."""
-    unknown = {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True}
+def strip_rows(state: Mapping) -> tuple[int, list[bytes]] | None:
+    """The top rows of one fresh frame, where both pixel strips sit, and the bytes a pixel takes; None when no frame."""
     # Every gameplay verb reads the strip, so its full-frame capture is removed once decoded rather than left behind.
     path = STATE_DIR / f"client-state-{os.getpid()}.png"
     try:
         image = shot(state, path, mark_read=False)
-        _width, _height, channels, rows = png_pixels(image)
+        _width, _height, channels, rows = png_pixels(image, max_rows=STRIP_ROWS)
+        return channels, rows
+    except (subprocess.CalledProcessError, ClientError, OSError):
+        return None
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def client_ui(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> dict[str, bool]:
+    """Decode live safety, identifying older strips for guarded session replacement."""
+    unknown = {"world": False, "menu": False, "chat": False, "safety": False, "dead": True, "combat": True}
+    try:
+        frame = frame or strip_rows(state)
+        if frame is None:
+            return unknown
+        channels, rows = frame
         bits = []
         for column in range(8):
             offset = (column * 4 + 2) * channels
@@ -857,10 +1677,8 @@ def client_ui(state: Mapping) -> dict[str, bool]:
             offset = (column * 4 + 2) * channels
             bits.append(rows[2][offset] >= 128)
         return dict(zip(("world", "menu", "chat", "dead", "combat"), bits[8:], strict=True)) | {"safety": True}
-    except (subprocess.CalledProcessError, ClientError, OSError, IndexError):
+    except IndexError:
         return unknown
-    finally:
-        path.unlink(missing_ok=True)
 
 
 def require_safe(state: Mapping, *, waiting: bool = False) -> None:
@@ -969,8 +1787,9 @@ PLAY_FILL = bytes((0, 116, 224))
 PLAY_LABEL = "play"
 
 
-def png_pixels(path: Path) -> tuple[int, int, int, list[bytes]]:
-    """The screenshot's width, height, channels and rows, decoded without an image library.
+def png_pixels(path: Path, max_rows: int | None = None) -> tuple[int, int, int, list[bytes]]:
+    """The screenshot's width, height, channels and rows, decoded without an image library. With `max_rows`, only
+    that many rows from the top: the pixel strips sit there, and a full 1920-wide frame takes over a second to unfilter.
 
     gamescope writes an 8-bit, non-interlaced RGB or RGBA PNG. Anything else is a ClientError naming the file: a frame
     this tool cannot read must never be reported as a launcher without Play.
@@ -1008,16 +1827,20 @@ def png_pixels(path: Path) -> tuple[int, int, int, list[bytes]]:
             break
     if not width or not height or channels is None:
         raise ClientError(f"{path} has no PNG header")
+    stride = width * channels
+    wanted = height if max_rows is None else min(height, max_rows)
     try:
-        raw = zlib.decompress(b"".join(compressed))
+        if max_rows is None:
+            raw = zlib.decompress(b"".join(compressed))
+        else:
+            raw = zlib.decompressobj().decompress(b"".join(compressed), (stride + 1) * wanted)
     except zlib.error as error:
         raise ClientError(f"{path} is not a readable PNG: {error}") from None
-    stride = width * channels
     rows: list[bytes] = []
     previous = bytes(stride)
     at = 0
     try:
-        for _row in range(height):
+        for _row in range(wanted):
             kind = raw[at]
             at += 1
             line = bytearray(raw[at : at + stride])
@@ -1248,7 +2071,8 @@ def press_play(state: dict) -> None:
         check=False,
     )
     if not found.stdout.split():
-        raise ClientError("Battle.net launcher window was not found")
+        # Battle.net can swap its login window for the main one; the startup loop retries until its deadline.
+        return
     if shutil.which("tesseract") is None:
         raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
     if client_pid():
@@ -1280,12 +2104,24 @@ def press_play(state: dict) -> None:
         )
     targets = play_targets(image)
     if not targets:
+        # The label trails its animated dots ("Logging in.."), which are not part of it.
+        label_words = [word.rstrip(".") for word in words]
+        if any(
+            label_words[index : index + len(phrase)] == list(phrase)
+            for phrase in LAUNCHER_LOGIN_LABELS
+            for index in range(len(label_words))
+        ):
+            return
         # A launcher dialog can cover the page. Dismiss it on the discovered
         # Battle.net window, then let the startup loop inspect a fresh frame.
         x(state, "key", "--window", found.stdout.split()[0], "Escape")
         if not state.get("play_target_missing_reported"):
+            # Every retry overwrites launcher.png, so by the time anyone reads this line the file shows a later
+            # frame (often one with Play drawn). Keep the frame this report is about under its own name.
+            missed = image.with_name(f"{image.stem}-no-play{image.suffix}")
+            shutil.copyfile(image, missed)
             print(
-                f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
+                f"no visible Play label recognized; inspect {missed}. Retrying until the startup deadline. "
                 "For screenshot-guided launcher clicks, restart with up --manual-launcher, then use shot and click.",
                 file=sys.stderr,
                 flush=True,
@@ -2389,6 +3225,27 @@ def lua_flow(action: str) -> bool:
     return action.endswith(".lua")
 
 
+# The client's secure slash words (SecureCmdList in Blizzard's ChatFrame, hash_SecureCmdList at run time). They run
+# protected actions, so only a player's typed chat line may send them: a Lua snippet that calls ChatEdit_SendText
+# is insecure and the client ignores the command (#901). !!DevSmoke's slash route cannot even find them, because they
+# are not in SlashCmdList. The words are fixed by the client, so this is a documented list, not a guess at content.
+SECURE_SLASH_WORDS = frozenset(
+    (
+        "/assist /cancelaura /cancelform /cast /castrandom /castsequence /click /clearfocus /cleartarget /dismount "
+        "/equip /equipslot /focus /leavevehicle /petaggressive /petassist /petattack /petdefensive /petfollow "
+        "/petpassive /startattack /stopattack /stopcasting /stopmacro /target /targetenemy /targetfriend "
+        "/targetlasttarget /use /userandom"
+    ).split()
+)
+# How long a typed secure slash flow settles before the capture: it has no ready check to poll (#901).
+SECURE_SLASH_SETTLE_SECONDS = 3
+
+
+def secure_slash(action: str) -> bool:
+    """Whether a flow's action is a secure slash command, decided by its command word."""
+    return not lua_flow(action) and action.split()[0].lower() in SECURE_SLASH_WORDS
+
+
 def flow_step(action: str) -> str:
     """What a proof records for one flow: a slash command as typed, or a Lua snippet by name and content digest.
 
@@ -2580,6 +3437,8 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     between the reload's world screenshot and the flow's own: opening a protected window is not something a Lua
     snippet can do, and since #648 no outside `click` can reach the client while this job holds it (#655).
     """
+    if secure_slash(action):
+        return run_secure_flow(state, action, point)
     tool = devsmoke_eval()
     try:
         if lua_flow(action):
@@ -2609,6 +3468,36 @@ def run_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) 
     except ClientError as error:
         raise flow_capture_failure(state, action, written["token"], error) from None
     return written["token"]
+
+
+def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
+    """Run a secure slash flow by typing it into chat, as the `slash` verb does, once the reload's world frame lands.
+
+    A secure command cannot run from insecure Lua, so no snippet is written and the flow has no run token or ready
+    check: the capture follows a short fixed settle after the typed line (#901). `point` is clicked once that settle
+    ends, so a flow can open a protected window and then pick a tab inside it, then settles again before the capture.
+    Each flow reloads first, so a later Lua flow starts from a fresh world; it does not continue from this window.
+    """
+    one_line_slash(action)
+    before = screenshots()
+    reload(state)
+    clear_eval_inbox()
+    try:
+        world = wait_for_flow_world(before, action, state=state)
+        print(f"typing {action} after {world.name}", flush=True)
+        slash(state, action)
+    except SafetyRefusal:
+        raise
+    except ClientError as error:
+        raise ClientError(f"the flow {action} could not be typed: {error}") from None
+    time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    if point:
+        # The typed line is the last input, so mark a fresh frame before clicking, as the Lua flow path does.
+        (STATE_DIR / "last-shot").touch()
+        click(state, point[0], point[1], "1")
+        print(f"clicked {point[0]},{point[1]} after {action}", flush=True)
+        time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    return ""
 
 
 def eval_result(state: Mapping, token: str) -> tuple[str, bool]:
@@ -2735,6 +3624,66 @@ def proof_digests(checkout: Path) -> dict:
         raise ClientError(f"visual proof --digests printed no JSON: {completed.stdout.strip()[:200]}") from None
 
 
+EMBED_FIELD_LINE = re.compile(r"^\ufeff?[ \t]*##[ \t]*X-Forever-Core-Embed[ \t]*:", re.IGNORECASE | re.MULTILINE)
+
+
+def track_stage(stage: Path) -> None:
+    """Make the staged tree its own git work tree with every file tracked, the embedded core included.
+
+    The packager rules the checker applies read git's untracked and ignored paths as unshipped, and fail outright when a
+    `.git` sits above the tree but git cannot read it (an empty `.git` placeholder over the workspace, with the build
+    root on another filesystem). Its own repository, everything force-added, answers both: no untracked paths, and git
+    never looks above the stage.
+    """
+    for args in (["init", "-q"], ["add", "-A", "-f"]):
+        try:
+            subprocess.run(["git", "-C", str(stage), *args], check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", "") or str(error)
+            raise ClientError(f"cannot track the embedded proof stage {stage}: {detail.strip()}") from None
+
+
+@contextmanager
+def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
+    """The tree the installed proof build must match: the checkout, run through its embed step when it embeds core.
+
+    A consumer whose root TOC carries the embed field ships `embed(checkout, pin)`, not the checkout itself: the build
+    rewrites its TOC and Lua and adds `Libs/ForeverCore/`. So its tracked files, as they stand in the checkout
+    (uncommitted edits included, as the plain comparison reads them), are staged outside any git work tree and given
+    the same `embed_core` the build ran, at the same pin, then tracked in a repository of its own (`track_stage`); that
+    staged tree is compared. The proof's digests still come
+    from the checkout itself (`proof_digests`), so the recorded identity is the source the pull request carries, and the
+    pin it hashes binds the embedded bytes. A checkout without the field is compared as it is. The stage is removed on
+    every exit.
+    """
+    if not any(
+        EMBED_FIELD_LINE.search(toc.read_text(encoding="utf-8", errors="replace")) for toc in checkout.glob("*.toc")
+    ):
+        yield checkout
+        return
+    stage = BUILD_ROOT / f"{repo}-proof-source"
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(checkout), "ls-files", "-z"], check=True, capture_output=True, text=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise ClientError(f"cannot list {checkout}'s tracked files for the embedded proof: {detail.strip()}") from None
+    try:
+        for name in filter(None, listed.split("\0")):
+            source = checkout / name
+            if source.is_file():
+                target = stage / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        embed_core(stage)
+        track_stage(stage)
+        yield stage
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 def proof_compare(checkout: Path, installed: Path) -> dict:
     """`visual_proof --compare`: the checkout's shipped runtime against the installed addon folder."""
     completed = visual_proof_run(checkout, "--compare", str(installed))
@@ -2839,7 +3788,8 @@ def proof(args: argparse.Namespace) -> int:
             # A queued proof can rebuild this shared folder as soon as the job lock is released.
             build = client_build(folders[0][1])
             try:
-                proof_compare(checkout, folders[0][1])
+                with proof_source(checkout, repo) as source:
+                    proof_compare(source, folders[0][1])
             except ClientError:
                 # A proof that does not describe the installed build must never be left where it could be committed.
                 (checkout / PROOF_FILE).unlink(missing_ok=True)
@@ -2866,6 +3816,182 @@ def proof(args: argparse.Namespace) -> int:
     target = checkout / PROOF_FILE
     atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
     print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
+    return 0
+
+
+CHECKLIST = Path(__file__).resolve().parents[1] / "checklist/checklist"
+CHECKLIST_RESULTS = Path(os.environ.get("CHECKLIST_HOME", WORKSPACE / "wow-handoff")) / "results"
+SHOT_SUFFIXES = {".png", ".jpg", ".jpeg", ".tga", ".webp"}
+
+
+def checklist_status(repo: str, commit: str, round_name: str | None = None) -> dict:
+    """`checklist status --json` for one build: the user's answers for it and the build the round recorded.
+
+    Exit 0 is a passed build, 1 a build with a check not passed, 2 a build no round covers (tools/checklist/README.md).
+    """
+    command = [str(CHECKLIST), "status", "--addon", repo, "--sha", commit, "--json"]
+    if round_name:
+        command += ["--round", round_name]
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    except OSError as error:
+        raise ClientError(f"cannot run {CHECKLIST}: {error}") from None
+    if completed.returncode == 2:
+        raise ClientError(f"no checklist round has checks for {repo}@{commit[:7]}: add them and test it first")
+    try:
+        report = json.loads(completed.stdout)
+    except ValueError:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"checklist status printed no JSON for {repo}@{commit[:7]}: {detail[:200]}") from None
+    if completed.returncode or not report.get("passed"):
+        open_checks = [
+            f"{row.get('id')} ({row.get('status') or 'open'})"
+            for row in report.get("checks", [])
+            if row.get("status") != "pass"
+        ]
+        raise ClientError(
+            f"{report.get('round')}: {repo}@{commit[:7]} has not passed the checklist: {', '.join(open_checks)}"
+        )
+    return report
+
+
+def attest(args: argparse.Namespace) -> int:
+    """Write a commit's `.visual-proof.json` from the user's own checklist pass in the live client (#874).
+
+    It never touches the client, so it runs while the user plays. The pass binds to the exact runtime that was tested:
+    the round's build must name this commit, its recorded runtime digest must equal the checkout's
+    `visual_proof --digests`, and the unpacked build it recorded must still compare equal to the checkout. The
+    screenshots are the ones the user pasted into the checklist plus any `--shot` from the client's Screenshots folder;
+    they go to a new secret gist like a proof's, and the record carries `kind: user-checked` and the round.
+    """
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    checkout = Path(args.checkout).resolve()
+    if not checkout.is_dir():
+        raise ClientError(f"no checkout at {checkout}: --checkout is the tree the proof is written to")
+    commit = resolve_commit(root, args.ref)
+    head = git(checkout, "rev-parse", "--verify", "HEAD")
+    if head != commit:
+        raise ClientError(f"{checkout} is at {head[:7]}, not {repo}@{commit[:7]}: check out the tested commit first")
+    report = checklist_status(repo, commit, args.round)
+    build = report.get("build") or {}
+    if build.get("sha") != commit:
+        raise ClientError(f"{report['round']} recorded {repo} at {str(build.get('sha'))[:7]}, not {commit[:7]}")
+    digests = proof_digests(checkout)
+    recorded = build.get("digest")
+    if not recorded:
+        raise ClientError(
+            f"{report['round']} recorded no runtime digest for {repo}: record it with checklist build --digest "
+            "when the build is linked, so the pass binds to what was tested"
+        )
+    if recorded != digests["input_digest"]:
+        raise ClientError(
+            f"{report['round']} tested {repo} runtime {recorded[:12]}, but {checkout} at {commit[:7]} is "
+            f"{digests['input_digest'][:12]}: the user's pass is for another build"
+        )
+    # The checklist resolves the recorded path and hashes it there; compare that same folder.
+    artifact = Path(build.get("artifact_path") or "")
+    folders = addon_folders(artifact, package_name(root, commit)) if build.get("artifact") and artifact.is_dir() else []
+    if not folders:
+        raise ClientError(f"{report['round']} names no unpacked build for {repo} to check ({build.get('artifact')!r})")
+    tested_in = build.get("client_build")
+    if not tested_in:
+        raise ClientError(
+            f"{report['round']} recorded no client build for {repo}: record it with checklist build --client-build"
+        )
+    if not build.get("artifact_sha256") or build["artifact_sha256"] != build.get("artifact_sha256_now"):
+        raise ClientError(
+            f"{report['round']}: the unpacked build at {build.get('artifact')} is not the one recorded when it was "
+            "linked (rebuilt, removed or recorded before artifact hashing): relink, record it and test again"
+        )
+    identity = {
+        "sha": commit,
+        "digest": recorded,
+        "artifact_sha256": build["artifact_sha256"],
+        "client_build": tested_in,
+    }
+    stale = [row["id"] for row in report["checks"] if any(row.get(k) != v for k, v in identity.items())]
+    if stale:
+        raise ClientError(f"{report['round']}: checks {', '.join(stale)} were not answered for this build")
+    proof_compare(checkout, folders[0][1])
+    passed = [row for row in report["checks"] if row.get("status") == "pass"]
+    if not passed:
+        raise ClientError(f"{report['round']}: no check for {repo}@{commit[:7]} was answered pass")
+    shots = [Path(image) for row in passed for image in row.get("images", [])] + [Path(s) for s in args.shot]
+    missing = [str(s) for s in shots if not s.is_file()]
+    if missing:
+        raise ClientError(f"screenshot not found: {', '.join(missing)}")
+    flows = [
+        {
+            "name": row["title"],
+            "steps": [s.strip() for s in row.get("steps") or [] if s.strip()] or [row.get("pass") or row["title"]],
+            "result": "pass",
+        }
+        for row in passed
+    ]
+    # visual_proof refuses a Lua flow named by an absolute path (#591), with or without its sha256 annotation; the
+    # same rule as its absolute_lua_step, which this tool cannot import from a checkout it has not checked yet.
+    lua = [
+        step
+        for flow in flows
+        for step in flow["steps"]
+        if (bare := re.sub(r"^sha256:[0-9a-f]{64}\s+|\s+sha256:[0-9a-f]{64}$", "", step)).endswith(".lua")
+        and (PurePosixPath(bare).is_absolute() or PureWindowsPath(bare).is_absolute())
+    ]
+    if lua:
+        raise ClientError(
+            f"a passed check names a Lua file by absolute path, which a public proof may not carry: {lua}"
+        )
+    # Evidence goes to a gist, so only an image from the client or the checklist's own results can be sent.
+    allowed = [(CLIENT / "Screenshots").resolve(), CHECKLIST_RESULTS.resolve()]
+    stray = [
+        str(s)
+        for s in shots
+        if s.suffix.lower() not in SHOT_SUFFIXES or not any(s.resolve().is_relative_to(base) for base in allowed)
+    ]
+    if stray:
+        raise ClientError(
+            f"not a screenshot from the client's Screenshots folder or the checklist results: {', '.join(stray)}"
+        )
+    if not shots:
+        raise ClientError(
+            f"no screenshot for {repo}@{commit[:7]}: paste one into a passed check or name a client capture with --shot"
+        )
+    staging = PROOF_SCRATCH / f"attest-{repo}-{commit[:7]}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    named = []
+    for index, shot_path in enumerate(shots, start=1):
+        # The checker accepts PNG evidence only; client captures are JPEG or TGA and pasted ones may be JPEG or WebP.
+        target = staging / f"{index}-{flow_slug(shot_path.stem)}.png"
+        try:
+            with Image.open(shot_path) as image:
+                image.convert("RGB").save(target, "PNG")
+        except OSError as e:
+            raise ClientError(f"{shot_path} is not a readable image: {e}") from e
+        named.append(target)
+    description = f"User-checked visual proof for {repo} at {commit} ({report['round']})"
+    gist = create_gist(description, staging)
+    images = upload_screenshots(gist, named, description)
+    proof_data = {
+        "input_digest": digests["input_digest"],
+        "runtime_sha256": digests["input_digest"],
+        "candidate": digests["candidate"],
+        "client_build": tested_in,
+        "tested_artifact": "source-tree",
+        "source_commit": commit,
+        "kind": "user-checked",
+        "round": report["round"],
+        "flows": flows,
+        "images": images,
+    }
+    target = checkout / PROOF_FILE
+    atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
+    print(f"{repo}@{commit[:7]}: wrote {target} from {report['round']} ({len(passed)} checks passed)", flush=True)
     return 0
 
 
@@ -3133,18 +4259,46 @@ def at_character_select(state: dict, manual_launcher: bool) -> None:
         press_play(state)
 
 
-def session_end_reason(now: float, started: float, ready: float, last_job: float) -> str | None:
+def pending_work(state: Mapping) -> str | None:
+    """What still needs this session, or None: a waiter in the job queue or a live lease of this session.
+
+    A lease holder works between verbs (building a test addon, reading a screenshot), so no job ends in that
+    time; the lease's own TTL (LEASE_MAX) bounds how long it can keep the session up.
+    """
+    if job_queue():
+        return "a request is queued"
+    directory = STATE_DIR / "leases"
+    for path in directory.glob("*.json") if directory.exists() else ():
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        expires = record.get("expires") if isinstance(record, dict) else None
+        if (
+            isinstance(expires, (int, float))
+            and expires > time.time()
+            and not record.get("ended")
+            and record.get("session") == session_identity(state)
+        ):
+            return "a lease is live"
+    return None
+
+
+def session_end_reason(
+    now: float, started: float, ready: float, last_job: float, busy: str | None = None
+) -> str | None:
     """Why the resident session should stop now, or None. Two fixed limits, checked in this order:
 
     - MAX_SESSION from the launch: the lifetime cap, whatever jobs arrive.
-    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming.
+    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming. Not while
+      `busy` names pending work (`pending_work`): a queued request or a live lease means a job is coming.
 
     `last_job` is never before `ready`: `last_job_mark` clamps it, because a mark an earlier session left says
     nothing about this one.
     """
     if now - started >= MAX_SESSION:
         return f"the {MAX_SESSION // 3600} h lifetime cap"
-    if now - last_job >= IDLE_LIMIT:
+    if busy is None and now - last_job >= IDLE_LIMIT:
         return f"{IDLE_LIMIT // 60} min without a job"
     return None
 
@@ -3361,7 +4515,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 job = job_token = None
                 continue
             last_world_check, reason = resident_world_check(state, last_world_check)
-            reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            reason = reason or session_end_reason(
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
+            )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -3385,7 +4541,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state.pop("world_lost", None)
                 write_state(state)
             reason = ("the client left the world" if not world else None) or session_end_reason(
-                time.monotonic(), launched, ready, last_job_mark(ready)
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
             )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
@@ -3701,7 +4857,13 @@ def job(args: argparse.Namespace) -> int:
             "FOREVER_CLIENT_JOB": token,
             "FOREVER_CLIENT_CALLER": os.environ.get("FOREVER_CLIENT_CALLER") or "job",
         }
-        return run_job_command(command, env, maximum)
+        code = None
+        try:
+            code = run_job_command(command, env, maximum)
+        finally:
+            parked = park_after_job(state)
+        # A job whose own command passed still fails when it left the character unparked.
+        return code if code or parked else PARK_FAILED_CODE
     finally:
         release_job(handle, token)
 
@@ -3909,6 +5071,9 @@ def hyprland_job(
                 "FOREVER_CLIENT_WINDOW": state["window"]["address"],
             }
             result["code"] = run_job_command(request["command"], command_env, request["maximum"], check)
+            # The restored session reopens where this one ends, so a job that moved the character parks it first.
+            if not park_after_job(state) and not result["code"]:
+                result["code"] = PARK_FAILED_CODE
         except (ClientError, module.NestedError, subprocess.SubprocessError, OSError) as error:
             errors.append(f"job: {error}")
             print(f"forever_client: the Hyprland job failed: {error}", flush=True)
@@ -4173,7 +5338,22 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {
+    "shot",
+    "click",
+    "hover",
+    "drag",
+    "scroll",
+    "key",
+    "slash",
+    "reload",
+    "eval",
+    "errors",
+    "face",
+    "walkto",
+    "park",
+    "where",
+}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -4203,12 +5383,46 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         click(state, args.x, args.y, args.button, args.hold)
     elif args.verb == "hover":
         hover(state, args.x, args.y, args.hold)
+    elif args.verb == "drag":
+        drag(state, (args.x1, args.y1), (args.x2, args.y2), args.hold)
     elif args.verb == "scroll":
         scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
-        press(state, args.keys)
+        if args.action and args.keys:
+            raise ClientError("key takes key names or --action, not both")
+        if not args.action and not args.keys:
+            raise ClientError("key needs a key name or --action")
+        if args.action:
+            press_actions(state, args.action, args.hold_for)
+        else:
+            press(state, args.keys, args.hold_for)
     elif args.verb == "slash":
         slash(state, args.command)
+    elif args.verb in ("face", "walkto"):
+        if args.x == "target":
+            motion = face_target(state) if args.verb == "face" else walkto_target(state)
+        else:
+            if args.y is None:
+                raise ClientError(f"{args.verb} takes X Y or `target`")
+            try:
+                x = float(args.x)
+            except ValueError:
+                raise ClientError(
+                    f"{args.verb} takes map coordinates 0 to 100 or `target`: refused {args.x!r}"
+                ) from None
+            x, y = map_point(x), map_point(args.y)
+            if args.verb == "face":
+                motion = face(state, heading_to(read_motion(state), x, y)[0])
+            else:
+                motion = walkto(state, x, y, args.map_id, args.tolerance)
+        print(describe_motion(motion))
+    elif args.verb == "where":
+        print(describe_motion(read_motion(state)))
+    elif args.verb == "park":
+        if args.add:
+            print(f"park spot {park_add(state, args.add)}")
+        else:
+            print(f"parked at {park(state)['label']}")
     elif args.verb == "reload":
         print(f"reloaded ({reload(state).name})")
     elif args.verb == "eval":
@@ -4243,6 +5457,10 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    words = list(sys.argv[1:] if argv is None else argv)
+    if words[:1] == ["release-held"] and len(words) == 4:
+        # The held-key watchdog a hold starts; it needs no session, lock or safety check, only the display.
+        return release_held(words[1], float(words[2]), words[3])
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="verb", required=True)
     for name in ("up", "serve"):
@@ -4300,10 +5518,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "hover", "scroll", "key", "slash", "eval", "errors"):
+    for name in (
+        "reload",
+        "shot",
+        "click",
+        "hover",
+        "drag",
+        "scroll",
+        "key",
+        "slash",
+        "eval",
+        "errors",
+        "face",
+        "walkto",
+        "park",
+        "where",
+    ):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
-        if name in ("click", "hover", "scroll"):
+        if name in ("click", "hover", "drag", "scroll"):
             p.add_argument(
                 "--hold",
                 action="append",
@@ -4320,14 +5553,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "hover":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
+        elif name == "drag":
+            for coord in ("x1", "y1", "x2", "y2"):
+                p.add_argument(coord, type=int)
         elif name == "scroll":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
             p.add_argument("ticks", type=int, help="wheel-up ticks (zoom in) when positive, wheel-down when negative")
         elif name == "key":
-            p.add_argument("keys", nargs="+")
+            p.add_argument("keys", nargs="*", help="xdotool key names; for movement use --action instead")
+            p.add_argument(
+                "--action",
+                action="append",
+                default=[],
+                choices=ACTIONS,
+                help="a game action, pressed by the key this client binds to it; repeat for more than one",
+            )
+            p.add_argument(
+                "--for",
+                dest="hold_for",
+                type=float,
+                metavar="SECONDS",
+                help="hold the keys down together for this long instead of tapping them: walk with w, turn with a or d",
+            )
         elif name == "slash":
             p.add_argument("command")
+        elif name in ("face", "walkto"):
+            p.add_argument("x", help="map x as the map shows it, 0 to 100, or `target`")
+            p.add_argument("y", nargs="?", type=float, help="map y, 0 to 100")
+            if name == "walkto":
+                p.add_argument("--map", type=int, dest="map_id", help="the map the point is on; refused on another")
+                p.add_argument("--tolerance", type=float, default=WALK_TOLERANCE, help="yards from the point")
+        elif name == "park":
+            p.add_argument("--add", metavar="LABEL", help="record where the player stands as a park spot")
         elif name == "eval":
             p.add_argument("file", type=Path, help="the Lua snippet to run through !!DevSmoke at the next reload")
         elif name == "errors":
@@ -4355,6 +5613,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--no-post",
         action="store_true",
         help="run the whole smoke and print its result without posting the headless-smoke commit status",
+    )
+    p = sub.add_parser("attest", help="write .visual-proof.json from the user's checklist pass (no client)")
+    p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
+    p.add_argument("--ref", required=True, help="the commit the user tested")
+    p.add_argument("--checkout", required=True, type=Path, help="the checkout of that commit the proof is written to")
+    p.add_argument("--round", help="the checklist round (default: the newest round covering the build)")
+    p.add_argument(
+        "--shot", action="append", default=[], help="a client screenshot to add to the evidence; repeat for each"
     )
     p = sub.add_parser("proof", help="record a commit's .visual-proof.json from a client session")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
@@ -4433,6 +5699,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return smoke(args)
         if args.verb == "proof":
             return proof(args)
+        if args.verb == "attest":
+            return attest(args)
         if args.verb in JOB_VERBS:
             state = load_state()
             if session_alive(state) and launcher_verb(state, args.verb, getattr(args, "button", None)):

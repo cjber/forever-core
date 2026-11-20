@@ -132,6 +132,9 @@ local nativeHeader = frame()
 nativeHeader.MinimizeButton = frame()
 native.Header = nativeHeader
 function native.UpdateHeaderPosition() end
+function native.IsCollapsed()
+	return false
+end
 function native.UpdateHeight() end
 local ns = {
 	-- English phrases, as the addon that translates by phrase has them. Nothing is set for the lock's constant key,
@@ -305,9 +308,12 @@ host.SetPoint, host.SetHeight, host.ClearAllPoints = setPoint, setHeight, clearP
 drag()
 check(host.moving == false and hostSettings.x == 500 and hostSettings.y == -180, "the drag works again after combat")
 
--- The retired attach switch leaves the column free.
+-- The attach checkbox picks Under, which releases the drag.
 ns.TrackerHost.SetAttached(true)
 drain()
-check(not ns.TrackerHost.IsAttachedToQuestTracker(), "attaching is a no-op")
+check(
+	ns.TrackerHost.IsAttachedToQuestTracker() and hostSettings.x == nil,
+	"attaching puts the column under the tracker"
+)
 
 print("tracker_host_lock_spec: " .. checks .. " checks passed")

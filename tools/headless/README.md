@@ -33,12 +33,27 @@ immediately after ensuring the session. Every input verb and each input send che
 commands inside a job using `FOREVER_CLIENT_JOB`. Screenshots and status remain available. Error reads reload to flush SavedVariables and
 are refused when unsafe. Reload and proof waits report a live safety refusal as soon as the strip shows it.
 
+A second strip row, under the first, carries where the player stands: map, position, facing, the map's size in
+yards, whether the player is indoors, where the target's nameplate is across the screen and whether the target is
+within interact distance, as 16-bit fields closed by a checksum. `face X Y`, `face target`, `walkto X Y`, `walkto
+target`, `where` and `park` read it after every step, so movement is a closed loop on the measured facing and
+position rather than a timed key hold. `walkto` jumps forward once when blocked, then follows the obstacle to each
+side; when that gains nothing it stops and reports the position and the blocked headings. A job that moved the
+character ends with `park`: a walk to the nearest spot recorded with `park --add LABEL` on that map
+(`~/.config/forever-client/park.json`), which must be outdoors.
+
 `slash` sends any one-line slash command, such as `/use Hearthstone`, and `key` sends any key,
 including movement and keybinds. `click` and `slash` close a Game Menu left open rather than
 refusing. Walking and opening or searching the auction house are allowed. Bidding, buying, posting,
 fighting, resurrection and automatic recovery are forbidden. A refusal sends no recovery input.
 An older resident addon or an unreadable safety strip is replaced through the guarded
 session teardown path before reuse. Unknown safety still refuses input.
+
+A `proof` flow given as a secure slash command (`--flow "route=/cast Cooking"`, or `/use`, `/click`, `/target`; the
+words are `SECURE_SLASH_WORDS` in `forever_client.py`) cannot run from insecure Lua, so it is typed through the same
+chat path as `slash` once the reload's world screenshot exists, then settles 3 s before the capture. It has no ready
+check or eval result. Its `--flow-click` runs after that settle, inside the window the command opened (a tab in the
+profession window, say), and settles again. Each flow reloads first, so a later Lua flow does not continue from its window.
 
 Exit 3 means the player's client is in use. Exit 4 means live safety refused the operation:
 `player is dead or a ghost`, `player is in combat`, or the version 2 safety protocol is
@@ -64,6 +79,9 @@ requests a stop and returns immediately; the session stops when the job ends.
 `job` and `lease` reuse the resident session without `--wait`.
 `serve --wait` queues for a separate session and reports the current holder,
 its launch lifetime deadline and its idle deadline before waiting.
+
+The session ends 60 minutes after the last job ended (or after READY when none has run) and 3 hours after launch.
+The idle end never fires while a request is queued or a lease of the session is live; the lifetime cap always does.
 
 
 ## Hyprland job

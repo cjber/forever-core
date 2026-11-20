@@ -23,29 +23,26 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-2** Zero setup. Every feature works out of the box: no required settings, extra downloads
   or companion installs. Data ships in the release zip (`.pkgmeta` `move-folders` for a
   load-on-demand data addon). Anything off by default is off because it acts for the player.
-  ForeverCore is the one required companion, and the addon's own zip ships it: declare `## OptionalDeps: ForeverCore`
-  in the TOC, never `## Dependencies`, so the addon still loads when core is missing and can say what to install, and in
-  `.pkgmeta` download the release `tools/forever-core.txt` pins under `externals:` and place it
-  with `move-folders:` `<package-as>/ForeverCore: ForeverCore`. Add the CurseForge slug `forevercore` under
-  `required-dependencies` while retaining that pinned bundle during standalone dependency adoption. Existing installs
-  must acquire manager-owned core through ordinary updates, including a direct jump that skips bridge releases, before
-  any channel drops its fallback. Verify mixed-addon updates and uninstalling either consumer, especially the last
-  writer of the shared folder. Channels without automatic dependency resolution keep a bundled artifact. Follow core's
-  `docs/dependency-transition.md` for the canary evidence and rollback gates. The store relation alone does not fix shared-folder ownership. It is
-  the suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
+  ForeverCore is embedded in the addon, as Ace3 and LibStub libraries are: the TOC declares
+  `## OptionalDeps: ForeverCore` (never `## Dependencies`) and `## X-Forever-Core-Embed: 1`, the embed step puts the
+  pinned copy under `Libs/ForeverCore/` at package time, and `.pkgmeta` lists `forevercore` under `embedded-libraries`
+  with no top-level ForeverCore external or `move-folders` rule. The standalone stays an optional download. Core's
+  `docs/dependency-transition.md` is the source for this layout and `tools/check_consumers.py` enforces it. It is the
+  suite's shared library, not a second addon the player has to choose. The root TOC also names that release in
   `## X-Forever-Core: <tag>`, so a player's other Forever addon can say a sibling bundles a different core. An addon that sets `## X-Forever-Core-Embed: 1` also ships core inside itself at
   `Libs/ForeverCore/`: its release and CI package job run `python3 -m tools.forever_tools.embed` before the packager
-  (core's `docs/dependency-transition.md` section 4); never commit `Libs/ForeverCore/`. Every core
-  release re-releases every addon automatically: the core sync PR moves the pin, rewrites the external and the TOC
-  field, and adds a marked `CHANGELOG.md` entry, then `release-consumers.yml` dispatches each addon's own release once
+  (core's `docs/dependency-transition.md`, "Packaging"); never commit `Libs/ForeverCore/`. Every core
+  release re-releases every addon automatically: the core sync PR moves the pin and the TOC field (and a bridge
+  consumer's external), and adds a marked `CHANGELOG.md` entry, then `release-consumers.yml` dispatches each addon's own release once
   its full CI on main is green. Each addon's `Core/Require.lua` computes `ready` from feature checks of every
   post-API-1 ForeverCore member it calls, never a version comparison, and calls `ns.ForeverRequire(ready, slash)`, `slash` being `{ key = <SlashCmdList key>, <words>... }`, so a
   stopped addon's slash words and compartment entry repeat the line instead of doing nothing; the vendored file is
-  never edited in a consumer.
+  never edited in a consumer. The pin gate (`forever_tools.require_slash`, run by `core_pin`) fails when the addon's own
+  command, the key named after its folder, is missing from that argument or its words differ.
 - **WFA-28** Game data has two sources: the installed QuestieDB (quests, NPCs, objects, spawns,
   vendors, trainers' places) and AtlasLoot (bosses, loot, recipes, drop rates), read at runtime
   through their public tables. Neither is copied into the repo or the zip: QuestieDB carries no
-  licence and AtlasLoot is GPL v2. This is the one data companion WFA-2 allows (ForeverCore is the required library,
+  licence and AtlasLoot is GPL v2. This is the one data companion WFA-2 allows (ForeverCore is the embedded library,
   not a data companion); without it the
   feature says in one plain line what to install and the rest of the addon works. A dataset neither
   holds (trainer fees, transports) is a named exception in the repo's `AGENTS.md` under `## Waivers`,
@@ -54,7 +51,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   it is never the source for a dataset QuestieDB or AtlasLoot holds. `.pkgmeta` lists the CurseForge
   slug of every TOC `OptionalDeps` data folder under `optional-dependencies` (QuestieDB is `questiedb`,
   AtlasLoot's Forever build `atlasloot-forever`), and ForeverCore, the one non-data entry, under
-  `required-dependencies` instead: the TOC line only orders loading, and the store
+  `embedded-libraries` (WFA-2): the TOC line only orders loading, and the store
   relation is what makes the CurseForge app offer the data addon. Wrong or missing data in either is
   fixed upstream, by a report or PR to that project (Questie's in-game debug offer already collects
   missing quest, NPC and loot data), not by an override table in the addon, which drifts from what
@@ -268,7 +265,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   in-game agent an `INGAME ... kind: proof` request with the checkout and `flows: update notice=<the addon's slash
   command or Lua file>` ([in-game.md](in-game.md)). It builds the commit, runs the flow, uploads the screenshots to a
   secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change. The required
-  `visual-proof` check then passes without an admin merge.
+  `visual-proof` check then passes without an admin merge. A build the user passed on the test checklist gets the
+  file from `forever_client.py attest` instead ([in-game.md](in-game.md#from-the-users-checklist-pass)).
 - **WFA-39** A ForeverCore release keeps every consumer release already on the stores working, including one
   pinned to an older core: players and the CurseForge app update core on its own, before the sync re-releases reach
   them. Core changes are additive. A public function, field, event, slash command or saved-variable shape a released

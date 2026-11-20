@@ -800,3 +800,32 @@ reports:SetScript("OnEvent", function(_, event, ...)
 	end
 	record(table.concat(parts, " "))
 end)
+
+-- The keys the running client binds to the actions forever_client's `key --action` presses, from the client's own
+-- GetBindingKey, so the tool never guesses a key an account has rebound (#820). Recorded at login and at every
+-- UPDATE_BINDINGS; the client writes SavedVariables at the next reload or logout, where the tool reads them.
+local BOUND_ACTIONS = {
+	"MOVEFORWARD",
+	"MOVEBACKWARD",
+	"TURNLEFT",
+	"TURNRIGHT",
+	"STRAFELEFT",
+	"STRAFERIGHT",
+	"JUMP",
+	"INTERACTTARGET",
+	"TARGETNEARESTENEMY",
+}
+
+local function recordBindings()
+	DevSmokeDB = DevSmokeDB or {}
+	local keys = {}
+	for _, action in ipairs(BOUND_ACTIONS) do
+		keys[action] = { GetBindingKey(action) }
+	end
+	DevSmokeDB.bindings = { keys = keys, recorded = time() }
+end
+
+local bindings = CreateFrame("Frame")
+bindings:RegisterEvent("PLAYER_LOGIN")
+bindings:RegisterEvent("UPDATE_BINDINGS")
+bindings:SetScript("OnEvent", recordBindings)

@@ -1,7 +1,7 @@
 name: Release consumers
 
-# Every consumer's release zip carries ForeverCore in the same folder, so every addon's latest release must ship the
-# same core: a core release has to re-release every consumer. The consumer sync opens a PR with a marked CHANGELOG.md
+# Every consumer's release zip carries its own copy of the pinned ForeverCore, so every addon's latest release must
+# ship the same core: a core release has to re-release every consumer. The consumer sync opens a PR with a marked CHANGELOG.md
 # entry; once that PR has landed and its full CI is green, this dispatches that consumer's own release.yml for the entry.
 # A successful main-head consumer smoke dispatches this workflow immediately. The schedule is a backstop.
 on:

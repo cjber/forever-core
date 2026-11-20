@@ -3,11 +3,12 @@
 -- The tracker contract's classes, declared once here for core's own UI/Tracker*.lua files.
 
 ---@class ForeverTrackerSettings
----@field attached boolean false once the host has moved a retired attached or beside placement to the pin
+---@field attached boolean true while the column follows the quest tracker under it: placement "under" and not dragged
 ---@field locked? boolean the Lock switch, which suppresses the grip's drag
 ---@field scale? number the player's tracker scale, 0.5 to 2; the host reads a missing one as 1
 ---@field backdropOpacity? number the optional backdrop's opacity, 0 (off) to 1
----@field x? number the column's dragged position, from UIParent's top left corner; nil pins it beside the game's tracker
+---@field placement? "under"|"left" where an undragged column sits: under the game's quest tracker (the default), or left of it
+---@field x? number the column's dragged position, from UIParent's top left corner; nil places it by `placement`
 ---@field y? number
 ---@field migrated? boolean the one-time copy from a consumer's old tracker settings is done
 
@@ -44,9 +45,11 @@
 ---@field SetBackdropOpacity fun(value: number)
 ---@field IsLocked fun(): boolean
 ---@field SetLocked fun(value: boolean)
----@field IsAttachedToQuestTracker fun(): boolean compatibility: always false, the old attach switch is gone
----@field SetAttached fun(value: boolean) compatibility: does nothing
----@field OnAttachmentChanged fun(callback: fun(attached: boolean)) compatibility: the callback is never called
+---@field GetPlacement fun(): "under"|"left"
+---@field SetPlacement fun(value: "under"|"left") picks a place and releases a dragged position
+---@field IsAttachedToQuestTracker fun(): boolean whether the column follows the quest tracker under it
+---@field SetAttached fun(value: boolean) true picks Under, false picks Left; both release a dragged position
+---@field OnAttachmentChanged fun(callback: fun(attached: boolean)) called with the new state when a pick or a drag changes it
 ---@field SavePosition fun(x: number, y: number) a dragged position, which releases the pin
 ---@field Debug fun(): string the tracker stack's anchors, heights and in-combat state, for an addon's debug command
 
@@ -143,7 +146,7 @@
 ---@field rows? ForeverTrackerTextRow[]
 
 ---@class ForeverTrackerInteractiveSpec
----@field onClick? fun(line: Frame, button: string) a left click on the line
+---@field onClick? fun(line: Frame, button: string) a left click on the line; a right-click opens the block's menu
 ---@field tooltip? fun(line: Frame) draws the line's tooltip; the helper hides it on leave
 
 ---@class ForeverTrackerHeaderTooltip

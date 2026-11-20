@@ -376,6 +376,7 @@ class MainTest(unittest.TestCase):
             mock.patch.object(release, "consumer_repos", return_value=sorted(decisions)),
             mock.patch.object(release, "discover_tooling_repos", return_value=set()),
             mock.patch.object(release, "plan", side_effect=lambda repo: decisions[repo]),
+            mock.patch.object(release, "embeds_at", return_value=False),
             mock.patch.object(release, "dispatch") as dispatched,
             contextlib.redirect_stdout(out),
         ):
@@ -393,6 +394,7 @@ class MainTest(unittest.TestCase):
             mock.patch.object(release, "consumer_repos", return_value=["legacy-forever"]),
             mock.patch.object(release, "discover_tooling_repos", return_value=set()),
             mock.patch.object(release, "plan", return_value=release.Decision(reason=detail, failed=True)),
+            mock.patch.object(release, "embeds_at", return_value=False),
             mock.patch.object(release, "dispatch") as dispatched,
             contextlib.redirect_stdout(out),
         ):
@@ -419,6 +421,7 @@ class MainTest(unittest.TestCase):
             mock.patch.object(release, "consumer_repos", return_value=["legacy-forever"]),
             mock.patch.object(release, "discover_tooling_repos", return_value=set()),
             mock.patch.object(release, "plan", return_value=release.Decision("1.4.3", SHA)),
+            mock.patch.object(release, "embeds_at", return_value=False),
             mock.patch.object(release, "dispatch", side_effect=release.SyncError("gh: Resource not accessible")),
             contextlib.redirect_stdout(out),
         ):
@@ -432,6 +435,7 @@ class MainTest(unittest.TestCase):
             mock.patch.object(release, "consumer_repos", return_value=["legacy-forever", "skillup-forever"]),
             mock.patch.object(release, "discover_tooling_repos", return_value=set()),
             mock.patch.object(release, "plan", return_value=release.Decision("1.4.3", SHA)),
+            mock.patch.object(release, "embeds_at", return_value=False),
             mock.patch.object(
                 release,
                 "dispatch",
@@ -461,6 +465,112 @@ class MainTest(unittest.TestCase):
         ):
             self.assertEqual(release.main(), 1)
         self.assertIn("::error::no token access", out.getvalue())
+
+
+class EmbedFleetTest(unittest.TestCase):
+    READY = release.Decision("1.4.3", SHA, f"releases v1.4.3 at {SHA}")
+
+    def run_main(self, opted):
+        out = io.StringIO()
+        heads = {repo: f"head-{repo}" for repo in release.EMBED_FLEET}
+
+        def embeds_at(repo, ref):
+            # The releasing addon is read at the commit it would release, the rest at their own main heads.
+            self.assertIn(ref, (SHA, heads[repo]) if repo == "macro-assist-forever" else (heads[repo],))
+            return opted[repo]
+
+        with (
+            mock.patch.dict(os.environ, {"GH_TOKEN": "token"}),
+            mock.patch.object(release, "consumer_repos", return_value=["macro-assist-forever"]),
+            mock.patch.object(release, "discover_tooling_repos", return_value=set()),
+            mock.patch.object(release, "plan", return_value=self.READY),
+            mock.patch.object(release, "main_head", side_effect=lambda repo: heads[repo]),
+            mock.patch.object(release, "embeds_at", side_effect=embeds_at),
+            mock.patch.object(release, "dispatch") as dispatched,
+            contextlib.redirect_stdout(out),
+        ):
+            code = release.main()
+        return code, out.getvalue(), dispatched
+
+    def test_an_opted_in_release_waits_for_the_rest_of_the_fleet_and_names_them(self):
+        opted = {repo: repo == "macro-assist-forever" for repo in release.EMBED_FLEET}
+        opted["skillup-forever"] = True
+        code, out, dispatched = self.run_main(opted)
+        self.assertEqual(code, 0, out)
+        dispatched.assert_not_called()
+        self.assertIn("macro-assist-forever: waiting: its embedded ForeverCore release waits", out)
+        missing = sorted(set(release.EMBED_FLEET) - {"macro-assist-forever", "skillup-forever"})
+        self.assertIn("not yet: " + ", ".join(missing), out)
+
+    def test_an_opted_in_release_goes_once_every_addon_has_opted_in(self):
+        code, out, dispatched = self.run_main(dict.fromkeys(release.EMBED_FLEET, True))
+        self.assertEqual(code, 0, out)
+        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA)
+
+    def test_a_consumer_not_opted_in_releases_without_reading_the_fleet(self):
+        code, out, dispatched = self.run_main(dict.fromkeys(release.EMBED_FLEET, False))
+        self.assertEqual(code, 0, out)
+        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA)
+
+    def run_batch(self, ready, released):
+        """Every addon opted in; `ready` names those whose own plan releases now, `released` those already embedded."""
+        out = io.StringIO()
+        waiting = release.Decision(reason="waiting for ci")
+        with (
+            mock.patch.dict(os.environ, {"GH_TOKEN": "token"}),
+            mock.patch.object(release, "consumer_repos", return_value=list(release.EMBED_FLEET)),
+            mock.patch.object(release, "discover_tooling_repos", return_value=set()),
+            mock.patch.object(release, "plan", side_effect=lambda repo: self.READY if repo in ready else waiting),
+            mock.patch.object(release, "main_head", side_effect=lambda repo: f"head-{repo}"),
+            mock.patch.object(release, "embeds_at", return_value=True),
+            mock.patch.object(release, "latest_release_embeds", side_effect=lambda repo: repo in released),
+            mock.patch.object(release, "dispatch") as dispatched,
+            contextlib.redirect_stdout(out),
+        ):
+            code = release.main()
+        return code, out.getvalue(), dispatched
+
+    def test_the_embed_releases_wait_for_every_addon_to_be_ready(self):
+        ready = set(release.EMBED_FLEET) - {"tweaks-forever"}
+        code, out, dispatched = self.run_batch(ready, set())
+        self.assertEqual(code, 0, out)
+        dispatched.assert_not_called()
+        self.assertIn("go out together; not ready yet: tweaks-forever", out)
+
+    def test_an_addon_already_released_embedded_does_not_hold_the_batch(self):
+        ready = set(release.EMBED_FLEET) - {"tweaks-forever"}
+        code, out, dispatched = self.run_batch(ready, {"tweaks-forever"})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(dispatched.call_count, len(ready))
+
+    def test_embeds_at_without_package_as_reads_the_listed_root_toc(self):
+        files = {".pkgmeta": "ignore:\n  - tools\n", "MacroAssistForever.toc": "## X-Forever-Core-Embed: 1\n"}
+        with (
+            mock.patch.object(release, "read_file", side_effect=lambda repo, path, ref: files.get(path)),
+            mock.patch.object(release, "api_json", return_value=[{"name": "MacroAssistForever.toc"}]),
+        ):
+            self.assertTrue(release.embeds_at("macro-assist-forever", SHA))
+
+    def test_embed_hold_names_only_the_missing_addons(self):
+        self.assertIsNone(release.embed_hold(dict.fromkeys(release.EMBED_FLEET, True)))
+        self.assertTrue(release.embed_hold({}).endswith(", ".join(sorted(release.EMBED_FLEET))))
+
+    def test_embeds_at_reads_the_toc_the_policy_names(self):
+        files = {
+            ".pkgmeta": "package-as: MacroAssistForever\n",
+            "MacroAssistForever.toc": "## Interface: 16001\n## X-Forever-Core-Embed: 1\n",
+        }
+        with mock.patch.object(release, "read_file", side_effect=lambda repo, path, ref: files.get(path)):
+            self.assertTrue(release.embeds_at("macro-assist-forever", SHA))
+        files["MacroAssistForever.toc"] += "## X-Forever-Core-Embed: 0\n"
+        with mock.patch.object(release, "read_file", side_effect=lambda repo, path, ref: files.get(path)):
+            self.assertFalse(release.embeds_at("macro-assist-forever", SHA))
+
+    def test_embeds_at_fails_closed_on_a_missing_toc(self):
+        files = {".pkgmeta": "package-as: MacroAssistForever\n"}
+        with mock.patch.object(release, "read_file", side_effect=lambda repo, path, ref: files.get(path)):
+            with self.assertRaises(release.SyncError):
+                release.embeds_at("macro-assist-forever", SHA)
 
 
 class ApiTest(unittest.TestCase):
