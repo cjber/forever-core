@@ -7,8 +7,9 @@ list is never compared with the TOC. Run the packager without uploading (`releas
 - an addon folder that is missing, or has no TOC of its own name;
 - a TOC whose `## Version` is the tag with its `v` (`v1.2.3`) or the unfilled `@project-version@`: every addon
   compares `GetAddOnMetadata(addon, "Version")` with a bare version, and `forever_tools.toc_version` writes it;
-- a file a TOC or its XML loads (`Script`, `Include`), or an `Interface\\AddOns\\<packaged folder>\\...` path a TOC
-  tag, XML attribute or whole Lua string names, that is not in the package;
+- a file a TOC or its XML loads (`Script`, `Include`), an `Interface\\AddOns\\<packaged folder>\\...` path a TOC
+  tag, XML attribute or whole Lua string names, or a `\\media\\...` tail a Lua file appends to a run-time root (an
+  embedded ForeverCore's `ns.root`), that is not in the package;
 - a development file or folder that shipped at an addon folder's top level (`tests`, `tools`, `types`, `docs`,
   `ruff.toml`, `stylua.toml` and any dot file such as `.luacheckrc`), or a required file that did not (a licence
   file in every packaged folder, and `THIRD_PARTY.md` in the main addon);
@@ -38,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from . import core_archive, core_pin, lua51, widget_handlers
-from .lua import LuaSyntaxError, tokenize
+from .lua import LONG_OPEN, LuaSyntaxError, tokenize
 
 __all__ = ["Policy", "check", "has_section", "licence_file", "main", "run_specs"]
 
@@ -115,15 +116,33 @@ def locate(path: Path, extensions: tuple[str, ...] = ("",)) -> Path | None:
 def lua_strings(source: str) -> list[tuple[int, str]]:
     """Each whole string literal in a Lua file with its line, escapes for backslashes and quotes undone. A string
     joined to another value with `..` is only part of a path, so it is left out."""
+    return [(line, text) for line, text, joined in _lua_literals(source) if not joined]
+
+
+def lua_tails(source: str) -> list[tuple[int, str]]:
+    """Each string literal a Lua file appends to another value (`root .. [[\\media\\Icon]]`) and that ends the
+    expression, as (line, text): the tail of a path whose head is a root only known at run time."""
+    return [(line, text) for line, text, joined in _lua_literals(source) if joined == "tail"]
+
+
+def _lua_literals(source: str) -> list[tuple[int, str, str]]:
+    """Every quoted or long string literal with its line, its text (quoted escapes for backslashes and quotes
+    undone) and how it is joined: "" alone, "tail" after a `..` and before none, "part" otherwise."""
     tokens, _ = tokenize(source)
     found = []
     for index, token in enumerate(tokens):
-        if token.kind != "string" or token.text[:1] not in "\"'":
+        if token.kind != "string":
             continue
-        if ".." in (tokens[index - 1].text if index else "", tokens[index + 1].text):
-            continue
-        body = token.text[1:-1]
-        found.append((token.line, body.replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")))
+        if token.text[:1] in "\"'":
+            body = token.text[1:-1].replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
+        else:
+            opening = LONG_OPEN.match(token.text)
+            if opening is None:
+                continue
+            body = token.text[opening.end() : -len(opening[1]) - 2]
+        before = index > 0 and tokens[index - 1].text == ".."
+        after = tokens[index + 1].text == ".."
+        found.append((token.line, body, "tail" if before and not after else "part" if before or after else ""))
     return found
 
 
@@ -285,6 +304,18 @@ def check_loaded(release: Path, folder: Path, toc: Path, addons: tuple[str, ...]
             at = f"{where(source)}:{line}" if line else where(source)
             problems.append(f"{at}: names {text.strip()}, which is not in the package")
 
+    def relative(source: Path, line: int, text: str) -> None:
+        # A media path built on a root the code only learns at run time (ForeverCore's `ns.root .. [[\media\...]]`,
+        # which is the embedding addon's Libs\ForeverCore folder or the standalone addon's own) names a file in the
+        # folder that ships the code: the embedded library's folder under Libs, otherwise the addon's.
+        parts = PurePosixPath(text.replace("\\", "/")).parts
+        if len(parts) < 3 or parts[0] != "/" or parts[1].lower() != "media":
+            return
+        inside = source.relative_to(folder).parts
+        base = folder / inside[0] / inside[1] if len(inside) > 2 and inside[0].lower() == "libs" else folder
+        if locate(base.joinpath(*parts[1:]), EXTENSIONS) is None:
+            problems.append(f"{where(source)}:{line}: names {where(base)}{text.strip()}, which is not in the package")
+
     def visit(wanted: Path, by: str) -> None:
         path = locate(wanted)
         if path is None:
@@ -308,12 +339,15 @@ def check_loaded(release: Path, folder: Path, toc: Path, addons: tuple[str, ...]
                     named(path, 0, value)
         elif path.suffix.lower() == ".lua":
             try:
-                strings = lua_strings(path.read_text(encoding="utf-8"))
+                source = path.read_text(encoding="utf-8")
+                strings, tails = lua_strings(source), lua_tails(source)
             except (LuaSyntaxError, UnicodeDecodeError) as error:
                 problems.append(f"{where(path)}: {error}")
                 return
             for line, text in strings:
                 named(path, line, text)
+            for line, text in tails:
+                relative(path, line, text)
 
     for number, line in enumerate(toc.read_text(encoding="utf-8-sig").splitlines(), 1):
         line = line.strip()
