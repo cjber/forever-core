@@ -18,7 +18,7 @@ class ReleaseArchiveTest(unittest.TestCase):
         self.folder = self.root / "ForeverCore"
         self.folder.mkdir()
         self.files = {
-            "ForeverCore.toc": "## Interface: 16001\nCore.lua\n",
+            "ForeverCore.toc": "## Interface: 16001\n## X-Forever-Core-Loader: 1\nCore.lua\n",
             "Core.lua": "local loaded = true\n",
             "LICENSE": "GPL-3.0-or-later\n",
             "README.md": "## Credits\nContributors.\n",
@@ -68,6 +68,14 @@ class ReleaseArchiveTest(unittest.TestCase):
             problems = self.check()
         self.assertIn("packaged exercise failed", problems[0])
         self.assertIn("bad global", problems[0])
+
+    def test_unwrapped_standalone_is_refused_without_running_exercise(self):
+        (self.folder / "ForeverCore.toc").write_text("## Interface: 16001\nCore.lua\n")
+        self.build()
+        with patch.object(gate.subprocess, "run") as run:
+            problems = self.check()
+        self.assertIn("no X-Forever-Core-Loader header", problems[0])
+        run.assert_not_called()
 
     def test_archive_cannot_escape_its_scratch_directory(self):
         with zipfile.ZipFile(self.archive, "a") as archive:

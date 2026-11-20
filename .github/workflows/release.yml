@@ -187,6 +187,11 @@ jobs:
         env:
           PYTHONPATH: .agents/skills/wow-forever-addon/tooling
         run: python3 -m forever_tools.toc_version
+      # The standalone ships wrapped like an embedded copy, so it joins the loader's election (#946).
+      - name: Wrap the standalone for the loader
+        env:
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
+        run: tools/wrap_standalone.sh "$RELEASE_TAG"
       - name: Build the release zip without uploading
         uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:

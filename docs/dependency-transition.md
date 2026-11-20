@@ -19,7 +19,8 @@ loads, directly or through an XML `Script`, as a deferred chunk on the file's fi
 the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's files, `ForeverCoreRun.lua` and
 `ForeverCoreReady.lua`.
 
-- With an older standalone folder installed (1.15.0 and earlier publish their table at file load), the loader adopts it
+- With an older standalone folder installed (every standalone up to 1.15.4 shipped unwrapped and publishes its table at
+  file load), the loader adopts it
   for the session, since a second runtime cannot start beside it, and the addon's files run inline during its own file
   load, exactly as before. When it is older than the newest embedded copy, the player sees an on-screen notice once per
   installed standalone version, naming both versions and saying to update or disable ForeverCore.
@@ -61,7 +62,11 @@ or downgrading that addon rolls core back under the others. Two holds enforce th
 The embed step also refuses a TOC whose `## SavedVariables` does not name exactly one account global: core mirrors
 its account store into that one global, and a per-character global or a choice of several cannot hold it.
 
-An already-released standalone (any 1.14.x or 1.15.0) that is enabled publishes its table while it loads. The loader
+An already-released standalone (any 1.14.x and 1.15.x up to 1.15.4) that is enabled publishes its table while it loads.
+Releases from 1.15.5 package the standalone wrapped (`build_embedded_core.py --standalone`), so it joins the election
+as mode `standalone` instead, and `tools/check_release_archive.py` refuses a standalone zip without the
+`X-Forever-Core-Loader` header. A consumer still guards any facade member newer than 1.15.3, the oldest standalone a
+player may keep. The loader
 adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release
 proof shows the addon working with no standalone installed and with an old standalone enabled. `forever_client.py
 proof` compares the installed build with the checkout after the same embed step at the same pin, and records the
