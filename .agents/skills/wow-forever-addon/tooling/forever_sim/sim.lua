@@ -249,6 +249,33 @@ function Sim:addon(dir, name)
 	return entry
 end
 
+-- The ForeverCore checkout a scenario loads beside the repository's addon (at `root`, a path ending in a slash; the
+-- working directory by default) ($FOREVER_CORE, else the sibling
+-- ../forever-core), or nil when the addon in the working directory carries its own core: a packaged build embeds it
+-- under Libs/ForeverCore (the embed step writes Libs/ForeverCore/bundle.json), which is what a player without the
+-- standalone runs. An unpackaged checkout beside it reads as an older standalone (@project-version@), so the
+-- loader's outdated notice would be the run's subject instead of the addon.
+function Sim.foreverCoreDir(root)
+	local bundle = io.open((root or "") .. "Libs/ForeverCore/bundle.json", "rb")
+	if bundle then
+		bundle:close()
+		return nil
+	end
+	local directory = os.getenv("FOREVER_CORE")
+	if directory == nil or directory == "" then
+		directory = "../forever-core"
+	end
+	return directory
+end
+
+-- Registers the ForeverCore checkout (Sim.foreverCoreDir) before login, unless the addon embeds its own core.
+function Sim:foreverCore()
+	local directory = Sim.foreverCoreDir()
+	if directory then
+		return self:addon(directory, "ForeverCore")
+	end
+end
+
 -- Adds a third-party stand-in from stubs/ (Questie, TomTom, Auctionator, Polestar), with its options; it loads
 -- with the addons at login and runs tainted by its own name, as the real addon would.
 function Sim:stub(name, options)
