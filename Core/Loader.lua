@@ -39,23 +39,26 @@ end
 -- The notice in every shipped locale (WFA-34). The loader runs before any runtime's Locales, so it carries its own
 -- line. The first %s is the installed standalone's version, the second the newest embedded one.
 local OUTDATED = {
-	enUS = "ForeverCore %s is older than the ForeverCore %s your addons include. Update or disable ForeverCore.",
-	deDE = "ForeverCore %s ist älter als das ForeverCore %s, das deine Addons enthalten. "
-		.. "Aktualisiere oder deaktiviere ForeverCore.", -- mt
-	esES = "ForeverCore %s es más antiguo que el ForeverCore %s que incluyen tus addons. "
-		.. "Actualiza o desactiva ForeverCore.", -- mt
-	esMX = "ForeverCore %s es más antiguo que el ForeverCore %s que incluyen tus addons. "
-		.. "Actualiza o desactiva ForeverCore.", -- mt
-	frFR = "ForeverCore %s est plus ancien que le ForeverCore %s inclus dans vos addons. "
-		.. "Mettez à jour ou désactivez ForeverCore.", -- mt
-	koKR = "ForeverCore %s 버전이 애드온에 포함된 ForeverCore %s보다 오래되었습니다. "
-		.. "ForeverCore를 업데이트하거나 비활성화하세요.", -- mt
-	ptBR = "O ForeverCore %s é mais antigo que o ForeverCore %s incluído nos seus addons. "
-		.. "Atualize ou desative o ForeverCore.", -- mt
-	ruRU = "ForeverCore %s старее, чем ForeverCore %s в ваших аддонах. "
-		.. "Обновите или отключите ForeverCore.", -- mt
-	zhCN = "ForeverCore %s 比你的插件所含的 ForeverCore %s 旧。请更新或停用 ForeverCore。", -- mt
-	zhTW = "ForeverCore %s 比你的插件所含的 ForeverCore %s 舊。請更新或停用 ForeverCore。", -- mt
+	enUS = "ForeverCore %s is older than the ForeverCore %s your addons include. Update ForeverCore, or delete the "
+		.. "ForeverCore folder in Interface/AddOns: your addons carry their own copy.",
+	deDE = "ForeverCore %s ist älter als das ForeverCore %s, das deine Addons enthalten. Aktualisiere ForeverCore "
+		.. "oder lösche den Ordner ForeverCore in Interface/AddOns: deine Addons bringen ihre eigene Kopie mit.", -- mt
+	esES = "ForeverCore %s es más antiguo que el ForeverCore %s que incluyen tus addons. Actualiza ForeverCore o "
+		.. "borra la carpeta ForeverCore de Interface/AddOns: tus addons llevan su propia copia.", -- mt
+	esMX = "ForeverCore %s es más antiguo que el ForeverCore %s que incluyen tus addons. Actualiza ForeverCore o "
+		.. "borra la carpeta ForeverCore de Interface/AddOns: tus addons traen su propia copia.", -- mt
+	frFR = "ForeverCore %s est plus ancien que le ForeverCore %s inclus dans vos addons. Mettez à jour ForeverCore "
+		.. "ou supprimez le dossier ForeverCore dans Interface/AddOns : vos addons ont leur propre copie.", -- mt
+	koKR = "ForeverCore %s 버전이 애드온에 포함된 ForeverCore %s보다 오래되었습니다. ForeverCore를 업데이트하거나 "
+		.. "Interface/AddOns의 ForeverCore 폴더를 삭제하세요. 애드온에 자체 사본이 들어 있습니다.", -- mt
+	ptBR = "O ForeverCore %s é mais antigo que o ForeverCore %s incluído nos seus addons. Atualize o ForeverCore "
+		.. "ou apague a pasta ForeverCore em Interface/AddOns: seus addons trazem a própria cópia.", -- mt
+	ruRU = "ForeverCore %s старее, чем ForeverCore %s в ваших аддонах. Обновите ForeverCore или удалите папку "
+		.. "ForeverCore в Interface/AddOns: в ваших аддонах есть своя копия.", -- mt
+	zhCN = "ForeverCore %s 比你的插件所含的 ForeverCore %s 旧。请更新 ForeverCore，"
+		.. "或删除 Interface/AddOns 中的 ForeverCore 文件夹：你的插件自带一份副本。", -- mt
+	zhTW = "ForeverCore %s 比你的插件所含的 ForeverCore %s 舊。請更新 ForeverCore，"
+		.. "或刪除 Interface/AddOns 中的 ForeverCore 資料夾：你的插件自帶一份副本。", -- mt
 }
 
 local function OutdatedText(version, newest)

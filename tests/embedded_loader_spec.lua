@@ -1009,7 +1009,10 @@ do
 	equal(picked.newest, build(1, 16, 0), "and the newer embedded build it runs in place of")
 	local warning = sess.loader.Warning() or ""
 	check(warning:find("v1.15.0", 1, true) and warning:find("1.16.0", 1, true), "the warning names both versions")
-	check(warning:find("Update or disable ForeverCore", 1, true), "and what to do")
+	check(
+		warning:find("Update ForeverCore, or delete the ForeverCore folder in Interface/AddOns", 1, true),
+		"and what to do"
+	)
 	sess.Tick()
 	equal(#shown, 0, "the notice waits for the world entry")
 	sess.Fire("PLAYER_ENTERING_WORLD", true, false)
@@ -1267,7 +1270,10 @@ do
 	sess.Tick()
 	equal(#shown, 1, "the outdated notice shows once")
 	check(shown[1]:find("v1.15.0", 1, true) and shown[1]:find("1.16.0", 1, true), "naming both versions")
-	check((sess.loader.Warning() or ""):find("Update or disable ForeverCore", 1, true), "and Warning reports it")
+	check(
+		(sess.loader.Warning() or ""):find("delete the ForeverCore folder in Interface/AddOns", 1, true),
+		"and Warning reports it"
+	)
 	equal(supervisedStore.outdatedNoticeVersion, "v1.15.0", "the version it was shown for is remembered")
 	equal(#sess.boots, 0, "still no second runtime")
 end
