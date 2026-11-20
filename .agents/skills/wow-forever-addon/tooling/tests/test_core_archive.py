@@ -29,14 +29,14 @@ class CoreArchiveTest(unittest.TestCase):
         core.mkdir()
         (core / "ForeverCore.toc").write_text(f"## Version: {version}\n")
 
-    def embed(self, version="1.15.3"):
+    def embed(self, version="1.15.3", chunks=", 42"):
         self.toc.write_text("## X-Forever-Core-Embed: 1\n")
         core = self.release / "FieldGuideForever/Libs/ForeverCore"
         core.mkdir(parents=True)
         major, minor, patch_version = core_archive.version(version)
         build = major * 1000000 + minor * 1000 + patch_version
         digest = "a" * 64
-        runtime = f'host.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{digest}", 42)\n'.encode()
+        runtime = f'host.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{digest}"{chunks})\n'.encode()
         # BigWigs writes CRLF after embed hashes the source.
         (core / "Begin.lua").write_bytes(runtime.replace(b"\n", b"\r\n"))
         (core / "bundle.json").write_text(
@@ -104,6 +104,11 @@ class CoreArchiveTest(unittest.TestCase):
         self.assertIn("file disagrees with its bundle hash", core_archive.check(self.root, self.release)[0])
         begin.write_bytes(b"stale begin file\n")
         self.assertIn("disagree with Begin.lua", core_archive.check(self.root, self.release)[0])
+
+    def test_embedded_stamp_before_chunk_counts(self):
+        # Packages built before ForeverCore 1.15.4 stamp Begin without the chunk count; the store audit still reads them.
+        self.embed(chunks="")
+        self.assertEqual(core_archive.check(self.root, self.release, "v1.15.3"), [])
 
     def test_embedded_version_comes_from_copy(self):
         self.embed("1.15.2")

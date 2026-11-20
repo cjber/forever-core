@@ -46,11 +46,12 @@ def embedded_tag(folder) -> str:
     digest = manifest["source_digest"]
     if minor >= 1000 or patch >= 1000 or manifest["build"] != build or not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("invalid bundle version, build or source digest")
-    # tools/build_embedded_core.py stamps Begin(addon, build, identity, chunks); the chunk count is the loader's own
-    # Seal check, so only the build and the identity (bundle.json's source_digest) are compared here.
+    # tools/build_embedded_core.py stamps Begin(addon, build, identity, chunks) since 1.15.4 and Begin(addon, build,
+    # identity) before, which released packages still carry. The chunk count is the loader's own Seal check, so only
+    # the build and the identity (bundle.json's source_digest) are compared here.
     begin = (folder / "Begin.lua").read_bytes().decode("utf-8")
     stamp = re.compile(
-        r'host\.ForeverCoreCopy = ForeverCoreLoader\.Begin\(addon, ([0-9]+), "([0-9a-f]{64})", [1-9][0-9]*\)'
+        r'host\.ForeverCoreCopy = ForeverCoreLoader\.Begin\(addon, ([0-9]+), "([0-9a-f]{64})"(?:, [1-9][0-9]*)?\)'
     )
     stamped = [match.groups() for match in map(stamp.fullmatch, begin.splitlines()) if match]
     if stamped != [(str(build), digest)]:
