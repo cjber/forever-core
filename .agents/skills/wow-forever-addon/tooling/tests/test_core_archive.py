@@ -36,7 +36,7 @@ class CoreArchiveTest(unittest.TestCase):
         major, minor, patch_version = core_archive.version(version)
         build = major * 1000000 + minor * 1000 + patch_version
         digest = "a" * 64
-        runtime = f'host.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{digest}")\n'.encode()
+        runtime = f'host.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{digest}", 42)\n'.encode()
         # BigWigs writes CRLF after embed hashes the source.
         (core / "Begin.lua").write_bytes(runtime.replace(b"\n", b"\r\n"))
         (core / "bundle.json").write_text(
