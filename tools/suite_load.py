@@ -40,6 +40,7 @@ ADDONS = (
     ("commissions-forever", "CommissionsForever"),
     ("macro-assist-forever", "MacroAssistForever"),
     ("adventure-guide-forever", "AdventureGuideForever"),
+    ("gathering-guide-forever", "GatheringGuideForever"),
 )
 
 
