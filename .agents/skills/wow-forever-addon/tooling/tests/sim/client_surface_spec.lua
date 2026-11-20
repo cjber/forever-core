@@ -41,10 +41,14 @@ local CVAR_READS = {
 	'GetCVarBitfield%(%s*"([%w_]+)"',
 }
 
-test("every cvar the loaded Blizzard code reads by name is one the client defines", function()
+test("every cvar the loaded Blizzard code reads by name has the client's own answer", function()
 	-- The client matches cvar names in any case.
 	local defined, missing = {}, {}
 	for name in pairs(Surface.cvars) do
+		defined[name:lower()] = true
+	end
+	-- The client answers nil for these too, so the sim's nil is the client's answer.
+	for _, name in ipairs(Surface.undefined) do
 		defined[name:lower()] = true
 	end
 	for _, path in ipairs(files) do
