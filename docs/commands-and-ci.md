@@ -38,6 +38,7 @@ python3 tools/headless/forever_client.py attest --repo R --ref SHA --checkout PA
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
 python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
+python3 tools/smoke_queue.py --repo skillup-forever  # smoke only the named repositories (repeatable), in that order
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (--push publishes)
 python3 tools/check_package.py            # .release/ForeverCore holds every loaded file, no development folder,
