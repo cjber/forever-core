@@ -50,7 +50,7 @@ local OUTDATED = {
 	frFR = "ForeverCore %s est plus ancien que le ForeverCore %s inclus dans vos addons. Mettez à jour ForeverCore "
 		.. "ou supprimez le dossier ForeverCore dans Interface/AddOns : vos addons ont leur propre copie.", -- mt
 	koKR = "ForeverCore %s 버전이 애드온에 포함된 ForeverCore %s보다 오래되었습니다. ForeverCore를 업데이트하거나 "
-		.. "Interface/AddOns의 ForeverCore 폴더를 삭제하세요. 애드온에 자체 사본이 들어 있습니다.", -- mt
+		.. "Interface/AddOns 폴더 안의 ForeverCore 폴더를 삭제하세요. 애드온에 자체 사본이 들어 있습니다.", -- mt
 	ptBR = "O ForeverCore %s é mais antigo que o ForeverCore %s incluído nos seus addons. Atualize o ForeverCore "
 		.. "ou apague a pasta ForeverCore em Interface/AddOns: seus addons trazem a própria cópia.", -- mt
 	ruRU = "ForeverCore %s старее, чем ForeverCore %s в ваших аддонах. Обновите ForeverCore или удалите папку "
