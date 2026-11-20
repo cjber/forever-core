@@ -80,7 +80,9 @@ alpha so every secure quest item button stays beside its quest. `TrackerSection.
 existing line and header text without another layout. `TrackerSection.Room(module, block)` measures the room left in
 the column, and `TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
 { onClick, tooltip })` makes a stock line clickable (a right-click on it opens its block's menu), and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
-header's hover; `ForeverTrackerInteractiveLineTemplate` is the mouse-enabled line template both use.
+header's hover. `ForeverCore.TrackerLine.template` names the mouse-enabled line template to pass to
+`block:AddObjective(key, text, template)`. Read it there, never write the name out: each embedded copy declares
+the template under its own name, and the embed step refuses a consumer file that spells it.
 
 `ForeverCore.TrackerHost` is the one column. Attach a section directly to it:
 

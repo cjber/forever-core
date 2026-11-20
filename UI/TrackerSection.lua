@@ -170,6 +170,9 @@ end
 ---@class ForeverTrackerLineAPI
 local TrackerLine = {}
 ns.TrackerLine = TrackerLine
+-- The line template's name, the one name a section passes to AddObjective. Each embedded copy declares the template
+-- under its own name and its End.lua replaces this one, so the name is read from here, never written out.
+TrackerLine.template = "ForeverTrackerInteractiveLineTemplate"
 
 ---@param line Frame
 ---@param spec ForeverTrackerInteractiveSpec

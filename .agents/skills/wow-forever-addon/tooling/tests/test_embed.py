@@ -126,6 +126,20 @@ class EmbedTest(unittest.TestCase):
         )
         self.assertEqual(self.run_embed()["wrapped"], 2, "another addon's load, a mention and the shared wait embed")
 
+    def test_a_file_naming_the_canonical_line_template_is_refused(self):
+        # cjber/forever-core#964: SkillUp drew tracker lines from the canonical name, which no embedded copy declares.
+        mention = "-- ForeverTrackerInteractiveLineTemplate, in a comment\n"
+        (self.root / "UI" / "Window.lua").write_text(
+            f'local _, ns = ...\n{mention}local T = "ForeverTrackerInteractiveLineTemplate"\n'
+        )
+        with self.assertRaisesRegex(embed.EmbedError, r"UI/Window\.lua:3: .*ForeverCore\.TrackerLine\.template"):
+            self.run_embed()
+        self.assertFalse((self.root / "Main.lua").read_bytes().startswith(embed.HEADER), "nothing was rewritten")
+        (self.root / "UI" / "Window.lua").write_text(
+            f"local _, ns = ...\n{mention}ns.T = ForeverCore.TrackerLine.template\n"
+        )
+        self.assertEqual(self.run_embed()["wrapped"], 2, "a mention in a comment and the running copy's name embed")
+
     @unittest.skipUnless(shutil.which("git"), "git not on PATH")
     def test_in_a_git_checkout_the_new_files_are_tracked_for_the_packager(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)

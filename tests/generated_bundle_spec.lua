@@ -240,12 +240,17 @@ do
 	)
 end
 -- Real unwrapped canonical source is the supported API2 legacy facade fixture.
--- It owns its already-running runtime; embedded wrappers must remain inert.
-for _, order in ipairs({
+-- It owns its already-running runtime; embedded wrappers must remain inert. `unnamed` stands for a standalone released
+-- before its TrackerLine named its template (1.15.4 and older): the facade still names the template it declared
+-- once the consumers are ready (cjber/forever-core#964).
+for _, case in ipairs({
 	{ "Legacy", "ConsumerA", "ConsumerB" },
 	{ "ConsumerA", "Legacy", "ConsumerB" },
 	{ "ConsumerA", "ConsumerB", "Legacy" },
+	{ "Legacy", "ConsumerA", "ConsumerB", unnamed = true },
+	{ "ConsumerA", "ConsumerB", "Legacy", unnamed = true },
 }) do
+	local order = { unpack(case) }
 	local env, frames = FakeClient.new()
 	env.ObjectiveTrackerFrame = nil
 	local function event(name, addon)
@@ -260,6 +265,7 @@ for _, order in ipairs({
 		end
 	end
 	local facade
+	local declarations = {}
 	for _, item in ipairs(order) do
 		local legacy = item == "Legacy"
 		local folder = legacy and "ForeverCore" or item
@@ -268,9 +274,16 @@ for _, order in ipairs({
 		for _, file in ipairs(Toc.files(path, folder .. ".toc")) do
 			if file.kind == "lua" then
 				setfenv(assert(loadfile(file.path)), env)(folder, host)
+			else
+				for _, template in ipairs(Toc.templates(file.path)) do
+					declarations[template.name] = folder
+				end
 			end
 		end
 		env[folder .. "DB"] = { existing = true }
+		if legacy and case.unnamed then
+			env.ForeverCore.TrackerLine.template = nil
+		end
 		event("ADDON_LOADED", folder)
 		if legacy then
 			facade = env.ForeverCore
@@ -284,6 +297,10 @@ for _, order in ipairs({
 	check(env.ForeverCoreLoader.CallbackError() == nil, "real legacy startup succeeds")
 	check(env.ConsumerStarts == 2, "both consumers initialize against real legacy public facade")
 	check(#env.ForeverCoreLoader.Rejections() == 0, "legacy wrappers seal without false assertion")
+	check(
+		declarations[env.ForeverCore.TrackerLine.template] == "ForeverCore",
+		"the legacy facade names the template its standalone declared"
+	)
 end
 -- The bridge release carries ForeverCoreDB across the switch: the tracker column's position, its Lock and its
 -- options survive installing an embedded consumer beside the standalone, then removing either one, in every order.

@@ -154,6 +154,7 @@
 ---@field lines? string[] normal lines under the title
 
 ---@class ForeverTrackerLineAPI
+---@field template string the running copy's interactive line template, for AddObjective
 ---@field SetInteractive fun(line: Frame, spec: ForeverTrackerInteractiveSpec)
 ---@field SetHeaderTooltip fun(module: ForeverTrackerModule, tip: ForeverTrackerHeaderTooltip|fun(block: any): ForeverTrackerHeaderTooltip?)
 

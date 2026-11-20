@@ -272,6 +272,15 @@ def own_load_waits(data: bytes, folder: str) -> list[int]:
     return lines
 
 
+def core_template_uses(data: bytes, template: str) -> list[int]:
+    """The lines where a consumer Lua file names ForeverCore's interactive line template by its canonical name, as a
+    string token. Only an older unwrapped standalone declares that name; every embedded copy declares its own, so the
+    name fails CreateFrame wherever a copy runs. `ForeverCore.TrackerLine.template` is the running copy's name in
+    every mode (cjber/forever-core#964)."""
+    tokens, _ = tokenize(data.decode("utf-8-sig"))
+    return [token.line for token in tokens if token.kind == "string" and unescape(token.text) == template]
+
+
 def _builder(core: Path):
     path = core / "tools" / "build_embedded_core.py"
     if not path.is_file():
@@ -405,6 +414,13 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
             raise EmbedError(
                 f"{name}:{waits[0]}: EventUtil.ContinueOnAddOnLoaded on this addon's own name; deferred to login the"
                 " callback would run inside this file, before the files after it. Call ns.OnFilesLoaded(callback)"
+            )
+    for name, data in sources.items():
+        uses = core_template_uses(data, builder.TEMPLATE)
+        if uses:
+            raise EmbedError(
+                f"{name}:{uses[0]}: names {builder.TEMPLATE}, which no embedded copy declares; use"
+                " ForeverCore.TrackerLine.template, the running copy's name"
             )
     for name, data in sources.items():
         (root / name).write_bytes(wrap(data))
