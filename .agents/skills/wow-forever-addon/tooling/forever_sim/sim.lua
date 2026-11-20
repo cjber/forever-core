@@ -131,6 +131,13 @@ Sim.CORE = {
 	"Blizzard_ObjectiveTracker",
 	"Blizzard_ContentTracking",
 	"Blizzard_TrainerUI",
+	"Blizzard_RaidWarning/RaidWarningUtil.lua",
+	"Blizzard_RaidWarning/RaidWarning.lua",
+	"Blizzard_RaidWarning/RaidWarning.xml",
+	"Blizzard_NamePlates/Blizzard_NamePlateConstants.lua",
+	"Blizzard_NamePlates/Blizzard_NamePlateFrameOptions.lua",
+	"Blizzard_NamePlates/Blizzard_NamePlates.lua",
+	"Blizzard_NamePlates/Blizzard_NamePlates.xml",
 }
 
 local docsCache = {}
@@ -239,6 +246,11 @@ function Sim.new(opts)
 		}) do
 			sim.G.Mixin(bar, sim.G.TextStatusBarMixin)
 		end
+	end
+	-- The raid warning anchors below Blizzard_BuffFrame's DeadlyDebuffFrame, which needs the omitted unit frames: the
+	-- hidden frame it reads stands in for it.
+	if sim.G.RaidWarningFrame and not sim.G.DeadlyDebuffFrame then
+		sim.G.CreateFrame("Frame", "DeadlyDebuffFrame", sim.G.UIParent):Hide()
 	end
 	sim.loader.bootstrap()
 	sim.createChat()

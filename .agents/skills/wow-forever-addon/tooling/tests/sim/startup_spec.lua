@@ -45,6 +45,25 @@ for _, gamepad in ipairs({ false, true }) do
 	end
 end
 
+do
+	-- Client names loaded at startup that Forever addons call from their own code: the raid warning, the nameplate
+	-- driver and the trainer kind.
+	local probe = Sim.new()
+	probe:login()
+	probe:runAs(
+		"StartupNamesProbe",
+		[=[
+        RaidWarningUtil.AddMessage("probe", { r = 1, g = 1, b = 1 })
+        assert(RaidWarningFrame:IsShown())
+        NamePlateDriverFrame:HookScript("OnEvent", function() end)
+        assert(IsTradeskillTrainer() == false)
+    ]=]
+	)
+	probe:event("DISPLAY_SIZE_CHANGED")
+	probe:advance(0.1)
+	probe:expectNoErrors()
+end
+
 local sim = Sim.new()
 local G = sim.G
 assert(

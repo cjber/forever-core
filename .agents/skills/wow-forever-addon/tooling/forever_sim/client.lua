@@ -246,7 +246,7 @@ function M.build(sim)
 		end
 		sim.reportError(msg, debug.traceback("", 2), Taint.current)
 	end
-	function sim.reportError(message, traceback, taint, origin, event)
+	local function Record(message, traceback, taint, origin, event)
 		message = tostring(Secret.unwrap(message))
 		if taint and message:find("attempt to compare %a+ with %a+") and message:find("userdata") then
 			-- A secret on one side of an ordering comparison: Lua 5.1 reports the types, the client the secret.
@@ -264,6 +264,13 @@ function M.build(sim)
 			event = event,
 		}
 		table.insert(sim.errors, entry)
+		if sim.verbose then
+			io.stderr:write("[sim error] ", message, "\n", traceback or "", "\n")
+		end
+		return message
+	end
+	function sim.reportError(message, traceback, taint, origin, event)
+		message = Record(message, traceback, taint, origin, event)
 		if handler then
 			local wasDispatching = dispatching
 			dispatching = true
@@ -274,15 +281,24 @@ function M.build(sim)
 			Taint.set(savedTaint, savedOrigin)
 			dispatching = wasDispatching
 		end
-		if sim.verbose then
-			io.stderr:write("[sim error] ", message, "\n", traceback or "", "\n")
-		end
 	end
 	Taint.onError = sim.reportError
 	G.geterrorhandler = function()
 		return handler or DefaultHandler
 	end
 	G.seterrorhandler = function(f)
+		if type(f) == "function" and not Taint.current then
+			-- The client's own handler (Blizzard_ScriptErrors) is where an error reaches the player. Addon code that
+			-- catches an error and hands it to geterrorhandler() (SafeCall's Trace, the embedded runner's Report) ends
+			-- here through each addon handler's saved previous one, so this is where such an error is recorded.
+			local shown = f
+			f = function(message, ...)
+				if not dispatching then
+					Record(message, debug.traceback("", 2), Taint.current)
+				end
+				return shown(message, ...)
+			end
+		end
 		handler = f
 	end
 	G.CallErrorHandler = function(...)

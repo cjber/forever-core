@@ -876,6 +876,30 @@ test("client: the default handler records an error passed straight to it", funct
 	eq(sim.errors[1].message, "boom")
 end)
 
+test("client: an error addon code hands to the handler reaches the client's own handler and is recorded", function()
+	local sim, G = freshClient()
+	local shown = {}
+	G.seterrorhandler(function(message)
+		shown[#shown + 1] = message
+	end)
+	Taint.set("Addon")
+	local previous = G.geterrorhandler()
+	local function addonHandler(message)
+		return previous(message)
+	end
+	G.seterrorhandler(addonHandler)
+	eq(G.geterrorhandler(), addonHandler, "an addon reads back the handler it installed")
+	G.geterrorhandler()("Addon/File.lua:3: boom")
+	Taint.set(nil)
+	eq(#sim.errors, 1, "recorded once")
+	eq(sim.errors[1].message, "Addon/File.lua:3: boom")
+	eq(sim.errors[1].taint, "Addon", "with the taint of the code that reported it")
+	eq(#shown, 1, "and shown once")
+	sim.reportError("Addon/File.lua:9: raised", "traceback", "Addon")
+	eq(#sim.errors, 2, "a raised error is still recorded once")
+	eq(#shown, 2, "and shown once")
+end)
+
 test("client: the key-binding globals the settings pages call are stubbed", function()
 	local _, G = freshClient()
 	eq(type(G.GetModifiedClick), "function", "GetModifiedClick")

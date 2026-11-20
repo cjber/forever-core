@@ -264,6 +264,22 @@ function M.build(sim)
 		local x = unit(u)
 		return x and (x.healthMax or 100) or 0
 	end
+	impl.UnitPower = function(u)
+		local x = unit(u)
+		return x and (x.power or 100) or 0
+	end
+	impl.UnitPowerMax = function(u)
+		local x = unit(u)
+		return x and (x.powerMax or 100) or 0
+	end
+	-- Mana unless a unit says otherwise: Enum.PowerType.Mana is 0.
+	impl.UnitPowerType = function(u)
+		local x = unit(u)
+		if x then
+			return x.powerType or 0, x.powerToken or "MANA"
+		end
+		return 0, "MANA"
+	end
 	impl.UnitPowerBarTimerInfo = function(u, index)
 		local x = Secret.unwrap(u) == "player" and W.player or unit(u)
 		local timer = x and x.powerBarTimers and x.powerBarTimers[Secret.unwrap(index) or 0]

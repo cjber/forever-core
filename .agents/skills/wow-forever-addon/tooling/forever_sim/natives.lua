@@ -510,6 +510,12 @@ function M.build(sim)
 			end,
 		},
 		{
+			"IsTradeskillTrainer",
+			function()
+				return false
+			end,
+		},
+		{
 			"GetTrainerSkillLineFilter",
 			function()
 				return false
