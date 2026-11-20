@@ -189,6 +189,31 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("media\\Numbers\\%d, which is not in the package", problems[0])
 
+    def test_a_media_path_on_a_run_time_root_names_a_file_in_the_folder_that_ships_it(self):
+        files = self.good()
+        files["Addon/Addon.toc"] += "Libs\\Core\\Art.lua\nUI\\Report.lua\n"
+        files["Addon/Libs/Core/Art.lua"] = (
+            "local ROOT = ns.root or [[Interface\\AddOns\\Core]]\n"
+            "local MARKER = ROOT .. [[\\media\\Numbers\\%d]]\n"
+            'local RING = ROOT .. "\\\\media\\\\Numbers\\\\Ring"\n'
+            'print(prefix .. "\\n\\nSystem information")\n'
+        )
+        files["Addon/Libs/Core/media/Numbers/1.tga"] = ""
+        files["Addon/Libs/Core/media/Numbers/Ring.tga"] = ""
+        files["Addon/UI/Report.lua"] = 'local ICON = root .. "\\\\media\\\\Icon"\n'
+        self.assertEqual(package.check(self.make(files), POLICY), [])
+        del files["Addon/Libs/Core/media/Numbers/Ring.tga"]
+        del files["Addon/media/dot.tga"]
+        files["Addon/Core.lua"] = ""
+        files["Addon/UI/Report.lua"] = 'local ICON = root .. "\\\\media\\\\Dot"\n'
+        self.assertEqual(
+            package.check(self.make(files), POLICY),
+            [
+                "Addon/Libs/Core/Art.lua:3: names Addon/Libs/Core\\media\\Numbers\\Ring, which is not in the package",
+                "Addon/UI/Report.lua:1: names Addon\\media\\Dot, which is not in the package",
+            ],
+        )
+
     def test_the_client_rules_for_case_prefixes_absolute_includes_and_flavours(self):
         files = self.good()
         files["Addon/Addon.toc"] = files["Addon/Addon.toc"].replace("Core.lua", "core.lua")

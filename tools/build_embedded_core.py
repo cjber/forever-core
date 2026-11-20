@@ -7,8 +7,10 @@ The ready entry is explicitly converted consumer code: it receives addon, namesp
 core, resources as varargs at OnReady, after account SavedVariables load. Resources
 provides the selected template name and explicit legacy/elected/standalone mode.
 Only API2 with Register and TrackerLine is supported; legacy also requires
-TrackerLine.SetInteractive and uses its original global template. It must initialize
-directly rather than wait for its already-finished ADDON_LOADED event.
+TrackerLine.SetInteractive and uses its original global template, which the ready step
+names on the legacy facade when that older standalone left it unnamed, so consumer code
+reads ForeverCore.TrackerLine.template in every mode. It must initialize directly rather
+than wait for its already-finished ADDON_LOADED event.
 """
 
 import argparse
@@ -158,10 +160,12 @@ def plan(
             f'assert(core.API == {API}, "incompatible ForeverCore API")\n'
             'assert(type(core.Register) == "function", "ForeverCore Register unavailable")\n'
             'assert(type(core.TrackerLine) == "table", "ForeverCore TrackerLine unavailable")\n'
-            "local template = core.TrackerLine.template\n"
             'if selected.mode == "legacy" then\n'
             'assert(type(core.TrackerLine.SetInteractive) == "function", "unsupported legacy TrackerLine")\n'
-            f'template = "{TEMPLATE}"\nend\n'
+            # An older unwrapped standalone declares the canonical template but never names it on its facade. Name
+            # it there, so consumer code reads core.TrackerLine.template in every mode.
+            f'if core.TrackerLine.template == nil then core.TrackerLine.template = "{TEMPLATE}" end\nend\n'
+            "local template = core.TrackerLine.template\n"
             'assert(type(template) == "string", "ForeverCore template unavailable")\n'
             "resources = { template = template, mode = selected.mode, root = selected.root }\n"
             "readyCore = core\ntryStart()\nend)\n"
