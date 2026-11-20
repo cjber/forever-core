@@ -76,6 +76,25 @@ class RateLimitTest(unittest.TestCase):
                 self.assertEqual([call.args[0] for call in sleep.call_args_list], [60, 60, 60])
                 self.assertEqual(run.call_count, 3)
 
+    def test_an_empty_graphql_bucket_waits_for_its_reset(self):
+        # The response Sync consumers run 44728473633 got for every commit (cjber/forever-core#949).
+        limited = (
+            '{"errors":[{"type":"RATE_LIMIT","code":"graphql_rate_limit",'
+            '"message":"API rate limit already exceeded for user ID 44099524."}]}'
+        )
+        headers = "X-Ratelimit-Remaining: 0\r\nX-Ratelimit-Reset: 1300\r\nX-Ratelimit-Resource: graphql\r\n"
+        done = '{"data": {"createCommitOnBranch": {"commit": {"oid": "abc"}}}}'
+        with (
+            mock.patch.object(
+                sync, "run", side_effect=[self.response(200, headers, limited), self.response(200, body=done)]
+            ) as run,
+            mock.patch.object(time, "time", return_value=1000),
+            mock.patch.object(time, "sleep") as sleep,
+        ):
+            self.assertEqual(sync.created_oid(sync.api("graphql", "--input", "body.json")), "abc")
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 301)
+        self.assertEqual(run.call_count, 2)
+
     def test_other_graphql_errors_and_odd_bodies_do_not_retry(self):
         forbidden = '{"errors": [{"type": "FORBIDDEN"}]}'
         for status, headers, body in (

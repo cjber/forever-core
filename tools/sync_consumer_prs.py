@@ -164,6 +164,12 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return run(["git", *args], cwd=root, check=check)
 
 
+# GraphQL's rate-limit error types: RATE_LIMIT is the primary bucket running dry, seen in Sync consumers run 44728473633
+# with x-ratelimit-remaining 0 at HTTP 200 (cjber/forever-core#949); RATE_LIMITED is the type GitHub documents for a
+# secondary limit. The headers then say how long to wait.
+GRAPHQL_RATE_LIMIT_TYPES = {"RATE_LIMIT", "RATE_LIMITED"}
+
+
 def graphql_error_types(body: str) -> set[str] | None:
     """The errors[].type values of a GraphQL response body, or None when it carries no error list."""
     try:
@@ -195,7 +201,7 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess:
         # GraphQL reports a rate limit as status 200 or 403 with a RATE_LIMITED error, often without retry-after;
         # any other GraphQL error (FORBIDDEN, NOT_FOUND) is final whatever its headers say.
         types = graphql_error_types(result.stdout) if args[1:2] == ("graphql",) else None
-        limited = status == 429 or (types is not None and "RATE_LIMITED" in types)
+        limited = status == 429 or bool(types and types & GRAPHQL_RATE_LIMIT_TYPES)
         if result.returncode and (limited or (status == 403 and types is None)):
             try:
                 if "retry-after" in headers:
