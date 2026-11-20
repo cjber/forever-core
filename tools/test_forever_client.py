@@ -5254,6 +5254,36 @@ class ModifierHoldTest(unittest.TestCase):
                 )
         self.assertEqual(set(self.displays), {":9"})
 
+    def test_drag_presses_moves_in_steps_and_releases(self):
+        self.record()
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        fc.drag({"display": ":9"}, (100, 200), (180, 120))
+        chain, release = self.sent
+        self.assertEqual(chain[1:6], ["mousemove", "100", "200", "mousedown", "1"])
+        moves = [chain[i + 1 : i + 3] for i, arg in enumerate(chain) if arg == "mousemove"][1:]
+        self.assertEqual(len(moves), fc.DRAG_STEPS)
+        self.assertEqual(moves[-1], ["180", "120"])
+        self.assertEqual(release, ["xdotool", "mouseup", "1"])
+
+    def test_a_failed_drag_still_releases_the_button(self):
+        self.record(fail_on="mousemove")
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        with self.assertRaises(subprocess.CalledProcessError):
+            fc.drag({"display": ":9"}, (100, 200), (180, 120))
+        self.assertEqual(self.sent[-1], ["xdotool", "mouseup", "1"])
+
+    def test_a_drag_needs_a_fresh_shot_and_points_in_the_frame(self):
+        run = self.record()
+        with self.assertRaisesRegex(fc.ClientError, "take a `shot`"):
+            fc.drag({"display": ":9"}, (1, 2), (3, 4))
+        (self.state / "last-shot").touch()
+        os.utime(self.state / "last-shot", (time.time() + 1, time.time() + 1))
+        with self.assertRaisesRegex(fc.ClientError, "outside"):
+            fc.drag({"display": ":9"}, (1, 2), (fc.WIDTH, 4))
+        run.assert_not_called()
+
     def test_keyup_still_runs_when_the_action_raises(self):
         self.record(fail_on="mousemove")
         (self.state / "last-shot").touch()

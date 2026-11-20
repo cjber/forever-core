@@ -20,8 +20,9 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py click X Y           # left click at a point in the 1920x1080 frame (after a fresh shot)
     forever_client.py hover X Y           # move the pointer to a point in the frame (after a fresh shot)
     forever_client.py scroll X Y N        # N wheel-up ticks (zoom in) or -N wheel-down ticks, at a point
+    forever_client.py drag X1 Y1 X2 Y2    # left-button drag from one point to another (after a fresh shot)
     forever_client.py click X Y --hold shift [--hold ctrl]
-                                          # hold shift, ctrl or alt through a click, hover or scroll; released after
+                                          # hold shift, ctrl or alt through any pointer verb; released after
     forever_client.py key Escape          # any key xdotool names
     forever_client.py slash "/fgf"        # open chat, type a Forever addon's slash command, send it
     forever_client.py reload              # /reload and wait for the world to load again
@@ -780,6 +781,11 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
 # here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
 # X position to the point and must never be used.
+# A drag moves in this many steps, pausing between them, so the client sees the press, a move and the release apart.
+DRAG_STEPS = 8
+DRAG_PAUSE_S = "0.05"
+
+
 def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
@@ -801,6 +807,33 @@ def hover(state: Mapping, px: int, py: int, hold: Sequence[str] = ()) -> None:
     if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
         raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
     send(state, "mousemove", str(px), str(py), hold=keys)
+
+
+def drag(state: Mapping, start: tuple[int, int], end: tuple[int, int], hold: Sequence[str] = ()) -> None:
+    """Press the left button at `start`, move to `end` in steps, release: a window or slider drag, screenshot-bound.
+
+    WoW starts a drag (OnDragStart, StartMoving) only once the pointer moves with the button down, and reads the drop
+    on release, so the press, the moves and the release are separate xdotool steps with a short pause between them.
+    The button is released even when a step fails, so a failed drag never leaves the client with the button held.
+    """
+    keys = modifier_keys(hold)
+    if mark("last-shot") <= mark("last-input"):
+        raise ClientError("take a `shot` and read it first: a drag must start on addon UI in the current frame")
+    for px, py in (start, end):
+        if not (0 <= px < WIDTH and 0 <= py < HEIGHT):
+            raise ClientError(f"({px}, {py}) is outside the {WIDTH}x{HEIGHT} frame")
+    if state.get("ready"):
+        close_game_menu(state)
+    steps = [
+        (start[0] + (end[0] - start[0]) * i // DRAG_STEPS, start[1] + (end[1] - start[1]) * i // DRAG_STEPS)
+        for i in range(1, DRAG_STEPS + 1)
+    ]
+    moves = [arg for px, py in steps for arg in ("sleep", DRAG_PAUSE_S, "mousemove", str(px), str(py))]
+    try:
+        press = ("mousemove", str(start[0]), str(start[1]), "mousedown", "1")
+        send(state, *press, *moves, "sleep", DRAG_PAUSE_S, hold=keys)
+    finally:
+        x(state, "mouseup", "1")
 
 
 def scroll(state: Mapping, px: int, py: int, ticks: int, hold: Sequence[str] = ()) -> None:
@@ -4485,7 +4518,7 @@ def format_eval(data: Mapping) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
-JOB_VERBS = {"shot", "click", "hover", "scroll", "key", "slash", "reload", "eval", "errors"}
+JOB_VERBS = {"shot", "click", "hover", "drag", "scroll", "key", "slash", "reload", "eval", "errors"}
 
 
 def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
@@ -4515,6 +4548,8 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
         click(state, args.x, args.y, args.button, args.hold)
     elif args.verb == "hover":
         hover(state, args.x, args.y, args.hold)
+    elif args.verb == "drag":
+        drag(state, (args.x1, args.y1), (args.x2, args.y2), args.hold)
     elif args.verb == "scroll":
         scroll(state, args.x, args.y, args.ticks, args.hold)
     elif args.verb == "key":
@@ -4612,10 +4647,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("down")
     sub.add_parser("status")
     sub.add_parser("capture-env")
-    for name in ("reload", "shot", "click", "hover", "scroll", "key", "slash", "eval", "errors"):
+    for name in ("reload", "shot", "click", "hover", "drag", "scroll", "key", "slash", "eval", "errors"):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
-        if name in ("click", "hover", "scroll"):
+        if name in ("click", "hover", "drag", "scroll"):
             p.add_argument(
                 "--hold",
                 action="append",
@@ -4632,6 +4667,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "hover":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
+        elif name == "drag":
+            for coord in ("x1", "y1", "x2", "y2"):
+                p.add_argument(coord, type=int)
         elif name == "scroll":
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
