@@ -5,7 +5,7 @@
 local _, ns = ...
 
 -- `version` is the interface number (docs/api.md); `minor` is the core table's own minor.
-local API = { version = 2, minor = 2 }
+local API = { version = 2, minor = 3 }
 
 -- Whether an addon reached Register; Expose.lua defines it once the contexts exist.
 ---@param addonName string
@@ -15,6 +15,7 @@ function API.Registered(addonName)
 end
 
 API.Open = ns.Open
+API.CharacterKey = ns.CharacterKey
 
 ns.CoreAPI = API
 ns.APIKit.Publish("ForeverCore", API)

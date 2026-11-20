@@ -181,7 +181,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   a larger slice, measured in game: 2 s of work at 1 ms a frame is 40 s of empty UI at 60 fps.
 - **WFA-14** Saved variables never assume a key: every default is declared in one place (a
   `DEFAULTS` table, or the feature registry's `default =`), and a missing key reads as its default,
-  so a new option and an old save file always agree.
+  so a new option and an old save file always agree. Per-character data is keyed by
+  `ForeverCore.CharacterKey()`, never by a realm name read here: a Forever realm has no name
+  (`GetRealmName()` is `""`) and `UnitName`'s second return is the surname, so a hand-built key is empty or
+  collides between characters sharing a first name. `forever_sim` and the fake client model that realm.
 - **WFA-38** Never touch Blizzard's Lua state. Forever runs its UI through secure delegates, so a hook, a field
   write or a first call from addon code into a Blizzard object makes Blizzard's own code fail or be blocked later,
   often only in combat, and the error names this addon. Blizzard allows hooks in general; this rule is ours,

@@ -228,6 +228,7 @@ read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
 -- The character's own name (the headless helper), and Escape closing the report, credits and menu windows like any panel.
 read_globals[#read_globals + 1] = "UnitName"
+read_globals[#read_globals + 1] = "UnitGUID"
 read_globals[#read_globals + 1] = "UISpecialFrames"
 read_globals[#read_globals + 1] = "tContains"
 -- Mover.lua: whether the button of a fine drag is still held.

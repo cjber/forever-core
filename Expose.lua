@@ -36,6 +36,7 @@ core.APIKit = ns.APIKit
 core.Open = ns.Open
 core.OpenMap = ns.OpenMap
 core.OpenSettingsPanel = ns.OpenSettingsPanel
+core.CharacterKey = ns.CharacterKey
 -- The Forever addons page is gone. An addon release from before that still calls these members while it loads, so
 -- they stay for one release as answers that draw nothing: no hint shows, no link window opens, and Register hands
 -- back the addon's own category, so an older "Forever addons" button opens the addon's own page. State still answers

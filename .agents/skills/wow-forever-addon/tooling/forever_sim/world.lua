@@ -17,8 +17,12 @@ function M.build(sim)
 	local G, impl = sim.G, sim.impl
 	local W = {
 		player = {
+			-- A Forever realm has no name (GetRealmName is "", GetRealmID 0) and UnitName's second return is the
+			-- surname; the GUID's server segment is the only realm-like value. A scenario on a named realm sets realm.
 			name = "Syrberus",
-			realm = "Forever",
+			surname = "Ironhide",
+			realm = "",
+			realmID = 0,
 			level = 60,
 			race = "Orc",
 			raceFile = "Orc",
@@ -26,7 +30,7 @@ function M.build(sim)
 			classFile = "WARRIOR",
 			classID = 1,
 			faction = "Horde",
-			guid = "Player-0000-00000001",
+			guid = "Player-6941-00000001",
 			money = 1000000,
 			map = 1454, -- Orgrimmar
 			x = 0.5,
@@ -62,6 +66,7 @@ function M.build(sim)
 			local p = W.player
 			return {
 				name = p.name,
+				surname = p.surname,
 				level = p.level,
 				guid = p.guid,
 				isPlayer = true,
@@ -181,17 +186,18 @@ function M.build(sim)
 		return inventorySlots[name], nil, false
 	end
 
+	-- The second return is the surname on Forever, the realm of a unit from another named realm elsewhere.
 	impl.UnitName = function(u)
 		local x = unit(u)
 		if x then
-			return x.name, x.realm
+			return x.name, x.surname or (x.realm ~= "" and x.realm or nil)
 		end
 	end
 	impl.UnitNameUnmodified = impl.UnitName
 	impl.UnitFullName = function(u)
 		local x = unit(u)
 		if x then
-			return x.name, x.realm or W.player.realm
+			return x.name, x.surname or x.realm or W.player.realm
 		end
 	end
 	impl.GetUnitName = function(u)
@@ -319,6 +325,9 @@ function M.build(sim)
 		return W.player.realm
 	end
 	impl.GetRealmName = impl.GetNormalizedRealmName
+	impl.GetRealmID = function()
+		return W.player.realmID or 0
+	end
 	impl.GetMoney = function()
 		return W.player.money
 	end
