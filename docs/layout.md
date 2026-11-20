@@ -45,7 +45,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   scans the TOC's files for one. There is no Forever quest list: quests show in the game's tracker or a quest
   addon's.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on
-  this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does.
+  this client build; its own frames do not taint the gamepad interface's focus as Blizzard's menu does. It copies
+  the Mainline MenuStyle1 metrics and art from the Blizzard source, so it looks like the game's own menus.
 - `UI/TrackerLock.lua`: the header drag and the Lock switch that stops it, which load before the host.
 - `UI/TrackerOrder.lua`: the section order (`uiOrder`, then attach order).
 - `UI/QuestLogTabs.lua`: the shared world map quest log side tab, stacking every addon's panel tab by order,

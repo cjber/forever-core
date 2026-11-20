@@ -59,7 +59,6 @@ L["Unavailable in combat"] = "Indisponível em combate"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"Uso: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "O que aconteceu, ou o que você gostaria"
-L["MENU_BACK"] = "Voltar"
 
 L["1 ms"] = "1 ms"
 L["5 ms"] = "5 ms"

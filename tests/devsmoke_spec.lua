@@ -178,6 +178,11 @@ _G.seterrorhandler = function(handler)
 	currentHandler = handler
 end
 
+-- The headless account's own bindings: forward rebound to S, back left on Down, interact on F9 (#820).
+local bound = { MOVEFORWARD = { "S" }, MOVEBACKWARD = { "DOWN" }, INTERACTTARGET = { "F9" }, JUMP = { "SPACE" } }
+_G.GetBindingKey = function(action)
+	return unpack(bound[action] or {})
+end
 _G.InCombatLockdown = function()
 	return inCombat
 end
@@ -518,6 +523,15 @@ taint["SLASH_DEVSMOKE1"] = "!!DevSmoke"
 
 fire("PLAYER_LOGIN")
 equal(SLASH_DEVSMOKE1, "/devsmoke", "the addon registers /devsmoke")
+-- The client's own GetBindingKey answers, recorded at login and again at UPDATE_BINDINGS for forever_client's
+-- `key --action`, so a rebound action resolves to the key this client presses.
+equal(DevSmokeDB.bindings.keys.MOVEFORWARD[1], "S", "a rebound forward records its own key")
+equal(DevSmokeDB.bindings.keys.MOVEBACKWARD[1], "DOWN", "back keeps the key the client still binds")
+equal(#DevSmokeDB.bindings.keys.TURNLEFT, 0, "an action with no key records none")
+bound.MOVEFORWARD = { "W", "UP" }
+fire("UPDATE_BINDINGS")
+equal(DevSmokeDB.bindings.keys.MOVEFORWARD[1], "W", "a rebinding is recorded at UPDATE_BINDINGS")
+equal(DevSmokeDB.bindings.keys.MOVEFORWARD[2], "UP", "both keys of an action are recorded")
 check(type(SlashCmdList.DEVSMOKE) == "function", "/devsmoke has a handler")
 local listened = {}
 for _, frame in ipairs(frames) do

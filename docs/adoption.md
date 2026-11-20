@@ -79,7 +79,7 @@ keeps the top block in place across updates, the wheel moves one block per step,
 alpha so every secure quest item button stays beside its quest. `TrackerSection.UpdateText(module, blocks)` rewrites
 existing line and header text without another layout. `TrackerSection.Room(module, block)` measures the room left in
 the column, and `TrackerSection.AddMore(block, key, count)` draws the "+N more" line. `ForeverCore.TrackerLine.SetInteractive(line,
-{ onClick, tooltip })` makes a stock line clickable, and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
+{ onClick, tooltip })` makes a stock line clickable (a right-click on it opens its block's menu), and `TrackerLine.SetHeaderTooltip(module, tip)` draws a block
 header's hover; `ForeverTrackerInteractiveLineTemplate` is the mouse-enabled line template both use.
 
 `ForeverCore.TrackerHost` is the one column. Attach a section directly to it:

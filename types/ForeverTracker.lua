@@ -146,7 +146,7 @@
 ---@field rows? ForeverTrackerTextRow[]
 
 ---@class ForeverTrackerInteractiveSpec
----@field onClick? fun(line: Frame, button: string) a left click on the line
+---@field onClick? fun(line: Frame, button: string) a left click on the line; a right-click opens the block's menu
 ---@field tooltip? fun(line: Frame) draws the line's tooltip; the helper hides it on leave
 
 ---@class ForeverTrackerHeaderTooltip

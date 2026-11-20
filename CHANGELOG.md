@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.15.3] - 2026-11-19
+
+### Fixed
+
+- **Right-click menus open at the cursor.** The tracker's block and section menus opened below the section's bottom-right corner, far from the click. (#868)
+- **Right-click menus look like the game's own.** Every Forever right-click menu now uses the same font, row height, spacing, divider, submenu arrow and hover as the quest tracker's menu, and its last row is no longer cut off at the bottom. (#875)
+- **Lock the tracker is on every tracker right-click menu.** It was only inside the Tracker submenu, so a locked tracker can now be unlocked from any section or entry. (#875)
+- **Right-clicking a tracker line opens its entry's menu.** A right-click on a line such as a journey step or a reagent did nothing; it now opens the same menu as the entry's title, with Lock and the entry's end action. (#875)
+- **Submenus open beside the menu.** Resting on a row with an arrow opens its submenu next to it, as the game's own menus do, and the menu above stays open; there is no Back row to step through. (#875)
+- **The tracker column follows the game's quest tracker as it changes.** Collapsing the quest tracker moves the column under its header, and expanding it puts the column back. When the quest tracker hides with nothing left to list, the column takes its place at once, as a reload would, instead of keeping its old spot until something else moved it. (#883, #885)
+
 ## [1.15.2] - 2026-11-18
 
 ### Added

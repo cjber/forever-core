@@ -63,7 +63,6 @@ L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug 
 	"Использование: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] =
 	"Что произошло или что вы хотели бы видеть"
-L["MENU_BACK"] = "Назад"
 
 L["1 ms"] = "1 мс"
 L["5 ms"] = "5 мс"

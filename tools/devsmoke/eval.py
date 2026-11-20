@@ -268,6 +268,11 @@ def write_snippet(source: Path, addons: Path | None = None, capture: bool = True
     return _write(body, source.name, source, addons, capture)
 
 
+def write_source(source: str, origin: str, addons: Path | None = None) -> dict[str, object]:
+    """Write Lua source the caller generated, not a file, as an eval chunk (no proof screenshot)."""
+    return _write(source, origin, Path(origin), addons, False)
+
+
 def live_commands(source: Path) -> tuple[str, list[str]]:
     """The run token and the numbered `/devsmoke live` chat lines that carry `source` into the running session.
 
