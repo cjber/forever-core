@@ -78,6 +78,10 @@ local function Load(target)
 			return key
 		end,
 	})
+	-- Start work runs at once, as in the unwrapped standalone.
+	target.AtStart = target.AtStart or function(work)
+		work()
+	end
 	assert(loadfile("Core/SafeCall.lua"))("CaptureAddon", target)
 	assert(loadfile("Core/Capture.lua"))("CaptureAddon", target)
 	assert(loadfile("Core/Log.lua"))("CaptureAddon", target)

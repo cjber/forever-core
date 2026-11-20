@@ -43,6 +43,10 @@ _G.CreateFrame = function(kind)
 end
 
 local ns = {}
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = ns.AtStart or function(work)
+	work()
+end
 assert(loadfile("Core/SafeCall.lua"))("ForeverCore", ns)
 local safe = ns.SafeCallFor("ForeverCore")
 
@@ -316,6 +320,10 @@ end
 _G.seterrorhandler = function() end
 
 local grabbedNs = {}
+-- Start work runs at once, as in the unwrapped standalone.
+grabbedNs.AtStart = grabbedNs.AtStart or function(work)
+	work()
+end
 assert(loadfile("Core/SafeCall.lua"))("GrabbyAddon", grabbedNs)
 
 -- The regression this guards: BugGrabber v12 fires "BugGrabber.BugGrabbed" on EventRegistry, so an error raised
@@ -361,6 +369,10 @@ _G.seterrorhandler = function(handler)
 end
 
 local chainedNs = {}
+-- Start work runs at once, as in the unwrapped standalone.
+chainedNs.AtStart = chainedNs.AtStart or function(work)
+	work()
+end
 assert(loadfile("Core/SafeCall.lua"))("ChainedAddon", chainedNs)
 equal(chainedCallbacks["BugGrabber.BugGrabbed"], nil, "a handler still in the chain does not attach at load")
 local chainedFrame = frames[#frames]

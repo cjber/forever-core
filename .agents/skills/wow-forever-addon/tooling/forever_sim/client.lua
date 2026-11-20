@@ -820,7 +820,8 @@ function M.build(sim)
 
 	-- CVars.
 	-- Numeric CVars client code reads through GetCVarNumberOrDefault even when tainted (an unset one reads nil
-	-- then, and tonumber(nil) errors). The gamepad interface transition reads these; the values are stand-ins.
+	-- then, and tonumber(nil) errors). The gamepad interface transition reads the Gamepad ones (stand-in values);
+	-- every StaticPopup reads userFontScale through TextSizeManager, at the client default of 1.
 	local cvarDefaults = {
 		GamepadMapScrollSpeed = "1",
 		GamepadMapScrollSpeedFullScreen = "1",
@@ -829,6 +830,7 @@ function M.build(sim)
 		GamepadTargetingModifierVisualDelay = "0.5",
 		GamepadPossessBarOverride = "1",
 		GamepadStanceBarOverride = "1",
+		userFontScale = "1",
 	}
 	sim.cvars = {}
 	for name, value in pairs(cvarDefaults) do

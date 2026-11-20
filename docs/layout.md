@@ -245,8 +245,9 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays it before it touches AddOns.
   `tools/test_forever_client.py` is its spec.
 - `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
-  read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time and stopped
-  at the first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
+  read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time in release
+  order (forever-core, SkillUp, Shortest Path, then the rest; `--repo` picks and orders them) and stopped at the
+  first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
   `forever-smoke.timer` run it every 30 minutes at `Nice=10`; `in-game.md` says how to install them.
   `tools/test_smoke_queue.py` is its spec.
 - `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from

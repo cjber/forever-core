@@ -170,7 +170,8 @@ FOREVER_CLIENT_CALLER=in-game python3 $FC smoke --repo legacy-forever --ref <sha
 
 `smoke` runs as one job. It builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way
 `rebuild-dev.sh` did (the same code, `forever_client.py build-dev <repo> <ref>`, writes
-`test-artifacts/<repo>-dev` for a hand link), ensures a session, takes the job lock, points the build's addon
+`test-artifacts/<repo>-dev` for a hand link; `--core-ref <sha>` embeds that forever-core commit instead of the pinned
+release, to check a core candidate inside an embedding addon), ensures a session, takes the job lock, points the build's addon
 folders at it in `Interface/AddOns`, reloads so the client loads it, runs `/forever selftest` and `errors --addon
 <folder>` for each of the repo's addon folders, and puts the links back before it releases the lock. It posts the
 result with
@@ -196,8 +197,9 @@ without the lock, so they never queue behind the job they are unblocking; `key` 
   and a record whose session is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
-head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never
-fights the player for the client. Each smoke is one job in the resident session, so the queue shares the client
+head) that has no `headless-smoke` status, and smokes them one at a time in release order (forever-core, SkillUp,
+Shortest Path, then the rest), stopping at exit 3 so the queue never fights the player for the client.
+`--repo NAME`, repeatable, smokes only those repositories in the order given. Each smoke is one job in the resident session, so the queue shares the client
 with an agent instead of waiting for a whole session to end. `python3 tools/smoke_queue.py --dry-run` lists them
 without starting anything.
 
@@ -411,7 +413,13 @@ printed: it is the flow's ready check, polled by `!!DevSmoke`, whose screenshot 
 The client reads the inbox once per session: the first `/devsmoke eval` or login loads it, and any snippet written
 after that needs `/reload`. `forever_client.py eval` writes the file and reloads, so it always runs the snippet it
 just wrote, then clears the inbox before reloading once more and reading the result that snippet's own run token
-names. The second reload therefore saves that one run instead of running the snippet again (#588).
+names. The second reload therefore saves that one run instead of running the snippet again (#588). `eval A.lua B.lua`
+runs each file at a login of its own, and each file's reload saves the result of the file before it, so N files take
+N + 1 reloads instead of 2N; batch independent probes into one call.
+
+A session ends after 10 min with no job, unless a queued job ticket or an unexpired lease on the session says more
+work is coming. An agent with more requests queued holds `lease --ttl` across them, so the next job skips a cold login
+(1 to 2.5 min). The 3 h lifetime cap still applies.
 
 `DevSmokeDB.eval` is `{ run = <token>, ran = <time>, ok = <bool>, out = { <lines> }, err = <string|nil>,
 ready = <"captured"|"failed"|"timeout"|nil>, readyErr = <string|nil> }`, where `out` holds the same lines the Agent

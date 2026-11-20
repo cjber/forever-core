@@ -122,14 +122,22 @@ def plan(
             raise ValueError(f"unsupported canonical TOC entry: {name}")
     if TEMPLATE not in templates:
         raise ValueError("canonical tracker template missing")
+    # A host first loaded after another copy is running (load on demand) joins that copy: the loader records its own
+    # copy as "late", which is not a packaging error, and keeps its store offer (a revision 1 registry refuses
+    # that as "late" too). Any other refusal stops the load.
+    # Every wrapped Lua file plus End.lua's template definition: Seal refuses a package missing any of them.
+    chunks = sum(1 for name in graph if name.endswith(".lua") and name != "Core/Loader.lua") + 1
     output[prefix + "Begin.lua"] = (
-        f'local addon, host = ...\nhost.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{identity}")\n'
-        f'assert(ForeverCoreLoader.OfferStore(addon, "{saved_variable}"))\n'
+        "local addon, host = ...\n"
+        f'host.ForeverCoreCopy = ForeverCoreLoader.Begin(addon, {build}, "{identity}", {chunks})\n'
+        f'local offered, reason = ForeverCoreLoader.OfferStore(addon, "{saved_variable}")\n'
+        'assert(offered or reason == "late", reason)\n'
     ).encode()
     output[prefix + "End.lua"] = (
         "local _, host = ...\nhost.ForeverCoreCopy:Define(function(_, ns)\n"
         f'ns.TrackerLine.template = "{template_name}"\nend)\n'
-        "assert(host.ForeverCoreCopy:Seal())\n"
+        "local sealed, reason = host.ForeverCoreCopy:Seal()\n"
+        'assert(sealed or reason == "late", reason)\n'
     ).encode()
     output["ForeverCoreReady.lua"] = (
         b"local addon, host = ...\nlocal readyCore, resources, loaded, started\nlocal function initialize(...)\n"
@@ -145,7 +153,8 @@ def plan(
             f'assert(type({saved_variable}) == "table", "account SavedVariables must be a table")\n'
             "loaded = true\ntryStart()\nend)\n"
             "ForeverCoreLoader.OnReady(function(core, selected)\n"
-            'assert(core, "ForeverCore did not activate")\n'
+            # The loader reports a failed activation once, by name; each consumer's ready step stays quiet.
+            "if core == nil then return end\n"
             f'assert(core.API == {API}, "incompatible ForeverCore API")\n'
             'assert(type(core.Register) == "function", "ForeverCore Register unavailable")\n'
             'assert(type(core.TrackerLine) == "table", "ForeverCore TrackerLine unavailable")\n'

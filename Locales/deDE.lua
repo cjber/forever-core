@@ -10,6 +10,7 @@ L["%s and %s"] = "%s und %s"
 L["%s, %s and %s"] = "%s, %s und %s"
 L["%s, %s, %s and %d more"] = "%s, %s, %s und %d weitere"
 L["+%d more"] = "+%d weitere"
+L["%d contributions"] = "%d Beiträge" -- mt
 L[", "] = ", "
 L["%s (last %d):"] = "%s (letzte %d):"
 L["%s: no lines yet."] = "%s: noch keine Zeilen."
@@ -52,6 +53,9 @@ L["Tracker background"] = "Hintergrund der Verfolgung"
 L["Tracker position"] = "Position der Verfolgung"
 L["Under the quest tracker"] = "Unter der Questverfolgung"
 L["Left of the quest tracker"] = "Links der Questverfolgung"
+L["Attach to quest tracker"] = "An Questverfolgung anheften" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"Die gemeinsame Forever-Verfolgung steht unter der Questverfolgung, wenn dies an ist, und links davon, wenn es aus ist. Jedes Forever-Addon zeigt dieselbe Einstellung." -- mt
 L["Tracker"] = "Verfolgung"
 L["Click to %s"] = "Klicken, um %s"
 L["Right-click for options"] = "Rechtsklick für Optionen"
@@ -120,4 +124,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"Kein Fehler erfasst. Aktiviert Lua-Fehler mit /console scriptErrors 1, führt /reload aus und lest den ersten Fehler, der %s nennt." -- mt
 L["Callback error: %s"] = "Callback-Fehler: %s" -- mt
 L["Login error: %s"] = "Anmeldefehler: %s" -- mt
+L["Warning: %s"] = "Warnung: %s" -- mt
 L["Copy %s: %s"] = "Kopie %s: %s" -- mt

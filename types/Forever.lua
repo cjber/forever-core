@@ -56,10 +56,14 @@
 ---@field Register fun(name: string, build: function, L?: table<string, string>, safeCall?: function): table?, Frame?
 ---@field AddHeader fun(panel: Frame, label: string, tooltip?: string): Frame
 ---@field AddCheck fun(panel: Frame, label: string, get: function, set: function, tooltip?: string): CheckButton
+---@field AddTrackerAttach fun(panel: Frame): CheckButton? the shared tracker's "Attach to quest tracker" tick box
+---@field minor integer raised with each member the module adds
 
 -- UI/SettingsSections.lua, native vertical-list headings registered through Blizzard's Settings API.
 ---@class ForeverSettingsSectionsAPI
 ---@field Register fun(category: table, name: string, tooltip?: string, newTagID?: number): table?
+---@field RegisterTrackerAttach fun(category: table, variable: string): table?, table? the shared tracker's "Attach to quest tracker" row
+---@field minor integer raised with each member the module adds
 
 -- UI/ContextMenu.lua, the suite's one context menu.
 ---@alias ForeverMenuEntryKind "root"|"button"|"title"|"divider"|"checkbox"|"radio"
@@ -166,11 +170,13 @@
 ---@field Start fun()
 ---@field Login fun()
 ---@field ForeverCore ForeverCoreAPI?
+---@field RefreshStore? fun(): table?
 
 ---@class ForeverCoreLoaderCopy
 ---@field folder string
 ---@field build number
 ---@field digest? string
+---@field expected? integer the chunk count named at Begin
 ---@field root string
 ---@field sealed boolean
 ---@field rejected? string
@@ -179,7 +185,9 @@
 
 ---@class ForeverCoreLoaderSelection
 ---@field mode "elected"|"standalone"|"legacy"
+---@field version? string the installed standalone's Version, in legacy mode
 ---@field build? number
+---@field newest? number the newest registered build, when an adopted legacy table is older
 ---@field folder? string
 ---@field root? string
 ---@field core ForeverCoreAPI?
@@ -199,7 +207,9 @@
 
 ---@class ForeverCoreLoader
 ---@field schema integer
----@field Begin fun(folder: string, build: number, digest?: string): ForeverCoreLoaderCopy
+---@field revision? integer nil for revision 1 (ForeverCore 1.15.0)
+---@field supervised? integer
+---@field Begin fun(folder: string, build: number, digest?: string, chunks?: integer): ForeverCoreLoaderCopy
 ---@field Activate fun(): ForeverCoreAPI?
 ---@field OnReady fun(callback: fun(core: ForeverCoreAPI?, selected: ForeverCoreLoaderSelection?)): boolean?
 ---@field OfferStore fun(folder: string, globalName: string): boolean, string?
@@ -209,9 +219,13 @@
 ---@field Namespace fun(): ForeverCoreLoaderNamespace?
 ---@field Facade fun(): ForeverCoreAPI?
 ---@field Error fun(): string?
+---@field Warning fun(): string?
 ---@field CallbackError fun(): string?
 ---@field LoginError fun(): string?
 ---@field Rejections fun(): { folder: string, reason: string }[]
+---@field Trace fun(): { kind: string, folder?: string, detail?: string, time?: number }[]
+---@field Seen fun(event: "PLAYER_ENTERING_WORLD"|"VARIABLES_LOADED"): boolean
+---@field WorldEntry fun(): boolean?, boolean?
 
 ---@class ForeverCoreStoreConflictValue
 ---@field present boolean
@@ -239,6 +253,9 @@ ForeverCoreLoader = nil
 ForeverCore = nil
 
 ---@class ForeverTrackerNamespace
+---@field DebugCaptureCatchUp? fun()
+---@field AtStart fun(work: fun())
+---@field started? boolean
 ---@field ReportRefusal fun(reason: any)
 ---@field RegisterOpener fun(addon: string, callback: ForeverCoreOpenCallback, secure?: boolean)
 ---@field folder? string

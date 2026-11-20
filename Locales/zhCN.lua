@@ -51,6 +51,9 @@ L["Tracker background"] = "追踪栏背景"
 L["Tracker position"] = "追踪栏位置"
 L["Under the quest tracker"] = "任务追踪栏下方"
 L["Left of the quest tracker"] = "任务追踪栏左侧"
+L["Attach to quest tracker"] = "附着到任务追踪栏" -- mt
+L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
+	"开启时，共享的 Forever 追踪栏位于任务追踪栏下方；关闭时位于其左侧。所有 Forever 插件都显示同一设置。" -- mt
 L["Tracker"] = "追踪栏"
 L["Click to %s"] = "点击 %s"
 L["Right-click for options"] = "右键查看选项"
@@ -119,4 +122,5 @@ L["No error captured. Use /console scriptErrors 1, then /reload and read the fir
 	"未记录错误。请用 /console scriptErrors 1 启用 Lua 错误，再执行 /reload，查看首个提到 %s 的错误。"
 L["Callback error: %s"] = "回调错误：%s"
 L["Login error: %s"] = "登录错误：%s"
+L["Warning: %s"] = "警告：%s" -- mt
 L["Copy %s: %s"] = "副本 %s：%s"

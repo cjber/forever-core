@@ -128,6 +128,10 @@ end
 _G.date = function()
 	return "d"
 end
+-- Start work runs at once, as in the unwrapped standalone.
+ns.AtStart = ns.AtStart or function(work)
+	work()
+end
 assert(loadfile("Core/SafeCall.lua"))("ExampleAddon", ns)
 assert(loadfile("Core/Log.lua"))("ExampleAddon", ns)
 local chunk = assert(loadfile("UI/Report.lua"))

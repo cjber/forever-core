@@ -13,10 +13,16 @@ local _, ns = ...
 ---@field settingsRows? table[]
 ---@field title? FontString
 ---@field category? table
+---@field foreverAttach? CheckButton the shared tracker's attach tick box, once added
 
 ---@class ForeverSettingsPage
 local Page = {}
+-- Raised with each member the module adds. AddTrackerAttach arrived in minor 1.
+Page.minor = 1
 ns.SettingsPage = Page
+-- The shared tracker's attach row's tooltip, one phrase for the canvas tick box here and SettingsSections' native row.
+ns.TRACKER_ATTACH_TOOLTIP = "The shared Forever tracker sits under the quest tracker when this is on, "
+	.. "and left of it when it is off. Every Forever addon shows this same setting."
 
 -- A row's callback runs in the registering addon's SafeCall, so a failure lands in that addon's journal.
 ---@param panel ForeverSettingsPanel
@@ -231,4 +237,37 @@ function Page.AddButton(panel, label, callback, tooltip)
 		button.tooltipText = Text(panel, tooltip)
 	end
 	return button --[[@as Button]]
+end
+
+-- The shared tracker's "Attach to quest tracker" tick box on a canvas page, the same setting and words
+-- SettingsSections.RegisterTrackerAttach puts in a native list (#910). It ticks itself again when a drag or another
+-- addon's row changes the choice.
+-- Like the native row, it shows nothing while an older adopted tracker is drawing, and a panel gets one tick box.
+---@param panel ForeverSettingsPanel
+---@return CheckButton?
+function Page.AddTrackerAttach(panel)
+	local host = ns.TrackerHost
+	if type(panel) ~= "table" or panel.foreverAttach then
+		return panel and panel.foreverAttach
+	end
+	if
+		ns.TrackerHostForeign
+		or type(host) ~= "table"
+		or type(host.GetSettings) ~= "function"
+		or type(host.SetAttached) ~= "function"
+		or type(host.OnAttachmentChanged) ~= "function"
+	then
+		return nil
+	end
+	local L = ns.L
+	local check = Page.AddCheck(panel, L["Attach to quest tracker"], function()
+		return host.GetSettings().attached == true
+	end, function(checked)
+		host.SetAttached(checked == true)
+	end, L[ns.TRACKER_ATTACH_TOOLTIP])
+	host.OnAttachmentChanged(function(attached)
+		check:SetChecked(attached == true)
+	end)
+	panel.foreverAttach = check
+	return check
 end

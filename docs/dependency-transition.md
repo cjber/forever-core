@@ -67,6 +67,49 @@ proof shows the addon working with no standalone installed and with an old stand
 proof` compares the installed build with the checkout after the same embed step at the same pin, and records the
 checkout's own digests, whose pin binds the embedded copy.
 
+## Check the built consumer ZIP
+
+The existing CI package job runs `python3 tools/check_package.py` after BigWigs builds the folders with
+`args: -d -z`. It compares each installed ForeverCore copy with `tools/forever-core.txt`. An opted-in addon
+must ship its embedded copy and cannot ship a top-level ForeverCore folder.
+
+In the consumer's `release.yml`, keep the pin check and, where applicable, the embed and fleet steps before
+BigWigs. In the same job, build the ZIP with `args: -d`, then validate it and upload that exact file:
+
+```yaml
+- name: Build the release ZIP
+  uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+  with:
+    args: -d
+- name: Check packaged ForeverCore
+  id: validated
+  env:
+    GH_TOKEN: ${{ github.token }}
+  run: python3 -m tools.forever_tools.core_archive --release-dir .release --latest
+- name: Verify the release ZIP checksum
+  env:
+    ARCHIVE: ${{ steps.validated.outputs.archive }}
+    ARCHIVE_SHA256: ${{ steps.validated.outputs.sha256 }}
+  run: printf '%s  %s\n' "$ARCHIVE_SHA256" "$ARCHIVE" | sha256sum --check --status
+- name: Upload the validated ZIP
+  uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+  with:
+    args: -c -z
+  env:
+    archive: ${{ steps.validated.outputs.archive }}
+    archive_name: ${{ steps.validated.outputs.archive_name }}
+    archive_label: ${{ steps.target.outputs.tag }}-forever
+    archive_version: ${{ steps.target.outputs.tag }}
+    CF_API_KEY: ${{ secrets.CF_API_KEY }}
+    GITHUB_OAUTH: ${{ github.token }}
+```
+
+Use the tag from the release job's target step. `tools/check_consumers.py` checks the build, validation, checksum
+and upload order. The version comes from the shipped TOC for a bridge copy and the stamped bundle for an embedded
+copy. The audit checks the player downloads on both stores after publication and updates one issue on failure.
+
+[BigWigs packager v2.7.0](https://github.com/BigWigsMods/packager/blob/v2.7.0/release.sh)
+
 ## History: the standalone dependency bridge
 
 The steps below were the plan before the owner chose embedding

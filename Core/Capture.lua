@@ -199,12 +199,28 @@ function ns.DebugCaptureEnteringWorld(isInitialLogin, isReloadingUi)
 	end
 end
 
-if type(CreateFrame) == "function" then
-	local frame = CreateFrame("Frame")
-	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-	frame:SetScript("OnEvent", function(_, event, isInitialLogin, isReloadingUi)
-		if event == "PLAYER_ENTERING_WORLD" then
-			ns.DebugCaptureEnteringWorld(isInitialLogin, isReloadingUi)
-		end
-	end)
+-- A copy the loader booted after the session's first PLAYER_ENTERING_WORLD missed it, so its login reads that entry
+-- from the loader instead (ns.Login, once the store exists); later entries (zone changes) arrive below as usual.
+function ns.DebugCaptureCatchUp()
+	local loader = rawget(_G, "ForeverCoreLoader")
+	if
+		type(loader) == "table"
+		and type(loader.Seen) == "function"
+		and type(loader.WorldEntry) == "function"
+		and loader.Seen("PLAYER_ENTERING_WORLD")
+	then
+		ns.DebugCaptureEnteringWorld(loader.WorldEntry())
+	end
 end
+
+ns.AtStart(function()
+	if type(CreateFrame) == "function" then
+		local frame = CreateFrame("Frame")
+		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+		frame:SetScript("OnEvent", function(_, event, isInitialLogin, isReloadingUi)
+			if event == "PLAYER_ENTERING_WORLD" then
+				ns.DebugCaptureEnteringWorld(isInitialLogin, isReloadingUi)
+			end
+		end)
+	end
+end)
