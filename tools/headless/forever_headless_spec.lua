@@ -31,9 +31,11 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 			SetIgnoreParentScale = function() end,
 			SetScale = function(frame, scale)
 				scales[#scales + 1] = scale
-				-- The readiness marker is the one 32-unit-wide frame.
+				-- The readiness marker is the one 32-unit-wide frame, the safety strip the one 52 wide.
 				if frame.width == 32 then
 					scales.marker = scale
+				elseif frame.width == 52 then
+					scales.status = scale
 				end
 			end,
 			SetFrameStrata = function() end,
@@ -144,6 +146,7 @@ assert(screenshot.count == 0, "missing parked-character configuration refuses re
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "approved character signals readiness")
 assert(scales.marker == 768 / 600, "the readiness marker is scaled to exactly 4 screen pixels a cell")
+assert(scales.status == 768 / 600, "the safety strip is scaled to exactly 4 screen pixels a cell")
 run({ name = "Other", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "unexpected identity refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, false, false, screenshot)
