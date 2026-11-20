@@ -43,43 +43,33 @@ updates acquire manager-owned core; a declared relation does not establish that 
 ```
 
 Never name ForeverCore in `## Dependencies`: the client would skip the addon when core is missing, and the player would
-see nothing. As an optional dependency it loads first when installed, and without it the addon still loads and its
-`Core/ForeverRequire.lua` shows one line naming the install.
+see nothing. As an optional dependency it loads first when installed. Without it, an addon that embeds core runs on its
+own copy and shows no install prompt.
 
-In `.pkgmeta`, an external at the release `tools/forever-core.txt` pins, moved to the zip's top level beside the
-addon's own folder, plus the standalone required relation:
+The addon embeds ForeverCore: its TOC also sets `## X-Forever-Core-Embed: 1`, and the embed step copies the release
+`tools/forever-core.txt` pins under `Libs/ForeverCore/` at package time. `.pkgmeta` lists core as an embedded library
+and ships no top-level ForeverCore folder:
 
 ```yaml
-required-dependencies:
+embedded-libraries:
   - forevercore
-
-externals:
-  ForeverCore: https://github.com/cjber/forever-core/releases/download/v1.4.1/ForeverCore-v1.4.1-forever.zip
-
-move-folders:
-  LegacyForever/ForeverCore: ForeverCore
 ```
 
-Before removing any bundle, follow core's `docs/dependency-transition.md`: canary each manager/provider with fresh
-install, update from a pre-transition release, a direct jump that skips all bridge releases, mixed-addon update and
-downgrade orders, and uninstalling either consumer including the last folder writer. Require exact installed-file
-and real-client proof with saved variables preserved. Keep a bundled artifact on channels that cannot automatically
-resolve the dependency, including manual ZIP installs. A waiting period or download count is not migration proof.
-Rollback uses a new higher patch release restoring the bundle, never overwritten tags or a forced reinstall.
+Inspect the published CurseForge file relation: project 1796337 must be `embeddedLibrary`, so the app links core on the
+project page without installing it as required. Core's `docs/dependency-transition.md` is the source for this layout.
 
-Inspect the published CurseForge file relation: project 1796337 must be `requiredDependency`, not `embeddedLibrary`.
-The GitHub ZIP external has no `curse-slug`; adding one lets BigWigs override the required relation as embedded.
-
-Keep the external's tag, `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal, and
-`<package-as>/ForeverCore` equal to your `package-as`; `tools/check_consumers.py` fails any mismatch, and it also fails
-a TOC that names core in `## Dependencies` or that ships core without `## OptionalDeps: ForeverCore`. The field is what
+Keep `## X-Forever-Core:` and the tag in `tools/forever-core.txt` equal; `tools/check_consumers.py` fails a mismatch, a
+top-level ForeverCore external or `move-folders` rule, a relation for core other than `embedded-libraries`, a TOC that
+names core in `## Dependencies`, one without `## OptionalDeps: ForeverCore`, and a release workflow without the fleet
+hold (`python3 -m tools.forever_tools.fleet`) before its packager; the addon's own `core_pin` gate checks the same
+packaging. The field is what
 a sibling addon reads at load to name an out-of-date ForeverCore. ForeverCore's CurseForge page is
 `forevercore` (project 1796337; `forever-core` belongs to someone else). Do not
 copy its runtime files into the addon.
 
-Every core release re-releases every addon, because all of them write the same `ForeverCore` folder and the latest
-release of each has to ship the same core. Core's sync PR moves `tools/forever-core.txt`, this external and the TOC
-field. When the consumer has no pending `changes/*.md`, sync adds a release entry above the newest version: the
+Every core release re-releases every addon, because each carries its own copy. Without an installed standalone the
+highest embedded copy runs. An installed older standalone (1.15.0 and earlier) is adopted for the session instead,
+and the player sees a notice once per standalone version to update or disable it. Core's sync PR moves `tools/forever-core.txt` and the TOC field. When the consumer has no pending `changes/*.md`, sync adds a release entry above the newest version: the
 next patch, dated today, with the marker `<!-- forever-core-sync -->` and the plain bullet about the shared code. When
 fragments already exist, it adds `changes/forever-core-sync.md` under `### Changed`, so the core ships in the addon's
 own next release. `tools/release_consumers.py` then dispatches the addon's own
@@ -199,6 +189,8 @@ needs, so the required `visual-proof` check passes without an admin merge. Send 
 `INGAME ... kind: proof` request with the pull request's checkout and
 `flows: update notice=<the addon's slash command or Lua file>`. It builds and loads the commit, runs the flow, uploads
 the screenshots to a secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change.
+When the user has passed that exact build on the test checklist, `forever_client.py attest` writes the file from that
+pass instead, without the client ([in-game.md](../wow-forever-addon/in-game.md#from-the-users-checklist-pass)).
 
 A flow is the addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs. ForeverCore has no shared
 opener for an addon's update notice, so there is no default. `wow-forever-addon/in-game.md` has the full flow, including the sync pull request that moves the

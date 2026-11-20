@@ -1,11 +1,84 @@
-# Standalone ForeverCore dependency
+# Embedded ForeverCore
 
-Every consumer already names `ForeverCore` in its TOC's `## OptionalDeps`. The release transition establishes independent
-manager ownership before removing the shared folder from consumer archives. It addresses
+Every Forever addon carries ForeverCore inside its own zip, under `Libs/ForeverCore/`, and names `ForeverCore` in its
+TOC's `## OptionalDeps`. The standalone ForeverCore stays an optional download that gets every release. This page is
+the source for that layout: how the embed works, how the zip and store relation are packaged, and, as history, the
+standalone-dependency bridge it replaced.
+
+## How the embed works
+
+Each consumer carries its own copy of core at `Libs/ForeverCore/`, so it runs whether or not the standalone folder is
+installed ([#801](https://github.com/cjber/forever-core/issues/801)). Nothing is committed for it: a consumer opts in
+with `## X-Forever-Core-Embed: 1` in its root TOC, and `python3 -m tools.forever_tools.embed` rewrites the disposable
+checkout right before the packager, in the release workflow, the CI package job and `forever_client.py build-dev`.
+`tools/check_consumers.py` fails an opted-in consumer whose workflow runs a packager with no embed step before it.
+
+The step plans the copy with `tools/build_embedded_core.py` from a ForeverCore checkout at the consumer's pin (`--core`,
+else `$FOREVER_CORE`), so every addon on one pin ships byte-equal copies and one digest. It wraps each Lua file the TOC
+loads, directly or through an XML `Script`, as a deferred chunk on the file's first line, so error line numbers stay
+the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's files, `ForeverCoreRun.lua` and
+`ForeverCoreReady.lua`.
+
+- With an older standalone folder installed (1.15.0 and earlier publish their table at file load), the loader adopts it
+  for the session, since a second runtime cannot start beside it, and the addon's files run inline during its own file
+  load, exactly as before. When it is older than the newest embedded copy, the player sees an on-screen notice once per
+  installed standalone version, naming both versions and saying to update or disable ForeverCore.
+- Without it, the highest sealed embedded copy is elected at PLAYER_LOGIN, with no install prompt. The addon's files run then, and each frame they
+  registered receives the addon's `ADDON_LOADED` and the `PLAYER_LOGIN` it missed.
+- `ForeverCoreDB` carries over in both directions: the standalone mirrors its store into every offered consumer table,
+  and an elected copy reads those mirrors, keeping a newer embedded change over a stale standalone table.
+  `tests/generated_bundle_spec.lua` covers install, update and removal in either order.
+
+## Packaging
+
+The owner chose the accepted community method in [#787](https://github.com/cjber/forever-core/issues/787), the way
+Ace3 and LibStub libraries ship:
+
+- **Embedded only:** each addon's zip carries core only under `Libs/ForeverCore/`. Its `.pkgmeta` drops the top-level
+  ForeverCore external and `move-folders` rule. No zip writes a shared `AddOns/ForeverCore/` folder any more, which
+  ends [#448](https://github.com/cjber/forever-core/issues/448): removing or downgrading one addon can no longer delete
+  or roll back core under the others.
+- **Embedded relation:** `.pkgmeta` lists `forevercore` under `embedded-libraries`, not `required-dependencies`. The
+  CurseForge app links core on the project page and never installs it as required.
+- **Optional standalone:** the standalone ForeverCore project stays on CurseForge as an optional download that gets
+  every core release, so the newest standalone available matches the newest embedded copy. A player who does not update
+  an installed standalone can still run an older one, as described above.
+
+The manager results in the bridge history below no longer block this. A manager that deletes the old shared folder
+during an update leaves the updated addon running on its embedded copy. `tools/check_consumers.py` holds every consumer that opts in with
+`## X-Forever-Core-Embed: 1` to this layout. A consumer that has not opted in keeps the bridge bundle (externals and
+`move-folders`) until its embed release. `core_pin.embeds` is the one reader of that field: the last
+`## X-Forever-Core-Embed:` line decides, and only the value `1` opts in, so every check agrees with the embed step.
+
+The embed releases go out together. While any addon still ships the shared top-level `ForeverCore/` folder, removing
+or downgrading that addon rolls core back under the others. Two holds enforce this:
+
+- **At every release:** each opted-in addon's own `release.yml` runs `python3 -m tools.forever_tools.fleet` before its
+  packager, and `tools/check_consumers.py` fails a release workflow without that step. It fails until every addon in
+  `forever_tools.fleet.EMBED_FLEET` sets the field on its own `main`, so a hand-run release or a pushed tag holds too.
+- **As one batch:** once all have opted in, `tools/release_consumers.py` dispatches none of the embed releases until
+  every fleet addon is ready to release in the same run or already has an embedded release published.
+The embed step also refuses a TOC whose `## SavedVariables` does not name exactly one account global: core mirrors
+its account store into that one global, and a per-character global or a choice of several cannot hold it.
+
+An already-released standalone (any 1.14.x or 1.15.0) that is enabled publishes its table while it loads. The loader
+adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release
+proof shows the addon working with no standalone installed and with an old standalone enabled. `forever_client.py
+proof` compares the installed build with the checkout after the same embed step at the same pin, and records the
+checkout's own digests, whose pin binds the embedded copy.
+
+## History: the standalone dependency bridge
+
+The steps below were the plan before the owner chose embedding
+([#787](https://github.com/cjber/forever-core/issues/787)). They are kept as the record of the manager evidence; none of
+them is a current instruction.
+
+At the time, every consumer already named `ForeverCore` in its TOC's `## OptionalDeps`. The bridge was to establish
+independent manager ownership before removing the shared folder from consumer archives. It addresses
 [#448](https://github.com/cjber/forever-core/issues/448): uninstalling the consumer that a manager considers the
 folder's owner can delete core from underneath other addons. Adding metadata alone does not resolve that issue.
 
-## 1. Declare the dependency and retain the fallback
+### 1. Declare the dependency and retain the fallback
 
 The shared consumer sync adds `required-dependencies: - forevercore` to consumers that bundle core, preserving other
 relations, the pinned GitHub ZIP external, `move-folders`, the TOC optional dependency and `X-Forever-Core` field.
@@ -19,7 +92,7 @@ GitHub release ZIP without `curse-slug`, so retain that form and inspect the act
 Sources: [CurseForge pkgmeta](https://support.curseforge.com/support/solutions/articles/9000197952-preparing-the-packagemeta-file),
 [packager v2.7.0 source](https://github.com/BigWigsMods/packager/blob/v2.7.0/release.sh).
 
-## 2. Prove manager ownership with a canary
+### 2. Prove manager ownership with a canary
 
 Use disposable addon installations with saved variables backed up. Record manager version, provider, old and new
 file IDs, archive hashes, actions taken, resulting folder ownership and the exact in-game smoke commit. Test each
@@ -43,7 +116,7 @@ that proof; they do not establish a manager's ownership behavior. Keep #448 open
 passes. If a manager removes core despite the dependency relation, retain the fallback and fix or report that manager
 path before continuing.
 
-## Phase 2 results
+### Phase 2 results
 
 The disposable-installation runs in [#650](https://github.com/cjber/forever-core/issues/650) cover CurseForge app
 1.326.0-42377 and WowUp-CF 2.25.5 with the CurseForge provider. The bundled Macro Assist Forever and Field Guide Forever
@@ -72,7 +145,7 @@ The remaining checks are wowaddon, manual ZIP installation, two consumers at mix
 a consumer downgrade, and a headless client smoke for each resulting addon set. The WowUp Wago provider also needs
 independent evidence before its channel can pass the gate.
 
-### Run the manager harness
+#### Run the manager harness
 
 `tools/manager_lifecycle/` contains the repeatable UI drivers and JSON/Markdown report builder. It needs Linux,
 `dbus-run-session`, `xvfb-run`, extracted CurseForge and WowUp-CF application directories, and the Python dependencies
@@ -117,7 +190,7 @@ archive hashes, installed records, folder contents and screenshots after each ac
 exit; a nonempty `processes_left` or a recorded action error makes the command fail. Keep those reports with the
 issue evidence. Pure tests run as part of the tools unittest discovery without launching an app.
 
-## 3. Remove bundles only on proven channels
+### 3. Remove bundles only on proven channels
 
 Start with one consumer on one verified channel, then expand after its update and uninstall evidence passes.
 The unbundled artifact keeps the TOC's `## OptionalDeps: ForeverCore` and store relation. Retire its external, move rule
@@ -131,34 +204,7 @@ self-contained fallback for channels that cannot resolve dependencies, including
 automatic migration exists. Explain the installation behavior on each store page without asking existing users to
 reinstall. Do not publish one globally unbundled ZIP on the assumption that every manager resolves dependencies.
 
-## 4. Embed core inside each addon
-
-Each consumer also carries its own copy of core at `Libs/ForeverCore/`, so it runs whether or not the standalone folder
-is installed ([#801](https://github.com/cjber/forever-core/issues/801)). Nothing is committed for it: a consumer opts in
-with `## X-Forever-Core-Embed: 1` in its root TOC, and `python3 -m tools.forever_tools.embed` rewrites the disposable
-checkout right before the packager, in the release workflow, the CI package job and `forever_client.py build-dev`.
-`tools/check_consumers.py` fails an opted-in consumer whose workflow runs a packager with no embed step before it.
-
-The step plans the copy with `tools/build_embedded_core.py` from a ForeverCore checkout at the consumer's pin (`--core`,
-else `$FOREVER_CORE`), so every addon on one pin ships byte-equal copies and one digest. It wraps each Lua file the TOC
-loads, directly or through an XML `Script`, as a deferred chunk on the file's first line, so error line numbers stay
-the source's, and orders the TOC as the copy, `ForeverCoreHost.lua`, the addon's files, `ForeverCoreRun.lua` and
-`ForeverCoreReady.lua`.
-
-- With the standalone folder installed, the loader is already active and the addon's files run inline during its own
-  file load, exactly as before. Every release up to 1.14.5 is an unwrapped standalone, so it wins the session.
-- Without it, the highest sealed copy is elected at PLAYER_LOGIN. The addon's files run then, and each frame they
-  registered receives the addon's `ADDON_LOADED` and the `PLAYER_LOGIN` it missed.
-- `ForeverCoreDB` carries over in both directions: the standalone mirrors its store into every offered consumer table,
-  and an elected copy reads those mirrors, keeping a newer embedded change over a stale standalone table.
-  `tests/generated_bundle_spec.lua` covers install, update and removal in either order.
-
-The bridge release ships the embedded copy and keeps the top-level `ForeverCore/` folder from the same pin, so a partial
-switch is safe: any mix of bridged and unbridged addons runs one core. Within a session a pre-loader standalone cannot
-be outranked by a newer embedded copy; the converted standalone (`plan(..., standalone=True)`), which elects by build,
-ships once every consumer's bridge release is live, before any bundle is dropped.
-
-## Rollback
+### Rollback
 
 Stop expansion at the first failing lifecycle check. Publish a higher patch version restoring the pinned bundle
 on the affected channel, retain the required relation and preserve saved variables. Test rollback as an ordinary

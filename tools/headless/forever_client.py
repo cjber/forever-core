@@ -23,7 +23,7 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py drag X1 Y1 X2 Y2 [--button 1] [--steps N]
                                           # press at one point, move in steps, release at the other (after a fresh shot)
     forever_client.py click X Y --hold shift [--hold ctrl]
-                                          # hold shift, ctrl or alt through a click, hover or scroll; released after
+                                          # hold shift, ctrl or alt through any pointer verb; released after
     forever_client.py key Escape          # any key xdotool names
     forever_client.py key --action MOVEFORWARD --for 2
                                           # hold the key this client binds to a game action: walk, turn, strafe
@@ -40,6 +40,8 @@ attempts produce no game process. Update the game in Battle.net before retrying 
                                           # the same with every consumer's latest released build linked beside core
     forever_client.py proof --repo R --ref SHA --checkout PATH --flow NAME=SLASH_OR_LUA_FILE
                                           # record the checkout's .visual-proof.json from a client session
+    forever_client.py attest --repo R --ref SHA --checkout PATH [--shot FILE]
+                                          # the same from the user's checklist pass, without the client
 
 `smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
 over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
@@ -62,6 +64,10 @@ borrows is put back exactly as it was, including a store install it moved aside.
 handlers leaves that record behind, and the next `up`, `serve`, `job`, `run`, `smoke`, `proof` or `build-dev` replays
 it under the job lock before it touches AddOns. A held job lock leaves the record untouched.
 A missing full commit SHA fetches origin once and retries resolution for smoke, proof and build-dev.
+
+`attest` writes the same file from the user's own checklist pass of that build (tools/checklist/README.md), without
+the client: the round must have passed every check for the commit and recorded a runtime digest equal to the
+checkout's `visual_proof --digests`, and the recorded unpacked build must still compare equal to the checkout.
 
 `proof` records the in-game visual proof a release prep or a ForeverCore pin bump needs. It runs as a job the way
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
@@ -88,7 +94,8 @@ Waiters hold exclusive locks on numbered ticket files and acquire in arrival ord
 Serve teardown takes priority over waiters without interrupting the holder. Wait logs update the holder and queue
 position; a timeout bounds the wait without guaranteeing acquisition. `STATE_DIR/job.json` names its holder
 (pid, token, label, start) so a waiter can say who it waits for. The session
-ends `IDLE_LIMIT` (10 min) after the last job ended, or after READY when none has run yet, and never later than
+ends `IDLE_LIMIT` (60 min) after the last job ended, or after READY when none has run yet, and not while a request
+is queued or a lease is live, and never later than
 `MAX_SESSION` (3 h) from the launch; at either end it takes the job lock first, so a job in flight is never cut off.
 `job` starts a detached `serve` when none runs and reuses a ready one. `up` is `serve` in the foreground, and `run`
 is an alias for `job`. `lease` prints a token valid for its TTL without holding the lock between calls.
@@ -156,7 +163,7 @@ import zlib
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
 
@@ -214,6 +221,8 @@ SIGN_IN_MESSAGE = (
 LAUNCHER_SIGN_IN_LABELS = (("welcome", "back"), ("email", "a", "code"), ("use", "password"), ("use", "passkey"))
 # Battle.net's update modal, excluding the unrelated "Upgrade Available" account banner.
 LAUNCHER_UPDATE_LABELS = (("installation", "required"),)
+# Battle.net's own exact label on the login splash; no Play button exists yet and Escape would close the window.
+LAUNCHER_LOGIN_LABELS = (("logging", "in"),)
 # Allow one retry for a launcher that did not accept Play, then stop sending input without a game process.
 MAX_PLAY_CLICKS = 2
 PLAY_RETRY_WAIT = 15.0  # Give each launch attempt the startup loop's full nudge interval to create the process.
@@ -226,9 +235,10 @@ CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "for
 ADDON = Path(__file__).resolve().parent / "!!ForeverHeadless"
 WIDTH, HEIGHT = 1920, 1080
 # The session is shared, so the client stays up while jobs arrive instead of ending after one test. These are fixed
-# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY when none has run yet), and
-# never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is never cut off.
-IDLE_LIMIT = 10 * 60
+# limits, not heuristics: it ends IDLE_LIMIT after the last job ended (or after READY; never while work is
+# pending), and never later than MAX_SESSION from the launch. Both are checked only between jobs; a job in flight is
+# never cut off.
+IDLE_LIMIT = 60 * 60
 MAX_SESSION = 3 * 60 * 60
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
@@ -944,6 +954,11 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # Gamescope maps absolute XTEST coordinates onto its focused window, whatever that window's X position, so a point
 # here is in the window's own pixels, the same pixels a screenshot shows. xdotool's --window option adds the window's
 # X position to the point and must never be used.
+# A drag moves in this many steps, pausing between them, so the client sees the press, a move and the release apart.
+DRAG_STEPS = 8
+DRAG_PAUSE_S = "0.05"
+
+
 def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:
     if button not in ("1", "3"):
         raise ClientError("click takes --button 1 (left) or 3 (right)")
@@ -2127,7 +2142,8 @@ def press_play(state: dict) -> None:
         check=False,
     )
     if not found.stdout.split():
-        raise ClientError("Battle.net launcher window was not found")
+        # Battle.net can swap its login window for the main one; the startup loop retries until its deadline.
+        return
     if shutil.which("tesseract") is None:
         raise ClientError("tesseract is required for OCR; use up --manual-launcher for screenshot-guided clicks")
     if client_pid():
@@ -2159,12 +2175,24 @@ def press_play(state: dict) -> None:
         )
     targets = play_targets(image)
     if not targets:
+        # The label trails its animated dots ("Logging in.."), which are not part of it.
+        label_words = [word.rstrip(".") for word in words]
+        if any(
+            label_words[index : index + len(phrase)] == list(phrase)
+            for phrase in LAUNCHER_LOGIN_LABELS
+            for index in range(len(label_words))
+        ):
+            return
         # A launcher dialog can cover the page. Dismiss it on the discovered
         # Battle.net window, then let the startup loop inspect a fresh frame.
         x(state, "key", "--window", found.stdout.split()[0], "Escape")
         if not state.get("play_target_missing_reported"):
+            # Every retry overwrites launcher.png, so by the time anyone reads this line the file shows a later
+            # frame (often one with Play drawn). Keep the frame this report is about under its own name.
+            missed = image.with_name(f"{image.stem}-no-play{image.suffix}")
+            shutil.copyfile(image, missed)
             print(
-                f"no visible Play label recognized; inspect {image}. Retrying until the startup deadline. "
+                f"no visible Play label recognized; inspect {missed}. Retrying until the startup deadline. "
                 "For screenshot-guided launcher clicks, restart with up --manual-launcher, then use shot and click.",
                 file=sys.stderr,
                 flush=True,
@@ -3266,6 +3294,27 @@ def lua_flow(action: str) -> bool:
     return action.endswith(".lua")
 
 
+# The client's secure slash words (SecureCmdList in Blizzard's ChatFrame, hash_SecureCmdList at run time). They run
+# protected actions, so only a player's typed chat line may send them: a Lua snippet that calls ChatEdit_SendText
+# is insecure and the client ignores the command (#901). !!DevSmoke's slash route cannot even find them, because they
+# are not in SlashCmdList. The words are fixed by the client, so this is a documented list, not a guess at content.
+SECURE_SLASH_WORDS = frozenset(
+    (
+        "/assist /cancelaura /cancelform /cast /castrandom /castsequence /click /clearfocus /cleartarget /dismount "
+        "/equip /equipslot /focus /leavevehicle /petaggressive /petassist /petattack /petdefensive /petfollow "
+        "/petpassive /startattack /stopattack /stopcasting /stopmacro /target /targetenemy /targetfriend "
+        "/targetlasttarget /use /userandom"
+    ).split()
+)
+# How long a typed secure slash flow settles before the capture: it has no ready check to poll (#901).
+SECURE_SLASH_SETTLE_SECONDS = 3
+
+
+def secure_slash(action: str) -> bool:
+    """Whether a flow's action is a secure slash command, decided by its command word."""
+    return not lua_flow(action) and action.split()[0].lower() in SECURE_SLASH_WORDS
+
+
 def flow_step(action: str) -> str:
     """What a proof records for one flow: a slash command as typed, or a Lua snippet by name and content digest.
 
@@ -3537,6 +3586,16 @@ def world_load_shot(path: Path, timeout: float = 5.0) -> bool:
             time.sleep(0.5)
 
 
+def secure_point(inputs: Sequence[FlowInput]) -> tuple[int, int] | None:
+    """The one click a secure slash flow may take, sent after its typed line settles (`run_secure_flow`)."""
+    if not inputs:
+        return None
+    kind, value = inputs[0]
+    if len(inputs) == 1 and kind == "click" and isinstance(value, tuple):
+        return value[0], value[1]
+    raise ClientError("a secure slash flow takes at most one --flow-click and no other flow input")
+
+
 def run_flow(state: Mapping, action: str, inputs: Sequence[FlowInput] = ()) -> str:
     """Run one proof flow through !!DevSmoke: a slash command, or a Lua file.
 
@@ -3550,6 +3609,8 @@ def run_flow(state: Mapping, action: str, inputs: Sequence[FlowInput] = ()) -> s
     (#655, #857, #860). Opening a protected window is not something a Lua snippet can do, and since #648 no outside
     input can reach the client while this job holds it.
     """
+    if secure_slash(action):
+        return run_secure_flow(state, action, secure_point(inputs))
     combos = flow_key_combos(state, inputs)
     tool = devsmoke_eval()
     try:
@@ -3582,6 +3643,36 @@ def run_flow(state: Mapping, action: str, inputs: Sequence[FlowInput] = ()) -> s
     except ClientError as error:
         raise flow_capture_failure(state, action, written["token"], error) from None
     return written["token"]
+
+
+def run_secure_flow(state: Mapping, action: str, point: tuple[int, int] | None = None) -> str:
+    """Run a secure slash flow by typing it into chat, as the `slash` verb does, once the reload's world frame lands.
+
+    A secure command cannot run from insecure Lua, so no snippet is written and the flow has no run token or ready
+    check: the capture follows a short fixed settle after the typed line (#901). `point` is clicked once that settle
+    ends, so a flow can open a protected window and then pick a tab inside it, then settles again before the capture.
+    Each flow reloads first, so a later Lua flow starts from a fresh world; it does not continue from this window.
+    """
+    one_line_slash(action)
+    before = screenshots()
+    reload(state)
+    clear_eval_inbox()
+    try:
+        world = wait_for_flow_world(before, action, state=state)
+        print(f"typing {action} after {world.name}", flush=True)
+        slash(state, action)
+    except SafetyRefusal:
+        raise
+    except ClientError as error:
+        raise ClientError(f"the flow {action} could not be typed: {error}") from None
+    time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    if point:
+        # The typed line is the last input, so mark a fresh frame before clicking, as the Lua flow path does.
+        (STATE_DIR / "last-shot").touch()
+        click(state, point[0], point[1], "1")
+        print(f"clicked {point[0]},{point[1]} after {action}", flush=True)
+        time.sleep(SECURE_SLASH_SETTLE_SECONDS)
+    return ""
 
 
 def eval_result(state: Mapping, token: str) -> tuple[str, bool]:
@@ -3708,6 +3799,66 @@ def proof_digests(checkout: Path) -> dict:
         raise ClientError(f"visual proof --digests printed no JSON: {completed.stdout.strip()[:200]}") from None
 
 
+EMBED_FIELD_LINE = re.compile(r"^\ufeff?[ \t]*##[ \t]*X-Forever-Core-Embed[ \t]*:", re.IGNORECASE | re.MULTILINE)
+
+
+def track_stage(stage: Path) -> None:
+    """Make the staged tree its own git work tree with every file tracked, the embedded core included.
+
+    The packager rules the checker applies read git's untracked and ignored paths as unshipped, and fail outright when a
+    `.git` sits above the tree but git cannot read it (an empty `.git` placeholder over the workspace, with the build
+    root on another filesystem). Its own repository, everything force-added, answers both: no untracked paths, and git
+    never looks above the stage.
+    """
+    for args in (["init", "-q"], ["add", "-A", "-f"]):
+        try:
+            subprocess.run(["git", "-C", str(stage), *args], check=True, capture_output=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", "") or str(error)
+            raise ClientError(f"cannot track the embedded proof stage {stage}: {detail.strip()}") from None
+
+
+@contextmanager
+def proof_source(checkout: Path, repo: str) -> Generator[Path, None, None]:
+    """The tree the installed proof build must match: the checkout, run through its embed step when it embeds core.
+
+    A consumer whose root TOC carries the embed field ships `embed(checkout, pin)`, not the checkout itself: the build
+    rewrites its TOC and Lua and adds `Libs/ForeverCore/`. So its tracked files, as they stand in the checkout
+    (uncommitted edits included, as the plain comparison reads them), are staged outside any git work tree and given
+    the same `embed_core` the build ran, at the same pin, then tracked in a repository of its own (`track_stage`); that
+    staged tree is compared. The proof's digests still come
+    from the checkout itself (`proof_digests`), so the recorded identity is the source the pull request carries, and the
+    pin it hashes binds the embedded bytes. A checkout without the field is compared as it is. The stage is removed on
+    every exit.
+    """
+    if not any(
+        EMBED_FIELD_LINE.search(toc.read_text(encoding="utf-8", errors="replace")) for toc in checkout.glob("*.toc")
+    ):
+        yield checkout
+        return
+    stage = BUILD_ROOT / f"{repo}-proof-source"
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(checkout), "ls-files", "-z"], check=True, capture_output=True, text=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise ClientError(f"cannot list {checkout}'s tracked files for the embedded proof: {detail.strip()}") from None
+    try:
+        for name in filter(None, listed.split("\0")):
+            source = checkout / name
+            if source.is_file():
+                target = stage / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        embed_core(stage)
+        track_stage(stage)
+        yield stage
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 def proof_compare(checkout: Path, installed: Path) -> dict:
     """`visual_proof --compare`: the checkout's shipped runtime against the installed addon folder."""
     completed = visual_proof_run(checkout, "--compare", str(installed))
@@ -3813,7 +3964,8 @@ def proof(args: argparse.Namespace) -> int:
             # A queued proof can rebuild this shared folder as soon as the job lock is released.
             build = client_build(folders[0][1])
             try:
-                proof_compare(checkout, folders[0][1])
+                with proof_source(checkout, repo) as source:
+                    proof_compare(source, folders[0][1])
             except ClientError:
                 # A proof that does not describe the installed build must never be left where it could be committed.
                 (checkout / PROOF_FILE).unlink(missing_ok=True)
@@ -3840,6 +3992,182 @@ def proof(args: argparse.Namespace) -> int:
     target = checkout / PROOF_FILE
     atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
     print(f"{repo}@{commit[:7]}: wrote {target} and checked it against {folders[0][1]}", flush=True)
+    return 0
+
+
+CHECKLIST = Path(__file__).resolve().parents[1] / "checklist/checklist"
+CHECKLIST_RESULTS = Path(os.environ.get("CHECKLIST_HOME", WORKSPACE / "wow-handoff")) / "results"
+SHOT_SUFFIXES = {".png", ".jpg", ".jpeg", ".tga", ".webp"}
+
+
+def checklist_status(repo: str, commit: str, round_name: str | None = None) -> dict:
+    """`checklist status --json` for one build: the user's answers for it and the build the round recorded.
+
+    Exit 0 is a passed build, 1 a build with a check not passed, 2 a build no round covers (tools/checklist/README.md).
+    """
+    command = [str(CHECKLIST), "status", "--addon", repo, "--sha", commit, "--json"]
+    if round_name:
+        command += ["--round", round_name]
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    except OSError as error:
+        raise ClientError(f"cannot run {CHECKLIST}: {error}") from None
+    if completed.returncode == 2:
+        raise ClientError(f"no checklist round has checks for {repo}@{commit[:7]}: add them and test it first")
+    try:
+        report = json.loads(completed.stdout)
+    except ValueError:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ClientError(f"checklist status printed no JSON for {repo}@{commit[:7]}: {detail[:200]}") from None
+    if completed.returncode or not report.get("passed"):
+        open_checks = [
+            f"{row.get('id')} ({row.get('status') or 'open'})"
+            for row in report.get("checks", [])
+            if row.get("status") != "pass"
+        ]
+        raise ClientError(
+            f"{report.get('round')}: {repo}@{commit[:7]} has not passed the checklist: {', '.join(open_checks)}"
+        )
+    return report
+
+
+def attest(args: argparse.Namespace) -> int:
+    """Write a commit's `.visual-proof.json` from the user's own checklist pass in the live client (#874).
+
+    It never touches the client, so it runs while the user plays. The pass binds to the exact runtime that was tested:
+    the round's build must name this commit, its recorded runtime digest must equal the checkout's
+    `visual_proof --digests`, and the unpacked build it recorded must still compare equal to the checkout. The
+    screenshots are the ones the user pasted into the checklist plus any `--shot` from the client's Screenshots folder;
+    they go to a new secret gist like a proof's, and the record carries `kind: user-checked` and the round.
+    """
+    repo = args.repo
+    if not SMOKE_REPO.fullmatch(repo):
+        raise ClientError(f"--repo takes a repository name, not {repo!r}")
+    root = WORKSPACE / repo
+    if not root.is_dir():
+        raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
+    checkout = Path(args.checkout).resolve()
+    if not checkout.is_dir():
+        raise ClientError(f"no checkout at {checkout}: --checkout is the tree the proof is written to")
+    commit = resolve_commit(root, args.ref)
+    head = git(checkout, "rev-parse", "--verify", "HEAD")
+    if head != commit:
+        raise ClientError(f"{checkout} is at {head[:7]}, not {repo}@{commit[:7]}: check out the tested commit first")
+    report = checklist_status(repo, commit, args.round)
+    build = report.get("build") or {}
+    if build.get("sha") != commit:
+        raise ClientError(f"{report['round']} recorded {repo} at {str(build.get('sha'))[:7]}, not {commit[:7]}")
+    digests = proof_digests(checkout)
+    recorded = build.get("digest")
+    if not recorded:
+        raise ClientError(
+            f"{report['round']} recorded no runtime digest for {repo}: record it with checklist build --digest "
+            "when the build is linked, so the pass binds to what was tested"
+        )
+    if recorded != digests["input_digest"]:
+        raise ClientError(
+            f"{report['round']} tested {repo} runtime {recorded[:12]}, but {checkout} at {commit[:7]} is "
+            f"{digests['input_digest'][:12]}: the user's pass is for another build"
+        )
+    # The checklist resolves the recorded path and hashes it there; compare that same folder.
+    artifact = Path(build.get("artifact_path") or "")
+    folders = addon_folders(artifact, package_name(root, commit)) if build.get("artifact") and artifact.is_dir() else []
+    if not folders:
+        raise ClientError(f"{report['round']} names no unpacked build for {repo} to check ({build.get('artifact')!r})")
+    tested_in = build.get("client_build")
+    if not tested_in:
+        raise ClientError(
+            f"{report['round']} recorded no client build for {repo}: record it with checklist build --client-build"
+        )
+    if not build.get("artifact_sha256") or build["artifact_sha256"] != build.get("artifact_sha256_now"):
+        raise ClientError(
+            f"{report['round']}: the unpacked build at {build.get('artifact')} is not the one recorded when it was "
+            "linked (rebuilt, removed or recorded before artifact hashing): relink, record it and test again"
+        )
+    identity = {
+        "sha": commit,
+        "digest": recorded,
+        "artifact_sha256": build["artifact_sha256"],
+        "client_build": tested_in,
+    }
+    stale = [row["id"] for row in report["checks"] if any(row.get(k) != v for k, v in identity.items())]
+    if stale:
+        raise ClientError(f"{report['round']}: checks {', '.join(stale)} were not answered for this build")
+    proof_compare(checkout, folders[0][1])
+    passed = [row for row in report["checks"] if row.get("status") == "pass"]
+    if not passed:
+        raise ClientError(f"{report['round']}: no check for {repo}@{commit[:7]} was answered pass")
+    shots = [Path(image) for row in passed for image in row.get("images", [])] + [Path(s) for s in args.shot]
+    missing = [str(s) for s in shots if not s.is_file()]
+    if missing:
+        raise ClientError(f"screenshot not found: {', '.join(missing)}")
+    flows = [
+        {
+            "name": row["title"],
+            "steps": [s.strip() for s in row.get("steps") or [] if s.strip()] or [row.get("pass") or row["title"]],
+            "result": "pass",
+        }
+        for row in passed
+    ]
+    # visual_proof refuses a Lua flow named by an absolute path (#591), with or without its sha256 annotation; the
+    # same rule as its absolute_lua_step, which this tool cannot import from a checkout it has not checked yet.
+    lua = [
+        step
+        for flow in flows
+        for step in flow["steps"]
+        if (bare := re.sub(r"^sha256:[0-9a-f]{64}\s+|\s+sha256:[0-9a-f]{64}$", "", step)).endswith(".lua")
+        and (PurePosixPath(bare).is_absolute() or PureWindowsPath(bare).is_absolute())
+    ]
+    if lua:
+        raise ClientError(
+            f"a passed check names a Lua file by absolute path, which a public proof may not carry: {lua}"
+        )
+    # Evidence goes to a gist, so only an image from the client or the checklist's own results can be sent.
+    allowed = [(CLIENT / "Screenshots").resolve(), CHECKLIST_RESULTS.resolve()]
+    stray = [
+        str(s)
+        for s in shots
+        if s.suffix.lower() not in SHOT_SUFFIXES or not any(s.resolve().is_relative_to(base) for base in allowed)
+    ]
+    if stray:
+        raise ClientError(
+            f"not a screenshot from the client's Screenshots folder or the checklist results: {', '.join(stray)}"
+        )
+    if not shots:
+        raise ClientError(
+            f"no screenshot for {repo}@{commit[:7]}: paste one into a passed check or name a client capture with --shot"
+        )
+    staging = PROOF_SCRATCH / f"attest-{repo}-{commit[:7]}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    named = []
+    for index, shot_path in enumerate(shots, start=1):
+        # The checker accepts PNG evidence only; client captures are JPEG or TGA and pasted ones may be JPEG or WebP.
+        target = staging / f"{index}-{flow_slug(shot_path.stem)}.png"
+        try:
+            with Image.open(shot_path) as image:
+                image.convert("RGB").save(target, "PNG")
+        except OSError as e:
+            raise ClientError(f"{shot_path} is not a readable image: {e}") from e
+        named.append(target)
+    description = f"User-checked visual proof for {repo} at {commit} ({report['round']})"
+    gist = create_gist(description, staging)
+    images = upload_screenshots(gist, named, description)
+    proof_data = {
+        "input_digest": digests["input_digest"],
+        "runtime_sha256": digests["input_digest"],
+        "candidate": digests["candidate"],
+        "client_build": tested_in,
+        "tested_artifact": "source-tree",
+        "source_commit": commit,
+        "kind": "user-checked",
+        "round": report["round"],
+        "flows": flows,
+        "images": images,
+    }
+    target = checkout / PROOF_FILE
+    atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
+    print(f"{repo}@{commit[:7]}: wrote {target} from {report['round']} ({len(passed)} checks passed)", flush=True)
     return 0
 
 
@@ -4107,18 +4435,46 @@ def at_character_select(state: dict, manual_launcher: bool) -> None:
         press_play(state)
 
 
-def session_end_reason(now: float, started: float, ready: float, last_job: float) -> str | None:
+def pending_work(state: Mapping) -> str | None:
+    """What still needs this session, or None: a waiter in the job queue or a live lease of this session.
+
+    A lease holder works between verbs (building a test addon, reading a screenshot), so no job ends in that
+    time; the lease's own TTL (LEASE_MAX) bounds how long it can keep the session up.
+    """
+    if job_queue():
+        return "a request is queued"
+    directory = STATE_DIR / "leases"
+    for path in directory.glob("*.json") if directory.exists() else ():
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        expires = record.get("expires") if isinstance(record, dict) else None
+        if (
+            isinstance(expires, (int, float))
+            and expires > time.time()
+            and not record.get("ended")
+            and record.get("session") == session_identity(state)
+        ):
+            return "a lease is live"
+    return None
+
+
+def session_end_reason(
+    now: float, started: float, ready: float, last_job: float, busy: str | None = None
+) -> str | None:
     """Why the resident session should stop now, or None. Two fixed limits, checked in this order:
 
     - MAX_SESSION from the launch: the lifetime cap, whatever jobs arrive.
-    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming.
+    - IDLE_LIMIT since the last job ended, or since READY when none has run yet: no job is coming. Not while
+      `busy` names pending work (`pending_work`): a queued request or a live lease means a job is coming.
 
     `last_job` is never before `ready`: `last_job_mark` clamps it, because a mark an earlier session left says
     nothing about this one.
     """
     if now - started >= MAX_SESSION:
         return f"the {MAX_SESSION // 3600} h lifetime cap"
-    if now - last_job >= IDLE_LIMIT:
+    if busy is None and now - last_job >= IDLE_LIMIT:
         return f"{IDLE_LIMIT // 60} min without a job"
     return None
 
@@ -4335,7 +4691,9 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 job = job_token = None
                 continue
             last_world_check, reason = resident_world_check(state, last_world_check)
-            reason = reason or session_end_reason(time.monotonic(), launched, ready, last_job_mark(ready))
+            reason = reason or session_end_reason(
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
+            )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
             if reason is None and (STATE_DIR / STOP).exists():
@@ -4359,7 +4717,7 @@ def serve(args: argparse.Namespace, after_ready=None) -> int:
                 state.pop("world_lost", None)
                 write_state(state)
             reason = ("the client left the world" if not world else None) or session_end_reason(
-                time.monotonic(), launched, ready, last_job_mark(ready)
+                time.monotonic(), launched, ready, last_job_mark(ready), pending_work(state)
             )
             if reason is None and launcher_sources(sources) != sources:
                 reason = "launcher source changed"
@@ -5160,8 +5518,8 @@ JOB_VERBS = {
     "shot",
     "click",
     "hover",
-    "scroll",
     "drag",
+    "scroll",
     "key",
     "slash",
     "reload",
@@ -5341,8 +5699,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "shot",
         "click",
         "hover",
-        "scroll",
         "drag",
+        "scroll",
         "key",
         "slash",
         "eval",
@@ -5354,7 +5712,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         p = sub.add_parser(name)
         p.add_argument("--timeout", type=float, default=600, help="seconds to wait for the job in flight")
-        if name in ("click", "hover", "scroll", "drag"):
+        if name in ("click", "hover", "drag", "scroll"):
             p.add_argument(
                 "--hold",
                 action="append",
@@ -5372,8 +5730,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("x", type=int)
             p.add_argument("y", type=int)
         elif name == "drag":
-            for point in ("x1", "y1", "x2", "y2"):
-                p.add_argument(point, type=int)
+            for coord in ("x1", "y1", "x2", "y2"):
+                p.add_argument(coord, type=int)
             p.add_argument("--button", default="1", choices=("1", "3"))
             p.add_argument(
                 "--steps",
@@ -5438,6 +5796,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--no-post",
         action="store_true",
         help="run the whole smoke and print its result without posting the headless-smoke commit status",
+    )
+    p = sub.add_parser("attest", help="write .visual-proof.json from the user's checklist pass (no client)")
+    p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
+    p.add_argument("--ref", required=True, help="the commit the user tested")
+    p.add_argument("--checkout", required=True, type=Path, help="the checkout of that commit the proof is written to")
+    p.add_argument("--round", help="the checklist round (default: the newest round covering the build)")
+    p.add_argument(
+        "--shot", action="append", default=[], help="a client screenshot to add to the evidence; repeat for each"
     )
     p = sub.add_parser("proof", help="record a commit's .visual-proof.json from a client session")
     p.add_argument("--repo", required=True, help="the repository under ~/drive/proj/wow, such as legacy-forever")
@@ -5530,6 +5896,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return smoke(args)
         if args.verb == "proof":
             return proof(args)
+        if args.verb == "attest":
+            return attest(args)
         if args.verb in JOB_VERBS:
             state = load_state()
             if session_alive(state) and launcher_verb(state, args.verb, getattr(args, "button", None)):

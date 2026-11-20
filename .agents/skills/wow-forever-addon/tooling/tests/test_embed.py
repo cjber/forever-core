@@ -93,6 +93,66 @@ class EmbedTest(unittest.TestCase):
         with self.assertRaisesRegex(embed.EmbedError, "SavedVariables"):
             self.run_embed()
 
+    def test_an_addon_with_only_per_character_saved_variables_is_refused(self):
+        self.toc(
+            "## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariablesPerCharacter: DemoCharDB\n"
+        )
+        with self.assertRaisesRegex(embed.EmbedError, "per character"):
+            self.run_embed()
+        self.assertFalse((self.root / "Libs").exists())
+
+    def test_an_addon_with_several_account_saved_variables_is_refused(self):
+        self.toc("## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariables: DemoDB, DemoOtherDB\n")
+        with self.assertRaisesRegex(embed.EmbedError, "exactly one"):
+            self.run_embed()
+        self.assertFalse((self.root / "Libs").exists())
+
+    def test_one_account_global_beside_a_per_character_one_embeds(self):
+        self.toc(
+            "## OptionalDeps: ForeverCore\n## X-Forever-Core-Embed: 1\n## SavedVariables: DemoForeverDB\n"
+            "## SavedVariablesPerCharacter: DemoCharDB\n"
+        )
+        self.assertEqual(self.run_embed()["wrapped"], 2)
+
+    def test_the_last_opt_in_line_decides(self):
+        for fields in (
+            "## X-Forever-Core-Embed: 0\n## X-Forever-Core-Embed: 1\n",
+            "##X-Forever-Core-Embed: 1\n",
+            "  ## X-Forever-Core-Embed: 1\n",
+        ):
+            with self.subTest(fields=fields):
+                self.toc("## OptionalDeps: ForeverCore\n## SavedVariables: DemoForeverDB\n" + fields)
+                self.assertIs(embed.enabled(self.root), True)
+
+    def test_an_opt_in_value_other_than_1_is_refused(self):
+        for fields in (
+            "## X-Forever-Core-Embed: 1\n## X-Forever-Core-Embed: 0\n",
+            "## X-Forever-Core-Embed: 1, 1\n",
+            "## X-Forever-Core-Embed: true\n",
+            "## X-Forever-Core-Embed: 1 # note\n",
+        ):
+            with self.subTest(fields=fields):
+                self.toc("## OptionalDeps: ForeverCore\n## SavedVariables: DemoForeverDB\n" + fields)
+                with self.assertRaisesRegex(embed.EmbedError, "exactly 1"):
+                    embed.enabled(self.root)
+
+    def test_the_toc_is_the_one_package_as_names(self):
+        (self.root / ".pkgmeta").write_text("package-as: DemoForever\n")
+        (self.root / "Demo.toc").write_text("## Interface: 16001\n")
+        self.assertTrue(embed.enabled(self.root))
+        with self.assertRaisesRegex(embed.EmbedError, "also has Demo.toc"):
+            self.run_embed()
+
+    def test_a_second_package_as_is_refused(self):
+        (self.root / ".pkgmeta").write_text("package-as: Wrong\npackage-as: DemoForever\n")
+        with self.assertRaisesRegex(embed.EmbedError, "set 2 times"):
+            embed.enabled(self.root)
+
+    def test_a_flavor_toc_beside_the_root_toc_is_refused(self):
+        (self.root / "DemoForever_Mainline.toc").write_text("## Interface: 110000\n")
+        with self.assertRaisesRegex(embed.EmbedError, "DemoForever_Mainline.toc"):
+            self.run_embed()
+
     def test_a_second_run_is_refused(self):
         self.run_embed()
         with self.assertRaisesRegex(embed.EmbedError, "already"):

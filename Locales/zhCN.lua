@@ -48,6 +48,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"文本已选中。按 Ctrl+C（Mac 上为 Cmd+C）复制，然后粘贴到你的错误报告中。"
 L["Title"] = "标题"
 L["Tracker background"] = "追踪栏背景"
+L["Tracker position"] = "追踪栏位置"
+L["Under the quest tracker"] = "任务追踪栏下方"
+L["Left of the quest tracker"] = "任务追踪栏左侧"
 L["Tracker"] = "追踪栏"
 L["Click to %s"] = "点击 %s"
 L["Right-click for options"] = "右键查看选项"
@@ -55,7 +58,6 @@ L["Unavailable in combat"] = "战斗中不可用"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"用法：/forever debug、/forever debug on、/forever debug off、/forever debug pin、/forever debug show"
 L["What happened, or what you would like"] = "请描述遇到的问题或希望增加的功能"
-L["MENU_BACK"] = "返回"
 
 L["1 ms"] = "1 毫秒"
 L["5 ms"] = "5 毫秒"

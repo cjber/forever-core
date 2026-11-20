@@ -1,0 +1,23 @@
+name: SkillUp
+checks:
+  - id: loads
+    title: Loads clean and /skillup opens its settings
+    steps:
+      - Type /reload.
+      - Type /skillup.
+    pass: No Lua error, and the SkillUp settings open.
+    minutes: 1
+  - id: professions-window
+    title: The Professions window shows SkillUp
+    steps:
+      - Press K, or open a profession from the spellbook.
+      - Click the SkillUp side tab.
+    pass: Recipes show skill-up chances and costs, the side tab opens the levelling route, and no Lua error appears.
+    minutes: 2
+  - id: switch-professions
+    title: Switching professions keeps the window steady
+    steps:
+      - With the Professions window open, switch to another profession and back.
+      - Switch between the client's own tabs and SkillUp's tab.
+    pass: The window keeps one width, the tabs stay stacked under the client's own, and nothing errors.
+    minutes: 2

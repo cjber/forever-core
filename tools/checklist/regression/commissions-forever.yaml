@@ -1,0 +1,17 @@
+name: Commissions
+checks:
+  - id: loads
+    title: Loads clean and /commissions opens its page
+    setup: Know at least one profession.
+    steps:
+      - Type /reload.
+      - Open the Professions window, then type /commissions.
+    pass: No Lua error, and the Commissions page opens in the Professions window.
+    minutes: 1
+  - id: route
+    title: Every commission in your log is on the route
+    setup: At least one commission quest in your quest log.
+    steps:
+      - Open the Commissions page.
+    pass: Each commission shows with its items and counts, or the page says why none can start.
+    minutes: 2

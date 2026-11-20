@@ -49,6 +49,9 @@ L["The text is selected. Press Ctrl+C (Cmd+C on a Mac) to copy it, then paste it
 	"텍스트가 선택되었습니다. Ctrl+C(Mac은 Cmd+C)를 눌러 복사한 후 오류 보고에 붙여 넣으십시오."
 L["Title"] = "제목"
 L["Tracker background"] = "추적기 배경"
+L["Tracker position"] = "추적기 위치"
+L["Under the quest tracker"] = "퀘스트 추적기 아래"
+L["Left of the quest tracker"] = "퀘스트 추적기 왼쪽"
 L["Tracker"] = "추적기"
 L["Click to %s"] = "%s하려면 클릭"
 L["Right-click for options"] = "우클릭하여 옵션 보기"
@@ -56,7 +59,6 @@ L["Unavailable in combat"] = "전투 중에는 사용할 수 없음"
 L["Usage: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"] =
 	"사용법: /forever debug, /forever debug on, /forever debug off, /forever debug pin, /forever debug show"
 L["What happened, or what you would like"] = "무슨 일이 있었는지 또는 원하는 기능"
-L["MENU_BACK"] = "뒤로"
 
 L["1 ms"] = "1 ms"
 L["5 ms"] = "5 ms"

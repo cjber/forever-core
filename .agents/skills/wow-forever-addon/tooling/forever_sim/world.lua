@@ -385,13 +385,36 @@ function M.build(sim)
 		for i in ipairs(W.professions) do
 			idx[i] = i
 		end
-		return idx[1], idx[2], idx[3], idx[4], idx[5], idx[6]
+		return idx[1], idx[2], idx[3], idx[4], idx[5], idx[6], idx[7]
 	end
 	impl.GetProfessionInfo = function(index)
 		local p = W.professions[index]
 		if p then
-			return p.name, p.icon or 136241, p.skill, p.max, 0, 0, p.skillLineID, p.modifier or 0, 0, 0, p.name
+			return p.name, p.icon or 136241, p.skill, p.max, 1, index - 1, p.skillLineID, p.modifier or 0, 0, 0, p.name
 		end
+	end
+	-- Each profession's spell sits in the player's spellbook at its profession index, so the client's right-hand
+	-- profession tabs show one per profession that has a crafting window (p.craftingUI false: Herbalism, Skinning).
+	local function spellProfession(spellID)
+		for index, p in ipairs(W.professions) do
+			if (p.spellID or 900000 + index) == spellID then
+				return p
+			end
+		end
+	end
+	impl["C_SpellBook.GetSpellBookItemInfo"] = function(slot)
+		local index = W.professions[slot] and slot
+		if index then
+			local p = W.professions[index]
+			local info = sim.api.zero({ Type = "SpellBookItemInfo" })
+			info.spellID = p.spellID or 900000 + index
+			info.name = p.name
+			return info
+		end
+	end
+	impl["C_TradeSkillUI.CanTradeSkillShowCraftingUI"] = function(spellID)
+		local p = spellProfession(spellID)
+		return p ~= nil and p.craftingUI ~= false
 	end
 	impl["C_TradeSkillUI.GetBaseProfessionInfo"] = function()
 		return professionInfo(open())
@@ -706,7 +729,11 @@ function M.build(sim)
 			return W.spells[id]
 		end
 		local r = recipe(id)
-		return r and { name = r.name, icon = r.icon or 134400 }
+		if r then
+			return { name = r.name, icon = r.icon or 134400 }
+		end
+		local p = spellProfession(id)
+		return p and { name = p.name, icon = p.icon or 136241 }
 	end
 	-- Flyout definitions exist before their spells are learned. Blizzard's class action button enumerates
 	-- these slots at PLAYER_LOGIN even when none are known; an unknown flyout ID still returns nothing.
