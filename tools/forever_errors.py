@@ -85,7 +85,9 @@ _TAINT_BLOCKED = re.compile(r"^An action was blocked(?: in combat)? because of t
 # Blizzard's own code, the secure code taint can harm: its Blizzard_ addons and the FrameXML folders.
 _SECURE_CODE = re.compile(r"^Interface[/\\](?:AddOns[/\\]Blizzard_|FrameXML[/\\]|SharedXML[/\\]|GlueXML[/\\])")
 # The client's secure call boundaries: taint picked up inside one is dropped when it returns.
-_SECURE_BOUNDARIES = frozenset({"securecall()", "securecallfunction()", "secureexecuterange()", "secureexecutenext()"})
+_SECURE_BOUNDARIES = frozenset(
+    {"securecall()", "securecallfunction()", "securecallmethod()", "secureexecuterange()", "secureexecutenext()"}
+)
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]+")
 _DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _COUNT_MARKER = re.compile(r"forever-errors:.*?\bcount=(\d+)")
