@@ -197,8 +197,9 @@ without the lock, so they never queue behind the job they are unblocking; `key` 
   and a record whose session is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
-head) that has no `headless-smoke` status, and smokes them one at a time, stopping at exit 3 so the queue never
-fights the player for the client. Each smoke is one job in the resident session, so the queue shares the client
+head) that has no `headless-smoke` status, and smokes them one at a time in release order (forever-core, SkillUp,
+Shortest Path, then the rest), stopping at exit 3 so the queue never fights the player for the client.
+`--repo NAME`, repeatable, smokes only those repositories in the order given. Each smoke is one job in the resident session, so the queue shares the client
 with an agent instead of waiting for a whole session to end. `python3 tools/smoke_queue.py --dry-run` lists them
 without starting anything.
 

@@ -702,24 +702,33 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
         add_changelog_entry(root, today)
 
 
-def repo_vendors_tooling(repo: str) -> bool:
+def repo_vendors_tooling(repo: str, *, strict: bool = False) -> bool:
     for path in TOOLING_MANIFESTS:
-        if api(f"repos/{OWNER}/{repo}/contents/{path}", "--silent", check=False).returncode == 0:
+        args = () if strict else ("--silent",)
+        result = api(f"repos/{OWNER}/{repo}/contents/{path}", *args, check=False)
+        if result.returncode == 0:
             return True
+        if strict and str(json.loads(result.stdout).get("status")) != "404":
+            raise SyncError(f"could not check {repo}/{path}: {result.stderr.strip()}")
     return False
 
 
-def discover_tooling_repos() -> set[str]:
+def discover_tooling_repos(*, strict: bool = False) -> set[str]:
     """The live repositories that vendor the tooling, so a new consumer needs no edit here."""
     try:
         listed = list_repositories()
     except (SyncError, json.JSONDecodeError) as error:
+        if strict:
+            raise
         print(f"::warning::Could not list {OWNER}'s repositories ({error}); using VENDORED's consumers only.")
         return set()
     return {
         item["name"]
         for item in listed
-        if not item.get("archived") and item["name"] != CORE_REPO and repo_vendors_tooling(item["name"])
+        if not item.get("archived")
+        and not item.get("disabled")
+        and item["name"] != CORE_REPO
+        and repo_vendors_tooling(item["name"], strict=strict)
     }
 
 

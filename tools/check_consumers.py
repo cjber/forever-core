@@ -441,7 +441,78 @@ def check_release_gate(repo, branch, local):
             f"{repo}: {path}: the ForeverCore pin gate must run `python3 -m {RELEASE_GATE_COMMAND}` directly above"
             " the packager"
         ]
-    return []
+    jobs = workflow_steps(text)
+    # Archive validation is being adopted one release workflow at a time. Require it for the whole
+    # fleet once every published consumer has it. An attempted adoption already has to validate the upload.
+    if not any(
+        re.search(r"\bpython3\s+-m\s+tools\.forever_tools\.core_archive\b", shell_code(line))
+        for steps in jobs
+        for step in steps
+        for line in step.get("run", "").splitlines()
+    ):
+        print(
+            f"::warning::{repo}: {path}: add packaged ForeverCore validation; "
+            "see docs/dependency-transition.md#check-the-built-consumer-zip"
+        )
+        return []
+    return [f"{repo}: {path}: {problem}" for problem in archive_release_problems(jobs)]
+
+
+ARCHIVE_COMMAND = "python3 -m tools.forever_tools.core_archive --release-dir .release --latest"
+ARCHIVE_CHECKSUM = """printf '%s  %s\\n' "$ARCHIVE_SHA256" "$ARCHIVE" | sha256sum --check --status"""
+
+
+def archive_release_problems(jobs):
+    """Require the same job to build, check and upload the checked ZIP."""
+    failures = []
+    uploads = 0
+    for steps in jobs:
+        built = validated = False
+        validator_id = ""
+        previous = {}
+        for step in steps:
+            before, previous = previous, step
+            if (
+                built
+                and step.get("run", "").strip() == ARCHIVE_COMMAND
+                and not step.get("if")
+                and step.get("continue-on-error", "false") == "false"
+                and not step.get("working-directory")
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", step.get("id", ""))
+            ):
+                validated = True
+                validator_id = step["id"]
+            if not step.get("uses", "").startswith("BigWigsMods/packager@"):
+                continue
+            args = step.get("args", "").split()
+            if args == ["-d"]:
+                built = not step.get("if") and step.get("continue-on-error", "false") == "false"
+                validated = False
+                continue
+            uploads += 1
+            output = f"${{{{ steps.{validator_id}.outputs.archive }}}}"
+            name = f"${{{{ steps.{validator_id}.outputs.archive_name }}}}"
+            if (
+                not validated
+                or set(args) != {"-c", "-z"}
+                or step.get("archive") != output
+                or step.get("archive_name") != name
+                or step.get("if")
+                or step.get("continue-on-error", "false") != "false"
+                or before.get("run", "").strip() != ARCHIVE_CHECKSUM
+                or before.get("ARCHIVE") != output
+                or before.get("ARCHIVE_SHA256") != f"${{{{ steps.{validator_id}.outputs.sha256 }}}}"
+                or before.get("if")
+                or before.get("continue-on-error", "false") != "false"
+            ):
+                failures.append(
+                    f"upload must use the validated ZIP: build with args: -d, run `{ARCHIVE_COMMAND}`"
+                    " in the same job, verify its SHA-256, then upload with args: -c -z and the"
+                    " validator's archive outputs"
+                )
+    if not uploads:
+        failures.append("release workflow has no BigWigs upload of the validated ZIP")
+    return failures
 
 
 EMBED_COMMAND = "tools.forever_tools.embed"
@@ -528,10 +599,23 @@ def shell_code(line):
     return re.split(r"(?:^|\s)#", line, maxsplit=1)[0]
 
 
+QUOTED_SCALAR = r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')"""
+WORKFLOW_FIELD = re.compile(rf"^({QUOTED_SCALAR}|[\w-]+):\s*(.*)$")
+
+
 def yaml_value(value):
-    """A plain YAML scalar's value without a trailing ` # comment` or its quotes."""
-    value = re.split(r"\s#", value, maxsplit=1)[0].strip()
-    return value[1:-1] if len(value) > 1 and value[0] == value[-1] and value[0] in "'\"" else value
+    """Read a plain or quoted workflow scalar, with any YAML comment removed."""
+    quoted = re.fullmatch(rf"({QUOTED_SCALAR})(?:\s+#.*)?", value)
+    if quoted:
+        scalar = quoted[1]
+        if scalar.startswith("'"):
+            return scalar[1:-1].replace("''", "'")
+        try:
+            return json.loads(scalar)
+        except ValueError:
+            # YAML has additional escapes beyond JSON; leave unsupported spellings unmatched.
+            return scalar
+    return re.split(r"(?:^|\s)#", value, maxsplit=1)[0].strip()
 
 
 def workflow_steps(text):
@@ -541,7 +625,12 @@ def workflow_steps(text):
     `jobs:` key has no jobs.
     """
     lines = [line.rstrip() for line in text.splitlines()]
-    start = next((index for index, line in enumerate(lines) if re.match(r"^jobs:\s*(#.*)?$", line)), None)
+
+    def mapping_header(line, key):
+        field = WORKFLOW_FIELD.fullmatch(line)
+        return field is not None and yaml_value(field[1]) == key and not yaml_value(field[2])
+
+    start = next((index for index, line in enumerate(lines) if mapping_header(line, "jobs")), None)
     if start is None:
         return []
     jobs = []
@@ -550,6 +639,7 @@ def workflow_steps(text):
     item_indent = None
     step = None
     block = None
+    mapping = None
     for line in lines[start + 1 :]:
         if not line.strip():
             if block is not None:
@@ -575,32 +665,43 @@ def workflow_steps(text):
             continue
         body = line.strip()
         if steps_indent is None:
-            if re.match(r"^steps:\s*(#.*)?$", body):
+            if mapping_header(body, "steps"):
                 steps_indent = width
             continue
         if width <= steps_indent and not body.startswith("- "):
             steps_indent = item_indent = step = None
-            if re.match(r"^steps:\s*(#.*)?$", body):
+            if mapping_header(body, "steps"):
                 steps_indent = width
             continue
         if body.startswith("- ") and (item_indent is None or width == item_indent):
             item_indent = width
             step = {}
+            mapping = None
             jobs[-1].append(step)
             body = body[2:].strip()
             width += 2
         if step is None:
             continue
-        key, separator, value = body.partition(":")
-        key = key.strip()
-        if not separator or key not in ("uses", "run", "if"):
+        field = WORKFLOW_FIELD.fullmatch(body)
+        if field is None:
+            continue
+        key, value = yaml_value(field[1]), field[2]
+        if width == item_indent + 2:
+            mapping = key if key in ("with", "env") else None
+            if key not in ("uses", "run", "if", "id", "continue-on-error", "working-directory"):
+                continue
+        elif mapping == "with" and key == "args":
+            pass
+        elif mapping == "env" and key in ("archive", "archive_name", "ARCHIVE", "ARCHIVE_SHA256"):
+            pass
+        else:
             continue
         value = value.strip()
         if key == "run" and value[:1] in ("|", ">"):
             step["run"] = ""
             block = width
         else:
-            step[key] = yaml_value(value) if key != "run" else value
+            step[key] = yaml_value(value)
     return jobs
 
 

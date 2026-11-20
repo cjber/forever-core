@@ -2524,6 +2524,20 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("nothing posted: slash refused", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
 
+    def test_a_smoke_reads_github_with_the_gh_login_when_no_token_is_set(self):
+        # #934: a core smoke reads every consumer's latest release; anonymous reads hit the shared rate limit.
+        login = subprocess.CompletedProcess(["gh"], 0, stdout="gho_login\n", stderr="")
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(fc.subprocess, "run", return_value=login):
+            os.environ.pop("GH_TOKEN", None)
+            os.environ.pop("GITHUB_TOKEN", None)
+            fc.github_token_from_gh()
+            self.assertEqual(os.environ["GH_TOKEN"], "gho_login")
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ci"}), mock.patch.object(fc.subprocess, "run") as run:
+            os.environ.pop("GH_TOKEN", None)
+            fc.github_token_from_gh()
+            run.assert_not_called()
+            self.assertNotIn("GH_TOKEN", os.environ)
+
     def test_a_client_that_is_not_in_use_smokes(self):
         # A resident session's own Wine processes are not a busy client: only the player's game is.
         code, _printed, _build = self.run_smoke(busy=None)
