@@ -1,6 +1,6 @@
 # Debugging a Forever addon in game
 
-Reference for the failures headless specs miss. Blizzard's source for the build is Gethe/wow-ui-source,
+Reference for the failures the offline specs miss. Blizzard's source for the build is Gethe/wow-ui-source,
 branch `forever`; diff the build you have against the latest before blaming addon code.
 
 ## Taint and blocked actions
@@ -62,10 +62,9 @@ blocked. Find the read, not the call.
   Enum.AddOnProfilerMetric.PeakTime)` and the `CountTimeOver*` metrics give a spike check after a run.
 - Hot loops over provider data: key tables by number, not by concatenated strings; hoist constant
   tables out of the loop; check the clock once per batch, not per item.
-- The headless clock in the specs is a stub, so a spec proves slicing and never speed.
-- Profile a whole session instead of one call: link `!!DevPerf`, play the action or run
-  `tools/headless/perf_run.sh`, mark around it with `/forever perf <label>` (zoom, hover with comparison,
-  a fight), `/reload`, then `python3 tools/forever_perf.py`. `/devperf watch` shows garbage churn.
+- The clock in the specs is a stub, so a spec proves slicing and never speed.
+- Profile a whole session instead of one call: link `!!DevPerf`, play the action, mark around it with `/forever perf <label>` (zoom, hover with comparison,
+  a fight), `/reload`, then read `DevPerfDB`. `/devperf watch` shows garbage churn.
 - `/forever perf scenario tooltips|mappins` measures each hover path as its own timed scenario.
 
 ## Reading results without a screenshot

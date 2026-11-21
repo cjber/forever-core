@@ -23,9 +23,8 @@ the suite skills in `.agents/skills`.
    editing a consumer's copy. `tools/check_core_shared.py` fails a PR that does.
 5. **Raise `ForeverCore.API`** (a number, read by every released addon; never make it a table) only when the public table or `Register` breaks. A core release reaches consumers
    through the stores: nothing is copied into them.
-6. **Game-client checks go through the `wow in-game` agent.** Send it an `INGAME` request
-   (`.agents/skills/wow-forever-addon/in-game.md#requesting-a-check`); never run `tools/headless/forever_client.py`
-   or start the game, Battle.net or Wine yourself.
+6. **Checks here are offline.** Specs and `forever_sim` are the checks; never start the game, Battle.net or Wine
+   from this repository.
 
 ## Commands
 
@@ -47,9 +46,8 @@ tracker specs run against Blizzard's real source: `python3 tools/fetch_tracker_u
 Each version needs changelog fragments consumed into a `CHANGELOG.md` entry before its `v*` tag
 (`python3 tools/changelog.py release X.Y.Z` in the preparation commit); no other PR edits `CHANGELOG.md`.
 `release.yml` waits for full CI and a green `headless-smoke` status on the exact commit, then packages for
-GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
-kind: proof` request (`flows: update notice=<slash or Lua file>`), or from the user's checklist pass of that exact
-build with `forever_client.py attest`. A core release re-releases every consumer
+GitHub and CurseForge. A change to the update notice or a locale needs a recorded `.visual-proof.json` for that exact
+build (from the maintainer's checks or the user's checklist pass). A core release re-releases every consumer
 through `release-consumers.yml`. Load order: `ForeverCore.toc` loads the modules, then `Expose.lua` last; it has
 no `OptionalDeps`. Skills for the suite (`wow-forever-addon`, `wow-addon-publish`, `wow-retail-ui-style`,
 `wow-mock-screenshots`, `wow-visual-audit`, `foreverauras`) live in

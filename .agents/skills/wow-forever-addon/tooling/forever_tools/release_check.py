@@ -1,17 +1,17 @@
-"""Publish only a commit that passed the repository's complete CI workflow on main and its headless smoke.
+"""Publish only a commit that passed the repository's complete CI workflow on main and its release smoke.
 
 Every release, manual or automatic, ships one commit and needs two records on that exact commit: the full CI push run
-on main, and the `headless-smoke` commit status the headless client posts after it loaded that commit's build, ran
-`/forever selftest` and found no Lua errors. A missing or pending status waits for `forever_client.py smoke`, and a
-failed one prints what it found, so a release never ships a build nobody loaded.
+on main, and the `headless-smoke` commit status, the maintainer's record that the build passed its pre-release checks
+with no Lua errors. A missing or pending status waits, and a failed one prints what it found, so a release never ships
+a build that was not checked.
 
 A version publishes once. The tag names one build, so a release whose GitHub release already carries a package, or
 whose version CurseForge already lists, is refused: a re-tagged or re-run version would put a second, different build
 under a number players already installed, and their clients never replace it (cjber/skillup-forever#901). Ship the
 change as the next version instead.
 
-A manual release may add `--skip-visual-proof` when the only job that failed is `visual-proof`, the recorded client
-session a maintainer waives on purpose. Every other job must still pass, and the headless smoke is never skipped.
+A manual release may add `--skip-visual-proof` when the only job that failed is `visual-proof`, the recorded
+visual proof a maintainer waives on purpose. Every other job must still pass, and the release smoke is never skipped.
 """
 
 import argparse
@@ -24,10 +24,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 CI_WORKFLOW = ".github/workflows/ci.yml"
-# The commit status `python3 tools/headless/forever_client.py smoke --repo R --ref SHA` posts, which
-# `tools/smoke_queue.py` fills in for every commit a release would ship.
+# The commit status that records a commit's pre-release checks; a release needs it green on its exact commit.
 SMOKE_CONTEXT = "headless-smoke"
-# The one job `--skip-visual-proof` accepts as a failure; it is the recorded client session, which a maintainer may
+# The one job `--skip-visual-proof` accepts as a failure; it is the recorded visual proof, which a maintainer may
 # choose to waive for a release whose change no capture covers yet.
 VISUAL_PROOF_JOB = "visual-proof"
 # A job with one of these conclusions did not fail its run; any other conclusion, including a missing one, did.
@@ -79,15 +78,12 @@ def headless_smoke(statuses: list[dict]) -> dict | None:
 
 
 def smoke_refusal(status: dict | None, repository: str, commit: str) -> str | None:
-    """Why this commit may not be released yet, or None when its newest headless smoke passed."""
+    """Why this commit may not be released yet, or None when its newest release smoke passed."""
     state = (status or {}).get("state")
     if state == "success":
         return None
     if state in (None, "pending"):
-        return (
-            f"waiting for {SMOKE_CONTEXT} on {commit}: run forever_client.py smoke "
-            f"--repo {repository.split('/', 1)[-1]} --ref {commit}"
-        )
+        return f"waiting for {SMOKE_CONTEXT} on {commit}"
     return f"{SMOKE_CONTEXT} on {commit} is {state}: {(status or {}).get('description') or 'no description'}"
 
 

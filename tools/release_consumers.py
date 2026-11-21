@@ -16,8 +16,8 @@ minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `mai
 - no `release.yml` run for `main`'s head already finished with a failure, which the cron would otherwise dispatch
   again every 20 minutes forever;
 - the `ci.yml` push run on `main`'s head concluded success, which is the release's own gate;
-- the newest `headless-smoke` commit status on that same commit is `success`, which is the record that the headless
-  client loaded that build, ran `/forever selftest` and found no Lua errors in the addon's folders. A commit without
+- the newest `headless-smoke` commit status on that same commit is `success`, which is the maintainer's record that
+  the build passed its pre-release checks with no Lua errors in the addon's folders. A commit without
   one is reported as waiting and retried by the next run, never as failed, so a release waits for the smoke instead of
   turning the job red.
 
@@ -70,7 +70,7 @@ MARKER = "<!-- forever-core-sync -->"
 CHANGELOG = "CHANGELOG.md"
 RELEASE_WORKFLOW = "release.yml"
 CI_WORKFLOW = "ci.yml"
-# The commit status `forever_client.py smoke` posts, which `tools/smoke_queue.py` fills in ahead of a release.
+# The commit status that records a commit's pre-release checks, posted ahead of a release.
 SMOKE_CONTEXT = "headless-smoke"
 # The published addons that embed ForeverCore under Libs/ForeverCore (`forever_tools.fleet`, which each consumer's own
 # release also runs). While any of them still ships the shared top-level ForeverCore folder, removing or downgrading
@@ -164,7 +164,7 @@ def decide(
     Pure, so the whole rule is unit-tested without the network: only a marked newest entry with no notes under
     `## [Unreleased]`, whose tag is missing, whose release is idle, whose head has no failed release run, whose full
     CI on main's head passed and whose head carries a green `headless-smoke` status is dispatched. A missing smoke is a
-    reason to wait for `tools/smoke_queue.py` and try again, never a failure.
+    reason to wait and try again, never a failure.
     """
     if changelog is None:
         return Decision(reason="main has no CHANGELOG.md")
@@ -299,8 +299,8 @@ def ci_runs(repo: str, sha: str) -> dict:
 def smoke_status(repo: str, sha: str) -> str:
     """The state of the newest `headless-smoke` status on `sha`, or `missing` before any smoke has posted one.
 
-    `tools/smoke_queue.py` reads the same status to choose what to smoke, and a release waits for it rather than
-    failing, so a commit that has not been in the client yet is simply not released this run.
+    A release waits for it rather than failing, so a commit that has not been checked yet is simply not released this
+    run.
     """
     statuses = api_json(f"repos/{OWNER}/{repo}/commits/{sha}/statuses")
     for status in statuses:

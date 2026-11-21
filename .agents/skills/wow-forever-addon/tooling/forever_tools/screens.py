@@ -5,7 +5,7 @@ wago.tools), so CI checks them against their scene dumps. A dump should cover on
 its own render module and the data or Lua it reads. A change elsewhere then leaves the record unchanged.
 
 Each addon names its scenes in `tools/check_screenshots.py`, mapping image names to functions returning dump bytes.
-Use a slice of a headless run's JSON or `files` over the sources an image reads. `record` writes the image and
+Use a slice of a simulated run's JSON or `files` over the sources an image reads. `record` writes the image and
 dump hashes to `docs/screenshots/scenes/<image name>.sha256`. `check` recomputes the hashes and reports stale
 screenshots and records. An existing `scenes.sha256` supplies entries missing from `scenes/` until the next
 successful `--record` migrates them.

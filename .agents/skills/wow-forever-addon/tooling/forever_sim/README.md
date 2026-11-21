@@ -1,6 +1,6 @@
 # forever_sim
 
-A headless WoW: Forever client for scenario tests. Real Blizzard UI code runs under LuaJIT, with the addons under
+A simulated WoW: Forever client API for scenario tests. Real Blizzard UI code runs under LuaJIT, with the addons under
 test, so the bugs the offline specs miss show up: secret values, taint, gamepad-interface taint, broken saved
 states and frames covering each other. Each repo vendors this folder as `tools/forever_sim/`, byte for byte, in the
 same way as `forever_tools` (`python3 tools/forever_sim/sync.py check|update|pin`).

@@ -207,7 +207,7 @@ class DecideTest(unittest.TestCase):
 
 
 class SmokeStatusTest(unittest.TestCase):
-    """The status `forever_client.py smoke` posts, read the way the smoke queue reads it."""
+    """The pre-release status, read the way the release gate reads it."""
 
     def status(self, context="headless-smoke", state="success"):
         return {"context": context, "state": state}

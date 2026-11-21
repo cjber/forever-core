@@ -1,4 +1,4 @@
--- forever_sim: a headless WoW: Forever client for scenario tests.
+-- forever_sim: a simulated WoW: Forever client API for scenario tests.
 --
 --   local Sim = dofile("tools/forever_sim/sim.lua")
 --   local sim = Sim.new({ ui = "tools/.cache/wow-ui-source" })

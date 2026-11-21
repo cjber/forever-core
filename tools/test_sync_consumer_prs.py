@@ -1737,7 +1737,7 @@ class MainTest(unittest.TestCase):
 
 
 class VisualProofHintTest(unittest.TestCase):
-    """A sync PR that changes runtime files prints the proof command the release session has to run."""
+    """A sync PR that changes runtime files prints the note naming the head a proof is needed for."""
 
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -1757,12 +1757,11 @@ class VisualProofHintTest(unittest.TestCase):
         (self.root / ".visual-proof.json").write_text(json.dumps({"input_digest": "0" * 64}))
         self.assertTrue(sync.proof_needed(self.root, ["UI/WhatsNew.lua"]))
 
-    def test_the_hint_names_the_exact_request_and_head(self):
+    def test_the_hint_names_the_repo_and_head(self):
         hint = sync.proof_hint("legacy-forever", "f" * 40)
-        self.assertIn(f"INGAME legacy-forever {'f' * 40}", hint)
-        self.assertIn("kind: proof", hint)
-        self.assertIn("checkout:", hint)
-        self.assertIn("flows:", hint)
+        self.assertIn("legacy-forever", hint)
+        self.assertIn("f" * 40, hint)
+        self.assertIn(sync.VISUAL_PROOF, hint)
         self.assertIn(".visual-proof.json", hint)
         self.assertIn("visual-proof", hint)
 
@@ -1800,7 +1799,7 @@ class VisualProofHintTest(unittest.TestCase):
         ):
             result = sync.sync_consumer("legacy-forever", self.root, self.root, "a" * 40)
         self.assertEqual(result.status, "opened")
-        self.assertIn(f"INGAME legacy-forever {'f' * 40}", out.getvalue())
+        self.assertIn("f" * 40, out.getvalue())
 
 
 if __name__ == "__main__":

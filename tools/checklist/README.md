@@ -1,6 +1,6 @@
 # Test checklist
 
-The page the user works through in the live client before an addon release, and the results the coordinator reads.
+The page the user works through in game before an addon release, and the results the coordinator reads.
 It is coordinator tooling: nothing here is vendored into an addon or loaded by the game.
 
 ![The checklist page for a round: the addon jump bar, the builds and a check with its expected pictures](preview.png)
@@ -43,14 +43,14 @@ behind one line, and expected pictures (`--picture`, repeatable) open on a click
 
 1. When a PR needs the user's eyes, add its checks to the coordinator's current round with `checklist add`: one check
    per thing to look at, steps a first-time reader can follow, a pass line that says exactly what they see, and the
-   PR's screenshot at its head SHA (or a headless capture) as `--picture`.
+   PR's screenshot at its head SHA (or a capture) as `--picture`.
 2. The coordinator records each linked build with `checklist build`, runs `checklist serve` and opens the page.
 3. Read `checklist status` for results; a fail carries the user's note and screenshot.
 4. Record `--artifact` (the unpacked build linked into AddOns; its files are hashed), `--digest` (its runtime digest)
    and `--client-build` (the client's version line) with `checklist build` so a pass binds to the exact runtime;
    `status --json` returns them under `build`, with the artifact's hash now as `artifact_sha256_now`. A page left open
    from an earlier build cannot record a status for the new one.
-5. `forever_client.py attest --repo X --ref S --checkout PATH` turns a passed build into its `.visual-proof.json`.
+5. A passed build is turned into its `.visual-proof.json` with the maintainer's own tooling.
 6. Release tooling gates on `checklist status --addon X --sha S`: exit 0 when every check for that exact build passed (a
    skip passes only on a check marked optional), 1 when one did not, 2 when no round covers the build.
 

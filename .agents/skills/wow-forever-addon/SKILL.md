@@ -125,7 +125,7 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
 - **WFA-9** Screenshots come from `tools/screenshots.py` via the `wow-mock-screenshots` skill, one
   per headline feature, regenerated in the same PR as any UI change they show. README, store page
   and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes/<image name>.sha256` records
-  that image's hash beside its scene dump's (`forever_tools.screens`). CI recomputes the dumps headlessly
+  that image's hash beside its scene dump's (`forever_tools.screens`). CI recomputes the dumps offline
   (`tools/check_screenshots.py`) and fails when a dump moved but its image did not.
   Every PR body shows every image in `docs/screenshots/`, linked at the head commit's SHA: the changed
   ones in full under `## Screenshots`, the rest in `<details>` blocks.
@@ -208,18 +208,17 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   the player's way to the feature and adds the states that have broken before: combat, a secret tooltip, the
   gamepad interface, Questie's tracker, an old saved file. A fix for a reported error comes with a scenario that
   fails on the release the error was reported against.
-- **WFA-40** A change is proven in the real client by what it does and what it costs, not by how it looks. A
+- **WFA-40** A change is proven in game by what it does and what it costs, not by how it looks. A
   screenshot passes a window that closes on the next click and a handler that freezes the client for a second.
   - Every surface the change touches gets a proof flow: the actions a player takes there (open, sort, click, buy,
     open the bags, turn the camera), each with its expected result, written as a Lua flow that raises on the first
-    mismatch so the proof fails ([in-game.md](in-game.md#behaviour-and-cost-flows)). A hardware-only action is the
-    flow's `--flow-click`.
+    mismatch so the proof fails.
   - Every flow reads `!!DevPerf`'s per-event split for its own actions: a Forever handler call or a tick over one
     frame (1000/60 ms) fails it, named by addon and event. WFA-13's 3 ms budget still holds; this is the floor a
-    proof enforces in the client.
+    proof enforces.
   - Every proof runs with full logging: `taintLog` 2, `scriptErrors` 1, BugGrabber, DevSessionLog and the
     `!!DevPerf` profiler. A new BugGrabber entry naming an addon of ours fails the proof, as does a taint.log record
-    of our taint reaching secure code (`forever_errors.taint_defect`: a blocked action, or Blizzard code writing or
+    of our taint reaching secure code (a blocked action, or Blizzard code writing or
     running tainted outside a secure call); one addon reading another's value is not a defect. A FAIL reports the exact error, its stack and the event or action that raised it, never a summary.
   - Every `CHANGELOG.md` bullet the change adds maps to the flow that proves it, listed in the pull request body.
   - Where Forever's client differs from retail, the behaviour is modelled in `forever_sim` from a live record, and
@@ -265,12 +264,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   Release prep starts by translating every phrase added since the last tag into each shipped locale (WFA-34):
   `tools/check_locales.py` lists each locale's coverage, and `--release` fails until every shipped locale is back at
   100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
-  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges: send the
-  in-game agent an `INGAME ... kind: proof` request with the checkout and `flows: update notice=<the addon's slash
-  command or Lua file>` ([in-game.md](in-game.md)). It builds the commit, runs the flow, uploads the screenshots to a
-  secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change. The required
-  `visual-proof` check then passes without an admin merge. A build the user passed on the test checklist gets the
-  file from `forever_client.py attest` instead ([in-game.md](in-game.md#from-the-users-checklist-pass)).
+  ForeverCore pin, record the visual proof their runtime changes need before the pull request merges: the proof is the
+  `.visual-proof.json` for that exact build (its screenshots uploaded to a secret gist), committed with the change.
+  The required `visual-proof` check then passes without an admin merge.
 - **WFA-39** A ForeverCore release keeps every consumer release already on the stores working, including one
   pinned to an older core: players and the CurseForge app update core on its own, before the sync re-releases reach
   them. Core changes are additive. A public function, field, event, slash command or saved-variable shape a released
@@ -278,14 +274,13 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   New behaviour stays off for a released consumer until that consumer opts in. The gate proves it: core's required
   `released-consumers` job and its `release.yml` step load the candidate core under forever_sim with each consumer's
   newest GitHub release zip (`python3 tools/suite_load.py --released`), and core's `headless-smoke` status, which
-  `release_check.py` requires, links the same released zips beside the candidate and runs `/forever selftest`. A Lua
+  `release_check.py` requires, covers the same released zips beside the candidate. A Lua
   error from either, or a released addon that never reached `ForeverCore.Register` because its startup check refused
   the candidate, blocks the release; fix core, never the released consumer.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
-  commit SHA, so every repo reads the latest standards. Headless specs pass on builds that are broken in game, so a change
+  commit SHA, so every repo reads the latest standards. Specs pass on builds that are broken in game, so a change
   to anything the player sees or to combat behaviour is verified live in game before it merges, and
-  the PR says what was checked. Agents run that check themselves in the headless client
-  ([in-game.md](in-game.md), whose hard rules bound every session: interface only, short, human pace); [debugging.md](debugging.md) covers taint, profiling and reading
+  the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
   results out of the client.
 
 ### Repository

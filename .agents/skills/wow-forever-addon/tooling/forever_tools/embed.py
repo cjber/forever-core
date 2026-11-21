@@ -2,9 +2,9 @@
 
     python3 -m tools.forever_tools.embed [--core DIR] [ROOT]
 
-Run it on a disposable checkout right before the packager (the CI package job, the Release workflow and
-`forever_client.py build-dev`): it rewrites the checkout in place. It does nothing unless the root TOC opts in with
-`## X-Forever-Core-Embed: 1`, so every consumer's workflows can call it.
+Run it on a disposable checkout right before the packager (the CI package job and the Release workflow): it
+rewrites the checkout in place. It does nothing unless the root TOC opts in with `## X-Forever-Core-Embed: 1`, so
+every consumer's workflows can call it.
 
 What it writes:
 
