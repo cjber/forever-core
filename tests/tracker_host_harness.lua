@@ -552,6 +552,14 @@ function harness.new(options)
 			host.scripts.OnEvent(host, event, ...)
 		end
 	end
+	function ctx.isSettling()
+		for _, f in ipairs(frames) do
+			if f.scripts.OnUpdate then
+				return true
+			end
+		end
+		return false
+	end
 	function ctx.advanceSettling()
 		for _ = 1, 2 do
 			for _, f in ipairs(frames) do

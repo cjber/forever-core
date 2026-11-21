@@ -63,17 +63,19 @@ local function Where()
 end
 
 -- Runs every queued frame until nothing is pending. Returns the frames that ran and how often the host's position
--- differed from where it started.
+-- changed from the previous frame.
 local function Settle()
 	local x, y = Where()
 	local frames, moves = 0, 0
-	while t.pending() > 0 do
+	while t.pending() > 0 or t.isSettling() do
 		frames = frames + 1
 		assert(frames < 20, "the column never settles")
 		t.drain()
+		t.advanceSettling()
 		local nx, ny = Where()
 		if nx ~= x or ny ~= y then
 			moves = moves + 1
+			x, y = nx, ny
 		end
 	end
 	return frames, moves
@@ -104,7 +106,7 @@ end
 check(list.trackerOverflow == true, "the long list overflows and scrolls")
 local x0, y0 = Where()
 
--- Zone and subzone changes, a quest log update and a taxi flight's control events reach nothing in the host.
+-- Zone, quest and taxi events leave the column and its sections alone when tracker geometry stays the same.
 local events = {
 	"ZONE_CHANGED",
 	"ZONE_CHANGED_INDOORS",
@@ -158,10 +160,15 @@ do
 	Untouched(before, animations, "the action bars moving")
 	local point = t.host.point
 	t.nativeRect.left, t.nativeRect.top = 600, 700
-	check(t.pending() == 0 and t.host.point == point, "an Edit Mode move of the game tracker runs nothing in the host")
+	check(t.pending() == 0 and t.host.point == point, "a tracker move alone leaves the column still")
+	t.fire("EDIT_MODE_LAYOUTS_UPDATED")
+	local _, trackerMoves = Settle()
+	check(trackerMoves == 1, "the column resamples the tracker once after the Edit Mode event")
 	check(t.host:GetRight() == 600 and t.host:GetTop() == 700, "the corners stay together after the move")
 	Untouched(before, animations, "an Edit Mode move of the game tracker")
 	t.nativeRect.left, t.nativeRect.top = 940, 880
+	t.fire("EDIT_MODE_LAYOUTS_UPDATED")
+	Settle()
 end
 
 -- One section's change rebuilds that section alone, in one frame.
