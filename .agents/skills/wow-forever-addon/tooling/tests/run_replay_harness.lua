@@ -52,6 +52,9 @@ local function Session(opts)
 			return event == "PLAYER_ENTERING_WORLD" and opts.worldSeen == true
 		end,
 		WorldEntry = function()
+			if opts.unobserved then
+				return
+			end
 			return true, false
 		end,
 	}
@@ -161,5 +164,15 @@ expect(
 late.Fire("ADDON_LOADED", "Demo")
 late.Tick()
 assert(#late.got == 5, "no second delivery")
+
+-- An older registry can know the world entry is past without having seen its flags.
+local unobserved = Session({ inline = true, loggedIn = true, worldSeen = true, unobserved = true })
+unobserved.Fire("ADDON_LOADED", "Demo")
+unobserved.Tick()
+expect(
+	unobserved,
+	"ADDON_LOADED:Demo:nil PLAYER_LOGIN:nil:nil PLAYER_ENTERING_WORLD:false:false",
+	"late load without an observed world entry"
+)
 
 print("run_replay_harness: passed")
