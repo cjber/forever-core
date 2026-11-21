@@ -355,6 +355,7 @@ HOLD_SLICE = 0.25  # seconds between safety checks while keys are held
 HOLD_GRACE = 2.0  # seconds past a hold's end before its watchdog releases what is still down
 # Keys that move the character on the client's default bindings: a raw hold of one marks the job as having moved it.
 MOVEMENT_KEYSYMS = {"w", "a", "s", "d", "q", "e", "space", "Up", "Down", "Left", "Right"}
+CHAT_FOCUS_POLLS = 30  # 0.1 s strip reads after a Return before the next key: the frame lags on a loaded machine
 MENU_CLOSE_TRIES = 2  # Escape presses to close a Game Menu left open; one closes it, the second covers a dropped key
 # The game's own window title: the character-select nudge sends Return only to it, never to the launcher, whose
 # focused Play button a Return would press again.
@@ -1921,12 +1922,16 @@ def focus_chat(state: Mapping) -> None:
     for key in (None, "Return", "Escape", "Return"):
         if key:
             send(state, "key", key)
-            time.sleep(0.1)
-        ui = client_ui(state)
-        if not ui["world"]:
-            raise ClientError("slash needs the world: there is no chat box at the login or character screen")
-        if ui["chat"]:
-            return
+        # A loaded machine can take well over 0.1 s to draw the frame whose strip shows the focus a Return gave, so a
+        # Return is followed by polls of the strip rather than one early read that types nothing.
+        for poll in range(CHAT_FOCUS_POLLS if key == "Return" else 1):
+            if key or poll:
+                time.sleep(0.1)
+            ui = client_ui(state)
+            if not ui["world"]:
+                raise ClientError("slash needs the world: there is no chat box at the login or character screen")
+            if ui["chat"]:
+                return
     raise ClientError("slash refused: the chat edit box did not acquire focus")
 
 
