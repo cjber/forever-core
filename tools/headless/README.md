@@ -59,6 +59,8 @@ profession window, say), and settles again. Each flow reloads first, so a later 
 Exit 3 means the player's client is in use. Exit 4 means live safety refused the operation:
 `player is dead or a ghost`, `player is in combat`, or the version 2 safety protocol is
 unavailable or outdated. Other client errors use exit 2.
+A dead character out of combat still takes `click` and `hover`, so it can release and be revived at the spirit
+healer; every other verb refuses it.
 
 ## Shared commands
 

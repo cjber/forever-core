@@ -1832,13 +1832,19 @@ def client_ui(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> d
         return unknown
 
 
+# Verbs a dead character still takes: Release Spirit and the spirit healer need a click, and a tooltip a hover. Every
+# other verb refuses a ghost, so the test character can be revived without opening movement, keys or Lua to one.
+DEAD_OK_VERBS = frozenset({"click", "hover"})
+dead_ok = False  # set by input_verb for one DEAD_OK_VERBS command; read by require_safe through x()
+
+
 def require_safe(state: Mapping, *, waiting: bool = False) -> None:
     ui = client_ui(state)
     if not ui.get("safety"):
         if waiting:
             return  # Loading screens have no strip. Keep waiting for the world.
         raise SafetyRefusal("live safety protocol unavailable or outdated: version 2 headless addon required")
-    if ui["dead"]:
+    if ui["dead"] and not (dead_ok and not ui["combat"]):
         raise SafetyRefusal("player is dead or a ghost")
     if ui["combat"]:
         raise SafetyRefusal("player is in combat")
@@ -5885,6 +5891,8 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     """One verb that touches the client, run inside the job that holds it."""
     if not state.get("ready") and not launcher_verb(state, args.verb, getattr(args, "button", None)):
         raise ClientError("the session is not in the world yet: wait for `up` to print READY")
+    global dead_ok
+    dead_ok = args.verb in DEAD_OK_VERBS
     if args.verb != "shot" and state.get("ready"):
         require_safe(state)
     if args.verb == "shot":

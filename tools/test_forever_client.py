@@ -2631,6 +2631,17 @@ class StopHandlersTest(unittest.TestCase):
 class SmokeTest(unittest.TestCase):
     """The release smoke: build, selftest, errors per folder, one commit status, links put back."""
 
+    def test_a_dead_character_takes_only_clicks_and_hovers_out_of_combat(self):
+        dead = {"safety": True, "dead": True, "combat": False}
+        with mock.patch.object(fc, "client_ui", return_value=dead), mock.patch.object(fc, "dead_ok", True):
+            REAL_REQUIRE_SAFE({})
+        with mock.patch.object(fc, "client_ui", return_value=dead), mock.patch.object(fc, "dead_ok", False):
+            self.assertRaisesRegex(fc.SafetyRefusal, "dead or a ghost", REAL_REQUIRE_SAFE, {})
+        fighting = dead | {"combat": True}
+        with mock.patch.object(fc, "client_ui", return_value=fighting), mock.patch.object(fc, "dead_ok", True):
+            self.assertRaisesRegex(fc.SafetyRefusal, "dead or a ghost", REAL_REQUIRE_SAFE, {})
+        self.assertEqual(fc.DEAD_OK_VERBS, {"click", "hover"})
+
     def test_smoke_refuses_live_unsafe_state_before_build_or_input(self):
         with (
             mock.patch.object(fc, "require_safe", REAL_REQUIRE_SAFE),
