@@ -39,11 +39,15 @@ local function safeCharacter()
 		return false, "unexpected player identity"
 	end
 	local dead, combat = safety()
-	if dead then
-		return false, "player is dead or a ghost"
-	end
 	if combat then
 		return false, "player is in combat"
+	end
+	-- A ghost out of combat still signals readiness, so a session can start for it and revive it with forever_client's
+	-- dead-allowed verbs; the live strip carries the dead bit and every other verb refuses it (forever-core#1009).
+	-- An unreadable dead state still refuses.
+	local isDead = _G.UnitIsDeadOrGhost
+	if dead and (type(isDead) ~= "function" or isDead("player") ~= true) then
+		return false, "dead state unavailable"
 	end
 	return true, realm or ""
 end
