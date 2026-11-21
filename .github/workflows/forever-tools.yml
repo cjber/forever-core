@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -16,6 +17,7 @@ jobs:
   # The Python version CI pins lives in tools/toolchain.json, which the action below reads from this checkout; the
   # matrix adds the oldest version the tooling supports.
   pins:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -28,6 +30,7 @@ jobs:
         id: toolchain
 
   check:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: pins
     runs-on: ubuntu-24.04
     timeout-minutes: 15
