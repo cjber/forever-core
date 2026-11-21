@@ -323,5 +323,26 @@ do
 	end
 	assert(read(8) == sum % 256, "the checksum")
 	assert(at == #row + 1, "nothing after the checksum")
+	-- A friendly target's nameplate is a restricted region: GetCenter raises, and the row paints with flag 3 false.
+	_G.C_NamePlate.GetNamePlateForUnit = function()
+		return {
+			IsVisible = function()
+				return true
+			end,
+			GetCenter = function()
+				error("Can't measure restricted regions")
+			end,
+			GetEffectiveScale = function()
+				return 1
+			end,
+		}
+	end
+	local firstTexture, firstUpdate = #textures + 14, #updates + 1
+	assert(loadstring(source))()
+	for index = firstUpdate, #updates do
+		assert(pcall(updates[index]), "a restricted nameplate must not raise")
+	end
+	local flag3 = textures[firstTexture + 10]
+	assert(flag3 and flag3.value == 0, "a plate the client refuses to measure leaves flag 3 false")
 	print("forever headless: motion row pass")
 end

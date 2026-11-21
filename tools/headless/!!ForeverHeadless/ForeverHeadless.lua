@@ -243,11 +243,14 @@ local function motionState()
 	flags[2] = _G.IsIndoors and _G.IsIndoors() and true or false
 	local plate = _G.C_NamePlate and _G.C_NamePlate.GetNamePlateForUnit and _G.C_NamePlate.GetNamePlateForUnit("target")
 	if plate and plate:IsVisible() then
-		local x = plate:GetCenter()
+		-- Friendly nameplates are restricted regions and refuse measurement; the x is optional, so leave flag 3 false.
+		local measured, x, scale = pcall(function()
+			return plate:GetCenter(), plate:GetEffectiveScale()
+		end)
 		local width = UIParent:GetWidth()
-		if x and width and width > 0 then
+		if measured and x and scale and width and width > 0 then
 			flags[3] = true
-			fields[7] = word(x * plate:GetEffectiveScale() / (width * UIParent:GetEffectiveScale()) * 65535)
+			fields[7] = word(x * scale / (width * UIParent:GetEffectiveScale()) * 65535)
 		end
 	end
 	if _G.UnitExists and _G.UnitExists("target") and type(_G.CheckInteractDistance) == "function" then
