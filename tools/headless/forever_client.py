@@ -1269,11 +1269,11 @@ def press_actions(state: Mapping, actions: Sequence[str], hold_for: float | None
     press(state, [keysym for combo in combos for keysym in combo], hold_for)
 
 
-# The motion row the headless addon draws under the safety strip (forever-core#820): an 8-cell header, four flags, seven
+# The motion row the headless addon draws under the safety strip (forever-core#820): an 8-cell header, five flags, ten
 # 16-bit fields and an 8-bit checksum, one 4-pixel cell per bit on pixel row 4 to 7.
 MOTION_HEADER = [True, False, False, True, True, False, True, True]
-MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x", "bindings")
-MOTION_FLAGS = ("known", "indoors", "plate", "near")
+MOTION_FIELDS = ("map", "x", "y", "facing", "width", "height", "plate_x", "bindings", "corpse_x", "corpse_y")
+MOTION_FLAGS = ("known", "indoors", "plate", "near", "corpse")
 MOTION_ROW = 6
 STRIP_ROWS = 8  # both strips sit in the frame's top 8 pixel rows
 # Closed-loop movement. Each step reads the motion row again; these bound one step, not the result.
@@ -1343,7 +1343,7 @@ def decode_motion(bits: Sequence[bool]) -> dict | None:
     if checksum != (sum(index for index, flag in enumerate(flags, 1) if flag) + sum(fields)) % 256:
         return None
     values = dict(zip(MOTION_FLAGS, flags, strict=True)) | dict(zip(MOTION_FIELDS, fields, strict=True))
-    for name in ("x", "y", "plate_x"):
+    for name in ("x", "y", "plate_x", "corpse_x", "corpse_y"):
         values[name] /= 65535
     values["facing"] = values["facing"] / 65535 * 2 * math.pi
     return values
@@ -1356,8 +1356,10 @@ def read_motion(state: Mapping) -> dict:
     for attempt in range(3):
         frame = strip_rows(state)
         ui = client_ui(state, frame) if frame else {"safety": False}
-        if ui.get("safety") and (ui["dead"] or ui["combat"]):
-            raise SafetyRefusal("player is dead or a ghost" if ui["dead"] else "player is in combat")
+        if ui.get("safety") and ui["combat"]:
+            raise SafetyRefusal("player is in combat")
+        if ui.get("safety") and ui["dead"] and not dead_ok:
+            raise SafetyRefusal("player is dead or a ghost")
         try:
             motion = motion_state(state, frame)
             break
@@ -1700,6 +1702,7 @@ def describe_motion(motion: Mapping) -> str:
         f"map {motion['map']} at {motion['x'] * 100:.2f}, {motion['y'] * 100:.2f} facing "
         f"{math.degrees(motion['facing']):.0f} deg (0 north, 90 west){', indoors' if motion['indoors'] else ''}"
         f"{', target within interact distance' if motion['near'] else ''}"
+        + (f", corpse at {motion['corpse_x'] * 100:.2f}, {motion['corpse_y'] * 100:.2f}" if motion["corpse"] else "")
     )
 
 
@@ -1832,10 +1835,11 @@ def client_ui(state: Mapping, frame: tuple[int, list[bytes]] | None = None) -> d
         return unknown
 
 
-# Verbs a dead character still takes: Release Spirit and the spirit healer need a click, and a tooltip a hover. Every
-# other verb refuses a ghost, so the test character can be revived without opening movement, keys or Lua to one.
-DEAD_OK_VERBS = frozenset({"click", "hover"})
-dead_ok = False  # set by input_verb for one DEAD_OK_VERBS command; read by require_safe through x()
+# Verbs a dead character out of combat still takes, so the test character can be revived: Release Spirit and the
+# resurrect popups are clicks, the corpse run is `walkto corpse`, and the spirit healer is INTERACTTARGET in reach.
+# Slash, eval and proofs still refuse a ghost (forever-core#1009).
+DEAD_OK_VERBS = frozenset({"click", "hover", "key", "face", "walkto", "where"})
+dead_ok = False  # True only while input_verb runs a DEAD_OK_VERBS command; read by require_safe and read_motion
 
 
 def require_safe(state: Mapping, *, waiting: bool = False) -> None:
@@ -5889,10 +5893,17 @@ def launcher_verb(state: Mapping, verb: str, button: str | None = None) -> bool:
 
 def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     """One verb that touches the client, run inside the job that holds it."""
-    if not state.get("ready") and not launcher_verb(state, args.verb, getattr(args, "button", None)):
-        raise ClientError("the session is not in the world yet: wait for `up` to print READY")
     global dead_ok
     dead_ok = args.verb in DEAD_OK_VERBS
+    try:
+        return run_input_verb(state, args)
+    finally:
+        dead_ok = False
+
+
+def run_input_verb(state: Mapping, args: argparse.Namespace) -> int:
+    if not state.get("ready") and not launcher_verb(state, args.verb, getattr(args, "button", None)):
+        raise ClientError("the session is not in the world yet: wait for `up` to print READY")
     if args.verb != "shot" and state.get("ready"):
         require_safe(state)
     if args.verb == "shot":
@@ -5919,6 +5930,12 @@ def input_verb(state: Mapping, args: argparse.Namespace) -> int:
     elif args.verb in ("face", "walkto"):
         if args.x == "target":
             motion = face_target(state) if args.verb == "face" else walkto_target(state)
+        elif args.x == "corpse":
+            here = read_motion(state)
+            if not here["corpse"]:
+                raise ClientError(f"{args.verb} corpse: the client shows no corpse on this map")
+            point = here["corpse_x"], here["corpse_y"]
+            motion = face(state, heading_to(here, *point)[0]) if args.verb == "face" else walkto(state, *point)
         else:
             if args.y is None:
                 raise ClientError(f"{args.verb} takes X Y or `target`")
@@ -6088,7 +6105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif name == "slash":
             p.add_argument("command")
         elif name in ("face", "walkto"):
-            p.add_argument("x", help="map x as the map shows it, 0 to 100, or `target`")
+            p.add_argument("x", help="map x as the map shows it, 0 to 100, `target`, or `corpse` for a ghost's corpse")
             p.add_argument("y", nargs="?", type=float, help="map y, 0 to 100")
             if name == "walkto":
                 p.add_argument("--map", type=int, dest="map_id", help="the map the point is on; refused on another")

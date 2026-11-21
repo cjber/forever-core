@@ -201,6 +201,11 @@ do
 		}
 	end
 	_G.CreateVector2D = Vector
+	_G.C_DeathInfo = {
+		GetCorpseMapPosition = function(map)
+			return map == 1453 and Vector(0.5, 0.25) or nil
+		end,
+	}
 	_G.C_Map = {
 		GetBestMapForUnit = function()
 			return 1453
@@ -276,10 +281,11 @@ do
 		return value
 	end
 	assert(read(8) == 155, "the motion header 10011011")
-	local flags = { read(1), read(1), read(1), read(1) }
+	local flags = { read(1), read(1), read(1), read(1), read(1) }
 	assert(flags[1] == 1 and flags[2] == 1 and flags[3] == 1 and flags[4] == 1, "known, indoors, plate, near")
+	assert(flags[5] == 1, "a corpse on this map")
 	local fields = {}
-	for index = 1, 8 do
+	for index = 1, 10 do
 		fields[index] = read(16)
 	end
 	assert(fields[1] == 1453, "the map")
@@ -290,7 +296,8 @@ do
 	-- forever_client hashes "MOVEFORWARD=S,;MOVEBACKWARD=DOWN,;..." the same way; tools/test_forever_client.py
 	-- checks the same string gives the same number.
 	assert(fields[8] == 30719, "the movement bindings hash")
-	local sum = 1 + 2 + 3 + 4
+	assert(fields[9] == math.floor(0.5 * 65535 + 0.5) and fields[10] == math.floor(0.25 * 65535 + 0.5), "the corpse")
+	local sum = 1 + 2 + 3 + 4 + 5
 	for _, value in ipairs(fields) do
 		sum = sum + value
 	end

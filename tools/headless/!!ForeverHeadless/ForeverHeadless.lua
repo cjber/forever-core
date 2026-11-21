@@ -109,8 +109,9 @@ end)
 -- screen. Each value is 16 bits, one 4-pixel cell per bit like the row above, closed by a checksum, so a torn or
 -- missing frame decodes as nothing rather than as a wrong position (forever-core#820).
 local MOTION_HEADER = { true, false, false, true, true, false, true, true }
-local FIELDS = 8 -- map, x, y, facing, map width, map height, target plate x, movement bindings hash
-local FLAGS = 4 -- position known, indoors, target plate shown, target within interact distance
+-- map, x, y, facing, map width, map height, target plate x, movement bindings hash, corpse x, corpse y
+local FIELDS = 10
+local FLAGS = 5 -- position known, indoors, target plate shown, target within interact distance, corpse on this map
 local motion = CreateFrame("Frame", nil, UIParent)
 motion:SetIgnoreParentScale(true)
 motion:SetFrameStrata("TOOLTIP")
@@ -198,7 +199,7 @@ end
 
 -- The player's motion state as flags and 16-bit fields; zeros with the first flag off when the position is unknown.
 local function motionState()
-	local flags, fields = { false, false, false, false }, { 0, 0, 0, 0, 0, 0, 0, bindingsHash }
+	local flags, fields = { false, false, false, false, false }, { 0, 0, 0, 0, 0, 0, 0, bindingsHash, 0, 0 }
 	local map = _G.C_Map and _G.C_Map.GetBestMapForUnit and _G.C_Map.GetBestMapForUnit("player")
 	local position = map and _G.C_Map.GetPlayerMapPosition and _G.C_Map.GetPlayerMapPosition(map, "player")
 	local facing = _G.GetPlayerFacing and _G.GetPlayerFacing()
@@ -210,6 +211,14 @@ local function motionState()
 		fields[4] = word(facing / (2 * math.pi) * 65535)
 		if size then
 			fields[5], fields[6] = word(size[1]), word(size[2])
+		end
+		-- A ghost's corpse on the same map, for `walkto corpse` (forever-core#1009).
+		local corpseAt = _G.C_DeathInfo and _G.C_DeathInfo.GetCorpseMapPosition
+		local corpse = type(corpseAt) == "function" and corpseAt(map)
+		if corpse then
+			local cx, cy = corpse:GetXY()
+			flags[5] = true
+			fields[9], fields[10] = word(cx * 65535), word(cy * 65535)
 		end
 	end
 	flags[2] = _G.IsIndoors and _G.IsIndoors() and true or false
