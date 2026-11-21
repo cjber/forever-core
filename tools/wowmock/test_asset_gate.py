@@ -127,6 +127,47 @@ class BannedTextureTest(unittest.TestCase):
                         self.assertIs(ui.texture(ref), image)
                     load.assert_called_once_with(fdid)
 
+    def test_static_popup_button_states_pass_the_gate(self):
+        # StaticPopupButtonTemplate's four texture files, set by Blizzard_StaticPopup_Game/GameDialog.xml.
+        paths = (
+            "interface/buttons/ui-dialogbox-button-up",
+            "interface/buttons/ui-dialogbox-button-down",
+            "interface/buttons/ui-dialogbox-button-disabled",
+            "interface/buttons/ui-dialogbox-button-highlight",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            ui = ui_in(directory)
+            for path in paths:
+                with self.subTest(path=path):
+                    self.assertTrue(legacy_chrome.is_legacy(path))
+                    self.assertIsNone(ui.check_asset(path))
+                    self.assertIsNone(legacy_chrome.reason(path))
+
+    def test_a_static_popup_button_state_renders_by_path_and_id(self):
+        # The one-button outdated-ForeverCore notice (#942) draws this on its StaticPopup's button.
+        path = "interface/buttons/ui-dialogbox-button-up"
+        fdid = 130715
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "paths.json").write_text(json.dumps({path: fdid}))
+            for ref in (path, fdid):
+                with self.subTest(ref=ref):
+                    ui = ui_in(directory)
+                    image = Image.new("RGBA", (32, 32))
+                    with patch.object(ui, "_image", return_value=image) as load:
+                        self.assertIs(ui.texture(ref), image)
+                    load.assert_called_once_with(fdid)
+
+    def test_static_popup_exception_does_not_allow_other_dialog_button_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ui = ui_in(directory)
+            for path in (
+                "interface/buttons/ui-dialogbox-button-gold-up",
+                "interface/buttons/ui-dialogbox-button-up-unknown",
+            ):
+                with self.subTest(path=path), self.assertRaises(BannedAsset):
+                    ui.texture(path)
+
     def test_native_checkbox_exception_does_not_allow_other_checkbox_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             ui = ui_in(directory)

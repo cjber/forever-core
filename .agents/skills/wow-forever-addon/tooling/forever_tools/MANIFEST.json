@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "assets.py": "18a092e60f2bb23e62bf7857906c4af1d0d9efdbd265202f0cba3738ca9e0c21",
+    "assets.py": "c7178f341af4a2b985e2e9c910b04f8e17487d65c37ae9c15324756b12beef2c",
     "backdrops.txt": "815f66269b9159e8672e8f684318ceb58509758d26f9d03eed02a75c1a0962c3",
     "changelog.py": "39c5cc9776663c596e1248bfa04fca913929bb92987cd650fee51c5d170fd76d",
     "client_calls.py": "2b9f60cab6047d40baa41ea062d81131598b841bbd258f9832ef1d27d0b39634",
@@ -31,7 +31,7 @@
     "identity.py": "ba47f923c9dbd73dc6f8f88fcfebed3e7ec3ae9a8aae8c0af3cc1b8c20ed17b3",
     "interface_paths.txt": "14179c8c508b67347fe98dacbf6f62e0a8ebaacc6a4e9c9ca8c016f8a957233e",
     "latest_build.py": "31d483946a872f5a90f62e03f34dae8b4a78f3516f819f323714687985f6e483",
-    "legacy_chrome.py": "e5f8424661ce0f26a00966222a1f3970d0a446970c90aa6d831c98b271a5e782",
+    "legacy_chrome.py": "4a43f70dc24f46f682d7e91dcc46acb9062774e20747771d5459314016dcc00b",
     "legacy_chrome.txt": "2883fb217ec2329ed06b2c4965ffe1d66fd64e47e88be51c30383bec8852ddbd",
     "locales.py": "f7dc8dbacbc5e422f4e3ca20251d6094236e9a604bbcd40e866d8fd5af30343d",
     "lua.py": "4ed4a32d328cb96cc6bf0775dbb2ab1bbeba2f6c1a741744d6a47d4478b41d48",
