@@ -1,7 +1,9 @@
 """Tests for tools/sync_consumers.py, run against throwaway core and consumer trees."""
 
 import contextlib
+import hashlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +17,8 @@ ALLOW = b"# allow\n"
 CLIENT_LOAD = b"# client load\n"
 CHECKER = b"# checker\n"
 TOC = "## Interface: 16001\nCore\\Own.lua\n"
+WARNING = b"-- Core/ForeverRequire.lua\n"
+TOC_WITH_GUARD = "## Interface: 16001\nCore\\Require.lua\n"
 LUACHECK = 'read_globals = { "CreateFrame" }\n'
 
 
@@ -148,6 +152,36 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertFalse((root / "addon/KilnForever/.github/workflows/visual-proof.yml").exists())
         self.assertFalse((root / ".github/workflows/visual-proof.yml").exists())
+
+    def test_a_vendored_module_refreshes_its_pinned_font_digest(self):
+        root = self.consumer()
+        self.write(root, ".pkgmeta", b"package-as: LegacyForever\n")
+        self.write(root, "LegacyForever.toc", TOC_WITH_GUARD.encode())
+        self.write(self.core, "tools/consumer/ForeverRequire.lua", WARNING)
+        manifest = {
+            "producers": [
+                {"source": "Core/ForeverRequire.lua", "sha256": "0" * 64, "bindings": []},
+                {"source": "UI/Window.lua", "sha256": "k" * 64, "bindings": [{"phrase": "Label"}]},
+            ]
+        }
+        self.write(root, "tools/font_bindings.json", json.dumps(manifest).encode())
+        code, out = self.run_sync(only=("Core/ForeverRequire.lua",))
+        self.assertEqual(code, 0, out)
+        updated = json.loads((root / "tools/font_bindings.json").read_text())
+        sources = {p["source"]: p["sha256"] for p in updated["producers"]}
+        self.assertEqual(sources["Core/ForeverRequire.lua"], hashlib.sha256(WARNING).hexdigest())
+        # A producer the addon reviews for itself keeps its digest and its bindings.
+        self.assertEqual(sources["UI/Window.lua"], "k" * 64)
+        self.assertEqual(len(updated["producers"][1]["bindings"]), 1)
+
+    def test_a_consumer_without_a_font_manifest_still_syncs(self):
+        root = self.consumer()
+        self.write(root, ".pkgmeta", b"package-as: LegacyForever\n")
+        self.write(root, "LegacyForever.toc", TOC_WITH_GUARD.encode())
+        self.write(self.core, "tools/consumer/ForeverRequire.lua", WARNING)
+        code, out = self.run_sync(only=("Core/ForeverRequire.lua",))
+        self.assertEqual(code, 0, out)
+        self.assertFalse((root / "tools/font_bindings.json").exists())
 
     def test_a_module_the_consumer_already_has_is_overwritten(self):
         root = self.consumer()

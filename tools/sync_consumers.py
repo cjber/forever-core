@@ -24,6 +24,7 @@ metadata, upload credential and store links from consumer-owned publishing files
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import sys
@@ -34,6 +35,7 @@ from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
 WARNING_MODULE = "Core/ForeverRequire.lua"
+FONT_MANIFEST = "tools/font_bindings.json"
 LOAD_GUARD = "Core/Require.lua"
 VISUAL_WORKFLOW = ".github/workflows/visual-proof.yml"
 VISUAL_PROOF_MODULE = "tools/forever_tools/visual_proof.py"
@@ -77,6 +79,33 @@ def warning_toc_edit(root, repo):
     after = "".join(line for line, entry in zip(lines[guard:], entries[guard:], strict=True) if entry != WARNING_MODULE)
     return toc, before + warning + after
 
+
+
+def font_digest_edit(root, repo, path, content):
+    """`path`'s pinned font-binding digest refreshed to `content`, or None.
+
+    `path` is core's file, vendored into `repo` by this sync, so the addon cannot review it; a digest the addon
+    pins for it would otherwise fail the addon's typecheck on every core change to the file (#998). Only the
+    digest moves: bindings, notes and every other producer stay exactly as the addon reviewed them.
+    """
+    manifest = root / consumer_path(repo, FONT_MANIFEST)
+    if not manifest.is_file():
+        return None
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    producers = data.get("producers")
+    if not isinstance(producers, list):
+        return None
+    fresh = digest(content)
+    stale = [p for p in producers if isinstance(p, dict) and p.get("source") == path and p.get("sha256") != fresh]
+    if not stale:
+        return None
+    for producer in stale:
+        producer["sha256"] = fresh
+    indent = 2
+    return manifest, json.dumps(data, indent=indent, ensure_ascii=False) + "\n"
 
 def release_gate_step(indent="      "):
     """The release-workflow step that fails a stale pin immediately before the packager uploads."""
@@ -274,6 +303,13 @@ def main(argv=None):
                 if not arguments.dry_run:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(origin, target)
+                    refreshed = font_digest_edit(root, repo, path, content)
+                    if refreshed is not None:
+                        font_manifest, font_text = refreshed
+                        changed += 1
+                        print(f"{repo}: {font_manifest.relative_to(root)}: {path} digest")
+                        if not arguments.dry_run:
+                            font_manifest.write_text(font_text, encoding="utf-8")
             if toc_edit is not None:
                 toc, text = toc_edit
                 changed += 1
