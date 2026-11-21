@@ -1309,19 +1309,26 @@ class ForeverClientTest(unittest.TestCase):
 
     def test_character_targets_match_the_whole_name_only(self):
         with (
-            mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(fc, "png_pixels", return_value=(3000, 1, 1, [b"\x00"])),
             mock.patch.object(fc, "write_pgm_channel"),
             mock.patch.object(
                 fc,
                 "ocr_words_with_lines",
                 return_value=[
-                    ("Hel", 90.0, 1600, 200, 40, 20, (1, 1, 1)),
-                    ("Helga", 90.0, 1600, 300, 60, 20, (1, 1, 2)),
-                    ("Berry", 90.0, 1600, 400, 60, 20, (1, 1, 3)),
+                    ("._Hel", 90.0, 3200, 400, 80, 40, (1, 1, 1)),
+                    ("Helga", 90.0, 3200, 600, 120, 40, (1, 1, 2)),
+                    ("Berry", 90.0, 3200, 800, 120, 40, (1, 1, 3)),
+                    ("Hel", 90.0, 1300, 1000, 80, 40, (1, 1, 4)),
                 ],
             ),
         ):
             self.assertEqual(fc.character_targets(Path("frame.png"), "Hel"), [(1600, 200, 40, 20)])
+
+    def test_character_select_channel_is_written_at_the_ocr_scale(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "frame.pgm"
+            fc.write_pgm_channel(path, 2, 1, 1, [bytes([0, 255])], 0, 2)
+            self.assertEqual(path.read_bytes(), b"P5\n4 2\n255\n" + bytes([255, 255, 0, 0]) * 2)
 
     def test_world_without_the_marker_is_refused_before_the_timeout(self):
         clock = iter(range(0, 1000, 5))
@@ -1337,7 +1344,7 @@ class ForeverClientTest(unittest.TestCase):
     def test_enter_world_targets_requires_adjacent_enter_and_world_words(self):
         with (
             mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
-            mock.patch.object(fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 896, 716, 127, 30, 1001)]),
+            mock.patch.object(fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 1792, 1432, 254, 60, 1001)]),
         ):
             self.assertEqual(fc.enter_world_targets(Path("frame.png")), [(896, 716, 127, 30, 51.4)])
 
