@@ -1344,7 +1344,9 @@ class ForeverClientTest(unittest.TestCase):
     def test_enter_world_targets_requires_adjacent_enter_and_world_words(self):
         with (
             mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
-            mock.patch.object(fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 1792, 1432, 254, 60, 1001)]),
+            mock.patch.object(
+                fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 1792, 1432, 254, 60, 1001)]
+            ),
         ):
             self.assertEqual(fc.enter_world_targets(Path("frame.png")), [(896, 716, 127, 30, 51.4)])
 
