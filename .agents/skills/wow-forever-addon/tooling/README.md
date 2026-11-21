@@ -36,7 +36,7 @@ version that either one proposes waits for review.
 | `core_pin` | PR packaging compares a consumer's ForeverCore pin (`tools/forever-core.txt`) with the `.pkgmeta` external and `## X-Forever-Core:` offline; the release workflow's `--latest` gate requires core's latest published GitHub release and fails closed when that release cannot be read, and an addon with no external is exempt only from the bundle comparison |
 | `core_archive` | Inspect every packaged ForeverCore copy, check its carried version against the pin and reject shared folders in embed-only packages. Release CI adds `--latest` and checks the ZIP before upload. |
 | `doctor` | Every tool pin in the vendored `tools/toolchain.json` and `tools/pyproject.toml` checked on this machine, each problem with its fix |
-| `screens` | `docs/screenshots/scenes.sha256`: each image's hash beside its scene dump's, and the CI check for a stale image |
+| `screens` | `docs/screenshots/scenes/<image name>.sha256` holds that image's hash and its scene dump's hash for the CI staleness check. Each dump covers only what its image draws, including its own render module and the data or Lua it reads, so changes elsewhere leave the record unchanged. |
 | `editorconfig` | The family `.editorconfig` template and its check against `stylua.toml` and `ruff.toml` |
 | `locales` | The translation check (WFA-34): every `Locales/<locale>.lua` parses, is loaded by the TOC, uses only the template's keys and keeps English's placeholders and escapes; prints each locale's coverage |
 | `family` | The shared "The Forever addons" block and its check in `README.md` and `docs/curseforge.md` |

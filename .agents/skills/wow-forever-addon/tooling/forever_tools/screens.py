@@ -1,16 +1,17 @@
 """Catch a screenshot left stale by a change to what it shows (WFA-9).
 
 The PNGs under `docs/screenshots/` are rendered locally (`tools/screenshots.py` needs Pillow, wowmock and
-wago.tools), so CI cannot redraw them. It can redraw what they are drawn from: each scene's dump, the headless
-layout or data `tools/screenshots.py` reads before drawing anything. `record` writes `docs/screenshots/scenes.sha256`
-beside the PNGs, one line per image with its sha256 and its dump's; `check` recomputes the dumps and fails when one
-moved but its image did not, when an image changed with no new record, or when an image and a record disagree.
+wago.tools), so CI checks them against their scene dumps. A dump should cover only what its image draws:
+its own render module and the data or Lua it reads. A change elsewhere then leaves the record unchanged.
 
-Each addon names its scenes in a thin `tools/check_screenshots.py`: a mapping from image name to a function
-returning that image's dump as bytes (a slice of a headless run's JSON, or `files` over the source an image reads).
+Each addon names its scenes in `tools/check_screenshots.py`, mapping image names to functions returning dump bytes.
+Use a slice of a headless run's JSON or `files` over the sources an image reads. `record` writes the image and
+dump hashes to `docs/screenshots/scenes/<image name>.sha256`. `check` recomputes the hashes and reports stale
+screenshots and records. An existing `scenes.sha256` supplies entries missing from `scenes/` until the next
+successful `--record` migrates them.
 
     python3 tools/check_screenshots.py           # CI: fail on a stale image
-    python3 tools/check_screenshots.py --record  # after tools/screenshots.py: write scenes.sha256
+    python3 tools/check_screenshots.py --record  # after tools/screenshots.py: write per-scene records
 """
 
 import argparse
@@ -20,9 +21,10 @@ import sys
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
-__all__ = ["RECORD", "check", "dump_json", "files", "main", "read", "record"]
+__all__ = ["RECORD_DIR", "check", "dump_json", "files", "main", "read", "record"]
 
-RECORD = "scenes.sha256"
+RECORD_DIR = "scenes"
+LEGACY_RECORD = "scenes.sha256"
 IMAGES = ("*.png", "*.gif")
 
 Scenes = Mapping[str, Callable[[], bytes]]
@@ -49,16 +51,25 @@ def files(root: Path, patterns: Iterable[str]) -> bytes:
     return "\n".join(sorted(set(lines))).encode()
 
 
+def record_path(name: str) -> Path:
+    return Path(RECORD_DIR) / f"{name}.sha256"
+
+
 def read(folder: Path) -> dict[str, tuple[str, str]]:
-    """The record as {image: (image sha256, dump sha256)}; empty when there is none yet."""
-    path = folder / RECORD
-    if not path.is_file():
-        return {}
+    """Return {image: (image sha256, dump sha256)}, filling missing records from the legacy file."""
     entries = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip() and not line.startswith("#"):
-            name, image, dump = line.split()
+    directory = folder / RECORD_DIR
+    for path in directory.glob("*.sha256"):
+        if path.is_file():
+            name = path.name.removesuffix(".sha256")
+            image, dump = path.read_text(encoding="utf-8").split()
             entries[name] = (image, dump)
+    legacy = folder / LEGACY_RECORD
+    if legacy.is_file():
+        for line in legacy.read_text(encoding="utf-8").splitlines():
+            if line.strip() and not line.startswith("#"):
+                name, image, dump = line.split()
+                entries.setdefault(name, (image, dump))
     return entries
 
 
@@ -71,20 +82,27 @@ def record(folder: Path, scenes: Scenes, force: bool = False) -> list[str]:
     if missing:
         raise SystemExit(f"no image for {', '.join(missing)}; run tools/screenshots.py first")
     recorded = read(folder)
-    lines, stale = [], []
+    entries, stale = {}, []
     for name in sorted(scenes):
         image, dump = sha256((folder / name).read_bytes()), sha256(scenes[name]())
         if name in recorded and recorded[name][0] == image and recorded[name][1] != dump:
             stale.append(name)
-        lines.append(f"{name} {image} {dump}")
+        entries[name] = (image, dump)
     if stale and not force:
         raise SystemExit(
             f"{', '.join(stale)}: what it shows changed but the image did not; run tools/screenshots.py, "
             "or pass --force if it rendered the same pixels"
         )
-    header = "# image sha256 dump-sha256; written by tools/check_screenshots.py --record, checked in CI\n"
-    (folder / RECORD).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
-    return lines
+    for name, (image, dump) in entries.items():
+        path = folder / record_path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{image} {dump}\n", encoding="utf-8")
+    current = {folder / record_path(name) for name in scenes}
+    for path in (folder / RECORD_DIR).glob("*.sha256"):
+        if path.is_file() and path not in current:
+            path.unlink(missing_ok=True)
+    (folder / LEGACY_RECORD).unlink(missing_ok=True)
+    return [f"{name} {image} {dump}" for name, (image, dump) in entries.items()]
 
 
 def check(folder: Path, scenes: Scenes) -> list[str]:
@@ -100,27 +118,34 @@ def check(folder: Path, scenes: Scenes) -> list[str]:
             problems.append(f"{name}: missing; run tools/screenshots.py")
             continue
         if name not in recorded:
-            problems.append(f"{name}: not in {RECORD}; run tools/check_screenshots.py --record")
+            problems.append(f"{name}: not in {record_path(name).as_posix()}; run tools/check_screenshots.py --record")
             continue
         image_was, dump_was = recorded[name]
         image_now, dump_now = sha256(path.read_bytes()), sha256(scenes[name]())
         if dump_now != dump_was and image_now == image_was:
             problems.append(f"{name}: what it shows changed but the image did not; run tools/screenshots.py")
         elif dump_now != dump_was or image_now != image_was:
-            problems.append(f"{name}: differs from {RECORD}; run tools/check_screenshots.py --record")
+            problems.append(
+                f"{name}: differs from {record_path(name).as_posix()}; run tools/check_screenshots.py --record"
+            )
     for name in sorted(recorded.keys() - scenes.keys()):
-        problems.append(f"{name}: recorded in {RECORD} but no longer a scene; run tools/check_screenshots.py --record")
+        problems.append(
+            f"{name}: recorded in {record_path(name).as_posix()} but no longer a scene; "
+            "run tools/check_screenshots.py --record"
+        )
     return problems
 
 
 def main(folder: Path, scenes: Scenes, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--record", action="store_true", help=f"write {RECORD} from the images and dumps now")
+    parser.add_argument(
+        "--record", action="store_true", help=f"write records in {RECORD_DIR}/ from the images and dumps now"
+    )
     parser.add_argument("--force", action="store_true", help="with --record: accept an image a fresh render left as is")
     args = parser.parse_args(argv)
     if args.record:
         lines = record(folder, scenes, args.force)
-        print(f"Screenshots: recorded {len(lines)} images in {RECORD}")
+        print(f"Screenshots: recorded {len(lines)} images in {RECORD_DIR}/")
         return 0
     problems = check(folder, scenes)
     for problem in problems:
