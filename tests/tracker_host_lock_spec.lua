@@ -74,6 +74,7 @@ local function frame()
 		self.point = nil
 	end
 	f.RegisterEvent = noop
+	f.RegisterUnitEvent = noop
 	f.SetMovable, f.RegisterForDrag, f.EnableMouse = noop, noop, noop
 	f.clamped = true
 	function f:SetClampedToScreen(value)

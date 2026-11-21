@@ -63,17 +63,19 @@ local function Where()
 end
 
 -- Runs every queued frame until nothing is pending. Returns the frames that ran and how often the host's position
--- differed from where it started.
+-- changed from the previous frame.
 local function Settle()
 	local x, y = Where()
 	local frames, moves = 0, 0
-	while t.pending() > 0 do
+	while t.pending() > 0 or t.isSettling() do
 		frames = frames + 1
 		assert(frames < 20, "the column never settles")
 		t.drain()
+		t.advanceSettling()
 		local nx, ny = Where()
 		if nx ~= x or ny ~= y then
 			moves = moves + 1
+			x, y = nx, ny
 		end
 	end
 	return frames, moves
@@ -104,7 +106,7 @@ end
 check(list.trackerOverflow == true, "the long list overflows and scrolls")
 local x0, y0 = Where()
 
--- Zone and subzone changes, a quest log update and a taxi flight's control events reach nothing in the host.
+-- Zone, quest and taxi events leave the column and its sections alone when tracker geometry stays the same.
 local events = {
 	"ZONE_CHANGED",
 	"ZONE_CHANGED_INDOORS",

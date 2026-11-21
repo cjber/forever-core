@@ -224,6 +224,10 @@ function harness.new(options)
 			self.events = self.events or {}
 			self.events[event] = true
 		end
+		function f:RegisterUnitEvent(event, unit)
+			self:RegisterEvent(event)
+			self.events[event] = unit
+		end
 		f.SetMovable = noop
 		function f:RegisterForDrag(button)
 			self.dragButton = button
@@ -559,16 +563,32 @@ function harness.new(options)
 	-- Deliver events to registered frames, as the client does.
 	function ctx.fire(event, ...)
 		for _, f in ipairs(frames) do
-			if f.events and f.events[event] and f.scripts.OnEvent then
+			local registration = f.events and f.events[event]
+			if registration and (registration == true or registration == (...)) and f.scripts.OnEvent then
 				f.scripts.OnEvent(f, event, ...)
+			end
+		end
+	end
+	function ctx.isSettling()
+		for _, f in ipairs(frames) do
+			if f.scripts.OnUpdate then
+				return true
+			end
+		end
+		return false
+	end
+	function ctx.advanceSettling()
+		for _, f in ipairs(frames) do
+			if f.scripts.OnUpdate then
+				f.scripts.OnUpdate(f, 1 / 60)
 			end
 		end
 	end
 	function ctx.moveLine(line)
 		nativeRect.line = line
 		ctx.fire("QUEST_LOG_UPDATE")
-		ctx.drain()
-		ctx.drain()
+		ctx.advanceSettling()
+		ctx.advanceSettling()
 	end
 	function ctx.loadHost(namespace, path)
 		-- Start work runs at once, as in the unwrapped standalone.

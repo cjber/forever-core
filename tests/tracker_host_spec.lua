@@ -61,7 +61,15 @@ t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 check(combatLate.parent == host, "combat release applies the deferred attachment")
 check(host.events.QUEST_LOG_UPDATE, "quest log changes can trigger placement")
-check(not host.events.ZONE_CHANGED_NEW_AREA, "a zone change queues no placement")
+for _, event in ipairs({ "QUEST_WATCH_UPDATE", "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN" }) do
+	check(not host.events[event], "the column ignores " .. event)
+end
+t.fire("PLAYER_TARGET_CHANGED")
+check(not t.isSettling(), "changing targets does not start settling")
+t.fire("UNIT_AURA", "target")
+check(not t.isSettling(), "target auras do not start settling")
+t.fire("UNIT_AURA", "player")
+check(t.isSettling(), "player auras start settling")
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local updatesBeforeDuplicateAttach = first.updates
 t.ns.TrackerHost.Attach(first)
@@ -85,10 +93,10 @@ nativeRect.left, nativeRect.top = 400, 700
 pinned.check(pinned.host.point == pinPoint, "the tracker move itself sets no column point")
 pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
 pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
-pinned.check(pinned.pending() == 1, "Edit Mode events share one placement check")
-pinned.drain()
+pinned.check(pinned.isSettling(), "Edit Mode events start sampling the layout")
+pinned.advanceSettling()
 pinned.check(pinned.host.point == pinPoint, "the placement check waits for the native layout")
-pinned.drain()
+pinned.advanceSettling()
 pinned.check(Pinned(pinned) and CornersTouch(pinned), "the corners meet after the deferred Edit Mode check")
 pinned.showTracker(false)
 pinned.host:MarkDirty()
@@ -185,8 +193,8 @@ local function QuestieCase()
 	q.env.Questie_BaseFrame = list
 	-- Discovery finds the list without a quest event.
 	q.drainDelayed()
-	q.drain()
-	q.drain()
+	q.advanceSettling()
+	q.advanceSettling()
 	local function UnderList()
 		local spot = q.host.point
 		return spot[1] == "TOPLEFT"

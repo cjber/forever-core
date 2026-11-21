@@ -1860,37 +1860,109 @@ function api.IsAttached(module)
 	---@cast module ForeverTrackerModule?
 	return module ~= nil and module.parentContainer == host
 end
+-- From the pinned Blizzard_ObjectiveTracker event registrations.
+-- Each event can cause a Blizzard tracker module to mark its layout dirty.
+-- Cooldown, quest blob, death count and proving grounds score updates only change existing controls.
+local TRACKER_LAYOUT_EVENTS = {
+	["ACHIEVEMENT_EARNED"] = true,
+	["ACTIVE_DELVE_DATA_UPDATE"] = true,
+	["BAG_UPDATE_DELAYED"] = true,
+	["CHALLENGE_MODE_START"] = true,
+	["CONTENT_TRACKING_UPDATE"] = true,
+	["CRITERIA_COMPLETE"] = true,
+	["CURRENCY_DISPLAY_UPDATE"] = true,
+	["HOUSE_DECOR_ADDED_TO_CHEST"] = true,
+	["INITIATIVE_TASKS_TRACKED_LIST_CHANGED"] = true,
+	["INITIATIVE_TASKS_TRACKED_UPDATED"] = true,
+	["NEIGHBORHOOD_INITIATIVE_UPDATED"] = true,
+	["PERKS_ACTIVITIES_TRACKED_LIST_CHANGED"] = true,
+	["PERKS_ACTIVITIES_TRACKED_UPDATED"] = true,
+	["PERKS_ACTIVITY_COMPLETED"] = true,
+	["QUEST_ACCEPTED"] = true,
+	["QUEST_AUTOCOMPLETE"] = true,
+	["QUEST_LOG_UPDATE"] = true,
+	["QUEST_POI_UPDATE"] = true,
+	["QUEST_REMOVED"] = true,
+	["QUEST_TURNED_IN"] = true,
+	["QUEST_WATCH_LIST_CHANGED"] = true,
+	["SCENARIO_BONUS_VISIBILITY_UPDATE"] = true,
+	["SCENARIO_COMPLETED"] = true,
+	["SCENARIO_CRITERIA_SHOW_STATE_UPDATE"] = true,
+	["SCENARIO_CRITERIA_UPDATE"] = true,
+	["SCENARIO_SPELL_UPDATE"] = true,
+	["SCENARIO_UPDATE"] = true,
+	["SUPER_TRACKING_CHANGED"] = true,
+	["SUPER_TRACKING_PATH_UPDATED"] = true,
+	["TRACKABLE_INFO_UPDATE"] = true,
+	["TRACKED_ACHIEVEMENT_LIST_CHANGED"] = true,
+	["TRACKED_ACHIEVEMENT_UPDATE"] = true,
+	["TRACKED_RECIPE_UPDATE"] = true,
+	["TRACKING_TARGET_INFO_UPDATE"] = true,
+	["TRANSMOG_COLLECTION_SOURCE_ADDED"] = true,
+	["UNIT_AURA"] = true,
+	["WORLD_STATE_TIMER_START"] = true,
+	["WORLD_STATE_TIMER_STOP"] = true,
+	["ZONE_CHANGED"] = true,
+	["ZONE_CHANGED_NEW_AREA"] = true,
+}
 -- Combat ending attaches the sections combat held back. Combat starting freezes every section's scrollbar, so
 -- each secure item button stays beside its quest.
 local function Listen()
-	local watching, needsLayout = false, false
-	-- The native tracker can finish its own layout on the frame after the event.
-	local function Recheck(layout)
-		if not ready or InCombatLockdown() then
+	-- A separate frame can settle even when the column is hidden. It has no script between events.
+	local settle = CreateFrame("Frame")
+	local watching, needsLayout, needsPlacement = false, false, false
+	local elapsed, frames, quiet = 0, 0, 0
+	local lastShows, lastLeft, lastLine
+	local function StopSettling()
+		settle:SetScript("OnUpdate", nil)
+		watching, needsLayout, needsPlacement = false, false, false
+	end
+	local function Sample(_, delta)
+		if InCombatLockdown() then
+			StopSettling()
 			return
 		end
-		needsLayout = needsLayout or layout
-		if watching then
-			return
+		elapsed, frames = elapsed + delta, frames + 1
+		local shows = TrackerShows()
+		local left, line = TrackerEdge(shows)
+		if shows ~= lastShows or left ~= lastLeft or line ~= lastLine then
+			lastShows, lastLeft, lastLine = shows, left, line
+			needsPlacement, quiet = true, 0
+		else
+			quiet = quiet + 1
 		end
-		watching = true
-		C_Timer.After(0, function()
-			C_Timer.After(0, function()
-				watching = false
-				local runLayout = needsLayout
-				needsLayout = false
-				-- A pending section layout already includes placement.
-				if queued or InCombatLockdown() then
-					return
-				end
-				if runLayout then
+
+		if needsPlacement and (frames >= 2 or elapsed >= 1) then
+			if not queued then
+				if needsLayout then
 					Layout()
 				else
 					FollowTracker(Settings())
 				end
-			end)
-		end)
+			end
+			needsLayout, needsPlacement = false, false
+		end
+		-- Questie may start rebuilding half a second after the event. Cap each burst at one second
+		-- so ongoing layout changes cannot keep the frame script running indefinitely.
+		if elapsed >= 1 or (quiet >= 3 and (shows ~= "questie" or elapsed >= 0.6)) then
+			StopSettling()
+		end
 	end
+
+	local function Recheck(layout)
+		if not ready or InCombatLockdown() then
+			return
+		end
+		needsLayout, needsPlacement = needsLayout or layout, true
+		quiet = 0
+		if not watching then
+			watching, elapsed, frames = true, 0, 0
+			settle:SetScript("OnUpdate", Sample)
+		end
+	end
+	EventRegistry:RegisterCallback("EditMode.Exit", function()
+		Recheck(true)
+	end, host)
 
 	-- Questie can build its list asynchronously after login. Stop sampling once it has geometry or the
 	-- discovery window ends. Subsequent movement and visibility changes are handled by events.
@@ -1925,8 +1997,13 @@ local function Listen()
 	host:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	host:RegisterEvent("PLAYER_ENTERING_WORLD")
 	host:RegisterEvent("GLOBAL_MOUSE_UP")
-	host:RegisterEvent("QUEST_WATCH_LIST_CHANGED")
-	host:RegisterEvent("QUEST_LOG_UPDATE")
+	for event in pairs(TRACKER_LAYOUT_EVENTS) do
+		if event == "UNIT_AURA" then
+			host:RegisterUnitEvent(event, "player")
+		else
+			host:RegisterEvent(event)
+		end
+	end
 	host:RegisterEvent("ADDON_LOADED")
 	host:SetScript("OnEvent", function(_, event, addon)
 		if event == "ADDON_LOADED" then
@@ -1954,14 +2031,16 @@ local function Listen()
 		end
 		if event == "PLAYER_REGEN_ENABLED" then
 			host:MarkDirty()
-		elseif event ~= "PLAYER_REGEN_DISABLED" then
-			Recheck(event ~= "GLOBAL_MOUSE_UP" and event ~= "QUEST_WATCH_LIST_CHANGED" and event ~= "QUEST_LOG_UPDATE")
+		elseif event == "PLAYER_REGEN_DISABLED" then
+			StopSettling()
+		else
+			Recheck(event ~= "GLOBAL_MOUSE_UP" and not TRACKER_LAYOUT_EVENTS[event])
 		end
 	end)
 	return DiscoverQuestie
 end
--- A developer diagnostic for the tracker stack (/agf tracker). The combat overlap is otherwise invisible headlessly: it
--- prints both frames' anchors, heights and who each is anchored to.
+-- A developer diagnostic for the tracker stack (/fcore tracker). The combat overlap is otherwise invisible headlessly:
+-- it prints both frames' anchors, heights and who each is anchored to.
 ---@return string
 function api.Debug()
 	-- Raw literals on purpose: this host is shared with the companion addons, whose ns.L has no AGF keys, and
