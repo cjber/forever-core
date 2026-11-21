@@ -1083,6 +1083,25 @@ local function TrackerShows()
 	end
 	return "list"
 end
+-- Where the game's tracker's top left corner is, in its own units, as the column places itself by it: the frame's own
+-- rect while the tracker shows. A hidden tracker (nothing tracked) is not laid out by its container any more, so its
+-- rect drifts or goes away with whatever else the screen does; the column holds the corner the tracker had when it
+-- last showed, which is where an empty tracker would sit, and reads the frame only for a tracker it never saw show.
+-- Reads only.
+local shownCorner
+---@return number? left, number? top, number scale
+local function TrackerRect()
+	local left, top = Coordinate(ObjectiveTrackerFrame:GetLeft()), Coordinate(ObjectiveTrackerFrame:GetTop())
+	local scale = ObjectiveTrackerFrame:GetEffectiveScale()
+	if ObjectiveTrackerFrame:IsShown() then
+		if left and top then
+			shownCorner = { left, top, scale }
+		end
+	elseif shownCorner then
+		return shownCorner[1], shownCorner[2], shownCorner[3]
+	end
+	return left, top, scale
+end
 -- Where the column goes under the game's quest tracker: its top left corner on the tracker's last visible line. That is
 -- the bottom of the tracker's NineSlice, which Blizzard anchors under its last shown section; the bottom of its header
 -- while the player has it collapsed, since its sections hide then but the NineSlice keeps their old anchor; or the
@@ -1101,8 +1120,7 @@ local function TrackerEdge(shows)
 		local listScale = list:GetEffectiveScale()
 		return listLeft * listScale / hostScale, listBottom * listScale / hostScale
 	end
-	local left = Coordinate(ObjectiveTrackerFrame:GetLeft())
-	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
+	local left, top, trackerScale = TrackerRect()
 	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
 		or shows == "collapsed" and ObjectiveTrackerFrame.Header
 		or nil
@@ -1110,7 +1128,7 @@ local function TrackerEdge(shows)
 	if edge then
 		bottom, scale = edge:GetBottom(), edge:GetEffectiveScale()
 	else
-		bottom, scale = ObjectiveTrackerFrame:GetTop(), trackerScale
+		bottom, scale = top, trackerScale
 	end
 	bottom = Coordinate(bottom)
 	if not (left and bottom) then
@@ -1190,8 +1208,13 @@ end
 ---@param tracker Frame
 ---@return number? left, number? top
 local function TrackerCorner(tracker)
-	local left, top = Coordinate(tracker:GetLeft()), Coordinate(tracker:GetTop())
-	local scale = tracker:GetEffectiveScale() / host:GetEffectiveScale()
+	local left, top, scale
+	if tracker == ObjectiveTrackerFrame then
+		left, top, scale = TrackerRect()
+	else
+		left, top, scale = Coordinate(tracker:GetLeft()), Coordinate(tracker:GetTop()), tracker:GetEffectiveScale()
+	end
+	scale = scale / host:GetEffectiveScale()
 	return left and left * scale, top and top * scale
 end
 
