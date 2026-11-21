@@ -907,6 +907,19 @@ class ForeverClientTest(unittest.TestCase):
             ],
         )
 
+    def test_slash_waits_for_chat_focus_a_slow_frame_draws_after_return(self):
+        idle = {"world": True, "menu": False, "chat": False}
+        lagging = [idle, idle] + [idle] * (fc.CHAT_FOCUS_POLLS - 1) + [idle | {"chat": True}]
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc, "client_ui", side_effect=lagging),
+        ):
+            fc.slash({}, "/reload")
+        self.assertEqual(send.call_args_list[0], mock.call({}, "key", "Return"))
+        self.assertNotIn(mock.call({}, "key", "Escape"), send.call_args_list)
+
     def test_slash_types_nothing_while_a_menu_will_not_close(self):
         with (
             mock.patch.object(fc, "send") as send,
