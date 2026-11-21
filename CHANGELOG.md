@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.16.1] - 2026-11-21
+
+### Fixed
+
+- Dragging the Objective Tracker in Edit Mode no longer throws a Lua error on every frame or makes the tracker disappear: the Forever column now places itself from the tracker's position instead of hanging off it, and follows when the drag ends; thanks to hknylmz and Flangemuffler for the reports.
+
 ## [1.16.0] - 2026-11-21
 
 <!-- discord-image: docs/screenshots/tracker.png -->
