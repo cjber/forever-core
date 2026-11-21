@@ -35,7 +35,22 @@ local function safeCharacter()
 	if type(name) ~= "string" or name == "" or type(guid) ~= "string" or guid == "" then
 		return false, "player identity unavailable"
 	end
-	if name ~= SAFE_CHARACTER.name or guid ~= SAFE_CHARACTER.guid then
+	if name ~= SAFE_CHARACTER.name then
+		return false, "unexpected player identity"
+	end
+	-- Enrolment (`forever_client enroll`): the owner approved this name but its GUID is not known yet. Show the GUID
+	-- large for the tool to read from the last frame, and refuse readiness so no other verb runs on this session.
+	-- A misread GUID cannot admit another character: the next session's check needs this exact name and GUID.
+	if SAFE_CHARACTER.guid == "PENDING" then
+		local holder = CreateFrame("Frame", nil, UIParent)
+		holder:SetFrameStrata("TOOLTIP")
+		holder:SetAllPoints()
+		local text = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightHuge")
+		text:SetPoint("CENTER")
+		text:SetText(guid)
+		return false, "enrolment: GUID shown"
+	end
+	if guid ~= SAFE_CHARACTER.guid then
 		return false, "unexpected player identity"
 	end
 	local dead, combat = safety()

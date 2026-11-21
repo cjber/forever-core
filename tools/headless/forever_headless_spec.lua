@@ -2,6 +2,8 @@
 local source = assert(io.open("tools/headless/!!ForeverHeadless/ForeverHeadless.lua")):read("*a")
 -- Every scale the addon set on a frame.
 local scales = {}
+-- The text the enrolment frame showed, if any.
+local shown
 
 local function run(config, name, guid, dead, combat, lockdown, screenshot)
 	local events, callback, updates = {}, nil, {}
@@ -39,7 +41,16 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 				end
 			end,
 			SetFrameStrata = function() end,
+			SetAllPoints = function() end,
 			Hide = function() end,
+			CreateFontString = function()
+				return {
+					SetPoint = function() end,
+					SetText = function(_, text)
+						shown = text
+					end,
+				}
+			end,
 			CreateTexture = function()
 				local cell = {}
 				textures[#textures + 1] = cell
@@ -159,6 +170,11 @@ run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false,
 assert(screenshot.count == 2, "combat character refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, true, screenshot)
 assert(screenshot.count == 2, "lockdown character refuses readiness")
+run({ name = "Tester", guid = "PENDING" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
+assert(screenshot.count == 2 and shown == "Player-1-2-3", "enrolment shows the GUID and refuses readiness")
+shown = nil
+run({ name = "Other", guid = "PENDING" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
+assert(screenshot.count == 2 and shown == nil, "enrolment never shows another character's GUID")
 print("forever headless: identity handshake pass")
 
 run(nil, "Tester", "Player-1-2-3", nil, nil, nil, screenshot)

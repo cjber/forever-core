@@ -5975,6 +5975,36 @@ def run_input_verb(state: Mapping, args: argparse.Namespace) -> int:
     return 0
 
 
+ENROL_GUID = "PENDING"
+
+
+def enroll(args) -> int:
+    """Record the approved character's GUID in the launch config, for a name the owner approved with guid PENDING.
+
+    The headless addon checks only the name for such a character, shows `UnitGUID("player")` large and refuses
+    readiness, so the session ends without any job running on it. The GUID is read from that last frame; a misread
+    cannot admit another character, since every later session needs this exact name and GUID (forever-core#978).
+    """
+    launch = json.loads(CONFIG.read_text())
+    character = character_config(launch)
+    if character["guid"] != ENROL_GUID:
+        raise ClientError(f"{CONFIG} character.guid is already set: enroll only fills a guid of {ENROL_GUID!r}")
+    frame = STATE_DIR / "failed.png"
+    frame.unlink(missing_ok=True)
+    try:
+        up(args)
+    except ClientError:
+        pass
+    words = " ".join(word[0] for word in ocr_words(frame, psm=11)) if frame.exists() else ""
+    found = sorted(set(re.findall(r"Player-\d+-[0-9A-F]{8}", words)))
+    if len(found) != 1:
+        raise ClientError(f"read {len(found)} GUIDs for {character['name']} from {frame}: {found}")
+    launch["character"]["guid"] = found[0]
+    CONFIG.write_text(json.dumps(launch, indent=2) + "\n")
+    print(f"forever_client: {character['name']} enrolled as {found[0]} in {CONFIG}; the next up verifies it")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     words = list(sys.argv[1:] if argv is None else argv)
     if words[:1] == ["release-held"] and len(words) == 4:
@@ -6035,6 +6065,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = sub.add_parser("release", help="end a lease now")
     p.add_argument("token")
     sub.add_parser("down")
+    p = sub.add_parser("enroll", help="record a newly approved character's GUID (guid PENDING in the launch config)")
+    p.add_argument("--wait", action="store_true", help="queue behind another agent's session")
+    p.add_argument("--manual-launcher", action="store_true", help="disable launcher OCR clicks")
+    p.add_argument("--timeout", type=float, default=600, help="seconds to reach the world")
     sub.add_parser("status")
     sub.add_parser("capture-env")
     for name in (
@@ -6206,7 +6240,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.verb in {"up", "serve", "job", "run", "lease", "smoke", "proof", "down", "release", *JOB_VERBS}:
+        if args.verb in {
+            "up",
+            "serve",
+            "job",
+            "run",
+            "lease",
+            "smoke",
+            "proof",
+            "down",
+            "release",
+            "enroll",
+            *JOB_VERBS,
+        }:
             if not (os.environ.get("FOREVER_CLIENT_CALLER") or os.environ.get("FOREVER_CLIENT_JOB")):
                 raise ClientError(
                     "send the shared in-game agent an INGAME request: "
@@ -6223,6 +6269,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return release(args.token)
         if args.verb == "down":
             return down()
+        if args.verb == "enroll":
+            return enroll(args)
         if args.verb == "capture-env":
             return capture_env()
         if args.verb == "status":
