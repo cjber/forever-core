@@ -106,6 +106,26 @@ class ForeverClientTest(unittest.TestCase):
         self.real_nvidia_mismatch = fc.nvidia_mismatch
         self.enterContext(mock.patch.object(fc, "nvidia_mismatch", return_value=None))
 
+    def test_enroll_preserves_startup_errors_without_a_new_screenshot(self):
+        config = self.state / "launch.json"
+        launch = json.dumps({"character": {"name": "Approved", "guid": fc.ENROL_GUID}})
+        config.write_text(launch)
+        frame = self.state / "failed.png"
+        for error in (fc.ClientError("session lock held"), fc.SignInRequired("sign in required")):
+            with self.subTest(error=error):
+                frame.touch()
+                with (
+                    mock.patch.object(fc, "CONFIG", config),
+                    mock.patch.object(fc, "up", side_effect=error),
+                    mock.patch.object(fc, "ocr_words") as ocr,
+                    self.assertRaises(fc.ClientError) as raised,
+                ):
+                    fc.enroll(mock.Mock())
+                self.assertIs(raised.exception, error)
+                self.assertFalse(frame.exists())
+                ocr.assert_not_called()
+                self.assertEqual(config.read_text(), launch)
+
     def test_sign_in_labels_persist_and_block_later_starts(self):
         for label in ("Welcome back", "Email a code", "Use password", "Use passkey", "Log in or sign up"):
             with (

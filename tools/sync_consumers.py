@@ -80,7 +80,6 @@ def warning_toc_edit(root, repo):
     return toc, before + warning + after
 
 
-
 def font_digest_edit(root, repo, path, content):
     """`path`'s pinned font-binding digest refreshed to `content`, or None.
 
@@ -95,6 +94,8 @@ def font_digest_edit(root, repo, path, content):
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    if not isinstance(data, dict):
+        return None
     producers = data.get("producers")
     if not isinstance(producers, list):
         return None
@@ -104,8 +105,8 @@ def font_digest_edit(root, repo, path, content):
         return None
     for producer in stale:
         producer["sha256"] = fresh
-    indent = 2
-    return manifest, json.dumps(data, indent=indent, ensure_ascii=False) + "\n"
+    return manifest, json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
 
 def release_gate_step(indent="      "):
     """The release-workflow step that fails a stale pin immediately before the packager uploads."""
@@ -273,9 +274,14 @@ def main(argv=None):
     )
     arguments = parser.parse_args(argv)
 
+    known_consumers = {repo for consumers in VENDORED.values() for repo in consumers}
+    wanted = set(arguments.consumer or ())
+    unknown = wanted - known_consumers
+    if unknown:
+        parser.error(f"unknown consumer(s): {', '.join(sorted(unknown))}")
+
     changed = 0
     failures = []
-    wanted = set(arguments.consumer or ())
     selected = arguments.only or VENDORED.keys()
     for path in selected:
         consumers = VENDORED[path]
@@ -303,13 +309,13 @@ def main(argv=None):
                 if not arguments.dry_run:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(origin, target)
-                    refreshed = font_digest_edit(root, repo, path, content)
-                    if refreshed is not None:
-                        font_manifest, font_text = refreshed
-                        changed += 1
-                        print(f"{repo}: {font_manifest.relative_to(root)}: {path} digest")
-                        if not arguments.dry_run:
-                            font_manifest.write_text(font_text, encoding="utf-8")
+            refreshed = font_digest_edit(root, repo, path, content)
+            if refreshed is not None:
+                font_manifest, font_text = refreshed
+                changed += 1
+                print(f"{repo}: {font_manifest.relative_to(root)}: {path} digest")
+                if not arguments.dry_run:
+                    font_manifest.write_text(font_text, encoding="utf-8")
             if toc_edit is not None:
                 toc, text = toc_edit
                 changed += 1
@@ -319,7 +325,7 @@ def main(argv=None):
     # A full sync also carries the release gate: that workflow is the addon's own, so it is inserted rather than
     # copied, and only when the maintainer asked for everything.
     if arguments.only is None:
-        for repo in sorted({repo for consumers in VENDORED.values() for repo in consumers}):
+        for repo in sorted(known_consumers):
             if wanted and repo not in wanted:
                 continue
             root = arguments.checkouts / repo

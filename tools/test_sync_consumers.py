@@ -153,6 +153,49 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertFalse((root / "addon/KilnForever/.github/workflows/visual-proof.yml").exists())
         self.assertFalse((root / ".github/workflows/visual-proof.yml").exists())
 
+    def test_unknown_consumer_is_rejected(self):
+        self.consumer()
+        self.consumer("legacy-forevr")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            self.run_sync("--consumer", "legacy-forever", "--consumer", "legacy-forevr")
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("unknown consumer", err.getvalue())
+        self.assertIn("legacy-forevr", err.getvalue())
+        self.assertFalse((self.checkouts / "legacy-forever/tools/deadcode.py").exists())
+
+    def test_stale_font_digest_is_reported_and_refreshed_for_identical_file(self):
+        root = self.consumer()
+        path = "tools/deadcode.py"
+        self.write(root, path, DEADCODE)
+        manifest = root / "tools/font_bindings.json"
+        original = json.dumps({"producers": [{"source": path, "sha256": "0" * 64}]}).encode()
+        manifest.write_bytes(original)
+
+        with self.subTest("dry run"):
+            code, out = self.run_sync("--dry-run")
+            self.assertEqual(code, 0, out)
+            self.assertIn("tools/font_bindings.json", out)
+            self.assertIn("1 file(s) would change", out)
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual((root / path).read_bytes(), DEADCODE)
+
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 file(s) changed", out)
+        self.assertEqual(
+            json.loads(manifest.read_text())["producers"][0]["sha256"], hashlib.sha256(DEADCODE).hexdigest()
+        )
+        self.assertIn("0 file(s) changed", self.run_sync()[1])
+
+    def test_non_object_font_manifest_is_left_alone(self):
+        root = self.consumer()
+        self.write(root, "tools/font_bindings.json", b"[]")
+        code, out = self.run_sync()
+        self.assertEqual(code, 0, out)
+        self.assertEqual((root / "tools/font_bindings.json").read_bytes(), b"[]")
+        self.assertEqual((root / "tools/deadcode.py").read_bytes(), DEADCODE)
+
     def test_a_vendored_module_refreshes_its_pinned_font_digest(self):
         root = self.consumer()
         self.write(root, ".pkgmeta", b"package-as: LegacyForever\n")

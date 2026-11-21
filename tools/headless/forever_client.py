@@ -5993,8 +5993,11 @@ def enroll(args) -> int:
     frame.unlink(missing_ok=True)
     try:
         up(args)
+    except SignInRequired:
+        raise
     except ClientError:
-        pass
+        if not frame.exists():
+            raise
     words = " ".join(word[0] for word in ocr_words(frame, psm=11)) if frame.exists() else ""
     found = sorted(set(re.findall(r"Player-\d+-[0-9A-F]{8}", words)))
     if len(found) != 1:
