@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.9] - 2026-11-21
+
+### Fixed
+
+- **The tracker column no longer draws over your action bars.** It only ever clamped itself to the screen, so with a short screen and the quest tracker up it laid out down into the main bar, and with action bars down the right side it grew into them. It now reads the bars your own layout put on screen and stops above a bar under it, or left of one beside it, the same way it stops at the tracker's line; a hidden bar, or one parked where the column never reaches, takes no room. (#987, cjber/shortest-path-forever#1139)
+
+### For addon authors
+
+- **Packaging checks no longer fail under a stray `.git` folder.** A `.git` folder in a parent directory that git itself does not accept as a repository, such as an empty one in the temp directory, no longer makes the package file checks report that git cannot read the work tree. (#826)
+
 ## [1.15.8] - 2026-11-20
 
 ### Fixed
