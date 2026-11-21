@@ -146,6 +146,7 @@ do
 	})
 	t.ready()
 	t.drain()
+	t.tickDelayed()
 	check(module ~= nil, "Create still returns the section")
 	check(unattached == 1, "onUnattached fires once when attaching fails")
 end
