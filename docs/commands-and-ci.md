@@ -24,22 +24,9 @@ python3 tools/bump_toolchain.py --dry-run # every pin tools/toolchain.json holds
 python3 tools/dependabot_merge.py --dry-run # Dependabot's open PRs in core and every consumer, no changes
 python3 tools/gen_forever_api.py          # regenerate forever_tools/client_names.txt from the pinned UI source
 python3 tools/lint_client_calls.py        # refuse a call of a client function the Forever client does not have
-python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session report
-# The forever_client.py lines below are for the `wow in-game` agent only; every other agent sends it an INGAME
-# request (wow-forever-addon/in-game.md#requesting-a-check).
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
-                                          # record the checkout's .visual-proof.json from a client session
-python3 tools/headless/forever_client.py attest --repo R --ref SHA --checkout PATH
-                                          # the same from the user's passed checklist round, without the client
 python3 tools/audit_store_core.py --cache DIR # check the latest GitHub and CurseForge consumer downloads
 python3 tools/released_consumers.py      # every consumer's latest release, unpacked under tools/.cache/released
 python3 tools/suite_load.py --released -v # this candidate ForeverCore with those released builds, under forever_sim
-python3 tools/smoke_queue.py --dry-run    # the commits the smoke timer would load in the client next
-python3 tools/smoke_queue.py --repo skillup-forever  # smoke only the named repositories (repeatable), in that order
 python3 tools/sync_consumers.py ..        # copy this repo's development tooling into local checkouts
 python3 tools/sync_curseforge.py ..       # check CurseForge descriptions match docs/curseforge.md (daily in CI)
 python3 tools/check_package.py            # .release/ForeverCore holds every loaded file, no development folder,

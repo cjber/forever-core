@@ -1,4 +1,4 @@
-"""Publish only a commit whose full CI run on main passed and whose newest headless smoke is green."""
+"""Publish only a commit whose full CI run on main passed and whose newest release smoke is green."""
 
 import sys
 from pathlib import Path

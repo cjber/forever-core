@@ -32,9 +32,9 @@ says what moved. A pin that is newer, equal or not a `vX.Y.Z` tag is left alone,
 release leaves every pin alone rather than failing the tooling sync.
 
 A sync PR that changes runtime files or moves the pin cannot record the visual proof the consumer's `visual-proof` job
-needs, because this script never drives the client. When the tree the PR now carries has no proof for its own input
-digest, the run prints the `INGAME ... kind: proof` request for that PR's head, and the release session sends it to
-the in-game agent and commits the `.visual-proof.json` it writes.
+needs, because this script never records one. When the tree the PR now carries has no proof for its own input
+digest, the run prints a note naming that PR's head, and the release session records the proof and commits the
+`.visual-proof.json`.
 
 A consumer that still ships the bridge `.pkgmeta` ForeverCore external also gets the standalone `forevercore`
 required store dependency, retaining its pinned external and move rule. A consumer whose root TOC sets
@@ -967,15 +967,10 @@ def proof_needed(root: Path, files: list[str]) -> bool:
 
 
 def proof_hint(repo: str, ref: str) -> str:
-    """The in-game request that records the proof a sync PR needs, with its flow named by hand."""
+    """The note that says which head a sync PR needs a recorded proof for."""
     return (
-        f"{repo}: this PR changes runtime files, so `visual-proof` needs a proof recorded on its head. Fetch\n"
-        f"`{BRANCH}` and check it out, then send the `wow in-game` session (wow-forever-addon/in-game.md):\n"
-        f"  INGAME {repo} {ref} from <your kiln id>\n"
-        f"  kind: proof\n"
-        f"  checkout: <the checkout of {ref}>\n"
-        f"  flows: update notice=<slash command or Lua file>\n"
-        f"Commit the {VISUAL_PROOF} its reply names to the PR."
+        f"{repo}: this PR changes runtime files, so `visual-proof` needs a proof recorded on its head {ref}.\n"
+        f"Record it from `{BRANCH}` and commit the {VISUAL_PROOF} to the PR."
     )
 
 

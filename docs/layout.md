@@ -214,8 +214,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   in place: the sync runs on that PR's own head, so a commit pushed to it (a recorded visual proof, say) stays on the
   branch, and a PR the sync cannot update that way is left untouched with a comment saying why. It needs the
   `CONSUMER_SYNC_TOKEN` secret; without it the job prints a notice and stays green. A sync PR that changes runtime
-  files or moves the pin cannot record the visual proof itself, so the run prints the `INGAME ... kind: proof`
-  request for that PR's head; the release session sends it to the in-game agent and commits `.visual-proof.json`.
+  files or moves the pin cannot record the visual proof itself, so the run prints a note naming that PR's head; the
+  release session records the proof and commits `.visual-proof.json`.
   `tools/test_sync_consumer_prs.py` is its spec.
 - `tools/release_consumers.py`: the automatic consumer release behind `.github/workflows/release-consumers.yml`, on a
   20-minute schedule. For each consumer it reads main's head, that commit's `CHANGELOG.md`, and its `changes/`
@@ -229,41 +229,6 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   Every core release therefore re-releases every consumer, because each zip carries its own copy of the pinned core. It is
   dispatch-only and idempotent. `CONSUMER_SYNC_TOKEN` needs Actions write on the consumers; without the secret the job
   prints a notice and stays green. `tools/test_release_consumers.py` is its spec.
-- `tools/headless/forever_client.py`: the one way the `wow in-game` agent touches the client; every other agent sends
-  that agent a request (`wow-forever-addon/in-game.md`). `up`,
-  `run`, `shot`, `slash`, `errors` and the rest act on a private gamescope display only, one session at a time. Its
-  `build-dev REPO REF` writes `test-artifacts/<repo>-dev` for a hand link, with the code the workspace's
-  `rebuild-dev.sh` used to carry, and `smoke --repo R --ref SHA` builds the commit a release would ship, links its
-  addon folders (recording each slot so it is put back exactly, store installs included), runs `/forever selftest` and
-  `errors --addon` per folder, and posts the result as the `headless-smoke` commit status. For forever-core it links
-  every consumer's latest release beside the candidate and, after the selftest, asks `ForeverCore.Registered` for each
-  released folder through one `!!DevSmoke` eval: a released addon that refused to start on the candidate raises no Lua
-  error, so it is counted as a failure of its own. `proof --repo R --ref SHA
-  --checkout PATH --flow NAME=SLASH_OR_LUA_FILE` builds and links the same way, reloads, runs each flow (a Forever
-  addon's slash command or a Lua file through `!!DevSmoke`), takes a screenshot after each, uploads the PNGs to a new
-  secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
-  sha256s before running `visual_proof --compare` against the installed build; it never commits or pushes the
-  checkout, and there is no default flow because ForeverCore has no shared opener for an addon's update notice. Exit 3
-  means the client is in use and nothing was posted or recorded. A stop that ran no handler leaves that record behind,
-  and the next `up`, `run`, `smoke`, `proof` or `build-dev` replays it before it touches AddOns.
-  `tools/test_forever_client.py` is its spec.
-- `tools/smoke_queue.py`: for forever-core and every consumer, the commit the next release would ship (`main`'s head,
-  read as `tools/release_consumers.py` reads it) that has no `headless-smoke` status, smoked one at a time in release
-  order (forever-core, SkillUp, Shortest Path, then the rest; `--repo` picks and orders them) and stopped at the
-  first exit 3 so it never queues behind the player. `tools/systemd/forever-smoke.service` and
-  `forever-smoke.timer` run it every 30 minutes at `Nice=10`; `in-game.md` says how to install them.
-  `tools/test_smoke_queue.py` is its spec.
-- `tools/devsmoke/!!DevSmoke`: the `!!DevSmoke` dev addon behind `/forever selftest`, linked into the client from
-  this checkout. It opens and closes every loaded addon that depends on ForeverCore (read from the client, so a new
-  addon is covered with no list to update) and the world map, saving a pass or fail per surface in `DevSmokeDB`,
-  which `tools/forever_errors.py` and `tools/forever_perf.py` read. A snippet from `tools/devsmoke/eval.py FILE` is
-  written to the gitignored `!!DevSmokeInbox` folder inside it, linked into AddOns as a load-on-demand addon of the
-  same name, and run under `xpcall` at login and on `/devsmoke eval` (its `print` output and returns go to the Agent
-  tab and `DevSmokeDB.eval`). The client reads the inbox once a session, so a snippet written after that needs
-  `/reload`. Every write stamps its chunk with a fresh `DevSmokeEvalRun` token, which lands in `DevSmokeDB.eval.run`:
-  SavedVariables reach disk only at the next reload, so that token is how `forever_client.py eval` and a Lua proof flow
-  read their own snippet's result rather than the session before it (#580). `tests/devsmoke_spec.lua` is its spec,
-  `tools/test_devsmoke_eval.py` the writer's.
 - `tools/discord_digest.py`: the Discord release digest, with pure payload builders over GitHub releases and
   `CHANGELOG.md` data and a thin fetch and post layer. `.github/workflows/discord-digest.yml` runs hourly with
   `--mode schedule`, which takes its windows from the previous successful scheduled run (GitHub drops and delays

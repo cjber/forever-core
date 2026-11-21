@@ -184,44 +184,14 @@ images, then the rest of `docs/gallery.md`.
 ```
 
 Before the version bump, the exact commit being released needs a green `headless-smoke` commit status on
-cjber/<repo>, and every release, manual or automatic, refuses without one: `tools/release_check.py` checks it
-beside full CI in the release workflow. The `forever-smoke` timer (`tools/smoke_queue.py`) fills it in for every
-commit a release would ship; when it has not reached the commit yet, send the in-game agent an
-`INGAME <repo> <sha> ... kind: smoke` request ([in-game.md](../wow-forever-addon/in-game.md#requesting-a-check)).
-
-The smoke builds that commit's dev archive under `test-artifacts/<repo>-smoke` the way `rebuild-dev.sh` did, links the
-build's addon folders over `Interface/AddOns`, runs `/forever selftest`, reads `errors --addon <folder>` for each
-of them and posts the result as the `headless-smoke` status. Exit 0 is a clean commit, exit 1 a failure the status
-records with its error count, and exit 3 means the player's client or another session holds the client: nothing is
-posted then, and the in-game agent runs it again later. Every link it borrowed is put back exactly as it was, store installs included.
-
-Read the record with `gh api repos/cjber/<repo>/commits/<sha>/statuses`. Missing or pending means waiting, a
-failure means fix the error and smoke the next commit. `python3 tools/smoke_queue.py --dry-run` lists the commits
-that would be smoked next, and a `smoke` request re-runs one commit at once.
+cjber/<repo>, the record of its pre-release checks, and every release, manual or automatic, refuses without one:
+`tools/release_check.py` checks it beside full CI in the release workflow. Read it with
+`gh api repos/cjber/<repo>/commits/<sha>/statuses`. Missing or pending means waiting; a failure names the errors to fix
+before the next commit is checked.
 
 A release preparation that edits the update notice or a locale also records the visual proof its runtime change
-needs, so the required `visual-proof` check passes without an admin merge. Send the in-game agent an
-`INGAME ... kind: proof` request with the pull request's checkout and
-`flows: update notice=<the addon's slash command or Lua file>`. It builds and loads the commit, runs the flow, uploads
-the screenshots to a secret gist and writes `.visual-proof.json` into the checkout; commit that file with the change.
-When the user has passed that exact build on the test checklist, `forever_client.py attest` writes the file from that
-pass instead, without the client ([in-game.md](../wow-forever-addon/in-game.md#from-the-users-checklist-pass)).
-
-A flow is the addon's own slash command after `=`, or a Lua file that `!!DevSmoke` runs. ForeverCore has no shared
-opener for an addon's update notice, so there is no default. `wow-forever-addon/in-game.md` has the full flow, including the sync pull request that moves the
-ForeverCore pin.
-
-By hand, in a session, the same checks are:
-
-1. Unpack the build under `test-artifacts/<repo>-<build>`, point the addon's `Interface/AddOns` link at it,
-   note `date +%s`, then `/reload`.
-2. Run `/forever selftest` (the `!!DevSmoke` dev addon, linked from this repo's `tools/devsmoke/!!DevSmoke`). It opens and closes every
-   loaded Forever addon's slash command and the world map, and shows "Dev Smoke: N surfaces, F failed" on
-   screen.
-3. `/reload` again so the client writes SavedVariables, then
-   `python3 tools/forever_errors.py --since <noted time> --addon <AddonFolder>`. It reads the journals,
-   BugGrabber, `taint.log` and the selftest's failed surfaces. Exit 1 blocks the release: fix the error first.
-4. Point the link back at `test-artifacts/<repo>-dev` and `/reload`.
+needs, so the required `visual-proof` check passes without an admin merge: commit the `.visual-proof.json` for that
+exact build with the change. The same goes for the sync pull request that moves the ForeverCore pin.
 
 After merging main into a release branch, re-read the version section; `changelog.py --check` catches a bullet that appears twice.
 

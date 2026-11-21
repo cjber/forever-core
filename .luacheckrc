@@ -1,7 +1,7 @@
 std = "lua51"
 max_line_length = 120
 -- tools/forever_probe_api.lua is committed data: the ForeverProbeDB.api table read by tools/gen_forever_api.py.
-exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", "tools/.venv/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**", "tools/devsmoke/!!DevSmoke/!!DevSmokeInbox/**", "tools/forever_probe_api.lua" }
+exclude_files = { ".agents/**", ".claude/**", "docs/**", "tools/.cache/**", "tools/.venv/**", ".types/**", "types/**", ".release/**", "Nav/**" , ".bugpatrol/runs/**", ".speedpatrol/runs/**", ".sloppatrol/runs/**", "tools/forever_probe_api.lua" }
 globals = {
 	"EventUtil",
 	-- UI/TrackerHost.lua: the companion tracker registry a store build's vendored host still uses.
@@ -107,39 +107,6 @@ read_globals = {
 	"C_Minimap",
 }
 files["tests/"] = { std = "+luajit" }
--- The headless test client's dev addon (tools/headless): it closes a chat box and takes the ready screenshot.
-files["tools/headless/"] = { read_globals = { "ChatEdit_DeactivateChat", "Screenshot" } }
--- The !!DevSmoke dev addon (tools/devsmoke) and its spec: the client's error frame, its error handler, the world map
--- toggle, the secure-value check, the addon's saved runs and its slash alias; the Agent chat tab's window functions,
--- BugGrabber's own API, and the panels the close command hides.
-files["tools/devsmoke/"] = {
-	read_globals = {
-		"UIErrorsFrame",
-		"seterrorhandler",
-		"ToggleWorldMap",
-		"issecurevariable",
-		"issecretvalue",
-		"debugstack",
-		"time",
-		"NUM_CHAT_WINDOWS",
-		"GetChatWindowInfo",
-		"GetBindingKey",
-		"FCF_OpenNewWindow",
-		"FCF_SelectDockFrame",
-		"BugGrabber",
-		"ProfessionsFrame",
-		"WorldMapFrame",
-		"SettingsPanel",
-		"HideUIPanel",
-		"C_TradeSkillUI",
-		"C_AddOns",
-		"DevSmokeEval",
-		"DevSmokeEvalRun",
-		"Screenshot",
-	},
-	globals = { "DevSmokeDB", "SLASH_DEVSMOKE1" },
-}
-files["tests/devsmoke_spec.lua"] = { globals = { "DevSmokeDB", "SLASH_DEVSMOKE1", "DevSmokeEval", "DevSmokeEvalRun", "issecretvalue" } }
 
 -- Tracker colours and the quest item button's client helpers.
 read_globals[#read_globals + 1] = "OBJECTIVE_TRACKER_COLOR"
@@ -227,7 +194,7 @@ read_globals[#read_globals + 1] = "GetLocale"
 read_globals[#read_globals + 1] = "UnitClass"
 read_globals[#read_globals + 1] = "UnitRace"
 read_globals[#read_globals + 1] = "UnitLevel"
--- The character's own name (the headless helper), and Escape closing the report, credits and menu windows like any panel.
+-- The character's own name, and Escape closing the report, credits and menu windows like any panel.
 read_globals[#read_globals + 1] = "UnitName"
 read_globals[#read_globals + 1] = "UnitGUID"
 read_globals[#read_globals + 1] = "UISpecialFrames"
