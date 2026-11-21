@@ -920,6 +920,32 @@ class ForeverClientTest(unittest.TestCase):
         self.assertEqual(send.call_args_list[0], mock.call({}, "key", "Return"))
         self.assertNotIn(mock.call({}, "key", "Escape"), send.call_args_list)
 
+    def test_slash_types_nothing_when_the_world_goes_while_waiting_for_focus(self):
+        idle = {"world": True, "menu": False, "chat": False}
+        with (
+            mock.patch.object(fc, "send") as send,
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc.time, "sleep"),
+            mock.patch.object(fc, "client_ui", side_effect=[idle, idle, idle, idle | {"world": False}]),
+        ):
+            with self.assertRaisesRegex(fc.ClientError, "slash needs the world"):
+                fc.slash({}, "/reload")
+        self.assertEqual(send.call_args_list, [mock.call({}, "key", "Return")])
+
+    def test_focus_polls_after_each_return_are_bounded(self):
+        idle = {"world": True, "menu": False, "chat": False}
+        with (
+            mock.patch.object(fc, "send"),
+            mock.patch.object(fc, "one_line_slash"),
+            mock.patch.object(fc.time, "sleep") as sleep,
+            mock.patch.object(fc, "client_ui", return_value=idle) as ui,
+        ):
+            with self.assertRaisesRegex(fc.ClientError, "did not acquire focus"):
+                fc.slash({}, "/reload")
+        # one menu check, one read before any key, CHAT_FOCUS_POLLS after each Return, one after Escape
+        self.assertEqual(ui.call_count, 3 + 2 * fc.CHAT_FOCUS_POLLS)
+        self.assertEqual(sleep.call_args_list, [mock.call(0.1)] * (1 + 2 * fc.CHAT_FOCUS_POLLS))
+
     def test_slash_types_nothing_while_a_menu_will_not_close(self):
         with (
             mock.patch.object(fc, "send") as send,
@@ -1357,11 +1383,13 @@ class ForeverClientTest(unittest.TestCase):
     def test_enter_world_targets_requires_adjacent_enter_and_world_words(self):
         with (
             mock.patch.object(fc, "png_pixels", return_value=(1, 1, 1, [b"\x00"])),
+            mock.patch.object(fc, "write_pgm_channel") as channel,
             mock.patch.object(
                 fc, "ocr_words_with_lines", return_value=[("EnterWorld", 51.4, 1792, 1432, 254, 60, 1001)]
             ),
         ):
             self.assertEqual(fc.enter_world_targets(Path("frame.png")), [(896, 716, 127, 30, 51.4)])
+        self.assertEqual(channel.call_args.args[-1], fc.CHARACTER_SELECT_OCR_SCALE)
 
     def test_enter_world_targets_fails_closed_on_ambiguous_exact_labels(self):
         with (
