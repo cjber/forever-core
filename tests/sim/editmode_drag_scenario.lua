@@ -35,6 +35,8 @@ scenario("editmode_drag: snapping a dragged objective tracker keeps the column i
 	local questie = assert(G.Questie_BaseFrame)
 	questie:SetSize(200, 100)
 	questie:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -50, -50)
+	-- Questie hides the game's tracker while its list shows, so a game tracker being dragged has no list beside it.
+	questie:Hide()
 	sim:event("QUEST_LOG_UPDATE")
 	sim:advance(0.1)
 

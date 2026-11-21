@@ -1219,7 +1219,7 @@ local function TrackerCorner(tracker)
 end
 
 local function PinLeft()
-	local left, top = TrackerCorner(ObjectiveTrackerFrame)
+	local left, top = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
 	if left and top then
 		SetColumnPoint("TOPRIGHT", "BOTTOMLEFT", left, top)
 		under = false
@@ -1236,6 +1236,25 @@ end
 local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
+-- Whether the column's rect and Questie's list overlap, which a player dragging the list onto a column that holds its
+-- place brings about. The column never covers the list it sits beside.
+---@param list Frame?
+---@return boolean
+local function CoversList(list)
+	if not list then
+		return false
+	end
+	local scale = list:GetEffectiveScale() / host:GetEffectiveScale()
+	local listLeft, listRight = Coordinate(list:GetLeft()), Coordinate(list:GetRight())
+	local listTop, listBottom = Coordinate(list:GetTop()), Coordinate(list:GetBottom())
+	local left, right = Coordinate(host:GetLeft()), Coordinate(host:GetRight())
+	local top, bottom = Coordinate(host:GetTop()), Coordinate(host:GetBottom())
+	if not (listLeft and listRight and listTop and listBottom and left and right and top and bottom) then
+		return false
+	end
+	listLeft, listRight, listTop, listBottom = listLeft * scale, listRight * scale, listTop * scale, listBottom * scale
+	return left < listRight and listLeft < right and bottom < listTop and listBottom < top
+end
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
 	if (settings.x and settings.y) or Drag.Dragging() or ObjectiveTrackerFrame.isDragging or InCombatLockdown() then
@@ -1256,7 +1275,11 @@ local function FollowTracker(settings)
 			local _, line = TrackerEdge(shows)
 			local height = host:GetHeight() or 0
 			local floor = BarRoom(host:GetLeft() or 0, host:GetWidth() or 0, host:GetTop() or 0, height)
-			if height > (line or math.huge) - floor or height > (host:GetTop() or 0) - floor then
+			if
+				height > (line or math.huge) - floor
+				or height > (host:GetTop() or 0) - floor
+				or CoversList(QuestieList())
+			then
 				PinLeft()
 			end
 		end
