@@ -60,9 +60,23 @@ check(combatLate.parent == nil, "combat defers a late section attachment")
 t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 check(combatLate.parent == host, "combat release applies the deferred attachment")
-for _, event in ipairs({ "QUEST_WATCH_UPDATE", "ZONE_CHANGED_NEW_AREA" }) do
+for _, event in ipairs({ "QUEST_WATCH_UPDATE", "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN" }) do
 	check(not host.events[event], "the column ignores " .. event)
 end
+local function IsSettling()
+	for _, frame in ipairs(t.frames) do
+		if frame.scripts.OnUpdate then
+			return true
+		end
+	end
+	return false
+end
+t.fire("PLAYER_TARGET_CHANGED")
+check(not IsSettling(), "changing targets does not start settling")
+t.fire("UNIT_AURA", "target")
+check(not IsSettling(), "target auras do not start settling")
+t.fire("UNIT_AURA", "player")
+check(IsSettling(), "player auras start settling")
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local updatesBeforeDuplicateAttach = first.updates
 t.ns.TrackerHost.Attach(first)

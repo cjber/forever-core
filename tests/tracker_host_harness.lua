@@ -207,6 +207,10 @@ function harness.new(options)
 			self.events = self.events or {}
 			self.events[event] = true
 		end
+		function f:RegisterUnitEvent(event, unit)
+			self:RegisterEvent(event)
+			self.events[event] = unit
+		end
 		f.SetMovable = noop
 		function f:RegisterForDrag(button)
 			self.dragButton = button
@@ -543,14 +547,23 @@ function harness.new(options)
 	-- Delivers a client event to the host only when the host registered it, as the client does.
 	function ctx.fire(event, ...)
 		local host = ctx.host
-		if host.events and host.events[event] then
+		local registration = host.events and host.events[event]
+		if registration and (registration == true or registration == (...)) then
 			host.scripts.OnEvent(host, event, ...)
+		end
+	end
+	function ctx.advanceSettling()
+		for _ = 1, 2 do
+			for _, f in ipairs(frames) do
+				if f.scripts.OnUpdate then
+					f.scripts.OnUpdate(f, 1 / 60)
+				end
+			end
 		end
 	end
 	function ctx.recheck(event)
 		ctx.fire(event)
-		ctx.drain()
-		ctx.drain()
+		ctx.advanceSettling()
 	end
 	function ctx.tickDelayed()
 		local pending = delayed
@@ -558,8 +571,7 @@ function harness.new(options)
 		for _, fn in ipairs(pending) do
 			fn()
 		end
-		ctx.drain()
-		ctx.drain()
+		ctx.advanceSettling()
 	end
 	function ctx.moveLine(line)
 		nativeRect.line = line
