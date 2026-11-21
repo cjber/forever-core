@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.15.9] - 2026-11-21
+## [1.16.0] - 2026-11-21
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
+### Added
+
+- **Move the world map tabs.** Drag a Forever tab up or down to move the column out of the way of other addons. Right-click a Forever tab and choose Reset tab position to move it back. (cjber/shortest-path-forever#1056)
 
 ### Fixed
 
@@ -9,6 +15,8 @@
 ### For addon authors
 
 - **Packaging checks no longer fail under a stray `.git` folder.** A `.git` folder in a parent directory that git itself does not accept as a repository, such as an empty one in the temp directory, no longer makes the package file checks report that git cannot read the work tree. (#826)
+- **One addon's sync error no longer stops the sync for the rest.** A consumer that cannot sync is reported against that addon only, and every other addon still gets its shared files. (#976)
+- **A vendored core file no longer fails your typecheck.** When the sync copies `Core/ForeverRequire.lua` into an addon, it refreshes that file's pinned digest in `tools/font_bindings.json`, so a core change to a file the addon cannot review stops failing its font-binding check. (#998)
 
 ## [1.15.8] - 2026-11-20
 
