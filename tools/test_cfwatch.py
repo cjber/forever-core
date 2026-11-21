@@ -318,6 +318,61 @@ class LinkedTest(unittest.TestCase):
         self.assertIn("0 due, 1 answered, 0 still waiting", output)
 
 
+class SearchIssuesTest(unittest.TestCase):
+    def search(self, rows_by_repo):
+        """Run search_issues() over two watched repos and return the gh_json args it tried."""
+        calls = []
+
+        def api(*args):
+            calls.append(args)
+            return list(rows_by_repo.get(args[args.index("-R") + 1], []))
+
+        patches = [
+            unittest.mock.patch.object(cfwatch, "slug_list", lambda: ["skillup-forever", "forever-core"]),
+            unittest.mock.patch.object(cfwatch, "gh_json", api),
+        ]
+        with contextlib.ExitStack() as stack:
+            for patch in patches:
+                stack.enter_context(patch)
+            return calls, cfwatch.search_issues()
+
+    def test_each_watched_repo_is_asked_for_its_own_issues(self):
+        calls, issues = self.search({})
+
+        self.assertEqual(
+            [args[args.index("-R") + 1] for args in calls],
+            ["cjber/skillup-forever", "cjber/forever-core"],
+        )
+        self.assertEqual(issues, [])
+
+    def test_the_listing_is_every_issue_open_and_closed(self):
+        calls, _ = self.search({})
+
+        for args in calls:
+            self.assertNotIn("search", args)
+            self.assertEqual(args[args.index("--state") + 1], "all")
+            self.assertIn("closedAt", args[args.index("--json") + 1])
+
+    def test_a_row_keeps_its_repo_so_links_still_group(self):
+        _, issues = self.search(
+            {
+                "cjber/skillup-forever": [
+                    {
+                        "number": 7,
+                        "state": "open",
+                        "closedAt": None,
+                        "body": "A player reported this.\nCurseForge thread 8684993 (skillup-forever)\n",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual([issue["repository"]["name"] for issue in issues], ["skillup-forever"])
+        linked = cfwatch.linked_issues(lambda: issues)
+        self.assertEqual(list(linked), ["8684993"])
+        self.assertEqual(linked["8684993"][0]["repo"], "skillup-forever")
+
+
 class DueCallsTest(unittest.TestCase):
     """A due run answers from local tags and makes a bounded, cached number of REST calls."""
 
