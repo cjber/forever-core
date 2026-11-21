@@ -622,7 +622,10 @@ def with_sync_entry(text: str, version: str, day: str) -> str | None:
     if not release:
         return None
     entry = f"## [{version}] - {day}\n\n{SYNC_MARKER}\n\n{SYNC_BULLET}\n"
-    return f"{text[: release.start()]}{entry}\n{text[release.start() :]}".rstrip("\n") + "\n"
+    # Everything below the new entry stays byte-identical, including the file's own trailing newlines: a consumer's
+    # changelog check compares the text after its newest released heading with the base, so reflowing the end of the
+    # file rejects the whole sync PR on a diff that only added a section.
+    return f"{text[: release.start()]}{entry}\n{text[release.start() :]}"
 
 
 def fragment_paths(root: Path) -> list[Path]:
