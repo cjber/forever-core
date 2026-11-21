@@ -1,0 +1,36 @@
+name: Store descriptions
+
+# Fails when any CurseForge project description differs from its repo's docs/curseforge.md on main.
+# Fix a red run by pasting the named descriptions (wow-addon-publish skill, "Descriptions").
+
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-descriptions
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Clone every published addon
+        run: |
+          mkdir -p "$RUNNER_TEMP/addons"
+          for repo in forever-core skillup-forever shortest-path-forever adventure-guide-forever tweaks-forever \
+            legacy-forever commissions-forever macro-assist-forever field-guide-forever; do
+            git clone -q --depth 1 "https://github.com/cjber/$repo.git" "$RUNNER_TEMP/addons/$repo"
+          done
+      - name: Compare stored descriptions with main
+        env:
+          CURSEFORGE_CORE_API_KEY: ${{ secrets.CURSEFORGE_CORE_API_KEY }}
+        run: python3 tools/sync_curseforge.py "$RUNNER_TEMP/addons"

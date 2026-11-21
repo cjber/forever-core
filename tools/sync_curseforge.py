@@ -1,29 +1,21 @@
-"""Publish each addon's `docs/curseforge.md` from `origin/main` as its CurseForge project description.
+"""Check each addon's CurseForge project description against its `docs/curseforge.md` on `origin/main`.
 
-CurseForge's upload API covers files only, so the description is set through the author site in the user's own
-signed-in Chrome, driven by fastbrowse's extension. Each push is then read back from CurseForge's Core API, because
-the author site's "Changes saved successfully" toast also shows for edits it did not store: the run passes only
-when the stored description has exactly the markdown's words, in order, and links exactly its URLs. Links alone are
-not enough, since a description stored twice over carries the same URLs.
-
-A plain run only reads each stored description back and compares it with `main`. Pushing is opt-in with `--push`,
-because the fastbrowse extension run saves wrong text for some pages (agent-labs-dev/fastbrowse#939): until that is
-fixed, paste failing descriptions by hand and rerun the check. A state file remembers the hash of the markdown last
-published per project, so `--push` pushes only addons whose description changed on `main`:
+CurseForge has no API to write a description, so a changed `docs/curseforge.md` is pasted on the author site with
+Claude in Chrome (the recipe is in the `wow-addon-publish` skill under "Descriptions"). This script reads every stored
+description back from CurseForge's Core API and fails when any word, link or image URL differs from `main`. The author
+site's "Changes saved successfully" toast also shows for edits it did not store, so this read-back is the proof. The
+`store-descriptions` workflow runs it daily and goes red on a stale page:
 
     export CURSEFORGE_CORE_API_KEY=$(pass show dev/CURSEFORGE_CORE_API_KEY)
-    python3 tools/sync_curseforge.py ~/drive/proj/wow                 # verify every stored description
-    python3 tools/sync_curseforge.py ~/drive/proj/wow --push          # push changed descriptions, then verify
-    python3 tools/sync_curseforge.py ~/drive/proj/wow --push --all    # push every addon
+    python3 tools/sync_curseforge.py ~/drive/proj/wow                      # every addon checkout in the folder
+    python3 tools/sync_curseforge.py ~/drive/proj/wow --only tweaks-forever
 
-fastbrowse reads `OPENROUTER_API_KEY` from the environment; the user's Chrome must have the fastbrowse extension and a
-CurseForge sign-in. The read-back needs `CURSEFORGE_CORE_API_KEY` (pass `dev/CURSEFORGE_CORE_API_KEY`), a key from
-https://console.curseforge.com/. cfwidget is not used for it: it serves a cached copy that lags a fresh save.
+The key is from https://console.curseforge.com/. The Core API lags a save by a minute or two. cfwidget is not used:
+its cached copy lags further.
 """
 
 import argparse
 import difflib
-import hashlib
 import json
 import os
 import re
@@ -36,7 +28,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 
-STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "forever-core/curseforge-sync.json"
 MARKER = "forever-family"  # comment lines the family sync keeps in the file; they are not description text
 LINK = re.compile(r"\]\((https?://[^)\s]+)\)")
 PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.M)
@@ -78,26 +69,6 @@ def normalise(url: str) -> str:
     if parsed.path.rstrip("/").endswith("/linkout"):
         url = unquote(parse_qs(parsed.query)["remoteUrl"][0])
     return url.rstrip("/")
-
-
-def fastbrowse(task: str, start: str) -> dict:
-    command = ["fastbrowse", task, "--start", start, "--extension", "--authorize", "--json"]
-    run = subprocess.run(command, capture_output=True, text=True, timeout=900)
-    try:
-        return json.loads(run.stdout)
-    except json.JSONDecodeError:
-        return {"status": "error", "answer": run.stderr[-2000:]}
-
-
-def push(addon: Addon, markdown: str) -> dict:
-    task = (
-        f"Replace the CurseForge project description of project {addon.project_id} with the exact markdown between "
-        "MARKDOWN START and MARKDOWN END, and save it. The description editor is a markdown textarea "
-        "(textarea.mde-text): replace all of its text with the markdown, then click into the textarea, press ctrl+End "
-        "and type one newline with real key input, because setting the value alone does not register. Then click "
-        "Save. Change nothing else on the project.\n\nMARKDOWN START\n" + markdown + "MARKDOWN END"
-    )
-    return fastbrowse(task, f"https://authors.curseforge.com/#/projects/{addon.project_id}/description")
 
 
 def words(text: str) -> list[str]:
@@ -164,34 +135,19 @@ def verify(addon: Addon, markdown: str, key: str) -> tuple[bool, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("root", type=Path, help="folder holding the addon checkouts")
-    parser.add_argument("--push", action="store_true", help="push descriptions through fastbrowse before verifying")
-    parser.add_argument("--all", action="store_true", help="with --push, push every addon, not only changed ones")
     parser.add_argument("--only", nargs="*", default=[], help="repo folder names to limit the run to")
     args = parser.parse_args()
 
     key = os.environ.get("CURSEFORGE_CORE_API_KEY")
     if not key:
         parser.error("set CURSEFORGE_CORE_API_KEY: a CurseForge Core API key reads each description back")
-    state = json.loads(STATE.read_text()) if STATE.exists() else {}
     failed = []
     for addon in addons(args.root):
         if args.only and addon.name not in args.only:
             continue
-        markdown = addon.markdown()
-        digest = hashlib.sha256(markdown.encode()).hexdigest()
-        if args.push and not args.all and state.get(addon.project_id) == digest:
-            print(f"{addon.name}: unchanged")
-            continue
-        if args.push:
-            result = push(addon, markdown)
-            print(f"{addon.name}: push {result.get('status')}")
-        ok, detail = verify(addon, markdown, key)
+        ok, detail = verify(addon, addon.markdown(), key)
         print(f"{addon.name}: {'ok' if ok else 'FAILED'}, {detail}")
-        if ok:
-            state[addon.project_id] = digest
-            STATE.parent.mkdir(parents=True, exist_ok=True)
-            STATE.write_text(json.dumps(state, indent=2) + "\n")
-        else:
+        if not ok:
             failed.append(addon.name)
     if failed:
         print("failed: " + ", ".join(failed), file=sys.stderr)

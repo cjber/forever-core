@@ -117,10 +117,25 @@ A new project stays hidden until a moderator approves it; uploaded files appear 
 Run the browser work in the user's logged-in Chrome, in batches of about three images, so a slow page
 does not outlast the tool call. Confirm every change after a reload or on the public page.
 
-**Descriptions.** After a PR that changes `docs/curseforge.md` merges, paste it on CurseForge, then run `python3 tools/sync_curseforge.py <wow folder>` from `forever-core`: it reads each stored description back from CurseForge's Core API and fails on any word or link that differs from `main`. Its `--push` publishes through fastbrowse but is unreliable until agent-labs-dev/fastbrowse#939 is fixed. It needs `CURSEFORGE_CORE_API_KEY`, in pass as `dev/CURSEFORGE_CORE_API_KEY`. Paste `docs/curseforge.md` without its `forever-family` marker lines. CurseForge shows
-"Changes saved successfully" for changes it did not store: set `textarea.mde-text`, then click into it,
-press `ctrl+End`, type a newline and click Save with real input. Read the result back after a reload:
-CurseForge rewrites the markdown, so compare words and links, not lengths.
+**Descriptions.** CurseForge has no API to write one, so paste `docs/curseforge.md` with Claude in Chrome
+after a PR that changes it merges, and whenever the `store-descriptions` workflow in forever-core is red:
+
+1. Open `https://authors.curseforge.com/#/projects/<ID>/description` in Markdown mode. Wait until
+   `textarea.mde-text` exists **and** `document.title` starts with the addon's name: hash navigation keeps the
+   previous project's editor for a moment, and writing then overwrites the wrong project.
+2. In page JS, fetch `https://raw.githubusercontent.com/cjber/<repo>/main/docs/curseforge.md`, drop lines containing
+   `forever-family`, set the textarea through `Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,
+   'value').set` and dispatch a bubbling `input` event.
+3. Press `ctrl+End` then `Return` in the editor with real key input; without it Save stores nothing.
+4. Click Save (find it by ref; its position moves with the viewport) and wait for "Changes saved successfully".
+5. About 90 s later run `python3 tools/sync_curseforge.py <wow folder> --only <repo>` from forever-core with
+   `CURSEFORGE_CORE_API_KEY` (pass `dev/CURSEFORGE_CORE_API_KEY`). The toast also shows for edits CurseForge did
+   not store, so only this read-back proves the save.
+
+**Pinned comment.** Each published addon has one pinned author comment on its CurseForge comments page, written
+with normal capitalisation: thanks, the Discord invite, then "<Name> works alongside my other free Forever addons:"
+naming every other published addon, and `https://www.curseforge.com/members/cjber/projects`. When the published
+set changes, edit each one through the comment's More Options menu (Edit, then Pin if it lost its pin).
 
 **CurseForge gallery.** Upload from the current `origin/main` render. Take the title from
 `docs/curseforge.md` first, then `docs/gallery.md`. The media title limit is 128 characters.
