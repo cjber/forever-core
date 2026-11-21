@@ -112,6 +112,9 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 	_G.InCombatLockdown = function()
 		return world.inCombat
 	end
+	_G.IsMouseButtonDown = function(button)
+		return button == "LeftButton" and not world.buttonUp
+	end
 	_G.QuestMapFrame = map
 	_G.WorldMapFrame = worldMap
 	_G.securecallfunction = function(fn, ...)
@@ -648,6 +651,39 @@ dragA:mouseUpHandler("RightButton", true)
 assert(menuOwner == dragA and reset, "right-click did not offer reset on the clicked tab")
 reset()
 assert(saved.questLogTabOffsetY == nil and dragQuests.points[5] == -7, "reset did not restore the default anchor")
+
+-- A smaller map clamps a saved column again without forgetting where it was put.
+press(dragQuests)
+dragQuests.scripts.OnDragStart(dragQuests)
+dragWorld.cursorY = -2000
+dragQuests.scripts.OnDragStop(dragQuests)
+assert(dragQuests.points[5] == -254 and saved.questLogTabOffsetY == -247, "bottom drag was not saved")
+dragWorld.map.height = 200
+dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(dragQuests.points[5] == -104, "a smaller map did not clamp the column again")
+assert(saved.questLogTabOffsetY == -247, "clamping to a smaller map changed the saved position")
+dragWorld.map.height = 350
+dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(dragQuests.points[5] == -254, "the larger map did not restore the saved position")
+
+-- The map closes with the button held, so OnDragStop never arrives: the next update ends the drag in place.
+press(dragA)
+dragA.scripts.OnDragStart(dragA)
+dragWorld.buttonUp = true
+dragWorld.cursorY = 500
+dragA.scripts.OnUpdate(dragA)
+assert(not dragA.scripts.OnUpdate, "a drag outlived the released button")
+assert(dragQuests.points[5] == -254 and saved.questLogTabOffsetY == -247, "a stale drag moved the column")
+dragWorld.buttonUp = false
+
+-- Combat starting mid-drag ends the drag where it is.
+press(dragA)
+dragA.scripts.OnDragStart(dragA)
+dragWorld.inCombat = true
+dragWorld.cursorY = 0
+dragA.scripts.OnUpdate(dragA)
+assert(not dragA.scripts.OnUpdate and dragQuests.points[5] == -254, "a drag continued into combat")
+dragWorld.inCombat = false
 
 -- Reload with a saved drag offset in the stock-tab layout.
 local stockWorld = newWorld(false)

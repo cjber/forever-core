@@ -119,11 +119,6 @@ local function PanelHidden(_, frame)
 	end
 end
 
--- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
-local function QuestLogPanelShown()
-	Sync()
-end
-
 ---@return ForeverCoreSavedVariables?
 local function Saved()
 	local db
@@ -188,6 +183,15 @@ local function Anchor(dragOffset)
 	end
 end
 
+-- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
+-- Maximising or minimising the map changes its height, so a moved column is clamped again; the saved offset stays.
+local function QuestLogPanelShown()
+	if appliedOffset ~= 0 or SavedOffset() ~= 0 then
+		Anchor()
+	end
+	Sync()
+end
+
 local function InCombat()
 	return InCombatLockdown and InCombatLockdown()
 end
@@ -198,19 +202,17 @@ local function SetTabInput(tab, selectTab)
 	local dragged = false
 	local cursorStart, offsetStart, lastCursorY
 
-	local function UpdateDrag()
-		if not InCombat() and cursorStart then
-			local _, cursorY = GetCursorPosition()
-			if cursorY ~= lastCursorY then
-				lastCursorY = cursorY
-				Anchor(offsetStart + (cursorY - cursorStart) / tab:GetEffectiveScale())
-			end
+	local function Move()
+		local _, cursorY = GetCursorPosition()
+		if cursorY ~= lastCursorY then
+			lastCursorY = cursorY
+			Anchor(offsetStart + (cursorY - cursorStart) / tab:GetEffectiveScale())
 		end
 	end
 
-	local function StopDrag()
+	-- Keeps the column where it was last drawn.
+	local function EndDrag()
 		if cursorStart then
-			UpdateDrag()
 			cursorStart = nil
 			tab:SetScript("OnUpdate", nil)
 			local db = Saved()
@@ -220,10 +222,30 @@ local function SetTabInput(tab, selectTab)
 		end
 	end
 
+	-- The map can close or combat can start while the button is held, and then OnDragStop never arrives: the next
+	-- update, on this frame or once the map is open again, ends the drag in place.
+	local function UpdateDrag()
+		if not cursorStart then
+			return
+		end
+		if InCombat() or not IsMouseButtonDown("LeftButton") then
+			EndDrag()
+		else
+			Move()
+		end
+	end
+
+	local function StopDrag()
+		if cursorStart and not InCombat() then
+			Move()
+		end
+		EndDrag()
+	end
+
 	tab:RegisterForDrag("LeftButton")
 	tab:HookScript("OnMouseDown", function(_, button)
 		if button == "LeftButton" then
-			StopDrag()
+			EndDrag()
 			dragged = false
 		end
 	end)
