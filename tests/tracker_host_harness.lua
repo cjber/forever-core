@@ -1,5 +1,4 @@
--- Shared stubs for the tracker host specs: one private host on a stubbed UIParent, and a native tracker it only names
--- as an anchor.
+-- Shared tracker host stubs with read-only native geometry and recorded anchor dependencies.
 local harness = {}
 
 function harness.new(options)
@@ -11,13 +10,13 @@ function harness.new(options)
 	end
 	local function noop() end
 	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
+	local delayed, trackerTargets = {}, {}
+	local env
 	local animations, released = 0, 0
 	local textures = {}
 	local initializationEvents
 	local combat = false
 	local parent
-	-- The native tracker's geometry, which only the spec reads and moves. A frame anchored to the native tracker
-	-- resolves through it, as the engine resolves an anchor, so the host never has to read the tracker itself.
 	local native
 	-- `line` is the bottom of its last visible line, where its NineSlice ends; `shown` false hides it.
 	local nativeRect = { left = 1200 - 260, top = 880, width = 260, height = 300, line = 880 - 120, shown = true }
@@ -29,27 +28,43 @@ function harness.new(options)
 		end
 		return low + size / 2
 	end
-	-- The frame's left and top when its one point names the native tracker, nil otherwise.
+	-- Resolve the screen and tracker anchors used by the column.
 	local function Anchored(self)
 		local p = self.point
-		if not p or p[2] ~= native then
+		if not p then
 			return nil
 		end
-		local x = Along(p[3]:gsub("TOP", ""):gsub("BOTTOM", ""), nativeRect.left, nativeRect.width) + (p[4] or 0)
-		local y = Along(p[3]:gsub("LEFT", ""):gsub("RIGHT", ""), nativeRect.top - nativeRect.height, nativeRect.height)
-			+ (p[5] or 0)
+		local left, top, width, height
+		if p[2] == native then
+			left, top, width, height = nativeRect.left, nativeRect.top, nativeRect.width, nativeRect.height
+		elseif p[2] == parent then
+			left, top = 0, parent.height / self:GetEffectiveScale()
+			width, height = parent.width / self:GetEffectiveScale(), top
+		else
+			return nil
+		end
+		local x = Along(p[3]:gsub("TOP", ""):gsub("BOTTOM", ""), left, width) + (p[4] or 0)
+		local y = Along(p[3]:gsub("LEFT", ""):gsub("RIGHT", ""), top - height, height) + (p[5] or 0)
 		local horizontal = p[1]:gsub("TOP", ""):gsub("BOTTOM", "")
 		local vertical = p[1]:gsub("LEFT", ""):gsub("RIGHT", "")
-		local left = x - (Along(horizontal, 0, self:GetWidth()))
-		local top = y + self:GetHeight() - Along(vertical, 0, self:GetHeight())
-		return left, top
+		return x - Along(horizontal, 0, self:GetWidth()), y + self:GetHeight() - Along(vertical, 0, self:GetHeight())
+	end
+	local dependents = {}
+	local function Record(owner, target)
+		if target and (trackerTargets[target] or (env and target == env.Questie_BaseFrame)) then
+			dependents[#dependents + 1] = { owner, target }
+		end
 	end
 	local function frame()
 		local f = { width = 250, height = 0, scripts = {} }
 		function f:SetPoint(...)
 			self.point = { ... }
+			Record(self, select(2, ...))
 			self.points = self.points or {}
 			self.points[(...)] = self.point
+		end
+		function f:SetAllPoints(target)
+			Record(self, target)
 		end
 		function f.GetPoint(self)
 			return unpack(self.point or { "TOPRIGHT", parent, "TOPRIGHT", 0, -100 })
@@ -130,6 +145,7 @@ function harness.new(options)
 			self.mouse = value
 		end
 		function f:SetParent(owner)
+			Record(self, owner)
 			self.parent = owner
 		end
 		-- Effective visibility, the way the client reports it: the frame and every ancestor shown.
@@ -278,9 +294,7 @@ function harness.new(options)
 		frames[#frames + 1] = f
 		return f
 	end
-	-- The client's tracker exists, which says its section template loaded, and the column may name it as an anchor. The
-	-- host may read where it is and where its last line ends, and nothing else: any other field, a write or a hook (its
-	-- HookScript, SetPoint or any setter) fails the spec.
+	-- The host can sample the native tracker; reads outside the placement API, writes and hooks fail the spec.
 	local function ReadOnly(name, reads)
 		return setmetatable({}, {
 			__index = function(_, key)
@@ -326,6 +340,7 @@ function harness.new(options)
 			GetEffectiveScale = NativeScale,
 		}),
 	})
+	trackerTargets[native], trackerTargets[nineSlice], trackerTargets[native.Header] = true, true, true
 	parent = frame()
 	parent.width = 1200
 	parent:SetHeight(1080)
@@ -375,7 +390,6 @@ function harness.new(options)
 		return menu
 	end
 	ns.ContextMenu = captureMenu
-	local env
 	env = setmetatable({
 		ObjectiveTrackerManager = forbidden,
 		InCombatLockdown = function()
@@ -385,12 +399,14 @@ function harness.new(options)
 		UIParent = parent,
 		CreateFrame = function(kind, _, owner, template)
 			local f = frame()
+			Record(f, owner)
 			f.kind, f.template, f.createdParent = kind, template, owner
 			return f
 		end,
 		C_Timer = {
-			After = function(_, fn)
-				timers[#timers + 1] = fn
+			After = function(delay, fn)
+				local queue = delay == 0 and timers or delayed
+				queue[#queue + 1] = fn
 			end,
 		},
 		EventUtil = {
@@ -525,36 +541,34 @@ function harness.new(options)
 		setCombat = function(value)
 			combat = value
 		end,
-		-- The game's quest list ends at `line`, as a quest added, completed or collapsed leaves it: the host's probe,
-		-- which spans from the screen's bottom to that line, changes size.
-		moveLine = function(line)
-			nativeRect.line = line
-			for _, f in ipairs(frames) do
-				if f.createdParent == parent and f.scripts.OnSizeChanged then
-					f.scripts.OnSizeChanged(f)
-				end
+		dependents = dependents,
+		drainDelayed = function()
+			local pending = delayed
+			delayed = {}
+			for _, fn in ipairs(pending) do
+				fn()
 			end
 		end,
-		-- The game's tracker shows or hides, which its child frames hear.
 		showTracker = function(shown)
 			nativeRect.shown = shown
-			for _, f in ipairs(frames) do
-				local handler = f.createdParent == native and f.scripts[shown and "OnShow" or "OnHide"]
-				if handler then
-					handler(f)
-				end
-			end
 		end,
 		inCombat = function()
 			return combat
 		end,
 	}
-	-- Delivers a client event to the host only when the host registered it, as the client does.
-	function ctx.fire(event)
-		local host = ctx.host
-		if host.events and host.events[event] then
-			host.scripts.OnEvent(host, event)
+	-- Deliver events to registered frames, as the client does.
+	function ctx.fire(event, ...)
+		for _, f in ipairs(frames) do
+			if f.events and f.events[event] and f.scripts.OnEvent then
+				f.scripts.OnEvent(f, event, ...)
+			end
 		end
+	end
+	function ctx.moveLine(line)
+		nativeRect.line = line
+		ctx.fire("QUEST_LOG_UPDATE")
+		ctx.drain()
+		ctx.drain()
 	end
 	function ctx.loadHost(namespace, path)
 		-- Start work runs at once, as in the unwrapped standalone.

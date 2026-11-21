@@ -1,5 +1,4 @@
--- The host must never enter Blizzard's tracker manager, including through pooled lines, and never touch the native
--- tracker: the harness's ObjectiveTrackerFrame fails any read or write, so the column may only name it as an anchor.
+-- The host stays outside the native tracker manager and samples tracker geometry without creating dependencies.
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ deferReady = true })
 local check, drain = t.check, t.drain
@@ -16,7 +15,7 @@ check(
 -- Before its first layout the column already sits at its pin and each section in it, so a reload's first pass moves
 -- nothing and a section's first build measures its lines at the width it draws at (#795).
 check(
-	host.point[1] == "TOPRIGHT" and host.point[2] == t.native and host.point[3] == "TOPLEFT",
+	host.point[1] == "TOPRIGHT" and host.point[2] == t.parent and host.point[3] == "BOTTOMLEFT",
 	"the column starts pinned"
 )
 check(first.point[2] == host and second.point[2] == host, "a section is placed in the column when it attaches")
@@ -29,10 +28,10 @@ check(host.width == 260, "the column takes the section template's width")
 local function Pinned(ctx)
 	local point = ctx.host.point
 	return point[1] == "TOPRIGHT"
-		and point[2] == ctx.native
-		and point[3] == "TOPLEFT"
-		and point[4] == 0
-		and point[5] == 0
+		and point[2] == ctx.parent
+		and point[3] == "BOTTOMLEFT"
+		and point[4] == ctx.nativeRect.left / ctx.host:GetEffectiveScale()
+		and point[5] == ctx.nativeRect.top / ctx.host:GetEffectiveScale()
 end
 -- Under it, the column's top left corner is on the tracker's last line, placed on UIParent.
 local function Under(ctx)
@@ -61,9 +60,8 @@ check(combatLate.parent == nil, "combat defers a late section attachment")
 t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 check(combatLate.parent == host, "combat release applies the deferred attachment")
-for _, event in ipairs({ "QUEST_LOG_UPDATE", "QUEST_WATCH_UPDATE", "ZONE_CHANGED_NEW_AREA" }) do
-	check(not host.events[event], "the column watches no quest events: " .. event)
-end
+check(host.events.QUEST_LOG_UPDATE, "quest log changes can trigger placement")
+check(not host.events.ZONE_CHANGED_NEW_AREA, "a zone change queues no placement")
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local updatesBeforeDuplicateAttach = first.updates
 t.ns.TrackerHost.Attach(first)
@@ -79,20 +77,24 @@ drain()
 check(host.shown == false, "host hides when no section draws")
 check(first.point[5] == 0 and second.point[5] == 0, "an empty column keeps its sections at its top")
 
--- An Edit Mode move of the game tracker carries the column with it: the engine keeps the anchor, so the host runs no
--- layout and sets no point of its own.
+-- The column resamples the two corners after Edit Mode has applied its layout.
 local pinned = harness.new()
 local pinPoint = pinned.host.point
 local nativeRect = pinned.nativeRect
 nativeRect.left, nativeRect.top = 400, 700
-pinned.check(pinned.pending() == 0, "a move of the game tracker queues no layout")
-pinned.check(pinned.host.point == pinPoint, "and sets no point")
-pinned.check(CornersTouch(pinned), "the corners stay together after an Edit Mode move")
--- The pin holds whether the game tracker is shown or hidden: the host never asks which, and the harness's tracker
--- would fail the spec if it did. A layout after the tracker hides keeps the same anchor.
+pinned.check(pinned.host.point == pinPoint, "the tracker move itself sets no column point")
+pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
+pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
+pinned.check(pinned.pending() == 1, "Edit Mode events share one placement check")
+pinned.drain()
+pinned.check(pinned.host.point == pinPoint, "the placement check waits for the native layout")
+pinned.drain()
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "the corners meet after the deferred Edit Mode check")
+pinned.showTracker(false)
 pinned.host:MarkDirty()
 pinned.drain()
-pinned.check(Pinned(pinned) and CornersTouch(pinned), "a later layout keeps the pin")
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "the hidden tracker keeps its left placement")
+pinned.check(#pinned.dependents == 0, "no addon frame depends on the native tracker")
 
 -- A drag on a section header gives the column a free position and releases the pin. Letting go is not a click.
 local settings = pinned.hostSettings
@@ -181,17 +183,10 @@ local function QuestieCase()
 	list.left, list.top, list.height = 900, 860, 200
 	q.showTracker(false)
 	q.env.Questie_BaseFrame = list
-	-- Questie's list appearing is read on the next quest log event, as the tracker showing or hiding is.
-	local function Event(event)
-		for _, f in ipairs(q.frames) do
-			if f ~= q.host and f.events and f.events[event] and f.scripts.OnEvent then
-				f.scripts.OnEvent(f, event)
-			end
-		end
-		q.drain()
-		q.drain()
-	end
-	Event("QUEST_LOG_UPDATE")
+	-- Discovery finds the list without a quest event.
+	q.drainDelayed()
+	q.drain()
+	q.drain()
 	local function UnderList()
 		local spot = q.host.point
 		return spot[1] == "TOPLEFT"
@@ -200,15 +195,16 @@ local function QuestieCase()
 			and spot[4] == list.left
 			and spot[5] == list.top - list.height
 	end
-	q.check(UnderList(), "the attached column sits under Questie's list")
+	q.check(UnderList(), "bounded discovery finds Questie without a quest event")
 	list.height = 320
 	q.moveLine(q.nativeRect.line)
 	q.check(UnderList(), "and follows its last line as it grows")
 	-- Questie's tracker turned off: the game's tracker is back, and the column goes back under it.
 	list.shown = false
 	q.showTracker(true)
-	Event("QUEST_LOG_UPDATE")
+	q.moveLine(q.nativeRect.line)
 	q.check(Under(q), "with Questie's list gone the column returns under the game's tracker")
+	q.check(#q.dependents == 0, "no addon frame depends on either tracker")
 end
 QuestieCase()
 
@@ -230,7 +226,7 @@ userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's 
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check, an anchor argument or one of the reads that place the column under it (#850, #883), never another
+-- a presence check or one of the reads that place the column under it (#850, #883), never another
 -- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
 local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
 local function Starts(text, list)
@@ -261,15 +257,45 @@ assert(
 	"a child write fails"
 )
 assert(not Read(".Header = nil") and not Read(":SetCollapsed(true)"), "an assignment or another method fails")
-local writes = {}
+local function TrackerArgument(argument)
+	return argument:match("%f[%w_]ObjectiveTrackerFrame%f[^%w_]") or argument:match("%f[%w_]Questie_BaseFrame%f[^%w_]")
+end
+
+local targetArguments = { SetPoint = 2, SetAllPoints = 1, SetParent = 1, CreateFrame = 3 }
+local function TrackerDependency(code)
+	for method, position in pairs(targetArguments) do
+		for args in code:gmatch("%f[%w_]" .. method .. "%s*(%b())") do
+			-- Replace nested expressions with a single argument fragment, retaining tracker references.
+			local flat = args:sub(2, -2):gsub("%b()", function(expression)
+				return expression:gsub(",", " ")
+			end)
+			local index = 0
+			for argument in (flat .. ","):gmatch("(.-),") do
+				index = index + 1
+				if index == position and TrackerArgument(argument) then
+					return method
+				end
+			end
+		end
+	end
+end
+assert(TrackerDependency('host:SetPoint("TOPRIGHT",\n ObjectiveTrackerFrame.NineSlice, "TOPLEFT")'))
+assert(TrackerDependency("host:SetAllPoints(Questie_BaseFrame)"))
+assert(TrackerDependency('CreateFrame("Frame", nil, ObjectiveTrackerFrame.Header)'))
+assert(TrackerDependency("host:SetParent(Questie_BaseFrame)"))
+assert(not TrackerDependency('host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ObjectiveTrackerFrame:GetLeft(), y)'))
+
+local writes, dependencies = {}, {}
 for line in io.lines("ForeverCore.toc") do
 	local path = line:match("^([%w_\\/]+%.lua)%s*$")
 	if path then
 		path = path:gsub("\\", "/")
-		local number = 0
-		for source in io.lines(path) do
+		local number, lines = 0, {}
+		local trackerPath = path == "UI/TrackerHost.lua" and os.getenv("TEST_TRACKER_HOST") or nil
+		for source in io.lines(trackerPath or path) do
 			number = number + 1
 			local code = source:gsub("%-%-.*$", "")
+			lines[#lines + 1] = code
 			local init = 1
 			while true do
 				local _, finish = code:find("ObjectiveTrackerFrame", init, true)
@@ -286,8 +312,13 @@ for line in io.lines("ForeverCore.toc") do
 				init = finish + 1
 			end
 		end
+		local dependency = TrackerDependency(table.concat(lines, "\n"))
+		if dependency then
+			dependencies[#dependencies + 1] = path .. " (" .. dependency .. ")"
+		end
 	end
 end
+check(#dependencies == 0, "tracker anchor or parent dependency: " .. table.concat(dependencies, ", "))
 check(#writes == 0, "nothing in core writes, hooks or calls ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks

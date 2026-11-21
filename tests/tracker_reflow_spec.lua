@@ -131,9 +131,8 @@ do
 	Untouched(before, animations, "a clean host pass")
 end
 
--- The right action bars moving or resizing: the host never reads them, so nothing follows. An Edit Mode move of the
--- game's tracker carries the pinned column through the engine's anchor alone: the host sets no point and rebuilds
--- nothing, and the two top corners stay together.
+-- Action bar changes outside the column's footprint leave it still. An Edit Mode move of the game tracker
+-- moves the pinned column once without rebuilding its sections.
 do
 	local frame = t.parent
 	local function Bar()
@@ -158,10 +157,15 @@ do
 	Untouched(before, animations, "the action bars moving")
 	local point = t.host.point
 	t.nativeRect.left, t.nativeRect.top = 600, 700
-	check(t.pending() == 0 and t.host.point == point, "an Edit Mode move of the game tracker runs nothing in the host")
+	check(t.pending() == 0 and t.host.point == point, "a tracker move alone leaves the column still")
+	t.fire("EDIT_MODE_LAYOUTS_UPDATED")
+	local _, trackerMoves = Settle()
+	check(trackerMoves == 1, "the column resamples the tracker once after the Edit Mode event")
 	check(t.host:GetRight() == 600 and t.host:GetTop() == 700, "the corners stay together after the move")
 	Untouched(before, animations, "an Edit Mode move of the game tracker")
 	t.nativeRect.left, t.nativeRect.top = 940, 880
+	t.fire("EDIT_MODE_LAYOUTS_UPDATED")
+	Settle()
 end
 
 -- One section's change rebuilds that section alone, in one frame.
