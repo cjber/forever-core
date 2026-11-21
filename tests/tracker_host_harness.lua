@@ -11,16 +11,15 @@ function harness.new(options)
 	end
 	local function noop() end
 	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
+	local delayed = {}
 	local animations, released = 0, 0
 	local textures = {}
 	local initializationEvents
 	local combat = false
 	local parent
-	-- The native tracker's geometry, which only the spec reads and moves. A frame anchored to the native tracker
-	-- resolves through it, as the engine resolves an anchor, so the host never has to read the tracker itself.
+	-- The native tracker exposes its geometry through the read-only fixture below.
 	local native
-	-- `line` is the bottom of its last visible line, where its NineSlice ends; `shown` false hides it.
-	local nativeRect = { left = 1200 - 260, top = 880, width = 260, height = 300, line = 880 - 120, shown = true }
+	local nativeRect = { left = 1200 - 260, top = 880, line = 880 - 120, shown = true }
 	local function Along(name, low, size)
 		if name:find("LEFT") or name:find("BOTTOM") then
 			return low
@@ -29,15 +28,15 @@ function harness.new(options)
 		end
 		return low + size / 2
 	end
-	-- The frame's left and top when its one point names the native tracker, nil otherwise.
+	-- Resolve points on UIParent in the anchored frame's units.
 	local function Anchored(self)
 		local p = self.point
-		if not p or p[2] ~= native then
+		if not p or p[2] ~= parent then
 			return nil
 		end
-		local x = Along(p[3]:gsub("TOP", ""):gsub("BOTTOM", ""), nativeRect.left, nativeRect.width) + (p[4] or 0)
-		local y = Along(p[3]:gsub("LEFT", ""):gsub("RIGHT", ""), nativeRect.top - nativeRect.height, nativeRect.height)
-			+ (p[5] or 0)
+		local scale = parent:GetEffectiveScale() / self:GetEffectiveScale()
+		local x = Along(p[3]:gsub("TOP", ""):gsub("BOTTOM", ""), 0, parent:GetWidth() * scale) + (p[4] or 0)
+		local y = Along(p[3]:gsub("LEFT", ""):gsub("RIGHT", ""), 0, parent:GetHeight() * scale) + (p[5] or 0)
 		local horizontal = p[1]:gsub("TOP", ""):gsub("BOTTOM", "")
 		local vertical = p[1]:gsub("LEFT", ""):gsub("RIGHT", "")
 		local left = x - (Along(horizontal, 0, self:GetWidth()))
@@ -52,7 +51,7 @@ function harness.new(options)
 			self.points[(...)] = self.point
 		end
 		function f.GetPoint(self)
-			return unpack(self.point or { "TOPRIGHT", parent, "TOPRIGHT", 0, -100 })
+			return unpack(self.point or {})
 		end
 		function f:SetWidth(value)
 			self.width = value
@@ -278,7 +277,7 @@ function harness.new(options)
 		frames[#frames + 1] = f
 		return f
 	end
-	-- The client's tracker exists, which says its section template loaded, and the column may name it as an anchor. The
+	-- The client's tracker exists, which says its section template loaded. The
 	-- host may read where it is and where its last line ends, and nothing else: any other field, a write or a hook (its
 	-- HookScript, SetPoint or any setter) fails the spec.
 	local function ReadOnly(name, reads)
@@ -305,6 +304,7 @@ function harness.new(options)
 		GetEffectiveScale = NativeScale,
 	})
 	native = ReadOnly("tracker", {
+		isDragging = false,
 		NineSlice = nineSlice,
 		GetLeft = function()
 			return nativeRect.left
@@ -389,8 +389,9 @@ function harness.new(options)
 			return f
 		end,
 		C_Timer = {
-			After = function(_, fn)
-				timers[#timers + 1] = fn
+			After = function(delay, fn)
+				local queue = delay > 0 and delayed or timers
+				queue[#queue + 1] = fn
 			end,
 		},
 		EventUtil = {
@@ -525,16 +526,6 @@ function harness.new(options)
 		setCombat = function(value)
 			combat = value
 		end,
-		-- The game's quest list ends at `line`, as a quest added, completed or collapsed leaves it: the host's probe,
-		-- which spans from the screen's bottom to that line, changes size.
-		moveLine = function(line)
-			nativeRect.line = line
-			for _, f in ipairs(frames) do
-				if f.createdParent == parent and f.scripts.OnSizeChanged then
-					f.scripts.OnSizeChanged(f)
-				end
-			end
-		end,
 		-- The game's tracker shows or hides, which its child frames hear.
 		showTracker = function(shown)
 			nativeRect.shown = shown
@@ -550,11 +541,29 @@ function harness.new(options)
 		end,
 	}
 	-- Delivers a client event to the host only when the host registered it, as the client does.
-	function ctx.fire(event)
+	function ctx.fire(event, ...)
 		local host = ctx.host
 		if host.events and host.events[event] then
-			host.scripts.OnEvent(host, event)
+			host.scripts.OnEvent(host, event, ...)
 		end
+	end
+	function ctx.recheck(event)
+		ctx.fire(event)
+		ctx.drain()
+		ctx.drain()
+	end
+	function ctx.tickDelayed()
+		local pending = delayed
+		delayed = {}
+		for _, fn in ipairs(pending) do
+			fn()
+		end
+		ctx.drain()
+		ctx.drain()
+	end
+	function ctx.moveLine(line)
+		nativeRect.line = line
+		ctx.recheck("QUEST_LOG_UPDATE")
 	end
 	function ctx.loadHost(namespace, path)
 		-- Start work runs at once, as in the unwrapped standalone.

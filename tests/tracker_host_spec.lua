@@ -1,5 +1,4 @@
--- The host must never enter Blizzard's tracker manager, including through pooled lines, and never touch the native
--- tracker: the harness's ObjectiveTrackerFrame fails any read or write, so the column may only name it as an anchor.
+-- The host stays outside Blizzard's tracker manager and reads only the tracker state needed for placement.
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ deferReady = true })
 local check, drain = t.check, t.drain
@@ -16,8 +15,8 @@ check(
 -- Before its first layout the column already sits at its pin and each section in it, so a reload's first pass moves
 -- nothing and a section's first build measures its lines at the width it draws at (#795).
 check(
-	host.point[1] == "TOPRIGHT" and host.point[2] == t.native and host.point[3] == "TOPLEFT",
-	"the column starts pinned"
+	host.point[1] == "TOPRIGHT" and host.point[2] == t.parent and host.point[3] == "BOTTOMLEFT",
+	"the column starts pinned to screen coordinates"
 )
 check(first.point[2] == host and second.point[2] == host, "a section is placed in the column when it attaches")
 t.ready()
@@ -29,10 +28,10 @@ check(host.width == 260, "the column takes the section template's width")
 local function Pinned(ctx)
 	local point = ctx.host.point
 	return point[1] == "TOPRIGHT"
-		and point[2] == ctx.native
-		and point[3] == "TOPLEFT"
-		and point[4] == 0
-		and point[5] == 0
+		and point[2] == ctx.parent
+		and point[3] == "BOTTOMLEFT"
+		and point[4] == ctx.nativeRect.left / ctx.host:GetEffectiveScale()
+		and point[5] == ctx.nativeRect.top / ctx.host:GetEffectiveScale()
 end
 -- Under it, the column's top left corner is on the tracker's last line, placed on UIParent.
 local function Under(ctx)
@@ -61,8 +60,8 @@ check(combatLate.parent == nil, "combat defers a late section attachment")
 t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 check(combatLate.parent == host, "combat release applies the deferred attachment")
-for _, event in ipairs({ "QUEST_LOG_UPDATE", "QUEST_WATCH_UPDATE", "ZONE_CHANGED_NEW_AREA" }) do
-	check(not host.events[event], "the column watches no quest events: " .. event)
+for _, event in ipairs({ "QUEST_WATCH_UPDATE", "ZONE_CHANGED_NEW_AREA" }) do
+	check(not host.events[event], "the column ignores " .. event)
 end
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local updatesBeforeDuplicateAttach = first.updates
@@ -79,20 +78,14 @@ drain()
 check(host.shown == false, "host hides when no section draws")
 check(first.point[5] == 0 and second.point[5] == 0, "an empty column keeps its sections at its top")
 
--- An Edit Mode move of the game tracker carries the column with it: the engine keeps the anchor, so the host runs no
--- layout and sets no point of its own.
-local pinned = harness.new()
-local pinPoint = pinned.host.point
+-- The drag release reads tracker geometry without laying out sections.
+local pinned = harness.new({ hostSettings = { placement = "left" } })
 local nativeRect = pinned.nativeRect
+local updates = pinned.first.updates
 nativeRect.left, nativeRect.top = 400, 700
-pinned.check(pinned.pending() == 0, "a move of the game tracker queues no layout")
-pinned.check(pinned.host.point == pinPoint, "and sets no point")
-pinned.check(CornersTouch(pinned), "the corners stay together after an Edit Mode move")
--- The pin holds whether the game tracker is shown or hidden: the host never asks which, and the harness's tracker
--- would fail the spec if it did. A layout after the tracker hides keeps the same anchor.
-pinned.host:MarkDirty()
-pinned.drain()
-pinned.check(Pinned(pinned) and CornersTouch(pinned), "a later layout keeps the pin")
+pinned.recheck("GLOBAL_MOUSE_UP")
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "the corners meet after an Edit Mode move")
+pinned.check(pinned.first.updates == updates, "following the move does not lay out sections")
 
 -- A drag on a section header gives the column a free position and releases the pin. Letting go is not a click.
 local settings = pinned.hostSettings
@@ -181,17 +174,8 @@ local function QuestieCase()
 	list.left, list.top, list.height = 900, 860, 200
 	q.showTracker(false)
 	q.env.Questie_BaseFrame = list
-	-- Questie's list appearing is read on the next quest log event, as the tracker showing or hiding is.
-	local function Event(event)
-		for _, f in ipairs(q.frames) do
-			if f ~= q.host and f.events and f.events[event] and f.scripts.OnEvent then
-				f.scripts.OnEvent(f, event)
-			end
-		end
-		q.drain()
-		q.drain()
-	end
-	Event("QUEST_LOG_UPDATE")
+	-- Questie's list can appear after the column's first layout.
+	q.tickDelayed()
 	local function UnderList()
 		local spot = q.host.point
 		return spot[1] == "TOPLEFT"
@@ -207,7 +191,7 @@ local function QuestieCase()
 	-- Questie's tracker turned off: the game's tracker is back, and the column goes back under it.
 	list.shown = false
 	q.showTracker(true)
-	Event("QUEST_LOG_UPDATE")
+	q.recheck("QUEST_LOG_UPDATE")
 	q.check(Under(q), "with Questie's list gone the column returns under the game's tracker")
 end
 QuestieCase()
@@ -230,9 +214,9 @@ userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's 
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check, an anchor argument or one of the reads that place the column under it (#850, #883), never another
+-- a presence check or one of the reads that place the column under it (#850, #883), never another
 -- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
-local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+local reads = { ".isDragging", ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
 local function Starts(text, list)
 	for _, read in ipairs(list) do
 		if text:sub(1, #read) == read then

@@ -27,6 +27,7 @@ end
 local function listEnds(sim, tracker, height)
 	tracker.questList.height = height
 	tracker:MarkDirty()
+	sim:event("QUEST_LOG_UPDATE")
 	sim:advance(0.1)
 end
 
