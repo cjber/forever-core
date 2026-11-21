@@ -49,6 +49,8 @@ local function run(sim, trackerHost)
 	}, { order = -3 })
 	G.ForeverCore.TrackerHost.Attach(section)
 	local tracker = sim:openObjectiveTracker()
+	-- Isolate tracker-line placement from the separate minimap clearance rule.
+	G.MinimapCluster:Hide()
 	tracker.questList = questList(G, tracker)
 	tracker:ClearAllPoints()
 	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)

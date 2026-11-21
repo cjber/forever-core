@@ -225,9 +225,7 @@ local userScaled = harness.new({ hostSettings = { attached = false, placement = 
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's scale sets the column's scale")
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
--- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check or one of the reads that place the column under it (#850, #883), never another
--- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
+-- The TOC's Lua files may read the trackers and minimap for placement geometry.
 local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
 local function Starts(text, list)
 	for _, read in ipairs(list) do
@@ -236,8 +234,13 @@ local function Starts(text, list)
 		end
 	end
 end
-local function Read(after)
-	local read = Starts(after, reads)
+local minimapReads = { ":GetLeft()", ":GetRight()", ":GetBottom()", ":GetEffectiveScale()", ":IsShown()" }
+local function Read(after, frame)
+	local minimap = frame == "Minimap" or frame == "MinimapCluster"
+	local read = Starts(after, minimap and minimapReads or reads)
+	if minimap then
+		return read ~= nil and not after:sub(#read + 1):match("^%s*=[^=]")
+	end
 	if not read then
 		local child = after:match("^%.NineSlice") or after:match("^%.Header")
 		if not child then
@@ -257,11 +260,21 @@ assert(
 	"a child write fails"
 )
 assert(not Read(".Header = nil") and not Read(":SetCollapsed(true)"), "an assignment or another method fails")
-local function TrackerArgument(argument)
-	return argument:match("%f[%w_]ObjectiveTrackerFrame%f[^%w_]") or argument:match("%f[%w_]Questie_BaseFrame%f[^%w_]")
+local placementFrames = { "ObjectiveTrackerFrame", "Questie_BaseFrame", "MinimapCluster", "Minimap" }
+local function FramePattern(frame)
+	return "%f[%w_]" .. frame .. "%f[^%w_]"
 end
 
-local targetArguments = { SetPoint = 2, SetAllPoints = 1, SetParent = 1, CreateFrame = 3 }
+local function TrackerArgument(argument)
+	for _, frame in ipairs(placementFrames) do
+		if argument:match(FramePattern(frame)) then
+			return true
+		end
+	end
+	return false
+end
+
+local targetArguments = { SetPoint = 2, SetAllPoints = 1, SetParent = 1, CreateFrame = 3, hooksecurefunc = 1 }
 local function TrackerDependency(code)
 	for method, position in pairs(targetArguments) do
 		for args in code:gmatch("%f[%w_]" .. method .. "%s*(%b())") do
@@ -283,6 +296,11 @@ assert(TrackerDependency('host:SetPoint("TOPRIGHT",\n ObjectiveTrackerFrame.Nine
 assert(TrackerDependency("host:SetAllPoints(Questie_BaseFrame)"))
 assert(TrackerDependency('CreateFrame("Frame", nil, ObjectiveTrackerFrame.Header)'))
 assert(TrackerDependency("host:SetParent(Questie_BaseFrame)"))
+assert(TrackerDependency('host:SetPoint("TOPLEFT", MinimapCluster, "BOTTOMLEFT")'))
+assert(TrackerDependency("host:SetAllPoints(Minimap)"))
+assert(TrackerDependency('hooksecurefunc(MinimapCluster, "SetScale", callback)'))
+assert(Read(":GetBottom()", "MinimapCluster") and not Read(":SetScale(1)", "MinimapCluster"))
+assert(not Read(":HookScript(", "Minimap") and not Read(".zoneText = nil", "Minimap"))
 assert(not TrackerDependency('host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ObjectiveTrackerFrame:GetLeft(), y)'))
 
 local writes, dependencies = {}, {}
@@ -296,20 +314,16 @@ for line in io.lines("ForeverCore.toc") do
 			number = number + 1
 			local code = source:gsub("%-%-.*$", "")
 			lines[#lines + 1] = code
-			local init = 1
-			while true do
-				local _, finish = code:find("ObjectiveTrackerFrame", init, true)
-				if not finish then
-					break
+			for _, frame in ipairs(placementFrames) do
+				for finish in code:gmatch(FramePattern(frame) .. "()") do
+					local after = code:sub(finish)
+					if
+						not Read(after, frame)
+						and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
+					then
+						writes[#writes + 1] = path .. ":" .. number .. " (" .. frame .. ")"
+					end
 				end
-				local after = code:sub(finish + 1)
-				if
-					not Read(after)
-					and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
-				then
-					writes[#writes + 1] = path .. ":" .. number
-				end
-				init = finish + 1
 			end
 		end
 		local dependency = TrackerDependency(table.concat(lines, "\n"))
@@ -318,8 +332,8 @@ for line in io.lines("ForeverCore.toc") do
 		end
 	end
 end
-check(#dependencies == 0, "tracker anchor or parent dependency: " .. table.concat(dependencies, ", "))
-check(#writes == 0, "nothing in core writes, hooks or calls ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
+check(#dependencies == 0, "tracker or minimap anchor, parent or hook dependency: " .. table.concat(dependencies, ", "))
+check(#writes == 0, "nothing in core writes to the trackers or minimap: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks
 -- releases every block, so a second layout would replay each header's add animation and rebuild every block. Issue

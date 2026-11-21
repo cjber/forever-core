@@ -1177,6 +1177,26 @@ local function BarRoom(left, width, top, height)
 	end
 	return floor, right
 end
+-- The whole cluster includes the zone name bar. Compare its edges in the column's units.
+local function MinimapTop(left, width, top)
+	local cluster = rawget(_G, "MinimapCluster")
+	if type(cluster) ~= "table" or not cluster:IsShown() then
+		return top
+	end
+	local mapLeft, mapRight, bottom = cluster:GetLeft(), cluster:GetRight(), cluster:GetBottom()
+	if mapLeft and mapRight and bottom then
+		local scale = cluster:GetEffectiveScale() / host:GetEffectiveScale()
+		if left < mapRight * scale and left + width > mapLeft * scale then
+			return math.min(top, bottom * scale)
+		end
+	end
+	return top
+end
+
+local function UnderX(x, width, right)
+	return math.max(0, math.min(x, right - width))
+end
+
 -- Whether the column now sits under the quest tracker rather than at its pin to the left.
 local under = false
 local function SetColumnPoint(point, relativePoint, x, y)
@@ -1197,7 +1217,8 @@ end
 
 local function PinLeft(left, top)
 	if left and top then
-		SetColumnPoint("TOPRIGHT", "BOTTOMLEFT", left, top)
+		local width = host:GetWidth()
+		SetColumnPoint("TOPRIGHT", "BOTTOMLEFT", left, MinimapTop(left - width, width, top))
 		under = false
 	end
 end
@@ -1231,10 +1252,15 @@ local function FollowTracker(settings)
 			PinLeft(left, trackerTop)
 		else
 			local _, line = TrackerEdge(shows)
+			local x, width = host:GetLeft() or 0, host:GetWidth() or 0
+			local heldTop = host:GetTop() or 0
+			local top = MinimapTop(x, width, heldTop)
 			local height = host:GetHeight() or 0
-			local floor = BarRoom(host:GetLeft() or 0, host:GetWidth() or 0, host:GetTop() or 0, height)
-			if height > (line or math.huge) - floor or height > (host:GetTop() or 0) - floor then
+			local floor = BarRoom(x, width, top, height)
+			if height > (line or math.huge) - floor or height > top - floor then
 				PinLeft(left, trackerTop)
+			elseif top < heldTop then
+				SetColumnPoint("TOPLEFT", "BOTTOMLEFT", x, top)
 			end
 		end
 		return
@@ -1252,19 +1278,22 @@ local function FollowTracker(settings)
 	local width = host:GetWidth() or 0
 	local height = host:GetHeight() or 0
 	local floor, right = BarRoom(x, width, top, height)
+	x = UnderX(x, width, right)
+	local capped = MinimapTop(x, width, top)
+	if capped < top then
+		floor = BarRoom(x, width, capped, height)
+		top = capped
+	end
 	if height > top - floor then
 		PinLeft(left, trackerTop)
 		return
 	end
-	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
-	local screenWidth = UIParent:GetWidth() / scale
-	x = math.max(0, math.min(x, math.max(0, math.min(screenWidth, right) - width)))
 	SetColumnPoint("TOPLEFT", "BOTTOMLEFT", x, top)
 	under = true
 end
 -- The private column sits wherever the player dragged it. Until then it sits left of the game's quest tracker or under
--- it. Both places use the room from the tracker's top to the screen's bottom. After layout, FollowTracker uses the
--- measured column height to choose between the last visible line and the left corner.
+-- it. Both use the room below the tracker's top, capped by the minimap when they overlap. After layout, FollowTracker
+-- uses the measured column height to choose between the last visible line and the left corner.
 ---@param settings ForeverTrackerSettings
 ---@return number width, number top, number? floor
 local function Anchor(settings)
@@ -1287,8 +1316,25 @@ local function Anchor(settings)
 	top = top or Coordinate(host:GetTop()) or screenHeight
 	left = left or Coordinate(host:GetRight()) or screenWidth
 	local height = host:GetHeight() or screenHeight
-	local floor = BarRoom(settings.placement == "under" and left or left - width, width, top, height)
-	return width, top, floor
+	local layoutLeft = left - width
+	local capped = MinimapTop(layoutLeft, width, top)
+	if settings.placement == "under" then
+		layoutLeft = left
+		if MinimapTop(0, screenWidth, top) < top then
+			local x
+			if settings.locked and followed and under and not placeAgain then
+				x = host:GetLeft() or left
+			else
+				local edge, line = TrackerEdge(TrackerShows())
+				local _, right = BarRoom(edge or left, width, line or top, height)
+				x = UnderX(edge or left, width, right)
+			end
+			-- Fit both Under and its Left fallback if the quest list is too long.
+			capped = math.min(capped, MinimapTop(x, width, top))
+		end
+	end
+	local floor = BarRoom(layoutLeft, width, capped, height)
+	return width, capped, floor
 end
 
 -- With no section to show, the column hides entirely; the next layout with content shows it again.
@@ -1959,6 +2005,7 @@ ns.AtStart(function()
 		host[key] = method
 	end
 	MatchScale()
+	host:SetWidth(WIDTH)
 	-- Establish a screen anchor before the first section measures its lines.
 	if not InCombatLockdown() then
 		local left, top = TrackerCorner()
@@ -1968,7 +2015,6 @@ ns.AtStart(function()
 			host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
 		end
 	end
-	host:SetWidth(WIDTH)
 	host:SetHeight(1)
 	host:SetMovable(true)
 	host:SetClampedToScreen(true)
