@@ -27,6 +27,7 @@ end
 local function listEnds(sim, tracker, height)
 	tracker.questList.height = height
 	tracker:MarkDirty()
+	sim:event("SCENARIO_CRITERIA_UPDATE")
 	sim:advance(0.1)
 end
 
@@ -48,6 +49,8 @@ local function run(sim, trackerHost)
 	}, { order = -3 })
 	G.ForeverCore.TrackerHost.Attach(section)
 	local tracker = sim:openObjectiveTracker()
+	-- Isolate tracker-line placement from the separate minimap clearance rule.
+	G.MinimapCluster:Hide()
 	tracker.questList = questList(G, tracker)
 	tracker:ClearAllPoints()
 	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)
@@ -126,4 +129,66 @@ scenario("placement850: a dragged column ignores the quest list", function(sim)
 	listEnds(sim, tracker, 300)
 	assert(column:GetLeft() == left and column:GetTop() == top, "a dragged column stays where it was dropped")
 	sim:expectNoErrors("ForeverCore")
+end)
+
+scenario("placement850: a tracked achievement grows the native list", function(sim)
+	local G, column, tracker = run(sim, {})
+	local list = tracker.questList
+	local previous = column:GetTop()
+	list.MarkDirty = function()
+		list.height = 200
+		tracker:MarkDirty()
+	end
+	list:SetScript("OnEvent", G.AchievementObjectiveTrackerMixin.OnEvent)
+	list:RegisterEvent("TRACKED_ACHIEVEMENT_LIST_CHANGED")
+	sim:event("TRACKED_ACHIEVEMENT_LIST_CHANGED")
+	sim:advance(0.2)
+	assert(not near(previous, tracker.NineSlice:GetBottom()), "Blizzard moved the last line")
+	assert(
+		near(column:GetTop(), tracker.NineSlice:GetBottom()),
+		"the column follows the achievement without a quest event"
+	)
+	sim:expectNoErrors("ForeverCore")
+end)
+
+scenario("placement850: Questie rebuilds its list half a second after a quest event", function(sim)
+	local G, column = run(sim, {})
+	sim:runAs("Questie", [[CreateFrame("Frame", "Questie_BaseFrame", UIParent)]])
+	local questie = assert(G.Questie_BaseFrame)
+	questie:SetSize(260, 120)
+	questie:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -200, -200)
+	sim:event("ADDON_LOADED", "Questie")
+	sim:advance(1.1)
+	assert(near(column:GetTop(), questie:GetBottom()), "the column starts under Questie")
+
+	G.C_Timer.After(0.5, function()
+		questie:SetHeight(200)
+	end)
+	sim:event("QUEST_LOG_UPDATE")
+	sim:advance(0.7)
+	assert(near(column:GetTop(), questie:GetBottom()), "the column follows Questie's delayed rebuild")
+
+	sim:advance(1)
+	for _, frame in ipairs(sim.widgets.all) do
+		local state = sim.widgets.state[frame]
+		if state.isFrame and state.creator == "ForeverCore" then
+			assert(not frame:GetScript("OnUpdate"), "ForeverCore has no idle OnUpdate")
+		end
+	end
+	for _, timer in ipairs(sim.timers) do
+		assert(timer.taint ~= "ForeverCore", "ForeverCore has no pending timer after settling")
+	end
+	sim:expectNoErrors("ForeverCore")
+end)
+
+scenario("placement850: leaving Edit Mode follows a keyboard nudge", function(sim)
+	local G, column, tracker = run(sim, { placement = "left" })
+	local original = column:GetRight()
+	tracker:AdjustPointsOffset(-10, 0)
+	sim:advance(0.1)
+	assert(near(column:GetRight(), original), "no event has asked the column to move")
+	G.EventRegistry:TriggerEvent("EditMode.Exit")
+	sim:advance(0.2)
+	assert(not near(original, tracker:GetLeft()), "the keyboard nudge moved the tracker")
+	assert(near(column:GetRight(), tracker:GetLeft()), "the column follows the nudge on exit")
 end)

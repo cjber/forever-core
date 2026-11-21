@@ -20,6 +20,16 @@ local function show(text, red)
 	end
 end
 
+-- forever_client.py reads a run's result and a proof flow's readiness from this addon's SavedVariables while the
+-- session goes on, so each has to reach disk the moment it is known. SaveAddOns writes them now; a reload any later
+-- would cut a selftest short or close the window a flow opened.
+local function saveAddOns()
+	local addons = C_AddOns
+	if type(addons) == "table" and type(addons.SaveAddOns) == "function" then
+		pcall(addons.SaveAddOns)
+	end
+end
+
 local function finish()
 	local current = run
 	if not current then
@@ -35,6 +45,9 @@ local function finish()
 			failed = failed + 1
 		end
 	end
+	-- The steps run on a timer, so a reader cannot tell a finished run from one still going without this mark.
+	current.entry.finished = true
+	saveAddOns()
 	local red = failed > 0 and 0.3 or 1
 	show(("Dev Smoke: %d surfaces, %d failed"):format(#current.entry.results, failed), red)
 end
@@ -148,7 +161,10 @@ local function begin()
 		runs = {}
 		DevSmokeDB.runs = runs
 	end
-	local entry = { started = time(), build = select(4, GetBuildInfo()), results = {} }
+	-- `started` is to the second, so a reader cannot tell this run from the one before it by time alone: each run
+	-- takes the next number, and a reader that saw the last number before typing the command waits for a higher one.
+	DevSmokeDB.sequence = (tonumber(DevSmokeDB.sequence) or 0) + 1
+	local entry = { run = DevSmokeDB.sequence, started = time(), build = select(4, GetBuildInfo()), results = {} }
 	runs[#runs + 1] = entry
 	while #runs > MAX_RUNS do
 		table.remove(runs, 1)
@@ -156,6 +172,7 @@ local function begin()
 	if InCombatLockdown() then
 		entry.result = "skipped: in combat"
 		show("Dev Smoke: skipped: in combat", 0.3)
+		saveAddOns()
 		return
 	end
 	local actions = {}
@@ -286,15 +303,6 @@ end)
 hooksecurefunc("Screenshot", function()
 	flowShotPending = true
 end)
-
--- The proof reads the readiness outcome from this addon's SavedVariables, so a failure has to reach disk before the
--- proof's bounded wait ends. SaveAddOns writes them now; without it the proof's final reload saves the same record.
-local function saveAddOns()
-	local addons = C_AddOns
-	if type(addons) == "table" and type(addons.SaveAddOns) == "function" then
-		pcall(addons.SaveAddOns)
-	end
-end
 
 local function flowWorldReady()
 	flowWorldLoaded = true

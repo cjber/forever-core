@@ -54,6 +54,8 @@ local function login(sim, height, reloaded)
 	}, { order = -3 })
 	G.ForeverCore.TrackerHost.Attach(section)
 	local tracker = sim:openObjectiveTracker()
+	-- Isolate tracker-line placement from the separate minimap clearance rule.
+	G.MinimapCluster:Hide()
 	if height then
 		tracker.questList = questList(G, tracker, height)
 	end

@@ -334,7 +334,14 @@ end
 ns.TrackerHost.Debug = function()
 	return "debug"
 end
+ns.L = ns.L or setmetatable({}, {
+	__index = function(_, key)
+		return key
+	end,
+})
+env.SlashCmdList.FOREVERCORE("tracker")
+check(printed == "debug", "/fcore tracker prints the host's diagnostic")
 env.SlashCmdList.FOREVERCORE()
-check(printed == "debug", "the slash command prints the host's diagnostic")
+check(printed ~= "debug" and printed:find("/fcore tracker", 1, true) ~= nil, "bare /fcore prints the usage")
 
 print(("core_spec: %d checks passed"):format(checks))

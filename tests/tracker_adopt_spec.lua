@@ -89,6 +89,9 @@ local function widget(kind, name, parent, template)
 	function methods:RegisterEvent(event)
 		self.events[event] = true
 	end
+	function methods:RegisterUnitEvent(event, unit)
+		self.events[event] = unit
+	end
 	function methods:UnregisterEvent(event)
 		self.events[event] = nil
 	end

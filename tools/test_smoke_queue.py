@@ -27,7 +27,7 @@ class QueueTest(unittest.TestCase):
             mock.patch.object(queue, "discover_tooling_repos", return_value=set()),
             mock.patch.object(queue, "consumer_repos", return_value=sorted(r for r in heads if r != "forever-core")),
             mock.patch.object(queue, "main_head", side_effect=lambda repo: heads[repo]),
-            mock.patch.object(queue, "smoke_status", side_effect=lambda repo, sha: states[repo]),
+            mock.patch.object(queue, "build_evidence", side_effect=lambda repo, sha: states[repo]),
             mock.patch.object(queue, "smoke", side_effect=smoke) as run,
             contextlib.redirect_stdout(out),
         ):
@@ -75,7 +75,7 @@ class QueueTest(unittest.TestCase):
         with (
             mock.patch.object(queue, "discover_tooling_repos", side_effect=queue.SyncError("no token access")),
             mock.patch.object(queue, "main_head", return_value=SHA),
-            mock.patch.object(queue, "smoke_status", return_value="missing"),
+            mock.patch.object(queue, "build_evidence", return_value="missing"),
             mock.patch.object(queue, "smoke", return_value=0) as run,
             contextlib.redirect_stdout(out),
         ):
@@ -90,6 +90,14 @@ class QueueTest(unittest.TestCase):
                     queue.main(["--repo", value])
                 self.assertEqual(exit_.exception.code, 2)
                 self.assertIn("is not a cjber repository name", err.getvalue())
+
+    def test_a_commit_its_visual_proof_covers_is_not_smoked(self):
+        heads = {"forever-core": SHA, "legacy-forever": OTHER}
+        states = {"forever-core": "proof", "legacy-forever": "missing"}
+        code, printed, smoked, _run = self.run_queue(heads, states)
+        self.assertEqual(code, 0)
+        self.assertEqual(smoked, [("legacy-forever", OTHER)])
+        self.assertIn(f"forever-core: {SHA[:7]} is covered by its visual proof", printed)
 
     def test_a_commit_that_already_has_a_status_is_left_alone(self):
         heads = {"forever-core": SHA, "legacy-forever": OTHER}
@@ -171,7 +179,7 @@ class QueueTest(unittest.TestCase):
             mock.patch.object(queue, "discover_tooling_repos", return_value=set()),
             mock.patch.object(queue, "consumer_repos", return_value=[]),
             mock.patch.object(queue, "main_head", return_value=SHA),
-            mock.patch.object(queue, "smoke_status", side_effect=json.JSONDecodeError("bad", "", 0)),
+            mock.patch.object(queue, "build_evidence", side_effect=json.JSONDecodeError("bad", "", 0)),
             mock.patch.object(queue, "smoke") as run,
             contextlib.redirect_stdout(out),
         ):

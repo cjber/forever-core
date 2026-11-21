@@ -38,6 +38,10 @@ ns.Credits = {
 		{ name = "Fareed", what = "Questie's quest tracker can be moved again" },
 		{ name = "ZiiMs", what = "Tracker column follows EllesmereUI's custom quest tracker" },
 		{ name = "Bolton_wow", what = "Map arrows open the destination map again" },
+		{ name = "Raynfeathyr", what = "The quest tracker moves freely with the Forever column" },
+		{ name = "Flangemuffler", what = "The quest tracker moves freely with the Forever column" },
+		{ name = "I3igAl", what = "The Forever column finds Questie's tracker after login" },
+		{ name = "Wavebreaker90", what = "/fcore quests explains the quest tracker" },
 	},
 	inspired = {
 		{ name = "The game's own objective tracker", what = "The column's left edge, width and header spacing" },

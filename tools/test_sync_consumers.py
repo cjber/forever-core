@@ -546,6 +546,44 @@ class VersionStepTest(unittest.TestCase):
         self.assertIn(sync.version_step() + packager, path.read_text(encoding="utf-8"))
         self.assertEqual(self.check(), [])
 
+    def test_a_version_step_in_another_job_does_not_cover_the_build(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        (self.root / sync.CI_WORKFLOW).unlink()
+        workflow = (
+            "jobs:\n  prepare:\n    steps:\n"
+            + sync.version_step()
+            + "  release:\n    steps:\n      - uses: BigWigsMods/packager@v2\n"
+        )
+        path.write_text(workflow, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(self.run_sync(), 0)
+
+    def test_only_the_build_is_versioned_before_a_validated_zip_upload(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        (self.root / sync.CI_WORKFLOW).unlink()
+        build = "        - name: Build the ZIP\n          uses: BigWigsMods/packager@v2\n"
+        for upload in (
+            "        - uses: BigWigsMods/packager@v2\n",
+            "        - name: Upload the validated ZIP\n          uses: BigWigsMods/packager@v2\n",
+        ):
+            with self.subTest(upload=upload):
+                workflow = (
+                    "jobs:\n  release:\n    steps:\n"
+                    + build
+                    + "          with:\n            args: -d\n"
+                    + upload
+                    + "          with:\n            args: '-c -z' # reuse the ZIP\n"
+                )
+                path.write_text(workflow, encoding="utf-8")
+                self.assertEqual(len(self.check()), 1)
+                self.assertEqual(self.run_sync(), 1)
+                expected = workflow.replace(build, sync.version_step("        ") + build)
+                self.assertEqual(path.read_text(encoding="utf-8"), expected)
+                self.assertEqual(self.check(), [])
+                self.assertEqual(self.run_sync(), 0)
+
     def test_the_pin_gate_stays_directly_above_the_packager(self):
         path = self.root / sync.RELEASE_WORKFLOW
         packager = "      - uses: BigWigsMods/packager@"

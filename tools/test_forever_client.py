@@ -30,6 +30,9 @@ fc = importlib.util.module_from_spec(SPEC)
 sys.modules["forever_client"] = fc
 SPEC.loader.exec_module(fc)
 REAL_REQUIRE_SAFE = fc.require_safe
+REAL_SELFTEST_RUN = fc.selftest_run
+REAL_SELFTEST_SEQUENCE = fc.selftest_sequence
+REAL_GITHUB_TOKEN = fc.github_token_from_gh
 REAL_RELEASE_MODIFIERS = fc.release_modifiers
 
 
@@ -2775,6 +2778,11 @@ class SmokeTest(unittest.TestCase):
         self.enterContext(mock.patch.object(fc, "require_safe"))
         self.state = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.enterContext(mock.patch.object(fc, "STATE_DIR", self.state))
+        # The run !!DevSmoke saves once `/forever selftest` finishes: one surface, passing.
+        self.selftest = {"run": 1, "started": 3, "finished": True, "results": {1: {"surface": "Tracker", "ok": True}}}
+        self.enterContext(mock.patch.object(fc, "selftest_sequence", return_value=0))
+        self.enterContext(mock.patch.object(fc, "selftest_run", side_effect=lambda _after: self.selftest))
+        self.token = self.enterContext(mock.patch.object(fc, "github_token_from_gh"))
         self.client = self.state / "client"
         self.addons = self.client / "Interface/AddOns"
         self.addons.mkdir(parents=True)
@@ -2827,8 +2835,11 @@ class SmokeTest(unittest.TestCase):
         startup=None,
         slash=None,
         stage=None,
+        selftest=None,
     ):
         folders = folders or [("LegacyForever", self.build)]
+        if selftest is not None:
+            self.selftest = selftest
         startup = startup if startup is not None else mock.Mock(return_value=registrations or [])
         with (
             mock.patch.object(fc, "git", return_value="0123456789abcdef0123456789abcdef01234567"),
@@ -2868,7 +2879,7 @@ class SmokeTest(unittest.TestCase):
             "legacy-forever",
             "0123456789abcdef0123456789abcdef01234567",
             True,
-            "clean: no Lua errors in 1 addon folder",
+            "clean: 1 selftest surface passed, no Lua errors in 1 addon folder",
         )
         self.assertIn("headless-smoke posted", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
@@ -2940,11 +2951,11 @@ class SmokeTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(fc.subprocess, "run", return_value=login):
             os.environ.pop("GH_TOKEN", None)
             os.environ.pop("GITHUB_TOKEN", None)
-            fc.github_token_from_gh()
+            REAL_GITHUB_TOKEN()
             self.assertEqual(os.environ["GH_TOKEN"], "gho_login")
         with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ci"}), mock.patch.object(fc.subprocess, "run") as run:
             os.environ.pop("GH_TOKEN", None)
-            fc.github_token_from_gh()
+            REAL_GITHUB_TOKEN()
             run.assert_not_called()
             self.assertNotIn("GH_TOKEN", os.environ)
 
@@ -2979,11 +2990,15 @@ class SmokeTest(unittest.TestCase):
                     [("LegacyForever", self.released_folder)],
                 ),
             )
+        # A proof reads the released builds through this same call, so it needs the `gh` login as much as a smoke.
+        self.token.assert_called_once_with()
+        self.token.reset_mock()
         with mock.patch.object(fc, "released_consumers_tool", side_effect=AssertionError("no release download")):
             self.assertEqual(
                 fc.smoke_folders("legacy-forever", [("LegacyForever", self.build)]),
                 ([("LegacyForever", self.build)], []),
             )
+        self.token.assert_not_called()
 
     def test_the_smoke_folders_unpack_the_released_builds_into_a_smoke_private_folder(self):
         core = self.state / "core"
@@ -3014,7 +3029,7 @@ class SmokeTest(unittest.TestCase):
             "forever-core",
             "0123456789abcdef0123456789abcdef01234567",
             True,
-            "clean: no Lua errors in 2 addon folders",
+            "clean: 1 selftest surface passed, no Lua errors in 2 addon folders",
         )
         self.assertIn("linking 1 released consumer folder", printed)
         self.assertFalse((self.addons / "ForeverCore").exists())
@@ -3041,9 +3056,79 @@ class SmokeTest(unittest.TestCase):
 
     def test_smoke_description_names_lua_errors_and_unstarted_addons(self):
         self.assertEqual(
-            fc.smoke_description({"LegacyForever": 2, "SkillUpForever": 0}, ["TweaksForever"]),
-            "2 Lua errors: 2 LegacyForever; 1 did not start: TweaksForever",
+            fc.smoke_description(
+                {
+                    "selftest": {"surfaces": 2, "failed": ["Tracker"]},
+                    "errors": {"LegacyForever": 2, "SkillUpForever": 0},
+                    "not_started": ["TweaksForever"],
+                }
+            ),
+            "selftest failed: Tracker; 2 Lua errors: 2 LegacyForever; 1 did not start: TweaksForever",
         )
+
+    def test_a_failed_selftest_surface_fails_the_smoke(self):
+        failed = {
+            "started": 3,
+            "finished": True,
+            "results": {1: {"surface": "Tracker", "ok": False, "errors": {1: "boom"}}},
+        }
+        code, printed, _build = self.run_smoke(selftest=failed)
+        self.assertEqual(code, 1)
+        self.posted.assert_called_once_with(
+            "legacy-forever", "0123456789abcdef0123456789abcdef01234567", False, "selftest failed: Tracker"
+        )
+        self.assertIn("selftest failed: Tracker", printed)
+
+    def test_a_skipped_selftest_is_no_verdict(self):
+        with self.assertRaisesRegex(fc.ClientError, "did not run: in combat"):
+            with (
+                mock.patch.object(fc, "slash"),
+                mock.patch.object(fc, "selftest_run", return_value={"started": 3, "result": "in combat"}),
+            ):
+                fc.run_selftest({"started": 3.0})
+
+    def test_a_selftest_that_never_saves_a_run_times_out(self):
+        with (
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "selftest_run", return_value=None),
+            mock.patch.object(fc, "SELFTEST_LIMIT", 0),
+            self.assertRaisesRegex(fc.ClientError, "saved no finished run"),
+        ):
+            fc.run_selftest({"started": 3.0})
+
+    def test_the_selftest_reads_only_a_finished_run_numbered_past_the_last_one(self):
+        saved = self.state / "DevSmoke.lua"
+        with (
+            mock.patch.object(fc, "saved_variables", return_value=[saved]),
+            mock.patch.object(fc, "selftest_run", REAL_SELFTEST_RUN),
+            mock.patch.object(fc, "selftest_sequence", REAL_SELFTEST_SEQUENCE),
+        ):
+            with mock.patch.object(fc, "saved_variables", return_value=[]):
+                self.assertEqual(fc.selftest_sequence(), 0, "no saved runs yet")
+            saved.write_text("DevSmokeDB = { sequence = 4, runs = { { run = 4, started = 5 } } }\n", encoding="utf-8")
+            self.assertEqual(fc.selftest_sequence(), 4)
+            saved.write_text("DevSmokeDB = { runs = { { run = 5, started = 5, results = {} } } }\n", encoding="utf-8")
+            self.assertIsNone(fc.selftest_run(4), "still running")
+            # A run saved in the same second the job started is still the earlier run: only its number tells them apart.
+            saved.write_text(
+                "DevSmokeDB = { runs = { { run = 4, started = 9, finished = true } } }\n", encoding="utf-8"
+            )
+            self.assertIsNone(fc.selftest_run(4), "the run before this command")
+            saved.write_text(
+                "DevSmokeDB = { runs = { { run = 5, started = 5, finished = true,"
+                ' results = { { surface = "Tracker", ok = true } } } } }\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(fc.selftest_run(4)["finished"], True)
+
+    def test_the_selftest_waits_for_the_run_after_the_one_saved_before_typing(self):
+        with (
+            mock.patch.object(fc, "selftest_sequence", return_value=7),
+            mock.patch.object(fc, "slash"),
+            mock.patch.object(fc, "selftest_run", return_value=self.selftest) as read,
+        ):
+            self.assertEqual(fc.run_selftest({"started": 3.0}), {"surfaces": 1, "failed": []})
+        read.assert_called_once_with(7)
 
     def test_the_startup_check_asks_after_every_released_folder(self):
         source = fc.registration_source(["LegacyForever", "TweaksForever"])
@@ -3180,7 +3265,7 @@ class SmokeTest(unittest.TestCase):
         code, printed, _build = self.run_smoke(main_argv=argv)
         self.assertEqual(code, 0)
         self.posted.assert_not_called()
-        self.assertIn("clean: no Lua errors in 1 addon folder (not posted)", printed)
+        self.assertIn("clean: 1 selftest surface passed, no Lua errors in 1 addon folder (not posted)", printed)
 
     def test_no_post_still_exits_one_on_errors(self):
         argv = ["smoke", "--repo", "legacy-forever", "--ref", "main", "--no-post"]
@@ -3194,7 +3279,7 @@ class SmokeTest(unittest.TestCase):
             contextlib.redirect_stdout(io.StringIO()) as out,
             contextlib.redirect_stderr(io.StringIO()),
         ):
-            code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": "boom"}, post=False)
+            code = fc.report_smoke("legacy-forever", "a" * 40, {"checks": {}, "error": "boom"}, post=False)
         self.assertEqual(code, 2)
         self.posted.assert_not_called()
         self.assertIn("no result, nothing posted: boom", out.getvalue())
@@ -3246,7 +3331,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_a_result_with_no_counts_and_no_error_posts_nothing(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            code = fc.report_smoke("legacy-forever", "a" * 40, {"counts": {}, "error": None})
+            code = fc.report_smoke("legacy-forever", "a" * 40, {"checks": {}, "error": None})
         self.assertEqual(code, 1)
         self.posted.assert_not_called()
         self.assertIn("stopped before it finished", err.getvalue())
@@ -3315,7 +3400,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_a_description_stays_under_the_status_limit(self):
         counts = {f"Addon{index}": 9 for index in range(20)}
-        description = fc.smoke_description(counts)
+        description = fc.smoke_description({"selftest": {"surfaces": 1, "failed": []}, "errors": counts})
         self.assertLessEqual(len(description), 140)
         self.assertTrue(description.startswith("180 Lua errors"))
 
@@ -4153,6 +4238,10 @@ class ProofTest(unittest.TestCase):
             "token": "run-1",
         }
         self.saved_eval({"run": "run-1", "ran": 7, "ok": True, "out": {1: "shown"}})
+        self.checks = {"selftest": {"surfaces": 3, "failed": []}, "errors": {"LegacyForever": 0}, "not_started": []}
+        self.candidate_checks = mock.Mock(
+            side_effect=lambda _state, _folders, _released, checks: checks.update(self.checks)
+        )
 
     def start_session(self, _timeout, _manual_launcher=False):
         return {"started": 1.0, "ready": 2.0, "display": ":1", "runtime_dir": "/run/user/1"}
@@ -4234,6 +4323,7 @@ class ProofTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(fc, "upload_screenshots", self.upload))
             stack.enter_context(mock.patch.object(fc, "client_build", self.client_build))
             stack.enter_context(mock.patch.object(fc, "proof_compare", self.compare))
+            stack.enter_context(mock.patch.object(fc, "candidate_checks", self.candidate_checks))
             stack.enter_context(mock.patch.object(fc, "stop_handlers", return_value={}))
             stack.enter_context(mock.patch.object(fc, "restore_handlers"))
             stack.enter_context(mock.patch.object(fc.time, "sleep"))
@@ -4299,6 +4389,8 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(proof["source_commit"], self.commit)
         self.assertEqual(proof["flows"], [{"name": "update notice", "steps": ["/lf"], "result": "pass"}])
         self.assertEqual(proof["images"], self.upload.return_value)
+        self.assertEqual(proof["checks"], self.checks)
+        self.candidate_checks.assert_called_once_with(mock.ANY, [("LegacyForever", self.build)], [], mock.ANY)
         self.eval_tool.write_slash.assert_called_once_with("/lf", addons=self.addons, capture=True)
         self.assertEqual([path.name for path in self.shot_paths], ["1-update-notice.png"])
         self.assertEqual(
@@ -4309,6 +4401,28 @@ class ProofTest(unittest.TestCase):
         self.assertIn("wrote", printed)
         self.assertFalse((self.addons / "LegacyForever").exists())
         self.released.assert_called_once()
+
+    def test_a_failed_selftest_or_a_lua_error_fails_the_proof_and_removes_a_stale_one(self):
+        for name, checks in (
+            ("selftest", {"selftest": {"surfaces": 3, "failed": ["Tracker"]}, "errors": {"LegacyForever": 0}}),
+            ("lua error", {"selftest": {"surfaces": 3, "failed": []}, "errors": {"LegacyForever": 2}}),
+        ):
+            with self.subTest(name):
+                (self.checkout / fc.PROOF_FILE).write_text("{}")
+                self.checks = {**checks, "not_started": []}
+                with self.assertRaisesRegex(fc.ClientError, "selftest failed: Tracker|2 Lua errors: 2 LegacyForever"):
+                    self.run_proof()
+                self.assertFalse((self.checkout / fc.PROOF_FILE).exists())
+                self.create_gist.assert_not_called()
+                fc.link_record_path().unlink(missing_ok=True)
+
+    def test_the_checks_run_after_the_last_flows_eval_is_read(self):
+        order = []
+        self.candidate_checks.side_effect = lambda *_args: order.append("checks")
+        with mock.patch.object(fc, "check_flow_eval", side_effect=lambda *_a, **_k: order.append("eval")):
+            code, _printed, _err = self.run_proof()
+        self.assertEqual(code, 0)
+        self.assertEqual(order, ["eval", "checks"])
 
     def one_eval_slot(self, outcomes: dict[str, bool], order: list) -> contextlib.ExitStack:
         """A client with one inbox, one DevSmokeDB.eval in memory and one on disk, as the real one has.

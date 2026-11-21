@@ -127,3 +127,7 @@ L["Copy %s: %s"] = "副本 %s：%s"
 
 L["Drag to move the tabs."] = "拖动以移动标签页。" -- mt
 L["Reset tab position"] = "重置标签页位置" -- mt
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore 已不再提供自己的任务列表。它从不会隐藏或移动游戏自带的任务追踪栏或 Questie 的任务追踪栏。各插件的“%s”设置只会调整 Forever 栏的位置。"
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "用法：/fcore report, /fcore debug, /fcore tracker"

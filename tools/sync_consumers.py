@@ -16,7 +16,7 @@ The release workflow is not a vendored file: each addon keeps its own. A full sy
 release gate directly above the BigWigs packager step in every consumer that has one, idempotently, so a core release
 that lands between CI and the upload is still caught. A workflow with no packager step (kiln-forever's own tar build)
 is left alone and its exact step is printed for the maintainer. The same full sync puts the bare version step
-(`forever_tools.toc_version`) above every packager step in the release and CI workflows, so the zip's TOC never
+(`forever_tools.toc_version`) above each package build in the release and CI workflows, so the zip's TOC never
 carries the tag's `v`. A full sync also removes the retired Wago store
 metadata, upload credential and store links from consumer-owned publishing files.
 
@@ -30,7 +30,15 @@ import shutil
 import sys
 from pathlib import Path
 
-from check_consumers import CI_WORKFLOW, TAG_STEP, VERSION_COMMAND, pkgmeta_field, tag_step, uncommented, workflow_step
+from check_consumers import (
+    CI_WORKFLOW,
+    TAG_STEP,
+    VERSION_COMMAND,
+    missing_version_steps,
+    pkgmeta_field,
+    tag_step,
+    workflow_step,
+)
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -154,31 +162,25 @@ def version_step(indent="      "):
 
 
 def version_step_edit(text):
-    """`text` with the version step directly above each BigWigs packager step that has none before it, or None."""
-    live = uncommented(text)  # a commented-out step does not run
-    packagers = list(PACKAGER_STEP.finditer(live))
-    command = f"python3 -m {VERSION_COMMAND}"
-    previous, pieces = 0, []
-    for packager in packagers:
-        anchor = packager.start()
-        if command not in live[previous:anchor]:
-            # The pin gate stays the last step before the packager, so the version step goes above it and its comment.
-            gate = text.rfind(f"- name: {RELEASE_GATE_NAME}\n", previous, anchor)
-            if gate >= 0:
-                anchor = text.rfind("\n", previous, gate) + 1
-                while anchor > previous:
-                    above = text.rfind("\n", previous, anchor - 1) + 1
-                    if not text[above:anchor].lstrip().startswith("#"):
-                        break
-                    anchor = above
-            pieces += [text[previous:anchor], version_step(packager["indent"])]
-            previous = anchor
-    updated = "".join(pieces) + text[previous:]
-    return None if updated == text else updated
+    """Insert version steps before the builds that need them, preserving the workflow's formatting."""
+    missing = list(missing_version_steps(text))
+    if not missing:
+        return None
+    lines = text.splitlines(keepends=True)
+    for packager, previous in reversed(missing):
+        anchor = packager["line"]
+        indent = lines[anchor][: len(lines[anchor]) - len(lines[anchor].lstrip())]
+        # Keep the pin gate and its comments together immediately before the packager.
+        if previous.get("name") == RELEASE_GATE_NAME:
+            anchor = previous["line"]
+            while anchor > 0 and lines[anchor - 1].lstrip().startswith("#"):
+                anchor -= 1
+        lines.insert(anchor, version_step(indent))
+    return "".join(lines)
 
 
 def sync_version_step(root, repo, dry_run):
-    """Insert the version step above every packager step in `repo`'s release and CI workflows; count the files."""
+    """Insert missing version steps in `repo`'s release and CI workflows and count edited files."""
     changed = 0
     for workflow in (RELEASE_WORKFLOW, CI_WORKFLOW):
         path = root / workflow

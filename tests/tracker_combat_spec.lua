@@ -70,6 +70,6 @@ t.fire("PLAYER_REGEN_ENABLED")
 drain()
 check(Snapshot() == settled, "leaving combat leaves the column still: " .. settled .. " became " .. Snapshot())
 check(sections[1].hides + sections[2].hides == 0, "no section blinks out across the combat toggle")
-check(host.point[2] == t.native and host.point[1] == "TOPRIGHT", "the column stays pinned to the game tracker")
+check(host.point[2] == t.parent and host.point[1] == "TOPRIGHT", "the column stays pinned to the game tracker")
 
 print("tracker_combat_spec: " .. t.checks() .. " checks passed")

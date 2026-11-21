@@ -32,6 +32,12 @@ The proof separates what the checkout supplies from what a release installs:
 Anything the packager does to shipped bytes beyond those two rules depends on the build (alpha versus release,
 the Core pin, a localization export) and is refused rather than hashed.
 
+`checks` is what the release smoke would have found on that same session: the `/forever selftest` surfaces and the
+ones that failed, each linked addon folder's Lua error count, and the released addons a core proof links beside it
+that never registered. `verify` fails a proof whose checks failed; `proof_problems(..., release=True)` also requires
+them, so a release takes a proof whose contents match its commit in place of a `headless-smoke` status. The TOC
+`## Version:` line is outside both digests, so a release preparation's version bump keeps the proof valid.
+
 The runtime graph is every TOC under the checkout, each addon's auto-loaded `Bindings.xml` and the XML script
 graph it names (the client reads the file without a TOC entry, WFA-37), and the artwork. Every TOC addon
 contributes, so a second addon the checkout holds (a library with its own TOC) cannot escape the identity.
@@ -654,12 +660,70 @@ def absolute_lua_step(step: str) -> bool:
     return PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute()
 
 
+def checks_problems(checks: object, *, required: bool) -> list[str]:
+    """Why the proof's in-game checks do not pass: the selftest, the Lua errors and the released addons' startup.
+
+    `forever_client.py proof` runs the smoke's checks on the session it captured and records them as `checks`: the
+    selftest's surface count and the ones that failed, each addon folder's Lua error count over the whole job, and the
+    released addons (a core proof) that never registered. A proof without them (a checklist attestation, or one
+    recorded before the checks existed) still proves the flows it shows, so only a release requires them.
+    """
+    if checks is None and not required:
+        return []
+    if not isinstance(checks, dict):
+        return ["visual proof needs the in-game checks forever_client.py proof records (selftest and Lua errors)"]
+    problems = []
+    selftest = checks.get("selftest")
+    if (
+        not isinstance(selftest, dict)
+        or not isinstance(selftest.get("surfaces"), int)
+        or selftest["surfaces"] < 1
+        or not isinstance(selftest.get("failed"), list)
+    ):
+        problems.append("visual proof checks need a selftest record with its surfaces and failures")
+    elif selftest["failed"]:
+        problems.append(f"visual proof selftest failed: {', '.join(map(str, selftest['failed']))}")
+    errors = checks.get("errors")
+    if (
+        not isinstance(errors, dict)
+        or not errors
+        or any(not isinstance(count, int) or isinstance(count, bool) or count < 0 for count in errors.values())
+    ):
+        problems.append("visual proof checks need a Lua error count per addon folder")
+    elif any(errors.values()):
+        named = ", ".join(f"{count} {name}" for name, count in errors.items() if count)
+        problems.append(f"visual proof recorded Lua errors: {named}")
+    not_started = checks.get("not_started")
+    if not isinstance(not_started, list):
+        problems.append("visual proof checks need the list of released addons that did not start")
+    elif not_started:
+        problems.append(f"visual proof recorded addons that did not start: {', '.join(map(str, not_started))}")
+    return problems
+
+
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
+    """Why a change's proof does not hold, when the changed paths reach the runtime; none when they do not."""
     root = root.resolve()
     if not requires_proof(root, paths):
         return []
     if not proof_path.is_file():
         return [f"{proof_path}: missing for runtime UI changes"]
+    return proof_problems(root, proof_path, rewritten=PROOF.as_posix() in paths)
+
+
+def proof_problems(
+    root: Path, proof_path: Path = PROOF, *, rewritten: bool = False, release: bool = False
+) -> list[str]:
+    """Why the proof at `proof_path` does not prove the runtime at `root`; none when it does.
+
+    The proof is bound to file contents, not to a commit, so a proof recorded on a pull request's head still holds for
+    its squash-merge commit and for a release preparation that only bumps the TOC version and the changelog.
+    `rewritten` is a change that records or rewrites the proof, which may not carry an absolute Lua step (#591).
+    `release` requires the in-game checks, which stand in for the `headless-smoke` status at that commit.
+    """
+    root = root.resolve()
+    if not proof_path.is_file():
+        return [f"{proof_path}: missing"]
     try:
         proof = json.loads(proof_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -709,7 +773,8 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         )
     ):
         problems.append("visual proof needs at least one passing flow")
-    if PROOF.as_posix() in paths and isinstance(flows, list):
+    problems.extend(checks_problems(proof.get("checks"), required=release))
+    if rewritten and isinstance(flows, list):
         # A proof recorded before #591 can still name a Lua flow by the caller's absolute path. It stays valid until
         # it is re-recorded, because a runtime change requires a fresh proof anyway while a version bump only
         # revalidates the same one. A proof this change records or rewrites may not carry that path.

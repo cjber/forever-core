@@ -30,9 +30,9 @@ python3 tools/forever_perf.py             # the !!DevPerf and !!DevSmoke session
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --max 600 -- tools/headless/perf_run.sh  # bounded exclusive profiling job
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py job --hyprland --max 600 -- COMMAND  # exclusive nested Hyprland job for deskpilot
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py lease     # ensure the session, print a token; each verb takes and releases the lock
-FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the release's headless-smoke status
+FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py smoke --repo forever-core --ref main  # the headless-smoke status for a commit no proof covers
 FOREVER_CLIENT_CALLER=in-game python3 tools/headless/forever_client.py proof --repo R --ref SHA --checkout PATH --flow "update notice=/lf"
-                                          # record the checkout's .visual-proof.json from a client session
+                                          # record the checkout's .visual-proof.json and its smoke checks
 python3 tools/headless/forever_client.py attest --repo R --ref SHA --checkout PATH
                                           # the same from the user's passed checklist round, without the client
 python3 tools/audit_store_core.py --cache DIR # check the latest GitHub and CurseForge consumer downloads

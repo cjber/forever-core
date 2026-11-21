@@ -131,3 +131,7 @@ L["Copy %s: %s"] = "Cópia %s: %s" -- mt
 
 L["Drag to move the tabs."] = "Arraste para mover as abas."
 L["Reset tab position"] = "Redefinir a posição das abas"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"O ForeverCore não tem mais uma lista de missões própria. Ele nunca oculta nem move o rastreador de missões do jogo ou do Questie. A opção “%s” de cada addon só posiciona a coluna do Forever."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "Uso: /fcore report, /fcore debug, /fcore tracker"

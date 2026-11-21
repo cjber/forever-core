@@ -36,12 +36,12 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   `forever-credits` markers in README.md's `## Credits` and in `docs/curseforge.md`.
 - `UI/TrackerHost.lua`: the private tracker column, one frame on `UIParent` the player drags and locks, its optional
   tooltip-art backdrop and opacity, its layout and combat handling, the one-time move of an old attached or beside
-  placement to the pin, and the one-time migration from a consumer's old tracker settings. By default its `TOPRIGHT`
-  is anchored to `ObjectiveTrackerFrame`'s `TOPLEFT`, one `SetPoint` the engine keeps through Edit Mode moves and
-  while that tracker is hidden; a header drag saves a free position and releases the pin.
-  The anchor is the only use of the native tracker: nothing in core reads its contents, visibility or geometry, or
-  writes to it (no alpha, state driver, hook, Show, Hide or SetPoint), and placement never reads the column's own
-  height. `tests/tracker_host_harness.lua`'s native tracker fails any read or write, and `tests/tracker_host_spec.lua`
+  placement to the pin, and the one-time migration from a consumer's old tracker settings. The column is anchored
+  only to `UIParent`, at coordinates read from the quest tracker on screen (`ObjectiveTrackerFrame`, or Questie's
+  `Questie_BaseFrame` when shown): left of its top left corner, or under its last line. Edit Mode, drag-end, quest
+  and scale events read it again, out of combat only; a header drag saves a free position and releases the pin.
+  Core only reads those trackers' edges, scale and shown or collapsed state: no frame of ours is anchored or
+  parented to them, and nothing writes to them (no alpha, state driver, hook, Show, Hide or SetPoint). `tests/tracker_host_harness.lua`'s native tracker fails any read or write, and `tests/tracker_host_spec.lua`
   scans the TOC's files for one. There is no Forever quest list: quests show in the game's tracker or a quest
   addon's.
 - `UI/ContextMenu.lua`: the suite's one context menu, drawn in its own frame because Blizzard's menu can assert on

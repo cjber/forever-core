@@ -14,9 +14,10 @@ the suite skills in `.agents/skills`.
    or bend one toward a single addon. Addon-specific behaviour arrives through `Register` or the module API.
 2. **Shared files keep their consumer-visible paths** (`UI/TrackerHost.lua`, `Core/SafeCall.lua`, ...): flat Lua at
    the root, so a consumer's `loadfile("UI/TrackerHost.lua")` still finds core's source when its spec runs here.
-3. **The native objective tracker is used only as an anchor:** `TrackerHost` anchors to `ObjectiveTrackerFrame`'s
-   `TOPLEFT` and never reads its contents, visibility or geometry nor writes to it (no alpha, hook, Show, Hide,
-   SetPoint). `tests/tracker_host_spec.lua` scans the TOC's files for a breach.
+3. **The quest trackers are only read, never anchored to:** `TrackerHost` places the column on `UIParent` at
+   coordinates it reads from `ObjectiveTrackerFrame` (or `Questie_BaseFrame`): their edges, scale, shown and
+   collapsed state. No frame of ours is anchored or parented to either, and nothing writes to them (no alpha, hook,
+   Show, Hide, SetPoint). `tests/tracker_host_spec.lua` scans the TOC's files for a breach.
 4. **Vendored tooling is edited here only.** `tools/forever_tools` and `tools/forever_sim` (from
    `.agents/skills/wow-forever-addon/tooling`) reach consumers with `python3 tools/sync_consumers.py ..`, never by
    editing a consumer's copy. `tools/check_core_shared.py` fails a PR that does.
@@ -45,8 +46,9 @@ tracker specs run against Blizzard's real source: `python3 tools/fetch_tracker_u
 
 Each version needs changelog fragments consumed into a `CHANGELOG.md` entry before its `v*` tag
 (`python3 tools/changelog.py release X.Y.Z` in the preparation commit); no other PR edits `CHANGELOG.md`.
-`release.yml` waits for full CI and a green `headless-smoke` status on the exact commit, then packages for
-GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
+`release.yml` waits for full CI and for the commit's in-game evidence: a committed `.visual-proof.json` that
+verifies with passing checks (a version bump keeps it valid), or else a green `headless-smoke` status. It then
+packages for GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
 kind: proof` request (`flows: update notice=<slash or Lua file>`), or from the user's checklist pass of that exact
 build with `forever_client.py attest`. A core release re-releases every consumer
 through `release-consumers.yml`. Load order: `ForeverCore.toc` loads the modules, then `Expose.lua` last; it has

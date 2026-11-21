@@ -8,7 +8,7 @@ local function check(value, message)
 end
 local frames, combat = {}, false
 local function frame()
-	local f = { width = 250, height = 0, scripts = {}, shown = true, scale = 1, left = 0, top = 640 }
+	local f = { events = {}, width = 250, height = 0, scripts = {}, shown = true, scale = 1, left = 0, top = 640 }
 	function f:SetParent(owner)
 		self.parent = owner
 	end
@@ -22,13 +22,18 @@ local function frame()
 		self.height = value
 	end
 	function f:GetHeight()
+		assert(not combat, "GetHeight called in lockdown")
 		return self.height
 	end
 	function f:GetEffectiveScale()
+		assert(not combat, "GetEffectiveScale called in lockdown")
 		return self.scale
 	end
 	function f:SetScript(event, fn)
 		self.scripts[event] = fn
+	end
+	function f:RegisterEvent(event)
+		self.events[event] = true
 	end
 	function f:RegisterForDrag(button)
 		self.dragButton = button
@@ -49,15 +54,20 @@ local function frame()
 		self.shown = true
 	end
 	function f:StartMoving()
+		assert(not combat, "StartMoving called in lockdown")
 		self.moving = true
 	end
 	function f:StopMovingOrSizing()
+		assert(not combat, "StopMovingOrSizing called in lockdown")
+		self.stops = (self.stops or 0) + 1
 		self.moving = false
 	end
 	function f:GetLeft()
+		assert(not combat, "GetLeft called in lockdown")
 		return self.left
 	end
 	function f:GetTop()
+		assert(not combat, "GetTop called in lockdown")
 		return self.top
 	end
 	frames[#frames + 1] = f
@@ -99,7 +109,6 @@ ns.TrackerHost = host
 local created = #frames
 local column = frame()
 local drag = module.Drag(column, host)
-check(#frames == created + 1, "the drag draws no frame of its own: no grip, no handle")
 local header = frame()
 drag.Attach(header)
 check(header.dragButton == "LeftButton", "a section header drags with the left button")
@@ -148,5 +157,23 @@ combat = false
 press()
 check(column.moving == true, "the drag works once combat ends")
 header.scripts.OnDragStop(header)
+
+-- Combat can start while the mouse is still held. The regen event fires before lockdown.
+press()
+column.left, column.top = 620, 830
+local stops, saves = column.stops, #saved
+for _, listener in ipairs(frames) do
+	if listener.events.PLAYER_REGEN_DISABLED then
+		listener.scripts.OnEvent(listener, "PLAYER_REGEN_DISABLED")
+	end
+end
+check(column.stops == stops + 1 and not drag.Dragging(), "combat entry stops the move before lockdown")
+check(#saved == saves + 1 and saved[#saved][1] == 620 and saved[#saved][2] == -250, "combat entry saves the position")
+combat = true
+header.scripts.OnDragStop(header)
+check(column.stops == stops + 1 and #saved == saves + 1, "releasing in lockdown does not stop or save again")
+check(drag.Dragged(), "combat entry preserves click suppression")
+
+check(#frames == created + 3, "the drag adds only its event frame")
 
 print("tracker_lock_spec: " .. checks .. " checks passed")

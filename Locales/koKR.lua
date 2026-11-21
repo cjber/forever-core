@@ -131,3 +131,7 @@ L["Copy %s: %s"] = "사본 %s: %s" -- mt
 
 L["Drag to move the tabs."] = "끌어서 탭을 이동합니다."
 L["Reset tab position"] = "탭 위치 초기화"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore에는 더 이상 자체 퀘스트 목록이 없습니다. 게임이나 Questie의 퀘스트 추적기를 숨기거나 옮기는 일은 없습니다. 각 애드온의 ‘%s’ 설정은 Forever 열의 위치만 정합니다."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "사용법: /fcore report, /fcore debug, /fcore tracker"

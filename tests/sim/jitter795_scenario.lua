@@ -7,6 +7,12 @@ local ROWS, LONG = 10, 14
 local function run(sim, trackerHost)
 	local G = sim.G
 	sim:login({ savedVariables = { ForeverCoreDB = { trackerHost = trackerHost } } })
+	local tracker = sim:openObjectiveTracker()
+	tracker:ClearAllPoints()
+	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)
+	tracker:SetSize(260, 600)
+	G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+	sim:event("EDIT_MODE_LAYOUTS_UPDATED")
 	sim:advance(3)
 	local rows = ROWS
 	local Section = G.ForeverCore.TrackerSection

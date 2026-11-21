@@ -155,11 +155,15 @@ local function Supervise(old)
 	old.Seen = old.Seen or function(event)
 		return seen[event] == true
 	end
-	old.WorldEntry = old.WorldEntry or function()
-		if entry ~= nil then
-			return entry[1], entry[2]
+	old.WorldEntry = old.WorldEntry
+		or function()
+			if entry ~= nil then
+				return entry[1], entry[2]
+			end
+			if seen.PLAYER_ENTERING_WORLD then
+				return false, false
+			end
 		end
-	end
 	old.Trace = old.Trace
 		or function()
 			local out = {}
@@ -1031,11 +1035,14 @@ function Loader.Seen(event)
 	return state.seen[event] == true
 end
 
--- The arguments of the first PLAYER_ENTERING_WORLD the loading frame saw (isInitialLogin, isReloadingUi), for a
--- runtime booted after it that needs to know which kind of entry this session began with.
+-- Replay the first observed world entry. A load-on-demand entry without an observed event is neither a login nor a
+-- reload. Keep that fallback separate so a real event can still supply its flags.
 function Loader.WorldEntry()
 	local entry = state.worldEntry
 	if entry ~= nil then
 		return entry[1], entry[2]
+	end
+	if state.seen.PLAYER_ENTERING_WORLD then
+		return false, false
 	end
 end

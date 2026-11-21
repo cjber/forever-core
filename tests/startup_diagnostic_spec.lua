@@ -183,9 +183,10 @@ output = run("report")
 check(output:find("/fcore is unavailable", 1, true) ~= nil, "the no-addon report describes the core-missing evidence")
 check(output:find("ForeverCore or a Forever addon in AddOns", 1, true) ~= nil, "and names the AddOns check")
 
--- The quest list is gone, so "quests" is an unknown word, and an unknown word prints the tracker diagnostic.
+-- There is no quest list: "quests" explains that instead of printing a diagnostic, and only "tracker" prints it.
 check(ForeverCore.TrackerQuests == nil, "the retired quest list is not published")
-equal(run("quests"), "tracker debug", "/fcore quests falls through to the tracker diagnostic")
-equal(run("other"), "tracker debug", "an unknown command keeps the tracker debug fallthrough")
+check(run("quests") ~= "tracker debug", "/fcore quests prints a note, not the tracker diagnostic")
+equal(run("tracker"), "tracker debug", "/fcore tracker prints the tracker diagnostic")
+check(run("other") ~= "tracker debug", "an unknown command prints the usage, not the diagnostic")
 
 print(("startup_diagnostic_spec: %d checks passed"):format(checks))
