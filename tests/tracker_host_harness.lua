@@ -717,6 +717,10 @@ function harness.new(options)
 		ctx.ns.TrackerHost.Attach(m)
 		return m
 	end
+	-- Globals a spec needs before the host file runs, such as a loader that already saw the world events.
+	for key, value in pairs(options.env or {}) do
+		env[key] = value
+	end
 	ctx.loadHost(ns)
 	ctx.host = frames[2]
 	ctx.first, ctx.second = ctx.module(1), ctx.module(2)

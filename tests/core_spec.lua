@@ -34,6 +34,7 @@ for _, path in ipairs({
 	"Core/OpenMap.lua",
 	"Core/OpenSettings.lua",
 	"Core/Text.lua",
+	"Core/Character.lua",
 	"Core/APIKit.lua",
 	"UI/Art.lua",
 	"UI/Report.lua",

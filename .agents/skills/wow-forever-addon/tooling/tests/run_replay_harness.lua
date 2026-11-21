@@ -123,6 +123,7 @@ assert(
 	"a file's own-load callback runs after every file, got: " .. table.concat(login.order, ", ")
 )
 assert(login.host.ForeverCoreHostAfter == nil, "the queue is gone once it has run")
+assert(login.host.ForeverCoreHostDeferred == true, "files run at activation stay marked as past the login")
 assert(login.host.ForeverCoreHostIncomplete == nil, "every wrapped file registered")
 
 -- Activated after the first world entry (a missed login, or after combat): the world entry with its arguments too.
@@ -137,6 +138,7 @@ expect(
 -- The standalone already running at startup: the files run inline and the client delivers every event itself.
 local startup = Session({ inline = true })
 assert(table.concat(startup.order, ", ") == "client, first file, last file", "inline, the client's own wait is used")
+assert(startup.host.ForeverCoreHostDeferred == nil, "files run inline at startup are not marked")
 startup.Fire("ADDON_LOADED", "Demo")
 startup.Tick()
 expect(startup, "ADDON_LOADED:Demo:nil", "inline at startup misses nothing")

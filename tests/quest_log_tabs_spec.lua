@@ -7,12 +7,31 @@ local function newFrame(name, parent)
 		shown = true,
 		checked = false,
 		points = {},
+		pointWrites = 0,
+		height = 30,
+		top = 470,
 		sizeCalls = {},
 		scripts = {},
 		scriptHooks = {},
 	}
 	function frame:SetPoint(...)
 		self.points = { ... }
+		self.pointWrites = self.pointWrites + 1
+	end
+	function frame:GetHeight()
+		return self.height
+	end
+	function frame:GetTop()
+		return self.top
+	end
+	function frame:GetBottom()
+		return self.top - self.height
+	end
+	function frame.GetEffectiveScale()
+		return 2
+	end
+	function frame:RegisterForDrag(button)
+		self.dragButton = button
 	end
 	function frame:GetPoint()
 		return unpack(self.points)
@@ -73,6 +92,7 @@ end
 local function newWorld(questTabHidden, offsetX, offsetY)
 	_G.ForeverQuestLogQuestsTab = nil
 	local map = newFrame("QuestMapFrame")
+	map.height, map.top = 350, 500
 	map.displayMode = 1
 	map.ContentFrames = { newFrame("QuestsContent"), newFrame("LegendContent") }
 	map.ContentFrames[1].displayMode = 1
@@ -86,6 +106,15 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 	end
 	local world = { map = map, worldMap = worldMap, created = {}, callbacks = {}, hooks = {} }
 
+	_G.GetCursorPosition = function()
+		return 0, world.cursorY or 0
+	end
+	_G.InCombatLockdown = function()
+		return world.inCombat
+	end
+	_G.IsMouseButtonDown = function(button)
+		return button == "LeftButton" and not world.buttonUp
+	end
 	_G.QuestMapFrame = map
 	_G.WorldMapFrame = worldMap
 	_G.securecallfunction = function(fn, ...)
@@ -523,3 +552,156 @@ for _, oneWorld in ipairs({ world, openWorld, eventWorld, hideWorld }) do
 		end
 	end
 end
+
+local dragWorld = newWorld(true)
+local saved = {}
+local reset, menuOwner
+local dragApi = load({
+	L = {
+		["Drag to move the tabs."] = "Drag to move the tabs.",
+		["Reset tab position"] = "Reset tab position",
+	},
+	Store = function()
+		return saved
+	end,
+	ContextMenu = function(owner, generate)
+		menuOwner = owner
+		generate(owner, {
+			CreateButton = function(_, label, action)
+				assert(label == "Reset tab position")
+				reset = action
+			end,
+		})
+	end,
+})
+local dragA = dragApi.Register("a", { name = "DragA", tooltip = "A", panel = newFrame(), order = 10 })
+local dragB = dragApi.Register("b", { name = "DragB", tooltip = "B", panel = newFrame(), order = 20 })
+local dragQuests = _G.ForeverQuestLogQuestsTab
+for _, tab in ipairs({ dragQuests, dragA, dragB }) do
+	assert(tab.dragButton == "LeftButton", "every ForeverCore map tab must register for left-button drag")
+end
+dragA:mouseUpHandler("RightButton", true)
+assert(not menuOwner, "a menu opened before a position was saved")
+
+local tooltipLine, tooltipShown
+_G.GRAY_FONT_COLOR = {
+	GetRGB = function()
+		return 0.5, 0.5, 0.5
+	end,
+}
+_G.GetAppropriateTooltip = function()
+	return {
+		IsOwned = function(_, owner)
+			return owner == dragA
+		end,
+		AddLine = function(_, line, r, g, b)
+			assert(r == 0.5 and g == 0.5 and b == 0.5, "drag hint was not grey")
+			tooltipLine = line
+		end,
+		Show = function()
+			tooltipShown = true
+		end,
+	}
+end
+dragA.scriptHooks.OnEnter[1](dragA)
+assert(tooltipLine == "Drag to move the tabs." and tooltipShown, "hover did not show the drag hint")
+
+local function press(tab)
+	for _, handler in ipairs(tab.scriptHooks.OnMouseDown or {}) do
+		handler(tab, "LeftButton")
+	end
+end
+
+press(dragB)
+dragB.scripts.OnDragStart(dragB)
+dragWorld.cursorY = -120
+dragB.scripts.OnUpdate(dragB)
+assert(dragQuests.points[5] == -67, "drag did not move the column live in map units")
+assert(dragA.points[2] == dragQuests and dragB.points[2] == dragA, "stacked tabs did not follow")
+assert(saved.questLogTabOffsetY == nil, "drag saved before release")
+dragB:mouseUpHandler("LeftButton", true)
+dragB.scripts.OnDragStop(dragB)
+assert(saved.questLogTabOffsetY == -60 and dragApi.Selected() == nil, "drag failed to save or selected a tab")
+press(dragB)
+dragB:mouseUpHandler("LeftButton", true)
+assert(dragApi.Selected() == "b", "a plain click after a drag did not select the tab")
+
+press(dragQuests)
+dragQuests.scripts.OnDragStart(dragQuests)
+dragWorld.cursorY = -2000
+dragQuests.scripts.OnUpdate(dragQuests)
+assert(dragQuests.points[5] == -254, "drag did not clamp the bottom of the entire column")
+dragWorld.cursorY = 2000
+dragQuests.scripts.OnUpdate(dragQuests)
+assert(dragQuests.points[5] == 0, "drag did not clamp the top of the column")
+dragQuests.scripts.OnDragStop(dragQuests)
+assert(saved.questLogTabOffsetY == 7, "drag did not save the clamped position")
+
+dragWorld.inCombat = true
+press(dragA)
+dragA.scripts.OnDragStart(dragA)
+dragWorld.cursorY = 0
+assert(not dragA.scripts.OnUpdate, "drag started in combat")
+dragA.scripts.OnDragStop(dragA)
+dragA:mouseUpHandler("LeftButton", true)
+assert(saved.questLogTabOffsetY == 7 and dragQuests.points[5] == 0, "combat drag changed the position")
+assert(dragApi.Selected() == "b", "combat drag selected a tab")
+dragWorld.inCombat = false
+dragA:mouseUpHandler("RightButton", true)
+assert(menuOwner == dragA and reset, "right-click did not offer reset on the clicked tab")
+reset()
+assert(saved.questLogTabOffsetY == nil and dragQuests.points[5] == -7, "reset did not restore the default anchor")
+
+-- A smaller map clamps a saved column again without forgetting where it was put.
+press(dragQuests)
+dragQuests.scripts.OnDragStart(dragQuests)
+dragWorld.cursorY = -2000
+dragQuests.scripts.OnDragStop(dragQuests)
+assert(dragQuests.points[5] == -254 and saved.questLogTabOffsetY == -247, "bottom drag was not saved")
+dragWorld.map.height = 200
+dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(dragQuests.points[5] == -104, "a smaller map did not clamp the column again")
+assert(saved.questLogTabOffsetY == -247, "clamping to a smaller map changed the saved position")
+dragWorld.map.height = 350
+dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(dragQuests.points[5] == -254, "the larger map did not restore the saved position")
+
+-- The map closes with the button held, so OnDragStop never arrives: the next update ends the drag in place.
+press(dragA)
+dragA.scripts.OnDragStart(dragA)
+dragWorld.buttonUp = true
+dragWorld.cursorY = 500
+dragA.scripts.OnUpdate(dragA)
+assert(not dragA.scripts.OnUpdate, "a drag outlived the released button")
+assert(dragQuests.points[5] == -254 and saved.questLogTabOffsetY == -247, "a stale drag moved the column")
+dragWorld.buttonUp = false
+
+-- Combat starting mid-drag ends the drag where it is.
+press(dragA)
+dragA.scripts.OnDragStart(dragA)
+dragWorld.inCombat = true
+dragWorld.cursorY = 0
+dragA.scripts.OnUpdate(dragA)
+assert(not dragA.scripts.OnUpdate and dragQuests.points[5] == -254, "a drag continued into combat")
+dragWorld.inCombat = false
+
+-- Reload with a saved drag offset in the stock-tab layout.
+local stockWorld = newWorld(false)
+stockWorld.map.MapLegendTab:Hide()
+saved.questLogTabOffsetY = -60
+local stockApi = load({
+	Store = function()
+		return saved
+	end,
+})
+local stockA = stockApi.Register("a", { name = "StockA", tooltip = "A", panel = newFrame(), order = 10 })
+assert(stockA.points[2] == stockWorld.map.QuestsTab and stockA.points[5] == -63, "saved position was not restored")
+press(stockA)
+stockA.scripts.OnDragStart(stockA)
+stockWorld.cursorY = -20
+stockA.scripts.OnDragStop(stockA)
+assert(stockA.points[5] == -73 and saved.questLogTabOffsetY == -70, "stock layout did not save the drag")
+assert(stockWorld.map.QuestsTab.pointWrites == 0, "Blizzard's QuestsTab was moved")
+assert(stockWorld.map.MapLegendTab.pointWrites == 0, "Blizzard's MapLegendTab was moved")
+assertNoShowScripts(dragWorld.created)
+assertNoShowScripts(stockWorld.created)

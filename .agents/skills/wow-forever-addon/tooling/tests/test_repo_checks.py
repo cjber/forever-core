@@ -226,9 +226,17 @@ class HeadlessSmokeTest(unittest.TestCase):
         ci = json.dumps([{"workflow_runs": [self.RUN]}])
         passing = json.dumps([[{"context": "headless-smoke", "state": "success"}]])
         failing = json.dumps([[{"context": "headless-smoke", "state": "failure", "description": "2 Lua errors"}]])
-        with patch.dict("os.environ", {"GITHUB_REPOSITORY": "cjber/forever-core", "GITHUB_SHA": "abc"}):
+        # A tag no GitHub release or store file carries yet, so the published-once gate passes.
+        unreleased = json.dumps([[]])
+        environ = {
+            "GITHUB_REPOSITORY": "cjber/forever-core",
+            "GITHUB_SHA": "abc",
+            "GITHUB_REF": "refs/tags/v1.0.0",
+            "GITHUB_REF_NAME": "v1.0.0",
+        }
+        with patch.dict("os.environ", environ), patch.object(release_check, "curseforge_projects", return_value=[]):
             with (
-                patch.object(release_check.subprocess, "check_output", side_effect=[ci, passing]),
+                patch.object(release_check.subprocess, "check_output", side_effect=[ci, passing, unreleased]),
                 contextlib.redirect_stdout(io.StringIO()) as out,
             ):
                 release_check.main([])

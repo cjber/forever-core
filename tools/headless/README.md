@@ -35,7 +35,7 @@ are refused when unsafe. Reload and proof waits report a live safety refusal as 
 
 A second strip row, under the first, carries where the player stands: map, position, facing, the map's size in
 yards, whether the player is indoors, where the target's nameplate is across the screen and whether the target is
-within interact distance, as 16-bit fields closed by a checksum. `face X Y`, `face target`, `walkto X Y`, `walkto
+within interact distance, and a ghost's corpse when it lies on the same map, as 16-bit fields closed by a checksum. `face X Y`, `face target`, `walkto X Y`, `walkto
 target`, `where` and `park` read it after every step, so movement is a closed loop on the measured facing and
 position rather than a timed key hold. `walkto` jumps forward once when blocked, then follows the obstacle, keeping
 to the side that last got round, until a straight step runs free; when neither side gets round, or it starts going round
@@ -59,6 +59,9 @@ profession window, say), and settles again. Each flow reloads first, so a later 
 Exit 3 means the player's client is in use. Exit 4 means live safety refused the operation:
 `player is dead or a ghost`, `player is in combat`, or the version 2 safety protocol is
 unavailable or outdated. Other client errors use exit 2.
+A dead character out of combat still takes `click`, `hover`, `key`, `face`, `walkto` and `where`, so it can be
+revived: `click` Release Spirit, `walkto corpse`, then `click` the resurrect popup's Accept, or `key --action
+INTERACTTARGET` on the targeted spirit healer in reach. `slash`, `eval` and proofs still refuse a ghost.
 
 ## Shared commands
 

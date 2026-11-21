@@ -563,4 +563,70 @@ do
 	_G.EventUtil = nil
 end
 
+-- A file waits for loading events through ns.AfterEvents, which waits only for the ones still to come: the client's
+-- own wait never calls back for an event that fired before the file ran (cjber/forever-core#980).
+do
+	local ns = {}
+	assert(loadfile("tools/consumer/ForeverRequire.lua"))("MyAddon", ns)
+	local waits, inWorld, seen = {}, false, {}
+	_G.EventUtil = {
+		ContinueAfterAllEvents = function(callback, ...)
+			waits[#waits + 1] = { callback = callback, events = table.concat({ ... }, " ") }
+		end,
+	}
+	_G.IsLoggedIn = function()
+		return inWorld
+	end
+	_G.ForeverCoreLoader = {
+		Seen = function(event)
+			return seen[event] == true
+		end,
+	}
+	local calls = 0
+	local function callback()
+		calls = calls + 1
+	end
+
+	-- While the addon loads nothing has fired: the client holds the whole wait.
+	ns.AfterEvents(callback, "PLAYER_LOGIN", "VARIABLES_LOADED")
+	equal(calls, 0, "nothing fired yet: no call")
+	equal(waits[1].events, "PLAYER_LOGIN VARIABLES_LOADED", "the client waits for every event")
+	equal(waits[1].callback, callback, "with the callback unchanged")
+
+	-- Run by the package's runner at activation: PLAYER_LOGIN is past whatever the client says, and the wait starts
+	-- after the last file.
+	ns.ForeverCoreHostAfter, ns.ForeverCoreHostDeferred = {}, true
+	ns.AfterEvents(callback, "PLAYER_LOGIN")
+	ns.AfterEvents(callback, "PLAYER_LOGIN", "VARIABLES_LOADED", "PLAYER_ENTERING_WORLD")
+	equal(calls, 0, "a deferred file's callback never runs inside the file that asked")
+	equal(#waits, 1, "nor is the client asked yet")
+	local queue = ns.ForeverCoreHostAfter
+	ns.ForeverCoreHostAfter = nil
+	seen.VARIABLES_LOADED = true
+	queue[1]()
+	equal(calls, 1, "after the last file a wait on the login alone calls back at once")
+	queue[2]()
+	equal(calls, 1, "a wait with an event still to come does not")
+	equal(waits[2].events, "PLAYER_ENTERING_WORLD", "the client waits for that event only")
+
+	-- Asked from a startup callback while PLAYER_LOGIN is still dispatching: the runner's mark holds.
+	ns.AfterEvents(callback, "PLAYER_LOGIN")
+	equal(calls, 2, "a deferred addon's later wait on the login calls back at once")
+	calls = 1
+
+	-- Asked later in the session: the client and the loader say what is past.
+	ns.ForeverCoreHostDeferred = nil
+	inWorld, seen.PLAYER_ENTERING_WORLD = true, true
+	ns.AfterEvents(callback, "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "VARIABLES_LOADED")
+	equal(calls, 2, "everything past: called at once")
+	ns.AfterEvents(callback, "PLAYER_LOGIN", "QUEST_LOG_UPDATE")
+	equal(waits[3].events, "QUEST_LOG_UPDATE", "an event that cannot be told past is waited for")
+
+	-- No loader (a spec, a client without the registry): only the login can be told past.
+	_G.ForeverCoreLoader = nil
+	ns.AfterEvents(callback, "PLAYER_LOGIN", "VARIABLES_LOADED")
+	equal(waits[4].events, "VARIABLES_LOADED", "without the loader the world events are waited for")
+	_G.EventUtil, _G.IsLoggedIn = nil, nil
+end
+
 print(("forever_require_spec: %d checks passed"):format(checks))

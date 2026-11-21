@@ -625,7 +625,11 @@ ns.AtStart(function()
 		frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 		frame:RegisterEvent("LUA_WARNING")
 		frame:RegisterEvent("ADDON_LOADED")
-		frame:RegisterEvent("PLAYER_LOGIN")
+		-- Elected at PLAYER_LOGIN, core starts after it: the attach above already ran with every addon loaded.
+		local isLoggedIn = rawget(_G, "IsLoggedIn")
+		if not (type(isLoggedIn) == "function" and isLoggedIn()) then
+			frame:RegisterEvent("PLAYER_LOGIN")
+		end
 		frame:SetScript("OnEvent", function(_, event, ...)
 			if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" then
 				AttachBugGrabber()

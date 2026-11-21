@@ -21,7 +21,9 @@ What it writes:
   addon's own ADDON_LOADED and the PLAYER_LOGIN it missed. By then the client counts the addon as loaded, so
   `EventUtil.ContinueOnAddOnLoaded` on the addon's own name would call back inside the file that asked, before the
   files after it: `ns.OnFilesLoaded` (Core/ForeverRequire.lua) queues on the runner instead, which calls back after
-  the last file. A wrapped file the client did not load leaves the count short, and the require gate stops the addon.
+  the last file. `EventUtil.ContinueAfterAllEvents` never calls back for an event that fired before the file ran,
+  and the runner can replay an event only to a frame: `ns.AfterEvents` waits for the events still to come. A wrapped
+  file the client did not load leaves the count short, and the require gate stops the addon.
 - The root TOC: the copy's files first, then `ForeverCoreHost.lua`, the consumer's files in their order,
   `ForeverCoreRun.lua` and the producer's `ForeverCoreReady.lua` last.
 
@@ -45,7 +47,7 @@ from . import core_pin
 from .lua import tokenize
 from .luadata import unescape
 
-__all__ = ["EMBED_FIELD", "EmbedError", "enabled", "main", "own_load_waits", "transform", "wrap"]
+__all__ = ["EMBED_FIELD", "EmbedError", "enabled", "event_waits", "main", "own_load_waits", "transform", "wrap"]
 
 EMBED_FIELD = core_pin.EMBED_FIELD
 PREFIX = "Libs/ForeverCore/"
@@ -160,6 +162,8 @@ ForeverCoreLoader.OnReady(function()
 	local after = {}
 	if not runInline then
 		host.ForeverCoreHostAfter = after
+		-- For the rest of the session: these files ran at or after PLAYER_LOGIN (ns.AfterEvents).
+		host.ForeverCoreHostDeferred = true
 	end
 	-- One file's error stops that file only, as the client's own file loading does.
 	for index = 1, #chunks do
@@ -244,7 +248,8 @@ def wrap(data: bytes) -> bytes:
     return (BOM if bom else b"") + HEADER + body + FOOTER
 
 
-# The shared consumer file that defines ns.OnFilesLoaded, the one caller of the client's wait this step allows.
+# The shared consumer file that defines ns.OnFilesLoaded and ns.AfterEvents, the one caller of the client's waits
+# this step allows.
 OWN_LOAD_HELPER = "Core/ForeverRequire.lua"
 
 
@@ -270,6 +275,19 @@ def own_load_waits(data: bytes, folder: str) -> list[int]:
         if texts[index + 3] == "," and (named or (argument.kind == "string" and unescape(argument.text) == folder)):
             lines.append(token.line)
     return lines
+
+
+def event_waits(data: bytes) -> list[int]:
+    """The lines where a file calls `ContinueAfterAllEvents`. Deferred to login, the file runs after PLAYER_LOGIN and
+    perhaps VARIABLES_LOADED or the world entry, and that wait never calls back for an event already fired: the
+    callback is lost with no error (cjber/forever-core#980). `ns.AfterEvents` waits only for the events still to
+    come. Read from the file's Lua tokens, so a comment or a string that mentions the call is not one."""
+    tokens, _ = tokenize(data.decode("utf-8-sig"))
+    return [
+        token.line
+        for index, token in enumerate(tokens[:-1])
+        if token.kind == "name" and token.text == "ContinueAfterAllEvents" and tokens[index + 1].text == "("
+    ]
 
 
 def core_template_uses(data: bytes, template: str) -> list[int]:
@@ -414,6 +432,13 @@ def transform(root: Path, core: Path, version: str) -> dict[str, object]:
             raise EmbedError(
                 f"{name}:{waits[0]}: EventUtil.ContinueOnAddOnLoaded on this addon's own name; deferred to login the"
                 " callback would run inside this file, before the files after it. Call ns.OnFilesLoaded(callback)"
+            )
+    for name, data in sources.items():
+        waits = [] if name == OWN_LOAD_HELPER else event_waits(data)
+        if waits:
+            raise EmbedError(
+                f"{name}:{waits[0]}: EventUtil.ContinueAfterAllEvents; deferred to login the file runs after events"
+                " that wait never sees again, and the callback is lost. Call ns.AfterEvents(callback, ...)"
             )
     for name, data in sources.items():
         uses = core_template_uses(data, builder.TEMPLATE)

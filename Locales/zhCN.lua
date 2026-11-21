@@ -124,3 +124,6 @@ L["Callback error: %s"] = "回调错误：%s"
 L["Login error: %s"] = "登录错误：%s"
 L["Warning: %s"] = "警告：%s" -- mt
 L["Copy %s: %s"] = "副本 %s：%s"
+
+L["Drag to move the tabs."] = "拖动以移动标签页。" -- mt
+L["Reset tab position"] = "重置标签页位置" -- mt

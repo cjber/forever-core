@@ -1,3 +1,4 @@
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +62,87 @@ class ScreensTest(unittest.TestCase):
         self.assertNotEqual(before, screens.files(self.root, ["UI/*.lua"]))
         with self.assertRaisesRegex(ValueError, "matches no file"):
             screens.files(self.root, ["Gone/*.lua"])
+
+
+class SceneRecordsTest(unittest.TestCase):
+    def tmp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        return Path(directory.name)
+
+    def test_independent_scene_edits_change_disjoint_records(self):
+        tmp_path = self.tmp()
+        base = tmp_path / "base"
+        base.mkdir()
+        scenes = {"map.png": lambda: b"map", "tracker.gif": lambda: b"tracker"}
+        for name in scenes:
+            (base / name).write_bytes(b"original pixels")
+        screens.record(base, scenes)
+        original = dict.fromkeys(scenes, screens.sha256(b"original pixels"))
+        expected = {name: (image, screens.sha256(scenes[name]())) for name, image in original.items()}
+        records = base / "scenes"
+        assert {path.name for path in records.iterdir()} == {"map.png.sha256", "tracker.gif.sha256"}
+        for name, (image, dump) in expected.items():
+            assert (records / f"{name}.sha256").read_text() == f"{image} {dump}\n"
+        assert screens.read(base) == expected
+
+        for name in scenes:
+            branch = tmp_path / name
+            shutil.copytree(base, branch)
+            (branch / name).write_bytes(b"new pixels")
+            screens.record(branch, scenes)
+            changed = {
+                path.name
+                for path in (branch / "scenes").iterdir()
+                if path.read_bytes() != (records / path.name).read_bytes()
+            }
+            assert changed == {f"{name}.sha256"}
+
+    def test_legacy_records_fill_gaps_and_migrate(self):
+        tmp_path = self.tmp()
+        legacy = tmp_path / "scenes.sha256"
+        records = tmp_path / "scenes"
+        records.mkdir()
+        image, dump = screens.sha256(b"pixels"), screens.sha256(b"dump")
+        legacy.write_text(f"# old records\nmap.png {image} {dump}\ntracker.png {image} {screens.sha256(b'old')}\n")
+        (records / "tracker.png.sha256").write_text(f"{image} {dump}\n")
+        (records / "retired.png.sha256").write_text(f"{image} {dump}\n")
+        (records / "notes.txt").write_text("keep")
+        scenes = {"map.png": lambda: b"dump", "tracker.png": lambda: b"dump"}
+        for name in scenes:
+            (tmp_path / name).write_bytes(b"pixels")
+
+        assert screens.read(tmp_path) == dict.fromkeys([*scenes, "retired.png"], (image, dump))
+        screens.record(tmp_path, scenes)
+
+        assert not legacy.exists()
+        assert {path.name for path in records.iterdir()} == {"map.png.sha256", "tracker.png.sha256", "notes.txt"}
+        assert screens.read(tmp_path) == dict.fromkeys(scenes, (image, dump))
+        assert screens.check(tmp_path, scenes) == []
+
+    def test_check_names_per_scene_records(self):
+        tmp_path = self.tmp()
+        scenes = dict.fromkeys(["stale.png", "changed.png", "removed.png"], lambda: b"original dump")
+        for name in scenes:
+            (tmp_path / name).write_bytes(b"original pixels")
+        screens.record(tmp_path, scenes)
+
+        scenes["stale.png"] = lambda: b"new dump"
+        (tmp_path / "changed.png").write_bytes(b"new pixels")
+        del scenes["removed.png"]
+        (tmp_path / "removed.png").unlink()
+        scenes["unrecorded.png"] = lambda: b"new dump"
+        (tmp_path / "unrecorded.png").write_bytes(b"new pixels")
+        (tmp_path / "unnamed.gif").write_bytes(b"new pixels")
+
+        assert screens.check(tmp_path, scenes) == [
+            "unnamed.gif: no scene in tools/check_screenshots.py; name what it is drawn from",
+            "changed.png: differs from scenes/changed.png.sha256; run tools/check_screenshots.py --record",
+            "stale.png: what it shows changed but the image did not; run tools/screenshots.py",
+            "unrecorded.png: not in scenes/unrecorded.png.sha256; run tools/check_screenshots.py --record",
+            "removed.png: recorded in scenes/removed.png.sha256 but no longer a scene; "
+            "run tools/check_screenshots.py --record",
+        ]
 
 
 if __name__ == "__main__":

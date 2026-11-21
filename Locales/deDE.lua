@@ -126,3 +126,6 @@ L["Callback error: %s"] = "Callback-Fehler: %s" -- mt
 L["Login error: %s"] = "Anmeldefehler: %s" -- mt
 L["Warning: %s"] = "Warnung: %s" -- mt
 L["Copy %s: %s"] = "Kopie %s: %s" -- mt
+
+L["Drag to move the tabs."] = "Ziehen, um die Reiter zu verschieben."
+L["Reset tab position"] = "Reiterposition zurücksetzen"

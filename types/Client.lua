@@ -46,6 +46,7 @@ function GameTooltip_SetTitle(tooltip, text) end
 -- ForeverCore's own saved variables, from ForeverCore.toc.
 ---@class ForeverCoreSavedVariables
 ---@field trackerHost? ForeverTrackerSettings
+---@field questLogTabOffsetY? number Vertical offset of the world map tab column.
 ---@field leaderboards? table Retired Forever Leaderboards saved data, cleared at load.
 ---@field questList? boolean The retired Forever quest list's switch, cleared at load.
 ---@field questListHintDone? boolean The retired quest list hint's answer, cleared at load.

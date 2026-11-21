@@ -421,8 +421,9 @@ class ReleasedInTest(unittest.TestCase):
     def released(self, *args, **kwargs):
         return cfwatch.released_in(*args, root=Path("/suite"), **kwargs)
 
-    def merged(self, at="2026-11-11T02:16:29Z"):
-        return [{"event": "cross-referenced", "source": {"issue": {"number": 583, "pull_request": {"merged_at": at}}}}]
+    def merged(self, at="2026-11-11T02:16:29Z", number=583, repo="skillup-forever"):
+        source = {"number": number, "pull_request": {"merged_at": at}, "repository": {"full_name": f"cjber/{repo}"}}
+        return [{"event": "cross-referenced", "source": {"issue": source}}]
 
     def test_an_open_issue_is_not_due(self):
         with self.release({"state": "open"}):
@@ -441,6 +442,22 @@ class ReleasedInTest(unittest.TestCase):
         self.assertEqual(
             git_calls, [("fetch", "--tags", "--quiet"), ("tag", "--contains", "abc", "--sort=creatordate")]
         )
+
+    def test_a_later_pr_in_another_repo_never_names_a_pr_here(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-18T00:00:00Z"}
+        events = self.merged("2026-11-17T00:00:00Z") + self.merged("2026-11-17T12:00:00Z", 716, "forever-core")
+        api_calls = []
+        with self.release(issue, events, api_calls=api_calls):
+            self.released("skillup-forever", 759)
+        pulls = [url for url in api_calls if "/pulls/" in url]
+        self.assertEqual(pulls, ["repos/cjber/skillup-forever/pulls/583"])
+
+    def test_a_pr_only_in_another_repo_is_not_a_release_here(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-18T00:00:00Z"}
+        api_calls = []
+        with self.release(issue, self.merged(number=716, repo="forever-core"), api_calls=api_calls):
+            self.assertIsNone(self.released("skillup-forever", 759))
+        self.assertFalse([url for url in api_calls if "/pulls/" in url])
 
     def test_a_fix_on_main_but_not_in_a_release_is_not_due(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
@@ -532,10 +549,7 @@ class ReleasedInTest(unittest.TestCase):
         events = [
             {"event": "closed", "commit_id": "abc", "created_at": "2026-11-11T02:16:31Z"},
             {"event": "reopened", "created_at": "2026-11-20T00:00:00Z"},
-            {
-                "event": "cross-referenced",
-                "source": {"issue": {"number": 583, "pull_request": {"merged_at": "2026-11-25T00:00:00Z"}}},
-            },
+            *self.merged("2026-11-25T00:00:00Z"),
             {"event": "closed", "created_at": "2026-12-01T00:00:00Z"},
         ]
         with self.release(

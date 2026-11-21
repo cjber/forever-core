@@ -126,6 +126,22 @@ class EmbedTest(unittest.TestCase):
         )
         self.assertEqual(self.run_embed()["wrapped"], 2, "another addon's load, a mention and the shared wait embed")
 
+    def test_a_file_waiting_for_events_through_the_client_is_refused(self):
+        # cjber/forever-core#980: deferred to login, the wait never sees PLAYER_LOGIN and the callback is lost.
+        (self.root / "Main.lua").write_text(
+            'local addon, ns = ...\nns.main = addon\nEventUtil.ContinueAfterAllEvents(function() end, "PLAYER_LOGIN")\n'
+        )
+        with self.assertRaisesRegex(embed.EmbedError, r"Main\.lua:3: .*ns\.AfterEvents"):
+            self.run_embed()
+        self.assertFalse((self.root / "Main.lua").read_bytes().startswith(embed.HEADER), "nothing was rewritten")
+        (self.root / "Main.lua").write_text(
+            "local addon, ns = ...\n"
+            "-- not EventUtil.ContinueAfterAllEvents(callback, event): it never sees a past event\n"
+            'ns.note = "ContinueAfterAllEvents(callback)"\n'
+            'ns.AfterEvents(function() end, "PLAYER_LOGIN")\n'
+        )
+        self.assertEqual(self.run_embed()["wrapped"], 2, "a mention and the shared wait embed")
+
     def test_a_file_naming_the_canonical_line_template_is_refused(self):
         # cjber/forever-core#964: SkillUp drew tracker lines from the canonical name, which no embedded copy declares.
         mention = "-- ForeverTrackerInteractiveLineTemplate, in a comment\n"

@@ -26,6 +26,8 @@ local reportedKey
 ---@type ForeverQuestLogTab?
 local questsTab
 local tabOffsetY = 0
+local appliedOffset = 0
+local TAB_GAP = 3
 local installed = false
 
 ---@param name string
@@ -117,33 +119,170 @@ local function PanelHidden(_, frame)
 	end
 end
 
--- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
-local function QuestLogPanelShown()
-	Sync()
+---@return ForeverCoreSavedVariables?
+local function Saved()
+	local db
+	if type(ns.Store) == "function" then
+		db = ns.Store()
+	else
+		db = rawget(_G, "ForeverCoreDB")
+	end
+	return type(db) == "table" and db or nil
 end
 
--- The one column: a hidden tab keeps its slot in the order but draws nothing, so the buttons above and below close the
--- gap. Hidden state lives on the entry, so hiding a tab leaves its panel and its selected state alone.
-local function Anchor()
+local function SavedOffset()
+	local db = Saved()
+	return db and db.questLogTabOffsetY or 0
+end
+
+local function ClampOffset(map, stockTab, entries, offset)
+	local defaultTop = tabOffsetY
+	local height = questsTab and questsTab:GetHeight() or 0
+	local hasTab = questsTab ~= nil
+	for _, entry in ipairs(entries) do
+		if not entry.hidden then
+			height = height + entry.tab:GetHeight() + (hasTab and TAB_GAP or 0)
+			hasTab = true
+		end
+	end
+	if not questsTab then
+		local mapTop, stockBottom = map:GetTop(), stockTab:GetBottom()
+		if not mapTop or not stockBottom then
+			return offset
+		end
+		defaultTop = stockBottom - mapTop - TAB_GAP
+	end
+	local bottomLimit = math.min(0, height - map:GetHeight())
+	return math.max(bottomLimit, math.min(0, defaultTop + offset)) - defaultTop
+end
+
+-- A hidden entry retains its order, and the visible tabs close the gap.
+---@param dragOffset number?
+local function Anchor(dragOffset)
 	local map = QuestMapFrame
-	---@type Button?
+	local entries = Sorted()
+	local stockTab = map.MapLegendTab:IsShown() and map.MapLegendTab or map.QuestsTab
+	appliedOffset = dragOffset or SavedOffset()
+	-- Preserve the client's exact layout when no custom position is set.
+	if dragOffset or appliedOffset ~= 0 then
+		appliedOffset = ClampOffset(map, stockTab, entries, appliedOffset)
+	end
 	local previous = questsTab
 	if questsTab then
 		questsTab:ClearAllPoints()
-		questsTab:SetPoint("TOPLEFT", map, "TOPRIGHT", 0, tabOffsetY)
+		questsTab:SetPoint("TOPLEFT", map, "TOPRIGHT", 0, tabOffsetY + appliedOffset)
 	end
-	for _, entry in ipairs(Sorted()) do
+	for _, entry in ipairs(entries) do
 		local tab = entry.tab
 		tab:ClearAllPoints()
 		tab:SetShown(not entry.hidden)
 		if not entry.hidden then
-			if not previous then
-				previous = map.MapLegendTab:IsShown() and map.MapLegendTab or map.QuestsTab
-			end
-			tab:SetPoint("TOP", previous, "BOTTOM", 0, -3)
+			tab:SetPoint("TOP", previous or stockTab, "BOTTOM", 0, -TAB_GAP + (previous and 0 or appliedOffset))
 			previous = tab
 		end
 	end
+end
+
+-- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
+-- Maximising or minimising the map changes its height, so a moved column is clamped again; the saved offset stays.
+local function QuestLogPanelShown()
+	if appliedOffset ~= 0 or SavedOffset() ~= 0 then
+		Anchor()
+	end
+	Sync()
+end
+
+local function InCombat()
+	return InCombatLockdown and InCombatLockdown()
+end
+
+---@param tab ForeverQuestLogTab
+---@param selectTab fun()
+local function SetTabInput(tab, selectTab)
+	local dragged = false
+	local cursorStart, offsetStart, lastCursorY
+
+	local function Move()
+		local _, cursorY = GetCursorPosition()
+		if cursorY ~= lastCursorY then
+			lastCursorY = cursorY
+			Anchor(offsetStart + (cursorY - cursorStart) / tab:GetEffectiveScale())
+		end
+	end
+
+	-- Keeps the column where it was last drawn.
+	local function EndDrag()
+		if cursorStart then
+			cursorStart = nil
+			tab:SetScript("OnUpdate", nil)
+			local db = Saved()
+			if db then
+				db.questLogTabOffsetY = appliedOffset ~= 0 and appliedOffset or nil
+			end
+		end
+	end
+
+	-- The map can close or combat can start while the button is held, and then OnDragStop never arrives: the next
+	-- update, on this frame or once the map is open again, ends the drag in place.
+	local function UpdateDrag()
+		if not cursorStart then
+			return
+		end
+		if InCombat() or not IsMouseButtonDown("LeftButton") then
+			EndDrag()
+		else
+			Move()
+		end
+	end
+
+	local function StopDrag()
+		if cursorStart and not InCombat() then
+			Move()
+		end
+		EndDrag()
+	end
+
+	tab:RegisterForDrag("LeftButton")
+	tab:HookScript("OnMouseDown", function(_, button)
+		if button == "LeftButton" then
+			EndDrag()
+			dragged = false
+		end
+	end)
+	tab:SetScript("OnDragStart", function()
+		dragged = true
+		if not InCombat() then
+			local _, cursorY = GetCursorPosition()
+			cursorStart, offsetStart, lastCursorY = cursorY, appliedOffset, cursorY
+			tab:SetScript("OnUpdate", UpdateDrag)
+		end
+	end)
+	tab:SetScript("OnDragStop", StopDrag)
+	tab:SetCustomOnMouseUpHandler(function(_, button, upInside)
+		if not upInside then
+			return
+		end
+		if button == "LeftButton" and not dragged then
+			selectTab()
+		elseif button == "RightButton" and SavedOffset() ~= 0 and not InCombat() then
+			ns.ContextMenu(tab, function(_, root)
+				root:CreateButton(ns.L["Reset tab position"], function()
+					local db = Saved()
+					if db and not InCombat() then
+						db.questLogTabOffsetY = nil
+						Anchor()
+					end
+				end)
+			end)
+		end
+	end)
+	tab:HookScript("OnEnter", function()
+		local tooltip = GetAppropriateTooltip()
+		if tooltip:IsOwned(tab) then
+			tooltip:AddLine(ns.L["Drag to move the tabs."], GRAY_FONT_COLOR:GetRGB())
+			tooltip:Show()
+		end
+	end)
 end
 
 local function Install()
@@ -157,11 +296,7 @@ local function Install()
 		tab.tooltipText = QUESTS_LABEL
 		tab.activeAtlas = "questlog-tab-icon-quest"
 		tab.inactiveAtlas = "questlog-tab-icon-quest-inactive"
-		tab:SetCustomOnMouseUpHandler(function(_, mouseButton, upInside)
-			if mouseButton == "LeftButton" and upInside then
-				api.ShowQuests()
-			end
-		end)
+		SetTabInput(tab, api.ShowQuests)
 		tab:SetChecked(true)
 		-- The client's offset is tuned for the Camelot tab art, which Forever hides and never draws, so
 		-- against Forever's own frame it leaves a dark strip between the map frame and the tab (#447).
@@ -206,10 +341,8 @@ function api.Register(key, spec)
 	Install()
 	local tab = NewTab(spec.name)
 	tab.tooltipText = spec.tooltip
-	tab:SetCustomOnMouseUpHandler(function(_, mouseButton, upInside)
-		if mouseButton == "LeftButton" and upInside then
-			api.Select(key)
-		end
+	SetTabInput(tab, function()
+		api.Select(key)
 	end)
 	tab:SetChecked(false)
 	tabs[key] = { key = key, spec = spec, tab = tab }

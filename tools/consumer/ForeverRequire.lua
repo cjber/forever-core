@@ -212,6 +212,45 @@ function ns.OnFilesLoaded(callback)
 	end
 	_G.EventUtil.ContinueOnAddOnLoaded(addonName, callback)
 end
+-- Whether a loading event has already fired this session. The package's runner marks files it ran at activation,
+-- which is at PLAYER_LOGIN or after it, so the login is past for them even while that event is still being
+-- dispatched; the loader records the other two as it sees them.
+local function fired(event)
+	if event == "PLAYER_LOGIN" then
+		return ns.ForeverCoreHostDeferred == true or (type(_G.IsLoggedIn) == "function" and _G.IsLoggedIn() == true)
+	end
+	local loader = rawget(_G, "ForeverCoreLoader")
+	return type(loader) == "table" and type(loader.Seen) == "function" and loader.Seen(event) == true
+end
+-- Calls back once every named event has fired this session, waiting only for the ones still to come. A file uses
+-- this, never EventUtil.ContinueAfterAllEvents: in a package that carries ForeverCore the files run at login or
+-- later, after PLAYER_LOGIN and perhaps VARIABLES_LOADED or the world entry, and the client's wait never calls back
+-- for an event that fired before it was asked (cjber/forever-core#980). Asked while the runner runs the files, the
+-- wait starts after the last file, so a callback with nothing left to wait for never runs inside the file that asked.
+---@param callback fun()
+---@param ... string event names
+function ns.AfterEvents(callback, ...)
+	local events = { ... }
+	local function wait()
+		local pending = {}
+		for _, event in ipairs(events) do
+			if not fired(event) then
+				pending[#pending + 1] = event
+			end
+		end
+		if #pending == 0 then
+			callback()
+		else
+			_G.EventUtil.ContinueAfterAllEvents(callback, unpack(pending))
+		end
+	end
+	local queue = ns.ForeverCoreHostAfter
+	if type(queue) == "table" then
+		queue[#queue + 1] = wait
+		return
+	end
+	wait()
+end
 ---@param ready boolean
 ---@param slash? { key: string, [integer]: string } the addon's slash words and their SlashCmdList key
 function ns.ForeverRequire(ready, slash)

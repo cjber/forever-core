@@ -26,11 +26,19 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 					callback = fn
 				end
 			end,
-			SetSize = function() end,
+			SetSize = function(frame, width)
+				frame.width = width
+			end,
 			SetPoint = function() end,
 			SetIgnoreParentScale = function() end,
-			SetScale = function(_, scale)
+			SetScale = function(frame, scale)
 				scales[#scales + 1] = scale
+				-- The readiness marker is the one 32-unit-wide frame, the safety strip the one 52 wide.
+				if frame.width == 32 then
+					scales.marker = scale
+				elseif frame.width == 52 then
+					scales.status = scale
+				end
 			end,
 			SetFrameStrata = function() end,
 			SetAllPoints = function() end,
@@ -85,6 +93,11 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 		screenshot.count = screenshot.count + 1
 	end
 	_G.print = function() end
+	-- The player's own windowed size, which the readiness marker must still draw at 4 pixels a cell.
+	_G.GetPhysicalScreenSize = function()
+		return 1432, 600
+	end
+	scales = {}
 	assert(loadstring(source))()
 	local registered = {}
 	for _, event in ipairs(events) do
@@ -143,19 +156,25 @@ run(nil, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 0, "missing parked-character configuration refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "approved character signals readiness")
+assert(scales.marker == 768 / 600, "the readiness marker is scaled to exactly 4 screen pixels a cell")
+assert(scales.status == 768 / 600, "the safety strip is scaled to exactly 4 screen pixels a cell")
 run({ name = "Other", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "unexpected identity refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, false, false, screenshot)
-assert(screenshot.count == 1, "dead character refuses readiness")
+assert(screenshot.count == 2, "a ghost out of combat signals readiness, so it can be revived")
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", nil, false, false, screenshot)
+assert(screenshot.count == 2, "an unreadable dead state refuses readiness")
+run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, true, false, screenshot)
+assert(screenshot.count == 2, "a ghost in combat refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, true, false, screenshot)
-assert(screenshot.count == 1, "combat character refuses readiness")
+assert(screenshot.count == 2, "combat character refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, true, screenshot)
-assert(screenshot.count == 1, "lockdown character refuses readiness")
+assert(screenshot.count == 2, "lockdown character refuses readiness")
 run({ name = "Tester", guid = "PENDING" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
-assert(screenshot.count == 1 and shown == "Player-1-2-3", "enrolment shows the GUID and refuses readiness")
+assert(screenshot.count == 2 and shown == "Player-1-2-3", "enrolment shows the GUID and refuses readiness")
 shown = nil
 run({ name = "Other", guid = "PENDING" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
-assert(screenshot.count == 1 and shown == nil, "enrolment never shows another character's GUID")
+assert(screenshot.count == 2 and shown == nil, "enrolment never shows another character's GUID")
 print("forever headless: identity handshake pass")
 
 run(nil, "Tester", "Player-1-2-3", nil, nil, nil, screenshot)
@@ -202,6 +221,11 @@ do
 		}
 	end
 	_G.CreateVector2D = Vector
+	_G.C_DeathInfo = {
+		GetCorpseMapPosition = function(map)
+			return map == 1453 and Vector(0.5, 0.25) or nil
+		end,
+	}
 	_G.C_Map = {
 		GetBestMapForUnit = function()
 			return 1453
@@ -277,10 +301,11 @@ do
 		return value
 	end
 	assert(read(8) == 155, "the motion header 10011011")
-	local flags = { read(1), read(1), read(1), read(1) }
+	local flags = { read(1), read(1), read(1), read(1), read(1) }
 	assert(flags[1] == 1 and flags[2] == 1 and flags[3] == 1 and flags[4] == 1, "known, indoors, plate, near")
+	assert(flags[5] == 1, "a corpse on this map")
 	local fields = {}
-	for index = 1, 8 do
+	for index = 1, 10 do
 		fields[index] = read(16)
 	end
 	assert(fields[1] == 1453, "the map")
@@ -291,7 +316,8 @@ do
 	-- forever_client hashes "MOVEFORWARD=S,;MOVEBACKWARD=DOWN,;..." the same way; tools/test_forever_client.py
 	-- checks the same string gives the same number.
 	assert(fields[8] == 30719, "the movement bindings hash")
-	local sum = 1 + 2 + 3 + 4
+	assert(fields[9] == math.floor(0.5 * 65535 + 0.5) and fields[10] == math.floor(0.25 * 65535 + 0.5), "the corpse")
+	local sum = 1 + 2 + 3 + 4 + 5
 	for _, value in ipairs(fields) do
 		sum = sum + value
 	end

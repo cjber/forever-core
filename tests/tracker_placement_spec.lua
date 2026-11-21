@@ -249,6 +249,60 @@ scaled.moveLine(300)
 local point = scaled.host.point
 scaled.check(point[4] == 200 and point[5] == 600, "the line is read in the column's units")
 
+-- #987/#1139: the column keeps clear of the action bars. It reads the bars the player's own layout put on screen: a bar
+-- lying across the column's width caps how far down it reaches, and a bar standing at its side caps how far right, so
+-- the column stops at the bars rather than laying out into them.
+local bars = harness.new({ hostSettings = { attached = false } })
+local function Bar(name, barLeft, barTop, barWidth, barHeight, shown)
+	bars.env[name] = {
+		IsShown = function()
+			return shown ~= false
+		end,
+		GetLeft = function()
+			return barLeft
+		end,
+		GetTop = function()
+			return barTop
+		end,
+		GetWidth = function()
+			return barWidth
+		end,
+		GetHeight = function()
+			return barHeight
+		end,
+		GetEffectiveScale = function()
+			return 1
+		end,
+	}
+end
+local room = bars.first.available
+-- A bar across the bottom of the screen, under the column.
+Bar("MainMenuBar", 0, 100, 1200, 60)
+bars.host:MarkDirty()
+bars.drain()
+bars.check(bars.first.available == room - 100, "a bar under the column takes its room off the layout")
+Bar("MainMenuBar", 0, 100, 1200, 60, false)
+bars.host:MarkDirty()
+bars.drain()
+bars.check(bars.first.available == room, "a hidden bar takes none")
+-- The same bar parked at the far left, where the column is not: it is in nobody's way.
+Bar("MainMenuBar", 0, 100, 300, 60)
+bars.host:MarkDirty()
+bars.drain()
+bars.check(bars.first.available == room, "a bar the column never reaches takes none")
+-- A bar that leaves less room than the column is tall moves it left, as a short list does.
+Bar("MainMenuBar", 0, 750, 1200, 60)
+bars.host:MarkDirty()
+bars.drain()
+bars.check(Pinned(bars), "a bar leaving no room under it moves the column left")
+bars.env.MainMenuBar = nil
+-- A bar standing at the right of the screen, beside the column, moves it left of that bar.
+Bar("MultiBarRight", 1150, 880, 40, 800)
+bars.host:MarkDirty()
+bars.drain()
+bars.check(bars.host.point[4] == 890, "a right-hand bar moves the column left of it")
+bars.check(bars.first.available == room, "and takes no room from below")
+
 print(
 	("tracker_placement_spec: %d checks passed"):format(
 		t.checks()
@@ -262,5 +316,6 @@ print(
 			+ grown.checks()
 			+ pinnedDrag.checks()
 			+ longList.checks()
+			+ bars.checks()
 	)
 )

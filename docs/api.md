@@ -28,15 +28,16 @@ end
 
 `ForeverCore.API` is a number and stays one: addons compare it as a number. Core's own published API table, the one
 [`docs/api-conventions.md`](api-conventions.md) describes for every addon, is the `"ForeverCore"` entry of
-`ForeverCore.APIKit.Addons()`. Its `version` and `minor` are these two numbers, and it carries `Registered(` and
-`Open(`.
+`ForeverCore.APIKit.Addons()`. Its `version` and `minor` are these two numbers, and it carries `Registered(`,
+`Open(` and `CharacterKey(`.
 
 `ForeverCore` itself exists only once the client has loaded ForeverCore, which `## OptionalDeps: ForeverCore` in your
 TOC makes the client load before your files when core is installed. Do not use `## Dependencies`: the client would skip
 your addon when core is missing. Show a missing core with the vendored `Core/ForeverRequire.lua` instead.
 
-`minor` is the core table's own version and rises with each member this page adds outside a module. It is `2` today,
-and `Registered` arrived in minor 1. Minor 2 adds `Open` and the registration fields `open` and `openSecure`. A member added here keeps `API` and raises `minor`, so check it before you use
+`minor` is the core table's own version and rises with each member this page adds outside a module. It is `3` today,
+and `Registered` arrived in minor 1. Minor 2 adds `Open` and the registration fields `open` and `openSecure`. Minor 3
+adds `CharacterKey`. A member added here keeps `API` and raises `minor`, so check it before you use
 such a member: `if (ForeverCore.minor or 0) >= 1 and ForeverCore.Registered then ... end`.
 
 ## `ForeverCore.Registered`
@@ -123,6 +124,20 @@ and `Diamond`. Check it before you use them: `if (ForeverCore.Art.minor or 1) >=
   it behind its numbered marker. (minor 2)
 - `Diamond()` is that ring with the goal pin's diamond in it,
   `Interface\AddOns\ForeverCore\media\Numbers\Diamond`, for the step that has no number next. (minor 2)
+
+## `ForeverCore.CharacterKey`
+
+```lua
+ForeverCore.CharacterKey() --> string?
+```
+
+The key to file this character's saved data under. On a realm with a name it is `Name-NormalizedRealm`
+(`Barry-Firemaw`), the key addons have always built. A Forever realm has no name: `GetRealmName()` is `""` and
+`UnitName("player")`'s second return is the character's surname, so the key is the full name and the server segment
+of `UnitGUID("player")` (`Barry Buckfast-6941`), which keeps characters sharing a first name apart. It is nil until
+the client has the character's name and GUID, and while a realm with an ID other than 0 has no name yet, so an early
+read on a named realm never answers a Forever key. It is read fresh on every call, so ask again later rather than
+keeping a nil. Check `(ForeverCore.minor or 0) >= 3` before calling it. (minor 3)
 
 ## `ForeverCore.OpenMap`
 

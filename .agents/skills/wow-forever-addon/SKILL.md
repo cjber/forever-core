@@ -124,8 +124,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   check, fails a TOC that omits it, a value the pinned build does not have, or a repeat in shipped Lua.
 - **WFA-9** Screenshots come from `tools/screenshots.py` via the `wow-mock-screenshots` skill, one
   per headline feature, regenerated in the same PR as any UI change they show. README, store page
-  and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes.sha256` records each
-  image's hash beside its scene dump's (`forever_tools.screens`); CI recomputes the dumps headlessly
+  and store gallery use the same files from `docs/screenshots/`. `docs/screenshots/scenes/<image name>.sha256` records
+  that image's hash beside its scene dump's (`forever_tools.screens`). CI recomputes the dumps headlessly
   (`tools/check_screenshots.py`) and fails when a dump moved but its image did not.
   Every PR body shows every image in `docs/screenshots/`, linked at the head commit's SHA: the changed
   ones in full under `## Screenshots`, the rest in `<details>` blocks.
@@ -181,7 +181,10 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   a larger slice, measured in game: 2 s of work at 1 ms a frame is 40 s of empty UI at 60 fps.
 - **WFA-14** Saved variables never assume a key: every default is declared in one place (a
   `DEFAULTS` table, or the feature registry's `default =`), and a missing key reads as its default,
-  so a new option and an old save file always agree.
+  so a new option and an old save file always agree. Per-character data is keyed by
+  `ForeverCore.CharacterKey()`, never by a realm name read here: a Forever realm has no name
+  (`GetRealmName()` is `""`) and `UnitName`'s second return is the surname, so a hand-built key is empty or
+  collides between characters sharing a first name. `forever_sim` and the fake client model that realm.
 - **WFA-38** Never touch Blizzard's Lua state. Forever runs its UI through secure delegates, so a hook, a field
   write or a first call from addon code into a Blizzard object makes Blizzard's own code fail or be blocked later,
   often only in combat, and the error names this addon. Blizzard allows hooks in general; this rule is ours,
@@ -215,8 +218,9 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
     frame (1000/60 ms) fails it, named by addon and event. WFA-13's 3 ms budget still holds; this is the floor a
     proof enforces in the client.
   - Every proof runs with full logging: `taintLog` 2, `scriptErrors` 1, BugGrabber, DevSessionLog and the
-    `!!DevPerf` profiler. A new taint.log line or BugGrabber entry naming an addon of ours fails the proof, and a FAIL
-    reports the exact error, its stack and the event or action that raised it, never a summary.
+    `!!DevPerf` profiler. A new BugGrabber entry naming an addon of ours fails the proof, as does a taint.log record
+    of our taint reaching secure code (`forever_errors.taint_defect`: a blocked action, or Blizzard code writing or
+    running tainted outside a secure call); one addon reading another's value is not a defect. A FAIL reports the exact error, its stack and the event or action that raised it, never a summary.
   - Every `CHANGELOG.md` bullet the change adds maps to the flow that proves it, listed in the pull request body.
   - Where Forever's client differs from retail, the behaviour is modelled in `forever_sim` from a live record, and
     the change's scenario runs against it (WFA-35). A bench of per-event work reads the sim's work counter.

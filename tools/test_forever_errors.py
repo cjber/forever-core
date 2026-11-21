@@ -244,23 +244,62 @@ DevSmokeDB = {
             self.assertIn("someone else's", loaded.warnings[0])
 
 
+LIVE_TAINT = Path(__file__).resolve().parent / "testdata" / "taint_2026-11-20.log"
+
+
 class TaintLogTest(unittest.TestCase):
-    def test_reads_lines_naming_our_folders(self):
+    def load(self, text):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            write(
-                root / "Logs" / "taint.log",
-                "11/8 11:07:44.832  Tainted value written by AdventureGuideForever "
-                "- Interface/AddOns/AdventureGuideForever/A.lua:4\n"
-                "11/8 11:07:45.000  Tainted value written by another addon "
-                "- Interface/AddOns/AtlasLootClassic/X.lua:4\n",
-            )
+            write(root / "Logs" / "taint.log", text)
             loaded = errors.load_sources(root / "WTF", root / "Logs", REFERENCE)
-            self.assertEqual(len(loaded.log_lines), 2)
-            ours = [entry for entry in loaded.entries if entry.source == "taint"]
-            self.assertEqual(len(ours), 1)
-            self.assertEqual(ours[0].repo, "cjber/adventure-guide-forever")
-            self.assertEqual(ours[0].last_seen, datetime(2026, 11, 8, 11, 7, 44, 832000).timestamp())
+        return loaded, [entry for entry in loaded.entries if entry.source == "taint"]
+
+    def test_addon_to_addon_taint_from_a_live_smoke_is_not_an_error(self):
+        # The 17:48 smoke: ForeverCore's loader running LegacyForever's and the others' files, Blizzard's
+        # keybinding UI reading our BINDING_NAME_ globals inside securecallfunction, and another addon's
+        # dropdown write. None of it is our taint reaching secure code.
+        loaded, ours = self.load(LIVE_TAINT.read_text(encoding="utf-8"))
+        self.assertEqual(len(loaded.log_lines), 76)
+        self.assertEqual(ours, [])
+
+    def test_a_blizzard_write_under_our_taint_counts_with_its_stack(self):
+        _, ours = self.load(
+            "11/8 11:07:44.832  Tainted value written to global UIDROPDOWNMENU_MENU_LEVEL (<table: 0>) "
+            "by AdventureGuideForever - Interface/AddOns/Blizzard_SharedXML/Mainline/UIDropDownMenu.lua:44\n"
+            "11/8 11:07:44.832      Interface/AddOns/Blizzard_SharedXML/Mainline/UIDropDownMenu.lua:44\n"
+            "11/8 11:07:44.832      securecall()\n"
+            "11/8 11:07:44.832      Interface/AddOns/AdventureGuideForever/A.lua:4\n"
+            "11/8 11:07:45.000  Tainted value written to global X (<table: 0>) by AtlasLootClassic "
+            "- Interface/AddOns/Blizzard_SharedXML/Mainline/UIDropDownMenu.lua:44\n"
+        )
+        self.assertEqual(len(ours), 1)
+        self.assertEqual(ours[0].repo, "cjber/adventure-guide-forever")
+        self.assertIn("securecall()", ours[0].stack)
+        self.assertEqual(ours[0].last_seen, datetime(2026, 11, 8, 11, 7, 44, 832000).timestamp())
+
+    def test_blizzard_code_run_tainted_outside_a_secure_call_counts(self):
+        _, ours = self.load(
+            "11/8 11:07:44.832  Execution tainted by TweaksForever while reading global WatchFrame_Update "
+            "(<function: 0>) - Interface/FrameXML/WatchFrame.lua:120 WatchFrame_OnEvent()\n"
+            "11/8 11:07:44.832      Interface/FrameXML/WatchFrame.lua:120 WatchFrame_OnEvent()\n"
+            "11/8 11:07:44.832      *:OnEvent()\n"
+        )
+        self.assertEqual([entry.folder for entry in ours], ["TweaksForever"])
+
+    def test_a_blocked_action_counts(self):
+        _, ours = self.load(
+            "11/8 11:07:44.832  An action was blocked in combat because of taint from LegacyForever "
+            "- WorldMapFrame:Show()\n"
+            "11/8 11:07:44.832      Interface/AddOns/LegacyForever/UI/Map.lua:320\n"
+        )
+        self.assertEqual([entry.folder for entry in ours], ["LegacyForever"])
+
+    def test_an_unknown_header_naming_our_folder_stays_red(self):
+        _, ours = self.load(
+            "11/8 11:07:44.832  Something new by SkillUpForever - Interface/AddOns/SkillUpForever/Core.lua:1\n"
+        )
+        self.assertEqual([entry.folder for entry in ours], ["SkillUpForever"])
 
 
 class GroupingTest(unittest.TestCase):
