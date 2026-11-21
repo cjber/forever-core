@@ -47,7 +47,7 @@ A third-party addon reads the members it may rely on, and the suite's published 
 ## Install
 
 Players never install it by hand: CurseForge installs it as a required dependency of every Forever addon. For a manual install, drop the
-`ForeverCore` folder in `Interface/AddOns`. `/fcore` prints the column's anchors, heights and combat state, which is
+`ForeverCore` folder in `Interface/AddOns`. `/fcore tracker` prints the column's anchors, heights and combat state, which is
 the same diagnostic the addons print from their own slash commands.
 
 ## Development
