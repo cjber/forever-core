@@ -1103,17 +1103,53 @@ class VisualProofTest(unittest.TestCase):
         self.assertIsNone(pkgmeta.read(extraction))
         self.assertIn("Core.lua", visual_proof.packaged_runtime_files(extraction))
 
+    @unittest.skipUnless(shutil.which("git"), "git decides which parent .git is a repository")
+    def test_an_empty_git_directory_in_a_parent_is_not_a_work_tree(self):
+        outer = self.elsewhere()
+        (outer / ".git").mkdir()
+        root = outer / "Addon"
+        root.mkdir()
+        (root / "Core.lua").write_text("core", encoding="utf-8")
+        (root / ".pkgmeta").write_text("package-as: Addon\n", encoding="utf-8")
+        self.assertTrue(pkgmeta.read(root).keeps("Core.lua"))
+
     def test_a_non_git_package_fixture_is_still_supported(self):
         root = self.checkout()
         self.assertTrue(pkgmeta.read(root).keeps("Core.lua"))
 
     def test_git_cannot_read_a_work_tree_by_itself(self):
         root = self.checkout()
-        (root / ".git").mkdir()
+        for name in ("objects", "refs"):
+            (root / ".git" / name).mkdir(parents=True)
+        (root / ".git/HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
         failed = subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: detected dubious ownership")
         with mock.patch.object(pkgmeta.subprocess, "run", return_value=failed):
             with self.assertRaisesRegex(ValueError, "git cannot read the work tree"):
                 pkgmeta.read(root)
+
+    def test_every_repository_layout_git_accepts_is_a_work_tree(self):
+        failed = subprocess.CompletedProcess(["git", "rev-parse"], 128, "", "fatal: detected dubious ownership")
+        for layout in ("unborn symlinked HEAD", "GIT_OBJECT_DIRECTORY", "gitdir file"):
+            with self.subTest(layout=layout):
+                root = self.checkout()
+                git = root / ".git"
+                environment = {}
+                if layout == "gitdir file":
+                    git.write_text("gitdir: ../elsewhere/.git/worktrees/Addon\n", encoding="utf-8")
+                else:
+                    (git / "refs").mkdir(parents=True)
+                    if layout == "unborn symlinked HEAD":
+                        (git / "objects").mkdir()
+                        (git / "HEAD").symlink_to("refs/heads/main")
+                    else:
+                        (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+                        environment["GIT_OBJECT_DIRECTORY"] = str(self.elsewhere())
+                with (
+                    mock.patch.dict(os.environ, environment),
+                    mock.patch.object(pkgmeta.subprocess, "run", return_value=failed),
+                ):
+                    with self.assertRaisesRegex(ValueError, "git cannot read the work tree"):
+                        pkgmeta.read(root)
 
     def test_a_non_git_fixture_ignores_a_git_rev_parse_failure(self):
         root = self.checkout()

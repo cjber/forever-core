@@ -24,11 +24,19 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 					callback = fn
 				end
 			end,
-			SetSize = function() end,
+			SetSize = function(frame, width)
+				frame.width = width
+			end,
 			SetPoint = function() end,
 			SetIgnoreParentScale = function() end,
-			SetScale = function(_, scale)
+			SetScale = function(frame, scale)
 				scales[#scales + 1] = scale
+				-- The readiness marker is the one 32-unit-wide frame, the safety strip the one 52 wide.
+				if frame.width == 32 then
+					scales.marker = scale
+				elseif frame.width == 52 then
+					scales.status = scale
+				end
 			end,
 			SetFrameStrata = function() end,
 			Hide = function() end,
@@ -74,6 +82,11 @@ local function run(config, name, guid, dead, combat, lockdown, screenshot)
 		screenshot.count = screenshot.count + 1
 	end
 	_G.print = function() end
+	-- The player's own windowed size, which the readiness marker must still draw at 4 pixels a cell.
+	_G.GetPhysicalScreenSize = function()
+		return 1432, 600
+	end
+	scales = {}
 	assert(loadstring(source))()
 	local registered = {}
 	for _, event in ipairs(events) do
@@ -132,6 +145,8 @@ run(nil, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 0, "missing parked-character configuration refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "approved character signals readiness")
+assert(scales.marker == 768 / 600, "the readiness marker is scaled to exactly 4 screen pixels a cell")
+assert(scales.status == 768 / 600, "the safety strip is scaled to exactly 4 screen pixels a cell")
 run({ name = "Other", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", false, false, false, screenshot)
 assert(screenshot.count == 1, "unexpected identity refuses readiness")
 run({ name = "Tester", guid = "Player-1-2-3" }, "Tester", "Player-1-2-3", true, false, false, screenshot)

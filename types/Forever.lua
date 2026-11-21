@@ -146,7 +146,7 @@
 
 ---@class ForeverCoreAPI
 ---@field API integer the interface version; 2 retired leaderboards and peer stats
----@field minor integer raised with each member core adds outside a module; 1 added Registered
+---@field minor integer raised with each member core adds outside a module; 1 added Registered, 3 CharacterKey
 ---@field Register fun(addonName: string, spec?: ForeverCoreSpec): ForeverCoreAddon
 ---@field Registered fun(addonName: string): boolean whether that addon reached Register, so its files started
 ---@field TrackerHost? ForeverTrackerHostAPI
@@ -164,6 +164,7 @@
 ---@field Open fun(addon: string, where?: any): boolean?, string?
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
+---@field CharacterKey fun(): string? the key per-character saved data is filed under; nil until the client knows
 ---@field Family? ForeverFamilyAPI the retired Forever addons page's members, answering without drawing
 ---@field Credits? ForeverCreditsAPI
 ---@field ContextMenu fun(owner: Region, generator: fun(owner: Region, root: ForeverMenuDescription)): ForeverMenuDescription?
@@ -279,6 +280,7 @@ ForeverCore = nil
 ---@field Open fun(addon: string, where?: any): boolean?, string?
 ---@field OpenMap fun(mapID?: integer): boolean
 ---@field OpenSettingsPanel fun(categoryID?: integer, element?: string): boolean
+---@field CharacterKey fun(): string?
 ---@field SettingsPage? ForeverSettingsPageModule
 ---@field MapCanvas? ForeverCanvasAPI
 ---@field MinimapButton? ForeverMinimapButtonAPI

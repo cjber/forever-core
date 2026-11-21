@@ -14,6 +14,7 @@ paths and is read as-is.
 """
 
 import fnmatch
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -301,14 +302,39 @@ def _globs(root: Path, entries: list[str]) -> tuple[str, ...]:
     return tuple(globs)
 
 
+def _repository(directory: Path) -> bool:
+    """Whether `directory/.git` is one git's discovery accepts, by git's own test (`setup.c`).
+
+    A `.git` file must name its git directory with `gitdir:`; a `.git` directory must hold `refs`, `objects` (or the
+    `GIT_OBJECT_DIRECTORY` git reads instead) and `HEAD`, a file or a symlink into `refs/` (an unborn branch's
+    dangles). Any other `.git` (a stray empty folder, say) git walks past, so it marks no work tree here either.
+    """
+    entry = directory / ".git"
+    if entry.is_file():
+        try:
+            return entry.read_text(encoding="utf-8", errors="replace").startswith("gitdir:")
+        except OSError:
+            return False
+    head = entry / "HEAD"
+    if head.is_symlink():
+        try:
+            valid_head = os.readlink(head).startswith("refs/")
+        except OSError:
+            valid_head = False
+    else:
+        valid_head = head.is_file()
+    objects = os.environ.get("GIT_OBJECT_DIRECTORY") or entry / "objects"
+    return valid_head and Path(objects).is_dir() and (entry / "refs").is_dir()
+
+
 def _work_tree(root: Path) -> bool:
     """Whether `root` sits in a git work tree, without asking git (which may itself be failing)."""
-    return any((directory / ".git").exists() for directory in (root, *root.parents))
+    return any(_repository(directory) for directory in (root, *root.parents))
 
 
 def _checkout_root(root: Path) -> bool:
     """Whether `root` is itself a git checkout, not a package extraction nested inside another repository."""
-    return (root / ".git").exists()
+    return _repository(root)
 
 
 def _untracked(root: Path) -> tuple[str, ...]:

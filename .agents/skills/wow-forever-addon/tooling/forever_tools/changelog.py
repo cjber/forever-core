@@ -268,22 +268,28 @@ def check_base(root: Path, base: str) -> None:
         following = HEADING.search(before, old.end())
         before = before[: old.start()] + (before[following.start() :] if following else "")
         old = HEADING.search(before)
-    first = HEADING.search(after)
-    valid = old is not None and first is not None
-    if valid:
+    valid = HEADING.search(after) is not None
+    inserted = ""
+    if valid and old is None:
+        # No release yet: the first release sections follow the intro, which stays as it was.
+        intro = before.rstrip("\n")
+        valid = after.startswith(intro)
+        inserted = after[len(intro) :].lstrip("\n") if valid else ""
+    elif valid and old is not None:
         prefix = before[: old.start()]
         valid = after.startswith(prefix)
         tail = after.find(before[old.start() :], len(prefix))
         valid = valid and tail >= len(prefix) and after[tail:] == before[old.start() :]
         inserted = after[len(prefix) : tail] if valid else ""
+    if valid:
         headings = list(HEADING.finditer(inserted))
-        valid = valid and bool(headings) and headings[0].start() == 0
+        valid = bool(headings) and headings[0].start() == 0
         for heading in headings:
             valid = (
                 valid
                 and bool(find(inserted, heading["version"]))
                 and heading["version"] not in tags
-                and _version_key(heading["version"]) > _version_key(old["version"])
+                and (old is None or _version_key(heading["version"]) > _version_key(old["version"]))
             )
         valid = valid and len({h["version"] for h in headings}) == len(headings)
     if not valid:

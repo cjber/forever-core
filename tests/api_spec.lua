@@ -39,7 +39,10 @@ end
 local ForeverCore = env.ForeverCore
 check(type(ForeverCore) == "table", "the TOC publishes ForeverCore")
 equal(ForeverCore.API, 2, "the interface version is 2")
-equal(ForeverCore.minor, 2, "the core table's own minor is 2")
+equal(ForeverCore.minor, 3, "the core table's own minor is 3")
+-- The fake client is a Forever realm: no realm name, so the key is the full name and the GUID's server (#999).
+equal(ForeverCore.CharacterKey(), "Tester Surname-6941", "the character key on a realm with no name")
+equal(ns.CoreAPI.CharacterKey, ForeverCore.CharacterKey, "the published API carries the same CharacterKey")
 check(type(ForeverCore.Register) == "function", "Register is the per-addon factory")
 check(type(ForeverCore.Registered) == "function", "Registered says whether an addon reached Register")
 check(not ForeverCore.Registered("AddonA"), "an addon that has not registered yet is false")

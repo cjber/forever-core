@@ -386,14 +386,21 @@ local function Client()
 		UnitFactionGroup = function()
 			return "Alliance"
 		end,
+		-- A Forever realm: no realm name, realm ID 0, the surname as UnitName's second return and the server in the GUID.
 		UnitName = function()
-			return "Tester"
+			return "Tester", "Surname"
+		end,
+		UnitGUID = function()
+			return "Player-6941-006325F9"
 		end,
 		GetNormalizedRealmName = function()
-			return "MyRealm"
+			return ""
 		end,
 		GetRealmName = function()
-			return "MyRealm"
+			return ""
+		end,
+		GetRealmID = function()
+			return 0
 		end,
 		IsInGuild = function()
 			return false

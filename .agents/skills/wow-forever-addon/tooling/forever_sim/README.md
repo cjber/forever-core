@@ -41,8 +41,11 @@ end)
 
 The runner registers the repository's addon (its TOC), runs each scenario on a fresh client and fails it on an
 error in the scenario, on any client error the addon caused (raised in its code, or in Blizzard code its
-taint reached), and on any protected call refused because of a field the addon wrote. `allowErrors` and
-`allowGamepadTaint` options turn those checks off for a scenario that asserts on them itself. After the declared
+taint reached), on any protected call refused because of a field the addon wrote, and on any stranded wait: a frame
+or `EventRegistry` callback the addon registered for `PLAYER_LOGIN` or `VARIABLES_LOADED` after that event fired,
+which never calls back (a file a wrapped ForeverCore runs after login does this; `ns.AfterEvents` is the fix).
+`allowErrors`, `allowGamepadTaint` and `allowStrandedWaits` options turn those checks off for a scenario that
+asserts on them itself. After the declared
 scenarios, and whether or not `tests/sim` holds any, the runner runs `sim:exercise()` for the repository's addon.
 An addon whose TOC names ForeverCore in `## OptionalDeps` or `## Dependencies` gets that checkout loaded for the
 exercise, from `$FOREVER_CORE` or the sibling `../forever-core`, so the addon's UI is really built and the exercise
@@ -73,6 +76,7 @@ means something; the walk still covers only the repository's own widgets.
 | `sim:exerciseWidgets(addons)` | every shown Button the named addons' own code created (menu rows and check boxes included): OnEnter, a left click, OnLeave, once each and in the current combat state, with frames a click opens walked in the same pass |
 | `Sim.new{ locale = "deDE" }` | another client locale (fetch it first) |
 | `sim:expectNoErrors(addon)`, `sim:expectError(text)`, `sim:takeErrors()` | the client's error list |
+| `sim:strandedWaits(addon)`, `sim:expectNoStrandedWaits(addon)` | waits registered for a once-only loading event after it fired, with the addon line that registered each |
 | `sim:gamepadTaint(addon)`, `sim:expectNoGamepadTaint(addon)` | secure reads of fields the addon wrote, with the writer line, the addon line the taint entered from, and the reader line; distinct causes are listed once with a count |
 | `sim:noisy{ seed, itemsPerFrame, failPercent, bagPercent, merchantPercent }`, `sim:noisy(false)` | a noisy client: every frame, seeded GET_ITEM_INFO_RECEIVED and ITEM_DATA_LOAD_RESULT pairs for random item IDs with some loads failed, BAG_UPDATE churn then BAG_UPDATE_DELAYED, and MERCHANT_UPDATE while the merchant is open; a requested load of a known item fails at the same rate; `sim.noise.fired` counts what it raised. A consumer spec runs it with `sim.work` to assert its work per event stays flat |
 | `sim.work.reset()`, `sim.work.paths[label]`, `sim.work.measure(label, f, ...)` | the work counter: every event is measured under its own name, and `measure` wraps any other path (a tooltip, a click, a callback), returning that run's `{ handlers, apiCalls }` and then `f`'s results; each `paths` entry holds `runs`, `handlers`, `apiCalls`, `maxHandlers` and `maxApiCalls` |

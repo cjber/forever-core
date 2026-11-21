@@ -48,15 +48,31 @@ local function safeCharacter()
 	return true, realm or ""
 end
 
--- A live, unscaled pixel protocol is observable through gamescope while Lua is running. SavedVariables
+-- A live pixel protocol is observable through gamescope while Lua is running. SavedVariables
 -- cannot provide live state: they normally flush only at logout/reload. Hide on leaving world so the
 -- login screen cannot retain a ready signal. Python reads these bits, never text or OCR.
+--
+-- Every pixel-protocol frame draws exactly 4 screen pixels a cell, whatever the screen's height: an unscaled frame is
+-- 768 units tall, so its scale is 768 over the physical height. In UI units the cells would be 4 * height / 768
+-- pixels, which forever_client reads only on a screen near 768 tall, so the player's window size would decide
+-- whether a session works.
+local function pixelExact(frame)
+	if type(_G.GetPhysicalScreenSize) ~= "function" then
+		return
+	end
+	local _, height = _G.GetPhysicalScreenSize()
+	if type(height) == "number" and height > 0 then
+		frame:SetScale(768 / height)
+	end
+end
+
 local inWorld = false
 local status = CreateFrame("Frame", nil, UIParent)
 status:SetIgnoreParentScale(true)
 status:SetFrameStrata("TOOLTIP")
 status:SetSize(52, 4)
 status:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+pixelExact(status)
 local cells = {}
 for column = 1, 13 do
 	local texture = status:CreateTexture(nil, "OVERLAY")
@@ -101,22 +117,14 @@ motion:SetFrameStrata("TOOLTIP")
 local MOTION_CELLS = #MOTION_HEADER + FLAGS + FIELDS * 16 + 8
 motion:SetSize(MOTION_CELLS * 4, 4)
 motion:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, -4)
--- Exactly 4 screen pixels a cell, whatever the screen's height: an unscaled frame is 768 units tall, so its scale is
--- 768 over the physical height. In UI units a 131-cell row would drift across cell edges on any screen not 768 tall.
-local function pixelExact()
-	if type(_G.GetPhysicalScreenSize) ~= "function" then
-		return
-	end
-	local _, height = _G.GetPhysicalScreenSize()
-	if type(height) == "number" and height > 0 then
-		motion:SetScale(768 / height)
-	end
-end
-pixelExact()
+pixelExact(motion)
 local resized = CreateFrame("Frame")
 resized:RegisterEvent("DISPLAY_SIZE_CHANGED")
 resized:RegisterEvent("UI_SCALE_CHANGED")
-resized:SetScript("OnEvent", pixelExact)
+resized:SetScript("OnEvent", function()
+	pixelExact(status)
+	pixelExact(motion)
+end)
 local motionCells = {}
 for column = 1, MOTION_CELLS do
 	local texture = motion:CreateTexture(nil, "OVERLAY")
@@ -270,6 +278,7 @@ frame:SetScript("OnEvent", function(_, event)
 		marker:SetIgnoreParentScale(true)
 		marker:SetFrameStrata("TOOLTIP")
 		marker:SetSize(32, 32)
+		pixelExact(marker)
 		marker:SetPoint("CENTER")
 		for row, bits in ipairs(MARKER) do
 			for column = 1, #bits do

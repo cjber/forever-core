@@ -110,6 +110,27 @@ class FragmentsTest(unittest.TestCase):
         self.commit(root)
         changelog.check_base(root, "main")
 
+    def test_first_release_after_an_intro_only_changelog(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.git(root, "init", "-b", "main")
+        (root / "CHANGELOG.md").write_text("# Changelog\n\nWhat changed.\n")
+        (root / "docs" / "screenshots").mkdir(parents=True)
+        (root / "docs" / "screenshots" / "hero.png").write_bytes(b"png")
+        self.note(root, "1", "<!-- discord-image: docs/screenshots/hero.png -->\n\n### Added\n\n- First.\n")
+        self.commit(root)
+        self.git(root, "checkout", "-b", "release")
+        changelog.main(root, ["release", "0.1.0", "--date", "2026-11-20"])
+        self.commit(root)
+        changelog.check_base(root, "main")
+        (root / "CHANGELOG.md").write_text(
+            (root / "CHANGELOG.md").read_text().replace("What changed.", "What changed, edited.")
+        )
+        self.commit(root)
+        with self.assertRaisesRegex(SystemExit, "changes/<slug>"):
+            changelog.check_base(root, "main")
+
     def test_history_edits_rejected(self):
         for text in [
             BASE + "- Bad.\n",

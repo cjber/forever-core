@@ -62,6 +62,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   `docs/api.md` is ForeverCore's own page for third-party authors, and `tools/check_api_docs.py` checks an addon's `Core/API.lua` against its
   `docs/api.md`.
 - `Core/Text.lua`: the shared search fold and ranking.
+- `Core/Character.lua`: `CharacterKey`, the one key every addon files per-character saved data under, on a named realm
+  and on a Forever realm, which has no name.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
   calling addon's L, and carries the debug-capture notice while `/forever debug on` is active.
 - `UI/MapCanvas.lua`: read-only drawings on the world map, with each addon's markers keyed on its name.

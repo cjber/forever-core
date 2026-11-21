@@ -370,27 +370,37 @@ for _, case in ipairs({
 	{ name = "variables loaded", seen = { VARIABLES_LOADED = true }, waits = "PLAYER_ENTERING_WORLD" },
 	{ name = "both past", seen = { PLAYER_ENTERING_WORLD = true, VARIABLES_LOADED = true }, waits = nil },
 }) do
-	local t = harness.new()
+	local loader = case.seen and {
+		Seen = function(event)
+			return case.seen[event] == true
+		end,
+	}
+	local t = harness.new({ deferReady = true, env = { ForeverCoreLoader = loader } })
 	local check = t.check
-	if case.seen then
-		t.env.ForeverCoreLoader = {
-			Seen = function(event)
-				return case.seen[event] == true
-			end,
-		}
-	end
-	local before = t.initializationEvents()
 	local ran = false
 	t.ns.AfterWorldEvents(function()
 		ran = true
 	end)
-	local after = t.initializationEvents()
+	local waits = t.initializationEvents()
 	if case.waits == nil then
 		check(ran, case.name .. ": runs at once")
-		check(after == before, case.name .. ": registers no wait")
+		check(waits == nil, case.name .. ": registers no wait")
 	else
 		check(not ran, case.name .. ": waits")
-		check(table.concat(after, ",") == case.waits, case.name .. ": waits only for " .. case.waits)
+		check(table.concat(waits, ",") == case.waits, case.name .. ": waits only for " .. case.waits)
+		-- A second caller, as a section created after login, joins the one wait rather than registering its own.
+		local late = false
+		t.ns.AfterWorldEvents(function()
+			late = true
+		end)
+		check(t.initializationEvents() == waits, case.name .. ": one wait for every caller")
+		t.ready()
+		check(ran and late, case.name .. ": every caller runs when the wait completes")
+		local after = false
+		t.ns.AfterWorldEvents(function()
+			after = true
+		end)
+		check(after, case.name .. ": a caller after the wait runs at once")
 	end
 end
 

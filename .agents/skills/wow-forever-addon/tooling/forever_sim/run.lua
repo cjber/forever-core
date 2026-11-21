@@ -132,6 +132,9 @@ local function runScenario(sc)
 		if not opts.allowGamepadTaint and addonName then
 			sim:expectNoGamepadTaint(addonName)
 		end
+		if not opts.allowStrandedWaits and addonName then
+			sim:expectNoStrandedWaits(addonName)
+		end
 	end, debug.traceback)
 	local seconds = os.clock() - t0
 	if ok then
