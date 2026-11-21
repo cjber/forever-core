@@ -6,7 +6,9 @@ release of every Forever addon starts the same way: `release.yml` releases `main
 `tools/release_consumers.py` dispatches that same commit for a consumer whose sync entry landed. This walks core and
 every consumer, reads that commit, and for each one with no status yet builds it and runs
 `tools/headless/forever_client.py smoke`, which posts the status itself. A commit that already carries a status of any
-kind is left alone, so a green main head costs nothing and a failed one is not retried behind the maintainer's back.
+kind is left alone, so a green main head costs nothing and a failed one is not retried behind the maintainer's back,
+and so is one whose committed `.visual-proof.json` already recorded that build passing in the client
+(`forever_client.py proof`), which the release accepts in place of the smoke.
 
     python3 tools/smoke_queue.py                         # smoke every commit that needs it, then stop
     python3 tools/smoke_queue.py --dry-run               # print the commits that would be smoked
@@ -31,7 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from release_consumers import SyncError, consumer_repos, discover_tooling_repos, main_head, smoke_status
+from release_consumers import SyncError, build_evidence, consumer_repos, discover_tooling_repos, main_head
 from sync_consumer_prs import CORE_REPO, OWNER
 
 CLIENT = Path(__file__).resolve().parent / "headless/forever_client.py"
@@ -98,10 +100,13 @@ def main(argv: list[str] | None = None) -> int:
     for repo in repos:
         try:
             commit = next_release(repo)
-            state = smoke_status(repo, commit)
+            state = build_evidence(repo, commit)
         except (SyncError, json.JSONDecodeError, OSError, KeyError, TypeError) as error:
             failures += 1
             print(f"{repo}: failed: {error}")
+            continue
+        if state == "proof":
+            print(f"{repo}: {commit[:7]} is covered by its visual proof")
             continue
         if state != "missing":
             print(f"{repo}: {commit[:7]} already has {state} headless-smoke")

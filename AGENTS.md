@@ -46,8 +46,9 @@ tracker specs run against Blizzard's real source: `python3 tools/fetch_tracker_u
 
 Each version needs changelog fragments consumed into a `CHANGELOG.md` entry before its `v*` tag
 (`python3 tools/changelog.py release X.Y.Z` in the preparation commit); no other PR edits `CHANGELOG.md`.
-`release.yml` waits for full CI and a green `headless-smoke` status on the exact commit, then packages for
-GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
+`release.yml` waits for full CI and for the commit's in-game evidence: a committed `.visual-proof.json` that
+verifies with passing checks (a version bump keeps it valid), or else a green `headless-smoke` status. It then
+packages for GitHub and CurseForge. A change to the update notice or a locale needs `.visual-proof.json` from an `INGAME ...
 kind: proof` request (`flows: update notice=<slash or Lua file>`), or from the user's checklist pass of that exact
 build with `forever_client.py attest`. A core release re-releases every consumer
 through `release-consumers.yml`. Load order: `ForeverCore.toc` loads the modules, then `Expose.lua` last; it has

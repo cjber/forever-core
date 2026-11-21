@@ -4,6 +4,7 @@ import contextlib
 import io
 import os
 import subprocess
+import tarfile
 import unittest
 from unittest import mock
 
@@ -228,6 +229,113 @@ class SmokeStatusTest(unittest.TestCase):
         self.assertEqual(requests, [f"repos/cjber/legacy-forever/commits/{SHA}/statuses"])
 
 
+class BuildEvidenceTest(unittest.TestCase):
+    """A green smoke, or else a committed visual proof that verifies over the commit's own tree."""
+
+    def test_a_green_smoke_reads_no_proof(self):
+        with (
+            mock.patch.object(release, "smoke_status", return_value="success"),
+            mock.patch.object(release, "proof_covers") as covers,
+        ):
+            self.assertEqual(release.build_evidence("legacy-forever", SHA), "success")
+        covers.assert_not_called()
+
+    def test_a_proof_stands_in_for_a_missing_or_failed_smoke(self):
+        for state in ("missing", "failure"):
+            with (
+                self.subTest(state),
+                mock.patch.object(release, "smoke_status", return_value=state),
+                mock.patch.object(release, "proof_covers", return_value=True),
+            ):
+                self.assertEqual(release.build_evidence("legacy-forever", SHA), "proof")
+        with (
+            mock.patch.object(release, "smoke_status", return_value="missing"),
+            mock.patch.object(release, "proof_covers", return_value=False),
+        ):
+            self.assertEqual(release.build_evidence("legacy-forever", SHA), "missing")
+
+    def test_a_commit_without_a_proof_downloads_nothing(self):
+        with (
+            mock.patch.object(release, "read_file", return_value=None) as read,
+            mock.patch.object(release.subprocess, "run") as download,
+        ):
+            self.assertFalse(release.proof_covers("legacy-forever", SHA))
+        read.assert_called_once_with("legacy-forever", ".visual-proof.json", SHA)
+        download.assert_not_called()
+
+    def tarball(self, files: dict[str, str], gate: dict[str, str] | None = None) -> bytes:
+        """The commit's tarball the way GitHub serves it: one top folder named after the repository and commit.
+
+        It vendors core's own proof gate unless `gate` replaces some of its files (None as a value drops one).
+        """
+        vendored = {
+            f"tools/forever_tools/{name}": (release.TOOLING / "forever_tools" / name).read_text()
+            for name in release.PROOF_GATE
+        }
+        vendored.update({f"tools/forever_tools/{name}": text for name, text in (gate or {}).items()})
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w:gz") as bundle:
+            for name, text in {**vendored, **files}.items():
+                if text is None:
+                    continue
+                data = text.encode()
+                info = tarfile.TarInfo(f"cjber-legacy-forever-0123456/{name}")
+                info.size = len(data)
+                bundle.addfile(info, io.BytesIO(data))
+        return stream.getvalue()
+
+    def test_the_proof_is_checked_over_the_commits_extracted_tree(self):
+        seen = []
+
+        def refusal(root):
+            seen.append((root.name, (root / "LegacyForever.toc").read_text()))
+            return None
+
+        answer = subprocess.CompletedProcess([], 0, self.tarball({"LegacyForever.toc": "## Interface: 16001\n"}), b"")
+        with (
+            mock.patch.object(release, "read_file", return_value="{}"),
+            mock.patch.object(release.subprocess, "run", return_value=answer) as download,
+            mock.patch.object(release.release_check, "proof_refusal", side_effect=refusal),
+        ):
+            self.assertTrue(release.proof_covers("legacy-forever", SHA))
+        self.assertEqual(download.call_args.args[0], ["gh", "api", f"repos/cjber/legacy-forever/tarball/{SHA}"])
+        self.assertEqual(seen, [("cjber-legacy-forever-0123456", "## Interface: 16001\n")])
+
+    def test_a_proof_that_does_not_verify_does_not_cover(self):
+        answer = subprocess.CompletedProcess([], 0, self.tarball({"a.lua": ""}), b"")
+        with (
+            mock.patch.object(release, "read_file", return_value="{}"),
+            mock.patch.object(release.subprocess, "run", return_value=answer),
+            mock.patch.object(release.release_check, "proof_refusal", return_value="visual proof selftest failed"),
+        ):
+            self.assertFalse(release.proof_covers("legacy-forever", SHA))
+
+    def test_a_consumer_vendoring_another_gate_waits_for_its_smoke(self):
+        for gate in ({"release_check.py": "# predates proofs\n"}, {"visual_proof.py": None}):
+            answer = subprocess.CompletedProcess([], 0, self.tarball({"a.lua": ""}, gate), b"")
+            with (
+                self.subTest(gate),
+                mock.patch.object(release, "read_file", return_value="{}"),
+                mock.patch.object(release.subprocess, "run", return_value=answer),
+                mock.patch.object(release.release_check, "proof_refusal", return_value=None) as refusal,
+            ):
+                self.assertFalse(release.proof_covers("legacy-forever", SHA))
+            refusal.assert_not_called()
+
+    def test_a_failed_download_is_an_error(self):
+        answer = subprocess.CompletedProcess([], 1, b"", b"HTTP 502")
+        with (
+            mock.patch.object(release, "read_file", return_value="{}"),
+            mock.patch.object(release.subprocess, "run", return_value=answer),
+            self.assertRaisesRegex(release.SyncError, "could not download legacy-forever at 0123456: HTTP 502"),
+        ):
+            release.proof_covers("legacy-forever", SHA)
+
+    def test_a_proven_head_is_released(self):
+        decision = release.decide(SYNC_ENTRY, SHA, False, False, "completed/success", smoke="proof")
+        self.assertTrue(decision.release)
+
+
 class PlanTest(unittest.TestCase):
     def setUp(self):
         fragments = mock.patch.object(release, "has_change_fragments", return_value=False)
@@ -254,7 +362,7 @@ class PlanTest(unittest.TestCase):
             mock.patch.object(release, "tag_exists", return_value=False),
             mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
             mock.patch.object(release, "ci_runs", return_value=runs(ci_run("completed", "success"))),
-            mock.patch.object(release, "smoke_status", return_value="success"),
+            mock.patch.object(release, "build_evidence", return_value="success"),
         ):
             decision = release.plan("legacy-forever")
         read.assert_called_once_with("legacy-forever", SHA)
@@ -268,7 +376,7 @@ class PlanTest(unittest.TestCase):
             mock.patch.object(release, "tag_exists", return_value=False),
             mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
             mock.patch.object(release, "ci_runs", return_value=runs(ci_run("completed", "success"))),
-            mock.patch.object(release, "smoke_status", return_value="missing") as smoke,
+            mock.patch.object(release, "build_evidence", return_value="missing") as smoke,
         ):
             decision = release.plan("legacy-forever")
         smoke.assert_called_once_with("legacy-forever", SHA)
@@ -283,7 +391,7 @@ class PlanTest(unittest.TestCase):
             mock.patch.object(release, "tag_exists", return_value=False),
             mock.patch.object(release, "release_runs", return_value=runs({"status": "completed"})),
             mock.patch.object(release, "ci_runs", return_value=runs(ci_run("in_progress", None))),
-            mock.patch.object(release, "smoke_status") as smoke,
+            mock.patch.object(release, "build_evidence") as smoke,
         ):
             decision = release.plan("legacy-forever")
         smoke.assert_not_called()

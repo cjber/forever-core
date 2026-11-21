@@ -166,9 +166,11 @@ same. Every ending logs the character out and stops the client.
 
 ## Smoking a release commit
 
-Every release, manual or automatic, needs a green `headless-smoke` commit status on the exact commit it ships.
-`tools/release_check.py` refuses without one, so the status is the release's record of a client load; nothing is
-written to a local file:
+Every release, manual or automatic, needs a record that its exact commit was loaded in the client: a committed
+`.visual-proof.json` that verifies against the commit's files and carries passing checks (`proof` below records
+them), or else a green `headless-smoke` commit status. `tools/release_check.py` refuses without either. The proof is
+bound to file contents, so a pull request proved in one session also releases its merge commit and a release
+preparation that only bumps the version; `smoke` is for a commit no proof covers:
 
 ```sh
 FC=~/drive/proj/wow/forever-core/tools/headless/forever_client.py
@@ -179,18 +181,19 @@ FOREVER_CLIENT_CALLER=in-game python3 $FC smoke --repo legacy-forever --ref <sha
 `rebuild-dev.sh` did (the same code, `forever_client.py build-dev <repo> <ref>`, writes
 `test-artifacts/<repo>-dev` for a hand link; `--core-ref <sha>` embeds that forever-core commit instead of the pinned
 release, to check a core candidate inside an embedding addon), ensures a session, takes the job lock, points the build's addon
-folders at it in `Interface/AddOns`, reloads so the client loads it, runs `/forever selftest` and `errors --addon
-<folder>` for each of the repo's addon folders, and puts the links back before it releases the lock. It posts the
-result with
-`gh api repos/cjber/<repo>/statuses/<sha> -f state=success|failure -f context=headless-smoke -f description=...`,
-the error count or "clean". `--manual-launcher` starts the session that way, so while launcher OCR is not finding
+folders at it in `Interface/AddOns`, reloads so the client loads it, runs `/forever selftest` and waits for
+`!!DevSmoke` to save the finished run, reloads once more and reads `errors --addon <folder>` for each of the repo's
+addon folders, and puts the links back before it releases the lock. A selftest surface that failed, a Lua error or
+(for core) a released addon that never started fails the smoke. It posts the result with
+`gh api repos/cjber/<repo>/statuses/<sha> -f state=success|failure -f context=headless-smoke -f description=...`:
+the failed surfaces and error counts, or "clean". `--manual-launcher` starts the session that way, so while launcher OCR is not finding
 Play (cjber/forever-core#547) an agent runs `smoke --manual-launcher` in the background, takes `shot`, and clicks
 Play itself. While that job holds the job lock and waits for READY, `shot` and a button-1 `click` act on the launcher
 without the lock, so they never queue behind the job they are unblocking; `key` and `slash` still refuse until READY.
 
 - Exit 0 is a clean commit and exit 1 a recorded failure.
-- Exit 2 means the checks never ran: the session could not reach the world (a start that timed out) or the client
-  refused the selftest. Nothing is posted, so a caller runs it again later. A Game Menu an earlier job left open is
+- Exit 2 means the checks never ran: the session could not reach the world (a start that timed out), or the
+  selftest was skipped (in combat) or saved no finished run. Nothing is posted, so a caller runs it again later. A Game Menu an earlier job left open is
   closed first, so it no longer stops a smoke.
 - Exit 3 also covers a persisted Battle.net sign-in block. The player clears it with `up --manual-launcher`,
   signs in and reaches READY. Nothing is posted while blocked.
@@ -204,7 +207,7 @@ without the lock, so they never queue behind the job they are unblocking; `key` 
   and a record whose session is still running is left to that session's own teardown.
 
 `tools/smoke_queue.py` finds, for forever-core and every consumer, the commit the next release would ship (`main`'s
-head) that has no `headless-smoke` status, and smokes them one at a time in release order (forever-core, SkillUp,
+head) that has no `headless-smoke` status and no committed visual proof that covers it, and smokes them one at a time in release order (forever-core, SkillUp,
 Shortest Path, then the rest), stopping at exit 3 so the queue never fights the player for the client.
 `--repo NAME`, repeatable, smokes only those repositories in the order given. Each smoke is one job in the resident session, so the queue shares the client
 with an agent instead of waiting for a whole session to end. `python3 tools/smoke_queue.py --dry-run` lists them
@@ -242,7 +245,10 @@ FOREVER_CLIENT_CALLER=in-game python3 $FC proof --repo legacy-forever --ref <sha
 
 `proof` runs as one job, as `smoke` does: it builds that commit's dev archive under `test-artifacts/<repo>-proof`,
 ensures a session, takes the job lock, points the build's addon folders at it in `Interface/AddOns`, reloads once,
-and then for each flow runs the flow and takes a screenshot. A flow is a Forever addon's own slash command after
+and then for each flow runs the flow and takes a screenshot. After the last flow it runs the smoke's checks on the
+same session (`/forever selftest`, every addon folder's Lua errors since the job started, and for core the released
+addons' startup) and records them as `checks`; a failed surface, a Lua error or an addon that did not start fails
+the proof and writes nothing, so the one session proves the change and stands in for its `headless-smoke`. A flow is a Forever addon's own slash command after
 `=`, or a Lua file that `!!DevSmoke` runs; anything longer than a `/run` line belongs in a file, exactly as `eval`
 takes it. The PNGs go to a new secret gist, and `<checkout>/.visual-proof.json` gets their full-SHA raw URLs and
 sha256s beside `visual_proof --digests`' input and candidate digests and the client build. It then runs

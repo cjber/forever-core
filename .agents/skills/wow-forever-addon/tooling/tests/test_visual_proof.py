@@ -10,8 +10,9 @@ from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError
 
-from forever_tools import pkgmeta, visual_proof
+from forever_tools import pkgmeta, release_check, visual_proof
 
+CHECKS = {"selftest": {"surfaces": 3, "failed": []}, "errors": {"ForeverCore": 0}, "not_started": []}
 IMAGE = {"url": "https://github.com/cjber/proof/raw/" + "a" * 40 + "/image.png", "sha256": "a" * 64}
 PLAIN_PKGMETA = (
     "package-as: ForeverCore\n\nplain-copy:\n  - Vendor.lua\n\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
@@ -835,6 +836,57 @@ class VisualProofTest(unittest.TestCase):
             self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
         self.written(root, self.proof(root, flows=[{"name": "map", "steps": ["/wait 25"], "result": "pass"}]))
         self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_proof_with_passing_checks_stands_in_for_the_smoke(self, _image_hash):
+        root = self.root()
+        self.written(root, self.proof(root, checks=CHECKS))
+        self.assertIsNone(release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_version_bump_on_a_proven_tree_still_verifies_and_releases(self, _image_hash):
+        root = self.root()
+        toc = root / "ForeverCore.toc"
+        toc.write_text("## Interface: 16001\n## Version: 1.0.0\n" + toc.read_text(), encoding="utf-8")
+        path = self.written(root, self.proof(root, checks=CHECKS))
+        toc.write_text(toc.read_text().replace("1.0.0", "1.1.0"), encoding="utf-8")
+        (root / "CHANGELOG.md").write_text("## [1.1.0]\n\n- A fix.\n", encoding="utf-8")
+        self.assertEqual(visual_proof.verify(root, ["ForeverCore.toc", "CHANGELOG.md"], path), [])
+        self.assertIsNone(release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_failed_selftest_or_a_lua_error_fails_verify_and_the_release(self, _image_hash):
+        for name, checks, problem in (
+            ("selftest", {**CHECKS, "selftest": {"surfaces": 3, "failed": ["Tracker"]}}, "selftest failed: Tracker"),
+            ("lua error", {**CHECKS, "errors": {"ForeverCore": 2}}, "recorded Lua errors: 2 ForeverCore"),
+            ("not started", {**CHECKS, "not_started": ["SkillUpForever"]}, "did not start: SkillUpForever"),
+        ):
+            with self.subTest(name):
+                root = self.root()
+                path = self.written(root, self.proof(root, checks=checks))
+                self.assertTrue(
+                    any(problem in found for found in visual_proof.verify(root, ["UI/Main.lua"], path)), problem
+                )
+                self.assertIn(problem, release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_proof_without_checks_verifies_but_does_not_release(self, _image_hash):
+        root = self.root()
+        path = self.written(root, self.proof(root))
+        self.assertEqual(visual_proof.verify(root, ["UI/Main.lua"], path), [])
+        self.assertIn("checks", release_check.proof_refusal(root))
+
+    def test_malformed_checks_are_problems(self):
+        for checks in (
+            [],
+            {**CHECKS, "selftest": {"surfaces": 0, "failed": []}},
+            {**CHECKS, "selftest": None},
+            {**CHECKS, "errors": {}},
+            {**CHECKS, "errors": {"ForeverCore": True}},
+            {**CHECKS, "not_started": None},
+        ):
+            with self.subTest(checks=checks):
+                self.assertTrue(visual_proof.checks_problems(checks, required=False))
 
     def test_absolute_lua_steps_are_rejected_in_both_digest_orders(self):
         digest = "sha256:" + "a" * 64

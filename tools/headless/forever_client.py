@@ -45,10 +45,12 @@ attempts produce no game process. Update the game in Battle.net before retrying 
     forever_client.py attest --repo R --ref SHA --checkout PATH [--shot FILE]
                                           # the same from the user's checklist pass, without the client
 
-`smoke` is the release gate: it builds the dev archive of the commit a release would ship, links its addon folders
-over the client's, runs `/forever selftest` and `errors --addon` for each of them, and posts the result on that exact
-commit as the `headless-smoke` commit status, which `tools/release_check.py` requires and `tools/smoke_queue.py`
-fills in. When the repository is ForeverCore itself it also links every consumer's latest released build from
+`smoke` is the release gate for a commit no visual proof covers: it builds the dev archive of the commit a release
+would ship, links its addon folders over the client's, runs `/forever selftest` and reads the run `!!DevSmoke` saves,
+then `errors --addon` for each folder, and posts the result on that exact commit as the `headless-smoke` commit
+status, which `tools/release_check.py` accepts in place of a proof and `tools/smoke_queue.py` fills in. A failed
+selftest surface fails it as a Lua error does.
+When the repository is ForeverCore itself it also links every consumer's latest released build from
 `tools/released_consumers.py` beside the candidate, so a core release is tested against the addons already on the
 stores, and counts their folders too: a consumer Lua error, or a released addon that never reached
 `ForeverCore.Registered` because its startup check refused this core, fails the status. It runs as one job: it
@@ -58,7 +60,8 @@ without posting a commit status, for a local demonstration. `--manual-launcher` 
 launcher OCR is not finding Play (cjber/forever-core#547), so an agent runs `smoke --manual-launcher` in the
 background, takes `shot` and clicks Play itself; those two launcher verbs run without the job lock, so they cannot
 queue behind the job that is waiting for READY. Exit 0 is a clean commit, 1 a recorded failure, 2 a smoke whose
-checks never ran (the session could not reach the world, or the client refused the selftest), and 3 means the player's
+checks never ran (the session could not reach the world, or the selftest was skipped or saved no finished run), and
+3 means the player's
 own client is running (the Wine prefix is used by processes this tool does not own); after 2 and 3 nothing is posted
 and a caller retries later. Another agent's job is waited for, up to `--timeout`. A Game Menu an earlier job left
 open is closed before the selftest is typed. The AddOns folder is shared: every slot the smoke
@@ -75,8 +78,12 @@ checkout's `visual_proof --digests`, and the recorded unpacked build must still 
 `smoke` does: it builds and links the candidate, reloads once, runs each `--flow NAME=SLASH_OR_LUA_FILE` through
 `!!DevSmoke` (a slash command, or a Lua file), takes a screenshot after each, uploads the PNGs to a
 new secret gist, and writes `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and
-each image's sha256, then checks the installed folder with `visual_proof --compare`. It never commits or pushes the
-checkout. A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
+each image's sha256, then checks the installed folder with `visual_proof --compare`. After the last flow it runs
+the smoke's own checks on the same session (`candidate_checks`: selftest, Lua errors since the job started, the
+released addons' startup for core) and records them as the proof's `checks`; a failure there fails the proof and
+writes nothing. `release_check.py` accepts that proof in place of `headless-smoke` for every commit whose runtime it
+still matches, so one session proves a change and releases it. It never commits or pushes the checkout.
+A slash command runs through `ChatEdit_SendText`, the client's own parser, so the capture follows a confirmed
 run rather than a fixed pause (#573). A flow that returns a ready check is captured once `!!DevSmoke` has polled it
 true, so a window filled in from late data is not photographed empty (#593); a check that raises or never turns true
 records its reason and fails the proof with it. A flow that needs real input names it with `--flow-click "NAME=X,Y"`,
@@ -249,6 +256,7 @@ WIDTH, HEIGHT = 1920, 1080
 IDLE_LIMIT = 60 * 60
 MAX_SESSION = 3 * 60 * 60
 EVAL_SAVE_WAIT = 10  # seconds an eval's saved result may take to reach disk before the saving reload is used
+SELFTEST_LIMIT = 300  # seconds `/forever selftest` may step through every surface before the run counts as stuck
 WAIT_POLL = 1.0  # how often a waiter checks the session lock, the job lock and the Wine prefix
 JOB_POLL = 0.5  # how often a job waiter checks the job lock while it waits
 LOGOUT_WAIT = 60  # /quit outside an inn counts down 20 s before the client exits
@@ -3180,13 +3188,110 @@ def smoke_counts(state: Mapping, folders: Sequence[tuple[str, Path]]) -> dict[st
     return counts
 
 
-def smoke_description(counts: Mapping[str, int], not_started: Sequence[str] = (), error: str | None = None) -> str:
-    """The commit status's text: the Lua error count, any released addon that never started, or why it stopped."""
+def saved_devsmoke() -> dict:
+    """!!DevSmoke's saved variables from the newest file that parses, or an empty table when there is none yet."""
+    lua = load_tool("forever_errors", Path(__file__).resolve().parents[1] / "forever_errors.py")
+    for path in sorted(saved_variables("!!DevSmoke"), key=lambda candidate: candidate.stat().st_mtime, reverse=True):
+        try:
+            smoke = lua.load_lua(path).get("DevSmokeDB")
+        except (OSError, lua.LuaSyntaxError):
+            continue
+        if isinstance(smoke, dict):
+            return smoke
+    return {}
+
+
+def selftest_sequence() -> int:
+    """The number !!DevSmoke gave its last saved run, 0 before its first; the next run takes a higher one."""
+    sequence = saved_devsmoke().get("sequence")
+    return sequence if isinstance(sequence, int) and not isinstance(sequence, bool) else 0
+
+
+def selftest_run(after: int) -> dict | None:
+    """The `/forever selftest` run !!DevSmoke numbered after `after`, once it finished or was skipped; None before then.
+
+    !!DevSmoke steps through the surfaces on a timer and saves the run when it marks it finished, so the record on disk
+    is complete without a reload, which would cut the run short. A file the client is still writing reads as not yet.
+    """
+    runs = _ordered(saved_devsmoke().get("runs"))
+    entry = runs[-1] if runs and isinstance(runs[-1], dict) else None
+    number = entry.get("run") if entry else None
+    if isinstance(number, int) and not isinstance(number, bool) and number > after:
+        return entry if entry.get("finished") is True or entry.get("result") else None
+    return None
+
+
+def run_selftest(state: Mapping) -> dict:
+    """Type `/forever selftest`, wait for !!DevSmoke's saved run, and return its surface count and failed surfaces.
+
+    A surface's error is caught by the run's own `xpcall`, so it reaches the run's record and not the error journal
+    `errors --addon` reads: the run itself is the only place a failed surface shows. A run that was skipped (in combat)
+    or never finished leaves no verdict, so it is a `ClientError`.
+    """
+    # The reload before this saved every earlier run, so the run this command starts is the first numbered past it.
+    after = selftest_sequence()
+    slash(state, "/forever selftest")
+    deadline = time.monotonic() + SELFTEST_LIMIT
+    while (entry := selftest_run(after)) is None:
+        if time.monotonic() >= deadline:
+            raise ClientError(f"/forever selftest saved no finished run within {SELFTEST_LIMIT} s")
+        time.sleep(WAIT_POLL)
+    if entry.get("result"):
+        raise ClientError(f"/forever selftest did not run: {_text(entry['result'])}")
+    results = [result for result in _ordered(entry.get("results")) if isinstance(result, dict)]
+    if not results:
+        raise ClientError("/forever selftest saved a run with no surfaces")
+    return {
+        "surfaces": len(results),
+        "failed": [_text(result.get("surface")) for result in results if result.get("ok") is not True],
+    }
+
+
+def candidate_checks(
+    state: Mapping, folders: Sequence[tuple[str, Path]], released: Sequence[tuple[str, Path]], checks: dict
+) -> None:
+    """The release smoke's checks on the linked candidate, which `smoke` posts and `proof` records.
+
+    One reload loads the candidate and runs the released addons' startup snippet, `/forever selftest` steps through
+    every surface, and one more reload saves every folder's Lua errors since the job started with the snippet's record.
+    `checks` is filled as each check finishes (`selftest`, `errors`, `not_started`), so one that raises leaves the
+    earlier results for the report.
+    """
+    startup = stage_registrations(released) if released else None
+    reload(state)
+    # The startup snippet ran at this login; a later login must not run it again.
+    clear_eval_inbox()
+    checks["selftest"] = run_selftest(state)
+    checks["errors"] = smoke_counts(state, folders)
+    checks["not_started"] = smoke_registrations(startup) if startup else []
+
+
+def checks_failed(checks: Mapping) -> bool:
+    """Whether finished checks found a failed selftest surface, a Lua error or a released addon that did not start."""
+    return bool(
+        (checks.get("selftest") or {}).get("failed")
+        or any((checks.get("errors") or {}).values())
+        or checks.get("not_started")
+    )
+
+
+def smoke_description(checks: Mapping, error: str | None = None) -> str:
+    """The commit status's text: failed selftest surfaces, Lua errors, released addons that never started, or why it
+    stopped."""
+    counts = checks.get("errors") or {}
+    failed = (checks.get("selftest") or {}).get("failed") or []
+    not_started = checks.get("not_started") or []
     total = sum(counts.values())
-    if not total and not not_started and not error:
+    if not checks_failed(checks) and not error:
         folders = len(counts)
-        return f"clean: no Lua errors in {folders} addon folder{'s' if folders != 1 else ''}"
+        surfaces = (checks.get("selftest") or {}).get("surfaces", 0)
+        return (
+            f"clean: {surfaces} selftest surface{'s' if surfaces != 1 else ''} passed, "
+            f"no Lua errors in {folders} addon folder{'s' if folders != 1 else ''}"
+        )
     parts = []
+    if failed:
+        parts.append(f"selftest failed: {', '.join(failed)}")
     if total:
         named = ", ".join(f"{count} {name}" for name, count in counts.items() if count)
         parts.append(f"{total} Lua error{'s' if total != 1 else ''}: {named}")
@@ -3261,20 +3366,19 @@ def report_smoke(repo: str, commit: str, outcome: Mapping, *, post: bool = True)
 
     `post=False` is `--no-post`: the result is printed exactly as it would be posted and no commit status is written.
     """
-    counts = outcome["counts"]
-    not_started = outcome.get("not_started") or []
+    checks = outcome["checks"]
     if outcome["error"]:
         print(f"{repo}@{commit[:7]}: {outcome['error']}", file=sys.stderr)
-    if not counts and not outcome["error"]:
+    if not checks.get("errors") and not outcome["error"]:
         print(f"smoke of {repo}@{commit[:7]} stopped before it finished; nothing posted", file=sys.stderr)
         return 1
-    if not counts:
+    if not checks.get("errors"):
         # The checks never ran, so there is no verdict on the commit to post: a failure status here would be read as
         # one by release_check.py and stop smoke_queue.py from trying the commit again (#727).
         print(f"{repo}@{commit[:7]}: no result, nothing posted: {outcome['error']}", flush=True)
         return 2
-    ok = not any(counts.values()) and not not_started and not outcome["error"]
-    description = smoke_description(counts, not_started, outcome["error"])
+    ok = not checks_failed(checks) and not outcome["error"]
+    description = smoke_description(checks, outcome["error"])
     if not post:
         print(f"{repo}@{commit[:7]}: {description} (not posted)", flush=True)
         return 0 if ok else 1
@@ -3305,6 +3409,7 @@ def smoke_folders(
     folders = list(folders)
     if repo != CORE_REPO:
         return folders, []
+    github_token_from_gh()
     tool = released_consumers_tool()
     try:
         released = tool.released_folders(BUILD_ROOT / "forever-core-smoke-released")
@@ -3420,14 +3525,13 @@ def smoke(args: argparse.Namespace) -> int:
         raise ClientError(f"no checkout of {repo} in {WORKSPACE}")
     commit = resolve_commit(root, args.ref)
     post = not args.no_post
-    github_token_from_gh()
     recover_links()
     busy = foreign_client()
     if busy:
         print(f"client in use: {busy}; nothing posted on {repo}@{commit[:7]}", flush=True)
         return 3
     handle, job_token = acquire_job(args.timeout, f"smoke {repo}@{commit[:7]}")
-    outcome: dict = {"counts": {}, "not_started": [], "error": None}
+    outcome: dict = {"checks": {}, "error": None}
     try:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
@@ -3457,15 +3561,7 @@ def smoke(args: argparse.Namespace) -> int:
             clear_eval_inbox()
             records = link_build(folders, addons_dir())
             try:
-                startup = stage_registrations(released) if released else None
-                reload(state)
-                # The startup snippet ran at this login; a later login must not run it again.
-                clear_eval_inbox()
-                slash(state, "/forever selftest")
-                # The selftest is synchronous Lua; the reload `smoke_counts` makes settles it and writes SavedVariables.
-                outcome["counts"] = smoke_counts(state, folders)
-                if startup:
-                    outcome["not_started"] = smoke_registrations(startup)
+                candidate_checks(state, folders, released, outcome["checks"])
             finally:
                 restore_links(records)
         except SafetyRefusal:
@@ -4150,7 +4246,10 @@ def proof(args: argparse.Namespace) -> int:
     It runs as one job: the build and the AddOns links are the smoke's, so every borrowed slot is put back on any
     exit. The job reloads once, runs each flow and takes a screenshot after it, and the PNGs go to a new secret gist.
     A flow's `--flow-click`, `--flow-drag`, `--flow-key` and `--flow-type` inputs run inside this job, in order, once
-    its reload's world screenshot has landed.
+    its reload's world screenshot has landed. After the flows the same session runs the smoke's `candidate_checks`
+    (ForeverCore's candidate with every consumer's released build beside it), and the proof records them as `checks`:
+    a failed selftest surface, a Lua error anywhere in the job or a released addon that did not start fails the proof
+    before any gist exists, and a release takes the recorded checks in place of a `headless-smoke` status.
     The proof is written to `<checkout>/.visual-proof.json`; the checkout is never committed or pushed here.
     """
     flows = parse_flows(args.flow)
@@ -4182,6 +4281,7 @@ def proof(args: argparse.Namespace) -> int:
     screenshots: list[Path] = []
     shots_folder = PROOF_SCRATCH / f"proof-{repo}-{commit[:7]}"
     folders: list[tuple[str, Path]] = []
+    checks: dict = {}
     try:
         try:
             state = ensure_session(args.timeout, args.manual_launcher)
@@ -4201,6 +4301,7 @@ def proof(args: argparse.Namespace) -> int:
         folders = addon_folders(folder, package_name(root, commit))
         if not folders:
             raise ClientError(f"{folder} ships no addon folder")
+        folders, released = smoke_folders(repo, folders)
         previous = stop_handlers()
         try:
             clear_eval_inbox()
@@ -4219,6 +4320,8 @@ def proof(args: argparse.Namespace) -> int:
                     unread = (action, flow_token) if flow_token else None
                 if unread:
                     check_flow_eval(state, *unread)
+                verify_links(records)
+                candidate_checks(state, folders, released, checks)
             finally:
                 try:
                     verify_links(records)
@@ -4234,6 +4337,8 @@ def proof(args: argparse.Namespace) -> int:
             # A queued proof can rebuild this shared folder as soon as the job lock is released.
             build = client_build(folders[0][1])
             try:
+                if checks_failed(checks):
+                    raise ClientError(f"{repo}@{commit[:7]}: {smoke_description(checks)}")
                 with proof_source(checkout, repo) as source:
                     proof_compare(source, folders[0][1])
             except ClientError:
@@ -4258,6 +4363,7 @@ def proof(args: argparse.Namespace) -> int:
         "source_commit": commit,
         "flows": [flow_record(name, action, inputs.get(name, ())) for name, action in flows],
         "images": images,
+        "checks": checks,
     }
     target = checkout / PROOF_FILE
     atomic_write(target, json.dumps(proof_data, indent=2) + "\n")
