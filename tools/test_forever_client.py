@@ -126,6 +126,50 @@ class ForeverClientTest(unittest.TestCase):
                 ocr.assert_not_called()
                 self.assertEqual(config.read_text(), launch)
 
+    def test_enroll_reports_missing_and_malformed_launch_config(self):
+        config = self.state / "env.json"
+        with mock.patch.object(fc, "CONFIG", config), mock.patch.object(fc, "up") as up:
+            with self.subTest("missing"):
+                with self.assertRaisesRegex(fc.ClientError, "no launch recorded:.*capture-env") as raised:
+                    fc.enroll(mock.Mock())
+                self.assertIn(str(config), str(raised.exception))
+            with self.subTest("malformed"):
+                config.write_text("{")
+                with self.assertRaises(fc.ClientError) as raised:
+                    fc.enroll(mock.Mock())
+                self.assertIn(str(config), str(raised.exception))
+            up.assert_not_called()
+
+    def test_enroll_atomically_updates_the_current_launch_config(self):
+        config = self.state / "env.json"
+        found = "Player-1-ABCDEF12"
+        for current_guid in (fc.ENROL_GUID, "Player-1-1234ABCD"):
+            with self.subTest(current_guid=current_guid):
+                launch = {"character": {"name": "Approved", "guid": fc.ENROL_GUID}, "env": {"key": "old"}}
+                config.write_text(json.dumps(launch))
+                current = {"character": {"name": "Approved", "guid": current_guid}, "env": {"key": "new"}}
+
+                def capture(_args, current=current):
+                    config.write_text(json.dumps(current))
+                    (self.state / "failed.png").touch()
+                    raise fc.ClientError("enrolment frame captured")
+
+                with (
+                    mock.patch.object(fc, "CONFIG", config),
+                    mock.patch.object(fc, "up", side_effect=capture),
+                    mock.patch.object(fc, "ocr_words", return_value=[(found,)]),
+                    mock.patch.object(fc, "atomic_write", wraps=fc.atomic_write) as publish,
+                ):
+                    if current_guid == fc.ENROL_GUID:
+                        self.assertEqual(fc.enroll(mock.Mock()), 0)
+                        publish.assert_called_once()
+                        current["character"]["guid"] = found
+                    else:
+                        with self.assertRaisesRegex(fc.ClientError, "character.guid is already set"):
+                            fc.enroll(mock.Mock())
+                        publish.assert_not_called()
+                self.assertEqual(json.loads(config.read_text()), current)
+
     def test_sign_in_labels_persist_and_block_later_starts(self):
         for label in ("Welcome back", "Email a code", "Use password", "Use passkey", "Log in or sign up"):
             with (

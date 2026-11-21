@@ -153,6 +153,32 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertFalse((root / "addon/KilnForever/.github/workflows/visual-proof.yml").exists())
         self.assertFalse((root / ".github/workflows/visual-proof.yml").exists())
 
+    def test_unreadable_vendored_target_does_not_stop_later_consumer(self):
+        path = "tools/deadcode.py"
+        broken = self.consumer()
+        later = self.consumer("tweaks-forever")
+        (broken / path).mkdir(parents=True)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), mock.patch.object(sync, "VENDORED", {path: (broken.name, later.name)}):
+            code, out = self.run_sync()
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"{broken.name}: {path}:", err.getvalue())
+        self.assertIn(f"1 consumer(s) failed and left the rest alone: {broken.name}", err.getvalue())
+        self.assertEqual((later / path).read_bytes(), DEADCODE)
+
+    def test_invalid_release_workflow_encoding_does_not_stop_later_consumer(self):
+        path = "tools/deadcode.py"
+        broken = self.consumer()
+        later = self.consumer("tweaks-forever")
+        self.write(broken, sync.RELEASE_WORKFLOW, bytes([255]))
+        self.write(later, "README.md", b"CurseForge and Wago")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), mock.patch.object(sync, "VENDORED", {path: (broken.name, later.name)}):
+            code, out = self.run_sync(only=())
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"{broken.name}: {sync.RELEASE_WORKFLOW}:", err.getvalue())
+        self.assertEqual((later / "README.md").read_bytes(), b"CurseForge")
+
     def test_unknown_consumer_is_rejected(self):
         self.consumer()
         self.consumer("legacy-forevr")

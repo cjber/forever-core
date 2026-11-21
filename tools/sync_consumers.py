@@ -297,31 +297,30 @@ def main(argv=None):
             content = origin.read_bytes()
             try:
                 toc_edit = warning_toc_edit(root, repo) if path == WARNING_MODULE else None
+                if not (target.exists() and digest(target.read_bytes()) == digest(content)):
+                    changed += 1
+                    print(f"{repo}: {path}")
+                    if not arguments.dry_run:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(origin, target)
+                refreshed = font_digest_edit(root, repo, path, content)
+                if refreshed is not None:
+                    font_manifest, font_text = refreshed
+                    changed += 1
+                    print(f"{repo}: {font_manifest.relative_to(root)}: {path} digest")
+                    if not arguments.dry_run:
+                        font_manifest.write_text(font_text, encoding="utf-8")
+                if toc_edit is not None:
+                    toc, text = toc_edit
+                    changed += 1
+                    print(f"{repo}: {toc.relative_to(root)}")
+                    if not arguments.dry_run:
+                        toc.write_bytes(text.encode("utf-8"))
             except (OSError, ValueError) as error:
                 # Reported against this consumer and the run carries on: one addon's missing file once stopped the
                 # sync for every consumer after it (#976).
-                print(f"{repo}: {error}", file=sys.stderr)
+                print(f"{repo}: {path}: {error}", file=sys.stderr)
                 failures.append(repo)
-                continue
-            if not (target.exists() and digest(target.read_bytes()) == digest(content)):
-                changed += 1
-                print(f"{repo}: {path}")
-                if not arguments.dry_run:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(origin, target)
-            refreshed = font_digest_edit(root, repo, path, content)
-            if refreshed is not None:
-                font_manifest, font_text = refreshed
-                changed += 1
-                print(f"{repo}: {font_manifest.relative_to(root)}: {path} digest")
-                if not arguments.dry_run:
-                    font_manifest.write_text(font_text, encoding="utf-8")
-            if toc_edit is not None:
-                toc, text = toc_edit
-                changed += 1
-                print(f"{repo}: {toc.relative_to(root)}")
-                if not arguments.dry_run:
-                    toc.write_bytes(text.encode("utf-8"))
     # A full sync also carries the release gate: that workflow is the addon's own, so it is inserted rather than
     # copied, and only when the maintainer asked for everything.
     if arguments.only is None:
@@ -336,7 +335,7 @@ def main(argv=None):
                 changed += sync_release_gate(root, repo, arguments.dry_run)
                 changed += sync_tag_step(root, repo, arguments.dry_run)
                 changed += sync_version_step(root, repo, arguments.dry_run)
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 print(f"{repo}: {RELEASE_WORKFLOW}: {error}", file=sys.stderr)
                 failures.append(repo)
     if changed and not arguments.dry_run:
