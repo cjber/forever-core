@@ -1010,7 +1010,6 @@ def shot(state: Mapping, path: Path, *, mark_read: bool = True) -> Path:
 # X position to the point and must never be used.
 # A drag moves in this many steps, pausing between them, so the client sees the press, a move and the release apart.
 DRAG_STEPS = 8
-DRAG_PAUSE_S = "0.05"
 
 
 def click(state: Mapping, px: int, py: int, button: str, hold: Sequence[str] = ()) -> None:

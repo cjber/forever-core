@@ -27,13 +27,6 @@ from typing import Any
 from forever_errors import DEFAULT_WTF, FOLDERS, LuaSyntaxError, load_lua, table_values
 
 BUDGET_MS = 3.0
-OVER_METRICS = (
-    "CountTimeOver1Ms",
-    "CountTimeOver5Ms",
-    "CountTimeOver10Ms",
-    "CountTimeOver50Ms",
-    "CountTimeOver100Ms",
-)
 
 
 # --------------------------------------------------------------------------------------------------

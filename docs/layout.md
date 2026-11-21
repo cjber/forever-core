@@ -69,8 +69,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
 - `UI/MapCanvas.lua`: read-only drawings on the world map, with each addon's markers keyed on its name.
 - `Locales/`: core's own phrases in enUS and the nine shipped locales. A consumer keeps its own locale file for its own
   copy; the phrases here are the only ones core owns.
-- The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in
-  `docs/handoff/`. Read `docs/handoff/boundaries.md` before assigning a feature or moving code between addons.
+- The suite's ownership boundaries live in `docs/handoff/boundaries.md`; `docs/handoff/cfwatch.py` reads CurseForge
+  comments. Read `docs/handoff/boundaries.md` before assigning a feature or moving code between addons.
 - `tools/check_core_shared.py`: the development-tooling map (`VENDORED`), the per-consumer addon folder
   `CONSUMER_ROOT`, and the consumer-side check, vendored into every consumer. In a consumer it compares its copies with
   core main; with `--base REF` it checks only the vendored files `REF...HEAD` changes, so a hand edit fails a PR while a
