@@ -236,14 +236,24 @@ def main(argv=None):
     parser.add_argument("checkouts", type=Path, help="the directory holding the consumer checkouts")
     parser.add_argument("--dry-run", action="store_true", help="report what would change and write nothing")
     parser.add_argument("--only", action="append", choices=VENDORED, help="sync only this shared path; may be repeated")
+    parser.add_argument(
+        "--consumer",
+        action="append",
+        metavar="REPO",
+        help="sync only this consumer repository; may be repeated, and one consumer's error then stays its own",
+    )
     arguments = parser.parse_args(argv)
 
     changed = 0
+    failures = []
+    wanted = set(arguments.consumer or ())
     selected = arguments.only or VENDORED.keys()
     for path in selected:
         consumers = VENDORED[path]
         origin = CORE_ROOT / source(path)
         for repo in consumers:
+            if wanted and repo not in wanted:
+                continue
             root = arguments.checkouts / repo
             target = root / consumer_path(repo, path)
             if not root.is_dir():
@@ -253,8 +263,11 @@ def main(argv=None):
             try:
                 toc_edit = warning_toc_edit(root, repo) if path == WARNING_MODULE else None
             except (OSError, ValueError) as error:
+                # Reported against this consumer and the run carries on: one addon's missing file once stopped the
+                # sync for every consumer after it (#976).
                 print(f"{repo}: {error}", file=sys.stderr)
-                return 1
+                failures.append(repo)
+                continue
             if not (target.exists() and digest(target.read_bytes()) == digest(content)):
                 changed += 1
                 print(f"{repo}: {path}")
@@ -271,6 +284,8 @@ def main(argv=None):
     # copied, and only when the maintainer asked for everything.
     if arguments.only is None:
         for repo in sorted({repo for consumers in VENDORED.values() for repo in consumers}):
+            if wanted and repo not in wanted:
+                continue
             root = arguments.checkouts / repo
             if not root.is_dir():
                 continue
@@ -281,7 +296,7 @@ def main(argv=None):
                 changed += sync_version_step(root, repo, arguments.dry_run)
             except OSError as error:
                 print(f"{repo}: {RELEASE_WORKFLOW}: {error}", file=sys.stderr)
-                return 1
+                failures.append(repo)
     if changed and not arguments.dry_run:
         print("Run each changed consumer's gates and open one PR per consumer for the shared tooling.")
     if changed and VISUAL_WORKFLOW in selected:
@@ -291,6 +306,10 @@ def main(argv=None):
         )
     verb = "would change" if arguments.dry_run else "changed"
     print(f"{changed} file(s) {verb}.")
+    if failures:
+        failed = ", ".join(sorted(set(failures)))
+        print(f"{len(set(failures))} consumer(s) failed and left the rest alone: {failed}", file=sys.stderr)
+        return 1
     return 0
 
 

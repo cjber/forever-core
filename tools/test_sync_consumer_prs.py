@@ -1135,7 +1135,14 @@ class PinTest(unittest.TestCase):
         ):
             sync.sync_checkout(self.root, self.root.parent)
         self.assertEqual(
-            commands[0], [sys.executable, str(self.root.parent / "tools" / "sync_consumers.py"), str(self.root.parent)]
+            commands[0],
+            [
+                sys.executable,
+                str(self.root.parent / "tools" / "sync_consumers.py"),
+                str(self.root.parent),
+                "--consumer",
+                self.root.name,
+            ],
         )
 
     def test_the_pr_body_names_the_bump_the_sync_made(self):

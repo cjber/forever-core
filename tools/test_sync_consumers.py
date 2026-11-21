@@ -156,6 +156,42 @@ class SyncConsumersTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual((root / "tools/deadcode.py").read_bytes(), DEADCODE)
 
+    def test_one_consumers_error_is_its_own_and_the_rest_still_sync(self):
+        legacy = self.consumer()
+        self.write(legacy, ".pkgmeta", b"package-as: LegacyForever\n")
+        self.write(legacy, "LegacyForever.toc", b"## Interface: 16001\nCore\\Require.lua\n")
+        # A registered consumer whose checkout has no .pkgmeta yet, the way ledger-forever arrived in the suite.
+        (self.checkouts / "ledger-forever").mkdir(parents=True)
+        self.write(self.core, "tools/consumer/ForeverRequire.lua", b"-- shared warning\n")
+        only = ("Core/ForeverRequire.lua",)
+        err = io.StringIO()
+
+        with contextlib.redirect_stderr(err):
+            code, out = self.run_sync(only=only)
+
+        self.assertEqual(code, 1, out)
+        self.assertIn("ledger-forever", err.getvalue())
+        self.assertNotIn("legacy-forever:", err.getvalue())
+        # The consumers after the broken one still got the shared file and its TOC line.
+        self.assertEqual((legacy / only[0]).read_bytes(), b"-- shared warning\n")
+        self.assertIn("Core\\ForeverRequire.lua", (legacy / "LegacyForever.toc").read_text(encoding="utf-8"))
+
+    def test_the_consumer_option_syncs_only_that_repository(self):
+        legacy = self.consumer()
+        self.write(legacy, ".pkgmeta", b"package-as: LegacyForever\n")
+        self.write(legacy, "LegacyForever.toc", b"## Interface: 16001\nCore\\Require.lua\n")
+        ledger = self.checkouts / "ledger-forever"
+        ledger.mkdir(parents=True)
+        self.write(self.core, "tools/consumer/ForeverRequire.lua", b"-- shared warning\n")
+        only = ("Core/ForeverRequire.lua",)
+
+        code, out = self.run_sync("--consumer", "legacy-forever", only=only)
+
+        self.assertEqual(code, 0, out)
+        self.assertIn("legacy-forever: Core/ForeverRequire.lua", out)
+        self.assertNotIn("ledger-forever", out)
+        self.assertFalse((ledger / only[0]).exists())
+
 
 RELEASE_WORKFLOW = """name: Release
 

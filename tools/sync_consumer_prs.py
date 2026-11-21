@@ -841,7 +841,9 @@ def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str
 
     The pin is bumped last, so a consumer whose sync fails keeps its pin where it was.
     """
-    run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent)])
+    # Scoped to this one consumer, so a consumer that cannot sync (a repo that has no .pkgmeta yet) fails on its own
+    # row instead of stopping every consumer after it (#976).
+    run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent), "--consumer", root.name])
     for package in tooling_packages(root):
         install_updater(root, core_root, package)
         run(
