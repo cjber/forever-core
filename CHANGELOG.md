@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.16.3] - 2026-11-21
+
+### Fixed
+
+- Moving Questie's tracker no longer leaves the Forever column on top of it or at the game tracker's old place: the column follows Questie's list to where you drop it, and gives way when a list is dropped onto a column that holds its place, locked or not; thanks to Zerkuleez for the report.
+
 ## [1.16.2] - 2026-11-21
 
 ### Fixed
