@@ -128,3 +128,6 @@ L["Callback error: %s"] = "콜백 오류: %s" -- mt
 L["Login error: %s"] = "로그인 오류: %s" -- mt
 L["Warning: %s"] = "경고: %s" -- mt
 L["Copy %s: %s"] = "사본 %s: %s" -- mt
+
+L["Drag to move the tabs."] = "끌어서 탭을 이동합니다."
+L["Reset tab position"] = "탭 위치 초기화"

@@ -128,3 +128,6 @@ L["Callback error: %s"] = "Error de callback: %s" -- mt
 L["Login error: %s"] = "Error de inicio de sesión: %s" -- mt
 L["Warning: %s"] = "Advertencia: %s" -- mt
 L["Copy %s: %s"] = "Copia %s: %s" -- mt
+
+L["Drag to move the tabs."] = "Arrastra para mover las pestañas."
+L["Reset tab position"] = "Restablecer la posición de las pestañas"

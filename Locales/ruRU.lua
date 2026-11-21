@@ -135,3 +135,6 @@ L["Callback error: %s"] = "Ошибка обратного вызова: %s" -- 
 L["Login error: %s"] = "Ошибка входа: %s" -- mt
 L["Warning: %s"] = "Предупреждение: %s" -- mt
 L["Copy %s: %s"] = "Копия %s: %s" -- mt
+
+L["Drag to move the tabs."] = "Перетащите, чтобы переместить вкладки."
+L["Reset tab position"] = "Сбросить положение вкладок"

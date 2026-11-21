@@ -128,3 +128,6 @@ L["Callback error: %s"] = "Erreur de callback : %s" -- mt
 L["Login error: %s"] = "Erreur de connexion : %s" -- mt
 L["Warning: %s"] = "Avertissement : %s" -- mt
 L["Copy %s: %s"] = "Copie %s : %s" -- mt
+
+L["Drag to move the tabs."] = "Faites glisser pour déplacer les onglets."
+L["Reset tab position"] = "Réinitialiser la position des onglets"

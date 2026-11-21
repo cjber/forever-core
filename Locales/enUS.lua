@@ -127,3 +127,6 @@ L["Callback error: %s"] = "Callback error: %s"
 L["Login error: %s"] = "Login error: %s"
 L["Warning: %s"] = "Warning: %s"
 L["Copy %s: %s"] = "Copy %s: %s"
+
+L["Drag to move the tabs."] = "Drag to move the tabs."
+L["Reset tab position"] = "Reset tab position"

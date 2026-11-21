@@ -48,6 +48,7 @@ read_globals = {
 	"GameTooltip_AddNormalLine",
 	"GameTooltip_SetTitle",
 	"geterrorhandler",
+	"GetAppropriateTooltip",
 	"GetTime",
 	"GRAY_FONT_COLOR",
 	"HIGHLIGHT_FONT_COLOR",

@@ -124,3 +124,6 @@ L["Callback error: %s"] = "回呼錯誤：%s"
 L["Login error: %s"] = "登入錯誤：%s"
 L["Warning: %s"] = "警告：%s" -- mt
 L["Copy %s: %s"] = "副本 %s：%s"
+
+L["Drag to move the tabs."] = "拖曳以移動分頁。" -- mt
+L["Reset tab position"] = "重設分頁位置" -- mt
