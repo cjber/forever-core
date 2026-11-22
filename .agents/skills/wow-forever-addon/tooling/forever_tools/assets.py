@@ -11,7 +11,7 @@ import html
 import re
 from pathlib import Path
 
-from . import legacy_chrome
+from . import legacy_chrome, progress_art
 from .lua import LONG_OPEN, tokenize
 from .toc import runtime_files
 
@@ -302,19 +302,32 @@ def renderer_files(root: Path) -> list[Path]:
     )
 
 
-def run(files: list[Path]) -> int:
+def run(files: list[Path], root: Path | None = None, *, strict_progress: bool = False) -> int:
     failed = False
+    registry = progress_art.load_registry() if root else None
+    tocs = sorted(root.glob("*.toc")) if root else []
+    addon = tocs[0].stem if len(tocs) == 1 else ""
     for path in sorted(set(files)):
-        for line, message in check(path.read_text(encoding="utf-8"), path.suffix):
+        source = path.read_text(encoding="utf-8")
+        for line, message in check(source, path.suffix):
             print(f"{path}:{line}: {message}")
             failed = True
+        if registry is not None and root is not None:
+            for line, message in progress_art.check(
+                source, path.suffix, addon, path.relative_to(root).as_posix(), registry
+            ):
+                severity = "" if strict_progress else "report-only: "
+                print(f"{path}:{line}: {severity}{message}")
+                failed |= strict_progress
     return int(failed)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    root = parser.parse_args().root.resolve()
+    parser.add_argument("--strict-progress", action="store_true", help="fail on progress art outside the registry")
+    options = parser.parse_args()
+    root = options.root.resolve()
     xml = [
         path
         for path in root.rglob("*.xml")
@@ -325,7 +338,9 @@ def main() -> int:
     # A local import avoids the cycle: identity reads string literals through this module.
     from . import identity
 
-    return int(identity.run(root)) | run([*runtime_files(root), *xml, *renderer_files(root)])
+    return int(identity.run(root)) | run(
+        [*runtime_files(root), *xml, *renderer_files(root)], root, strict_progress=options.strict_progress
+    )
 
 
 if __name__ == "__main__":

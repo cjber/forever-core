@@ -1,0 +1,1 @@
+../../../../../docs/asset-registry.md

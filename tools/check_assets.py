@@ -13,7 +13,7 @@ def main() -> int:
     for folder in ("Core", "UI"):
         runtime.extend((ROOT / folder).rglob("*.lua"))
         runtime.extend((ROOT / folder).rglob("*.xml"))
-    return int(identity.run(ROOT)) | assets.run([*runtime, *assets.renderer_files(ROOT)])
+    return int(identity.run(ROOT)) | assets.run([*runtime, *assets.renderer_files(ROOT)], ROOT)
 
 
 if __name__ == "__main__":

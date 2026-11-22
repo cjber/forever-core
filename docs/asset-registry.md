@@ -29,6 +29,58 @@ applies to runtime Lua/XML and Python screenshot renderers, including art helper
 and references carrying an `art-ok` comment. Content icons and native host
 backgrounds are separate from these chrome families, and the age rule leaves atlases alone.
 
+## Approved control chrome by role
+
+| Role | Approved native chrome |
+|---|---|
+| Window and inset | PortraitFrameTemplate, ButtonFrameTemplate, ButtonFrameTemplateNoPortrait, InsetFrameTemplate and BasicFrameTemplateWithInset. Use the layout from the native host. |
+| Button | SharedButtonTemplate, SharedButtonSmallTemplate, SharedButtonLargeTemplate and SharedButtonExtraSmallTemplate, with their native state textures. |
+| Tab | PanelTabButtonTemplate on the bottom edge, PanelTopTabButtonTemplate or TabSystemTopButtonTemplate on the top edge, and LargeSideTabButtonTemplate on the outer rail. |
+| Text | The pinned client font objects listed in Tier 1. A settings title uses GameFontHighlightHuge. |
+| Generic progress | A StatusBar with the fill and background below, or ColoredProgressBarTemplate when the caller uses SetFillPercent. |
+
+The [pinned ColoredProgressBar XML](https://github.com/Gethe/wow-ui-source/blob/966519cf0ad2c10301ea011a88c14b25697c9687/Interface/AddOns/Blizzard_SharedXML/Camelot/ProgressBars/ColoredProgressBar.xml#L3-L24)
+defines a Frame with a mask and a fill texture. Its API is SetFillPercent. For a native
+StatusBar using SetValue, create the bar directly and apply the atlas pair. The pinned
+UiTextureAtlasElement IDs are 35755 (background), 35759 (white fill) and 35760 (mask).
+The background and fill resolve to art set 1 in both sheet resolutions (4189 and 4190).
+The mask resolves to art set 1 on sheets 4191 and 4192.
+
+### Checked progress slots
+
+<!-- progress-approvals:start -->
+| Slot | Approved value |
+|---|---|
+| fill | common-stat-bar-white |
+| background | common-stat-bar-BG |
+| template | ColoredProgressBarTemplate |
+<!-- progress-approvals:end -->
+
+The report checks StatusBar fill calls, assets on tracked bar textures, and StatusBar
+XML. A backdrop or solid color assigned as a progress background needs the approved
+atlas instead. Code that selects art dynamically may require manual review. The
+other control roles use the existing blacklist and native client-load checks, with
+role and host suitability reviewed against the table above. Content icons remain
+under the content rules and are outside the progress slots.
+
+### Checked native progress exceptions
+
+Add a row only for a specific addon, source file, widget, slot and asset. Cite the
+pinned native source that uses the same asset in the same role. The checker matches
+all five fields exactly. The Addon cell is the TOC filename stem. For an XML widget,
+use its name. Inline comments do not grant an exception.
+
+<!-- progress-exceptions:start -->
+| Addon | Source file | Widget | Slot | Value | Native source |
+|---|---|---|---|---|---|
+| AdventureGuideForever | UI/Overview.lua | bar | fill | common-stat-bar-green | https://github.com/Gethe/wow-ui-source/blob/966519cf0ad2c10301ea011a88c14b25697c9687/Interface/AddOns/Blizzard_SharedXML/Camelot/ProgressBars/ColoredProgressBar.lua#L33-L34 |
+<!-- progress-exceptions:end -->
+
+Progress findings are report-only during the consumer migration. The shared blacklist
+and icon checks still determine the assets command's exit status. Use
+`python3 -m forever_tools.assets --root PATH --strict-progress` to fail on progress
+findings once the addon is ready.
+
 ## Pre-Legion chrome by FileDataID age
 
 FileDataIDs were assigned roughly in the order art was added. About 130,000-140,000

@@ -33,6 +33,7 @@ DATA_FILES = (
     "legacy_chrome.txt",
     "interface_paths.txt",
     "backdrops.txt",
+    "asset-registry.md",
     "credits_opt_out.txt",
     "widget_methods.txt",
     "client_names.txt",
