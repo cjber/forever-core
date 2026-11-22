@@ -52,7 +52,9 @@ local function setup(sim)
 	local tracker = sim:openObjectiveTracker()
 	tracker.questList = questList(G, tracker)
 	tracker:ClearAllPoints()
-	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)
+	-- The game keeps its tracker under the minimap cluster; the column never climbs past that cluster.
+	local underMinimap = math.min(-200, G.MinimapCluster:GetBottom() - G.UIParent:GetHeight() - 10)
+	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, underMinimap)
 	tracker:SetSize(260, 600)
 	G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	sim:event("EDIT_MODE_LAYOUTS_UPDATED")
@@ -91,10 +93,11 @@ scenario("placement1034: a hidden tracker whose rect drifts leaves the column in
 	local G, column, tracker = setup(sim)
 	local top, x = column:GetTop(), column:GetLeft()
 	assert(near(top, tracker:GetTop()), "the column sits at the hidden tracker's top, got " .. tostring(top))
+	local baseY = tracker:GetTop() - G.UIParent:GetHeight()
 	-- The container no longer lays the hidden tracker out: its anchor drifts.
 	for step = 1, 3 do
 		tracker:ClearAllPoints()
-		tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100 - step * 40, -200 - step * 55)
+		tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100 - step * 40, baseY - step * 55)
 		sim:event("QUEST_WATCH_LIST_CHANGED")
 		sim:advance(0.5)
 		assert(near(column:GetTop(), top) and near(column:GetLeft(), x), "the drift " .. step .. " moved the column")

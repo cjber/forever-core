@@ -845,7 +845,7 @@ function M.install(Sim)
 	-- and a target change, a soft-interact change and a binding-set change after each, with the addons' own widgets
 	-- driven after every command and every surface that opens. The same runs in combat for the commands and map, then
 	-- again on a fresh client after /reload. Fails on an error either client caused.
-	function Sim:exercise(opts)
+	local function exercise(self, opts)
 		opts = opts or {}
 		self.exerciseRan = true
 		local addons = opts.addons
@@ -980,6 +980,20 @@ function M.install(Sim)
 			end
 		end
 		return sim
+	end
+
+	-- Exercise orchestrates client input from the harness. Direct addon calls by a scenario can leave its
+	-- execution tainted, so isolate the orchestration while preserving the caller's taint and test errors.
+	function Sim:exercise(opts)
+		local taint = self.taint
+		local previous, origin = taint.current, taint.origin
+		taint.set(nil)
+		local ok, result = pcall(exercise, self, opts)
+		taint.set(previous, origin)
+		if not ok then
+			error(result, 0)
+		end
+		return result
 	end
 
 	-- Fires a game event as the client does.

@@ -187,16 +187,21 @@ function M.build(sim)
 			local path = dir .. "/" .. rel
 			-- Bootstrap files run once, before the load-on-demand addon.
 			if not bootstrapped[path] then
+				local _, failure
 				if rel:match("%.lua$") then
-					sim.templates.loadLua(path, folder .. "/" .. rel, folder, ns)
+					_, failure = sim.templates.loadLua(path, folder .. "/" .. rel, folder, ns)
 				elseif rel:match("%.xml$") then
-					sim.templates.loadXML(path, folder, rel, folder, ns)
+					_, failure = sim.templates.loadXML(path, folder, rel, folder, ns)
+				end
+				if failure then
+					return false
 				end
 			end
 			if toc.bootstrap and toc.bootstrap[rel] then
 				bootstrapped[path] = true
 			end
 		end
+		return true
 	end
 
 	-- Bootstrap entries run at startup even when their containing addon is load-on-demand.
@@ -363,6 +368,9 @@ function M.build(sim)
 		if not entry or entry.loaded then
 			return entry ~= nil
 		end
+		if entry.compileFailed then
+			return false
+		end
 		entry.loading = true
 		for _, list in ipairs({ entry.toc.deps, entry.toc.optional }) do
 			for _, dep in ipairs(list) do
@@ -373,7 +381,10 @@ function M.build(sim)
 		end
 		entry.loading = nil
 		local started = os.clock()
-		loadFiles(entry.dir, name, entry.toc, entry.ns)
+		if not loadFiles(entry.dir, name, entry.toc, entry.ns) then
+			entry.compileFailed = true
+			return false
+		end
 		entry.loaded = true
 		entry.seconds = os.clock() - started
 		sim.events.queue("ADDON_LOADED", name, false)

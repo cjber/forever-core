@@ -1,4 +1,4 @@
-"""Publish only a commit whose full CI run on main passed and whose newest release smoke is green."""
+"""Publish only a commit whose full CI run on main passed and whose build a visual proof or release smoke covers."""
 
 import sys
 from pathlib import Path
@@ -11,12 +11,13 @@ from forever_tools.release_check import (  # noqa: E402
     headless_smoke,
     jobs,
     main,
+    proof_refusal,
     smoke_refusal,
     statuses,
     verified,
 )
 
-__all__ = ["failed_jobs", "headless_smoke", "jobs", "main", "smoke_refusal", "statuses", "verified"]
+__all__ = ["failed_jobs", "headless_smoke", "jobs", "main", "proof_refusal", "smoke_refusal", "statuses", "verified"]
 
 if __name__ == "__main__":
     main()

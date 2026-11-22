@@ -37,7 +37,7 @@ behind one line, and expected pictures (`--picture`, repeatable) open on a click
   and the pasted screenshots under `results/<round>/`. Finishing the round adds `bugs`: the BugGrabber errors logged
   since the page was first opened (the client writes them on /reload or logout).
 
-`CHECKLIST_HOME`, `CHECKLIST_PORT` and `CHECKLIST_BUGGRABBER` move the data folder, the port and the error log.
+`CHECKLIST_HOME` and `CHECKLIST_PORT` move the data folder and the port; `CHECKLIST_BUGGRABBER` names the client's `!BugGrabber.lua` SavedVariables file, and with it unset no error log is read.
 
 ## Shepherd workflow
 

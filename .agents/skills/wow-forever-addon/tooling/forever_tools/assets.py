@@ -99,6 +99,17 @@ LEGACY_LOOSE = re.compile(
     r"|framegeneral/ui-border|characterframe/ui-character-border)",
     re.IGNORECASE,
 )
+# StaticPopupButtonTemplate's four states, which Blizzard_StaticPopup_Game/GameDialog.xml sets by file.
+# The client's own one-button popup still draws them and the pinned build has no atlas for that art, so
+# a mock of a StaticPopup (the outdated-ForeverCore notice, #942) needs them. #943.
+STATIC_POPUP_BUTTON_ART = frozenset(
+    {
+        "interface/buttons/ui-dialogbox-button-up",
+        "interface/buttons/ui-dialogbox-button-down",
+        "interface/buttons/ui-dialogbox-button-disabled",
+        "interface/buttons/ui-dialogbox-button-highlight",
+    }
+)
 EXPANSION_CHROME = re.compile(
     r"^_?(?:garr(?:mission|building|follower|ability)|classhall[_-]|orderhall[_-]"
     r"|covenant[_-]|covenantsanctum|soulbinds?[_-]|warfront[_-]|housing[_-]"
@@ -118,6 +129,8 @@ CRAFTING_PROGRESS_BAR = re.compile(r"^profession-progressbar-(?:bg|frame)$", re.
 def _old_problem(value: str) -> str | None:
     """The named-family rules that predate the FileDataID age rule."""
     normal = re.sub(r"/+", "/", value.replace("\\", "/"))
+    if normal in STATIC_POPUP_BUTTON_ART:
+        return None
     for template in normal.split(","):
         if template.strip() in LEGACY_BUTTON_TEMPLATES:
             return "legacy button template; use SharedButtonSmallTemplate (Forever atlas set 1)"

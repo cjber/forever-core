@@ -764,5 +764,115 @@ class EmbedCheckTest(unittest.TestCase):
         self.assertIn("runs no BigWigs packager", failures[0])
 
 
+class VersionStepCheckTest(unittest.TestCase):
+    """The version step is required above a packager that builds, not above an upload-only one."""
+
+    PACKAGER = "BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0"
+    WORKFLOW = f"""name: Release
+
+jobs:
+  release:
+    steps:
+      - name: Write the bare version into the TOC
+        run: python3 -m {check_consumers.VERSION_COMMAND}
+      - name: Build the release ZIP
+        uses: {PACKAGER}
+        with:
+          args: -d
+      - name: Upload the validated ZIP
+        uses: {PACKAGER}
+        with:
+          args: -c -z
+"""
+    WITHOUT_VERSION = WORKFLOW.replace(
+        "      - name: Write the bare version into the TOC\n"
+        f"        run: python3 -m {check_consumers.VERSION_COMMAND}\n",
+        "",
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.workflow = self.checkouts / "legacy-forever" / check_consumers.RELEASE_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+
+    def check(self):
+        return check_consumers.check_version_step("legacy-forever", "main", self.checkouts)
+
+    def test_a_build_packager_and_an_upload_only_packager_need_only_one_version_step(self):
+        self.workflow.write_text(self.WORKFLOW, encoding="utf-8")
+        self.assertEqual(self.check(), [])
+
+    def test_a_build_packager_without_the_version_step_fails(self):
+        self.workflow.write_text(self.WITHOUT_VERSION, encoding="utf-8")
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn(check_consumers.RELEASE_WORKFLOW, failures[0])
+        self.assertIn("tools.forever_tools.toc_version", failures[0])
+
+
+class PrPinGateCheckTest(unittest.TestCase):
+    """A consumer's CI workflow runs the release-prep ForeverCore pin gate on pull requests."""
+
+    VALID = """name: CI
+
+jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Verify the ForeverCore pin on a release-prep PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 -m tools.forever_tools.core_pin --latest-if-release-prep --base "origin/$BASE"
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.workflow = self.checkouts / "skillup-forever" / check_consumers.CI_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+
+    def check(self):
+        return check_consumers.check_pr_pin_gate("skillup-forever", "main", self.checkouts)
+
+    def test_valid_pr_pin_gate_passes(self):
+        self.workflow.write_text(self.VALID, encoding="utf-8")
+        self.assertEqual(self.check(), [])
+
+    def test_missing_ci_workflow_passes(self):
+        self.assertEqual(self.check(), [])
+
+    def test_missing_pr_pin_gate_fails(self):
+        self.workflow.write_text("jobs:\n  project-rules:\n    steps:\n      - run: echo ok\n", encoding="utf-8")
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("core_pin --latest-if-release-prep", failures[0])
+
+    def test_bypassed_or_unauthenticated_pr_pin_gate_fails(self):
+        for label, mutated in (
+            ("if false", self.VALID.replace("github.event_name == 'pull_request'", "false")),
+            (
+                "continue-on-error",
+                self.VALID.replace(
+                    "        if: github.event_name == 'pull_request'\n",
+                    "        if: github.event_name == 'pull_request'\n        continue-on-error: true\n",
+                ),
+            ),
+            ("missing --base", self.VALID.replace(' --base "origin/$BASE"', "")),
+            ("missing GH_TOKEN", self.VALID.replace("          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n", "")),
+            ("missing BASE env", self.VALID.replace("          BASE: ${{ github.base_ref }}\n", "")),
+            ("commented run", self.VALID.replace("        run: python3", "        run: # python3")),
+        ):
+            with self.subTest(label=label):
+                self.workflow.write_text(mutated, encoding="utf-8")
+                self.assertEqual(len(self.check()), 1, label)
+
+
 if __name__ == "__main__":
     unittest.main()

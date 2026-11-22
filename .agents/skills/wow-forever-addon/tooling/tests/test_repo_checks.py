@@ -231,7 +231,12 @@ class HeadlessSmokeTest(unittest.TestCase):
             "GITHUB_REF": "refs/tags/v1.0.0",
             "GITHUB_REF_NAME": "v1.0.0",
         }
-        with patch.dict("os.environ", environ), patch.object(release_check, "curseforge_projects", return_value=[]):
+        with (
+            patch.dict("os.environ", environ),
+            patch.object(release_check, "curseforge_projects", return_value=[]),
+            # No committed proof covers this commit, so the release reads the smoke.
+            patch.object(release_check, "proof_refusal", return_value="no proof"),
+        ):
             with (
                 patch.object(release_check.subprocess, "check_output", side_effect=[ci, passing, unreleased]),
                 contextlib.redirect_stdout(io.StringIO()) as out,
@@ -244,7 +249,11 @@ class HeadlessSmokeTest(unittest.TestCase):
                 self.assertRaises(SystemExit) as result,
             ):
                 release_check.main([])
-            self.assertEqual(result.exception.code, "Release blocked: headless-smoke on abc is failure: 2 Lua errors")
+            self.assertEqual(
+                result.exception.code,
+                "Release blocked: headless-smoke on abc is failure: 2 Lua errors; "
+                "the committed visual proof does not stand in for it: no proof",
+            )
             with (
                 patch.object(release_check.subprocess, "check_output", side_effect=[ci, json.dumps([[]])]),
                 contextlib.redirect_stderr(io.StringIO()),

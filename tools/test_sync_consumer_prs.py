@@ -1397,6 +1397,26 @@ class BundleTest(unittest.TestCase):
             "- An older entry.\n",
         )
 
+    def test_a_release_entry_leaves_the_consumers_own_tail_byte_identical(self):
+        """A consumer's changelog check compares everything below its newest released heading with the base.
+
+        `check_base` in the shared changelog tool accepts a pull request only when the inserted sections sit above
+        text that is otherwise unchanged, so the sync must not reflow the end of the file while adding its entry.
+        """
+        self.changelog.write_text("# Changelog\n\n## [1.2.3] - 2026-11-01\n\n- An older entry.\n\n", encoding="utf-8")
+        self.assertTrue(sync.add_changelog_entry(self.root, self.DAY))
+        text = self.changelog.read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("- An older entry.\n\n"), repr(text[-30:]))
+        self.assertEqual(
+            text,
+            "# Changelog\n\n"
+            "## [1.2.4] - 2026-11-11\n\n"
+            f"{sync.SYNC_MARKER}\n\n"
+            f"{sync.SYNC_BULLET}\n\n"
+            "## [1.2.3] - 2026-11-01\n\n"
+            "- An older entry.\n\n",
+        )
+
     def test_the_newest_release_is_compared_numerically(self):
         self.changelog.write_text("## [Unreleased]\n\n## [1.10.0] - 2026-11-01\n\n- Older.\n", encoding="utf-8")
         self.bump()

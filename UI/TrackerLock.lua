@@ -39,10 +39,17 @@ function TrackerLock.Drag(host, source)
 			return
 		end
 		dragging = false
+		if InCombatLockdown() then
+			return
+		end
 		host:StopMovingOrSizing()
 		local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 		source.SavePosition((host:GetLeft() or 0) * scale, (host:GetTop() or 0) * scale - UIParent:GetHeight())
 	end
+	-- Finish moving the column while the combat-entry event can still move protected frames.
+	local combatEvents = CreateFrame("Frame")
+	combatEvents:RegisterEvent("PLAYER_REGEN_DISABLED")
+	combatEvents:SetScript("OnEvent", Stop)
 	return {
 		---@param header Frame
 		Attach = function(header)

@@ -140,7 +140,7 @@ The boundaries are meant to move as the addons iterate. To change one:
 1. Say which row changes and why, in #wow-addons. A proposal is a one-line edit plus a reason.
 2. The owner's call wins. A changed boundary that moves code needs the code move in the same round: the row is not true
    until the feature actually lives with its new owner, so a move and a row edit ship together or not at all.
-3. Edit this file, add a row to the change log below, and add a line to `forever-handoff/ledger.md`.
+3. Edit this file and add a row to the change log below.
 4. If the change affects an addon's own docs, update that AGENTS.md in the same PR.
 
 Rules that keep this file honest:

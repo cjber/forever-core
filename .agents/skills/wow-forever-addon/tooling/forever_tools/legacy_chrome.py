@@ -57,6 +57,13 @@ ALLOWLIST = {
     "interface/minimap/ui-minimap-zoombutton-highlight": "LibDBIcon's button highlight art; no atlas is the same piece",
     "interface/questframe/ui-questlog-bookicon": "wowmock's native default world-map portrait",
     "interface/questframe/ui-questtitlehighlight": "Blizzard_Menu's row highlight, in ContextMenu and wowmock",
+    # StaticPopupButtonTemplate's four states, set by file in Blizzard_StaticPopup_Game/GameDialog.xml.
+    # The client's own one-button popup still draws them, so a mock of any StaticPopup needs them, and
+    # no atlas replaces them there.
+    "interface/buttons/ui-dialogbox-button-up": "StaticPopupButtonTemplate's normal face; no atlas for it",
+    "interface/buttons/ui-dialogbox-button-down": "StaticPopupButtonTemplate's pushed face; no atlas for it",
+    "interface/buttons/ui-dialogbox-button-disabled": "StaticPopupButtonTemplate's disabled face; no atlas",
+    "interface/buttons/ui-dialogbox-button-highlight": "StaticPopupButtonTemplate's highlight face; no atlas",
 }
 
 

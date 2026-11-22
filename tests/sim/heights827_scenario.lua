@@ -110,8 +110,6 @@ local function run(sim, trackerHost, placeTracker)
 		tracker:ClearAllPoints()
 		tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)
 		tracker:SetSize(260, 600)
-		-- The sim loads none of the top frames Edit Mode's own handler places, so only the addons hear the event.
-		G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 		sim:event("EDIT_MODE_LAYOUTS_UPDATED")
 	end
 	Settle("login")

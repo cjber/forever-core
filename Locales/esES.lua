@@ -53,6 +53,7 @@ L["Tracker background"] = "Fondo del rastreador"
 L["Tracker position"] = "Posición del rastreador"
 L["Under the quest tracker"] = "Debajo del rastreador de misiones"
 L["Left of the quest tracker"] = "A la izquierda del rastreador de misiones"
+L["Always stay under the quest tracker"] = "Permanecer siempre debajo del rastreador de misiones" -- mt
 L["Attach to quest tracker"] = "Anclar al rastreador de misiones" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"El rastreador compartido de Forever se coloca debajo del rastreador de misiones cuando está activado y a su izquierda cuando está desactivado. Todos los addons Forever muestran este mismo ajuste." -- mt
@@ -131,3 +132,7 @@ L["Copy %s: %s"] = "Copia %s: %s" -- mt
 
 L["Drag to move the tabs."] = "Arrastra para mover las pestañas."
 L["Reset tab position"] = "Restablecer la posición de las pestañas"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore ya no tiene su propia lista de misiones. Nunca oculta ni mueve el rastreador de misiones del juego ni el de Questie. El ajuste «%s» de cada addon solo coloca la columna de Forever."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "Uso: /fcore report, /fcore debug, /fcore tracker"

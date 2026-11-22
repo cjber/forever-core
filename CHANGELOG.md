@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.17.0] - 2026-11-22
+
+<!-- discord-image: docs/screenshots/tracker.png -->
+
+### Added
+
+- Turn on **Always stay under the quest tracker** in the Tracker position menu to keep the Forever column below your quests when space is short. Scroll the sections to see the rest.
+
+### Fixed
+
+- On a short screen or with an enlarged minimap, the attached Forever tracker column starts below the minimap and its zone name bar instead of drawing over them, and its sections fit the room left.
+- Dragging the Forever tracker into combat now ends the move and saves its position before combat lockdown.
+- `/fcore quests` now explains that ForeverCore has no quest list of its own and never hides or moves the game's or Questie's quest tracker, instead of printing a tracker diagnostic. `/fcore tracker` prints that diagnostic, and any other word prints the commands; thanks to Wavebreaker90 for the report.
+
+### For addon authors
+
+- Simulator exercises start with a secure execution context after a scenario calls addon code directly.
+- Simulator scenarios can deliver Edit Mode layout updates and apply the tracker anchor from a layout.
+- The simulator allows the game's Create button to craft after reading recipe data from an addon.
+- Visual proof can verify addon builds that bundle ForeverCore, including the bundled files and the addon code the loader runs.
+- The simulator identifies which addon file LuaJIT could not compile and stops loading that addon before related errors pile up.
+- The consumer sync inserts missing bare TOC version steps before named BigWigs packager builds. The consumer check and sync both skip packager steps that reuse an existing ZIP with `-c -z`.
+- **Release-prep pull requests check that the ForeverCore pin is current before tagging.** `forever_tools.core_pin --latest-if-release-prep --base <ref>` requires core's latest published release only when `CHANGELOG.md` adds a new version heading against the base branch, leaving normal pull requests unaffected. `tools/sync_consumers.py` and `tools/check_consumers.py` keep this step in every published consumer's CI workflow. (#858)
+- A Forever addon loaded on demand after world entry now gets `PLAYER_ENTERING_WORLD` replayed with `false, false` (neither a login nor a reload) instead of nil arguments, so a saved debug capture resumes or stops correctly.
+- **Manual releases refuse commits that already carry another tag.** The `Tag a manual release` workflow step now checks the target commit before creating a tag on GitHub and fails if another tag already points to it, so BigWigs packager cannot attach the validated ZIP to the wrong release. Consumers receive the guard through `tools/sync_consumers.py`. (#940)
+- wowmock renders the client's own StaticPopup button: `UI-DialogBox-Button-Up`, `-Down`, `-Disabled` and `-Highlight` pass the asset gate instead of failing as pre-Legion loose chrome. `Blizzard_StaticPopup_Game/GameDialog.xml` still sets all four by file on `StaticPopupButtonTemplate` and the pinned build has no atlas for that art, so any mock of a StaticPopup, including the outdated-ForeverCore notice (#942), could not be rendered before this.
+
 ## [1.16.3] - 2026-11-21
 
 ### Fixed

@@ -1,9 +1,11 @@
-"""Publish only a commit that passed the repository's complete CI workflow on main and its release smoke.
+"""Publish only a commit that passed the repository's complete CI workflow on main and its in-game checks.
 
-Every release, manual or automatic, ships one commit and needs two records on that exact commit: the full CI push run
-on main, and the `headless-smoke` commit status, the maintainer's record that the build passed its pre-release checks
-with no Lua errors. A missing or pending status waits, and a failed one prints what it found, so a release never ships
-a build that was not checked.
+Every release, manual or automatic, ships one commit and needs two things for it: the full CI push run on main for that
+exact commit, and evidence that its build passed its pre-release checks with no Lua errors. The evidence is either the
+committed `.visual-proof.json`, when it verifies against the commit's files and carries passing in-game checks, or the
+`headless-smoke` commit status. The proof is bound to file contents, so the proof of a pull request also covers its
+merge commit and a release preparation's version bump. A commit whose contents no proof covers waits for the smoke,
+and a failed smoke prints what it found, so a release never ships a build that was not checked.
 
 A version publishes once. The tag names one build, so a release whose GitHub release already carries a package, or
 whose version CurseForge already lists, is refused: a re-tagged or re-run version would put a second, different build
@@ -11,7 +13,7 @@ under a number players already installed, and their clients never replace it (cj
 change as the next version instead.
 
 A manual release may add `--skip-visual-proof` when the only job that failed is `visual-proof`, the recorded
-visual proof a maintainer waives on purpose. Every other job must still pass, and the release smoke is never skipped.
+visual proof a maintainer waives on purpose. Every other job must still pass, and the in-game evidence is never skipped.
 """
 
 import argparse
@@ -22,6 +24,8 @@ import sys
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+
+from . import visual_proof
 
 CI_WORKFLOW = ".github/workflows/ci.yml"
 # The commit status that records a commit's pre-release checks; a release needs it green on its exact commit.
@@ -85,6 +89,12 @@ def smoke_refusal(status: dict | None, repository: str, commit: str) -> str | No
     if state in (None, "pending"):
         return f"waiting for {SMOKE_CONTEXT} on {commit}"
     return f"{SMOKE_CONTEXT} on {commit} is {state}: {(status or {}).get('description') or 'no description'}"
+
+
+def proof_refusal(root: Path) -> str | None:
+    """Why the checkout's committed proof does not stand in for the headless smoke, or None when it does."""
+    problems = visual_proof.proof_problems(root, root / visual_proof.PROOF, release=True)
+    return "; ".join(problems) if problems else None
 
 
 def statuses(repository: str, commit: str) -> list[dict]:
@@ -226,9 +236,11 @@ def main(argv: list[str] | None = None) -> None:
         if not waived:
             sys.exit("Release blocked: this exact commit needs a successful full CI run on main.")
         skipped = True
-    refusal = smoke_refusal(headless_smoke(statuses(repository, commit)), repository, commit)
-    if refusal:
-        sys.exit(f"Release blocked: {refusal}")
+    proof = proof_refusal(Path.cwd())
+    if proof:
+        refusal = smoke_refusal(headless_smoke(statuses(repository, commit)), repository, commit)
+        if refusal:
+            sys.exit(f"Release blocked: {refusal}; the committed visual proof does not stand in for it: {proof}")
     tag = release_tag(dict(os.environ))
     if tag is None:
         sys.exit("Release blocked: neither a pushed tag nor a manual run's version names the release")
@@ -239,7 +251,7 @@ def main(argv: list[str] | None = None) -> None:
     if skipped:
         print(f"Release skips the failed {VISUAL_PROOF_JOB} job on {commit}: --skip-visual-proof was given")
     detail = f" (skipping {VISUAL_PROOF_JOB})" if skipped else ""
+    evidence = f"{SMOKE_CONTEXT} passed" if proof else f"{visual_proof.PROOF} proves the build"
     print(
-        f"Release verified: full CI passed on main{detail} and {SMOKE_CONTEXT} passed at {commit}, "
-        f"and {tag} is not published yet"
+        f"Release verified: full CI passed on main{detail} and {evidence} at {commit}, and {tag} is not published yet"
     )

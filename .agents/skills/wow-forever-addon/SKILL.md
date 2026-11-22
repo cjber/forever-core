@@ -266,15 +266,16 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   100%. A release preparation that edits the update notice or a locale, and a sync pull request that moves the
   ForeverCore pin, record the visual proof their runtime changes need before the pull request merges: the proof is the
   `.visual-proof.json` for that exact build (its screenshots uploaded to a secret gist), committed with the change.
-  The required `visual-proof` check then passes without an admin merge.
+  The required `visual-proof` check then passes without an admin merge, and `release_check.py` accepts the proof in
+  place of a `headless-smoke` status for any commit whose runtime it still matches.
 - **WFA-39** A ForeverCore release keeps every consumer release already on the stores working, including one
   pinned to an older core: players and the CurseForge app update core on its own, before the sync re-releases reach
   them. Core changes are additive. A public function, field, event, slash command or saved-variable shape a released
   consumer uses keeps its name and meaning; retire it only once every store release that uses it has been replaced.
   New behaviour stays off for a released consumer until that consumer opts in. The gate proves it: core's required
   `released-consumers` job and its `release.yml` step load the candidate core under forever_sim with each consumer's
-  newest GitHub release zip (`python3 tools/suite_load.py --released`), and core's `headless-smoke` status, which
-  `release_check.py` requires, covers the same released zips beside the candidate. A Lua
+  newest GitHub release zip (`python3 tools/suite_load.py --released`), and core's in-game evidence, which
+  `release_check.py` requires (its visual proof's checks or its `headless-smoke` status), covers the same released zips beside the candidate. A Lua
   error from either, or a released addon that never reached `ForeverCore.Register` because its startup check refused
   the candidate, blocks the release; fix core, never the released consumer.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a

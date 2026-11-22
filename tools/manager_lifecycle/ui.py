@@ -49,9 +49,5 @@ def wait_for(d, js, timeout=60, what=None):
     raise TimeoutError(f"timed out waiting for {what or js!r} (last={last!r})")
 
 
-def text_present(d, text):
-    return bool(d.eval(f"document.body.innerText.includes({json.dumps(text)})"))
-
-
 def body_text(d, n=4000):
     return d.eval(f"document.body.innerText.slice(0,{n})")

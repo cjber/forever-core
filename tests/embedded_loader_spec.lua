@@ -1128,6 +1128,8 @@ do
 	lateSess:Candidate("LateHost", build(1, 7, 0))
 	check(lateSess.loader.Seen("PLAYER_ENTERING_WORLD"), "a loader made after login counts the world entry as past")
 	check(lateSess.loader.Seen("VARIABLES_LOADED"), "and the saved variables")
+	local initialLogin, reloadingUi = lateSess.loader.WorldEntry()
+	check(initialLogin == false and reloadingUi == false, "late world-entry replay supplies two false flags")
 	lateSess.Fire("PLAYER_ENTERING_WORLD", false, true)
 	local lateInitial, lateReloading = lateSess.loader.WorldEntry()
 	check(lateInitial == false and lateReloading == true, "and still records an entry that fires later")

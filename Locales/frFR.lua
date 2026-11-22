@@ -53,6 +53,7 @@ L["Tracker background"] = "Fond du suivi"
 L["Tracker position"] = "Position du suivi"
 L["Under the quest tracker"] = "Sous le suivi des quêtes"
 L["Left of the quest tracker"] = "À gauche du suivi des quêtes"
+L["Always stay under the quest tracker"] = "Toujours rester sous le suivi des quêtes" -- mt
 L["Attach to quest tracker"] = "Attacher au suivi des quêtes" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"Le suivi Forever partagé se place sous le suivi des quêtes quand cette option est active, et à sa gauche quand elle est désactivée. Chaque addon Forever affiche ce même réglage." -- mt
@@ -131,3 +132,7 @@ L["Copy %s: %s"] = "Copie %s : %s" -- mt
 
 L["Drag to move the tabs."] = "Faites glisser pour déplacer les onglets."
 L["Reset tab position"] = "Réinitialiser la position des onglets"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore ne possède plus sa propre liste de quêtes. Il ne masque et ne déplace jamais le suivi des quêtes du jeu ou de Questie. Le réglage « %s » de chaque addon place uniquement la colonne Forever."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "Utilisation : /fcore report, /fcore debug, /fcore tracker"

@@ -15,10 +15,12 @@ forever_tools sync, never the workflow alone.
 The release workflow is not a vendored file: each addon keeps its own. A full sync therefore inserts the ForeverCore
 release gate directly above the BigWigs packager step in every consumer that has one, idempotently, so a core release
 that lands between CI and the upload is still caught. A workflow with no packager step (kiln-forever's own tar build)
-is left alone and its exact step is printed for the maintainer. The same full sync puts the bare version step
-(`forever_tools.toc_version`) above every packager step in the release and CI workflows, so the zip's TOC never
-carries the tag's `v`. A full sync also removes the retired Wago store
-metadata, upload credential and store links from consumer-owned publishing files.
+is left alone and its exact step is printed for the maintainer. The same full sync inserts the release-prep pin gate
+(`forever_tools.core_pin --latest-if-release-prep`) into each consumer's CI workflow right after its changelog check,
+so a release-prep PR with a stale pin fails before tagging while normal PRs stay unaffected. It also puts the bare
+version step (`forever_tools.toc_version`) above each package build in the release and CI workflows, so the zip's TOC
+never carries the tag's `v`, and removes the retired Wago store metadata, upload credential and store links from
+consumer-owned publishing files.
 
 """
 
@@ -30,7 +32,19 @@ import shutil
 import sys
 from pathlib import Path
 
-from check_consumers import CI_WORKFLOW, TAG_STEP, VERSION_COMMAND, pkgmeta_field, tag_step, uncommented, workflow_step
+from check_consumers import (
+    CI_WORKFLOW,
+    PR_PIN_GATE,
+    PR_PIN_GATE_COMMAND,
+    TAG_STEP,
+    VERSION_COMMAND,
+    changelog_check_step,
+    has_pr_pin_gate,
+    missing_version_steps,
+    pkgmeta_field,
+    tag_step,
+    workflow_step,
+)
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -154,31 +168,25 @@ def version_step(indent="      "):
 
 
 def version_step_edit(text):
-    """`text` with the version step directly above each BigWigs packager step that has none before it, or None."""
-    live = uncommented(text)  # a commented-out step does not run
-    packagers = list(PACKAGER_STEP.finditer(live))
-    command = f"python3 -m {VERSION_COMMAND}"
-    previous, pieces = 0, []
-    for packager in packagers:
-        anchor = packager.start()
-        if command not in live[previous:anchor]:
-            # The pin gate stays the last step before the packager, so the version step goes above it and its comment.
-            gate = text.rfind(f"- name: {RELEASE_GATE_NAME}\n", previous, anchor)
-            if gate >= 0:
-                anchor = text.rfind("\n", previous, gate) + 1
-                while anchor > previous:
-                    above = text.rfind("\n", previous, anchor - 1) + 1
-                    if not text[above:anchor].lstrip().startswith("#"):
-                        break
-                    anchor = above
-            pieces += [text[previous:anchor], version_step(packager["indent"])]
-            previous = anchor
-    updated = "".join(pieces) + text[previous:]
-    return None if updated == text else updated
+    """Insert version steps before the builds that need them, preserving the workflow's formatting."""
+    missing = list(missing_version_steps(text))
+    if not missing:
+        return None
+    lines = text.splitlines(keepends=True)
+    for packager, previous in reversed(missing):
+        anchor = packager["line"]
+        indent = lines[anchor][: len(lines[anchor]) - len(lines[anchor].lstrip())]
+        # Keep the pin gate and its comments together immediately before the packager.
+        if previous.get("name") == RELEASE_GATE_NAME:
+            anchor = previous["line"]
+            while anchor > 0 and lines[anchor - 1].lstrip().startswith("#"):
+                anchor -= 1
+        lines.insert(anchor, version_step(indent))
+    return "".join(lines)
 
 
 def sync_version_step(root, repo, dry_run):
-    """Insert the version step above every packager step in `repo`'s release and CI workflows; count the files."""
+    """Insert missing version steps in `repo`'s release and CI workflows and count edited files."""
     changed = 0
     for workflow in (RELEASE_WORKFLOW, CI_WORKFLOW):
         path = root / workflow
@@ -192,6 +200,59 @@ def sync_version_step(root, repo, dry_run):
         if not dry_run:
             path.write_text(updated, encoding="utf-8")
     return changed
+
+
+def pr_pin_gate_step(indent="      "):
+    """The CI step that runs core_pin --latest on pull requests whose CHANGELOG adds a version heading."""
+    return (
+        f"{indent}# A release-prep pull request adds a new CHANGELOG.md version heading; check --latest here so a\n"
+        f"{indent}# stale pin fails the pull request instead of the release workflow after tagging.\n"
+        f"{indent}- name: {PR_PIN_GATE}\n"
+        f"{indent}  if: github.event_name == 'pull_request'\n"
+        f"{indent}  env:\n"
+        f"{indent}    BASE: ${{{{ github.base_ref }}}}\n"
+        f"{indent}    GH_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}\n"
+        f'{indent}  run: python3 -m {PR_PIN_GATE_COMMAND} --base "origin/$BASE"\n'
+    )
+
+
+def pr_pin_gate_edit(text):
+    """Insert the release-prep pin gate right after the changelog check step, or None when not needed."""
+    if has_pr_pin_gate(text):
+        return None
+    anchor_step = changelog_check_step(text)
+    if anchor_step is None:
+        return None
+    lines = text.splitlines(keepends=True)
+    start_line = anchor_step["line"]
+    step_indent = len(lines[start_line]) - len(lines[start_line].lstrip())
+    indent = lines[start_line][:step_indent]
+    insert = start_line + 1
+    while insert < len(lines):
+        stripped = lines[insert].lstrip(" \t")
+        if stripped.strip() and len(lines[insert]) - len(stripped) <= step_indent:
+            break
+        insert += 1
+    while insert > start_line + 1 and not lines[insert - 1].strip():
+        insert -= 1
+    if insert > 0 and not lines[insert - 1].endswith("\n"):
+        lines[insert - 1] += "\n"
+    lines.insert(insert, pr_pin_gate_step(indent))
+    return "".join(lines)
+
+
+def sync_pr_pin_gate(root, repo, dry_run):
+    """Insert the release-prep pin gate into `repo`'s CI workflow, returning whether it changed."""
+    path = root / CI_WORKFLOW
+    if not path.is_file():
+        return 0
+    updated = pr_pin_gate_edit(path.read_text(encoding="utf-8"))
+    if updated is None:
+        return 0
+    print(f"{repo}: {CI_WORKFLOW}: {PR_PIN_GATE}")
+    if not dry_run:
+        path.write_text(updated, encoding="utf-8")
+    return 1
 
 
 def sync_release_gate(root, repo, dry_run):
@@ -333,6 +394,7 @@ def main(argv=None):
             try:
                 changed += sync_store_channels(root, repo, arguments.dry_run)
                 changed += sync_release_gate(root, repo, arguments.dry_run)
+                changed += sync_pr_pin_gate(root, repo, arguments.dry_run)
                 changed += sync_tag_step(root, repo, arguments.dry_run)
                 changed += sync_version_step(root, repo, arguments.dry_run)
             except (OSError, ValueError) as error:

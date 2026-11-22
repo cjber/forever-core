@@ -22,7 +22,7 @@ luajit <forever-core>/.agents/skills/foreverauras/scripts/fa.lua encode <Auras/X
 luajit <forever-core>/.agents/skills/foreverauras/scripts/fa.lua decode <file|->              # prints a string's payload as Lua
 ```
 
-`FA_DIR` overrides the addon folder (default: the `_forever_` client's `Interface/AddOns/ForeverAuras`).
+`FA_DIR` names the installed addon folder, the `_forever_` client's `Interface/AddOns/ForeverAuras`; the script stops without it.
 The encoder stamps `internalVersion` from the installed addon, so the import runs the addon's own
 upgrade and defaults over every field the spec leaves out.
 

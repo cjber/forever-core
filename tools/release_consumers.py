@@ -16,10 +16,11 @@ minutes by `.github/workflows/release-consumers.yml`, reads each consumer's `mai
 - no `release.yml` run for `main`'s head already finished with a failure, which the cron would otherwise dispatch
   again every 20 minutes forever;
 - the `ci.yml` push run on `main`'s head concluded success, which is the release's own gate;
-- the newest `headless-smoke` commit status on that same commit is `success`, which is the maintainer's record that
-  the build passed its pre-release checks with no Lua errors in the addon's folders. A commit without
-  one is reported as waiting and retried by the next run, never as failed, so a release waits for the smoke instead of
-  turning the job red.
+- the commit's build passed its pre-release checks: its newest `headless-smoke` commit status is `success`, or its
+  committed `.visual-proof.json` verifies against its files with passing in-game checks, the same evidence
+  `release.yml`'s `release_check` accepts. Either one records that the build passed with no Lua errors in the addon's
+  folders. A commit with neither is reported as waiting and retried by the next run, never as failed, so a release
+  waits for the smoke instead of turning the job red.
 
 A consumer whose root TOC opts in to the embedded core (`## X-Forever-Core-Embed: 1`) at the commit it would release
 also waits until every addon in `EMBED_FLEET` has opted in on its own `main`, and the wait names the ones that have not.
@@ -47,7 +48,10 @@ stays green until the owner adds the secret.
 import json
 import os
 import re
+import subprocess
 import sys
+import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,7 +59,7 @@ from pathlib import Path
 TOOLING = Path(__file__).resolve().parent.parent / ".agents/skills/wow-forever-addon/tooling"
 sys.path.insert(0, str(TOOLING))
 
-from forever_tools import fleet  # noqa: E402
+from forever_tools import fleet, release_check, visual_proof  # noqa: E402
 from sync_consumer_prs import (  # noqa: E402
     OWNER,
     SyncError,
@@ -163,8 +167,8 @@ def decide(
 
     Pure, so the whole rule is unit-tested without the network: only a marked newest entry with no notes under
     `## [Unreleased]`, whose tag is missing, whose release is idle, whose head has no failed release run, whose full
-    CI on main's head passed and whose head carries a green `headless-smoke` status is dispatched. A missing smoke is a
-    reason to wait and try again, never a failure.
+    CI on main's head passed and whose head carries a green `headless-smoke` status or a verified visual proof
+    (`smoke="proof"`) is dispatched. A missing smoke is a reason to wait and try again, never a failure.
     """
     if changelog is None:
         return Decision(reason="main has no CHANGELOG.md")
@@ -193,7 +197,7 @@ def decide(
         return Decision(reason="main has no head commit")
     if ci_state != "completed/success":
         return Decision(reason=f"{CI_WORKFLOW} on main's head {head[:7]} is {ci_state}")
-    if smoke != "success":
+    if smoke not in ("success", "proof"):
         return Decision(reason=f"waiting for {SMOKE_CONTEXT} on {head[:7]}, which is {smoke}")
     return Decision(version, head, f"releases v{version} at {head}")
 
@@ -309,12 +313,57 @@ def smoke_status(repo: str, sha: str) -> str:
     return "missing"
 
 
+# The vendored modules `release_check` runs to judge a proof: itself and everything it imports from `forever_tools`.
+PROOF_GATE = ("release_check.py", "visual_proof.py", "pkgmeta.py", "toc.py")
+
+
+def proof_covers(repo: str, sha: str) -> bool:
+    """Whether `sha`'s committed `.visual-proof.json` stands in for its headless smoke, as `release_check` decides.
+
+    The proof is bound to the commit's file contents, so the check runs over the commit's own tree: its tarball,
+    extracted outside any git work tree, where the packager has no untracked paths to leave out. Core's gate judges
+    the proof, so it covers the commit only when the consumer vendors that same gate: a consumer whose release check
+    still predates proofs, or differs in any other way, would refuse the dispatched release, so it waits for its smoke.
+    """
+    if read_file(repo, visual_proof.PROOF.as_posix(), sha) is None:
+        return False
+    result = subprocess.run(["gh", "api", f"repos/{OWNER}/{repo}/tarball/{sha}"], capture_output=True, check=False)
+    if result.returncode:
+        raise SyncError(f"could not download {repo} at {sha[:7]}: {result.stderr.decode(errors='replace').strip()}")
+    with tempfile.TemporaryDirectory(prefix="forever-proof-") as scratch:
+        archive = Path(scratch) / "tree.tar.gz"
+        archive.write_bytes(result.stdout)
+        tree = Path(scratch) / "tree"
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(tree, filter="data")
+        (top,) = tree.iterdir()
+        vendored = top / "tools/forever_tools"
+        if any(
+            not (vendored / name).is_file()
+            or (vendored / name).read_bytes() != (TOOLING / "forever_tools" / name).read_bytes()
+            for name in PROOF_GATE
+        ):
+            return False
+        return release_check.proof_refusal(top) is None
+
+
+def build_evidence(repo: str, sha: str) -> str:
+    """`success` when `sha` has a green headless smoke, `proof` when its visual proof covers it, else the smoke state.
+
+    `release_check` accepts either one.
+    """
+    state = smoke_status(repo, sha)
+    if state != "success" and proof_covers(repo, sha):
+        return "proof"
+    return state
+
+
 def plan(repo: str) -> Decision:
     """Read one consumer's state and decide whether to release it now, with as few API reads as the rule allows.
 
     `main`'s head is read first and the changelog at that exact commit, so a merge that lands between two reads can
-    never dispatch a release for an intent the commit does not carry. CI and the smoke status are both read for that
-    same commit, and the smoke status only once CI is green, which is the only path to a dispatch.
+    never dispatch a release for an intent the commit does not carry. CI and the build evidence are both read for that
+    same commit, and the evidence only once CI is green, which is the only path to a dispatch.
     """
     head = main_head(repo)
     changelog = read_changelog(repo, head)
@@ -332,7 +381,7 @@ def plan(repo: str) -> Decision:
     if tag_exists(repo, f"v{version}"):
         return decide(changelog, None, True, False, "none")
     state = ci_state(ci_runs(repo, head), head)
-    smoke = smoke_status(repo, head) if state == "completed/success" else "missing"
+    smoke = build_evidence(repo, head) if state == "completed/success" else "missing"
     return decide(changelog, head, False, False, state, smoke=smoke)
 
 

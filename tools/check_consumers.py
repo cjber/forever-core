@@ -23,11 +23,13 @@ drifts the same way:
   addon can name a sibling whose core is out of date. It must agree with `tools/forever-core.txt`.
 - Each published consumer's own `release.yml`, which is not a vendored file, must still run the pin gate directly above
   its BigWigs packager, so a core release that lands after CI is caught before the upload.
+- Each published consumer's own `ci.yml` must run `core_pin --latest-if-release-prep --base` on pull requests, so a
+  release-prep PR with a stale pin fails before tagging while normal PRs stay unaffected.
 - TOCs and release workflows must not retain the retired Wago store ID or upload credential.
 - The same `release.yml` must carry core's own "Tag a manual release" step unchanged, the one that peels a signed tag
   and tags a workflow-changing commit with the PAT; `tools/sync_consumers.py` copies it in.
 - A consumer that vendors the client-call lint must run it from its own `tools/typecheck.sh`.
-- Every BigWigs packager step in a consumer's `release.yml` and `ci.yml` must have
+- Every BigWigs packager step that stages or builds a package in a consumer's `release.yml` and `ci.yml` must have
   `python3 -m tools.forever_tools.toc_version` before it, so `## Version` ships bare, never the tag's `v`.
 - A consumer whose root TOC opts in with `## X-Forever-Core-Embed: 1` must run `python3 -m tools.forever_tools.embed`
   before every BigWigs packager step in its `release.yml` and `ci.yml`, so the zip it uploads and the package CI
@@ -80,6 +82,9 @@ RELEASE_WORKFLOW = ".github/workflows/release.yml"
 # verifies the step is still there and still last before the upload rather than comparing its bytes.
 RELEASE_GATE = "Verify the ForeverCore pin is core's latest release"
 RELEASE_GATE_COMMAND = "tools.forever_tools.core_pin --latest"
+PR_PIN_GATE = "Verify the ForeverCore pin on a release-prep PR"
+PR_PIN_GATE_COMMAND = "tools.forever_tools.core_pin --latest-if-release-prep"
+CHANGELOG_CHECK_COMMAND = "tools/changelog.py --check"
 # The step a manual release tags its commit with. It is the same shell in every repo, so core's own release.yml is its
 # source and each consumer's copy must match it once reindented.
 TAG_STEP = "Tag a manual release"
@@ -517,18 +522,83 @@ def archive_release_problems(jobs):
     return failures
 
 
+def step_runs_pr_pin_gate(step):
+    """Whether a CI step actively runs the release-prep ForeverCore pin gate with --base and a token."""
+    if (
+        step.get("if", "").strip().casefold() in NEVER
+        or step.get("continue-on-error", "false").strip().casefold() != "false"
+        or step.get("working-directory")
+    ):
+        return False
+    if not (step.get("GH_TOKEN") or step.get("GITHUB_TOKEN")):
+        return False
+    command = f"python3 -m {PR_PIN_GATE_COMMAND}"
+    for line in step.get("run", "").splitlines():
+        code = shell_code(line)
+        if command not in code or "--base" not in code:
+            continue
+        if ("$BASE" in code or "${BASE}" in code) and not step.get("BASE"):
+            return False
+        return True
+    return False
+
+
+def has_pr_pin_gate(text):
+    """Whether a CI workflow runs the release-prep ForeverCore pin gate."""
+    return any(step_runs_pr_pin_gate(step) for steps in workflow_steps(text) for step in steps)
+
+
+def changelog_check_step(text):
+    """The first active step in `text` that runs `tools/changelog.py --check`, or None."""
+    for steps in workflow_steps(text):
+        for step in steps:
+            if step.get("if", "").strip().casefold() in NEVER:
+                continue
+            if any(CHANGELOG_CHECK_COMMAND in shell_code(line) for line in step.get("run", "").splitlines()):
+                return step
+    return None
+
+
+def check_pr_pin_gate(repo, branch, local):
+    """A consumer's CI workflow checks `core_pin --latest` on pull requests that add a CHANGELOG version."""
+    path = consumer_path(repo, CI_WORKFLOW)
+    data, error = read_consumer(repo, path, branch, local)
+    if error:
+        return [f"{repo}: {path}: {error}"]
+    if data is None:
+        return []
+    text = data.decode("utf-8", "replace")
+    if has_pr_pin_gate(text):
+        return []
+    return [
+        f"{repo}: {path}: no release-prep ForeverCore pin gate; add a pull_request step running"
+        f' `python3 -m {PR_PIN_GATE_COMMAND} --base "origin/$BASE"` (run tools/sync_consumers.py)'
+    ]
+
+
 EMBED_COMMAND = "tools.forever_tools.embed"
 CI_WORKFLOW = ".github/workflows/ci.yml"
 VERSION_COMMAND = "tools.forever_tools.toc_version"
 
 
-def uncommented(text):
-    """`text` with each YAML comment-only line blanked to spaces, so offsets still line up with the original."""
-    return re.sub(r"(?m)^[ \t]*#.*$", lambda line: " " * len(line[0]), text)
+def missing_version_steps(text):
+    """Yield each build missing its version step and the preceding step in the same job."""
+    for steps in workflow_steps(text):
+        versioned = False
+        previous = {}
+        for step in steps:
+            if step_runs(step, VERSION_COMMAND):
+                versioned = True
+            # -c skips staging files and -z skips creating the ZIP. Together they reuse an existing archive.
+            if step_packages(step) and not {"-c", "-z"}.issubset(step.get("args", "").split()):
+                if not versioned:
+                    yield step, previous
+                versioned = False
+            previous = step
 
 
 def check_version_step(repo, branch, local):
-    """Every packager step in a consumer's release and CI workflows has the bare version step before it.
+    """Every build in a consumer's release and CI workflows has the bare version step before it.
 
     The packager alone writes the tag, `v1.2.3`, into `## Version`, which no addon's version comparison matches.
     """
@@ -540,15 +610,12 @@ def check_version_step(repo, branch, local):
         if error:
             failures.append(f"{repo}: {path}: {error}")
             continue
-        text = uncommented("" if data is None else data.decode("utf-8", "replace"))
-        previous = 0
-        for packager in (match.start() for match in re.finditer(r"BigWigsMods/packager@", text)):
-            if command not in text[previous:packager]:
-                failures.append(
-                    f"{repo}: {path}: a packager step with no `{command}` before it, so the TOC ships the tag's v;"
-                    " run tools/sync_consumers.py"
-                )
-            previous = packager
+        text = "" if data is None else data.decode("utf-8", "replace")
+        for _ in missing_version_steps(text):
+            failures.append(
+                f"{repo}: {path}: a packager step with no `{command}` before it, so the TOC ships the tag's v;"
+                " run tools/sync_consumers.py"
+            )
     return failures
 
 
@@ -652,7 +719,7 @@ def yaml_value(value):
 
 
 def workflow_steps(text):
-    """Every job's steps under a workflow's top-level `jobs:`, each step its `uses`, `run` and `if` values.
+    """Every job's steps under top-level `jobs:`, with each step's line number and selected fields.
 
     A `run: |` or `run: >` block is the lines indented under it. Comment lines are dropped. A workflow with no
     `jobs:` key has no jobs.
@@ -673,7 +740,7 @@ def workflow_steps(text):
     step = None
     block = None
     mapping = None
-    for line in lines[start + 1 :]:
+    for line_number, line in enumerate(lines[start + 1 :], start + 1):
         if not line.strip():
             if block is not None:
                 step["run"] += "\n"
@@ -708,7 +775,7 @@ def workflow_steps(text):
             continue
         if body.startswith("- ") and (item_indent is None or width == item_indent):
             item_indent = width
-            step = {}
+            step = {"line": line_number}
             mapping = None
             jobs[-1].append(step)
             body = body[2:].strip()
@@ -721,11 +788,19 @@ def workflow_steps(text):
         key, value = yaml_value(field[1]), field[2]
         if width == item_indent + 2:
             mapping = key if key in ("with", "env") else None
-            if key not in ("uses", "run", "if", "id", "continue-on-error", "working-directory"):
+            if key not in ("name", "uses", "run", "if", "id", "continue-on-error", "working-directory"):
                 continue
         elif mapping == "with" and key == "args":
             pass
-        elif mapping == "env" and key in ("archive", "archive_name", "ARCHIVE", "ARCHIVE_SHA256"):
+        elif mapping == "env" and key in (
+            "archive",
+            "archive_name",
+            "ARCHIVE",
+            "ARCHIVE_SHA256",
+            "BASE",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+        ):
             pass
         else:
             continue
@@ -965,6 +1040,7 @@ def main(argv=None):
     # Kiln Forever's own tar build has no packager to gate, so it is not in this list.
     for repo in VENDORED.get(VISUAL_WORKFLOW, ()):
         failures += check_release_gate(repo, arguments.branch, arguments.local)
+        failures += check_pr_pin_gate(repo, arguments.branch, arguments.local)
         failures += check_tag_step(repo, arguments.branch, arguments.local)
     # Any consumer's own CI may run the package check; each such step must be authenticated, whether or not the addon
     # publishes a visual-proof workflow.

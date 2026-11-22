@@ -21,7 +21,6 @@ import wowmock  # noqa: E402
 BG = (26, 26, 30)
 PANEL = (38, 38, 44)
 INK = (232, 232, 236)
-DIM = (150, 150, 158)
 ACCENT = (255, 209, 0)
 
 GROUPS = collections.OrderedDict(

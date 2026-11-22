@@ -31,14 +31,8 @@ HERE = Path(__file__).resolve().parent
 REGRESSION_DIR = HERE / "regression"
 PAGE_TEMPLATE = HERE / "page.html"
 HANDOFF = Path(os.environ.get("CHECKLIST_HOME", Path.home() / "drive/proj/wow/wow-handoff"))
-BUGGRABBER = Path(
-    os.environ.get(
-        "CHECKLIST_BUGGRABBER",
-        Path.home()
-        / "Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/WTF/Account/WORLDOFCILLIAN"
-        / "SavedVariables/!BugGrabber.lua",
-    )
-)
+# The client's !BugGrabber.lua SavedVariables file; unset means no error log is read.
+BUGGRABBER = Path(os.environ["CHECKLIST_BUGGRABBER"]) if os.environ.get("CHECKLIST_BUGGRABBER") else None
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CHECKLIST_PORT", "8765"))
 DEFAULT_MINUTES = 2
@@ -425,7 +419,7 @@ class LuaReader:
 def bug_errors(since: int, path: Path | None = None) -> list[dict]:
     """The BugGrabber errors whose last time is at or after since (the client writes the file on /reload or logout)."""
     path = path or BUGGRABBER
-    if not path.exists():
+    if path is None or not path.exists():
         return []
     db = LuaReader(path.read_text(encoding="utf-8", errors="replace")).assignments().get("BugGrabberDB") or {}
     errors = db.get("errors") or []

@@ -4,6 +4,9 @@ import contextlib
 import hashlib
 import io
 import json
+import os
+import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -488,6 +491,94 @@ class TagStepTest(unittest.TestCase):
         self.assertEqual(sync.sync_tag_step(self.root, "legacy-forever", dry_run=False), 0)
         self.assertEqual(self.workflow.read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)
 
+    def tag_step_script(self):
+        core = (check_consumers.CORE_ROOT / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8")
+        steps = [
+            step
+            for job in check_consumers.workflow_steps(core)
+            for step in job
+            if step.get("name") == check_consumers.TAG_STEP
+        ]
+        self.assertEqual(len(steps), 1)
+        return steps[0]["run"]
+
+    def run_tag_step(self, tags, release_tag, gh_script):
+        repo = Path(self.tmp.name) / f"git-{release_tag}-{len(tags)}"
+        repo.mkdir()
+        subprocess.run(["git", "init", "--quiet", "--initial-branch=main"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo, check=True)
+        (repo / "README.md").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "initial"], cwd=repo, check=True)
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        for tag in tags:
+            subprocess.run(["git", "tag", tag, commit], cwd=repo, check=True)
+        bindir = Path(self.tmp.name) / f"bin-{release_tag}-{len(tags)}"
+        bindir.mkdir()
+        marker = bindir / "gh-called"
+        gh = bindir / "gh"
+        gh.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n{gh_script}\n", encoding="utf-8")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        env = {
+            **os.environ,
+            "PATH": f"{bindir}:{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "cjber/forever-core",
+            "RELEASE_TAG": release_tag,
+            "RELEASE_COMMIT": commit,
+            "GH_TOKEN": "token",
+            "SYNC_TOKEN": "",
+        }
+        result = subprocess.run(
+            ["bash", "-eo", "pipefail", "-c", self.tag_step_script()],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return commit, result, marker
+
+    def test_manual_tag_step_refuses_a_commit_with_another_tag_before_calling_gh(self):
+        commit, result, marker = self.run_tag_step(
+            tags=("v1.0.0",),
+            release_tag="v1.0.1",
+            gh_script="exit 99",
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "gh should not be called when another tag is on the commit")
+        self.assertIn(f"::error::{commit} already carries v1.0.0;", result.stdout)
+
+    def test_manual_tag_step_refuses_a_commit_with_multiple_other_tags(self):
+        commit, result, marker = self.run_tag_step(
+            tags=("v0.9.0", "v1.0.0"),
+            release_tag="v1.0.1",
+            gh_script="exit 99",
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "gh should not be called when other tags are on the commit")
+        self.assertIn(f"::error::{commit} already carries v0.9.0 v1.0.0;", result.stdout)
+
+    def test_manual_tag_step_allows_an_untagged_commit_or_the_same_tag(self):
+        _commit, untagged, marker = self.run_tag_step(
+            tags=(),
+            release_tag="v1.0.1",
+            gh_script='if [[ "$*" == *"git/ref/tags/"* ]]; then exit 1; fi; exit 0',
+        )
+        self.assertEqual(untagged.returncode, 0, untagged.stdout + untagged.stderr)
+        self.assertTrue(marker.exists())
+
+        _commit, same, same_marker = self.run_tag_step(
+            tags=("v1.0.1",),
+            release_tag="v1.0.1",
+            gh_script='if [[ "$*" == *"git/ref/tags/"* ]]; then echo "commit $RELEASE_COMMIT"; exit 0; fi; exit 1',
+        )
+        self.assertEqual(same.returncode, 0, same.stdout + same.stderr)
+        self.assertTrue(same_marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -505,7 +596,20 @@ class VersionStepTest(unittest.TestCase):
         run: python3 -m tools.forever_tools.embed
       - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:
-          args: -d -z
+          args: -d
+"""
+
+    NAMED = """jobs:
+  release:
+    steps:
+      - name: Build the release ZIP
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -d
+      - name: Upload the validated ZIP
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -c -z
 """
 
     def setUp(self):
@@ -546,6 +650,44 @@ class VersionStepTest(unittest.TestCase):
         self.assertIn(sync.version_step() + packager, path.read_text(encoding="utf-8"))
         self.assertEqual(self.check(), [])
 
+    def test_a_version_step_in_another_job_does_not_cover_the_build(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        (self.root / sync.CI_WORKFLOW).unlink()
+        workflow = (
+            "jobs:\n  prepare:\n    steps:\n"
+            + sync.version_step()
+            + "  release:\n    steps:\n      - uses: BigWigsMods/packager@v2\n"
+        )
+        path.write_text(workflow, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(self.run_sync(), 0)
+
+    def test_only_the_build_is_versioned_before_a_validated_zip_upload(self):
+        path = self.root / sync.RELEASE_WORKFLOW
+        (self.root / sync.CI_WORKFLOW).unlink()
+        build = "        - name: Build the ZIP\n          uses: BigWigsMods/packager@v2\n"
+        for upload in (
+            "        - uses: BigWigsMods/packager@v2\n",
+            "        - name: Upload the validated ZIP\n          uses: BigWigsMods/packager@v2\n",
+        ):
+            with self.subTest(upload=upload):
+                workflow = (
+                    "jobs:\n  release:\n    steps:\n"
+                    + build
+                    + "          with:\n            args: -d\n"
+                    + upload
+                    + "          with:\n            args: '-c -z' # reuse the ZIP\n"
+                )
+                path.write_text(workflow, encoding="utf-8")
+                self.assertEqual(len(self.check()), 1)
+                self.assertEqual(self.run_sync(), 1)
+                expected = workflow.replace(build, sync.version_step("        ") + build)
+                self.assertEqual(path.read_text(encoding="utf-8"), expected)
+                self.assertEqual(self.check(), [])
+                self.assertEqual(self.run_sync(), 0)
+
     def test_the_pin_gate_stays_directly_above_the_packager(self):
         path = self.root / sync.RELEASE_WORKFLOW
         packager = "      - uses: BigWigsMods/packager@"
@@ -562,3 +704,155 @@ class VersionStepTest(unittest.TestCase):
         self.assertEqual(self.check(), [])
         self.assertEqual(self.run_sync(), 0)
         self.assertEqual((self.root / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)
+
+    def test_the_named_build_step_gets_one_version_step_and_the_upload_only_step_none(self):
+        updated = sync.version_step_edit(self.NAMED)
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.count(f"python3 -m {sync.VERSION_COMMAND}"), 1)
+        self.assertEqual(
+            updated,
+            self.NAMED.replace(
+                "      - name: Build the release ZIP",
+                sync.version_step() + "      - name: Build the release ZIP",
+            ),
+        )
+        self.assertNotIn(sync.version_step() + "      - name: Upload the validated ZIP", updated)
+
+    def test_the_sync_and_the_check_agree_on_the_named_build_step(self):
+        updated = sync.version_step_edit(self.NAMED)
+        self.assertIsNotNone(updated)
+        self.assertIsNone(sync.version_step_edit(updated))
+        (self.root / sync.RELEASE_WORKFLOW).write_text(updated, encoding="utf-8")
+        (self.root / sync.CI_WORKFLOW).unlink()
+        self.assertEqual(self.check(), [])
+
+
+class PrPinGateTest(unittest.TestCase):
+    """The sync inserts the release-prep ForeverCore pin gate into consumers' CI workflows."""
+
+    MULTILINE_LAST = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check changelog
+        env:
+          CHANGELOG_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$CHANGELOG_BASE" ]; then
+            python3 tools/changelog.py --check --base "origin/$CHANGELOG_BASE"
+          else
+            python3 tools/changelog.py --check
+          fi
+
+  workflows:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+"""
+
+    MULTILINE_FOLLOWED = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check changelog
+        env:
+          CHANGELOG_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$CHANGELOG_BASE" ]; then
+            python3 tools/changelog.py --check --base "origin/$CHANGELOG_BASE"
+          else
+            python3 tools/changelog.py --check
+          fi
+      # docs/api.md names every function Core/API.lua publishes.
+      - run: python3 tools/check_api_docs.py
+"""
+
+    SINGLE_LINE = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: python3 tools/changelog.py --check
+      - run: python3 tools/repo_rules.py
+"""
+
+    NO_CHANGELOG = """jobs:
+  lint:
+    steps:
+      - run: ruff check .
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.root = self.checkouts / "skillup-forever"
+        self.workflow = self.root / sync.CI_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+
+    def check(self):
+        return check_consumers.check_pr_pin_gate("skillup-forever", "main", self.checkouts)
+
+    def run_sync(self, dry_run=False):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sync.sync_pr_pin_gate(self.root, "skillup-forever", dry_run=dry_run)
+
+    def test_inserts_after_multiline_changelog_at_end_of_job_and_is_idempotent(self):
+        self.workflow.write_text(self.MULTILINE_LAST, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn("          fi\n" + sync.pr_pin_gate_step() + "\n  workflows:\n", text)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(self.run_sync(), 0)
+
+    def test_inserts_after_changelog_preserving_following_comment_and_step(self):
+        self.workflow.write_text(self.MULTILINE_FOLLOWED, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn(
+            "          fi\n"
+            + sync.pr_pin_gate_step()
+            + "      # docs/api.md names every function Core/API.lua publishes.\n"
+            + "      - run: python3 tools/check_api_docs.py\n",
+            text,
+        )
+        self.assertEqual(self.check(), [])
+
+    def test_inserts_after_single_line_changelog_step(self):
+        self.workflow.write_text(self.SINGLE_LINE, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn(
+            "      - run: python3 tools/changelog.py --check\n"
+            + sync.pr_pin_gate_step()
+            + "      - run: python3 tools/repo_rules.py\n",
+            text,
+        )
+        self.assertEqual(self.check(), [])
+
+    def test_dry_run_reports_without_writing(self):
+        self.workflow.write_text(self.SINGLE_LINE, encoding="utf-8")
+        self.assertEqual(self.run_sync(dry_run=True), 1)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), self.SINGLE_LINE)
+
+    def test_workflow_without_changelog_step_is_left_alone(self):
+        self.workflow.write_text(self.NO_CHANGELOG, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 0)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), self.NO_CHANGELOG)
+
+    def test_commented_out_gate_is_still_inserted(self):
+        commented = self.SINGLE_LINE.replace(
+            "      - run: python3 tools/repo_rules.py\n",
+            "      # - run: python3 -m tools.forever_tools.core_pin --latest-if-release-prep --base origin/main\n"
+            "      - run: python3 tools/repo_rules.py\n",
+        )
+        self.workflow.write_text(commented, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        self.assertEqual(self.check(), [])

@@ -53,6 +53,7 @@ L["Tracker background"] = "Hintergrund der Verfolgung"
 L["Tracker position"] = "Position der Verfolgung"
 L["Under the quest tracker"] = "Unter der Questverfolgung"
 L["Left of the quest tracker"] = "Links der Questverfolgung"
+L["Always stay under the quest tracker"] = "Immer unter der Questverfolgung bleiben" -- mt
 L["Attach to quest tracker"] = "An Questverfolgung anheften" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"Die gemeinsame Forever-Verfolgung steht unter der Questverfolgung, wenn dies an ist, und links davon, wenn es aus ist. Jedes Forever-Addon zeigt dieselbe Einstellung." -- mt
@@ -129,3 +130,7 @@ L["Copy %s: %s"] = "Kopie %s: %s" -- mt
 
 L["Drag to move the tabs."] = "Ziehen, um die Reiter zu verschieben."
 L["Reset tab position"] = "Reiterposition zurücksetzen"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore hat keine eigene Questliste mehr. Es blendet die Questverfolgung des Spiels oder von Questie nie aus und verschiebt sie auch nicht. Die Einstellung „%s“ jedes Addons positioniert nur die Forever-Spalte."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "Verwendung: /fcore report, /fcore debug, /fcore tracker"

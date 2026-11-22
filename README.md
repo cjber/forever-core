@@ -47,7 +47,7 @@ A third-party addon reads the members it may rely on, and the suite's published 
 ## Install
 
 Players never install it by hand: CurseForge installs it as a required dependency of every Forever addon. For a manual install, drop the
-`ForeverCore` folder in `Interface/AddOns`. `/fcore` prints the column's anchors, heights and combat state, which is
+`ForeverCore` folder in `Interface/AddOns`. `/fcore tracker` prints the column's anchors, heights and combat state, which is
 the same diagnostic the addons print from their own slash commands.
 
 ## Development
@@ -65,7 +65,7 @@ ForeverCore is built on the game's own UI and the work of other addon authors, l
 
 <!-- forever-credits:start -->
 
-Thanks to moshoutegong, TechnoHunter, user_efwsfml273dlvfm5, serb1tar, tommyekholm, Crypa7, Shuro, dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow, hknylmz, Flangemuffler and everyone who reported a bug or asked for a feature.
+Thanks to moshoutegong, TechnoHunter, user_efwsfml273dlvfm5, serb1tar, tommyekholm, Crypa7, Shuro, dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow, hknylmz, Flangemuffler, Raynfeathyr, I3igAl, Wavebreaker90 and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

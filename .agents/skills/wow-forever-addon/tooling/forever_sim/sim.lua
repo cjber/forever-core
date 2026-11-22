@@ -252,6 +252,49 @@ function Sim.new(opts)
 	if sim.G.RaidWarningFrame and not sim.G.DeadlyDebuffFrame then
 		sim.G.CreateFrame("Frame", "DeadlyDebuffFrame", sim.G.UIParent):Hide()
 	end
+	-- The full Edit Mode event updates systems whose frames are outside the simulated boot (buffs, cast bar,
+	-- and action bars). Model the tracker anchor from the event payload and keep the other native events intact.
+	local editMode, tracker = sim.G.EditModeManagerFrame, sim.G.ObjectiveTrackerFrame
+	if editMode and tracker then
+		local onEvent = editMode:GetScript("OnEvent")
+		editMode:SetScript("OnEvent", function(frame, event, ...)
+			if event ~= "EDIT_MODE_LAYOUTS_UPDATED" then
+				return onEvent(frame, event, ...)
+			end
+			-- A notification without a payload leaves the scenario's current tracker placement in place.
+			local layoutInfo = ...
+			if not layoutInfo then
+				return
+			end
+			-- As UpdateLayoutInfo does: the manager keeps the payload, its layouts the presets then the saved ones.
+			local layouts = sim.G.EditModePresetLayoutManager:GetCopyOfPresetLayouts()
+			for _, saved in ipairs(layoutInfo.layouts or {}) do
+				layouts[#layouts + 1] = saved
+			end
+			layoutInfo.layouts = layouts
+			frame.layoutInfo = layoutInfo
+			local layout = layouts[layoutInfo.activeLayout]
+			if not layout then
+				return
+			end
+			for _, system in ipairs(layout.systems) do
+				if system.system == tracker.system then
+					local scale = tracker:GetScale()
+					tracker:ClearAllPoints()
+					for _, anchor in ipairs({ system.anchorInfo, system.anchorInfo2 }) do
+						tracker:SetPoint(
+							anchor.point,
+							anchor.relativeTo,
+							anchor.relativePoint,
+							anchor.offsetX / scale,
+							anchor.offsetY / scale
+						)
+					end
+					break
+				end
+			end
+		end)
+	end
 	sim.events.watchRegistry(rawget(sim.G, "EventRegistry"))
 	sim.loader.bootstrap()
 	sim.createChat()

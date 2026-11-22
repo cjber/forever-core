@@ -51,6 +51,7 @@ L["Tracker background"] = "追踪栏背景"
 L["Tracker position"] = "追踪栏位置"
 L["Under the quest tracker"] = "任务追踪栏下方"
 L["Left of the quest tracker"] = "任务追踪栏左侧"
+L["Always stay under the quest tracker"] = "始终保持在任务追踪栏下方" -- mt
 L["Attach to quest tracker"] = "附着到任务追踪栏" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"开启时，共享的 Forever 追踪栏位于任务追踪栏下方；关闭时位于其左侧。所有 Forever 插件都显示同一设置。" -- mt
@@ -127,3 +128,7 @@ L["Copy %s: %s"] = "副本 %s：%s"
 
 L["Drag to move the tabs."] = "拖动以移动标签页。" -- mt
 L["Reset tab position"] = "重置标签页位置" -- mt
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore 已不再提供自己的任务列表。它从不会隐藏或移动游戏自带的任务追踪栏或 Questie 的任务追踪栏。各插件的“%s”设置只会调整 Forever 栏的位置。"
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "用法：/fcore report, /fcore debug, /fcore tracker"

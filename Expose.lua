@@ -1,6 +1,6 @@
 -- The core's public face, loaded after the shared files so it can publish what they built. Every Forever addon reads
 -- ForeverCore for the modules it shares and calls ForeverCore.Register for the services that belong to it alone, and
--- /fcore prints the tracker's diagnostic while /forever debug drives the shared log.
+-- /fcore tracker prints the tracker's diagnostic while /forever debug drives the shared log.
 
 local _, ns = ...
 
@@ -407,22 +407,33 @@ if SlashCmdList ~= nil then
 	SlashCmdList.FOREVERCORE = function(message)
 		local text = tostring(message or "")
 		local command, argument = text:match("^%s*(%S*)%s*(.*)$")
-		command = command or ""
-		if command:lower() == "report" then
+		command = (command or ""):lower()
+		if command == "report" then
 			for _, line in ipairs(StartupReport(argument)) do
 				print(line)
 			end
 			return
 		end
-		if command:lower() == "debug" then
+		if command == "debug" then
 			if type(ns.DebugCommand) == "function" then
-				ns.DebugCommand(text:match("^%s*%S+%s*(.*)$"))
+				ns.DebugCommand(argument)
 			end
 			return
 		end
-		local host = ns.TrackerHost
-		if host ~= nil and host.Debug ~= nil then
-			print(host.Debug())
+		if command == "tracker" then
+			local host = ns.TrackerHost
+			if host ~= nil and host.Debug ~= nil then
+				print(host.Debug())
+			end
+			return
 		end
+		local L = ns.L
+		if command == "quests" or command == "quest" then
+			local note = "ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's"
+				.. " quest tracker. Each addon's %s setting only places the Forever column."
+			print(L[note]:format(L["Attach to quest tracker"]))
+			return
+		end
+		print(L["Usage: /fcore report, /fcore debug, /fcore tracker"])
 	end
 end

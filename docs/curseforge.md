@@ -22,7 +22,7 @@ Free, with nothing locked behind it. If it saves you time, you can [sponsor me o
 
 <!-- forever-credits:start -->
 
-Thanks to moshoutegong, TechnoHunter, user_efwsfml273dlvfm5, serb1tar, tommyekholm, Crypa7, Shuro, dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow, hknylmz, Flangemuffler and everyone who reported a bug or asked for a feature.
+Thanks to moshoutegong, TechnoHunter, user_efwsfml273dlvfm5, serb1tar, tommyekholm, Crypa7, Shuro, dokiz, user_vyffn82yvmu3bflh, user_8vheexbirr5v6h4a, Laddylucks, thirex, axejess, p1tu, Mirades96, silhouetteone, kowakowa93, xh43k, cotijelucie, iPulse, _spada, Darkwavez76, Naburiel, MrFIXlT, deathmvp1, berserkerlxl, Alex21xx, Torpdotorgx, dryzee, procque, Fareed, ZiiMs, Bolton_wow, hknylmz, Flangemuffler, Raynfeathyr, I3igAl, Wavebreaker90 and everyone who reported a bug or asked for a feature.
 
 <!-- forever-credits:end -->
 

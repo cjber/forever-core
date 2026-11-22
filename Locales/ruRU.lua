@@ -55,6 +55,7 @@ L["Tracker background"] = "Фон отслеживания"
 L["Tracker position"] = "Положение отслеживания"
 L["Under the quest tracker"] = "Под списком заданий"
 L["Left of the quest tracker"] = "Слева от списка заданий"
+L["Always stay under the quest tracker"] = "Всегда оставаться под списком заданий" -- mt
 L["Attach to quest tracker"] = "Прикрепить к списку заданий" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"Когда включено, общий трекер Forever стоит под списком заданий, а когда выключено, слева от него. Эта настройка одна для всех аддонов Forever." -- mt
@@ -138,3 +139,8 @@ L["Copy %s: %s"] = "Копия %s: %s" -- mt
 
 L["Drag to move the tabs."] = "Перетащите, чтобы переместить вкладки."
 L["Reset tab position"] = "Сбросить положение вкладок"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"У ForeverCore больше нет собственного списка заданий. Он никогда не скрывает и не перемещает список отслеживаемых заданий игры или Questie. Настройка «%s» в каждом аддоне задаёт только положение колонки Forever."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] =
+	"Использование: /fcore report, /fcore debug, /fcore tracker"

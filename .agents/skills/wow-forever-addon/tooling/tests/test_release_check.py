@@ -31,6 +31,9 @@ def job(name, conclusion):
     return {"name": name, "conclusion": conclusion}
 
 
+NO_PROOF = ".visual-proof.json: missing"
+
+
 class VisualProofSkipTest(unittest.TestCase):
     """`--skip-visual-proof` waives one named job, and nothing else."""
 
@@ -127,9 +130,17 @@ class VisualProofSkipTest(unittest.TestCase):
             self.assertEqual(len(release_check.jobs("cjber/forever-core", 7)), 1)
         self.assertEqual(requests[0][-1], "repos/cjber/forever-core/actions/runs/7/jobs?per_page=100")
 
-    def release(self, arguments, runs, jobs, statuses):
-        """Run main over recorded API answers, returning its output or the reason it exited."""
-        answers = [json.dumps([{"workflow_runs": runs}]), json.dumps([{"jobs": jobs}]), json.dumps([statuses])]
+    def release(self, arguments, runs, jobs, statuses, proof=NO_PROOF):
+        """Run main over recorded API answers, returning its output or the reason it exited.
+
+        `jobs` is None for a run whose jobs are never read, and `proof` is what `proof_refusal` says of the checkout:
+        a verified proof (None) reads no statuses.
+        """
+        answers = [json.dumps([{"workflow_runs": runs}])]
+        if jobs is not None:
+            answers.append(json.dumps([{"jobs": jobs}]))
+        if proof is not None:
+            answers.append(json.dumps([statuses]))
         # The releases listing: no GitHub release carries v1.0.0 yet.
         answers.append(json.dumps([[]]))
         environ = {
@@ -141,6 +152,7 @@ class VisualProofSkipTest(unittest.TestCase):
         with (
             patch.dict("os.environ", environ),
             patch.object(release_check, "curseforge_projects", return_value=[]),
+            patch.object(release_check, "proof_refusal", return_value=proof),
             patch.object(release_check.subprocess, "check_output", side_effect=answers) as request,
             contextlib.redirect_stdout(io.StringIO()) as out,
             contextlib.redirect_stderr(io.StringIO()),
@@ -179,7 +191,25 @@ class VisualProofSkipTest(unittest.TestCase):
             jobs,
             [{"context": "headless-smoke", "state": "failure", "description": "2 Lua errors"}],
         )
-        self.assertEqual(refusal, "Release blocked: headless-smoke on " + COMMIT + " is failure: 2 Lua errors")
+        self.assertEqual(
+            refusal,
+            f"Release blocked: headless-smoke on {COMMIT} is failure: 2 Lua errors; "
+            f"the committed visual proof does not stand in for it: {NO_PROOF}",
+        )
+
+    def test_a_verified_proof_releases_without_reading_the_smoke(self):
+        refusal, request, out = self.release([], [run()], None, [], proof=None)
+        self.assertIsNone(refusal)
+        self.assertEqual(request.call_count, 2, "the runs and the releases listing, no statuses")
+        self.assertIn(".visual-proof.json proves the build", out)
+
+    def test_a_proof_that_does_not_verify_falls_back_to_the_smoke(self):
+        refusal, request, out = self.release(
+            [], [run()], None, [{"context": "headless-smoke", "state": "success"}], proof="visual proof selftest failed"
+        )
+        self.assertIsNone(refusal)
+        self.assertEqual(request.call_count, 3)
+        self.assertIn("headless-smoke passed", out)
 
     def test_main_refuses_another_failed_job_even_with_the_flag(self):
         failing = run(conclusion="failure")

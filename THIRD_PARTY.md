@@ -74,6 +74,9 @@ One row per shipped contribution: a player with five shipped items has five rows
 | Bolton_wow | Map arrows open the destination map again | Asked on CurseForge (#486) |
 | hknylmz | Objective Tracker drags in Edit Mode without errors | Discord; #1027 |
 | Flangemuffler | Objective Tracker drags in Edit Mode without errors | CurseForge; thread 8757056; #1027 |
+| Raynfeathyr | The quest tracker moves freely with the Forever column | CurseForge; thread 8755423; #926 |
+| I3igAl | The Forever column finds Questie's tracker after login | CurseForge; thread 8748495; #928 |
+| Wavebreaker90 | /fcore quests explains the quest tracker | CurseForge; thread 8763283; #926 |
 
 ## Inspired by
 

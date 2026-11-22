@@ -32,6 +32,12 @@ The proof separates what the checkout supplies from what a release installs:
 Anything the packager does to shipped bytes beyond those two rules depends on the build (alpha versus release,
 the Core pin, a localization export) and is refused rather than hashed.
 
+`checks` is what the release smoke would have found on that same session: the `/forever selftest` surfaces and the
+ones that failed, each linked addon folder's Lua error count, and the released addons a core proof links beside it
+that never registered. `verify` fails a proof whose checks failed; `proof_problems(..., release=True)` also requires
+them, so a release takes a proof whose contents match its commit in place of a `headless-smoke` status. The TOC
+`## Version:` line is outside both digests, so a release preparation's version bump keeps the proof valid.
+
 The runtime graph is every TOC under the checkout, each addon's auto-loaded `Bindings.xml` and the XML script
 graph it names (the client reads the file without a TOC entry, WFA-37), and the artwork. Every TOC addon
 contributes, so a second addon the checkout holds (a library with its own TOC) cannot escape the identity.
@@ -50,7 +56,8 @@ instead of hashed, whether or not the policy plain-copies it. `compare_installed
 a mapped checkout must use `compare_package` on the packager's release root, which also checks the declared external
 addon folders without claiming their bytes. An addon that embeds core (`## X-Forever-Core-Embed: 1`) installs the
 embed step's output, so the proof compares the installed folder with the checkout's tracked files after
-that same step at the same pin; `input_digest` and `candidate` stay the checkout's own, and the pin binds the copy.
+that same step using the ForeverCore source supplied with `--core`. The comparison reports the checkout candidate
+for proof verification and an embedded candidate that hashes the core files actually installed.
 """
 
 import argparse
@@ -63,7 +70,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.request import Request, urlopen
 
-from . import pkgmeta, toc
+from . import core_archive, core_pin, embed, pkgmeta, toc
 
 PROOF = Path(".visual-proof.json")
 SHA = re.compile(r"/raw/[0-9a-f]{40}/", re.IGNORECASE)
@@ -100,6 +107,310 @@ PACKAGER_TOKEN = re.compile(
 ARTIFACTS = ("release-package", "source-tree")
 # A mapped package's keys already name the release root; the tag keeps that hash from ever equalling a legacy one.
 MAPPED_DOMAIN = b"forever-mapped-candidate-v1\0"
+EMBEDDED_BUNDLE = embed.PREFIX + "bundle.json"
+EMBEDDED_SHIMS = frozenset({embed.HOST_BEGIN, embed.HOST_RUN, embed.READY})
+BEGIN_STAMP = re.compile(
+    r'host\.ForeverCoreCopy = ForeverCoreLoader\.Begin\(addon, ([0-9]+), "([0-9a-f]{64})"(?:, [1-9][0-9]*)?\)'
+)
+HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class _EmbeddedBuild:
+    folder: str
+    version: str
+    source_digest: str
+    saved_variable: str
+    root_toc: str
+    toc_bytes: bytes
+    wrapped: frozenset[str]
+    manifest: dict
+
+
+def _is_embedded_path(name: str) -> bool:
+    return name.startswith(embed.PREFIX) or name in EMBEDDED_SHIMS
+
+
+def _has_embedded_artifacts(root: Path) -> bool:
+    return (root / embed.PREFIX).exists() or any((root / name).exists() for name in EMBEDDED_SHIMS)
+
+
+def _unwrap_host_chunk(data: bytes) -> bytes | None:
+    """Strip `embed.wrap`'s exact host-chunk wrapper from LF-normalised Lua bytes; None when not wrapped."""
+    bom = data.startswith(embed.BOM)
+    body = data[len(embed.BOM) :] if bom else data
+    if (
+        len(body) >= len(embed.HEADER) + len(embed.FOOTER)
+        and body.startswith(embed.HEADER)
+        and body.endswith(embed.FOOTER)
+    ):
+        return (embed.BOM if bom else b"") + body[len(embed.HEADER) : -len(embed.FOOTER)]
+    return None
+
+
+def _expected_core_loads(source_order: list[str]) -> list[str]:
+    return [
+        embed.PREFIX + source_order[0],
+        embed.PREFIX + "Begin.lua",
+        *(embed.PREFIX + name for name in source_order[1:]),
+        embed.PREFIX + "End.lua",
+    ]
+
+
+def _canonical_embedded_source_toc(toc_bytes: bytes) -> bytes:
+    """Canonical consumer TOC bytes matching `embed.transform`'s formatting."""
+    text = toc_bytes.decode("utf-8")
+    headers = [line for line in text.splitlines() if line.startswith("##")]
+    loads = embed._loads(text)
+    return ("\n".join(headers) + "\n\n" + "\n".join(name.replace("/", "\\") for name in loads) + "\n").encode("utf-8")
+
+
+def _unwrap_embedded_toc(toc_bytes: bytes, source_order: list[str]) -> tuple[bytes, list[str]]:
+    """Strip the core and host load entries `embed.transform` adds around the consumer's TOC loads."""
+    text = toc_bytes.decode("utf-8")
+    headers = [line for line in text.splitlines() if line.startswith("##")]
+    order = embed._loads(text)
+    rebuilt = "\n".join(headers) + "\n\n" + "\n".join(name.replace("/", "\\") for name in order) + "\n"
+    if rebuilt != text:
+        raise ValueError("embedded TOC does not match embed.transform formatting")
+    prefix = [*_expected_core_loads(source_order), embed.HOST_BEGIN]
+    suffix = [embed.HOST_RUN, embed.READY]
+    if len(order) < len(prefix) + len(suffix) or order[: len(prefix)] != prefix or order[-len(suffix) :] != suffix:
+        raise ValueError("embedded TOC load order disagrees with bundle.json")
+    consumer_loads = order[len(prefix) : -len(suffix)]
+    canonical = (
+        "\n".join(headers) + "\n\n" + "\n".join(name.replace("/", "\\") for name in consumer_loads) + "\n"
+    ).encode("utf-8")
+    return canonical, consumer_loads
+
+
+def _parse_bundle_manifest(root: Path) -> dict:
+    bundle_path = root / EMBEDDED_BUNDLE
+    try:
+        manifest = json.loads(bundle_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid JSON ({error})") from None
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: must be a JSON object")
+    if manifest.get("schema") != 1 or manifest.get("standalone") is not False:
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid embedded bundle schema")
+    version = manifest.get("version")
+    if not isinstance(version, str):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: missing version")
+    major, minor, patch = core_archive.version(version)
+    build = major * 1000000 + minor * 1000 + patch
+    digest = manifest.get("source_digest")
+    if (
+        minor >= 1000
+        or patch >= 1000
+        or manifest.get("build") != build
+        or not isinstance(digest, str)
+        or not HEX64.fullmatch(digest)
+    ):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid version, build or source_digest")
+    folder = manifest.get("folder")
+    saved_variable = manifest.get("saved_variable")
+    if not all(
+        isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value) for value in (folder, saved_variable)
+    ):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid folder or saved_variable")
+    source_order = manifest.get("source_order")
+    if (
+        not isinstance(source_order, list)
+        or not source_order
+        or not all(isinstance(item, str) and item for item in source_order)
+    ):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid source_order")
+    wrapped = manifest.get("wrapped")
+    if not isinstance(wrapped, list) or not all(isinstance(item, str) and item for item in wrapped):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid wrapped file list")
+    files = manifest.get("files")
+    if (
+        not isinstance(files, dict)
+        or not files
+        or not all(isinstance(k, str) and isinstance(v, str) and HEX64.fullmatch(v) for k, v in files.items())
+    ):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid files hash map")
+    for name in files:
+        if name == EMBEDDED_BUNDLE or (name != embed.READY and not name.startswith(embed.PREFIX)):
+            raise ValueError(f"{EMBEDDED_BUNDLE}: unexpected file entry {name}")
+    required = {
+        embed.READY,
+        embed.PREFIX + "Begin.lua",
+        embed.PREFIX + "End.lua",
+        *(embed.PREFIX + item for item in source_order),
+    }
+    if any(
+        PurePosixPath(name).as_posix() != name or ".." in PurePosixPath(name).parts or "\\" in name for name in files
+    ):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: invalid embedded file path")
+    if not required.issubset(files):
+        raise ValueError(f"{EMBEDDED_BUNDLE}: missing required embedded core entries")
+    return manifest
+
+
+def _matches_bundle_hash(name: str, data: bytes, expected_sha: str) -> bool:
+    if hashlib.sha256(data).hexdigest() == expected_sha:
+        return True
+    if Path(name).suffix in TEXT_SUFFIXES:
+        return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest() == expected_sha
+    return False
+
+
+def _verify_embedded_files(
+    root: Path, manifest: dict, expected_wrapped: list[str], *, core: Path | None = None
+) -> tuple[set[str], set[str], set[str]]:
+    """Compare embedded core files and host shims in `root` against `manifest` (or a `core` checkout)."""
+    missing: set[str] = set()
+    differing: set[str] = set()
+    extra: set[str] = set()
+
+    begin_name = embed.PREFIX + "Begin.lua"
+    begin_path = root / begin_name
+    if begin_path.is_file():
+        try:
+            begin_text = begin_path.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            differing.add(begin_name)
+        else:
+            stamped = [match.groups() for match in map(BEGIN_STAMP.fullmatch, begin_text.splitlines()) if match]
+            if stamped != [(str(manifest["build"]), manifest["source_digest"])]:
+                differing.add(begin_name)
+
+    prefix_root = root / embed.PREFIX
+    actual_files: dict[str, Path] = {}
+    if prefix_root.is_dir():
+        for path in prefix_root.rglob("*"):
+            if path.is_file():
+                name = path.relative_to(root).as_posix()
+                if name != EMBEDDED_BUNDLE:
+                    actual_files[name] = path
+    ready_path = root / embed.READY
+    if ready_path.is_file():
+        actual_files[embed.READY] = ready_path
+
+    if core is not None:
+        builder = embed._builder(core)
+        planned = builder.plan(core, manifest["folder"], manifest["version"], manifest["saved_variable"], b"")
+        planned_manifest = json.loads(planned[EMBEDDED_BUNDLE])
+        if (
+            manifest["source_digest"] != planned_manifest["source_digest"]
+            or manifest["source_order"] != planned_manifest["source_order"]
+        ):
+            differing.add(EMBEDDED_BUNDLE)
+        expected_bytes = {
+            name: data
+            for name, data in planned.items()
+            if (name.startswith(embed.PREFIX) and name != EMBEDDED_BUNDLE) or name == embed.READY
+        }
+        if manifest["files"] != {name: hashlib.sha256(data).hexdigest() for name, data in expected_bytes.items()}:
+            differing.add(EMBEDDED_BUNDLE)
+        missing |= set(expected_bytes) - set(actual_files)
+        extra |= set(actual_files) - set(expected_bytes)
+        for name in set(expected_bytes) & set(actual_files):
+            path = actual_files[name]
+            if _shipped_bytes(path, path.read_bytes()) != _shipped_bytes(path, expected_bytes[name]):
+                differing.add(name)
+    else:
+        expected_hashes = manifest["files"]
+        missing |= set(expected_hashes) - set(actual_files)
+        extra |= set(actual_files) - set(expected_hashes)
+        for name in set(expected_hashes) & set(actual_files):
+            if not _matches_bundle_hash(name, actual_files[name].read_bytes(), expected_hashes[name]):
+                differing.add(name)
+
+    expected_shims = {
+        embed.HOST_BEGIN: embed.BEGIN_SOURCE,
+        embed.HOST_RUN: embed.RUN_SOURCE.replace(b"__WRAPPED__", str(len(expected_wrapped)).encode()),
+    }
+    for name, expected_data in expected_shims.items():
+        path = root / name
+        if not path.is_file():
+            missing.add(name)
+        elif _shipped_bytes(path, path.read_bytes()) != _shipped_bytes(path, expected_data):
+            differing.add(name)
+
+    return missing, differing, extra
+
+
+def _read_embedded_build(root: Path) -> _EmbeddedBuild | None:
+    """Validate and unwrap an embedded-core build folder; None when `root` has no embedded copy."""
+    root = root.resolve()
+    if not (root / EMBEDDED_BUNDLE).is_file():
+        if _has_embedded_artifacts(root):
+            raise ValueError(f"{EMBEDDED_BUNDLE}: missing for embedded ForeverCore")
+        return None
+    manifest = _parse_bundle_manifest(root)
+    missing, differing, extra = _verify_embedded_files(root, manifest, manifest["wrapped"])
+    problems = [
+        *(f"{name}: missing from embedded ForeverCore" for name in sorted(missing)),
+        *(f"{name}: disagrees with embedded ForeverCore bundle" for name in sorted(differing)),
+        *(f"{name}: unexpected file in embedded ForeverCore" for name in sorted(extra)),
+    ]
+    if problems:
+        raise ValueError("; ".join(problems))
+    toc_name = f"{manifest['folder']}.toc"
+    toc_path = root / toc_name
+    if not toc_path.is_file():
+        raise ValueError(f"{toc_name}: missing root TOC for embedded ForeverCore")
+    other_tocs = sorted(path.name for path in root.glob("*.toc") if path.name != toc_name)
+    if other_tocs:
+        raise ValueError(f"{toc_name}: unexpected sibling root TOCs: {', '.join(other_tocs)}")
+    raw_toc = toc_path.read_bytes()
+    if not core_pin.embeds(raw_toc):
+        raise ValueError(f"{toc_name}: embedded ForeverCore present without ## {embed.EMBED_FIELD}: 1")
+    fields = core_pin.toc_fields(raw_toc)
+    saved = [item.strip() for item in fields.get("savedvariables", "").split(",") if item.strip()]
+    if saved != [manifest["saved_variable"]]:
+        raise ValueError(f"{toc_name}: ## SavedVariables disagrees with {EMBEDDED_BUNDLE}")
+    try:
+        toc_bytes, consumer_loads = _unwrap_embedded_toc(_shipped_bytes(toc_path, raw_toc), manifest["source_order"])
+    except ValueError as error:
+        raise ValueError(f"{toc_name}: {error}") from None
+    try:
+        actual_wrapped = embed._lua_graph(root, consumer_loads)
+    except embed.EmbedError as error:
+        raise ValueError(f"{toc_name}: {error}") from None
+    if actual_wrapped != manifest["wrapped"]:
+        raise ValueError(f"{EMBEDDED_BUNDLE}: wrapped file list disagrees with {toc_name} load graph")
+    for name in manifest["wrapped"]:
+        path = root / name
+        if _unwrap_host_chunk(_shipped_bytes(path, path.read_bytes())) is None:
+            raise ValueError(f"{name}: missing expected ForeverCoreHostChunk wrapper")
+    return _EmbeddedBuild(
+        folder=manifest["folder"],
+        version=manifest["version"],
+        source_digest=manifest["source_digest"],
+        saved_variable=manifest["saved_variable"],
+        root_toc=toc_name,
+        toc_bytes=toc_bytes,
+        wrapped=frozenset(manifest["wrapped"]),
+        manifest=manifest,
+    )
+
+
+def _source_embed_info(source: Path) -> tuple[str, str, str, list[str], str | None] | None:
+    """Return `(toc_name, folder, saved_variable, wrapped_lua, pin)` when `source` opts into embedding."""
+    try:
+        toc_path = embed._toc_path(source)
+    except embed.EmbedError:
+        return None
+    toc_text = toc_path.read_text(encoding="utf-8-sig")
+    if not core_pin.embeds(toc_text):
+        return None
+    if any(path.name != toc_path.name for path in source.glob("*.toc")):
+        return None
+    fields = core_pin.toc_fields(toc_text)
+    saved = [item.strip() for item in fields.get("savedvariables", "").split(",") if item.strip()]
+    if len(saved) != 1:
+        return None
+    try:
+        wrapped = embed._lua_graph(source, embed._loads(toc_text))
+    except embed.EmbedError:
+        return None
+    pin_file = source / embed.PIN_PATH
+    pin = pin_file.read_text(encoding="utf-8").strip() if pin_file.is_file() else None
+    return toc_path.name, toc_path.stem, saved[0], wrapped, pin
 
 
 def changed_files(base: str) -> list[str]:
@@ -235,7 +546,7 @@ def _present_runtime(root: Path) -> dict[str, Path]:
     return files
 
 
-def packaged_runtime_files(root: Path) -> dict[str, Path]:
+def packaged_runtime_files(root: Path, *, embedded: _EmbeddedBuild | None = None) -> dict[str, Path]:
     """The runtime files a release installs at the addon's folder, keyed by their installed path.
 
     A checkout's `.pkgmeta` decides, with the packager's own `ignore` rules. A package extraction has no
@@ -243,6 +554,8 @@ def packaged_runtime_files(root: Path) -> dict[str, Path]:
     ignored file the TOC/XML graph loads would leave a package that cannot run, so it is refused.
     """
     root = root.resolve()
+    if embedded is None:
+        embedded = _read_embedded_build(root)
     files = _runtime_map(root)
     manifest = pkgmeta.read(root)
     if manifest is not None:
@@ -251,6 +564,8 @@ def packaged_runtime_files(root: Path) -> dict[str, Path]:
             raise ValueError("; ".join(excluded))
         files = {name: path for name, path in files.items() if manifest.keeps(name)}
     files.update(_script_map(root, manifest))
+    if embedded is not None:
+        files = {name: path for name, path in files.items() if not _is_embedded_path(name)}
     layout = manifest.layout(root) if manifest is not None else None
     if layout is not None:
         files = {name: path for name, path in files.items() if not layout.in_external_source(name)}
@@ -263,13 +578,15 @@ def packaged_runtime_files(root: Path) -> dict[str, Path]:
     return files
 
 
-def _selected_runtime(root: Path) -> dict[str, Path]:
+def _selected_runtime(root: Path, *, embedded: _EmbeddedBuild | None = None) -> dict[str, Path]:
     """The shipped runtime without refusing an excluded load: `unsupported` reports that before this is read."""
     files = _runtime_map(root)
     manifest = pkgmeta.read(root)
     if manifest is not None:
         files = {name: path for name, path in files.items() if manifest.keeps(name)}
     files.update(_script_map(root, manifest))
+    if embedded is not None:
+        files = {name: path for name, path in files.items() if not _is_embedded_path(name)}
     return files
 
 
@@ -281,12 +598,37 @@ def _shipped_bytes(path: Path, data: bytes) -> bytes:
     return SHIPPED_VERSION.sub(b"## Version: <packager-version>", data) if path.suffix == ".toc" else data
 
 
+def _canonical_bytes(
+    name: str,
+    path: Path,
+    data: bytes,
+    *,
+    embedded: _EmbeddedBuild | None = None,
+    embedded_prefix: str = "",
+) -> bytes:
+    data = _shipped_bytes(path, data)
+    if embedded is not None:
+        local = name[len(embedded_prefix) :] if embedded_prefix and name.startswith(embedded_prefix) else name
+        if not embedded_prefix or name.startswith(embedded_prefix):
+            if local == embedded.root_toc:
+                return embedded.toc_bytes
+            if local in embedded.wrapped:
+                unwrapped = _unwrap_host_chunk(data)
+                if unwrapped is None:
+                    raise ValueError(f"{name}: missing expected ForeverCoreHostChunk wrapper")
+                return unwrapped
+        return data
+    if path.suffix == ".toc" and core_pin.embeds(data):
+        return _canonical_embedded_source_toc(data)
+    return data
+
+
 def _digest(files: dict[str, Path], canonical, domain: bytes = b"") -> str:
     digest = hashlib.sha256()
     if domain:
         digest.update(domain)
     for name in sorted(files):
-        data = canonical(files[name], files[name].read_bytes())
+        data = canonical(name, files[name], files[name].read_bytes())
         key = name.encode()
         digest.update(len(key).to_bytes(4, "big"))
         digest.update(key)
@@ -309,25 +651,36 @@ def input_digest(root: Path) -> str:
             files[name] = policy
     return _digest(
         files,
-        lambda path, data: VERSION_LINE.sub(b"## Version: <packager-version>", data) if path.suffix == ".toc" else data,
+        lambda _name, path, data: (
+            VERSION_LINE.sub(b"## Version: <packager-version>", data) if path.suffix == ".toc" else data
+        ),
     )
 
 
 def candidate_digest(root: Path) -> str:
     """The canonical packaged runtime: what a release zip installs at the addon's folder.
 
-    Run it on a checkout to derive the installed identity, and on a package extraction to check one. A checkout
+    For an embedded extraction the digest also includes its bundle files. The checkout digest describes consumer
+    inputs, with the Core pin tracked by `input_digest`. A checkout
     whose `.pkgmeta` relocates a shipped runtime file, drops one the graph loads, or carries a TOC or packager
     substitution the canonical form cannot derive raises `ValueError` instead of naming bytes it would be guessing.
     """
     root = root.resolve()
-    problems = unsupported(root) + unmodeled_directives(root)
+    embedded = _read_embedded_build(root)
+    problems = unsupported(root) + unmodeled_directives(root, embedded=embedded)
     if problems:
         raise ValueError("; ".join(problems))
     manifest = pkgmeta.read(root)
     layout = manifest.layout(root) if manifest is not None else None
     domain = MAPPED_DOMAIN if layout is not None and layout.mapped else b""
-    return _digest(packaged_runtime_files(root), _shipped_bytes, domain)
+    files = packaged_runtime_files(root, embedded=embedded)
+    if embedded is not None:
+        files.update({name: root / name for name in embedded.manifest["files"]})
+    return _digest(
+        files,
+        lambda name, path, data: _canonical_bytes(name, path, data, embedded=embedded),
+        domain,
+    )
 
 
 def _case_duplicate_entries(release_root: Path, layout: pkgmeta.Layout) -> list[str]:
@@ -374,11 +727,25 @@ def package_candidate_digest(release_root: Path, layout: pkgmeta.Layout) -> str:
     for folder, _ in layout.owned:
         if _case_dir(release_root, folder) is None:
             raise ValueError(f"{folder}: missing from the package root {release_root}")
+    main_dir = _case_dir(release_root, layout.package)
+    embedded = _read_embedded_build(main_dir) if main_dir is not None else None
+    prefix = f"{layout.package}/"
     files = _package_files(release_root, layout)
+    if embedded is not None:
+        files = {
+            name: path
+            for name, path in files.items()
+            if not (name.startswith(prefix) and _is_embedded_path(name[len(prefix) :]))
+        }
+        files.update({f"{prefix}{name}": main_dir / name for name in embedded.manifest["files"]})
     problems = _casefold_problems(files)
     if problems:
         raise ValueError("; ".join(problems))
-    return _digest(files, _shipped_bytes, MAPPED_DOMAIN)
+    return _digest(
+        files,
+        lambda name, path, data: _canonical_bytes(name, path, data, embedded=embedded, embedded_prefix=prefix),
+        MAPPED_DOMAIN,
+    )
 
 
 def _relocated_loads(root: Path, layout: pkgmeta.Layout, manifest: pkgmeta.Manifest) -> list[str]:
@@ -441,7 +808,7 @@ def unsupported(root: Path) -> list[str]:
     return problems
 
 
-def unmodeled_directives(root: Path) -> list[str]:
+def unmodeled_directives(root: Path, *, embedded: _EmbeddedBuild | None = None) -> list[str]:
     """Shipped runtime text files carrying a packager change this checker cannot derive.
 
     The candidate accounts for the line-ending filter and the TOC project version. Any other token changes the
@@ -452,7 +819,7 @@ def unmodeled_directives(root: Path) -> list[str]:
     """
     root = root.resolve()
     problems = []
-    for name, path in sorted(_selected_runtime(root).items()):
+    for name, path in sorted(_selected_runtime(root, embedded=embedded).items()):
         if path.suffix not in TEXT_SUFFIXES:
             continue
         raw = path.read_bytes()
@@ -467,7 +834,7 @@ def unmodeled_directives(root: Path) -> list[str]:
                     f"{name}: TOC has a '## Interface-' line, which the packager removes and the candidate digest "
                     "cannot model"
                 )
-        data = _shipped_bytes(path, raw)
+        data = _canonical_bytes(name, path, raw, embedded=embedded)
         for token in sorted({match.group().decode() for match in PACKAGER_TOKEN.finditer(data)}):
             problems.append(f"{name}: packager substitution {token} is not modelled by the candidate digest")
     return problems
@@ -483,7 +850,8 @@ class Comparison:
     source-tree install's store icon) is reported and harmless. A script the source holds and the policy keeps is
     shipped even when nothing loads it, so it is compared byte for byte rather than reported as an extra.
     Development trees and packaged non-runtime files (a README, a licence) are not extras. Missing or differing
-    shipped files also make the two non-equivalent.
+    shipped files also make the two non-equivalent. When the installed folder carries an embedded ForeverCore copy,
+    `embedded_core` reports its version, source digest and embedded candidate on a match.
     """
 
     equivalent: bool
@@ -491,17 +859,96 @@ class Comparison:
     missing: tuple[str, ...]
     differing: tuple[str, ...]
     extra: tuple[str, ...]
+    embedded_core: dict[str, str] | None = None
 
 
-def compare_installed(source: Path, installed: Path) -> Comparison:
+def _compare_embedded_folder(
+    source: Path,
+    installed: Path,
+    shipped_local: dict[str, Path],
+    present_local: dict[str, Path],
+    *,
+    core: Path | None = None,
+) -> tuple[set[str], set[str], set[str], set[str], dict[str, str] | None] | None:
+    """Compare one embedded-core build folder against `source`; None when standard comparison should run."""
+    if not _has_embedded_artifacts(installed):
+        return None
+    source_embed = _source_embed_info(source)
+    if source_embed is None:
+        return set(), {EMBEDDED_BUNDLE}, set(), set(), None
+    toc_name, folder, saved_variable, expected_wrapped, source_pin = source_embed
+    try:
+        manifest = _parse_bundle_manifest(installed)
+    except ValueError:
+        return set(), {EMBEDDED_BUNDLE}, set(), set(), None
+    embedded_core = {"version": manifest["version"], "source_digest": manifest["source_digest"]}
+    emb_missing, emb_differing, emb_extra = _verify_embedded_files(installed, manifest, expected_wrapped, core=core)
+    if (
+        manifest["folder"] != folder
+        or manifest["saved_variable"] != saved_variable
+        or manifest["wrapped"] != expected_wrapped
+    ):
+        emb_differing.add(EMBEDDED_BUNDLE)
+    if source_pin is not None and core_archive.tag(manifest["version"]) != source_pin:
+        emb_differing.add(EMBEDDED_BUNDLE)
+
+    present_consumer = {name: path for name, path in present_local.items() if not _is_embedded_path(name)}
+    consumer_missing = set(shipped_local) - set(present_consumer)
+    consumer_extra = {
+        name
+        for name in set(present_consumer) - set(shipped_local)
+        if not (
+            PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES and name.split("/", 1)[0] in NON_RUNTIME_SCRIPT_ROOTS
+        )
+    }
+    wrapped_set = set(expected_wrapped)
+    consumer_differing: set[str] = set()
+    for name in sorted(set(shipped_local) & set(present_consumer)):
+        source_bytes = _shipped_bytes(shipped_local[name], shipped_local[name].read_bytes())
+        installed_bytes = _shipped_bytes(present_consumer[name], present_consumer[name].read_bytes())
+        if name == toc_name:
+            expected_toc = _canonical_embedded_source_toc(source_bytes)
+            try:
+                actual_toc, _ = _unwrap_embedded_toc(installed_bytes, manifest["source_order"])
+            except ValueError:
+                consumer_differing.add(name)
+            else:
+                if actual_toc != expected_toc:
+                    consumer_differing.add(name)
+        elif name in wrapped_set:
+            unwrapped = _unwrap_host_chunk(installed_bytes)
+            if unwrapped is None or unwrapped != source_bytes:
+                consumer_differing.add(name)
+        elif source_bytes != installed_bytes:
+            consumer_differing.add(name)
+    if not (consumer_missing or consumer_differing or emb_missing or emb_differing or emb_extra) and not any(
+        PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in consumer_extra
+    ):
+        if core is None:
+            raise ValueError("embedded ForeverCore comparison needs --core pointing to the source used to build it")
+        embedded_core["candidate"] = candidate_digest(installed)
+    return (
+        consumer_missing | emb_missing,
+        consumer_differing | emb_differing,
+        consumer_extra,
+        emb_extra,
+        embedded_core,
+    )
+
+
+def compare_installed(source: Path, installed: Path, *, core: Path | None = None) -> Comparison:
     """Compare a checkout's shipped runtime with one installed addon folder.
 
     A source-owned `move-folders` entry installs another top-level addon, which one folder cannot describe, so a
     mapped checkout is refused here and must use `compare_package` on the packager's release root. An external-only
-    move installs no source-owned folder elsewhere and keeps this single-folder comparison.
+    move installs no source-owned folder elsewhere and keeps this single-folder comparison. When `installed` embeds
+    ForeverCore (`Libs/ForeverCore/bundle.json`), the host-chunk wrappers and rewritten root TOC are unwrapped with
+    `embed`'s exact constants and the embedded core files are verified against the `core` source used by the build.
     """
     source = source.resolve()
     installed = installed.resolve()
+    if core is not None:
+        core = core.resolve()
     manifest = pkgmeta.read(source)
     layout = manifest.layout(source) if manifest is not None else None
     if layout is not None and layout.mapped:
@@ -523,6 +970,21 @@ def compare_installed(source: Path, installed: Path) -> Comparison:
             and not any(part.startswith(".") for part in relative.parts)
         ):
             present[relative.as_posix()] = path
+    embedded_result = _compare_embedded_folder(source, installed, shipped, present, core=core)
+    if embedded_result is not None:
+        missing_set, differing_set, consumer_extra, emb_extra, embedded_core = embedded_result
+        missing = tuple(sorted(missing_set))
+        differing = tuple(sorted(differing_set))
+        extra = tuple(sorted(consumer_extra | emb_extra))
+        unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in consumer_extra)
+        return Comparison(
+            not missing and not differing and not unshipped and not emb_extra,
+            candidate_digest(source),
+            missing,
+            differing,
+            extra,
+            embedded_core,
+        )
     missing = tuple(sorted(set(shipped) - set(present)))
     extra = tuple(
         sorted(
@@ -534,15 +996,19 @@ def compare_installed(source: Path, installed: Path) -> Comparison:
             )
         )
     )
-    differing = []
+    differing_list = []
     for name in sorted(set(shipped) & set(present)):
         source_bytes = _shipped_bytes(shipped[name], shipped[name].read_bytes())
         installed_bytes = _shipped_bytes(present[name], present[name].read_bytes())
         if source_bytes != installed_bytes:
-            differing.append(name)
+            differing_list.append(name)
     unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in extra)
     return Comparison(
-        not missing and not differing and not unshipped, candidate_digest(source), missing, tuple(differing), extra
+        not missing and not differing_list and not unshipped,
+        candidate_digest(source),
+        missing,
+        tuple(differing_list),
+        extra,
     )
 
 
@@ -567,12 +1033,15 @@ class PackageComparison:
     unexpected_folders: tuple[str, ...]
     external_bound_by_pin: tuple[str, ...]
     external_missing: tuple[str, ...]
+    embedded_core: dict[str, str] | None = None
 
 
-def compare_package(source: Path, release_root: Path) -> PackageComparison:
+def compare_package(source: Path, release_root: Path, *, core: Path | None = None) -> PackageComparison:
     """Compare a mapped checkout's shipped runtime with a packager release root holding every addon folder."""
     source = source.resolve()
     release_root = release_root.resolve()
+    if core is not None:
+        core = core.resolve()
     manifest = pkgmeta.read(source)
     if manifest is None:
         raise ValueError(f"{source}: no package policy; compare_package needs a mapped checkout")
@@ -600,14 +1069,44 @@ def compare_package(source: Path, release_root: Path) -> PackageComparison:
             )
         )
     present = _package_files(release_root, layout)
-    missing = tuple(sorted(set(shipped) - set(present)))
-    extra = tuple(sorted(set(present) - set(shipped)))
-    differing = []
-    for name in sorted(set(shipped) & set(present)):
-        source_bytes = _shipped_bytes(shipped[name], shipped[name].read_bytes())
-        package_bytes = _shipped_bytes(present[name], present[name].read_bytes())
-        if source_bytes != package_bytes:
-            differing.append(name)
+    prefix = f"{layout.package}/"
+    main_dir = _case_dir(release_root, layout.package)
+    embedded_result = None
+    if main_dir is not None:
+        main_shipped = {name[len(prefix) :]: path for name, path in shipped.items() if name.startswith(prefix)}
+        main_present = {name[len(prefix) :]: path for name, path in present.items() if name.startswith(prefix)}
+        embedded_result = _compare_embedded_folder(source, main_dir, main_shipped, main_present, core=core)
+    if embedded_result is not None:
+        emb_missing, emb_differing, main_extra, emb_extra, embedded_core = embedded_result
+        other_shipped = {name: path for name, path in shipped.items() if not name.startswith(prefix)}
+        other_present = {name: path for name, path in present.items() if not name.startswith(prefix)}
+        missing_set = {f"{prefix}{name}" for name in emb_missing} | (set(other_shipped) - set(other_present))
+        consumer_extra = {f"{prefix}{name}" for name in main_extra} | (set(other_present) - set(other_shipped))
+        emb_extra_prefixed = {f"{prefix}{name}" for name in emb_extra}
+        differing_set = {f"{prefix}{name}" for name in emb_differing}
+        for name in sorted(set(other_shipped) & set(other_present)):
+            if _shipped_bytes(other_shipped[name], other_shipped[name].read_bytes()) != _shipped_bytes(
+                other_present[name], other_present[name].read_bytes()
+            ):
+                differing_set.add(name)
+        missing = tuple(sorted(missing_set))
+        differing = tuple(sorted(differing_set))
+        extra = tuple(sorted(consumer_extra | emb_extra_prefixed))
+        unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in consumer_extra)
+        has_emb_extra = bool(emb_extra_prefixed)
+    else:
+        embedded_core = None
+        missing = tuple(sorted(set(shipped) - set(present)))
+        extra = tuple(sorted(set(present) - set(shipped)))
+        differing_list = []
+        for name in sorted(set(shipped) & set(present)):
+            source_bytes = _shipped_bytes(shipped[name], shipped[name].read_bytes())
+            package_bytes = _shipped_bytes(present[name], present[name].read_bytes())
+            if source_bytes != package_bytes:
+                differing_list.append(name)
+        differing = tuple(differing_list)
+        unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in extra)
+        has_emb_extra = False
     external_bound = []
     external_missing = []
     for folder in layout.external:
@@ -618,16 +1117,21 @@ def compare_package(source: Path, release_root: Path) -> PackageComparison:
             external_missing.append(f"{folder}/{folder}.toc: missing from the external addon folder")
         else:
             external_bound.append(folder)
-    unshipped = any(PurePosixPath(name).suffix.lower() in SCRIPT_SUFFIXES for name in extra)
     return PackageComparison(
-        not missing and not differing and not unshipped and not unexpected and not external_missing,
+        not missing
+        and not differing
+        and not unshipped
+        and not has_emb_extra
+        and not unexpected
+        and not external_missing,
         candidate_digest(source),
         missing,
-        tuple(differing),
+        differing,
         extra,
         unexpected,
         tuple(external_bound),
         tuple(external_missing),
+        embedded_core,
     )
 
 
@@ -654,12 +1158,70 @@ def absolute_lua_step(step: str) -> bool:
     return PurePosixPath(step).is_absolute() or PureWindowsPath(step).is_absolute()
 
 
+def checks_problems(checks: object, *, required: bool) -> list[str]:
+    """Why the proof's in-game checks do not pass: the selftest, the Lua errors and the released addons' startup.
+
+    The recorder runs the smoke's checks on the session it captured and records them as `checks`: the
+    selftest's surface count and the ones that failed, each addon folder's Lua error count over the whole job, and the
+    released addons (a core proof) that never registered. A proof without them (a checklist attestation, or one
+    recorded before the checks existed) still proves the flows it shows, so only a release requires them.
+    """
+    if checks is None and not required:
+        return []
+    if not isinstance(checks, dict):
+        return ["visual proof needs its recorded in-game checks (selftest and Lua errors)"]
+    problems = []
+    selftest = checks.get("selftest")
+    if (
+        not isinstance(selftest, dict)
+        or not isinstance(selftest.get("surfaces"), int)
+        or selftest["surfaces"] < 1
+        or not isinstance(selftest.get("failed"), list)
+    ):
+        problems.append("visual proof checks need a selftest record with its surfaces and failures")
+    elif selftest["failed"]:
+        problems.append(f"visual proof selftest failed: {', '.join(map(str, selftest['failed']))}")
+    errors = checks.get("errors")
+    if (
+        not isinstance(errors, dict)
+        or not errors
+        or any(not isinstance(count, int) or isinstance(count, bool) or count < 0 for count in errors.values())
+    ):
+        problems.append("visual proof checks need a Lua error count per addon folder")
+    elif any(errors.values()):
+        named = ", ".join(f"{count} {name}" for name, count in errors.items() if count)
+        problems.append(f"visual proof recorded Lua errors: {named}")
+    not_started = checks.get("not_started")
+    if not isinstance(not_started, list):
+        problems.append("visual proof checks need the list of released addons that did not start")
+    elif not_started:
+        problems.append(f"visual proof recorded addons that did not start: {', '.join(map(str, not_started))}")
+    return problems
+
+
 def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
+    """Why a change's proof does not hold, when the changed paths reach the runtime; none when they do not."""
     root = root.resolve()
     if not requires_proof(root, paths):
         return []
     if not proof_path.is_file():
         return [f"{proof_path}: missing for runtime UI changes"]
+    return proof_problems(root, proof_path, rewritten=PROOF.as_posix() in paths)
+
+
+def proof_problems(
+    root: Path, proof_path: Path = PROOF, *, rewritten: bool = False, release: bool = False
+) -> list[str]:
+    """Why the proof at `proof_path` does not prove the runtime at `root`; none when it does.
+
+    The proof is bound to file contents, not to a commit, so a proof recorded on a pull request's head still holds for
+    its squash-merge commit and for a release preparation that only bumps the TOC version and the changelog.
+    `rewritten` is a change that records or rewrites the proof, which may not carry an absolute Lua step (#591).
+    `release` requires the in-game checks, which stand in for the `headless-smoke` status at that commit.
+    """
+    root = root.resolve()
+    if not proof_path.is_file():
+        return [f"{proof_path}: missing"]
     try:
         proof = json.loads(proof_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -709,7 +1271,8 @@ def verify(root: Path, paths: list[str], proof_path: Path = PROOF) -> list[str]:
         )
     ):
         problems.append("visual proof needs at least one passing flow")
-    if PROOF.as_posix() in paths and isinstance(flows, list):
+    problems.extend(checks_problems(proof.get("checks"), required=release))
+    if rewritten and isinstance(flows, list):
         # A proof recorded before #591 can still name a Lua flow by the caller's absolute path. It stays valid until
         # it is re-recorded, because a runtime change requires a fresh proof anyway while a version bump only
         # revalidates the same one. A proof this change records or rewrites may not carry that path.
@@ -765,11 +1328,17 @@ def main() -> int:
         help="compare a mapped checkout's shipped runtime with the packager's release root holding every addon "
         "folder (external folders are checked for their TOC, never by bytes)",
     )
+    parser.add_argument(
+        "--core",
+        metavar="CORE_DIR",
+        type=Path,
+        help="ForeverCore source used to produce the embedded build, required for a matching comparison",
+    )
     args = parser.parse_args()
     root = Path(".")
     if args.compare_package:
         try:
-            package_comparison = compare_package(root, Path(args.compare_package))
+            package_comparison = compare_package(root, Path(args.compare_package), core=args.core)
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
@@ -777,7 +1346,7 @@ def main() -> int:
         return 0 if package_comparison.equivalent else 1
     if args.compare:
         try:
-            comparison = compare_installed(root, Path(args.compare))
+            comparison = compare_installed(root, Path(args.compare), core=args.core)
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1

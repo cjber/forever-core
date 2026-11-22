@@ -358,8 +358,8 @@ function M.build(sim)
 	local function stub(qualified, fdoc)
 		local nargs = #(fdoc.Arguments or {})
 		local protected = fdoc.IsProtectedFunction or protectedNames[qualified]
-		local overridden = (sim.restrictionOverrides or {})[qualified] ~= nil
-		local restricted = fdoc.HasRestrictions or overridden
+		local override = (sim.restrictionOverrides or {})[qualified]
+		local restricted = fdoc.HasRestrictions or override
 		local secretArgs = fdoc.SecretArguments
 		local returns = fdoc.Returns or {}
 		local f = function(...)
@@ -399,8 +399,11 @@ function M.build(sim)
 			end
 			-- HasRestrictions alone is a combat-time restriction; a documented function this client refuses at all
 			-- times is in protectedNames instead.
-			local refused = protected or (restricted and restrictedNow(qualified))
-			if refused and tainted then
+			if
+				tainted
+				and (not override or not override.applies or override.applies())
+				and (protected or (restricted and restrictedNow(qualified)))
+			then
 				sim.forbidden(qualified)
 				-- What the client still does after refusing the call, where that was recorded live.
 				local onRefused = sim.refusedImpl and sim.refusedImpl[qualified]

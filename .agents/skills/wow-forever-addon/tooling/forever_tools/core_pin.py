@@ -8,25 +8,30 @@ against.
 
     python3 -m tools.forever_tools.core_pin [root]            the three copies name one release
     python3 -m tools.forever_tools.core_pin --latest [root]   and that release is core's latest published one
+    python3 -m tools.forever_tools.core_pin --latest-if-release-prep --base REF [root]
+                                                              require latest only when CHANGELOG.md adds a version
 
 `--latest` is the release gate. It reads `cjber/forever-core`'s latest published GitHub release (with `GH_TOKEN` or
 `GITHUB_TOKEN` when either is set) and fails closed when that release cannot be read, so an unknown latest release can
-never pass a stale pin. The consumer's package job compares the three copies offline; its release workflow runs
-`--latest` directly before the packager uploads. A consumer whose `.pkgmeta` ships no ForeverCore external bundles no
-core, so the bundle comparison is skipped; `--latest` still checks its pin against the latest release.
+never pass a stale pin. The consumer's package job compares the three copies offline; its PR CI runs
+`--latest-if-release-prep --base origin/$BASE` so a release-prep PR fails before tagging while normal PRs stay
+unaffected; its release workflow runs `--latest` directly before the packager uploads. A consumer whose `.pkgmeta`
+ships no ForeverCore external bundles no core, so the bundle comparison is skipped; `--latest` still checks its pin
+against the latest release.
 """
 
 import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
 
+from . import changelog, require_slash
 from . import pkgmeta as pkgmeta_reader
-from . import require_slash
 
 __all__ = [
     "CORE_EXTERNAL",
@@ -38,8 +43,10 @@ __all__ = [
     "PIN_PATH",
     "PKGMETA",
     "TOC_CORE_FIELD",
+    "added_changelog_versions",
     "check",
     "check_latest",
+    "check_latest_if_release_prep",
     "compare",
     "compare_latest",
     "core_external",
@@ -50,6 +57,7 @@ __all__ = [
     "external_tag",
     "latest_release",
     "main",
+    "parse_args",
     "pkgmeta_field",
     "policy_package",
     "policy_path",
@@ -497,28 +505,108 @@ def check_latest(root, fetch=None):
     return check(root, latest)
 
 
-def main(root=None, latest=False, fetch=None):
+def added_changelog_versions(root, base):
+    """Release version headings added to `CHANGELOG.md` compared with `git merge-base <base> HEAD`.
+
+    Raises `RuntimeError` when git history against `base` cannot be read, so callers fail closed instead of quietly
+    skipping the release-prep pin gate.
+    """
+    root = Path(root)
+
+    def run_git(*args):
+        result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            raise RuntimeError(f"CHANGELOG.md: git {' '.join(args)} failed ({detail})")
+        return result.stdout
+
+    ancestor = run_git("merge-base", base, "HEAD").strip()
+    if run_git("ls-tree", "--name-only", ancestor, "--", "CHANGELOG.md").strip():
+        before = run_git("show", f"{ancestor}:CHANGELOG.md")
+    else:
+        before = ""
+    changelog_path = root / "CHANGELOG.md"
+    after = changelog_path.read_text(encoding="utf-8", errors="replace") if changelog_path.is_file() else ""
+    before_versions = {match["version"] for match in changelog.HEADING.finditer(before)}
+    after_versions = {match["version"] for match in changelog.HEADING.finditer(after)}
+    return sorted(after_versions - before_versions)
+
+
+def _release_prep_check(root, base, fetch):
+    """The failures, and whether `CHANGELOG.md` adds a version heading against `base`."""
+    try:
+        added = added_changelog_versions(root, base)
+    except RuntimeError as error:
+        return [f"{error}; refusing to skip the release-prep pin check"], False
+    return (check_latest(root, fetch) if added else check(root)), bool(added)
+
+
+def check_latest_if_release_prep(root, base, fetch=None):
+    """Require core's latest release only when `CHANGELOG.md` adds a version heading against `base`.
+
+    Normal pull requests still verify offline bundle agreement without querying GitHub, so a core release between
+    unrelated PRs does not break them. A release-prep PR runs `check_latest` so a stale pin fails the PR rather than
+    the release workflow after tagging. Unreadable git history fails closed.
+    """
+    return _release_prep_check(Path(root), base, fetch)[0]
+
+
+def main(root=None, latest=False, fetch=None, *, latest_if_release_prep=False, base=None):
     """Check `root` (the current directory by default) and report every copy that disagrees."""
     root = Path.cwd() if root is None else Path(root)
-    failures = check_latest(root, fetch) if latest else check(root)
+    release_prep = False
+    if latest_if_release_prep:
+        failures, release_prep = _release_prep_check(root, base, fetch)
+    else:
+        failures = check_latest(root, fetch) if latest else check(root)
     for failure in failures:
         print(failure, file=sys.stderr)
     if failures:
         return 1
-    if latest:
+    if latest or release_prep:
         print("ForeverCore pin: the pin names core's latest published release, and the bundle agrees")
+    elif latest_if_release_prep:
+        print("ForeverCore pin: no new CHANGELOG.md version heading against base; the bundle agrees offline")
     else:
         print("ForeverCore pin: the pin, the .pkgmeta external and the TOC field agree, or this addon bundles no core")
     return 0
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("root", nargs="?", type=Path, default=Path.cwd(), help="the consumer checkout (default: .)")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--latest",
         action="store_true",
         help="also require the pin to name cjber/forever-core's latest published release (the release gate)",
     )
-    arguments = parser.parse_args()
-    sys.exit(main(arguments.root, arguments.latest))
+    mode.add_argument(
+        "--latest-if-release-prep",
+        action="store_true",
+        help=(
+            "require the pin to name core's latest release only when CHANGELOG.md adds a version heading against --base"
+        ),
+    )
+    parser.add_argument(
+        "--base",
+        help="git base ref to compare CHANGELOG.md against (required with --latest-if-release-prep)",
+    )
+    arguments = parser.parse_args(argv)
+    if arguments.latest_if_release_prep and not arguments.base:
+        parser.error("--latest-if-release-prep requires --base")
+    if arguments.base and not arguments.latest_if_release_prep:
+        parser.error("--base is only used with --latest-if-release-prep")
+    return arguments
+
+
+if __name__ == "__main__":
+    arguments = parse_args()
+    sys.exit(
+        main(
+            arguments.root,
+            arguments.latest,
+            latest_if_release_prep=arguments.latest_if_release_prep,
+            base=arguments.base,
+        )
+    )

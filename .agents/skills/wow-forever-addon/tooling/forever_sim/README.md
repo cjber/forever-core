@@ -146,7 +146,8 @@ end)
 - **Forever's professions**: `C_TradeSkillUI.OpenRecipe` behaves as recorded live, not as retail: from a hardware
   input it closes an open Professions window (three TRADE_SKILL_CLOSE) and answers
   `OPEN_RECIPE_RESPONSE(recipeID, base, child)`, and from tainted code outside one it is refused yet still answers.
-  `CraftRecipe` is refused to tainted code at any time. A profession's `childSkillLineID` (Cooking 185, child 2939)
+  `CraftRecipe` allows native hardware clicks that read addon state. Tainted calls without hardware input or
+  with addon execution on the call path are refused. A profession's `childSkillLineID` (Cooking 185, child 2939)
   is reported only by recipe, with the base line as parent; `GetProfessionChildSkillLineID` is 0. A refused call's
   recorded side effects live in `sim.refusedImpl`.
 - **Items**: every item ID answers from the client's own Item, ItemSparse, ItemClass and ItemSubClass rows at the
@@ -168,6 +169,9 @@ end)
   field an addon wrote that secure Blizzard code reads is reported with the writer, the reader and the field.
 
 ## Limits
+
+- Edit Mode layout events apply the Objective Tracker anchors from the active preset or saved layout. The other
+  systems need frames outside the simulated boot. An event without layout data keeps the scenario's current anchor.
 
 - Layout is our own anchor solver: no text measurement (a character is half the font height wide), no clamping,
   strata draw order or hit testing.

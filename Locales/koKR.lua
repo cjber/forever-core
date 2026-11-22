@@ -53,6 +53,7 @@ L["Tracker background"] = "추적기 배경"
 L["Tracker position"] = "추적기 위치"
 L["Under the quest tracker"] = "퀘스트 추적기 아래"
 L["Left of the quest tracker"] = "퀘스트 추적기 왼쪽"
+L["Always stay under the quest tracker"] = "항상 퀘스트 추적기 아래에 유지" -- mt
 L["Attach to quest tracker"] = "퀘스트 추적기에 붙이기" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"켜면 공용 Forever 추적기가 퀘스트 추적기 아래에, 끄면 왼쪽에 놓입니다. 모든 Forever 애드온에 같은 설정이 있습니다." -- mt
@@ -131,3 +132,7 @@ L["Copy %s: %s"] = "사본 %s: %s" -- mt
 
 L["Drag to move the tabs."] = "끌어서 탭을 이동합니다."
 L["Reset tab position"] = "탭 위치 초기화"
+
+L["ForeverCore no longer has its own quest list. It never hides or moves the game's or Questie's quest tracker. Each addon's %s setting only places the Forever column."] =
+	"ForeverCore에는 더 이상 자체 퀘스트 목록이 없습니다. 게임이나 Questie의 퀘스트 추적기를 숨기거나 옮기는 일은 없습니다. 각 애드온의 ‘%s’ 설정은 Forever 열의 위치만 정합니다."
+L["Usage: /fcore report, /fcore debug, /fcore tracker"] = "사용법: /fcore report, /fcore debug, /fcore tracker"

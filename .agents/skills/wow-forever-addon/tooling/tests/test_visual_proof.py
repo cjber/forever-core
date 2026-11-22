@@ -10,8 +10,11 @@ from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError
 
-from forever_tools import pkgmeta, visual_proof
+from forever_tools import embed, pkgmeta, release_check, visual_proof
 
+CORE = Path(__file__).resolve().parents[5]
+
+CHECKS = {"selftest": {"surfaces": 3, "failed": []}, "errors": {"ForeverCore": 0}, "not_started": []}
 IMAGE = {"url": "https://github.com/cjber/proof/raw/" + "a" * 40 + "/image.png", "sha256": "a" * 64}
 PLAIN_PKGMETA = (
     "package-as: ForeverCore\n\nplain-copy:\n  - Vendor.lua\n\nignore:\n  - media/icon-400.png\n  - media/icon.svg\n"
@@ -836,6 +839,57 @@ class VisualProofTest(unittest.TestCase):
         self.written(root, self.proof(root, flows=[{"name": "map", "steps": ["/wait 25"], "result": "pass"}]))
         self.assertEqual(visual_proof.verify(root, ["UI/Main.lua", ".visual-proof.json"], path), [])
 
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_proof_with_passing_checks_stands_in_for_the_smoke(self, _image_hash):
+        root = self.root()
+        self.written(root, self.proof(root, checks=CHECKS))
+        self.assertIsNone(release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_version_bump_on_a_proven_tree_still_verifies_and_releases(self, _image_hash):
+        root = self.root()
+        toc = root / "ForeverCore.toc"
+        toc.write_text("## Interface: 16001\n## Version: 1.0.0\n" + toc.read_text(), encoding="utf-8")
+        path = self.written(root, self.proof(root, checks=CHECKS))
+        toc.write_text(toc.read_text().replace("1.0.0", "1.1.0"), encoding="utf-8")
+        (root / "CHANGELOG.md").write_text("## [1.1.0]\n\n- A fix.\n", encoding="utf-8")
+        self.assertEqual(visual_proof.verify(root, ["ForeverCore.toc", "CHANGELOG.md"], path), [])
+        self.assertIsNone(release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_failed_selftest_or_a_lua_error_fails_verify_and_the_release(self, _image_hash):
+        for name, checks, problem in (
+            ("selftest", {**CHECKS, "selftest": {"surfaces": 3, "failed": ["Tracker"]}}, "selftest failed: Tracker"),
+            ("lua error", {**CHECKS, "errors": {"ForeverCore": 2}}, "recorded Lua errors: 2 ForeverCore"),
+            ("not started", {**CHECKS, "not_started": ["SkillUpForever"]}, "did not start: SkillUpForever"),
+        ):
+            with self.subTest(name):
+                root = self.root()
+                path = self.written(root, self.proof(root, checks=checks))
+                self.assertTrue(
+                    any(problem in found for found in visual_proof.verify(root, ["UI/Main.lua"], path)), problem
+                )
+                self.assertIn(problem, release_check.proof_refusal(root))
+
+    @mock.patch.object(visual_proof, "image_hash", return_value="a" * 64)
+    def test_a_proof_without_checks_verifies_but_does_not_release(self, _image_hash):
+        root = self.root()
+        path = self.written(root, self.proof(root))
+        self.assertEqual(visual_proof.verify(root, ["UI/Main.lua"], path), [])
+        self.assertIn("checks", release_check.proof_refusal(root))
+
+    def test_malformed_checks_are_problems(self):
+        for checks in (
+            [],
+            {**CHECKS, "selftest": {"surfaces": 0, "failed": []}},
+            {**CHECKS, "selftest": None},
+            {**CHECKS, "errors": {}},
+            {**CHECKS, "errors": {"ForeverCore": True}},
+            {**CHECKS, "not_started": None},
+        ):
+            with self.subTest(checks=checks):
+                self.assertTrue(visual_proof.checks_problems(checks, required=False))
+
     def test_absolute_lua_steps_are_rejected_in_both_digest_orders(self):
         digest = "sha256:" + "a" * 64
         for name in ("/home/me/map.lua", "C:\\Users\\me\\map.lua"):
@@ -1340,3 +1394,290 @@ class VisualProofTest(unittest.TestCase):
         # A source-tree install's LuaLS declarations under types/ stay out of the extras.
         (installed / "types/Forever.lua").write_text("---@class Forever", encoding="utf-8")
         self.assertTrue(visual_proof.compare_installed(source, installed).equivalent)
+
+    def embedded_checkout(self, version="v1.14.5", toc_extra=""):
+        """A consumer checkout opted into embedded ForeverCore (`## X-Forever-Core-Embed: 1`)."""
+        root = self.elsewhere() / "DemoForever"
+        (root / "UI").mkdir(parents=True)
+        (root / "media").mkdir()
+        (root / "tools").mkdir()
+        (root / "tools/forever-core.txt").write_text(f"{version}\n", encoding="utf-8")
+        (root / "DemoForever.toc").write_text(
+            "## Interface: 16001\n"
+            "## Title: Demo Forever\n"
+            "## Version: @project-version@\n"
+            "## SavedVariables: DemoForeverDB\n"
+            "## OptionalDeps: ForeverCore\n"
+            f"## X-Forever-Core: {version}\n"
+            "## X-Forever-Core-Embed: 1\n\n"
+            f"{toc_extra}"
+            "Main.lua\n"
+            "UI\\UI.xml\n",
+            encoding="utf-8",
+        )
+        (root / "Main.lua").write_text("local addon, ns = ...\nns.main = addon\n", encoding="utf-8")
+        (root / "UI/UI.xml").write_text(
+            '<Ui xmlns="http://www.blizzard.com/wow/ui/">\n  <Script file="Window.lua"/>\n</Ui>\n',
+            encoding="utf-8",
+        )
+        (root / "UI/Window.lua").write_bytes(b"\xef\xbb\xbflocal _, ns = ...\nns.window = true\n")
+        (root / "Unused.lua").write_text("local unused = true\n", encoding="utf-8")
+        (root / "media/icon.tga").write_bytes(b"texture")
+        (root / "media/icon-400.png").write_bytes(b"store icon")
+        (root / ".pkgmeta").write_text(
+            "package-as: DemoForever\n\nignore:\n  - media/icon-400.png\n  - tools\n",
+            encoding="utf-8",
+        )
+        return root
+
+    def embedded_package(self, source, *, core=CORE, version="1.14.5", crlf=True, toc_version="0.9.0"):
+        """Produce a real embedded-core build from `source`, optionally with BigWigs CRLF and version stamping."""
+        destination = self.elsewhere() / "DemoForever"
+        shutil.copytree(source, destination)
+        embed.transform(destination, core, version)
+        (destination / ".pkgmeta").unlink()
+        shutil.rmtree(destination / "tools")
+        ignored = destination / "media/icon-400.png"
+        if ignored.exists():
+            ignored.unlink()
+        toc_path = destination / "DemoForever.toc"
+        toc_path.write_text(
+            toc_path.read_text(encoding="utf-8").replace("@project-version@", toc_version),
+            encoding="utf-8",
+        )
+        if crlf:
+            for path in destination.rglob("*"):
+                if path.is_file() and path.suffix in visual_proof.TEXT_SUFFIXES:
+                    raw = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+                    path.write_bytes(raw)
+        return destination
+
+    def test_embedded_build_compares_equal_and_reports_both_candidates(self):
+        for crlf, toc_extra in (
+            (False, ""),
+            (True, ""),
+            (True, "# Core and UI\n\n"),
+        ):
+            with self.subTest(crlf=crlf, toc_extra=toc_extra):
+                source = self.embedded_checkout(toc_extra=toc_extra)
+                if toc_extra:
+                    toc_path = source / "DemoForever.toc"
+                    toc_path.write_text(toc_path.read_text(encoding="utf-8").replace("UI\\UI.xml", "UI/UI.xml"))
+                installed = self.embedded_package(source, crlf=crlf)
+                manifest = json.loads((installed / "Libs/ForeverCore/bundle.json").read_text(encoding="utf-8"))
+                with self.assertRaisesRegex(ValueError, "--core"):
+                    visual_proof.compare_installed(source, installed)
+                comparison = visual_proof.compare_installed(source, installed, core=CORE)
+                self.assertTrue(comparison.equivalent, comparison)
+                self.assertEqual(comparison.missing, ())
+                self.assertEqual(comparison.differing, ())
+                self.assertEqual(comparison.extra, ())
+                self.assertEqual(
+                    comparison.embedded_core,
+                    {
+                        "version": "1.14.5",
+                        "source_digest": manifest["source_digest"],
+                        "candidate": visual_proof.candidate_digest(installed),
+                    },
+                )
+                self.assertEqual(comparison.candidate, visual_proof.candidate_digest(source))
+                source_tree = visual_proof.compare_installed(source, source)
+                self.assertTrue(source_tree.equivalent, source_tree)
+                self.assertIsNone(source_tree.embedded_core)
+
+    def test_embedded_wrapped_file_body_change_differs(self):
+        source = self.embedded_checkout()
+        installed = self.embedded_package(source)
+        original_candidate = visual_proof.candidate_digest(installed)
+        (installed / "Main.lua").write_bytes(embed.wrap(b"local addon, ns = ...\nns.main = 'changed'\n"))
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertEqual(comparison.differing, ("Main.lua",))
+        self.assertNotEqual(original_candidate, visual_proof.candidate_digest(installed))
+
+        installed = self.embedded_package(source)
+        (installed / "UI/Window.lua").write_bytes(embed.wrap(b"\xef\xbb\xbflocal _, ns = ...\nns.window = false\n"))
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertEqual(comparison.differing, ("UI/Window.lua",))
+        self.assertNotEqual(original_candidate, visual_proof.candidate_digest(installed))
+
+    def test_embedded_tampered_or_missing_wrapper_differs(self):
+        source = self.embedded_checkout()
+        # Replacing a wrapped file with raw unwrapped source bytes must not pass.
+        installed = self.embedded_package(source)
+        (installed / "Main.lua").write_bytes((source / "Main.lua").read_bytes())
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Main.lua", comparison.differing)
+        with self.assertRaisesRegex(ValueError, "Main.lua"):
+            visual_proof.candidate_digest(installed)
+
+        # Tampering with the host-chunk header or footer must not unwrap.
+        installed = self.embedded_package(source)
+        (installed / "Main.lua").write_bytes(
+            (installed / "Main.lua").read_bytes().replace(b"ForeverCoreHostChunk", b"TamperedHostChunk", 1)
+        )
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Main.lua", comparison.differing)
+        with self.assertRaisesRegex(ValueError, "Main.lua"):
+            visual_proof.candidate_digest(installed)
+
+    def test_embedded_core_tampering_missing_extra_and_core_mismatch_fail(self):
+        source = self.embedded_checkout()
+
+        # Modified embedded core Lua file.
+        installed = self.embedded_package(source)
+        (installed / "Libs/ForeverCore/Core/SafeCall.lua").write_text("-- tampered\n", encoding="utf-8")
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/Core/SafeCall.lua", comparison.differing)
+        with self.assertRaisesRegex(ValueError, "SafeCall.lua"):
+            visual_proof.candidate_digest(installed)
+
+        # Missing embedded core file.
+        installed = self.embedded_package(source)
+        (installed / "Libs/ForeverCore/Expose.lua").unlink()
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/Expose.lua", comparison.missing)
+        with self.assertRaisesRegex(ValueError, "Expose.lua"):
+            visual_proof.candidate_digest(installed)
+
+        # Extra file under Libs/ForeverCore (both script and asset).
+        for extra_name in ("Libs/ForeverCore/Extra.lua", "Libs/ForeverCore/extra.tga"):
+            installed = self.embedded_package(source)
+            (installed / extra_name).write_bytes(b"injected")
+            comparison = visual_proof.compare_installed(source, installed)
+            self.assertFalse(comparison.equivalent, extra_name)
+            self.assertIn(extra_name, comparison.extra)
+            with self.assertRaisesRegex(ValueError, extra_name):
+                visual_proof.candidate_digest(installed)
+
+        # Modified or missing host shim files.
+        for shim in (embed.HOST_BEGIN, embed.HOST_RUN, embed.READY):
+            installed = self.embedded_package(source)
+            (installed / shim).write_text("-- tampered\n", encoding="utf-8")
+            comparison = visual_proof.compare_installed(source, installed)
+            self.assertFalse(comparison.equivalent, shim)
+            self.assertIn(shim, comparison.differing)
+            with self.assertRaisesRegex(ValueError, shim):
+                visual_proof.candidate_digest(installed)
+
+            installed = self.embedded_package(source)
+            (installed / shim).unlink()
+            comparison = visual_proof.compare_installed(source, installed)
+            self.assertFalse(comparison.equivalent, shim)
+            self.assertIn(shim, comparison.missing)
+            with self.assertRaisesRegex(ValueError, shim):
+                visual_proof.candidate_digest(installed)
+
+        # Embedded core version disagrees with checkout pin.
+        installed = self.embedded_package(source, version="1.13.0")
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/bundle.json", comparison.differing)
+        # A matching --core checkout does not excuse a build embedding another release than the pin.
+        comparison = visual_proof.compare_installed(source, installed, core=CORE)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/bundle.json", comparison.differing)
+
+        # Embedded core files disagree with explicit core checkout (--core).
+        installed = self.embedded_package(source)
+        other_core = self.elsewhere() / "other-core"
+        shutil.copytree(
+            CORE,
+            other_core,
+            ignore=shutil.ignore_patterns(".git", ".cache", ".venv", "__pycache__", "tests", "docs"),
+        )
+        safe_call = other_core / "Core/SafeCall.lua"
+        safe_call.write_bytes(safe_call.read_bytes() + b"\n-- different core commit\n")
+        comparison = visual_proof.compare_installed(source, installed, core=other_core)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/Core/SafeCall.lua", comparison.differing)
+        self.assertIn("Libs/ForeverCore/bundle.json", comparison.differing)
+
+        # Missing bundle.json in an embedded build is refused.
+        installed = self.embedded_package(source)
+        (installed / "Libs/ForeverCore/bundle.json").unlink()
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        with self.assertRaisesRegex(ValueError, "bundle.json"):
+            visual_proof.candidate_digest(installed)
+
+        # Tampered root TOC fails.
+        installed = self.embedded_package(source)
+        toc_path = installed / "DemoForever.toc"
+        toc_path.write_text(toc_path.read_text(encoding="utf-8").replace("ForeverCoreHost.lua\n", ""), encoding="utf-8")
+        comparison = visual_proof.compare_installed(source, installed)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("DemoForever.toc", comparison.differing)
+        with self.assertRaisesRegex(ValueError, "DemoForever.toc"):
+            visual_proof.candidate_digest(installed)
+
+        # Non-opted-in source compared against an embedded build fails.
+        plain_source = self.embedded_checkout()
+        plain_toc = plain_source / "DemoForever.toc"
+        plain_toc.write_text(
+            plain_toc.read_text(encoding="utf-8").replace("## X-Forever-Core-Embed: 1\n", ""),
+            encoding="utf-8",
+        )
+        installed = self.embedded_package(source)
+        comparison = visual_proof.compare_installed(plain_source, installed)
+        self.assertFalse(comparison.equivalent)
+
+    def test_embedded_digest_binds_core_even_if_bundle_hashes_are_rewritten(self):
+        source = self.embedded_checkout()
+        installed = self.embedded_package(source)
+        before = visual_proof.candidate_digest(installed)
+        name = "Libs/ForeverCore/Core/SafeCall.lua"
+        victim = installed / name
+        victim.write_bytes(victim.read_bytes() + b"\n-- different core\n")
+        bundle = installed / "Libs/ForeverCore/bundle.json"
+        manifest = json.loads(bundle.read_bytes())
+        manifest["files"][name] = hashlib.sha256(victim.read_bytes()).hexdigest()
+        bundle.write_text(json.dumps(manifest), encoding="utf-8")
+
+        self.assertNotEqual(before, visual_proof.candidate_digest(installed))
+        comparison = visual_proof.compare_installed(source, installed, core=CORE)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn(name, comparison.differing)
+
+    def test_embedded_cli_compare_and_digests(self):
+        source = self.embedded_checkout()
+        installed = self.embedded_package(source)
+        tooling = Path(__file__).resolve().parents[1]
+        environment = {**os.environ, "PYTHONPATH": str(tooling)}
+        result = subprocess.run(
+            [sys.executable, "-m", "forever_tools.visual_proof", "--compare", str(installed), "--core", str(CORE)],
+            cwd=source,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["equivalent"])
+        self.assertEqual(payload["embedded_core"]["version"], "1.14.5")
+        source_digests = subprocess.run(
+            [sys.executable, "-m", "forever_tools.visual_proof", "--digests"],
+            cwd=source,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(payload["candidate"], json.loads(source_digests.stdout)["candidate"])
+        installed_digests = subprocess.run(
+            [sys.executable, "-m", "forever_tools.visual_proof", "--digests"],
+            cwd=installed,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(
+            payload["embedded_core"]["candidate"],
+            json.loads(installed_digests.stdout)["candidate"],
+        )
