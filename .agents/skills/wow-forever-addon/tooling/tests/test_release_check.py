@@ -1,4 +1,4 @@
-"""The release gate: full CI on main, the headless smoke, and the manual visual-proof skip."""
+"""The release gate: full CI on main, the release smoke, and the manual visual-proof skip."""
 
 import contextlib
 import io

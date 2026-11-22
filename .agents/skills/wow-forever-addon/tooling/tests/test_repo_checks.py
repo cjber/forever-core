@@ -206,14 +206,11 @@ class HeadlessSmokeTest(unittest.TestCase):
     def test_a_passed_smoke_releases(self):
         self.assertIsNone(self.refuse(self.status("success")))
 
-    def test_a_missing_or_pending_smoke_waits_with_the_command_to_run(self):
+    def test_a_missing_or_pending_smoke_waits(self):
         for status in (None, self.status("pending")):
             with self.subTest(status=status):
                 refused = self.refuse(status)
-                self.assertEqual(
-                    refused,
-                    "waiting for headless-smoke on abc: run forever_client.py smoke --repo forever-core --ref abc",
-                )
+                self.assertEqual(refused, "waiting for headless-smoke on abc")
 
     def test_a_failed_smoke_prints_what_it_found(self):
         self.assertEqual(

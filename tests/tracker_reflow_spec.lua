@@ -133,8 +133,9 @@ do
 	Untouched(before, animations, "a clean host pass")
 end
 
--- Action bar changes outside the column's footprint leave it still. An Edit Mode move of the game tracker
--- moves the pinned column once without rebuilding its sections.
+-- The right action bars moving or resizing: the host never reads them, so nothing follows. An Edit Mode move of the
+-- game's tracker carries the pinned column through the engine's anchor alone: the host sets no point and rebuilds
+-- nothing, and the two top corners stay together.
 do
 	local frame = t.parent
 	local function Bar()

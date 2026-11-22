@@ -1,4 +1,4 @@
-"""Publish only a commit whose full CI run on main passed and whose build a visual proof or headless smoke loaded."""
+"""Publish only a commit whose full CI run on main passed and whose build a visual proof or release smoke covers."""
 
 import sys
 from pathlib import Path

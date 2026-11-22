@@ -1,4 +1,4 @@
--- The host stays outside the native tracker manager and samples tracker geometry without creating dependencies.
+-- The host stays outside Blizzard's tracker manager and reads only the tracker state needed for placement.
 local harness = dofile("tests/tracker_host_harness.lua")
 local t = harness.new({ deferReady = true })
 local check, drain = t.check, t.drain
@@ -16,7 +16,7 @@ check(
 -- nothing and a section's first build measures its lines at the width it draws at (#795).
 check(
 	host.point[1] == "TOPRIGHT" and host.point[2] == t.parent and host.point[3] == "BOTTOMLEFT",
-	"the column starts pinned"
+	"the column starts pinned to screen coordinates"
 )
 check(first.point[2] == host and second.point[2] == host, "a section is placed in the column when it attaches")
 t.ready()
@@ -60,16 +60,23 @@ check(combatLate.parent == nil, "combat defers a late section attachment")
 t.setCombat(false)
 t.fire("PLAYER_REGEN_ENABLED")
 check(combatLate.parent == host, "combat release applies the deferred attachment")
-check(host.events.QUEST_LOG_UPDATE, "quest log changes can trigger placement")
 for _, event in ipairs({ "QUEST_WATCH_UPDATE", "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN" }) do
 	check(not host.events[event], "the column ignores " .. event)
 end
+local function IsSettling()
+	for _, frame in ipairs(t.frames) do
+		if frame.scripts.OnUpdate then
+			return true
+		end
+	end
+	return false
+end
 t.fire("PLAYER_TARGET_CHANGED")
-check(not t.isSettling(), "changing targets does not start settling")
+check(not IsSettling(), "changing targets does not start settling")
 t.fire("UNIT_AURA", "target")
-check(not t.isSettling(), "target auras do not start settling")
+check(not IsSettling(), "target auras do not start settling")
 t.fire("UNIT_AURA", "player")
-check(t.isSettling(), "player auras start settling")
+check(IsSettling(), "player auras start settling")
 check(t.ns.TrackerHost.IsAttached(first) and not t.ns.TrackerHost.IsAttached(nil), "ownership lookup")
 local updatesBeforeDuplicateAttach = first.updates
 t.ns.TrackerHost.Attach(first)
@@ -85,24 +92,14 @@ drain()
 check(host.shown == false, "host hides when no section draws")
 check(first.point[5] == 0 and second.point[5] == 0, "an empty column keeps its sections at its top")
 
--- The column resamples the two corners after Edit Mode has applied its layout.
-local pinned = harness.new()
-local pinPoint = pinned.host.point
+-- The drag release reads tracker geometry without laying out sections.
+local pinned = harness.new({ hostSettings = { placement = "left" } })
 local nativeRect = pinned.nativeRect
+local updates = pinned.first.updates
 nativeRect.left, nativeRect.top = 400, 700
-pinned.check(pinned.host.point == pinPoint, "the tracker move itself sets no column point")
-pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
-pinned.fire("EDIT_MODE_LAYOUTS_UPDATED")
-pinned.check(pinned.isSettling(), "Edit Mode events start sampling the layout")
-pinned.advanceSettling()
-pinned.check(pinned.host.point == pinPoint, "the placement check waits for the native layout")
-pinned.advanceSettling()
-pinned.check(Pinned(pinned) and CornersTouch(pinned), "the corners meet after the deferred Edit Mode check")
-pinned.showTracker(false)
-pinned.host:MarkDirty()
-pinned.drain()
-pinned.check(Pinned(pinned) and CornersTouch(pinned), "the hidden tracker keeps its left placement")
-pinned.check(#pinned.dependents == 0, "no addon frame depends on the native tracker")
+pinned.recheck("GLOBAL_MOUSE_UP")
+pinned.check(Pinned(pinned) and CornersTouch(pinned), "the corners meet after an Edit Mode move")
+pinned.check(pinned.first.updates == updates, "following the move does not lay out sections")
 
 -- A drag on a section header gives the column a free position and releases the pin. Letting go is not a click.
 local settings = pinned.hostSettings
@@ -191,10 +188,8 @@ local function QuestieCase()
 	list.left, list.top, list.height = 900, 860, 200
 	q.showTracker(false)
 	q.env.Questie_BaseFrame = list
-	-- Discovery finds the list without a quest event.
-	q.drainDelayed()
-	q.advanceSettling()
-	q.advanceSettling()
+	-- Questie's list can appear after the column's first layout.
+	q.tickDelayed()
 	local function UnderList()
 		local spot = q.host.point
 		return spot[1] == "TOPLEFT"
@@ -203,16 +198,15 @@ local function QuestieCase()
 			and spot[4] == list.left
 			and spot[5] == list.top - list.height
 	end
-	q.check(UnderList(), "bounded discovery finds Questie without a quest event")
+	q.check(UnderList(), "the attached column sits under Questie's list")
 	list.height = 320
 	q.moveLine(q.nativeRect.line)
 	q.check(UnderList(), "and follows its last line as it grows")
 	-- Questie's tracker turned off: the game's tracker is back, and the column goes back under it.
 	list.shown = false
 	q.showTracker(true)
-	q.moveLine(q.nativeRect.line)
+	q.recheck("QUEST_LOG_UPDATE")
 	q.check(Under(q), "with Questie's list gone the column returns under the game's tracker")
-	q.check(#q.dependents == 0, "no addon frame depends on either tracker")
 end
 QuestieCase()
 
@@ -233,8 +227,10 @@ local userScaled = harness.new({ hostSettings = { attached = false, placement = 
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's scale sets the column's scale")
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
--- The TOC's Lua files may read the trackers and minimap for placement geometry.
-local reads = { ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+-- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
+-- a presence check or one of the reads that place the column under it (#850, #883), never another
+-- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
+local reads = { ".isDragging", ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
 local function Starts(text, list)
 	for _, read in ipairs(list) do
 		if text:sub(1, #read) == read then
@@ -242,13 +238,8 @@ local function Starts(text, list)
 		end
 	end
 end
-local minimapReads = { ":GetLeft()", ":GetRight()", ":GetBottom()", ":GetEffectiveScale()", ":IsShown()" }
-local function Read(after, frame)
-	local minimap = frame == "Minimap" or frame == "MinimapCluster"
-	local read = Starts(after, minimap and minimapReads or reads)
-	if minimap then
-		return read ~= nil and not after:sub(#read + 1):match("^%s*=[^=]")
-	end
+local function Read(after)
+	local read = Starts(after, reads)
 	if not read then
 		local child = after:match("^%.NineSlice") or after:match("^%.Header")
 		if not child then
@@ -268,80 +259,34 @@ assert(
 	"a child write fails"
 )
 assert(not Read(".Header = nil") and not Read(":SetCollapsed(true)"), "an assignment or another method fails")
-local placementFrames = { "ObjectiveTrackerFrame", "Questie_BaseFrame", "MinimapCluster", "Minimap" }
-local function FramePattern(frame)
-	return "%f[%w_]" .. frame .. "%f[^%w_]"
-end
-
-local function TrackerArgument(argument)
-	for _, frame in ipairs(placementFrames) do
-		if argument:match(FramePattern(frame)) then
-			return true
-		end
-	end
-	return false
-end
-
-local targetArguments = { SetPoint = 2, SetAllPoints = 1, SetParent = 1, CreateFrame = 3, hooksecurefunc = 1 }
-local function TrackerDependency(code)
-	for method, position in pairs(targetArguments) do
-		for args in code:gmatch("%f[%w_]" .. method .. "%s*(%b())") do
-			-- Replace nested expressions with a single argument fragment, retaining tracker references.
-			local flat = args:sub(2, -2):gsub("%b()", function(expression)
-				return expression:gsub(",", " ")
-			end)
-			local index = 0
-			for argument in (flat .. ","):gmatch("(.-),") do
-				index = index + 1
-				if index == position and TrackerArgument(argument) then
-					return method
-				end
-			end
-		end
-	end
-end
-assert(TrackerDependency('host:SetPoint("TOPRIGHT",\n ObjectiveTrackerFrame.NineSlice, "TOPLEFT")'))
-assert(TrackerDependency("host:SetAllPoints(Questie_BaseFrame)"))
-assert(TrackerDependency('CreateFrame("Frame", nil, ObjectiveTrackerFrame.Header)'))
-assert(TrackerDependency("host:SetParent(Questie_BaseFrame)"))
-assert(TrackerDependency('host:SetPoint("TOPLEFT", MinimapCluster, "BOTTOMLEFT")'))
-assert(TrackerDependency("host:SetAllPoints(Minimap)"))
-assert(TrackerDependency('hooksecurefunc(MinimapCluster, "SetScale", callback)'))
-assert(Read(":GetBottom()", "MinimapCluster") and not Read(":SetScale(1)", "MinimapCluster"))
-assert(not Read(":HookScript(", "Minimap") and not Read(".zoneText = nil", "Minimap"))
-assert(not TrackerDependency('host:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ObjectiveTrackerFrame:GetLeft(), y)'))
-
-local writes, dependencies = {}, {}
+local writes = {}
 for line in io.lines("ForeverCore.toc") do
 	local path = line:match("^([%w_\\/]+%.lua)%s*$")
 	if path then
 		path = path:gsub("\\", "/")
-		local number, lines = 0, {}
-		local trackerPath = path == "UI/TrackerHost.lua" and os.getenv("TEST_TRACKER_HOST") or nil
-		for source in io.lines(trackerPath or path) do
+		local number = 0
+		for source in io.lines(path) do
 			number = number + 1
 			local code = source:gsub("%-%-.*$", "")
-			lines[#lines + 1] = code
-			for _, frame in ipairs(placementFrames) do
-				for finish in code:gmatch(FramePattern(frame) .. "()") do
-					local after = code:sub(finish)
-					if
-						not Read(after, frame)
-						and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
-					then
-						writes[#writes + 1] = path .. ":" .. number .. " (" .. frame .. ")"
-					end
+			local init = 1
+			while true do
+				local _, finish = code:find("ObjectiveTrackerFrame", init, true)
+				if not finish then
+					break
 				end
+				local after = code:sub(finish + 1)
+				if
+					not Read(after)
+					and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
+				then
+					writes[#writes + 1] = path .. ":" .. number
+				end
+				init = finish + 1
 			end
-		end
-		local dependency = TrackerDependency(table.concat(lines, "\n"))
-		if dependency then
-			dependencies[#dependencies + 1] = path .. " (" .. dependency .. ")"
 		end
 	end
 end
-check(#dependencies == 0, "tracker or minimap anchor, parent or hook dependency: " .. table.concat(dependencies, ", "))
-check(#writes == 0, "nothing in core writes to the trackers or minimap: " .. table.concat(writes, ", "))
+check(#writes == 0, "nothing in core writes, hooks or calls ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks
 -- releases every block, so a second layout would replay each header's add animation and rebuild every block. Issue

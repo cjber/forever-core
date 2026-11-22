@@ -10,9 +10,9 @@ saying so, but a run that finds no consumer folder at all is an error, because t
 alone. A failed read, download or unpack is an error too, because a gate that cannot see a consumer's build must not
 pass.
 
-The unpacked folders are what `tools/suite_load.py --released` passes to `forever_sim` and what a `forever_client.py
-smoke --repo forever-core` links beside the candidate core. Each zip is untrusted data: it is unpacked member by member
-and a member with an absolute path or a `..` step is refused rather than written. The bundled `ForeverCore` folder and
+The unpacked folders are what `tools/suite_load.py --released` passes to `forever_sim` and what a core smoke links
+beside the candidate core. Each zip is untrusted data: it is unpacked member by member and a member with an
+absolute path or a `..` step is refused rather than written. The bundled `ForeverCore` folder and
 top-level `Lib*` folders are left out of the returned list, so the candidate core is the one loaded and the addon's own
 folder is the only thing registered from that release.
 

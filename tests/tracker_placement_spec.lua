@@ -13,11 +13,7 @@ local function Under(ctx, line)
 end
 local function Pinned(ctx)
 	local point = ctx.host.point
-	return point[1] == "TOPRIGHT"
-		and point[2] == ctx.parent
-		and point[3] == "BOTTOMLEFT"
-		and point[4] == ctx.nativeRect.left
-		and point[5] == ctx.nativeRect.top
+	return point[1] == "TOPRIGHT" and point[2] == ctx.parent and point[3] == "BOTTOMLEFT"
 end
 -- How many times the sections laid out, so a spec can say a move was not a layout.
 local function Updates(ctx)

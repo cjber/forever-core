@@ -2,7 +2,7 @@ version: 1
 
 # Speedpatrol profile for ForeverCore, written by hand because `speedpatrol init` reads a repo without
 # package.json as an HTTP API. The game client cannot run here, so every benchmark is a command over
-# the headless harness.
+# the offline spec harness.
 project:
   name: forever-core
   source: .

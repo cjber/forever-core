@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.16.3] - 2026-11-21
+
+### Fixed
+
+- Moving Questie's tracker no longer leaves the Forever column on top of it or at the game tracker's old place: the column follows Questie's list to where you drop it, and gives way when a list is dropped onto a column that holds its place, locked or not; thanks to Zerkuleez for the report.
+
+## [1.16.2] - 2026-11-21
+
+### Fixed
+
+- With no quest tracked, the Forever column stays in one place instead of moving when the hidden Objective Tracker's position shifts: it keeps the place the tracker had when it last showed.
+
+## [1.16.1] - 2026-11-21
+
+### Fixed
+
+- Dragging the Objective Tracker in Edit Mode no longer throws a Lua error on every frame or makes the tracker disappear: the Forever column now places itself from the tracker's position instead of hanging off it, and follows when the drag ends; thanks to hknylmz and Flangemuffler for the reports.
+
 ## [1.16.0] - 2026-11-21
 
 <!-- discord-image: docs/screenshots/tracker.png -->

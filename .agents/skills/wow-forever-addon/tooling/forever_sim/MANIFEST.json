@@ -22,7 +22,7 @@
     "restrictions.txt": "afa04c4814ddb35a1f8ef6f66d5617bc57643fbf91c68b514680933bd3a8a706",
     "run.lua": "e6e56667941e48b841cad93df9184974547ef47566daf0ac7cc91fca8dd1357b",
     "scenario.lua": "a13603fd7923d2c47762284f3af7e010ff034447c5b5ad9a38132484782dcce9",
-    "sim.lua": "97c5feeb68ba2f573013a67964fbd92e2c1c0f3db81931a8baf5978bc1f880f8",
+    "sim.lua": "6127e34730de1ca16833c0d0bcb7dde82a81f366142c53c3b411910d333452a8",
     "stubgen.lua": "8fb8b4bb461d0d77f38ee79a08609eb6de7b69d250f53b50d13e865916dab858",
     "stubs/Auctionator/Auctionator.lua": "86341db427d1a11728402a7afda87b0dc56f395e50087d015576fdb1db5fa72d",
     "stubs/Auctionator/Auctionator.toc": "4982689c03d9e4c5932ec5e0af619d6f1f4fcdcce701d323cf191e4fdb0d5b7f",

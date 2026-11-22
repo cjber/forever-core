@@ -83,8 +83,7 @@ Built with AI assistance.
 
 The CurseForge gallery holds the page's images in page order, each titled with its alt text, then the rest of
 `docs/gallery.md` where a repo has one. Every image can be rebuilt from the repo, so a gallery image neither file shows
-is deleted. `tools/sync_curseforge.py`
-in forever-core compares each gallery with its page through the CurseForge API; CI cannot, as it holds no API key.
+is deleted.
 
 ## The buttons
 

@@ -10,7 +10,7 @@ standalone-dependency bridge it replaced.
 Each consumer carries its own copy of core at `Libs/ForeverCore/`, so it runs whether or not the standalone folder is
 installed ([#801](https://github.com/cjber/forever-core/issues/801)). Nothing is committed for it: a consumer opts in
 with `## X-Forever-Core-Embed: 1` in its root TOC, and `python3 -m tools.forever_tools.embed` rewrites the disposable
-checkout right before the packager, in the release workflow, the CI package job and `forever_client.py build-dev`.
+checkout right before the packager, in the release workflow and the CI package job.
 `tools/check_consumers.py` fails an opted-in consumer whose workflow runs a packager with no embed step before it.
 
 The step plans the copy with `tools/build_embedded_core.py` from a ForeverCore checkout at the consumer's pin (`--core`,
@@ -68,8 +68,8 @@ as mode `standalone` instead, and `tools/check_release_archive.py` refuses a sta
 `X-Forever-Core-Loader` header. A consumer still guards any facade member newer than 1.15.3, the oldest standalone a
 player may keep. The loader
 adopts it for that session if it serves the embedded consumers, and otherwise fails naming its version. Each release
-proof shows the addon working with no standalone installed and with an old standalone enabled. `forever_client.py
-proof` compares the installed build with the checkout after the same embed step at the same pin, and records the
+proof shows the addon working with no standalone installed and with an old standalone enabled. the proof
+compares the installed build with the checkout after the same embed step at the same pin, and records the
 checkout's own digests, whose pin binds the embedded copy.
 
 ## Check the built consumer ZIP
@@ -159,7 +159,7 @@ For each manager/provider, prove:
   remaining consumer still work. Updating or repairing the remaining consumer also works.
 - Disable and re-enable core, reload, restart and update standalone core while preserving saved variables.
 
-Run the real headless client smoke against the resulting exact addon set. Archive and metadata checks supplement
+Run the release smoke against the resulting exact addon set. Archive and metadata checks supplement
 that proof; they do not establish a manager's ownership behavior. Keep #448 open until its uninstall reproduction
 passes. If a manager removes core despite the dependency relation, retain the fallback and fix or report that manager
 path before continuing.
@@ -190,7 +190,7 @@ remains, fresh install and uninstall behave according to the dependency settings
 open. These results are partial evidence for #650, not completion of its lifecycle matrix.
 
 The remaining checks are wowaddon, manual ZIP installation, two consumers at mixed versions in both update orders,
-a consumer downgrade, and a headless client smoke for each resulting addon set. The WowUp Wago provider also needs
+a consumer downgrade, and a release smoke for each resulting addon set. The WowUp Wago provider also needs
 independent evidence before its channel can pass the gate.
 
 #### Run the manager harness

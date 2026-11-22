@@ -55,7 +55,7 @@ TOC's leading UTF-8 BOM and `## Interface-` lines are stripped by the packager, 
 instead of hashed, whether or not the policy plain-copies it. `compare_installed` stays a single-folder comparison;
 a mapped checkout must use `compare_package` on the packager's release root, which also checks the declared external
 addon folders without claiming their bytes. An addon that embeds core (`## X-Forever-Core-Embed: 1`) installs the
-embed step's output, so `forever_client.py proof` compares the installed folder with the checkout's tracked files after
+embed step's output, so the proof compares the installed folder with the checkout's tracked files after
 that same step at the same pin; `input_digest` and `candidate` stay the checkout's own, and the pin binds the copy.
 """
 
@@ -663,7 +663,7 @@ def absolute_lua_step(step: str) -> bool:
 def checks_problems(checks: object, *, required: bool) -> list[str]:
     """Why the proof's in-game checks do not pass: the selftest, the Lua errors and the released addons' startup.
 
-    `forever_client.py proof` runs the smoke's checks on the session it captured and records them as `checks`: the
+    The recorder runs the smoke's checks on the session it captured and records them as `checks`: the
     selftest's surface count and the ones that failed, each addon folder's Lua error count over the whole job, and the
     released addons (a core proof) that never registered. A proof without them (a checklist attestation, or one
     recorded before the checks existed) still proves the flows it shows, so only a release requires them.
@@ -671,7 +671,7 @@ def checks_problems(checks: object, *, required: bool) -> list[str]:
     if checks is None and not required:
         return []
     if not isinstance(checks, dict):
-        return ["visual proof needs the in-game checks forever_client.py proof records (selftest and Lua errors)"]
+        return ["visual proof needs its recorded in-game checks (selftest and Lua errors)"]
     problems = []
     selftest = checks.get("selftest")
     if (

@@ -203,6 +203,6 @@ core files gets its stand-in there, in one place, not in each addon's specs.
 3. Release ForeverCore. The stores carry it to players with the addons that require it.
 4. Consumers pick up behaviour changes with no file copy. `tools/sync_consumers.py` copies only the development
    tooling in `tools/check_core_shared.py`'s `VENDORED`.
-5. A changed store description in an addon's `docs/curseforge.md` reaches CurseForge through
-   `tools/sync_curseforge.py`, which skips descriptions that did not change and checks every word, link and image URL it
-   publishes.
+5. A changed store description in an addon's `docs/curseforge.md` is pasted on CurseForge (`wow-addon-publish`,
+   "Descriptions"); `tools/sync_curseforge.py` and the daily `store-descriptions` workflow check every word, link and
+   image URL stored there against `main`.

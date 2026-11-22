@@ -21,12 +21,11 @@ local _, ns = ...
 
 -- The client's own objective tracker. Its presence says Blizzard_ObjectiveTracker loaded, which defines the section
 -- template every Forever section is built from, and the column sits under its last line or pins left of it. The column
--- reads only where it is, whether it is shown or collapsed, and where its NineSlice, which ends under its last line,
--- and its header end. Both placements sample coordinates and anchor the column to UIParent so it stays outside
--- the tracker's protected anchor chain.
+-- reads its position, visibility, collapse and drag state, and the bottom of its NineSlice or header.
 ---@class ForeverNativeTrackerFrame : Frame
 ---@field NineSlice Frame?
 ---@field Header Frame?
+---@field isDragging boolean?
 
 -- Keep our sections and their frame pools entirely outside the native module collection and its Edit Mode path.
 if not ObjectiveTrackerFrame then
@@ -1084,6 +1083,25 @@ local function TrackerShows()
 	end
 	return "list"
 end
+-- Where the game's tracker's top left corner is, in its own units, as the column places itself by it: the frame's own
+-- rect while the tracker shows. A hidden tracker (nothing tracked) is not laid out by its container any more, so its
+-- rect drifts or goes away with whatever else the screen does; the column holds the corner the tracker had when it
+-- last showed, which is where an empty tracker would sit, and reads the frame only for a tracker it never saw show.
+-- Reads only.
+local shownCorner
+---@return number? left, number? top, number scale
+local function TrackerRect()
+	local left, top = Coordinate(ObjectiveTrackerFrame:GetLeft()), Coordinate(ObjectiveTrackerFrame:GetTop())
+	local scale = ObjectiveTrackerFrame:GetEffectiveScale()
+	if ObjectiveTrackerFrame:IsShown() then
+		if left and top then
+			shownCorner = { left, top, scale }
+		end
+	elseif shownCorner then
+		return shownCorner[1], shownCorner[2], shownCorner[3]
+	end
+	return left, top, scale
+end
 -- Where the column goes under the game's quest tracker: its top left corner on the tracker's last visible line. That is
 -- the bottom of the tracker's NineSlice, which Blizzard anchors under its last shown section; the bottom of its header
 -- while the player has it collapsed, since its sections hide then but the NineSlice keeps their old anchor; or the
@@ -1102,8 +1120,7 @@ local function TrackerEdge(shows)
 		local listScale = list:GetEffectiveScale()
 		return listLeft * listScale / hostScale, listBottom * listScale / hostScale
 	end
-	local left = Coordinate(ObjectiveTrackerFrame:GetLeft())
-	local trackerScale = ObjectiveTrackerFrame:GetEffectiveScale()
+	local left, top, trackerScale = TrackerRect()
 	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
 		or shows == "collapsed" and ObjectiveTrackerFrame.Header
 		or nil
@@ -1111,8 +1128,9 @@ local function TrackerEdge(shows)
 	if edge then
 		bottom, scale = edge:GetBottom(), edge:GetEffectiveScale()
 	else
-		bottom, scale = ObjectiveTrackerFrame:GetTop(), trackerScale
+		bottom, scale = top, trackerScale
 	end
+	bottom = Coordinate(bottom)
 	if not (left and bottom) then
 		return nil
 	end
@@ -1177,26 +1195,6 @@ local function BarRoom(left, width, top, height)
 	end
 	return floor, right
 end
--- The whole cluster includes the zone name bar. Compare its edges in the column's units.
-local function MinimapTop(left, width, top)
-	local cluster = rawget(_G, "MinimapCluster")
-	if type(cluster) ~= "table" or not cluster:IsShown() then
-		return top
-	end
-	local mapLeft, mapRight, bottom = cluster:GetLeft(), cluster:GetRight(), cluster:GetBottom()
-	if mapLeft and mapRight and bottom then
-		local scale = cluster:GetEffectiveScale() / host:GetEffectiveScale()
-		if left < mapRight * scale and left + width > mapLeft * scale then
-			return math.min(top, bottom * scale)
-		end
-	end
-	return top
-end
-
-local function UnderX(x, width, right)
-	return math.max(0, math.min(x, right - width))
-end
-
 -- Whether the column now sits under the quest tracker rather than at its pin to the left.
 local under = false
 local function SetColumnPoint(point, relativePoint, x, y)
@@ -1207,18 +1205,23 @@ local function SetColumnPoint(point, relativePoint, x, y)
 	end
 end
 
--- The selected tracker's top-left corner in the column's units.
-local function TrackerCorner()
-	local tracker = QuestieList() or ObjectiveTrackerFrame
-	local left, top = Coordinate(tracker:GetLeft()), Coordinate(tracker:GetTop())
-	local scale = tracker:GetEffectiveScale() / host:GetEffectiveScale()
+---@param tracker Frame
+---@return number? left, number? top
+local function TrackerCorner(tracker)
+	local left, top, scale
+	if tracker == ObjectiveTrackerFrame then
+		left, top, scale = TrackerRect()
+	else
+		left, top, scale = Coordinate(tracker:GetLeft()), Coordinate(tracker:GetTop()), tracker:GetEffectiveScale()
+	end
+	scale = scale / host:GetEffectiveScale()
 	return left and left * scale, top and top * scale
 end
 
-local function PinLeft(left, top)
+local function PinLeft()
+	local left, top = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
 	if left and top then
-		local width = host:GetWidth()
-		SetColumnPoint("TOPRIGHT", "BOTTOMLEFT", left, MinimapTop(left - width, width, top))
+		SetColumnPoint("TOPRIGHT", "BOTTOMLEFT", left, top)
 		under = false
 	end
 end
@@ -1233,14 +1236,32 @@ end
 local placeAgain = false
 -- Whether this session has placed the column by the tracker's line at least once.
 local followed = false
+-- Whether the column's rect and Questie's list overlap, which a player dragging the list onto a column that holds its
+-- place brings about. The column never covers the list it sits beside.
+---@param list Frame?
+---@return boolean
+local function CoversList(list)
+	if not list then
+		return false
+	end
+	local scale = list:GetEffectiveScale() / host:GetEffectiveScale()
+	local listLeft, listRight = Coordinate(list:GetLeft()), Coordinate(list:GetRight())
+	local listTop, listBottom = Coordinate(list:GetTop()), Coordinate(list:GetBottom())
+	local left, right = Coordinate(host:GetLeft()), Coordinate(host:GetRight())
+	local top, bottom = Coordinate(host:GetTop()), Coordinate(host:GetBottom())
+	if not (listLeft and listRight and listTop and listBottom and left and right and top and bottom) then
+		return false
+	end
+	listLeft, listRight, listTop, listBottom = listLeft * scale, listRight * scale, listTop * scale, listBottom * scale
+	return left < listRight and listLeft < right and bottom < listTop and listBottom < top
+end
 ---@param settings ForeverTrackerSettings
 local function FollowTracker(settings)
-	if (settings.x and settings.y) or Drag.Dragging() or InCombatLockdown() then
+	if (settings.x and settings.y) or Drag.Dragging() or ObjectiveTrackerFrame.isDragging or InCombatLockdown() then
 		return
 	end
-	local left, trackerTop = TrackerCorner()
 	if settings.placement == "left" then
-		PinLeft(left, trackerTop)
+		PinLeft()
 		return
 	end
 	-- Lock holds the place the column has, except for Under's no-room fallback: a locked column under the tracker that no
@@ -1249,18 +1270,17 @@ local function FollowTracker(settings)
 	local shows = TrackerShows()
 	if settings.locked and followed and not placeAgain then
 		if not under then
-			PinLeft(left, trackerTop)
+			PinLeft()
 		else
 			local _, line = TrackerEdge(shows)
-			local x, width = host:GetLeft() or 0, host:GetWidth() or 0
-			local heldTop = host:GetTop() or 0
-			local top = MinimapTop(x, width, heldTop)
 			local height = host:GetHeight() or 0
-			local floor = BarRoom(x, width, top, height)
-			if height > (line or math.huge) - floor or height > top - floor then
-				PinLeft(left, trackerTop)
-			elseif top < heldTop then
-				SetColumnPoint("TOPLEFT", "BOTTOMLEFT", x, top)
+			local floor = BarRoom(host:GetLeft() or 0, host:GetWidth() or 0, host:GetTop() or 0, height)
+			if
+				height > (line or math.huge) - floor
+				or height > (host:GetTop() or 0) - floor
+				or CoversList(QuestieList())
+			then
+				PinLeft()
 			end
 		end
 		return
@@ -1270,7 +1290,7 @@ local function FollowTracker(settings)
 	-- and once placed keeps its place.
 	if not (x and top) then
 		if not followed then
-			PinLeft(left, trackerTop)
+			PinLeft()
 		end
 		return
 	end
@@ -1278,22 +1298,18 @@ local function FollowTracker(settings)
 	local width = host:GetWidth() or 0
 	local height = host:GetHeight() or 0
 	local floor, right = BarRoom(x, width, top, height)
-	x = UnderX(x, width, right)
-	local capped = MinimapTop(x, width, top)
-	if capped < top then
-		floor = BarRoom(x, width, capped, height)
-		top = capped
-	end
 	if height > top - floor then
-		PinLeft(left, trackerTop)
+		PinLeft()
 		return
 	end
+	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	local screenWidth = UIParent:GetWidth() / scale
+	x = math.max(0, math.min(x, math.max(0, math.min(screenWidth, right) - width)))
 	SetColumnPoint("TOPLEFT", "BOTTOMLEFT", x, top)
 	under = true
 end
--- The private column sits wherever the player dragged it. Until then it sits left of the game's quest tracker or under
--- it. Both use the room below the tracker's top, capped by the minimap when they overlap. After layout, FollowTracker
--- uses the measured column height to choose between the last visible line and the left corner.
+-- Layout measures the room from the tracker's top. Once the column's height is known, FollowTracker can
+-- place it below the last line. Both placements use screen coordinates so the column has no anchor to the tracker.
 ---@param settings ForeverTrackerSettings
 ---@return number width, number top, number? floor
 local function Anchor(settings)
@@ -1301,40 +1317,29 @@ local function Anchor(settings)
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(WIDTH, screenWidth)
 	host:SetWidth(width)
-	-- A drag in progress owns the column's position: a header's StartMoving placed it, and its OnDragStop saves it.
-	if Drag.Dragging() then
+	-- Keep the column in place while either tracker is being dragged.
+	if Drag.Dragging() or ObjectiveTrackerFrame.isDragging then
 		return width, host:GetTop() or screenHeight
 	end
 	if settings.x and settings.y then
+		host:ClearAllPoints()
 		local x = math.max(0, math.min(settings.x / scale, math.max(0, screenWidth - width)))
 		local y = math.min(0, math.max(settings.y / scale, 24 - screenHeight))
-		SetColumnPoint("TOPLEFT", "TOPLEFT", x, y)
+		host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
 		under = false
 		return width, screenHeight + y
 	end
-	local left, top = TrackerCorner()
-	top = top or Coordinate(host:GetTop()) or screenHeight
-	left = left or Coordinate(host:GetRight()) or screenWidth
-	local height = host:GetHeight() or screenHeight
-	local layoutLeft = left - width
-	local capped = MinimapTop(layoutLeft, width, top)
 	if settings.placement == "under" then
-		layoutLeft = left
-		if MinimapTop(0, screenWidth, top) < top then
-			local x
-			if settings.locked and followed and under and not placeAgain then
-				x = host:GetLeft() or left
-			else
-				local edge, line = TrackerEdge(TrackerShows())
-				local _, right = BarRoom(edge or left, width, line or top, height)
-				x = UnderX(edge or left, width, right)
-			end
-			-- Fit both Under and its Left fallback if the quest list is too long.
-			capped = math.min(capped, MinimapTop(x, width, top))
+		local left, top = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
+		if top then
+			local floor = BarRoom(left or 0, width, top, host:GetHeight() or screenHeight)
+			return width, top, floor
 		end
 	end
-	local floor = BarRoom(layoutLeft, width, capped, height)
-	return width, capped, floor
+	PinLeft()
+	local pinnedTop = host:GetTop() or screenHeight
+	local pinnedFloor = BarRoom(host:GetLeft() or 0, width, pinnedTop, host:GetHeight() or screenHeight)
+	return width, pinnedTop, pinnedFloor
 end
 
 -- With no section to show, the column hides entirely; the next layout with content shows it again.
@@ -1773,9 +1778,6 @@ local function Migrate()
 	if not InCombatLockdown() then
 		host:SetScale(settings.scale)
 		Anchor(settings)
-		if not (settings.x and settings.y) and not Drag.Dragging() then
-			PinLeft(TrackerCorner())
-		end
 	end
 	host:MarkDirty()
 end
@@ -2039,8 +2041,8 @@ local function Listen()
 	end)
 	return DiscoverQuestie
 end
--- A developer diagnostic for the tracker stack (/fcore tracker). The combat overlap is otherwise invisible headlessly:
--- it prints both frames' anchors, heights and who each is anchored to.
+-- A developer diagnostic for the tracker stack (/agf tracker). The combat overlap is otherwise invisible headlessly: it
+-- prints both frames' anchors, heights and who each is anchored to.
 ---@return string
 function api.Debug()
 	-- Raw literals on purpose: this host is shared with the companion addons, whose ns.L has no AGF keys, and
@@ -2083,17 +2085,11 @@ ns.AtStart(function()
 	for key, method in pairs(column) do
 		host[key] = method
 	end
+	-- The column starts at its pin, so it never shows anywhere else before the store's anchor (#795).
 	MatchScale()
+	host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
+	PinLeft()
 	host:SetWidth(WIDTH)
-	-- Establish a screen anchor before the first section measures its lines.
-	if not InCombatLockdown() then
-		local left, top = TrackerCorner()
-		if left and top then
-			PinLeft(left, top)
-		else
-			host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
-		end
-	end
 	host:SetHeight(1)
 	host:SetMovable(true)
 	host:SetClampedToScreen(true)
