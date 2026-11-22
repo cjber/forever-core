@@ -208,7 +208,7 @@ Use only where the client itself shows that art in the same context, and never a
   being skinned (action bars, cast bar, cooldown manager). Never as a border, divider, or panel edge.
 - `talents-*`, `artifacts*`, `runecarving*` (423 elements, only 13 with a set-1 member): only those 13.
 - `questlog-*` (67 elements, none in set 1) — the icon-level ones (`QuestLog-icon-setting`) are fine;
-  the parchment column art is not.
+  the parchment column art requires a named exception.
 - Expansion-flavoured icons for content that is genuinely that expansion (a Draenei portrait, a
   Pandaren map pin). Icons carry meaning; frames and chrome must stay neutral.
 
@@ -240,6 +240,7 @@ The owner approved each of these by name. A new use of the same art in another c
 | Asset | Where | Why it stays |
 |---|---|---|
 | `islands-queue-prop-compass` | Adventure Guide, Legacy | The client shows it as a standalone prop on the Islands queue screen (`Blizzard_IslandsQueueUI.xml`): an illustrated object with no expansion branding, at high resolution. Allowed only as a standalone navigation icon, never as framing. |
+| `QuestLog-main-background` | Gathering Guide quest-map surface only | The native quest list selects the same atlas in [QuestLogScrollFrameMixin:UpdateBackground](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/Interface/AddOns/Blizzard_UIPanels_Game/Mainline/QuestMapFrame.lua#L1411-L1429). Keep the art within the quest-map content bounds. |
 | `shortest-path-forever/media/Zeppelin.tga` | Shortest Path | The client has no zeppelin icon. |
 | `shortest-path-forever/media/Pin.tga` | Shortest Path goal pin | A sibling of the client's waypoint pin, so a journey's goal can be told apart from the player's own map waypoint (#432). |
 | `shortest-path-forever/media/PinInactive.tga` | Shortest Path untracked goal pin | The bronze twin of `Pin.tga`, for a route that is planned but not guided (#432). |
