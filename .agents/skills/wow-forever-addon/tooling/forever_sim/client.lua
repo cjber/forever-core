@@ -413,9 +413,18 @@ function M.build(sim)
 		["C_TradeSkillUI.OpenTradeSkill"] = { class = "always", issue = "cjber/forever-core#538" },
 		["C_UI.Reload"] = { class = "hwevent", issue = "cjber/forever-core#538" },
 		-- OpenRecipe from addon code outside a hardware event logged ADDON_ACTION_BLOCKED live (cjber/forever-core#831);
-		-- CraftRecipe reached from tainted code did at any time (cjber/skillup-forever#313).
 		["C_TradeSkillUI.OpenRecipe"] = { class = "hwevent", issue = "cjber/forever-core#831" },
-		["C_TradeSkillUI.CraftRecipe"] = { class = "always", issue = "cjber/skillup-forever#313" },
+		-- A native hardware click can craft after reading addon state. Addon execution on the call path
+		-- and tainted calls without hardware input are still refused.
+		["C_TradeSkillUI.CraftRecipe"] = {
+			class = "always",
+			issue = "cjber/skillup-forever#313",
+			applies = function()
+				local origin = Taint.origin
+				local fromRead = origin and (origin.kind == "field" or origin.kind == "global")
+				return not (sim.hardwareInput and fromRead and not Taint.addonSite())
+			end,
+		},
 	}
 	-- Every class of a restriction, the observed override first, then the pin, then the pre-class combat-only rule for
 	-- an untagged name. A function can carry several classes, and any one that applies refuses the call.
