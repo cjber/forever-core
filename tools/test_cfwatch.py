@@ -317,6 +317,36 @@ class LinkedTest(unittest.TestCase):
         self.assertNotIn("thread #11:", output)
         self.assertIn("0 due, 1 answered, 0 still waiting", output)
 
+    def test_a_link_from_a_nested_reply_is_read_through_its_thread(self):
+        links = {"20": [self.link(number=7)]}
+        rows = [
+            comment(
+                11,
+                "needs a fix",
+                replies=[comment(20, "same here", parent=11, replies=[owner_reply(21, 20, posted=1_800_000_000_000)])],
+            )
+        ]
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            output = run(["--due"], fake_fetch(rows), links=links)
+        self.assertNotIn("thread #", output)
+        self.assertIn("0 due, 1 answered, 0 still waiting", output)
+
+    def test_a_link_recorded_from_the_owners_own_reply_is_already_answered(self):
+        links = {"21": [self.link(number=7)]}
+        rows = [comment(11, "needs a fix", replies=[owner_reply(21, 11)])]
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z")
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            output = run(["--due"], fake_fetch(rows), links=links)
+        self.assertNotIn("thread #", output)
+        self.assertIn("0 due, 1 answered, 0 still waiting", output)
+
 
 class SearchIssuesTest(unittest.TestCase):
     def search(self, rows_by_repo):
@@ -518,6 +548,37 @@ class ReleasedInTest(unittest.TestCase):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
         with self.release(issue, self.merged(), contained=()):
             self.assertIsNone(self.released("skillup-forever", 9))
+
+    def test_the_first_merged_closing_pr_names_the_release_that_shipped_the_fix(self):
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-18T00:00:00Z"}
+        events = self.merged("2026-11-11T00:00:00Z", 886, "shortest-path-forever") + self.merged(
+            "2026-11-17T00:00:00Z", 969, "shortest-path-forever"
+        )
+
+        def api(*args):
+            url = args[1]
+            if "/timeline" in url:
+                return events
+            if "/issues/" in url:
+                return issue
+            if "/pulls/" in url:
+                return {"merge_commit_sha": "sha" + url.rsplit("/", 1)[1]}
+            if "/releases" in url:
+                return [
+                    {"tag_name": "v1.38.0", "published_at": "2026-11-12", "draft": False},
+                    {"tag_name": "v1.43.0", "published_at": "2026-11-18", "draft": False},
+                ]
+            raise AssertionError(url)
+
+        def git(checkout, *args):
+            if args[0] == "tag":
+                contained = {"sha886": ("v1.38.0", "v1.43.0"), "sha969": ("v1.43.0",)}
+                tags = contained.get(args[2], ())
+                return subprocess.CompletedProcess(args, 0, "\n".join(tags) + ("\n" if tags else ""), "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with unittest.mock.patch.multiple(cfwatch, gh_json=api, checkout=lambda root, repo: Path("/checkout"), git=git):
+            self.assertEqual(self.released("shortest-path-forever", 846), cfwatch.Release("v1.38.0", "2026-11-12"))
 
     def test_a_pr_merged_after_the_issue_closed_does_not_close_it(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
