@@ -74,6 +74,8 @@ MARKER = "<!-- forever-core-sync -->"
 CHANGELOG = "CHANGELOG.md"
 RELEASE_WORKFLOW = "release.yml"
 CI_WORKFLOW = "ci.yml"
+# The one CI job `release.yml` waives under `skip_visual_proof`, since a sync merge's proof is bound to the PR head.
+VISUAL_PROOF_JOB = "visual-proof"
 # The commit status that records a commit's pre-release checks, posted ahead of a release.
 SMOKE_CONTEXT = "headless-smoke"
 # The published addons that embed ForeverCore under Libs/ForeverCore (`forever_tools.fleet`, which each consumer's own
@@ -304,6 +306,42 @@ def ci_runs(repo: str, sha: str) -> dict:
     return api_json(f"repos/{OWNER}/{repo}/actions/workflows/{CI_WORKFLOW}/runs?head_sha={sha}&event=push&per_page=100")
 
 
+def ci_jobs(repo: str, run_id: int) -> dict:
+    """The jobs of one `ci.yml` run, which say whether only the visual-proof job failed."""
+    return api_json(f"repos/{OWNER}/{repo}/actions/runs/{run_id}/jobs?per_page=100")
+
+
+def only_visual_proof_failed(repo: str, runs: dict, sha: str) -> bool:
+    """Whether `sha`'s newest main CI run failed only on `VISUAL_PROOF_JOB`, the failure `release.yml` waives."""
+    matching = [
+        run for run in runs.get("workflow_runs", []) if run.get("head_branch") == "main" and run.get("head_sha") == sha
+    ]
+    if not matching:
+        return False
+    newest = max(matching, key=lambda run: run.get("run_started_at") or "")
+    if newest.get("conclusion") != "failure":
+        return False
+    run_id = newest.get("id")
+    if not isinstance(run_id, int):
+        return False
+    try:
+        jobs = ci_jobs(repo, run_id).get("jobs")
+    except (AttributeError, json.JSONDecodeError, KeyError, TypeError):
+        return False
+    if not isinstance(jobs, list):
+        return False
+    failed = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            return False
+        # Every job has to be settled: a run whose other jobs are still going (or whose payload is odd) is not.
+        if job.get("status") != "completed":
+            return False
+        if job.get("conclusion") == "failure":
+            failed.append(job.get("name"))
+    return bool(failed) and all(name == VISUAL_PROOF_JOB for name in failed)
+
+
 def smoke_status(repo: str, sha: str) -> str:
     """The state of the newest `headless-smoke` status on `sha`, or `missing` before any smoke has posted one.
 
@@ -384,7 +422,10 @@ def plan(repo: str) -> Decision:
         return decide(changelog, head, False, False, "none", release_failed=True)
     if tag_exists(repo, f"v{version}"):
         return decide(changelog, None, True, False, "none")
-    state = ci_state(ci_runs(repo, head), head)
+    ci = ci_runs(repo, head)
+    state = ci_state(ci, head)
+    if state == "completed/failure" and only_visual_proof_failed(repo, ci, head):
+        state = "completed/success"
     smoke = build_evidence(repo, head) if state == "completed/success" else "missing"
     return decide(changelog, head, False, False, state, smoke=smoke)
 
