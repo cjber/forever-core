@@ -2,8 +2,7 @@
 -- luajit fa.lua encode <Auras/X.lua> [id]   prints an import string for each spec the file declares with
 --                                          ns.Aura({d = data, c = children?}), or only the one whose d.id is id
 -- luajit fa.lua decode <file|->     prints the payload of an import string as a Lua table
-local FA = os.getenv("FA_DIR") or (os.getenv("HOME")
-  .. "/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/Interface/AddOns/ForeverAuras")
+local FA = os.getenv("FA_DIR") or error("set FA_DIR to the installed ForeverAuras addon folder (Interface/AddOns/ForeverAuras)")
 
 local libs = {}
 LibStub = setmetatable({

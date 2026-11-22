@@ -132,9 +132,9 @@ ForeverCore.CharacterKey() --> string?
 ```
 
 The key to file this character's saved data under. On a realm with a name it is `Name-NormalizedRealm`
-(`Barry-Firemaw`), the key addons have always built. A Forever realm has no name: `GetRealmName()` is `""` and
+(`Aria-Firemaw`), the key addons have always built. A Forever realm has no name: `GetRealmName()` is `""` and
 `UnitName("player")`'s second return is the character's surname, so the key is the full name and the server segment
-of `UnitGUID("player")` (`Barry Buckfast-6941`), which keeps characters sharing a first name apart. It is nil until
+of `UnitGUID("player")` (`Aria Stone-6941`), which keeps characters sharing a first name apart. It is nil until
 the client has the character's name and GUID, and while a realm with an ID other than 0 has no name yet, so an early
 read on a named realm never answers a Forever key. It is read fresh on every call, so ask again later rather than
 keeping a nil. Check `(ForeverCore.minor or 0) >= 3` before calling it. (minor 3)

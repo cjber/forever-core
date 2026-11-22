@@ -42,25 +42,25 @@ end
 local GUID = "Player-6941-006325F9"
 
 -- A named realm keeps today's key, whatever the GUID or second name says.
-equal(Key({ name = "Barry", normalized = "Firemaw", realm = "Firemaw", guid = GUID }), "Barry-Firemaw", "a named realm")
+equal(Key({ name = "Aria", normalized = "Firemaw", realm = "Firemaw", guid = GUID }), "Aria-Firemaw", "a named realm")
 equal(
-	Key({ name = "Barry", second = "Buckfast", normalized = "Firemaw", realm = "Firemaw", guid = GUID }),
-	"Barry-Firemaw",
+	Key({ name = "Aria", second = "Stone", normalized = "Firemaw", realm = "Firemaw", guid = GUID }),
+	"Aria-Firemaw",
 	"a named realm ignores a surname, so existing keys still match"
 )
 equal(
-	Key({ name = "Barry", normalized = "ArgentDawn", realm = "Argent Dawn", guid = GUID }),
-	"Barry-ArgentDawn",
+	Key({ name = "Aria", normalized = "ArgentDawn", realm = "Argent Dawn", guid = GUID }),
+	"Aria-ArgentDawn",
 	"the normalized realm, without its space"
 )
 equal(
-	Key({ name = "Barry", normalized = "", realm = "Argent Dawn", guid = GUID }),
-	"Barry-ArgentDawn",
+	Key({ name = "Aria", normalized = "", realm = "Argent Dawn", guid = GUID }),
+	"Aria-ArgentDawn",
 	"early in loading the plain realm name, stripped the way the client normalizes it"
 )
 equal(
-	Key({ name = "Barry", normalized = nil, realm = "Azjol-Nerub", guid = GUID }),
-	"Barry-AzjolNerub",
+	Key({ name = "Aria", normalized = nil, realm = "Azjol-Nerub", guid = GUID }),
+	"Aria-AzjolNerub",
 	"a hyphen is stripped too"
 )
 
@@ -68,23 +68,23 @@ equal(
 local forever = { name = "Hel", second = "Io", normalized = "", realm = "", guid = GUID, realmID = 0 }
 equal(Key(forever), "Hel Io-6941", "the live Forever case from #999")
 equal(
-	Key({ name = "Barry", second = "Buckfast", normalized = "", realm = "", guid = "Player-6941-0000ABCD", realmID = 0 }),
-	"Barry Buckfast-6941",
+	Key({ name = "Aria", second = "Stone", normalized = "", realm = "", guid = "Player-6941-0000ABCD", realmID = 0 }),
+	"Aria Stone-6941",
 	"one first name on one server"
 )
 equal(
-	Key({ name = "Barry", second = "Guns", normalized = "", realm = "", guid = "Player-6941-0000ABCE", realmID = 0 }),
-	"Barry Guns-6941",
+	Key({ name = "Aria", second = "Guns", normalized = "", realm = "", guid = "Player-6941-0000ABCE", realmID = 0 }),
+	"Aria Guns-6941",
 	"and a different surname is a different key"
 )
 equal(
-	Key({ name = "Barry", normalized = "", realm = "", guid = GUID, realmID = 0 }),
-	"Barry-6941",
+	Key({ name = "Aria", normalized = "", realm = "", guid = GUID, realmID = 0 }),
+	"Aria-6941",
 	"a character with no surname keys on its first name"
 )
 equal(
-	Key({ name = "Barry", second = "", normalized = "", realm = "", guid = GUID, realmID = 0 }),
-	"Barry-6941",
+	Key({ name = "Aria", second = "", normalized = "", realm = "", guid = GUID, realmID = 0 }),
+	"Aria-6941",
 	"an empty surname is no surname"
 )
 
@@ -102,13 +102,13 @@ equal(
 
 -- A named realm still loading answers no name with a real ID: no key yet, never a Forever key it would later drop.
 equal(
-	Key({ name = "Barry", second = "Buckfast", normalized = "", realm = "", realmID = 4440, guid = GUID }),
+	Key({ name = "Aria", second = "Stone", normalized = "", realm = "", realmID = 4440, guid = GUID }),
 	nil,
 	"a realm with an ID but no name yet"
 )
-equal(Key({ name = "Barry", normalized = "", realm = "", realmID = nil, guid = GUID }), nil, "no realm ID yet")
+equal(Key({ name = "Aria", normalized = "", realm = "", realmID = nil, guid = GUID }), nil, "no realm ID yet")
 equal(
-	Key({ name = "Barry", normalized = "Firemaw", realm = "Firemaw", guid = nil }),
+	Key({ name = "Aria", normalized = "Firemaw", realm = "Firemaw", guid = nil }),
 	nil,
 	"a named realm with no GUID yet"
 )
