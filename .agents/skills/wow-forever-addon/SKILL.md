@@ -208,21 +208,23 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   the player's way to the feature and adds the states that have broken before: combat, a secret tooltip, the
   gamepad interface, Questie's tracker, an old saved file. A fix for a reported error comes with a scenario that
   fails on the release the error was reported against.
-- **WFA-40** A change is proven in game by what it does and what it costs, not by how it looks. A
-  screenshot passes a window that closes on the next click and a handler that freezes the client for a second.
-  - Every surface the change touches gets a proof flow: the actions a player takes there (open, sort, click, buy,
-    open the bags, turn the camera), each with its expected result, written as a Lua flow that raises on the first
-    mismatch so the proof fails.
-  - Every flow reads `!!DevPerf`'s per-event split for its own actions: a Forever handler call or a tick over one
-    frame (1000/60 ms) fails it, named by addon and event. WFA-13's 3 ms budget still holds; this is the floor a
-    proof enforces.
-  - Every proof runs with full logging: `taintLog` 2, `scriptErrors` 1, BugGrabber, DevSessionLog and the
-    `!!DevPerf` profiler. A new BugGrabber entry naming an addon of ours fails the proof, as does a taint.log record
-    of our taint reaching secure code (a blocked action, or Blizzard code writing or
-    running tainted outside a secure call); one addon reading another's value is not a defect. A FAIL reports the exact error, its stack and the event or action that raised it, never a summary.
-  - Every `CHANGELOG.md` bullet the change adds maps to the flow that proves it, listed in the pull request body.
-  - Where Forever's client differs from retail, the behaviour is modelled in `forever_sim` from a live record, and
-    the change's scenario runs against it (WFA-35). A bench of per-event work reads the sim's work counter.
+- **WFA-40** Use the cheapest check that exercises the changed behaviour.
+  - Start with a focused spec or `forever_sim` scenario. Use it for logic, defaults, message routing and
+    deduplication when it can assert the player's result through the normal entry point. For a yellow
+    distance notice, cross the threshold in the simulator and assert one on-screen message and zero chat
+    messages. That completes the behavioural check.
+  - Use the live client when a required gate calls for it (WFA-16), or when the change makes a claim the
+    simulator cannot settle. Examples include a client-only protected action or taint report, actual layout
+    or input behaviour the simulator cannot model, and measured frame time. Before opening the game,
+    name the unanswered question and the one flow that answers it. Reuse a recorded result for the same
+    candidate and flow when it already answers the question. Read [debugging.md](debugging.md) for live checks.
+  - In a live flow, assert the expected result at each action. Enable `taintLog` 2, `scriptErrors` 1,
+    BugGrabber, DevSessionLog and the `!!DevPerf` profiler. Fail on a new BugGrabber entry naming one of our
+    addons, or our taint reaching secure code. Report the error, its stack and the triggering action.
+    For changed input, event or render paths, check the profiler's per-event split. Fail a Forever handler
+    or tick over one frame (1000/60 ms), and apply WFA-13's 3 ms budget.
+  - In the PR body, cite the check that proves each changed behaviour. For a Forever-specific behaviour the
+    simulator misses, model it from the live recording and add the scenario required by WFA-35.
 
 ### Build, CI and release
 
