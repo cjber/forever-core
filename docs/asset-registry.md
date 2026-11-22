@@ -305,13 +305,15 @@ it stops the next new feature reaching for garrison or covenant art.
 ```python
 # Set 1 is preferred; a set-0-only element needs native host evidence and a blacklist check.
 import csv, collections
-base = '/.cache/wowmock/1.60.1.70124/'          # under $HOME
-atel = {a['ID']: a for a in csv.DictReader(open(base+'UiTextureAtlas.csv', encoding='utf-8-sig'))}
-elem = {e['ID']: e['Name'] for e in csv.DictReader(open(base+'UiTextureAtlasElement.csv', encoding='utf-8-sig'))}
+
+base = "/.cache/wowmock/1.60.1.70124/"  # under $HOME
+atel = {a["ID"]: a for a in csv.DictReader(open(base + "UiTextureAtlas.csv", encoding="utf-8-sig"))}
+elem = {e["ID"]: e["Name"] for e in csv.DictReader(open(base + "UiTextureAtlasElement.csv", encoding="utf-8-sig"))}
 sets = collections.defaultdict(set)
-for m in csv.DictReader(open(base+'UiTextureAtlasMember.csv', encoding='utf-8-sig')):
-    a = atel.get(m['UiTextureAtlasID'])
-    if a: sets[elem.get(m['UiTextureAtlasElementID'], '?')].add(a['UiTextureAtlasSetID'])
-sets['common-dropdown-bg']                    # {'0', '1'} -> prefer set 1; still check context and blacklist
-sets['GarrMission_EncounterAbilityBorder']    # {'0'}     -> this family is blacklisted, regardless of set
+for m in csv.DictReader(open(base + "UiTextureAtlasMember.csv", encoding="utf-8-sig")):
+    a = atel.get(m["UiTextureAtlasID"])
+    if a:
+        sets[elem.get(m["UiTextureAtlasElementID"], "?")].add(a["UiTextureAtlasSetID"])
+sets["common-dropdown-bg"]  # {'0', '1'} -> prefer set 1; still check context and blacklist
+sets["GarrMission_EncounterAbilityBorder"]  # {'0'}     -> this family is blacklisted, regardless of set
 ```

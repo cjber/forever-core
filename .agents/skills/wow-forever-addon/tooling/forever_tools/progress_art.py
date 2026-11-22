@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.parsers import expat
 
-from .client_calls import _arguments
-from .lua import Token, tokenize
-from .luadata import unescape
+from .client_calls import _arguments, _blocks, _declarations, _enclosing, _expression, _field, _header_dos
+from .lua import LuaSyntaxError, Token, tokenize
+from .luadata import LuaDataError, unescape
 
 REGISTRY = Path(__file__).with_name("asset-registry.md")
 SLOTS = {"fill", "background", "template"}
@@ -68,32 +68,52 @@ def _receiver(tokens: list[Token], end: int) -> str:
     return _path(tokens[start:end]) or "?"
 
 
-def _asset(tokens: list[Token], constants: dict[str, str]) -> str | None:
+def _literal(tokens: list[Token]) -> str | None:
     if tokens and all(token.kind == "string" if i % 2 == 0 else token.text == ".." for i, token in enumerate(tokens)):
-        return "".join(unescape(token.text) for token in tokens[::2])
-    return constants.get(_path(tokens) or "")
+        try:
+            return "".join(unescape(token.text) for token in tokens[::2])
+        except LuaDataError:
+            return None
+    if len(tokens) == 1 and tokens[0].kind == "number":
+        return tokens[0].text
+    return None
 
 
 def lua_usages(source: str, templates: set[str]) -> list[Usage]:
     tokens, _ = tokenize(source)
-    constants: dict[str, str] = {}
-    bars: set[str] = set()
-    textures: dict[str, tuple[str, str]] = {}
-    paints: dict[str, Usage] = {}
-    fills: dict[str, str] = {}
+    ends = _blocks(tokens, _header_dos(tokens))
+    scopes, declared = _declarations(tokens, ends, _enclosing(tokens, ends))
+
+    def binding(path: str, index: int) -> tuple[str, int]:
+        base = path.split(".", 1)[0]
+        return path, max((start for start, end in scopes.get(base, ()) if start <= index <= end), default=-1)
+
+    def asset(argument: list[Token], index: int) -> str | None:
+        return _literal(argument) or constants.get(binding(_path(argument) or "", index))
+
+    constants: dict[tuple[str, int], str] = {}
+    bars: set[tuple[str, int]] = set()
+    textures: dict[tuple[str, int], tuple[tuple[str, int], str]] = {}
+    paints: dict[tuple[str, int], Usage] = {}
+    fills: dict[tuple[str, int], str] = {}
     usages = []
+    assignment: tuple[tuple[str, int], int] | None = None
 
     for index, token in enumerate(tokens[:-1]):
         word = token.text
-        if word == "=" and tokens[index - 1].kind == "name":
-            end = index + 1
-            while tokens[end].kind == "string" or tokens[end].text == "..":
-                end += 1
-            target = _receiver(tokens, index)
-            if value := _asset(tokens[index + 1 : end], constants):
+        if word == "=" and index and tokens[index - 1].kind == "name":
+            end = _expression(tokens, index + 1, ends)
+            path = _receiver(tokens, index)
+            target = binding(path, end if index - 1 in declared else index)
+            value = asset(tokens[index + 1 : end], index)
+            bars.discard(target)
+            textures.pop(target, None)
+            paints.pop(target, None)
+            fills.pop(target, None)
+            constants.pop(target, None)
+            if value:
                 constants[target] = value
-            else:
-                constants.pop(target, None)
+            assignment = (target, index + 1)
 
         if (
             word
@@ -110,50 +130,47 @@ def lua_usages(source: str, templates: set[str]) -> list[Usage]:
         ):
             continue
         args = _arguments(tokens, index + 1)
-        first = _asset(args[0], constants)
+        first = asset(args[0], index)
         receiver = _receiver(tokens, index - 1) if index and tokens[index - 1].text == ":" else "?"
-        if word == "CreateFrame" and index and tokens[index - 1].text == "=":
-            target = _receiver(tokens, index - 1)
-            template = _asset(args[3], constants) if len(args) >= 4 else None
-            if first == "StatusBar" or template in templates:
+        widget = binding(receiver, index)
+        if word == "CreateFrame" and assignment and assignment[1] == index:
+            target = assignment[0]
+            template = asset(args[3], index) if len(args) >= 4 else None
+            inherited = {name.strip() for name in (template or "").split(",")} - {"", "BackdropTemplate"}
+            if first == "StatusBar" or inherited & templates:
                 bars.add(target)
-                if template:
-                    for name in template.split(","):
-                        name = name.strip()
-                        if name != "BackdropTemplate":
-                            usages.append(Usage(token.line, target, "template", name))
-        elif word == "CreateTexture" and index >= 3 and tokens[index - 1].text == ":":
+                usages.extend(Usage(token.line, target[0], "template", name) for name in inherited)
+        elif word == "CreateTexture" and receiver != "?" and assignment and len(args) >= 2:
             start = index - 2
             while start >= 2 and tokens[start - 1].text == ".":
                 start -= 2
-            if tokens[start - 1].text == "=" and len(args) >= 2:
-                target = _receiver(tokens, start - 1)
-                layer = _asset(args[1], constants) or ""
-                textures[target] = (receiver, layer)
+            if assignment[1] == start:
+                textures[assignment[0]] = (widget, asset(args[1], index) or "")
         elif word == "SetStatusBarTexture":
             if first:
                 usages.append(Usage(token.line, receiver, "fill", first))
-            elif target := _path(args[0]):
+            elif path := _path(args[0]):
+                target = binding(path, index)
                 fills[target] = receiver
-        elif word == "SetBackdrop" and receiver in bars and args[0] and args[0][0].text != "nil":
-            usages.append(Usage(token.line, receiver, "background", first or "SetBackdrop"))
+                if paint := paints.get(target):
+                    usages.append(Usage(paint.line, receiver, "fill", paint.value))
+        elif word == "SetBackdrop" and widget in bars and args[0] and args[0][0].text != "nil":
+            backdrop = [value for name in ("bgFile", "edgeFile") if (value := _field(args[0], name))]
+            usages.extend(
+                Usage(token.line, receiver, "background", value) for value in backdrop or [first or "SetBackdrop"]
+            )
         elif word in {"SetAtlas", "SetTexture", "SetColorTexture"}:
-            value = first or ("SetColorTexture" if word == "SetColorTexture" else None)
+            value = "SetColorTexture" if word == "SetColorTexture" else first
             if value:
-                paints[receiver] = Usage(token.line, receiver, "fill", value)
-                if receiver in fills:
-                    usages.append(Usage(token.line, fills[receiver], "fill", value))
-                elif receiver.endswith(".Fill") and receiver[:-5] in bars:
+                paints[widget] = Usage(token.line, receiver, "fill", value)
+                if widget in fills:
+                    usages.append(Usage(token.line, fills[widget], "fill", value))
+                elif receiver.endswith(".Fill") and binding(receiver[:-5], index) in bars:
                     usages.append(Usage(token.line, receiver[:-5], "fill", value))
-                elif receiver in textures:
-                    parent, layer = textures[receiver]
+                elif widget in textures:
+                    parent, layer = textures[widget]
                     if parent in bars and layer == "BACKGROUND":
-                        usages.append(Usage(token.line, parent, "background", value))
-            continue
-
-        if word == "SetStatusBarTexture" and not first and (target := _path(args[0])) in paints:
-            paint = paints[target]
-            usages.append(Usage(paint.line, receiver, "fill", paint.value))
+                        usages.append(Usage(token.line, parent[0], "background", value))
     return usages
 
 
@@ -183,8 +200,11 @@ def xml_usages(source: str, templates: set[str]) -> list[Usage]:
                     slot = None
                 if slot and (value := attrs.get("atlas") or attrs.get("file") or attrs.get("color")):
                     usages.append(Usage(line, widget, slot, value))
+            elif tag == "Color" and parent == "Texture" and len(stack) >= 2 and stack[-2][0] == "BACKGROUND":
+                usages.append(Usage(line, widget, "background", "Color"))
             elif tag == "Backdrop":
-                usages.append(Usage(line, widget, "background", attrs.get("bgFile", "Backdrop")))
+                backdrop = [attrs[name] for name in ("bgFile", "edgeFile") if name in attrs]
+                usages.extend(Usage(line, widget, "background", value) for value in backdrop or ["Backdrop"])
         stack.append((attrs.get("level", tag) if tag == "Layer" else tag, widget))
 
     parser.StartElementHandler = start
@@ -195,12 +215,15 @@ def xml_usages(source: str, templates: set[str]) -> list[Usage]:
 
 def check(source: str, suffix: str, addon: str, file: str, registry: tuple) -> list[tuple[int, str]]:
     approved, exceptions = registry
-    if suffix == ".lua":
-        usages = lua_usages(source, approved["template"])
-    elif suffix == ".xml":
-        usages = xml_usages(source, approved["template"])
-    else:
-        return []
+    try:
+        if suffix == ".lua":
+            usages = lua_usages(source, approved["template"])
+        elif suffix == ".xml":
+            usages = xml_usages(source, approved["template"])
+        else:
+            return []
+    except (LuaSyntaxError, expat.ExpatError) as error:
+        return [(1, f"progress-art: could not inspect source: {error}")]
     return sorted(
         {
             (

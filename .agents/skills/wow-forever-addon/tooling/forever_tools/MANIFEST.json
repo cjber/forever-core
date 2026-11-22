@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "asset-registry.md": "cf0ab6beeef0eba73cfe1594da14eeff4695eec87e9999803f5cef99ba28696d",
+    "asset-registry.md": "5fac1ea87a4412f1bb58dd0ef5cd1e896089dda8001a10a0f43ade6690a8b194",
     "assets.py": "90c143b7951711d8e3ae99ac1ab8fdf8d3a19f4ad7a93e7adaf471d568f56591",
     "backdrops.txt": "815f66269b9159e8672e8f684318ceb58509758d26f9d03eed02a75c1a0962c3",
     "changelog.py": "2fe96ebc39b6468eaa51482f40d33adb3eef13e163d829cd4f6af9e7d0f3d6a3",
@@ -41,7 +41,7 @@
     "multivalue.py": "39815c69ae1518e1f847a8043837ca48f096d626b05d49a7bc9b6052521c639f",
     "package.py": "45a320eec36b40f3ffb5bbe7ac99ca69accbb068a4eff59940f3fa92d0469fd2",
     "pkgmeta.py": "05fba24959b21f39717a861f6412a342aba4614cd6c75dd5e36f2f7a336f435d",
-    "progress_art.py": "792d4ff2c1844ed7b1a8c5765c87b9d7229f789be7ca836add90148a050248e5",
+    "progress_art.py": "4b4234219c1b54e838ad4f6ae6f4932f8471fcadc465cd983665f0dd1890dee4",
     "readable.py": "5f41e691066830727e3218bd958c07c05a442f3b7e311150c9e2cbffefb567d4",
     "release_check.py": "227e204c2b7a3a5045a35596b283bd9b198b2fa64066044a5c1bc88328f48600",
     "report.py": "2b6e11c9e6dfa856f5bc7bb35822013f02a527225a28820ad745be61565c53ba",
