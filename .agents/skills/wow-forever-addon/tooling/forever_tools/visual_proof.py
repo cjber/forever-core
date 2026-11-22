@@ -889,7 +889,7 @@ def _compare_embedded_folder(
         or manifest["wrapped"] != expected_wrapped
     ):
         emb_differing.add(EMBEDDED_BUNDLE)
-    if core is None and source_pin is not None and core_archive.tag(manifest["version"]) != source_pin:
+    if source_pin is not None and core_archive.tag(manifest["version"]) != source_pin:
         emb_differing.add(EMBEDDED_BUNDLE)
 
     present_consumer = {name: path for name, path in present_local.items() if not _is_embedded_path(name)}

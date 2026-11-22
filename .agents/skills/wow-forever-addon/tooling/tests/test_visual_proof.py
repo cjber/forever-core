@@ -1578,6 +1578,10 @@ class VisualProofTest(unittest.TestCase):
         comparison = visual_proof.compare_installed(source, installed)
         self.assertFalse(comparison.equivalent)
         self.assertIn("Libs/ForeverCore/bundle.json", comparison.differing)
+        # A matching --core checkout does not excuse a build embedding another release than the pin.
+        comparison = visual_proof.compare_installed(source, installed, core=CORE)
+        self.assertFalse(comparison.equivalent)
+        self.assertIn("Libs/ForeverCore/bundle.json", comparison.differing)
 
         # Embedded core files disagree with explicit core checkout (--core).
         installed = self.embedded_package(source)
