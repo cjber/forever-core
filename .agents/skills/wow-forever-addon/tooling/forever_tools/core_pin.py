@@ -532,6 +532,15 @@ def added_changelog_versions(root, base):
     return sorted(after_versions - before_versions)
 
 
+def _release_prep_check(root, base, fetch):
+    """The failures, and whether `CHANGELOG.md` adds a version heading against `base`."""
+    try:
+        added = added_changelog_versions(root, base)
+    except RuntimeError as error:
+        return [f"{error}; refusing to skip the release-prep pin check"], False
+    return (check_latest(root, fetch) if added else check(root)), bool(added)
+
+
 def check_latest_if_release_prep(root, base, fetch=None):
     """Require core's latest release only when `CHANGELOG.md` adds a version heading against `base`.
 
@@ -539,34 +548,15 @@ def check_latest_if_release_prep(root, base, fetch=None):
     unrelated PRs does not break them. A release-prep PR runs `check_latest` so a stale pin fails the PR rather than
     the release workflow after tagging. Unreadable git history fails closed.
     """
-    root = Path(root)
-    try:
-        added = added_changelog_versions(root, base)
-    except RuntimeError as error:
-        return [f"{error}; refusing to skip the release-prep pin check"]
-    if added:
-        return check_latest(root, fetch)
-    return check(root)
+    return _release_prep_check(Path(root), base, fetch)[0]
 
 
 def main(root=None, latest=False, fetch=None, *, latest_if_release_prep=False, base=None):
     """Check `root` (the current directory by default) and report every copy that disagrees."""
-    if latest and latest_if_release_prep:
-        raise ValueError("use either latest or latest_if_release_prep, not both")
-    if latest_if_release_prep and not base:
-        raise ValueError("base is required with latest_if_release_prep")
-    if base and not latest_if_release_prep:
-        raise ValueError("base is only used with latest_if_release_prep")
     root = Path.cwd() if root is None else Path(root)
     release_prep = False
     if latest_if_release_prep:
-        try:
-            added = added_changelog_versions(root, base)
-        except RuntimeError as error:
-            failures = [f"{error}; refusing to skip the release-prep pin check"]
-        else:
-            release_prep = bool(added)
-            failures = check_latest(root, fetch) if release_prep else check(root)
+        failures, release_prep = _release_prep_check(root, base, fetch)
     else:
         failures = check_latest(root, fetch) if latest else check(root)
     for failure in failures:
