@@ -281,10 +281,8 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
   error from either, or a released addon that never reached `ForeverCore.Register` because its startup check refused
   the candidate, blocks the release; fix core, never the released consumer.
 - **WFA-17** Every repo has a lean `AGENTS.md` declaring this pack by its link on forever-core `main`, never a
-  commit SHA, so every repo reads the latest standards. Specs pass on builds that are broken in game, so a change
-  to anything the player sees or to combat behaviour is verified live in game before it merges, and
-  the PR says what was checked. [debugging.md](debugging.md) covers taint, profiling and reading
-  results out of the client.
+  commit SHA, so every repo reads the latest standards. WFA-40 defines when a change needs live evidence
+  and what the PR records.
 
 ### Repository
 
