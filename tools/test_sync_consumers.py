@@ -725,3 +725,134 @@ class VersionStepTest(unittest.TestCase):
         (self.root / sync.RELEASE_WORKFLOW).write_text(updated, encoding="utf-8")
         (self.root / sync.CI_WORKFLOW).unlink()
         self.assertEqual(self.check(), [])
+
+
+class PrPinGateTest(unittest.TestCase):
+    """The sync inserts the release-prep ForeverCore pin gate into consumers' CI workflows."""
+
+    MULTILINE_LAST = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check changelog
+        env:
+          CHANGELOG_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$CHANGELOG_BASE" ]; then
+            python3 tools/changelog.py --check --base "origin/$CHANGELOG_BASE"
+          else
+            python3 tools/changelog.py --check
+          fi
+
+  workflows:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+"""
+
+    MULTILINE_FOLLOWED = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check changelog
+        env:
+          CHANGELOG_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$CHANGELOG_BASE" ]; then
+            python3 tools/changelog.py --check --base "origin/$CHANGELOG_BASE"
+          else
+            python3 tools/changelog.py --check
+          fi
+      # docs/api.md names every function Core/API.lua publishes.
+      - run: python3 tools/check_api_docs.py
+"""
+
+    SINGLE_LINE = """jobs:
+  project-rules:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: python3 tools/changelog.py --check
+      - run: python3 tools/repo_rules.py
+"""
+
+    NO_CHANGELOG = """jobs:
+  lint:
+    steps:
+      - run: ruff check .
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.root = self.checkouts / "skillup-forever"
+        self.workflow = self.root / sync.CI_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+
+    def check(self):
+        return check_consumers.check_pr_pin_gate("skillup-forever", "main", self.checkouts)
+
+    def run_sync(self, dry_run=False):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sync.sync_pr_pin_gate(self.root, "skillup-forever", dry_run=dry_run)
+
+    def test_inserts_after_multiline_changelog_at_end_of_job_and_is_idempotent(self):
+        self.workflow.write_text(self.MULTILINE_LAST, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn("          fi\n" + sync.pr_pin_gate_step() + "\n  workflows:\n", text)
+        self.assertEqual(self.check(), [])
+        self.assertEqual(self.run_sync(), 0)
+
+    def test_inserts_after_changelog_preserving_following_comment_and_step(self):
+        self.workflow.write_text(self.MULTILINE_FOLLOWED, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn(
+            "          fi\n"
+            + sync.pr_pin_gate_step()
+            + "      # docs/api.md names every function Core/API.lua publishes.\n"
+            + "      - run: python3 tools/check_api_docs.py\n",
+            text,
+        )
+        self.assertEqual(self.check(), [])
+
+    def test_inserts_after_single_line_changelog_step(self):
+        self.workflow.write_text(self.SINGLE_LINE, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 1)
+        text = self.workflow.read_text(encoding="utf-8")
+        self.assertIn(
+            "      - run: python3 tools/changelog.py --check\n"
+            + sync.pr_pin_gate_step()
+            + "      - run: python3 tools/repo_rules.py\n",
+            text,
+        )
+        self.assertEqual(self.check(), [])
+
+    def test_dry_run_reports_without_writing(self):
+        self.workflow.write_text(self.SINGLE_LINE, encoding="utf-8")
+        self.assertEqual(self.run_sync(dry_run=True), 1)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), self.SINGLE_LINE)
+
+    def test_workflow_without_changelog_step_is_left_alone(self):
+        self.workflow.write_text(self.NO_CHANGELOG, encoding="utf-8")
+        self.assertEqual(self.run_sync(), 0)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), self.NO_CHANGELOG)
+
+    def test_commented_out_gate_is_still_inserted(self):
+        commented = self.SINGLE_LINE.replace(
+            "      - run: python3 tools/repo_rules.py\n",
+            "      # - run: python3 -m tools.forever_tools.core_pin --latest-if-release-prep --base origin/main\n"
+            "      - run: python3 tools/repo_rules.py\n",
+        )
+        self.workflow.write_text(commented, encoding="utf-8")
+        self.assertEqual(len(self.check()), 1)
+        self.assertEqual(self.run_sync(), 1)
+        self.assertEqual(self.check(), [])

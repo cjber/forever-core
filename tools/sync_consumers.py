@@ -15,10 +15,12 @@ forever_tools sync, never the workflow alone.
 The release workflow is not a vendored file: each addon keeps its own. A full sync therefore inserts the ForeverCore
 release gate directly above the BigWigs packager step in every consumer that has one, idempotently, so a core release
 that lands between CI and the upload is still caught. A workflow with no packager step (kiln-forever's own tar build)
-is left alone and its exact step is printed for the maintainer. The same full sync puts the bare version step
-(`forever_tools.toc_version`) above each package build in the release and CI workflows, so the zip's TOC never
-carries the tag's `v`. A full sync also removes the retired Wago store
-metadata, upload credential and store links from consumer-owned publishing files.
+is left alone and its exact step is printed for the maintainer. The same full sync inserts the release-prep pin gate
+(`forever_tools.core_pin --latest-if-release-prep`) into each consumer's CI workflow right after its changelog check,
+so a release-prep PR with a stale pin fails before tagging while normal PRs stay unaffected. It also puts the bare
+version step (`forever_tools.toc_version`) above each package build in the release and CI workflows, so the zip's TOC
+never carries the tag's `v`, and removes the retired Wago store metadata, upload credential and store links from
+consumer-owned publishing files.
 
 """
 
@@ -32,8 +34,12 @@ from pathlib import Path
 
 from check_consumers import (
     CI_WORKFLOW,
+    PR_PIN_GATE,
+    PR_PIN_GATE_COMMAND,
     TAG_STEP,
     VERSION_COMMAND,
+    changelog_check_step,
+    has_pr_pin_gate,
     missing_version_steps,
     pkgmeta_field,
     tag_step,
@@ -196,6 +202,59 @@ def sync_version_step(root, repo, dry_run):
     return changed
 
 
+def pr_pin_gate_step(indent="      "):
+    """The CI step that runs core_pin --latest on pull requests whose CHANGELOG adds a version heading."""
+    return (
+        f"{indent}# A release-prep pull request adds a new CHANGELOG.md version heading; check --latest here so a\n"
+        f"{indent}# stale pin fails the pull request instead of the release workflow after tagging.\n"
+        f"{indent}- name: {PR_PIN_GATE}\n"
+        f"{indent}  if: github.event_name == 'pull_request'\n"
+        f"{indent}  env:\n"
+        f"{indent}    BASE: ${{{{ github.base_ref }}}}\n"
+        f"{indent}    GH_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}\n"
+        f'{indent}  run: python3 -m {PR_PIN_GATE_COMMAND} --base "origin/$BASE"\n'
+    )
+
+
+def pr_pin_gate_edit(text):
+    """Insert the release-prep pin gate right after the changelog check step, or None when not needed."""
+    if has_pr_pin_gate(text):
+        return None
+    anchor_step = changelog_check_step(text)
+    if anchor_step is None:
+        return None
+    lines = text.splitlines(keepends=True)
+    start_line = anchor_step["line"]
+    step_indent = len(lines[start_line]) - len(lines[start_line].lstrip())
+    indent = lines[start_line][:step_indent]
+    insert = start_line + 1
+    while insert < len(lines):
+        stripped = lines[insert].lstrip(" \t")
+        if stripped.strip() and len(lines[insert]) - len(stripped) <= step_indent:
+            break
+        insert += 1
+    while insert > start_line + 1 and not lines[insert - 1].strip():
+        insert -= 1
+    if insert > 0 and not lines[insert - 1].endswith("\n"):
+        lines[insert - 1] += "\n"
+    lines.insert(insert, pr_pin_gate_step(indent))
+    return "".join(lines)
+
+
+def sync_pr_pin_gate(root, repo, dry_run):
+    """Insert the release-prep pin gate into `repo`'s CI workflow, returning whether it changed."""
+    path = root / CI_WORKFLOW
+    if not path.is_file():
+        return 0
+    updated = pr_pin_gate_edit(path.read_text(encoding="utf-8"))
+    if updated is None:
+        return 0
+    print(f"{repo}: {CI_WORKFLOW}: {PR_PIN_GATE}")
+    if not dry_run:
+        path.write_text(updated, encoding="utf-8")
+    return 1
+
+
 def sync_release_gate(root, repo, dry_run):
     """Insert the release gate into `repo`'s release workflow, returning whether it changed."""
     path, updated, notice = release_gate_edit(root, repo)
@@ -335,6 +394,7 @@ def main(argv=None):
             try:
                 changed += sync_store_channels(root, repo, arguments.dry_run)
                 changed += sync_release_gate(root, repo, arguments.dry_run)
+                changed += sync_pr_pin_gate(root, repo, arguments.dry_run)
                 changed += sync_tag_step(root, repo, arguments.dry_run)
                 changed += sync_version_step(root, repo, arguments.dry_run)
             except (OSError, ValueError) as error:
