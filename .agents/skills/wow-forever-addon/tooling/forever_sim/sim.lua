@@ -266,9 +266,14 @@ function Sim.new(opts)
 			if not layoutInfo then
 				return
 			end
-			local presets = sim.G.EditModePresetLayoutManager
-			local layouts = presets:GetCopyOfPresetLayouts()
-			local layout = layouts[layoutInfo.activeLayout] or layoutInfo.layouts[layoutInfo.activeLayout - #layouts]
+			-- As UpdateLayoutInfo does: the manager keeps the payload, its layouts the presets then the saved ones.
+			local layouts = sim.G.EditModePresetLayoutManager:GetCopyOfPresetLayouts()
+			for _, saved in ipairs(layoutInfo.layouts or {}) do
+				layouts[#layouts + 1] = saved
+			end
+			layoutInfo.layouts = layouts
+			frame.layoutInfo = layoutInfo
+			local layout = layouts[layoutInfo.activeLayout]
 			if not layout then
 				return
 			end
