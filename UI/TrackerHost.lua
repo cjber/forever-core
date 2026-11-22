@@ -1582,7 +1582,7 @@ local function NewTrackerMenu(root, module, target)
 			slots.open = slots.open
 				or Entry(text, function()
 					return ns.Open(addon, where)
-				end, { reported = true })
+				end, { combat = true, reported = true })
 			return slots.open
 		end
 		slots.open = slots.open or Entry(text, fn, { combat = true })

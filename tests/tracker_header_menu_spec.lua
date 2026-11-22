@@ -305,10 +305,33 @@ contractModule.trackerMenu = function(_, builder)
 	builder:Open("Named panel", "PanelAddon", "target")
 end
 local named = Menu(contractModule)
+check(Entry(named, "Named panel"):IsEnabled(), "a named Open is enabled outside combat")
+local namedLines = {}
+Entry(named, "Named panel").tooltip({
+	SetText = function(_, text)
+		namedLines[#namedLines + 1] = text
+	end,
+	AddLine = function(_, text)
+		namedLines[#namedLines + 1] = text
+	end,
+})
+check(namedLines[1] == "Named panel" and #namedLines == 1, "a named Open's tooltip has no combat line outside combat")
 local beforeMessages = #messages
 Entry(named, "Named panel").callback()
 check(#messages == beforeMessages + 1, "named Open reports a refusal once")
 t.setCombat(true)
-Entry(named, "Named panel").callback()
-check(#messages == beforeMessages + 2, "named Open reports combat once")
+local blockedNamed = Menu(contractModule)
+check(not Entry(blockedNamed, "Named panel"):IsEnabled(), "a named Open is disabled when constructed in combat")
+local namedCombatLines = {}
+Entry(blockedNamed, "Named panel").tooltip({
+	SetText = function() end,
+	AddLine = function(_, text)
+		namedCombatLines[#namedCombatLines + 1] = text
+	end,
+})
+check(namedCombatLines[1] == "Unavailable in combat", "a disabled named Open explains its refusal")
+local beforeCombatMessages = #messages
+local acceptedNamed, namedReason = Entry(blockedNamed, "Named panel").callback()
+check(acceptedNamed == false and namedReason == "Unavailable in combat", "a named Open refuses in combat")
+check(#messages == beforeCombatMessages + 1, "named Open reports combat once, not twice")
 t.setCombat(false)
