@@ -53,6 +53,7 @@ L["Tracker background"] = "추적기 배경"
 L["Tracker position"] = "추적기 위치"
 L["Under the quest tracker"] = "퀘스트 추적기 아래"
 L["Left of the quest tracker"] = "퀘스트 추적기 왼쪽"
+L["Always stay under the quest tracker"] = "항상 퀘스트 추적기 아래에 유지" -- mt
 L["Attach to quest tracker"] = "퀘스트 추적기에 붙이기" -- mt
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"켜면 공용 Forever 추적기가 퀘스트 추적기 아래에, 끄면 왼쪽에 놓입니다. 모든 Forever 애드온에 같은 설정이 있습니다." -- mt

@@ -87,6 +87,7 @@ L["Tracker background"] = "Tracker background"
 L["Tracker position"] = "Tracker position"
 L["Under the quest tracker"] = "Under the quest tracker"
 L["Left of the quest tracker"] = "Left of the quest tracker"
+L["Always stay under the quest tracker"] = "Always stay under the quest tracker"
 L["Attach to quest tracker"] = "Attach to quest tracker"
 L["The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."] =
 	"The shared Forever tracker sits under the quest tracker when this is on, and left of it when it is off. Every Forever addon shows this same setting."
