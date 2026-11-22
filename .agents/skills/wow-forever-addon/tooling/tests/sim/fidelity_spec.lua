@@ -123,7 +123,10 @@ function tests.edit_mode()
 	assert(x * tracker:GetScale() == modern.offsetX and y * tracker:GetScale() == modern.offsetY)
 	assert(seen == 2, "layout event must reach other registered listeners")
 	local saved = { layoutName = "Mine", layoutType = 1, systems = presets:GetCopyOfPresetLayouts()[2].systems }
-	sim:event("EDIT_MODE_LAYOUTS_UPDATED", { layouts = { saved }, activeLayout = #presets:GetCopyOfPresetLayouts() + 1 })
+	sim:event(
+		"EDIT_MODE_LAYOUTS_UPDATED",
+		{ layouts = { saved }, activeLayout = #presets:GetCopyOfPresetLayouts() + 1 }
+	)
 	sim:expectNoErrors()
 	assert(G.EditModeManagerFrame:GetActiveLayoutInfo() == saved, "the manager must report the saved layout as active")
 end
