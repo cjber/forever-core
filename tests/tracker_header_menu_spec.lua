@@ -216,6 +216,33 @@ end
 Entry(blockTracker, "Hide this section").callback()
 check(blockShown == false, "a block menu hides its section through the module switch")
 
+-- The declarative menu keeps the section's show hint too, so a section that says where its switch lives has that
+-- sentence in the Tracker submenu's Hide tooltip, exactly as the legacy menu does.
+contractModule.show.where = "Turn it back on in Ledger settings."
+local hinted = Entry(Entry(Menu(contractModule), "Tracker"), "Hide this section")
+local hintedLines = {}
+hinted.tooltip({
+	SetText = function(_, text)
+		hintedLines[#hintedLines + 1] = text
+	end,
+	AddLine = function(_, text)
+		hintedLines[#hintedLines + 1] = text
+	end,
+})
+check(
+	hintedLines[1] == "Hide this section" and hintedLines[2] == "Turn it back on in Ledger settings.",
+	"the declarative Tracker submenu's hide entry keeps the show hint"
+)
+local plainShow = {
+	get = function()
+		return true
+	end,
+	set = function() end,
+}
+contractModule.show = plainShow
+local plainHinted = Entry(Entry(Menu(contractModule), "Tracker"), "Hide this section")
+check(plainHinted ~= nil, "a show switch without a hint still offers to hide the section")
+
 -- Construction uses the production description, so disabled state, callbacks and nested rows are real.
 local opens, clicks = 0, 0
 contractModule.trackerMenu = function(_, builder)

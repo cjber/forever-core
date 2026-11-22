@@ -1791,11 +1791,19 @@ local function NewTrackerMenu(root, module, target)
 		end
 		local show = module.show
 		if type(show) == "table" and type(show.get) == "function" and type(show.set) == "function" then
-			tracker:CreateButton(ns.L["Hide this section"], function()
+			local entry = tracker:CreateButton(ns.L["Hide this section"], function()
 				if show.get() then
 					show.set(false)
 				end
 			end)
+			-- A section's show contract may say where its switch lives; the declarative menu keeps that hint, as the
+			-- legacy menu already did, so the player is told where to turn the section back on.
+			if type(show.where) == "string" then
+				entry:SetTooltip(function(tooltip)
+					tooltip:SetText(ns.L["Hide this section"], 1, 1, 1)
+					tooltip:AddLine(show.where, nil, nil, nil, true)
+				end)
+			end
 		end
 	end
 	return menu, Finish
