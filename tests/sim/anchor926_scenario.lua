@@ -35,7 +35,6 @@ local function setup(sim, placement)
 	local G = sim.G
 	sim:login({ savedVariables = { ForeverCoreDB = { trackerHost = { placement = placement } } } })
 	local tracker = sim:openObjectiveTracker()
-	G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	move(G, tracker, 520, -200)
 	tracker:SetSize(260, 600)
 	local list = G.CreateFrame("Frame", nil, tracker)

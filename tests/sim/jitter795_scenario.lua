@@ -11,7 +11,6 @@ local function run(sim, trackerHost)
 	tracker:SetSize(260, 600)
 	tracker:ClearAllPoints()
 	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, -200)
-	G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	sim:event("EDIT_MODE_LAYOUTS_UPDATED")
 	sim:advance(3)
 	local rows = ROWS
