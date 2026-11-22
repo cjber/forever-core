@@ -4,6 +4,9 @@ import contextlib
 import hashlib
 import io
 import json
+import os
+import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -487,6 +490,94 @@ class TagStepTest(unittest.TestCase):
         self.workflow.write_text(KILN_RELEASE_WORKFLOW, encoding="utf-8")
         self.assertEqual(sync.sync_tag_step(self.root, "legacy-forever", dry_run=False), 0)
         self.assertEqual(self.workflow.read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)
+
+    def tag_step_script(self):
+        core = (check_consumers.CORE_ROOT / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8")
+        steps = [
+            step
+            for job in check_consumers.workflow_steps(core)
+            for step in job
+            if step.get("name") == check_consumers.TAG_STEP
+        ]
+        self.assertEqual(len(steps), 1)
+        return steps[0]["run"]
+
+    def run_tag_step(self, tags, release_tag, gh_script):
+        repo = Path(self.tmp.name) / f"git-{release_tag}-{len(tags)}"
+        repo.mkdir()
+        subprocess.run(["git", "init", "--quiet", "--initial-branch=main"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo, check=True)
+        (repo / "README.md").write_text("hi\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "initial"], cwd=repo, check=True)
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        for tag in tags:
+            subprocess.run(["git", "tag", tag, commit], cwd=repo, check=True)
+        bindir = Path(self.tmp.name) / f"bin-{release_tag}-{len(tags)}"
+        bindir.mkdir()
+        marker = bindir / "gh-called"
+        gh = bindir / "gh"
+        gh.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n{gh_script}\n", encoding="utf-8")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        env = {
+            **os.environ,
+            "PATH": f"{bindir}:{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "cjber/forever-core",
+            "RELEASE_TAG": release_tag,
+            "RELEASE_COMMIT": commit,
+            "GH_TOKEN": "token",
+            "SYNC_TOKEN": "",
+        }
+        result = subprocess.run(
+            ["bash", "-eo", "pipefail", "-c", self.tag_step_script()],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return commit, result, marker
+
+    def test_manual_tag_step_refuses_a_commit_with_another_tag_before_calling_gh(self):
+        commit, result, marker = self.run_tag_step(
+            tags=("v1.0.0",),
+            release_tag="v1.0.1",
+            gh_script="exit 99",
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "gh should not be called when another tag is on the commit")
+        self.assertIn(f"::error::{commit} already carries v1.0.0;", result.stdout)
+
+    def test_manual_tag_step_refuses_a_commit_with_multiple_other_tags(self):
+        commit, result, marker = self.run_tag_step(
+            tags=("v0.9.0", "v1.0.0"),
+            release_tag="v1.0.1",
+            gh_script="exit 99",
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), "gh should not be called when other tags are on the commit")
+        self.assertIn(f"::error::{commit} already carries v0.9.0 v1.0.0;", result.stdout)
+
+    def test_manual_tag_step_allows_an_untagged_commit_or_the_same_tag(self):
+        _commit, untagged, marker = self.run_tag_step(
+            tags=(),
+            release_tag="v1.0.1",
+            gh_script='if [[ "$*" == *"git/ref/tags/"* ]]; then exit 1; fi; exit 0',
+        )
+        self.assertEqual(untagged.returncode, 0, untagged.stdout + untagged.stderr)
+        self.assertTrue(marker.exists())
+
+        _commit, same, same_marker = self.run_tag_step(
+            tags=("v1.0.1",),
+            release_tag="v1.0.1",
+            gh_script='if [[ "$*" == *"git/ref/tags/"* ]]; then echo "commit $RELEASE_COMMIT"; exit 0; fi; exit 1',
+        )
+        self.assertEqual(same.returncode, 0, same.stdout + same.stderr)
+        self.assertTrue(same_marker.exists())
 
 
 if __name__ == "__main__":

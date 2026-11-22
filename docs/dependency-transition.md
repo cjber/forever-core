@@ -110,8 +110,13 @@ BigWigs. In the same job, build the ZIP with `args: -d`, then validate it and up
 ```
 
 Use the tag from the release job's target step. `tools/check_consumers.py` checks the build, validation, checksum
-and upload order. The version comes from the shipped TOC for a bridge copy and the stamped bundle for an embedded
-copy. The audit checks the player downloads on both stores after publication and updates one issue on failure.
+and upload order. On a `workflow_dispatch` release, `GITHUB_REF` is `refs/heads/main`, so BigWigs packager v2.7.0
+chooses the GitHub release tag from the tags on the checked-out commit rather than from the run input. The
+`Tag a manual release` step (synced from core's `release.yml` by `tools/sync_consumers.py` and checked by
+`tools/check_consumers.py`) therefore refuses a commit that already carries any tag other than the release tag,
+before creating a tag on GitHub, so the validated ZIP cannot be attached to another release. The version comes from
+the shipped TOC for a bridge copy and the stamped bundle for an embedded copy. The audit checks the player downloads
+on both stores after publication and updates one issue on failure.
 
 [BigWigs packager v2.7.0](https://github.com/BigWigsMods/packager/blob/v2.7.0/release.sh)
 
