@@ -1033,6 +1033,11 @@ function M.build(sim)
 		T.files[#T.files + 1] = path
 		local chunk, err = T.compile(text, chunkName)
 		if not chunk then
+			local addon = Taint.addonFolders[chunkName:match("^([^/]+)/")]
+			if addon then
+				sim.reportError(chunkName .. ": cannot load in forever_sim: " .. err, "", addon)
+				return false, "compile"
+			end
 			sim.reportError(err, "", nil)
 			return false
 		end
@@ -1126,7 +1131,10 @@ function M.build(sim)
 			if tag == "Script" then
 				if node.attr.file then
 					local p, r = relative(node.attr.file)
-					T.loadLua(p, folder .. "/" .. r:gsub("\\", "/"), unpack(addonArgs, 1, nargs))
+					local _, failure = T.loadLua(p, folder .. "/" .. r:gsub("\\", "/"), unpack(addonArgs, 1, nargs))
+					if failure then
+						return false, failure
+					end
 				elseif node.text then
 					local f, err = T.compile(node.text, chunk, node.textLine)
 					if f then
@@ -1134,12 +1142,20 @@ function M.build(sim)
 							f(unpack(addonArgs, 1, nargs))
 						end)
 					else
+						local addon = Taint.addonFolders[folder]
+						if addon then
+							sim.reportError(chunk .. ": cannot load in forever_sim: " .. err, "", addon)
+							return false, "compile"
+						end
 						sim.reportError(err, "", nil)
 					end
 				end
 			elseif tag == "Include" then
 				local p, r = relative(node.attr.file)
-				T.loadXML(p, folder, r, unpack(addonArgs, 1, nargs))
+				local _, failure = T.loadXML(p, folder, r, unpack(addonArgs, 1, nargs))
+				if failure then
+					return false, failure
+				end
 			elseif tag == "Font" then
 				loadFont(node, { file = path })
 			elseif tag == "FontFamily" then
