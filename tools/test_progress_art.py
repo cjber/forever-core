@@ -101,3 +101,7 @@ status:SetStatusBarTexture(123456)
         )
         self.assertEqual(len(findings), 1)
         self.assertIn("Meter background", findings[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
