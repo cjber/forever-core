@@ -4,6 +4,7 @@ import io
 import tempfile
 import unittest
 import urllib.error
+from email.utils import formatdate
 from unittest.mock import patch
 
 import wowmock
@@ -30,8 +31,10 @@ class FetchRetryTest(unittest.TestCase):
     def run_fetch(self, outcomes):
         sleeps = []
         calls = iter(outcomes)
+        self.requests = 0
 
         def urlopen(request, timeout):
+            self.requests += 1
             outcome = next(calls)
             if isinstance(outcome, Exception):
                 raise outcome
@@ -57,9 +60,22 @@ class FetchRetryTest(unittest.TestCase):
         _, sleeps = self.run_fetch([error(429, "9999"), b"ok"])
         self.assertEqual(sleeps, [wowmock.RETRY_CAP])
 
+    def test_retry_after_http_date_is_honoured(self):
+        with patch.object(wowmock.time, "time", return_value=1000.0):
+            _, sleeps = self.run_fetch([error(429, formatdate(1030.0, usegmt=True)), b"ok"])
+        self.assertEqual(sleeps, [30.0])
+
+    def test_unusable_retry_after_falls_back_to_backoff(self):
+        for value in ("NaN", "inf", "soon"):
+            _, sleeps = self.run_fetch([error(429, value), b"ok"])
+            self.assertEqual(sleeps, [2.0], value)
+
     def test_gives_up_after_the_bounded_attempts(self):
-        with self.assertRaises(urllib.error.HTTPError):
-            self.run_fetch([error(429)] * wowmock.FETCH_ATTEMPTS)
+        outcomes = [error(429)] * wowmock.FETCH_ATTEMPTS + [b"ok"]
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.run_fetch(outcomes)
+        self.assertEqual(caught.exception.code, 429)
+        self.assertEqual(self.requests, wowmock.FETCH_ATTEMPTS)
 
     def test_other_errors_are_not_retried(self):
         with self.assertRaises(urllib.error.HTTPError):

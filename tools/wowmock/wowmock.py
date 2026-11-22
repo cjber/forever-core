@@ -44,6 +44,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
@@ -65,12 +66,18 @@ RETRY_CAP = 60.0
 
 
 def retry_delay(retry_after, attempt):
-    """Seconds to wait: the server's Retry-After when it is a number, else doubling from RETRY_BASE, capped."""
-    backoff = RETRY_BASE * 2**attempt
-    try:
-        wait = float(retry_after) if retry_after is not None else backoff
-    except ValueError:
-        wait = backoff
+    """Seconds to wait: Retry-After as seconds or an HTTP date, else doubling from RETRY_BASE, capped."""
+    wait = RETRY_BASE * 2**attempt
+    if retry_after is not None:
+        try:
+            wait = float(retry_after)
+        except ValueError:
+            try:
+                wait = parsedate_to_datetime(retry_after).timestamp() - time.time()
+            except (TypeError, ValueError):
+                pass
+        if not math.isfinite(wait):
+            wait = RETRY_BASE * 2**attempt
     return min(max(wait, 0.0), RETRY_CAP)
 
 
