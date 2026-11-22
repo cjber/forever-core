@@ -273,6 +273,21 @@ local userScaled = harness.new({ hostSettings = { attached = false, placement = 
 userScaled.check(math.abs(userScaled.host:GetScale() - 1.5) < 1e-9, "the user's scale sets the column's scale")
 userScaled.check(Pinned(userScaled), "a scaled column stays pinned")
 
+-- #1061: a column hand-placed and locked, then attached under the tracker, sat left of it after a reload. The login
+-- layout sees the tracker before its saved position and line are applied, with no room for the column under it, and
+-- the left fallback used to count as having followed the tracker — so nothing laid the column out again when the real
+-- edges arrived, and only toggling the setting (which clears that state) put it back underneath.
+local relog = harness.new({ deferReady = true, hostSettings = { attached = true, placement = "under", locked = true } })
+relog.nativeRect.left, relog.nativeRect.top, relog.nativeRect.line = 940, 100, 20
+relog.ready()
+relog.drain()
+relog.check(Pinned(relog), "a locked column with no room under the tracker waits at the pin")
+-- The tracker's saved position and last line arrive: the column must go under it without the player toggling anything.
+relog.nativeRect.left, relog.nativeRect.top, relog.nativeRect.line = 940, 880, 760
+relog.recheck("QUEST_LOG_UPDATE")
+relog.check(Under(relog), "and goes under once the tracker's real edges arrive, without a toggle")
+relog.nativeRect.left, relog.nativeRect.top, relog.nativeRect.line = 1200 - 260, 880, 760
+
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
 -- a presence check or one of the reads that place the column under it (#850, #883), never another
 -- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.

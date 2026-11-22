@@ -1352,6 +1352,7 @@ local function PlaceUnder(settings, x, top, floor, allowLayout)
 	end
 	SetColumnPoint("TOPLEFT", "BOTTOMLEFT", x, top)
 	under = true
+	followed = true
 end
 
 ---@param settings ForeverTrackerSettings
@@ -1400,7 +1401,7 @@ local function FollowTracker(settings, allowLayout)
 		end
 		return
 	end
-	placeAgain, followed = false, true
+	placeAgain = false
 	if not settings.stayUnder and height > top - floor then
 		PinLeft()
 		return
