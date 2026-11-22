@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.1] - 2026-11-22
+
+### Fixed
+
+- Offline generated-data checks use cached inputs from the current Git worktree and fill missing inputs from the main checkout.
+- The wowmock renderer waits out a wago.tools rate limit or outage (429 or 503), honouring Retry-After with a bounded backoff, instead of failing the scene.
+- The Forever column no longer jumps to the left of the quest tracker after a reload: a column attached under it stays under it once the tracker's saved position and last line are known.
+
 ## [1.17.0] - 2026-11-22
 
 <!-- discord-image: docs/screenshots/tracker.png -->
