@@ -23,12 +23,12 @@ from .report import Hint, Subset, build_report
 Outputs = Mapping[str, bytes]
 
 
-def input_cache(root: Path, cache: str = "tools/.cache") -> Path:
-    """The main checkout's cache, so every git worktree of the repository shares one set of inputs."""
+def input_cache(root: Path, cache: str = "tools/.cache") -> tuple[Path, Path]:
+    """Return the shared and worktree input caches, in ascending order of precedence."""
     common = subprocess.check_output(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root, text=True
     ).strip()
-    return Path(common).parent / cache
+    return Path(common).parent / cache, root.resolve() / cache
 
 
 def copy_tracked(root: Path, scratch: Path) -> None:
@@ -55,7 +55,7 @@ def copy_back(source: Path, target: Path) -> None:
         destination.mkdir(parents=True, exist_ok=True)
         for name in files:
             new, old = here / name, destination / name
-            if old.is_file() and filecmp.cmp(new, old, shallow=True):
+            if old.is_file() and filecmp.cmp(new, old, shallow=False):
                 continue
             partial = destination / f".{name}.partial"
             shutil.copy2(new, partial)
@@ -109,15 +109,17 @@ def same_tree(left: Path, right: Path) -> bool:
 
 @contextmanager
 def scratch_tree(
-    root: Path, shared: Path, cache: str, prefix: str, temporary_root: Path | None
+    root: Path, shared: Path, local: Path, cache: str, prefix: str, temporary_root: Path | None
 ) -> Generator[Path, None, None]:
-    """A disposable copy of the tracked tree, seeded with an independent copy of the shared input cache."""
+    """A disposable copy of the tracked tree, seeded with shared inputs and any worktree overrides."""
     with tempfile.TemporaryDirectory(prefix=prefix, dir=temporary_root) as temporary:
         scratch = Path(temporary)
         try:
             copy_tracked(root, scratch)
             if shared.is_dir():
                 shutil.copytree(shared, scratch / cache, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".scratch"))
+            if local != shared and local.is_dir():
+                copy_back(local, scratch / cache)
         except OSError as error:
             reason = error.args[0][0][2] if isinstance(error, shutil.Error) and error.args[0] else str(error)
             raise SystemExit(
@@ -139,18 +141,19 @@ def check_generated(
     cache: str = "tools/.cache",
     prefix: str = "regenerate-",
 ) -> None:
-    """Regenerate twice in scratch copies of the tracked tree, seeded with the shared input cache.
+    """Regenerate twice in scratch copies of the tracked tree, with worktree inputs overriding shared inputs.
 
     `regenerate(scratch, offline)` removes the generated files and runs every generator; it must touch nothing outside
     `scratch`, because the two passes run at the same time. The first pass (online unless `offline`) proves the
     committed files are fresh. The second, offline, runs in its own tree from the same cache. It counts only when the
     first pass left the inputs byte-identical, so both read the same inputs; otherwise, or when it fails, it runs again
     after the first pass, from that pass's inputs, as a serial gate would. An online first pass copies the inputs it
-    downloaded or changed back into the shared cache (`copy_back`), so later runs work offline. Scratch lives in the
-    ignored shared cache, avoiding limited system tmpfs. An explicit TMPDIR, TEMP or TMP keeps the platform's
-    temporary-directory selection.
+    downloaded or changed back into the worktree cache if it exists, or the shared cache otherwise, so later runs
+    work offline. Scratch lives in the ignored shared cache, avoiding limited system tmpfs. An explicit TMPDIR,
+    TEMP or TMP keeps the platform's temporary-directory selection.
     """
-    shared = input_cache(root, cache)
+    shared, local = input_cache(root, cache)
+    write_cache = local if local.is_dir() else shared
     temporary_root = None
     if not any(os.environ.get(name) for name in ("TMPDIR", "TEMP", "TMP")):
         temporary_root = shared / ".scratch"
@@ -164,8 +167,8 @@ def check_generated(
         return True
 
     with (
-        scratch_tree(root, shared, cache, prefix, temporary_root) as fresh,
-        scratch_tree(root, shared, cache, prefix, temporary_root) as second,
+        scratch_tree(root, shared, local, cache, prefix, temporary_root) as fresh,
+        scratch_tree(root, shared, local, cache, prefix, temporary_root) as second,
     ):
         expected = outputs(fresh)
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -173,7 +176,7 @@ def check_generated(
             regenerate(fresh, offline)
             replayed_ok = replayed.result()
         if not offline and (fresh / cache).is_dir():
-            copy_back(fresh / cache, shared)
+            copy_back(fresh / cache, write_cache)
         generated = outputs(fresh)
         compare(expected, generated, "Stale generated files; run the canonical generators", hints, subsets)
         if replayed_ok and same_tree(fresh / cache, second / cache):

@@ -70,6 +70,37 @@ class GeneratedTest(unittest.TestCase):
     def test_gate_passes_for_a_fresh_reproducible_generator(self):
         self.run_gate(GENERATOR)
 
+    def test_offline_gate_prefers_worktree_inputs_and_fills_gaps_from_main(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = repository(Path(directory) / "main", {"Data/X.lua": "local only\nworktree\nshared only\n"})
+            worktree = Path(directory) / "worktree"
+            git(main, "worktree", "add", "--detach", str(worktree))
+            cache = "tools/.cache"
+            for root, inputs in (
+                (main, {"common": "main\n", "shared": "shared only\n"}),
+                (worktree, {"common": "worktree\n", "local": "local only\n"}),
+            ):
+                (root / cache).mkdir(parents=True)
+                for name, contents in inputs.items():
+                    (root / cache / name).write_text(contents)
+
+            def regenerate(scratch, offline):
+                self.assertTrue(offline)
+                inputs = scratch / cache
+                for name in ("local", "common", "shared"):
+                    self.assertTrue((inputs / name).is_file(), f"Missing cached source: {name}")
+                (scratch / "Data/X.lua").write_text(
+                    "".join((inputs / name).read_text() for name in ("local", "common", "shared"))
+                )
+
+            generated.check_generated(
+                worktree,
+                outputs=lambda r: {"Data/X.lua": (r / "Data/X.lua").read_bytes()},
+                regenerate=regenerate,
+                offline=True,
+                success="ok",
+            )
+
     def test_gate_rejects_a_generator_whose_second_pass_differs(self):
         with self.assertRaisesRegex(SystemExit, "not byte-for-byte reproducible"):
             self.run_gate(DRIFT, offline=False)
