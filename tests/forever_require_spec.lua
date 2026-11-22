@@ -251,6 +251,50 @@ do
 	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "an up-to-date addon is not named")
 end
 
+-- Shipped ForeverCore TOCs strip the tag's leading v ("1.0.0", not "v1.0.0"). Bare release versions compare the same,
+-- while dev hashes and non-release strings are never treated as evidence of an old core.
+do
+	local bareOld = {
+		name = "ForeverCore",
+		title = "ForeverCore",
+		project = "1796337",
+		loaded = true,
+		enabled = 2,
+		version = "1.0.0",
+	}
+	local _, _, text = run({}, false, nil, bareOld)
+	equal(
+		text,
+		"My Addon: ForeverCore is out of date. Update it to fix this.",
+		"an old ForeverCore with a bare version is named"
+	)
+
+	for _, version in ipairs({
+		"1.5.0",
+		"1.6.0",
+		"1.0.0-4-g262187d",
+		"v1.0.0-dev",
+		"262187d",
+		"@project-version@",
+		"vv1.0.0",
+	}) do
+		local installedCore = {
+			name = "ForeverCore",
+			title = "ForeverCore",
+			project = "1796337",
+			loaded = true,
+			enabled = 2,
+			version = version,
+		}
+		local _, _, line = run({}, false, nil, installedCore)
+		equal(
+			line,
+			"My Addon could not start. Reinstall My Addon to fix this.",
+			"version " .. version .. " is not called old"
+		)
+	end
+end
+
 -- A ForeverCore older than the version this addon's TOC asks for is named, because updating this addon cannot fix it
 -- (cjber/skillup-forever#953).
 do

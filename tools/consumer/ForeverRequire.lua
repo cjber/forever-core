@@ -176,10 +176,10 @@ local function behindCore(index)
 	if type(required) == "string" then
 		a, b, c = required:match("^v(%d+)%.(%d+)%.(%d+)$")
 	end
-	if not a or type(served) ~= "string" or not served:match("^v%d+%.%d+%.%d+$") then
+	if not a or type(served) ~= "string" or not served:match("^v?%d+%.%d+%.%d+$") then
 		return false
 	end
-	return outdated(served, { tonumber(a), tonumber(b), tonumber(c) }) == true
+	return outdated("v" .. served:gsub("^v", ""), { tonumber(a), tonumber(b), tonumber(c) }) == true
 end
 -- The line for an addon that relies on a separately installed ForeverCore.
 local function standaloneFailure(own)
