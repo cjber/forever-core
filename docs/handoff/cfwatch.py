@@ -302,18 +302,32 @@ def unanswered(items):
 
 
 def search_issues():
-    """Every Forever issue that may carry a CurseForge thread line, open and closed."""
-    return gh_json(
-        "search",
-        "issues",
-        "CurseForge thread",
-        "--owner",
-        OWNER,
-        "--limit",
-        "1000",
-        "--json",
-        "repository,number,state,body,closedAt",
-    )
+    """Every Forever issue that may carry a CurseForge thread line, open and closed.
+
+    Asked of each watched repository on its own, because `gh search issues --owner` is one listing
+    across an owner and a token scoped to a single repository owner cannot make it: the lookup then
+    fails before a single thread is matched, and every thread reads as never filed.
+    """
+    issues = []
+    for slug in slug_list():
+        rows = gh_json(
+            "issue",
+            "list",
+            "-R",
+            f"{OWNER}/{slug}",
+            "--state",
+            "all",
+            "--search",
+            "CurseForge thread",
+            "--limit",
+            "1000",
+            "--json",
+            "number,state,body,closedAt",
+        )
+        for row in rows:
+            row["repository"] = {"name": slug}
+            issues.append(row)
+    return issues
 
 
 def linked_issues(search=None):
