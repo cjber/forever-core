@@ -156,6 +156,7 @@
 - **Package diagnostics name the exclusion source**, distinguishing a matching `.pkgmeta` ignore rule from an untracked or Git-ignored runtime file. (#732)
 - **Headless tooling refuses jobs and input while the character is dead, a ghost or in combat**, and stops when live safety cannot be confirmed. (#619)
 - **Simulator scenarios can read quest rewards and share quests, open the backpack and press override bindings.** The world map opens on a modelled map, edit boxes notify text changes on the next frame as the client does, and widget-method generation reads the annotation pin from `tools/toolchain.json`. (#632, #636, #643, #644, #668, #676)
+- **Headless jobs can run in a private nested Hyprland for deskpilot**, with a bounded command and a return to gamescope before the slot is released. (#662)
 - **Headless leases lock one command at a time**, exclusive jobs have a hard timeout, and a job can request session shutdown without waiting on its own lock. (#671)
 - **A Forever addon's minimap button can register with LibDBIcon** so SexyMap and other minimap managers can show it on hover, move and hide it. The tooltip says it can be dragged. Thanks to Laddylucks, thirex, axejess, p1tu and Mirades96 for the reports. (#685)
 - **Release tooling:** `changelog.py --check` fails on a bullet that appears twice in one section, an addon PR's package check no longer fails while a new ForeverCore awaits CurseForge moderation (the release workflow still requires the latest core), and a proof records a Lua flow as `sha256:<digest> <file>` so a file named with `api` or `key` no longer trips gitleaks. (#660, #661, #656)
@@ -277,6 +278,13 @@
 
 - **A tracker section can cap its own height.** `TrackerSection.Create` takes `maxHeight`: 200 UI units when omitted, or `"remaining"` for what the column's other sections leave. A taller section scrolls under its header with the client's minimal scrollbar, keeps the top block in place across updates, moves one block per wheel step, and freezes in combat. (#177)
 
+- **A Lua proof flow reports its own snippet's result, not the session before it.** `--flow NAME=file.lua` and
+  `forever_client.py eval` reload once to run a snippet and then read `DevSmokeDB.eval`, but SavedVariables reach disk
+  only at the next reload, so the file still held the previous eval: a snippet that raised passed the proof on an
+  earlier run's success, and a clean one failed on an earlier run's error. `tools/devsmoke/eval.py` now stamps every
+  generated `Eval.lua` with a fresh run token, `!!DevSmoke` copies it into `DevSmokeDB.eval.run`, and the reader reloads
+  once more and answers only the record carrying that token. A failed flow fails the proof with the snippet's own
+  error, before any gist or `.visual-proof.json` exists. (#580)
 - Native settings pages can register section headings through `SettingsSections.Register`, using Blizzard's row layout and focus handling (#488).
 
 ## [1.11.0] - 2026-11-13
@@ -290,6 +298,16 @@
   ring are byte for byte the ones Adventure Guide Forever and Shortest Path Forever ship, so an addon can drop its own
   copy and read core's instead; `ForeverCore.Art.minor` is 2. `tools/export_markers.py` writes them from
   `tools/marker_source`, and its `--check` fails when a committed marker differs. (#570)
+- **A visual proof is one command, on a release prep or a Core pin bump.** `tools/headless/forever_client.py proof
+  --repo <repo> --ref <sha> --checkout <tree> --flow "update notice=<slash command or Lua file>"` builds and links the
+  commit as `smoke` does, reloads once, runs each named flow (a Forever addon's own slash command, or a Lua file
+  through `!!DevSmoke`), screenshots each and uploads the PNGs to a new secret gist. It writes
+  `<checkout>/.visual-proof.json` from `visual_proof --digests` with full-SHA raw URLs and each image's sha256, then
+  checks the installed build with `visual_proof --compare`; every AddOns slot is put back and the checkout is never
+  committed or pushed. A release preparation and a sync pull request that moves the ForeverCore pin run it, so the
+  required `visual-proof` check passes without `--admin`; `tools/sync_consumer_prs.py` prints the command for a sync
+  pull request whose changed files need a proof, because it cannot drive the client itself. ForeverCore has no shared
+  opener for an addon's update notice, so the flow is always named. (#563)
 - **A sync PR that merges while the sync runs no longer fails it.** The run looked up the open `forever-core-sync`
   pull request, and when that PR merged and its branch was deleted before the commit, the commit failed with "Branch
   not found". The sync now opens a fresh branch and pull request from the new `main` instead. (#559)
@@ -341,6 +359,14 @@
   completed full CI run on main whose only failed job is `visual-proof`; every other job must still pass and the
   `headless-smoke` gate still applies. An addon's Release workflow passes it from a `skip_visual_proof` dispatch input.
   (#552)
+- **A release needs a green `headless-smoke` on its exact commit.** `tools/release_check.py` reads the newest commit
+  status in that context beside the full CI run, so a commit the client never loaded is not released: a missing or
+  pending one waits and names the command that fills it in, and a failed one prints what it found.
+  `python3 tools/headless/forever_client.py smoke --repo <repo> --ref <sha>` builds that commit, runs
+  `/forever selftest` and `errors --addon` for each of its addon folders in the headless client, and posts the status;
+  exit 3 means the player's client or another session holds it, so nothing is posted. `tools/release_consumers.py`
+  reports such a commit as waiting rather than failed, and `tools/smoke_queue.py` with its `forever-smoke` timer fills
+  the status in for every commit a release would ship. (#540)
 - **The simulator exercises every addon with no scenario file, and clicks the addon's own widgets.** `run.lua` runs
   `sim:exercise()` after the declared scenarios, so an addon no longer needs `tests/sim/exercise_scenario.lua`; a
   declared scenario still passes the exercise its own commands and saved variables. An addon that depends on
@@ -579,6 +605,7 @@
 - **`/reload` and `errors` reach the chat box when the Forever copy-link box has focus.** The Return and the typed command used to go into that box, so the world never reloaded and the verb timed out after 120 s. `slash` now sends Return, Escape, Return before typing: from a clean frame that opens, closes and reopens chat, and with a focused box the Escape closes its window first. (#266)
 - **An optional Forever quest list in the tracker column.** Turn on "Forever quest list" in Forever Core's settings or type `/fcore quests`: your tracked quests then show at the top of the Forever column in the game's own tracker style, quests ready to turn in first, then the ones in this zone, then every other zone, each nearest first with its distance in yards from the game's quest data. Left-click super-tracks a quest, right-click opens the game's quest menu. The game's own quest and campaign lists are collapsed while it is on, and it stays off while Questie's tracker, Kaliel's Tracker or EQOT show the quests. (#177)
 - **A hidden EQ Objective Tracker list is no longer read on every tick.** The tracker's EQOT watcher reports the list hiding or fading out once, then reads no geometry until it shows again; its show and hide hooks still reflow at once. (#268, cjber/skillup-forever#412)
+- **Agents can test the addons in the real client without touching the player's desktop.** `tools/headless/forever_client.py` runs the WoW: Forever client under gamescope's headless backend on the GPU, waits until it is in the world, and gives screenshot, click, key, slash command, `/reload`, SavedVariables and Lua error verbs on that private display. One lock and a check of the Wine prefix keep it to one client, and it will not start while the player is in game. The tool keeps to the interface (slash commands only from the Forever addons, a fresh screenshot before each click, no free typing), spaces inputs out, caps a session at 30 minutes and logs the character out at every ending. The standard is `wow-forever-addon/in-game.md`.
 - **Every Forever addon is exercised together.** `tools/suite_load.py` checks out each published addon's main and runs `sim:exercise()` with all of them and ForeverCore in one client, so a clash between two addons fails before a release; the Suite load workflow runs it daily and on demand. The simulator now boots the client's secure templates and its error frame (`UIErrorsFrame`), and answers the achievement natives from `sim.world.achievements`. (#203)
 - **The leaderboards reach players you have not grouped with.** Each Forever addon now passes on the rows it has heard to its own guild and group, so a player's progress spreads through everyone who groups across guilds. A passed-on row keeps the player it came from and the time it was made, replaces only an older passed-on row, and never a row heard from the player directly. The window's menu adds "Players you've met" beside "Your guild and group"; values stay player-reported. Up to 400 such players are kept, the least recently active dropped first, and rows older than 30 days expire. (#170)
 - **The leaderboards and quest log side tabs are real buttons.** They were frames carrying the side-tab template's mouse scripts, and with the gamepad interface on the client's navigation reads the mouse scripts of any focused frame that is not a button, inside its own protected call. The tabs are Buttons now, as the client builds its own side tabs, so that scan never reads a script a Forever addon created. `LEADERBOARDS_VERSION` is 3. (#253, cjber/skillup-forever#398)
