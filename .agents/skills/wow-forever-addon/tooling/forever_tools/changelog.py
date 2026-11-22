@@ -279,7 +279,8 @@ def check_base(root: Path, base: str) -> None:
         prefix = before[: old.start()]
         valid = after.startswith(prefix)
         tail = after.find(before[old.start() :], len(prefix))
-        valid = valid and tail >= len(prefix) and after[tail:] == before[old.start() :]
+        # EOF blank lines carry no content: compare the tails with trailing newlines normalised.
+        valid = valid and tail >= len(prefix) and after[tail:].rstrip("\n") == before[old.start() :].rstrip("\n")
         inserted = after[len(prefix) : tail] if valid else ""
     if valid:
         headings = list(HEADING.finditer(inserted))
@@ -382,8 +383,10 @@ def main(root: Path, argv: list[str] | None = None) -> None:
             rest = text[following.start() :] if following else ""
             body = _join_sections(find(text, version) or "", body)
             candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n\n" + rest
+            candidate = candidate.rstrip("\n") + "\n"
         else:
             candidate = text[:offset].rstrip() + f"\n\n## [{version}] - {args.date}\n\n{body}\n" + text[offset:]
+            candidate = candidate.rstrip("\n") + "\n"
         check(candidate, [version])
         check_image(root, candidate, version, [v for v in released(root) if _version_key(v) < _version_key(version)])
         path.write_text(candidate, encoding="utf-8")

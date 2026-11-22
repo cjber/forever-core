@@ -73,6 +73,29 @@ class FragmentsTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 changelog.check_base(root, "v1.0.0")
 
+    def test_release_leaves_no_trailing_blank_line_and_check_tolerates_one(self):
+        # #1054: release must not end the file with a blank line, and --check --base must not
+        # fail just because the base had one (EOF blank lines carry no content).
+        root = self.repo()
+        blank = root / "CHANGELOG.md"
+        blank.write_text(BASE + "\n")
+        self.commit(root)
+        self.note(root, "one", "### Added\n\n- One.\n")
+        changelog.main(root, ["release", "1.0.1", "--date", "2026-11-17"])
+        written = (root / "CHANGELOG.md").read_text()
+        self.assertTrue(written.endswith("\n"))
+        self.assertFalse(written.endswith("\n\n"), "release left a trailing blank line")
+        self.commit(root)
+        changelog.check_base(root, "v1.0.0")
+        self.git(root, "tag", "v1.0.1")
+        # A later branch that only normalises the base's stray blank line is not a changelog change.
+        self.git(root, "checkout", "-b", "trim", "main")
+        (root / "CHANGELOG.md").write_text(written.rstrip("\n") + "\n\n")
+        self.note(root, "two", "### Fixed\n\n- Two.\n")
+        changelog.main(root, ["release", "1.0.2", "--date", "2026-11-18"])
+        self.commit(root)
+        changelog.check_base(root, "main")
+
     def test_release_joins_fragments_to_an_untagged_section_in_preparation(self):
         root = self.repo()
         prepared = BASE.replace(
