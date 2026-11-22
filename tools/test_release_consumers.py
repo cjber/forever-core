@@ -104,6 +104,17 @@ class FailedReleaseTest(unittest.TestCase):
     def test_a_running_release_is_not_failed(self):
         self.assertFalse(release.has_failed_release(runs(release_run("in_progress", None)), SHA))
 
+    def test_a_success_beside_a_failed_duplicate_is_not_failed(self):
+        # A tag push also fires release.yml once; the dispatch duplicate can fail while the tag's own run shipped.
+        shipped = {**release_run("completed", "success"), "run_started_at": "2026-11-22T03:20:00Z"}
+        duplicate = {**release_run("completed", "failure"), "run_started_at": "2026-11-22T03:26:00Z"}
+        self.assertFalse(release.has_failed_release(runs(shipped, duplicate), SHA))
+
+    def test_a_cancelled_run_beside_a_success_is_not_failed(self):
+        shipped = {**release_run("completed", "success"), "run_started_at": "2026-11-22T03:20:00Z"}
+        cancelled = {**release_run("completed", "cancelled"), "run_started_at": "2026-11-22T03:27:00Z"}
+        self.assertFalse(release.has_failed_release(runs(shipped, cancelled), SHA))
+
     def test_a_failure_rerun_to_success_is_not_failed(self):
         failed = {**release_run("completed", "failure"), "run_started_at": "2026-11-11T10:00:00Z"}
         passed = {**release_run("completed", "success"), "run_started_at": "2026-11-11T11:00:00Z"}

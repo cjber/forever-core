@@ -137,17 +137,21 @@ def has_pending_release(runs: dict) -> bool:
 
 
 def has_failed_release(runs: dict, sha: str) -> bool:
-    """Whether the newest finished `release.yml` run on `sha` ended in anything but success.
+    """Whether `sha` has no successful `release.yml` run and its newest finished one did not succeed.
 
     A 20-minute cron would otherwise dispatch the same failing release again and again, forever, so a failure at the
-    head commit is the maintainer's to fix and dispatch by hand. Only the newest finished run counts, so a failure
-    rerun to success clears. A release tags its commit before the packager uploads, so this is read before the tag:
-    a tag left by a failed upload is not a published release.
+    head commit is the maintainer's to fix and dispatch by hand. A single success settles it: a released sha usually
+    also carries a failed `workflow_dispatch` duplicate of its tag push, and a cancelled run, so the newest run alone
+    would report a shipped release as failed. Any success, then a failure rerun to success, clears it. A release tags
+    its commit before the packager uploads, so this is read before the tag: a tag left by a failed upload is not a
+    published release.
     """
     finished = [
         run for run in runs.get("workflow_runs", []) if run.get("head_sha") == sha and run.get("status") == "completed"
     ]
     if not finished:
+        return False
+    if any(run.get("conclusion") == "success" for run in finished):
         return False
     newest = max(finished, key=lambda run: run.get("run_started_at") or "")
     return newest.get("conclusion") != "success"
