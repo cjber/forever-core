@@ -100,6 +100,9 @@ _G.C_AddOns = {
 		if field == "X-Forever-Core" then
 			return item.tag
 		end
+		if field == "Version" then
+			return item.version
+		end
 		if field == "AddonCompartmentFunc" or field == "AddonCompartmentFuncOnEnter" then
 			return item[field]
 		end
@@ -246,6 +249,34 @@ end
 do
 	local _, _, text = run({ entry({ name = "NewForever", title = "New Forever", tag = "v1.5.0" }) }, false)
 	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "an up-to-date addon is not named")
+end
+
+-- A ForeverCore older than the version this addon's TOC asks for is named, because updating this addon cannot fix it
+-- (cjber/skillup-forever#953).
+do
+	local old = { name = "ForeverCore", title = "ForeverCore", project = "1796337", loaded = true, enabled = 2 }
+	old.version = "v1.0.0"
+	local _, _, text = run({}, false, nil, old)
+	equal(text, "My Addon: ForeverCore is out of date. Update it to fix this.", "an old ForeverCore is named")
+end
+
+-- A core whose Version the client will not report is not called old: nothing there says which copy is newer.
+do
+	local silent = { name = "ForeverCore", title = "ForeverCore", project = "1796337", loaded = true, enabled = 2 }
+	local _, _, text = run({}, false, nil, silent)
+	equal(
+		text,
+		"My Addon could not start. Reinstall My Addon to fix this.",
+		"an unreported core version keeps the reinstall line"
+	)
+end
+
+-- A core at the version this addon asks for is not called old either, even when another addon cannot start.
+do
+	local current = { name = "ForeverCore", title = "ForeverCore", project = "1796337", loaded = true, enabled = 2 }
+	current.version = "v1.5.0"
+	local _, _, text = run({}, false, nil, current)
+	equal(text, "My Addon could not start. Reinstall My Addon to fix this.", "a current core keeps the reinstall line")
 end
 
 -- A disabled dependent is ignored.

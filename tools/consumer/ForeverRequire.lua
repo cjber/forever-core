@@ -167,6 +167,20 @@ local function embeddedFailure(own)
 	end
 	return phrase("%s could not start. Reinstall %s to fix this.", own, own)
 end
+-- Whether the ForeverCore at `index` is older than the version this addon's TOC asks for. A TOC that names no
+-- requirement, or a core whose Version the client will not report, is not evidence of an old core.
+local function behindCore(index)
+	local required = trimmed(safe("GetAddOnMetadata", addonName, "X-Forever-Core"))
+	local served = trimmed(safe("GetAddOnMetadata", index, "Version"))
+	local a, b, c
+	if type(required) == "string" then
+		a, b, c = required:match("^v(%d+)%.(%d+)%.(%d+)$")
+	end
+	if not a or type(served) ~= "string" or not served:match("^v%d+%.%d+%.%d+$") then
+		return false
+	end
+	return outdated(served, { tonumber(a), tonumber(b), tonumber(c) }) == true
+end
 -- The line for an addon that relies on a separately installed ForeverCore.
 local function standaloneFailure(own)
 	local core = installed()
@@ -193,6 +207,11 @@ local function standaloneFailure(own)
 			local joined = #found == 2 and table.concat(found, " and ")
 				or (table.concat(found, ", ", 1, #found - 1) .. " and " .. found[#found])
 			text = phrase("%s: %s are out of date. Update them to fix this.", own, joined)
+		elseif behindCore(core) then
+			-- The installed core is genuinely older than the version this build asks for in its TOC, so updating
+			-- ForeverCore is the only fix: telling the player to reinstall this addon reinstalls the same build and the
+			-- same warning (cjber/skillup-forever#953).
+			text = phrase("%s: %s is out of date. Update it to fix this.", own, "ForeverCore")
 		else
 			text = phrase("%s could not start. Reinstall %s to fix this.", own, own)
 		end
