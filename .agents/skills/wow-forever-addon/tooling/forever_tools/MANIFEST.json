@@ -8,7 +8,7 @@
   "files": {
     "__init__.py": "845dbed90ad519817771603e96839d1ba970007d5a6d997a4a13fef416b8bcd1",
     "art.py": "85184f1b56aa13720b9be0ecb1317e13c5a99296091fd4c2b568fa2e9355ce53",
-    "asset-registry.md": "5fac1ea87a4412f1bb58dd0ef5cd1e896089dda8001a10a0f43ade6690a8b194",
+    "asset-registry.md": "6f61b59493ced75fa1f4314e4d2214fb664c1a6c47786cebeef024dde0f86dbe",
     "assets.py": "90c143b7951711d8e3ae99ac1ab8fdf8d3a19f4ad7a93e7adaf471d568f56591",
     "backdrops.txt": "815f66269b9159e8672e8f684318ceb58509758d26f9d03eed02a75c1a0962c3",
     "changelog.py": "2fe96ebc39b6468eaa51482f40d33adb3eef13e163d829cd4f6af9e7d0f3d6a3",

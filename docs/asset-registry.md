@@ -78,7 +78,7 @@ use its name. Inline comments do not grant an exception.
 
 Progress findings are report-only during the consumer migration. The shared blacklist
 and icon checks still determine the assets command's exit status. Use
-`python3 -m forever_tools.assets --root PATH --strict-progress` to fail on progress
+`python3 -m tools.forever_tools.assets --root PATH --strict-progress` to fail on progress
 findings once the addon is ready.
 
 ## Pre-Legion chrome by FileDataID age
