@@ -11,6 +11,7 @@ function harness.new(options)
 	end
 	local function noop() end
 	local timers, readyFn, frames, releases, menus = {}, nil, {}, {}, {}
+	local editModeCallbacks = {}
 	local delayed = {}
 	local animations, released = 0, 0
 	local textures = {}
@@ -307,7 +308,7 @@ function harness.new(options)
 		end,
 		GetEffectiveScale = NativeScale,
 	})
-	native = ReadOnly("tracker", {
+	local trackerReads = {
 		isDragging = false,
 		NineSlice = nineSlice,
 		GetLeft = function()
@@ -329,7 +330,8 @@ function harness.new(options)
 			end,
 			GetEffectiveScale = NativeScale,
 		}),
-	})
+	}
+	native = ReadOnly("tracker", trackerReads)
 	parent = frame()
 	parent.width = 1200
 	parent:SetHeight(1080)
@@ -404,7 +406,17 @@ function harness.new(options)
 				readyFn = fn
 			end,
 		},
-		EventRegistry = { RegisterCallback = noop },
+		EventRegistry = {
+			RegisterCallback = function(_, event, callback, owner)
+				editModeCallbacks[event] = editModeCallbacks[event] or {}
+				table.insert(editModeCallbacks[event], { callback = callback, owner = owner })
+			end,
+			TriggerEvent = function(_, event, ...)
+				for _, entry in ipairs(editModeCallbacks[event] or {}) do
+					entry.callback(...)
+				end
+			end,
+		},
 		C_XMLUtil = {
 			GetTemplateInfo = function()
 				return { type = "Frame" }
@@ -568,6 +580,37 @@ function harness.new(options)
 				end
 			end
 		end
+	end
+	-- Sets the tracker's own drag flag, the signal the host follows while Edit Mode moves it.
+	function ctx.setTrackerDragging(dragging)
+		trackerReads.isDragging = dragging == true
+	end
+	-- Delivers an Edit Mode event through EventRegistry, as the client does.
+	function ctx.editMode(event)
+		env.EventRegistry:TriggerEvent(event)
+	end
+	-- Runs every armed OnUpdate handler once, then returns how many frames have one.
+	function ctx.stepUpdates()
+		for _, f in ipairs(frames) do
+			local handler = f.scripts.OnUpdate
+			if handler then
+				handler(f, 1 / 60)
+			end
+		end
+	end
+	function ctx.advanceUpdates(passes)
+		for _ = 1, passes or 2 do
+			ctx.stepUpdates()
+		end
+	end
+	function ctx.updateFrames()
+		local armed = {}
+		for _, f in ipairs(frames) do
+			if f.scripts.OnUpdate then
+				armed[#armed + 1] = f
+			end
+		end
+		return armed
 	end
 	function ctx.recheck(event)
 		ctx.fire(event)
