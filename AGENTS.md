@@ -41,8 +41,8 @@ between addons. Repo-specific skills stay in that repo's `.agents/skills/`, neve
 tracker specs run against Blizzard's real source: `python3 tools/fetch_tracker_ui.py`, then
 `TRACKER_UI_ROOT=tools/.cache/tracker-ui luajit tests/tracker_reflow_spec.lua` (the reflow spec skips without it).
 
-Use a focused spec or `forever_sim` for behaviour it can verify. Before opening the live client, identify
-the required gate or the question only the client can answer. See WFA-40 in the addon standards.
+Use a focused spec or `forever_sim` for behaviour it can verify. When WFA-40 calls for live evidence,
+name the gate or client-only question and route the check through the suite workflow in rule 6.
 
 ## Releases
 

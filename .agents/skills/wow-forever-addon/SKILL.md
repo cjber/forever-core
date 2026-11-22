@@ -213,11 +213,11 @@ When this pack and a reference repo disagree, fix whichever is wrong in the same
     deduplication when it can assert the player's result through the normal entry point. For a yellow
     distance notice, cross the threshold in the simulator and assert one on-screen message and zero chat
     messages. That completes the behavioural check.
-  - Use the live client when a required gate calls for it (WFA-16), or when the change makes a claim the
-    simulator cannot settle. Examples include a client-only protected action or taint report, actual layout
+  - Use the live client when a required check calls for it, such as WFA-16's release visual proof, or
+    when the change makes a claim the simulator cannot settle. Examples include a client-only protected action or taint report, actual layout
     or input behaviour the simulator cannot model, and measured frame time. Before opening the game,
-    name the unanswered question and the one flow that answers it. Reuse a recorded result for the same
-    candidate and flow when it already answers the question. Read [debugging.md](debugging.md) for live checks.
+    name the unanswered question and the one flow that answers it. Reuse evidence linked from the PR or its required check when it covers
+    the same build and flow. Read [debugging.md](debugging.md) for live checks.
   - In a live flow, assert the expected result at each action. Enable `taintLog` 2, `scriptErrors` 1,
     BugGrabber, DevSessionLog and the `!!DevPerf` profiler. Fail on a new BugGrabber entry naming one of our
     addons, or our taint reaching secure code. Report the error, its stack and the triggering action.
