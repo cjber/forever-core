@@ -52,7 +52,8 @@ local function run(sim, trackerHost)
 	tracker.questList = questList(G, tracker)
 	tracker:ClearAllPoints()
 	-- The game keeps its tracker under the minimap cluster; the column never climbs past that cluster.
-	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, math.min(-200, G.MinimapCluster:GetBottom() - G.UIParent:GetHeight() - 10))
+	local underMinimap = G.MinimapCluster:GetBottom() - G.UIParent:GetHeight() - 10
+	tracker:SetPoint("TOPRIGHT", G.UIParent, "TOPRIGHT", -100, math.min(-200, underMinimap))
 	tracker:SetSize(260, 600)
 	G.EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	sim:event("EDIT_MODE_LAYOUTS_UPDATED")
