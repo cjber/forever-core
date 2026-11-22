@@ -764,5 +764,53 @@ class EmbedCheckTest(unittest.TestCase):
         self.assertIn("runs no BigWigs packager", failures[0])
 
 
+class VersionStepCheckTest(unittest.TestCase):
+    """The version step is required above a packager that builds, not above an upload-only one."""
+
+    PACKAGER = "BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0"
+    WORKFLOW = f"""name: Release
+
+jobs:
+  release:
+    steps:
+      - name: Write the bare version into the TOC
+        run: python3 -m {check_consumers.VERSION_COMMAND}
+      - name: Build the release ZIP
+        uses: {PACKAGER}
+        with:
+          args: -d
+      - name: Upload the validated ZIP
+        uses: {PACKAGER}
+        with:
+          args: -c -z
+"""
+    WITHOUT_VERSION = WORKFLOW.replace(
+        "      - name: Write the bare version into the TOC\n"
+        f"        run: python3 -m {check_consumers.VERSION_COMMAND}\n",
+        "",
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.checkouts = Path(self.tmp.name)
+        self.workflow = self.checkouts / "legacy-forever" / check_consumers.RELEASE_WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+
+    def check(self):
+        return check_consumers.check_version_step("legacy-forever", "main", self.checkouts)
+
+    def test_a_build_packager_and_an_upload_only_packager_need_only_one_version_step(self):
+        self.workflow.write_text(self.WORKFLOW, encoding="utf-8")
+        self.assertEqual(self.check(), [])
+
+    def test_a_build_packager_without_the_version_step_fails(self):
+        self.workflow.write_text(self.WITHOUT_VERSION, encoding="utf-8")
+        failures = self.check()
+        self.assertEqual(len(failures), 1)
+        self.assertIn(check_consumers.RELEASE_WORKFLOW, failures[0])
+        self.assertIn("tools.forever_tools.toc_version", failures[0])
+
+
 if __name__ == "__main__":
     unittest.main()

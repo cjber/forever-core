@@ -505,7 +505,20 @@ class VersionStepTest(unittest.TestCase):
         run: python3 -m tools.forever_tools.embed
       - uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
         with:
-          args: -d -z
+          args: -d
+"""
+
+    NAMED = """jobs:
+  release:
+    steps:
+      - name: Build the release ZIP
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -d
+      - name: Upload the validated ZIP
+        uses: BigWigsMods/packager@01e8631a69c69d7654c788d152630d5fed9e3812 # v2.7.0
+        with:
+          args: -c -z
 """
 
     def setUp(self):
@@ -600,3 +613,24 @@ class VersionStepTest(unittest.TestCase):
         self.assertEqual(self.check(), [])
         self.assertEqual(self.run_sync(), 0)
         self.assertEqual((self.root / sync.RELEASE_WORKFLOW).read_text(encoding="utf-8"), KILN_RELEASE_WORKFLOW)
+
+    def test_the_named_build_step_gets_one_version_step_and_the_upload_only_step_none(self):
+        updated = sync.version_step_edit(self.NAMED)
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.count(f"python3 -m {sync.VERSION_COMMAND}"), 1)
+        self.assertEqual(
+            updated,
+            self.NAMED.replace(
+                "      - name: Build the release ZIP",
+                sync.version_step() + "      - name: Build the release ZIP",
+            ),
+        )
+        self.assertNotIn(sync.version_step() + "      - name: Upload the validated ZIP", updated)
+
+    def test_the_sync_and_the_check_agree_on_the_named_build_step(self):
+        updated = sync.version_step_edit(self.NAMED)
+        self.assertIsNotNone(updated)
+        self.assertIsNone(sync.version_step_edit(updated))
+        (self.root / sync.RELEASE_WORKFLOW).write_text(updated, encoding="utf-8")
+        (self.root / sync.CI_WORKFLOW).unlink()
+        self.assertEqual(self.check(), [])
