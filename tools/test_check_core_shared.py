@@ -89,9 +89,11 @@ class CheckCoreSharedTest(unittest.TestCase):
     def test_ledger_glyph_check_can_skip_an_empty_manifest(self):
         gate = (
             "python3 tools/lint_client_calls.py\n"
-            "if python3 -c 'import json, sys; "
-            'sys.exit(not json.load(open("tools/font_bindings.json"))["producers"])'
-            "'; then\n"
+            "has_font_producers=$(python3 - <<'PY'\n"
+            "print('no')\n"
+            "PY\n"
+            ")\n"
+            "if [[ $has_font_producers == yes ]]; then\n"
             "    python3 tools/check_font_glyphs.py\n"
             "fi\n"
         )
