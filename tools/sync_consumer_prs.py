@@ -706,8 +706,7 @@ def embeds_core(root: Path) -> bool:
 def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin: str | None = None) -> None:
     """Point the bundle at `pin`, touching the changelog when the consumer's latest release ships another core.
 
-    A consumer whose `.pkgmeta` has no ForeverCore external (kiln-forever has no `.pkgmeta` at all) bundles no core, so
-    a pin that moves gives its own release nothing to carry: it still gets the pin and the TOC field, and no entry.
+    A consumer that ships no Core copy only needs its CI pin, which bump_pin handles before this call.
 
     The decision is the released tag's bundled core, not whether this run moved the pin: `main` can already pin the new
     core while the latest release still ships the old one, and a re-run has to repair that. A consumer that has never
@@ -715,14 +714,13 @@ def update_bundle(root: Path, pin: str, today: date | None = None, previous_pin:
     """
     # Either way the release zip carries core: as the bridge external or as the embedded copy the embed step makes from
     # the pin. Only the bridge external gets the required relation; an embedded consumer lists it as embedded.
-    bundles = ships_core(root) or embeds_core(root)
+    if not (ships_core(root) or embeds_core(root)):
+        return
     dependency_changed = ensure_core_dependency(root)
     rewrite_toc_dependencies(root)
     before = bundle_tag(root) or previous_pin
     rewrite_core_external(root, pin)
     rewrite_toc_core_field(root, pin)
-    if not bundles:
-        return
     released = latest_release_tag(root)
     if released is None:
         if dependency_changed or (bundle_tag(root) or pin) != before:
@@ -983,16 +981,16 @@ def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None =
             f"Moves the ForeverCore pin from {pin_bump[0]} to {pin_bump[1]}, so this addon's CI runs against the"
             " latest release.",
             "",
-            (
-                "This PR points `## X-Forever-Core:` at that tag, which the embed step copies into"
-                " `Libs/ForeverCore/`, and adds a marked CHANGELOG.md release entry for the release-consumers workflow"
-                " to publish."
-                if embedded
-                else "This PR points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and"
-                " adds a marked CHANGELOG.md release entry for the release-consumers workflow to publish."
-            ),
-            "",
         ]
+        if any(Path(path).suffix == ".toc" for path in files):
+            toc_note = "Updates the TOC's `## X-Forever-Core:` to match the pin."
+            if embedded:
+                toc_note += " The embed step uses that pin for `Libs/ForeverCore/`."
+            lines += [toc_note, ""]
+        if not embedded and any(Path(path).name in POLICY_FILES for path in files):
+            lines += ["Updates the packaged ForeverCore external to match.", ""]
+        if CHANGELOG in files or "changes/forever-core-sync.md" in files:
+            lines += ["Updates the addon's release notes for the bundled Core change.", ""]
     if RELEASE_WORKFLOW in files:
         lines += [
             "It also inserts the ForeverCore pin gate directly above the packager in"

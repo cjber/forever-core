@@ -1603,6 +1603,19 @@ class BundleTest(unittest.TestCase):
         self.assertEqual(self.toc.read_text(encoding="utf-8"), "## Interface: 16001\n## Title: Legacy Forever\n")
         self.assertIn("has no `## OptionalDeps:` or `## Dependencies:` line", out.getvalue())
 
+    def test_a_non_bundling_addon_only_moves_its_ci_pin(self):
+        root = Path(self.tmp.name) / "kiln-forever"
+        pin = root / sync.PIN_PATH
+        pin.parent.mkdir(parents=True)
+        pin.write_text("v1.0.0\n", encoding="utf-8")
+        toc = root / "addon" / "KilnForever" / "KilnForever.toc"
+        toc.parent.mkdir(parents=True)
+        required = "## OptionalDeps: Blizzard_ObjectiveTracker\n## Dependencies: ForeverCore\n"
+        toc.write_text(required, encoding="utf-8")
+        self.assertEqual(sync.bump_pin(root, "v1.4.0", self.DAY), "v1.0.0")
+        self.assertEqual(pin.read_text(encoding="utf-8"), "v1.4.0\n")
+        self.assertEqual(toc.read_text(encoding="utf-8"), required)
+
     def test_a_nested_addon_gets_its_bundle_below_its_addon_folder(self):
         root = Path(self.tmp.name) / "kiln-forever"
         addon = root / "addon" / "KilnForever"
@@ -1744,10 +1757,18 @@ class BodyTest(unittest.TestCase):
         )
         self.assertNotIn("Moves the ForeverCore pin", sync.pr_body("abc123", ("tools/forever-core.txt",)))
 
+    def test_a_pin_only_body_does_not_claim_bundle_changes(self):
+        body = sync.pr_body("abc123", (sync.PIN_PATH,), ("v1.3.2", "v1.4.0"))
+        self.assertNotIn("external", body)
+        self.assertNotIn("X-Forever-Core", body)
+        self.assertNotIn("release notes", body)
+
     def test_an_embedded_body_names_no_external(self):
-        body = sync.pr_body("abc123", ("tools/forever-core.txt",), ("v1.3.2", "v1.4.0"), embedded=True)
+        files = (sync.PIN_PATH, "LegacyForever.toc", "changes/forever-core-sync.md")
+        body = sync.pr_body("abc123", files, ("v1.3.2", "v1.4.0"), embedded=True)
         self.assertNotIn("external", body)
         self.assertIn("Libs/ForeverCore/", body)
+        self.assertIn("release notes", body)
 
 
 class SummaryTest(unittest.TestCase):
