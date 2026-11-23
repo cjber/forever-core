@@ -277,10 +277,11 @@ def check_base(root: Path, base: str) -> None:
         inserted = after[len(intro) :].lstrip("\n") if valid else ""
     elif valid and old is not None:
         prefix = before[: old.start()]
-        valid = after.startswith(prefix)
-        tail = after.find(before[old.start() :], len(prefix))
-        # EOF blank lines carry no content: compare the tails with trailing newlines normalised.
-        valid = valid and tail >= len(prefix) and after[tail:].rstrip("\n") == before[old.start() :].rstrip("\n")
+        # EOF blank lines carry no content. Match history at the end after dropping those newlines.
+        history = before[old.start() :].rstrip("\n")
+        after = after.rstrip("\n")
+        tail = len(after) - len(history)
+        valid = tail >= len(prefix) and after.startswith(prefix) and after.endswith(history)
         inserted = after[len(prefix) : tail] if valid else ""
     if valid:
         headings = list(HEADING.finditer(inserted))
