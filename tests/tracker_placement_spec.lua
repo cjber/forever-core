@@ -45,6 +45,42 @@ t.moveLine(height)
 check(Under(t, height), "it returns under the list once the whole column fits")
 check(t.pending() == 0 and Updates(t) == updates, "and returning is not a layout")
 
+local nearLeft = harness.new({ hostSettings = { placement = "under" } })
+nearLeft.nativeRect.left = 24
+nearLeft.moveLine(nearLeft.host:GetHeight() - 1)
+nearLeft.check(
+	nearLeft.host.point[1] == "TOPLEFT" and nearLeft.host.point[4] == 24 + 260,
+	"an automatic fallback fits to the right when the tracker is at the left edge"
+)
+
+nearLeft.host:MarkDirty()
+nearLeft.drain()
+nearLeft.check(
+	nearLeft.host.point[1] == "TOPLEFT" and nearLeft.host.point[4] == 24 + 260,
+	"a layout and a tracker move choose the same fallback"
+)
+nearLeft.ns.TrackerHost.SetPlacement("left")
+nearLeft.drain()
+nearLeft.check(Pinned(nearLeft) and nearLeft.host.point[4] == 24, "the explicit Left placement keeps its left pin")
+
+local blocked = harness.new({ hostSettings = { placement = "under" } })
+blocked.nativeRect.left, blocked.nativeRect.width = 24, 1000
+blocked.first.contentHeight = 750
+blocked.host:MarkDirty()
+blocked.drain()
+blocked.moveLine(400)
+blocked.drain()
+blocked.check(Under(blocked, 400), "with neither side clear, the column stays under the tracker")
+blocked.check(blocked.first.available <= 400 and blocked.host:GetHeight() <= 400, "the column fits the room below")
+local blockedHeight = blocked.host:GetHeight()
+blocked.moveLine(800)
+blocked.drain()
+blocked.check(blocked.host:GetHeight() > blockedHeight, "the sections grow when the tracker frees more room below")
+blocked.nativeRect.left, blocked.nativeRect.width = 940, 260
+blocked.moveLine(400)
+blocked.drain()
+blocked.check(Pinned(blocked), "the column can return to the left fallback when a side opens")
+
 -- The column's own growth is measured by its layout, which places it again.
 t.moveLine(400)
 t.first.contentHeight = 500
@@ -306,6 +342,8 @@ bars.check(bars.first.available == room, "and takes no room from below")
 print(
 	("tracker_placement_spec: %d checks passed"):format(
 		t.checks()
+			+ nearLeft.checks()
+			+ blocked.checks()
 			+ early.checks()
 			+ scaled.checks()
 			+ box.checks()

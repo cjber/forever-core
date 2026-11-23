@@ -314,6 +314,9 @@ function harness.new(options)
 		GetLeft = function()
 			return nativeRect.left
 		end,
+		GetRight = function()
+			return nativeRect.left and nativeRect.left + (nativeRect.width or 260)
+		end,
 		GetTop = function()
 			return nativeRect.top
 		end,

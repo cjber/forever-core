@@ -291,7 +291,8 @@ relog.nativeRect.left, relog.nativeRect.top, relog.nativeRect.line = 1200 - 260,
 -- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
 -- a presence check or one of the reads that place the column under it (#850, #883), never another
 -- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
-local reads = { ".isDragging", ":GetTop()", ":GetLeft()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+local reads =
+	{ ".isDragging", ":GetTop()", ":GetLeft()", ":GetRight()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
 local function Starts(text, list)
 	for _, read in ipairs(list) do
 		if text:sub(1, #read) == read then
