@@ -377,6 +377,7 @@ class PlanTest(unittest.TestCase):
         decision, jobs_read = self.plan_with_ci_jobs(jobs)
         self.assertTrue(decision.release)
         self.assertEqual(decision.commit, SHA)
+        self.assertTrue(decision.skip_visual_proof)
         jobs_read.assert_called_once_with("legacy-forever", 1)
 
     def test_visual_proof_beside_another_failed_job_holds_the_release(self):
@@ -385,6 +386,11 @@ class PlanTest(unittest.TestCase):
         self.assertFalse(decision.release)
         self.assertFalse(decision.failed)
         self.assertIn("ci.yml on main's head 0123456 is completed/failure", decision.reason)
+
+    def test_visual_proof_with_a_cancelled_job_holds_the_release(self):
+        jobs = [ci_job("visual-proof", "failure"), ci_job("test", "cancelled")]
+        decision, _ = self.plan_with_ci_jobs(jobs)
+        self.assertFalse(decision.release)
 
     def test_a_run_whose_only_failing_job_is_another_job_holds_the_release(self):
         jobs = [ci_job("test", "failure"), ci_job("visual-proof")]
@@ -403,6 +409,7 @@ class PlanTest(unittest.TestCase):
     def test_a_successful_run_is_unaffected_and_reads_no_jobs(self):
         decision, jobs_read = self.plan_with_ci_jobs([], run=ci_run("completed", "success"))
         self.assertTrue(decision.release)
+        self.assertFalse(decision.skip_visual_proof)
         jobs_read.assert_not_called()
 
     def test_an_odd_jobs_payload_never_releases(self):
@@ -563,7 +570,7 @@ class MainTest(unittest.TestCase):
         ):
             self.assertEqual(release.main(), 0)
 
-        dispatched.assert_called_once_with("skillup-forever", "1.4.3", SHA)
+        dispatched.assert_called_once_with("skillup-forever", "1.4.3", SHA, skip_visual_proof=False)
         self.assertIn("legacy-forever: waiting: v1.4.3 is already released", out.getvalue())
         self.assertIn(f"skillup-forever: dispatched release.yml for v1.4.3 at {SHA}", out.getvalue())
 
@@ -686,12 +693,12 @@ class EmbedFleetTest(unittest.TestCase):
     def test_an_opted_in_release_goes_once_every_addon_has_opted_in(self):
         code, out, dispatched = self.run_main(dict.fromkeys(release.EMBED_FLEET, True))
         self.assertEqual(code, 0, out)
-        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA)
+        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA, skip_visual_proof=False)
 
     def test_a_consumer_not_opted_in_releases_without_reading_the_fleet(self):
         code, out, dispatched = self.run_main(dict.fromkeys(release.EMBED_FLEET, False))
         self.assertEqual(code, 0, out)
-        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA)
+        dispatched.assert_called_once_with("macro-assist-forever", "1.4.3", SHA, skip_visual_proof=False)
 
     def run_batch(self, ready, released):
         """Every addon opted in; `ready` names those whose own plan releases now, `released` those already embedded."""
@@ -834,6 +841,11 @@ class ApiTest(unittest.TestCase):
                 f"commit={SHA}",
             ),
         )
+
+    def test_the_dispatch_passes_the_visual_proof_waiver(self):
+        with mock.patch.object(release, "gh") as gh:
+            release.dispatch("legacy-forever", "1.4.3", SHA, skip_visual_proof=True)
+        self.assertEqual(gh.call_args.args[-2:], ("-f", "skip_visual_proof=true"))
 
     def test_workflow_runs_are_read_as_json(self):
         requests = []

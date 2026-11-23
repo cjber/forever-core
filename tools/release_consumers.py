@@ -52,7 +52,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 # Run as a script, nothing has put the addon skill pack's tooling on the path yet.
@@ -97,6 +97,7 @@ class Decision:
     commit: str | None = None
     reason: str = ""
     failed: bool = False
+    skip_visual_proof: bool = False
 
     @property
     def release(self) -> bool:
@@ -330,15 +331,9 @@ def only_visual_proof_failed(repo: str, runs: dict, sha: str) -> bool:
         return False
     if not isinstance(jobs, list):
         return False
-    failed = []
-    for job in jobs:
-        if not isinstance(job, dict):
-            return False
-        # Every job has to be settled: a run whose other jobs are still going (or whose payload is odd) is not.
-        if job.get("status") != "completed":
-            return False
-        if job.get("conclusion") == "failure":
-            failed.append(job.get("name"))
+    if any(not isinstance(job, dict) or job.get("status") != "completed" for job in jobs):
+        return False
+    failed = release_check.failed_jobs(jobs)
     return bool(failed) and all(name == VISUAL_PROOF_JOB for name in failed)
 
 
@@ -424,14 +419,17 @@ def plan(repo: str) -> Decision:
         return decide(changelog, None, True, False, "none")
     ci = ci_runs(repo, head)
     state = ci_state(ci, head)
-    if state == "completed/failure" and only_visual_proof_failed(repo, ci, head):
+    skip_visual_proof = state == "completed/failure" and only_visual_proof_failed(repo, ci, head)
+    if skip_visual_proof:
         state = "completed/success"
     smoke = build_evidence(repo, head) if state == "completed/success" else "missing"
-    return decide(changelog, head, False, False, state, smoke=smoke)
+    decision = decide(changelog, head, False, False, state, smoke=smoke)
+    return replace(decision, skip_visual_proof=True) if decision.release and skip_visual_proof else decision
 
 
-def dispatch(repo: str, version: str, commit: str) -> None:
+def dispatch(repo: str, version: str, commit: str, *, skip_visual_proof: bool = False) -> None:
     """Start the consumer's own release workflow for the marked entry, at the commit full CI passed."""
+    waiver_input = ["-f", "skip_visual_proof=true"] if skip_visual_proof else []
     try:
         gh(
             "workflow",
@@ -445,6 +443,7 @@ def dispatch(repo: str, version: str, commit: str) -> None:
             f"version={version}",
             "-f",
             f"commit={commit}",
+            *waiver_input,
         )
     except SyncError as error:
         if "403" in str(error):
@@ -509,7 +508,7 @@ def main() -> int:
                 if hold:
                     print(f"{repo}: waiting: {hold}")
                     continue
-            dispatch(repo, decision.version, decision.commit)
+            dispatch(repo, decision.version, decision.commit, skip_visual_proof=decision.skip_visual_proof)
         except DispatchForbidden:
             forbidden += 1
             print(f"::error::CONSUMER_SYNC_TOKEN lacks Actions: Read and write on {OWNER}/{repo}")
