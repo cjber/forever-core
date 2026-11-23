@@ -5,13 +5,13 @@
 ### Fixed
 
 - The Tracker menu shows where to turn a section back on when you point at **Hide this section**, if that section provides directions. (#1066)
-- When the Forever column cannot fit under the quest tracker, automatic placement checks for room on the left, then on the right. If neither side fits, its sections scroll in the space below the quest tracker. (#1085)
+- In automatic Under placement, the Forever column tries the left and then the right when it cannot fit below the quest tracker. If neither side fits, the column fits its sections below the tracker’s last line. (#1085)
 
 ### For addon authors
 
 - Tracker sections use the shared `trackerMenu` declaration. The deprecated menu fallback and automatic block-click wrapper are gone. Sections can still forward clicks through `TrackerHost.HandleBlockHeaderClick`. (#1078)
-- Consumer sync updates test pins at the repository root, including for nested addons. Addons that ship without a bundled ForeverCore get only a test-pin bump. Refreshed sync PRs list every changed file and describe packaging or release changes when present. (#1077, #1080, #1082)
-- The shared asset checker can report progress bar art by role. Managed consumer gates must invoke the shared font glyph checker. (#1070, #1084)
+- Consumer sync updates test pins at the repository root, including for nested addons. Addons that ship without a bundled ForeverCore get only a test-pin bump. Refreshed sync PR descriptions list every file changed from the default branch and describe packaging or release changes when present. (#1077, #1080, #1082)
+- The shared asset checker has a report-only check for progress bar art by role. Managed consumer gates must invoke the shared font glyph checker. (#1070, #1084)
 - The store audit reports GitHub-only addons and continues checking consumers that publish to CurseForge. (#1072)
 
 ## [1.17.1] - 2026-11-22
