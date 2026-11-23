@@ -1140,6 +1140,13 @@ class ToolingTest(unittest.TestCase):
             sync.sync_checkout(consumer, core)
             self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["source"]["revision"], latest)
 
+            updater = manifest.with_name("sync.py")
+            for invalid_revision in (initial, "0" * 40):
+                with self.subTest(revision=invalid_revision):
+                    sync.run([sys.executable, str(updater), "pin", invalid_revision])
+                    sync.sync_checkout(consumer, core)
+                    self.assertEqual(json.loads(manifest.read_bytes())["source"]["revision"], latest)
+
 
 class PinTest(unittest.TestCase):
     """The ForeverCore pin each consumer checks its specs and CI against."""

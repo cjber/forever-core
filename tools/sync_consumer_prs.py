@@ -837,8 +837,8 @@ def install_updater(root: Path, core_root: Path, package: str) -> None:
     copy_preserving_mode(source, target)
 
 
-def preserve_tooling_revision(manifest: Path, previous: bytes) -> None:
-    """Keep the original stamp when the updater verified the same producer files."""
+def preserve_tooling_revision(manifest: Path, previous: bytes, core_root: Path, package: str) -> None:
+    """Keep an older stamp only when its producer snapshot matches the updated files."""
     try:
         old = json.loads(previous.decode("utf-8"))
         revision = old["source"]["revision"]
@@ -849,7 +849,18 @@ def preserve_tooling_revision(manifest: Path, previous: bytes) -> None:
 
     updated = json.loads(manifest.read_bytes())
     updated["source"]["revision"] = revision
-    if updated == old:
+    if updated != old:
+        return
+
+    producer_manifest = f"{TOOLING_PRODUCER_ROOT}/{package}/MANIFEST.json"
+    historical = git(core_root, "show", f"{revision}^{{commit}}:{producer_manifest}", check=False)
+    if historical.returncode:
+        return
+    try:
+        historical_files = json.loads(historical.stdout)["files"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return
+    if historical_files == updated["files"]:
         manifest.write_bytes(previous)
 
 
@@ -869,7 +880,7 @@ def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str
             [sys.executable, str(root / "tools" / package / "sync.py"), "update", "--source", str(core_root)],
             cwd=root,
         )
-        preserve_tooling_revision(manifest, previous)
+        preserve_tooling_revision(manifest, previous, core_root, package)
     regenerate_phrases(root)
     regenerate_family(root)
     return bump_pin(root, latest)
