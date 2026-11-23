@@ -281,7 +281,12 @@ def check_base(root: Path, base: str) -> None:
         history = before[old.start() :].rstrip("\n")
         after = after.rstrip("\n")
         tail = len(after) - len(history)
-        valid = tail >= len(prefix) and after.startswith(prefix) and after.endswith(history)
+        valid = (
+            tail >= len(prefix)
+            and after.startswith(prefix)
+            and after.endswith(history)
+            and HEADING.match(after, tail) is not None
+        )
         inserted = after[len(prefix) : tail] if valid else ""
     if valid:
         headings = list(HEADING.finditer(inserted))

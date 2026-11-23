@@ -89,6 +89,12 @@ class FragmentsTest(unittest.TestCase):
         self.commit(root)
         changelog.check_base(root, "main")
 
+        # The old release must still start at a heading in the full changelog.
+        path.write_text(written.replace("- One.\n\n## [1.0.0]", "- One.## [1.0.0]"))
+        self.commit(root)
+        with self.assertRaisesRegex(SystemExit, "changes/<slug>"):
+            changelog.check_base(root, "main")
+
         # Normalising the end of the file cannot hide an edit to a tagged release.
         path.write_text(written.replace("- First.", "- Edited."))
         self.commit(root)
