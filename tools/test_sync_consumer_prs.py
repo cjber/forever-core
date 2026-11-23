@@ -1097,9 +1097,9 @@ class PinTest(unittest.TestCase):
         self.assertIsNone(self.bump(self.root, "v1.4.0"))
         self.assertEqual(sorted(self.pin.parent.iterdir()), [])
 
-    def test_a_prefixed_consumer_gets_its_pin_below_the_addon_folder(self):
+    def test_a_prefixed_consumer_uses_the_repository_pin(self):
         root = Path(self.tmp.name) / "kiln-forever"
-        pin = root / "addon" / "KilnForever" / "tools" / "forever-core.txt"
+        pin = root / "tools" / "forever-core.txt"
         pin.parent.mkdir(parents=True)
         pin.write_text("v1.0.0\n", encoding="utf-8")
         self.assertEqual(self.bump(root, "v1.4.0"), "v1.0.0")
@@ -1606,8 +1606,9 @@ class BundleTest(unittest.TestCase):
     def test_a_nested_addon_gets_its_bundle_below_its_addon_folder(self):
         root = Path(self.tmp.name) / "kiln-forever"
         addon = root / "addon" / "KilnForever"
-        (addon / "tools").mkdir(parents=True)
-        (addon / "tools" / "forever-core.txt").write_text("v1.3.2\n", encoding="utf-8")
+        addon.mkdir(parents=True)
+        (root / "tools").mkdir()
+        (root / "tools" / "forever-core.txt").write_text("v1.3.2\n", encoding="utf-8")
         (addon / ".pkgmeta").write_text(self.PKGMETA.replace("LegacyForever", "KilnForever"), encoding="utf-8")
         (addon / "KilnForever.toc").write_text(self.TOC, encoding="utf-8")
         (root / "CHANGELOG.md").write_text(self.CHANGELOG, encoding="utf-8")
