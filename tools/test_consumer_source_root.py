@@ -110,7 +110,7 @@ class ConsumerFontGlyphsTest(unittest.TestCase):
             core = Path(__file__).resolve().parent.parent
             wrapper = "tools/check_font_glyphs.py"
             self.assertEqual(check_core_shared.VENDORED[wrapper], check_core_shared.SUITE_CONSUMERS)
-            self.assertNotIn(wrapper, check_core_shared.REQUIRED_GATE_CHECKS)
+            self.assertEqual(check_core_shared.REQUIRED_GATE_CHECKS[wrapper], "tools/typecheck.sh")
             shutil.copyfile(core / check_core_shared.source(wrapper), root / wrapper)
             shutil.copytree(
                 core / ".agents/skills/wow-forever-addon/tooling/forever_tools",
