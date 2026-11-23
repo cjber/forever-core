@@ -985,11 +985,11 @@ def pr_body(sha: str, files: tuple[str, ...], pin_bump: tuple[str, str] | None =
             " latest release.",
             "",
             (
-                "The same commit points `## X-Forever-Core:` at that tag, which the embed step copies into"
+                "This PR points `## X-Forever-Core:` at that tag, which the embed step copies into"
                 " `Libs/ForeverCore/`, and adds a marked CHANGELOG.md release entry for the release-consumers workflow"
                 " to publish."
                 if embedded
-                else "The same commit points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and"
+                else "This PR points the bundled ForeverCore external and `## X-Forever-Core:` at that tag, and"
                 " adds a marked CHANGELOG.md release entry for the release-consumers workflow to publish."
             ),
             "",
@@ -1188,6 +1188,12 @@ def sync_consumer(
         if in_place:
             diff = git(root, "diff", "--cached", "--name-only", "--no-renames", "-z", main).stdout
             pr_files = tuple(sorted(path for path in diff.split("\0") if path))
+            pin_path = consumer_path(root.name, PIN_PATH)
+            if pin_path in pr_files and (root / pin_path).is_file():
+                old_pin = git(root, "show", f"{main}:{pin_path}", check=False)
+                new_pin = (root / pin_path).read_text(encoding="utf-8").strip()
+                if old_pin.returncode == 0 and release_version(old_pin.stdout.strip()) and release_version(new_pin):
+                    pin_bump = (old_pin.stdout.strip(), new_pin)
         body = pr_body(sha, pr_files, pin_bump, embeds_core(root))
         if in_place:
             try:
@@ -1211,7 +1217,7 @@ def sync_consumer(
             status = "opened" if pull is None else "rebuilt from main"
         number, url, _, node_id = open_or_update_pr(repo, body, pull)
         warning = auto_merge_warning(node_id) if node_id else None
-        if proof_needed(root, list(files)):
+        if proof_needed(root, list(pr_files)):
             print(proof_hint(repo, oid))
         return Result(repo, status, files, url, warning)
     except (SyncError, json.JSONDecodeError, OSError) as error:

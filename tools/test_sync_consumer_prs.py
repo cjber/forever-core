@@ -741,7 +741,11 @@ class InPlaceSyncTest(unittest.TestCase):
             if args[:2] == ("rev-parse", "FETCH_HEAD"):
                 return subprocess.CompletedProcess(args, 0, "proid\n", "")
             if args == ("diff", "--cached", "--name-only", "--no-renames", "-z", "mainoid"):
-                return subprocess.CompletedProcess(args, 0, "tools/uv.lock\0UI/TrackerHost.lua\0", "")
+                return subprocess.CompletedProcess(
+                    args, 0, "tools/uv.lock\0UI/TrackerHost.lua\0tools/forever-core.txt\0", ""
+                )
+            if args == ("show", "mainoid:tools/forever-core.txt"):
+                return subprocess.CompletedProcess(args, 0, "v1.2.0\n", "")
             return subprocess.CompletedProcess(args, 0, "", "")
 
         def fake_api(path, *args, check=True):
@@ -759,6 +763,9 @@ class InPlaceSyncTest(unittest.TestCase):
             return fake_git(root, *args, check=check)
 
         with tempfile.TemporaryDirectory() as directory:
+            pin = Path(directory) / "repo" / sync.PIN_PATH
+            pin.parent.mkdir(parents=True)
+            pin.write_text("v1.3.0\n", encoding="utf-8")
             result = self.run_sync(Path(directory), fake_api, recording_git, self.PULL)
 
         self.assertEqual((result.status, result.url), ("updated in place", "https://example.test/pull/7"))
@@ -768,6 +775,7 @@ class InPlaceSyncTest(unittest.TestCase):
         self.assertEqual([item["path"] for item in given["fileChanges"]["additions"]], ["UI/TrackerHost.lua"])
         body = next(arg for _, args, _ in calls for arg in args if arg.startswith("body="))
         self.assertIn("- `tools/uv.lock`", body)
+        self.assertIn("Moves the ForeverCore pin from v1.2.0 to v1.3.0", body)
         self.assertIn("- `UI/TrackerHost.lua`", body)
         # The sync ran on the PR's head rather than on main, so the commits already pushed to it are its parents.
         self.assertIn(("checkout", "-B", sync.BRANCH, "proid"), git_calls)
