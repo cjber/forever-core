@@ -1763,12 +1763,12 @@ class BodyTest(unittest.TestCase):
         self.assertNotIn("X-Forever-Core", body)
         self.assertNotIn("release notes", body)
 
-    def test_an_embedded_body_names_no_external(self):
-        files = (sync.PIN_PATH, "LegacyForever.toc", "changes/forever-core-sync.md")
-        body = sync.pr_body("abc123", files, ("v1.3.2", "v1.4.0"), embedded=True)
+    def test_a_toc_and_policy_diff_does_not_imply_specific_fields_changed(self):
+        files = (sync.PIN_PATH, "LegacyForever.toc", ".pkgmeta")
+        body = sync.pr_body("abc123", files, ("v1.3.2", "v1.4.0"))
+        self.assertNotIn("X-Forever-Core", body)
         self.assertNotIn("external", body)
-        self.assertIn("Libs/ForeverCore/", body)
-        self.assertIn("release notes", body)
+        self.assertIn("`LegacyForever.toc`", body)
 
 
 class SummaryTest(unittest.TestCase):
