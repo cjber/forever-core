@@ -364,9 +364,8 @@ def released_core_tag(root: Path, tag: str) -> str | None:
 def bump_pin(root: Path, latest: str | None, today: date | None = None) -> str | None:
     """Move the consumer's ForeverCore pin up to `latest`, returning the tag it moved from.
 
-    `root` is a clone named after the consumer's repository, so a consumer whose addon lives below its root
-    (kiln-forever) gets the pin at the path CONSUMER_ROOT names. A pin that is equal, newer, or not a `vX.Y.Z` tag is
-    left exactly as it is: the pin never moves backwards, and a tag this cannot compare is a maintainer's call.
+    `root` is the consumer repository clone. The CI pin lives at its root even when the addon lives in a
+    subdirectory. Only comparable `vX.Y.Z` tags move forward.
 
     Every run also points the bundle at the pin, moved or not: the `.pkgmeta` external and the root TOC's
     `## X-Forever-Core:` field name the release the pin ships, so a consumer that pins v1.5.0 while its zip still
