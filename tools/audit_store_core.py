@@ -149,7 +149,7 @@ def project_lookup(repo):
         raise ReleasedError(error)
     project = core_pin.toc_fields(toc).get("x-curse-project-id")
     if not project:
-        raise ReleasedError("consumer TOC names no CurseForge project")
+        return None
     return int(project)
 
 
@@ -225,9 +225,14 @@ def audit(
         github_names = {asset["name"] for asset in assets}
         if not projects and not kiln:
             try:
-                projects.add(lookup_project(repo))
+                project = lookup_project(repo)
             except READ_ERRORS as error:
                 failures.append(f"{repo} CurseForge: {error}")
+            else:
+                if project is None:
+                    reports.append(f"{repo}: no CurseForge project declared; GitHub-only")
+                else:
+                    projects.add(project)
 
         for project in sorted(projects):
             try:

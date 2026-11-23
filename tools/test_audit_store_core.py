@@ -26,7 +26,7 @@ class StoreAuditTest(unittest.TestCase):
             return {"tag_name": "v1.15.3", "published_at": self.now.isoformat()}
         return {"tag_name": "v0.8.15", "assets": self.assets, "published_at": self.consumer_published.isoformat()}
 
-    def run_audit(self, hours=0):
+    def run_audit(self, hours=0, lookup_project=lambda repo: 1):
         return audit.audit(
             self.cache,
             now=self.now + timedelta(hours=hours),
@@ -34,7 +34,7 @@ class StoreAuditTest(unittest.TestCase):
             release=self.release,
             fetch_asset=self.fetch,
             cf_asset=lambda project: self.curseforge,
-            lookup_project=lambda repo: 1,
+            lookup_project=lookup_project,
         )
 
     def fetch(self, asset, destination, **kwargs):
@@ -45,7 +45,7 @@ class StoreAuditTest(unittest.TestCase):
             raise OSError("read unavailable")
         with zipfile.ZipFile(destination, "w") as archive:
             addon = "FieldGuideForever"
-            toc = "## X-Curse-Project-ID: 1\n"
+            toc = "" if "no-project" in asset else "## X-Curse-Project-ID: 1\n"
             if "embed" in asset:
                 major, minor, patch = map(int, asset["embed"].split("."))
                 build = major * 1000000 + minor * 1000 + patch
@@ -153,6 +153,14 @@ class StoreAuditTest(unittest.TestCase):
         self.assertIn("CurseForge", reports[0])
         self.assertIn("GitHub v0.8.15 (FieldGuideForever-v0.8.15-forever.zip): read unavailable", failures[0])
         self.assertIn("below the minimum", failures[1])
+
+    def test_consumer_without_curseforge_project_is_reported_not_failed(self):
+        self.github["embed"] = "1.15.3"
+        self.github["no-project"] = True
+        reports, failures = self.run_audit(lookup_project=lambda repo: None)
+        self.assertEqual(failures, [])
+        self.assertTrue(any("GitHub-only" in row for row in reports))
+        self.assertTrue(any(self.github["name"] in row for row in reports))
 
     def test_workflow_uses_the_repository_token_for_github_reads(self):
         workflow = Path(audit.__file__).resolve().parents[1] / ".github/workflows/store-core-audit.yml"
