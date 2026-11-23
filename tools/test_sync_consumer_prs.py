@@ -1136,6 +1136,10 @@ class ToolingTest(unittest.TestCase):
             self.assertEqual(manifest.read_bytes(), updated)
             api.assert_not_called()
 
+            manifest.write_bytes(updated.decode("utf-8").encode("utf-16"))
+            sync.sync_checkout(consumer, core)
+            self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["source"]["revision"], latest)
+
 
 class PinTest(unittest.TestCase):
     """The ForeverCore pin each consumer checks its specs and CI against."""

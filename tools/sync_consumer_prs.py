@@ -840,7 +840,7 @@ def install_updater(root: Path, core_root: Path, package: str) -> None:
 def preserve_tooling_revision(manifest: Path, previous: bytes) -> None:
     """Keep the original stamp when the updater verified the same producer files."""
     try:
-        old = json.loads(previous)
+        old = json.loads(previous.decode("utf-8"))
         revision = old["source"]["revision"]
     except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError):
         return
