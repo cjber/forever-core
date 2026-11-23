@@ -1023,12 +1023,12 @@ local function LayoutPass(width, available)
 			module:UpdateHeight()
 		end
 		local used = ok and module:GetContentsHeight() or 0
-		if module.trackerScrollable then
-			if cap < (module.headerHeight or 0) then
-				used = 0
-			end
-			module:SetShown(used > 0)
+		if module.trackerScrollable and cap < (module.headerHeight or 0) then
+			used = 0
 		end
+		-- A section that lays out no content is hidden whatever its template: a hand-built section keeps its pooled
+		-- blocks and lines shown when it empties, and that stale content would paint over the section below it (#879).
+		module:SetShown(used > 0)
 		heights[index] = used
 		if used > 0 then
 			total = total + used + GAP
