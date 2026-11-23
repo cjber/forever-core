@@ -130,9 +130,8 @@ create error reports. Set the end callback whenever the action can end, includin
 `TrackerLine.SetHeaderTooltip` adds **Click to %s** when `clickHint(target)` supplies the action,
 and **Right-click for options** when the module has a declarative menu. Block implementations
 forward clicks to `TrackerHost.HandleBlockHeaderClick(module, block, button)`; the return value
-says whether the host handled the click. A legacy `OnBlockHeaderClick` is wrapped automatically.
-`AddHeaderMenuEntries` stays supported for migrating consumers, but cannot be combined with a
-new menu contract. A rejected combination leaves the attached module unchanged.
+says whether the host handled the click. Supply section menu entries through the contract's
+`menu` callback.
 
 The column is one frame of its own on `UIParent`. Its top right corner is pinned to the game's quest tracker's top left
 corner until the player drags a section header; it never reads or changes that tracker, and never

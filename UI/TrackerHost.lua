@@ -1824,8 +1824,7 @@ function api.HandleBlockHeaderClick(module, block, button)
 	return false
 end
 
--- The column's own right-click menu, through core's shared context menu. A section may add its own entries after the
--- column's, without the host learning what the section is.
+-- Open the declarative section menu or show the column controls for a section without one.
 ---@param module ForeverTrackerModule
 local function AddHeaderMenu(module)
 	local header = module.Header
