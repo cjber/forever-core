@@ -59,6 +59,9 @@ nearLeft.check(
 	nearLeft.host.point[1] == "TOPLEFT" and nearLeft.host.point[4] == 24 + 260,
 	"a layout and a tracker move choose the same fallback"
 )
+nearLeft.nativeRect.width = 300
+nearLeft.moveLine(nearLeft.nativeRect.line)
+nearLeft.check(nearLeft.host.point[4] == 324, "a width-only tracker change moves the right fallback")
 nearLeft.ns.TrackerHost.SetPlacement("left")
 nearLeft.drain()
 nearLeft.check(Pinned(nearLeft) and nearLeft.host.point[4] == 24, "the explicit Left placement keeps its left pin")
@@ -289,8 +292,8 @@ scaled.check(point[4] == 200 and point[5] == 600, "the line is read in the colum
 -- lying across the column's width caps how far down it reaches, and a bar standing at its side caps how far right, so
 -- the column stops at the bars rather than laying out into them.
 local bars = harness.new({ hostSettings = { attached = false } })
-local function Bar(name, barLeft, barTop, barWidth, barHeight, shown)
-	bars.env[name] = {
+local function Bar(name, barLeft, barTop, barWidth, barHeight, shown, ctx)
+	(ctx or bars).env[name] = {
 		IsShown = function()
 			return shown ~= false
 		end,
@@ -339,10 +342,69 @@ bars.drain()
 bars.check(bars.host.point[4] == 890, "a right-hand bar moves the column left of it")
 bars.check(bars.first.available == room, "and takes no room from below")
 
+local sideBar = harness.new({ hostSettings = { placement = "under" } })
+sideBar.nativeRect.left = 350
+Bar("MultiBarRight", 300, 880, 40, 800, true, sideBar)
+sideBar.moveLine(sideBar.host:GetHeight() - 1)
+sideBar.check(
+	sideBar.host.point[1] == "TOPLEFT" and sideBar.host.point[4] == 610,
+	"when an action bar takes the left side, use the open right side"
+)
+
+local floorBar = harness.new({ hostSettings = { placement = "under" } })
+floorBar.nativeRect.left = 24
+floorBar.first.contentHeight = 750
+floorBar.host:MarkDirty()
+floorBar.drain()
+Bar("MainMenuBar", 284, 500, 300, 50, true, floorBar)
+floorBar.moveLine(300)
+floorBar.check(
+	floorBar.host.point[1] == "TOPLEFT" and floorBar.host.point[4] == 284 and floorBar.host:GetBottom() >= 500,
+	"following the tracker fits the right fallback above its action bar"
+)
+
+local lockedBlocked = harness.new({ hostSettings = { placement = "under", locked = true }, deferReady = true })
+lockedBlocked.nativeRect.left, lockedBlocked.nativeRect.width = 24, 1000
+lockedBlocked.first.contentHeight = 750
+lockedBlocked.ready()
+lockedBlocked.drain()
+lockedBlocked.moveLine(400)
+lockedBlocked.drain()
+lockedBlocked.check(Under(lockedBlocked, 400), "a locked column with no side room stays below the growing list")
+lockedBlocked.moveLine(800)
+lockedBlocked.drain()
+lockedBlocked.check(Under(lockedBlocked, 400), "a locked column keeps its top when more room opens below the list")
+
+local intruding = harness.new({ hostSettings = { placement = "under" } })
+intruding.nativeRect.left = 24
+Bar("MultiBarRight", 260, 880, 40, 800, true, intruding)
+intruding.moveLine(intruding.host:GetHeight() - 1)
+intruding.drain()
+intruding.check(
+	intruding.host.point[4] + intruding.host:GetWidth() <= 260,
+	"the right fallback rejects a vertical bar whose right edge intrudes into it"
+)
+
+local unusedSide = harness.new({ hostSettings = { placement = "under" } })
+unusedSide.nativeRect.left = 24
+unusedSide.first.contentHeight = 450
+Bar("MainMenuBar", 284, 500, 300, 50, true, unusedSide)
+unusedSide.host:MarkDirty()
+unusedSide.drain()
+unusedSide.check(
+	Under(unusedSide) and unusedSide.host:GetHeight() > 450,
+	"a bar under the unused right side takes no room from Under"
+)
+
 print(
 	("tracker_placement_spec: %d checks passed"):format(
 		t.checks()
 			+ nearLeft.checks()
+			+ sideBar.checks()
+			+ floorBar.checks()
+			+ lockedBlocked.checks()
+			+ intruding.checks()
+			+ unusedSide.checks()
 			+ blocked.checks()
 			+ early.checks()
 			+ scaled.checks()

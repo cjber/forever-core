@@ -1125,7 +1125,7 @@ end
 -- tracker's top while it is hidden with nothing to show. Returns that x and y in the host's own units, nil before the
 -- client has placed the tracker. These are reads only; nothing here writes to the tracker or hooks it.
 ---@param shows "questie"|"hidden"|"collapsed"|"list"
----@return number? x, number? top
+---@return number? x, number? top, number? right
 local function TrackerEdge(shows)
 	local hostScale = host:GetEffectiveScale()
 	local list = shows == "questie" and QuestieList()
@@ -1135,9 +1135,12 @@ local function TrackerEdge(shows)
 			return nil
 		end
 		local listScale = list:GetEffectiveScale()
-		return listLeft * listScale / hostScale, listBottom * listScale / hostScale
+		local right = Coordinate(list:GetRight())
+		return listLeft * listScale / hostScale,
+			listBottom * listScale / hostScale,
+			right and right * listScale / hostScale
 	end
-	local left, top, trackerScale = TrackerRect()
+	local left, top, trackerScale, right = TrackerRect()
 	local edge = shows == "list" and ObjectiveTrackerFrame.NineSlice
 		or shows == "collapsed" and ObjectiveTrackerFrame.Header
 		or nil
@@ -1151,7 +1154,7 @@ local function TrackerEdge(shows)
 	if not (left and bottom) then
 		return nil
 	end
-	return left * trackerScale / hostScale, bottom * scale / hostScale
+	return left * trackerScale / hostScale, bottom * scale / hostScale, right and right * trackerScale / hostScale
 end
 local AddPlacementMenu
 -- The bars the column keeps clear of: the main bar and the extra bars parked at the bottom of the screen, then the two
@@ -1204,7 +1207,7 @@ local function BarRoom(left, width, top, height)
 					if barTopHost < top and barRightHost > left and barLeftHost < left + width then
 						floor = math.max(floor, barTopHost)
 					end
-				elseif barBottomHost < top and barTopHost > low and barLeftHost >= left then
+				elseif barBottomHost < top and barTopHost > low and barRightHost > left then
 					right = math.min(right, barLeftHost)
 				end
 			end
@@ -1253,8 +1256,8 @@ end
 
 -- Whether the column now sits under the quest tracker rather than beside it.
 local under = false
--- A column with neither side open was laid out using only the room below the tracker's last line.
-local limitedUnder = false
+-- A fallback used less room than the tracker top normally offers.
+local limitedPlacement = false
 -- The vertical room the last layout pass gave the column's sections.
 local lastAvailable
 local function SetColumnPoint(point, relativePoint, x, y)
@@ -1287,36 +1290,31 @@ local function PinLeft()
 		under = false
 	end
 end
--- Automatic placement prefers the left side and tries the right if there is no full column's width on the left.
+local function SideRoom(x, width, top, height)
+	if not x or x < 0 then
+		return nil
+	end
+	local capped = MinimapTop(x, width, top)
+	local floor, limit = BarRoom(x, width, capped, height)
+	if x + width <= limit then
+		return capped, floor
+	end
+end
+
+-- Automatic placement prefers the left side and tries the right if the left is blocked.
 -- Use the same rectangle to measure the layout and to place the column.
 local function SidePosition(width, height, left, top, right)
 	if not (left and top) then
 		return nil
 	end
-	local x = left - width
-	local anchor = "TOPRIGHT"
-	if x < 0 then
-		if not right or right < 0 then
-			return nil
-		end
-		x, anchor = right, "TOPLEFT"
+	local capped, floor = SideRoom(left - width, width, top, height)
+	if capped then
+		return "TOPRIGHT", left, capped, floor
 	end
-	local capped = MinimapTop(x, width, top)
-	local floor, limit = BarRoom(x, width, capped, height)
-	if x + width <= limit then
-		return anchor, anchor == "TOPRIGHT" and left or x, capped, floor
+	capped, floor = SideRoom(right, width, top, height)
+	if capped then
+		return "TOPLEFT", right, capped, floor
 	end
-end
-
-local function PinSide(width, height)
-	local left, top, right = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
-	local anchor, x, sideTop = SidePosition(width, height, left, top, right)
-	if anchor and x and sideTop then
-		SetColumnPoint(anchor, "BOTTOMLEFT", x, sideTop)
-		under = false
-		return true
-	end
-	return false
 end
 
 -- Puts a column placed under the quest tracker on the tracker's last line when the whole column, as its last layout
@@ -1376,6 +1374,21 @@ local function FitSections(width, available)
 	host:SetShown(LayoutModules(width, available))
 end
 
+local function PinSide(width, height)
+	local left, top, right = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
+	local anchor, x, sideTop, floor = SidePosition(width, height, left, top, right)
+	if not (anchor and x and sideTop and floor) then
+		return false
+	end
+	if height > sideTop - floor then
+		limitedPlacement = true
+		FitSections(width, AvailableHeight(sideTop, floor))
+	end
+	SetColumnPoint(anchor, "BOTTOMLEFT", x, sideTop)
+	under = false
+	return true
+end
+
 local function PlaceUnder(x, top, floor, resize)
 	if resize then
 		local available = AvailableHeight(top, floor)
@@ -1401,7 +1414,7 @@ local function FollowTracker(settings, allowLayout)
 	-- Lock holds the place the column has, except for Under's no-room fallback: a locked column under the tracker that no
 	-- longer fits under the list's last line, or would run past the screen's bottom from where it is, moves to the side
 	-- if possible, as an unlocked one would. With stayUnder on, it stays under the tracker and lays out in the room left.
-	if limitedUnder and allowLayout then
+	if limitedPlacement and allowLayout then
 		host:MarkDirty()
 		return
 	end
@@ -1413,7 +1426,7 @@ local function FollowTracker(settings, allowLayout)
 			if PinSide(width, height) then
 				return
 			end
-		elseif settings.stayUnder then
+		elseif settings.stayUnder or limitedPlacement then
 			local x, top, floor = LockedUnderPosition(shows, width, height)
 			PlaceUnder(x, top, floor, allowLayout)
 			return
@@ -1449,7 +1462,7 @@ local function FollowTracker(settings, allowLayout)
 		if PinSide(width, height) then
 			return
 		end
-		limitedUnder = true
+		limitedPlacement = true
 		PlaceUnder(x, top, floor, true)
 		return
 	end
@@ -1461,7 +1474,7 @@ end
 ---@param settings ForeverTrackerSettings
 ---@return number width, number top, number? floor
 local function Anchor(settings)
-	limitedUnder = false
+	limitedPlacement = false
 	local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
 	local screenWidth, screenHeight = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
 	local width = math.min(WIDTH, screenWidth)
@@ -1480,43 +1493,23 @@ local function Anchor(settings)
 	end
 	if settings.placement == "under" then
 		local height = host:GetHeight() or screenHeight
-		if settings.stayUnder then
-			local shows = TrackerShows()
-			if settings.locked and followed and under and not placeAgain then
-				local _, top, floor = LockedUnderPosition(shows, width, height)
-				return width, top, floor
-			end
-			local _, top, floor = UnderPosition(shows, width, height)
-			if top then
-				return width, top, floor
-			end
-		end
+		local shows = TrackerShows()
 		local left, top, right = TrackerCorner(QuestieList() or ObjectiveTrackerFrame)
+		local x, underTop, underFloor = UnderPosition(shows, width, height)
+		local holding = settings.locked and followed and under and not placeAgain
+		if underTop and (settings.stayUnder or not SidePosition(width, height, left, top, right)) then
+			limitedPlacement = not settings.stayUnder
+			if holding then
+				local _, heldTop, heldFloor = LockedUnderPosition(shows, width, height)
+				return width, heldTop, heldFloor
+			end
+			return width, underTop, underFloor
+		end
 		if top then
-			local layoutLeft = left or 0
-			local side, _, capped, sideFloor = SidePosition(width, height, left, top, right)
-			if not side then
-				local _, underTop, underFloor = UnderPosition(TrackerShows(), width, height)
-				if underTop then
-					limitedUnder = true
-					return width, underTop, underFloor
-				end
-			end
-			capped = capped or top
-			if MinimapTop(0, screenWidth, top) < top then
-				local x
-				if settings.locked and followed and under and not placeAgain then
-					x = host:GetLeft() or layoutLeft
-				else
-					local edge, line = TrackerEdge(TrackerShows())
-					local _, barRight = BarRoom(edge or layoutLeft, width, line or top, height)
-					x = UnderX(edge or layoutLeft, width, barRight)
-				end
-				-- Fit both Under and the side fallback if the quest list is too long.
-				capped = math.min(capped, MinimapTop(x, width, top))
-			end
-			local floor = BarRoom(layoutLeft, width, capped, height)
-			return width, capped, math.max(floor, sideFloor or 0)
+			x = holding and host:GetLeft() or x or left or 0
+			local capped = MinimapTop(x, width, top)
+			local floor = BarRoom(x, width, capped, height)
+			return width, capped, floor
 		end
 	end
 	PinLeft()
@@ -2101,7 +2094,7 @@ local function Listen()
 	local settle = CreateFrame("Frame")
 	local watching, needsLayout, needsPlacement = false, false, false
 	local elapsed, frames, quiet = 0, 0, 0
-	local lastShows, lastLeft, lastLine
+	local lastShows, lastLeft, lastLine, lastRight
 	local function StopSettling()
 		settle:SetScript("OnUpdate", nil)
 		watching, needsLayout, needsPlacement = false, false, false
@@ -2113,9 +2106,9 @@ local function Listen()
 		end
 		elapsed, frames = elapsed + delta, frames + 1
 		local shows = TrackerShows()
-		local left, line = TrackerEdge(shows)
-		if shows ~= lastShows or left ~= lastLeft or line ~= lastLine then
-			lastShows, lastLeft, lastLine = shows, left, line
+		local left, line, right = TrackerEdge(shows)
+		if shows ~= lastShows or left ~= lastLeft or line ~= lastLine or right ~= lastRight then
+			lastShows, lastLeft, lastLine, lastRight = shows, left, line, right
 			needsPlacement, quiet = true, 0
 		else
 			quiet = quiet + 1
@@ -2142,7 +2135,7 @@ local function Listen()
 	-- the edge when it changes. A drag holds the column where it is, and the frame follows once the drag ends. It stops
 	-- when Edit Mode exits and in combat, so no OnUpdate outlives Edit Mode.
 	local watch = CreateFrame("Frame")
-	local dragWatching, dragHeld, watchShows, watchLeft, watchLine
+	local dragWatching, dragHeld, watchShows, watchLeft, watchLine, watchRight
 	local function WatchMove()
 		if InCombatLockdown() then
 			dragWatching = false
@@ -2151,20 +2144,23 @@ local function Listen()
 		end
 		local dragging = ObjectiveTrackerFrame.isDragging
 		local shows = TrackerShows()
-		local left, line = TrackerEdge(shows)
-		if not dragging and (dragHeld or shows ~= watchShows or left ~= watchLeft or line ~= watchLine) then
+		local left, line, right = TrackerEdge(shows)
+		if
+			not dragging
+			and (dragHeld or shows ~= watchShows or left ~= watchLeft or line ~= watchLine or right ~= watchRight)
+		then
 			if not queued then
 				FollowTracker(Settings(), true)
 			end
 		end
-		dragHeld, watchShows, watchLeft, watchLine = dragging, shows, left, line
+		dragHeld, watchShows, watchLeft, watchLine, watchRight = dragging, shows, left, line, right
 	end
 	local function StartWatching()
 		if dragWatching or InCombatLockdown() then
 			return
 		end
 		dragWatching = true
-		dragHeld, watchShows, watchLeft, watchLine = false, nil, nil, nil
+		dragHeld, watchShows, watchLeft, watchLine, watchRight = false, nil, nil, nil, nil
 		watch:SetScript("OnUpdate", WatchMove)
 	end
 	local function StopWatching()
