@@ -837,6 +837,22 @@ def install_updater(root: Path, core_root: Path, package: str) -> None:
     copy_preserving_mode(source, target)
 
 
+def preserve_tooling_revision(manifest: Path, previous: bytes) -> None:
+    """Keep the original stamp when the updater verified the same producer files."""
+    try:
+        old = json.loads(previous)
+        revision = old["source"]["revision"]
+    except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError):
+        return
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        return
+
+    updated = json.loads(manifest.read_bytes())
+    updated["source"]["revision"] = revision
+    if updated == old:
+        manifest.write_bytes(previous)
+
+
 def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str | None:
     """Sync the tooling and move the ForeverCore pin, returning the tag a moved pin came from.
 
@@ -846,11 +862,14 @@ def sync_checkout(root: Path, core_root: Path, latest: str | None = None) -> str
     # row instead of stopping every consumer after it (#976).
     run([sys.executable, str(core_root / "tools/sync_consumers.py"), str(root.parent), "--consumer", root.name])
     for package in tooling_packages(root):
+        manifest = root / "tools" / package / "MANIFEST.json"
+        previous = manifest.read_bytes()
         install_updater(root, core_root, package)
         run(
             [sys.executable, str(root / "tools" / package / "sync.py"), "update", "--source", str(core_root)],
             cwd=root,
         )
+        preserve_tooling_revision(manifest, previous)
     regenerate_phrases(root)
     regenerate_family(root)
     return bump_pin(root, latest)

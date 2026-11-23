@@ -1044,6 +1044,98 @@ class ToolingTest(unittest.TestCase):
             (tools / "MANIFEST.json").write_text("{}", encoding="utf-8")
             self.assertEqual(sync.tooling_packages(root), ["forever_tools"])
 
+    def test_sync_keeps_a_valid_manifest_for_identical_tooling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            core = root / "forever-core"
+            consumer = root / "legacy-forever"
+            packages = ("forever_tools", "forever_sim")
+            for package in packages:
+                producer = core / sync.TOOLING_PRODUCER_ROOT / package
+                producer.mkdir(parents=True)
+                path = producer / "sync.py"
+                shutil.copyfile(
+                    Path(__file__).resolve().parents[1] / sync.TOOLING_PRODUCER_ROOT / package / "sync.py", path
+                )
+                target = consumer / "tools" / package
+                target.mkdir(parents=True)
+                shutil.copyfile(path, target / "sync.py")
+                sync.run([sys.executable, str(path), "manifest"])
+            manifest = consumer / "tools/forever_tools/MANIFEST.json"
+            simulator_manifest = consumer / "tools/forever_sim/MANIFEST.json"
+            sync.git(core, "init", "--quiet")
+
+            def commit(repo, message):
+                sync.git(repo, "add", ".")
+                sync.git(
+                    repo,
+                    "-c",
+                    "user.name=CI",
+                    "-c",
+                    "user.email=ci@example.test",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    message,
+                )
+                return sync.git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            (core / "tools").mkdir()
+            (core / "tools/sync_consumers.py").touch()
+            initial = commit(core, "Initial tooling")
+            for package in packages:
+                updater = consumer / "tools" / package / "sync.py"
+                sync.run([sys.executable, str(updater), "pin", initial])
+            original = manifest.read_bytes()
+            simulator_original = simulator_manifest.read_bytes()
+            (core / "CHANGELOG.md").write_text("Release notes\n", encoding="utf-8")
+            commit(core, "Release preparation only")
+            (consumer / "tools/forever-core.txt").write_text("v1.0.0\n", encoding="utf-8")
+            sync.sync_checkout(consumer, core, "v1.0.1")
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(simulator_manifest.read_bytes(), simulator_original)
+            self.assertEqual((consumer / sync.PIN_PATH).read_text(), "v1.0.1\n")
+            sync.git(consumer, "init", "--quiet")
+            main = commit(consumer, "Initial consumer")
+            sync.git(consumer, "switch", "-c", sync.BRANCH)
+
+            producer = core / sync.TOOLING_PRODUCER_ROOT / "forever_tools"
+            (producer / "module.py").write_text("value = 1\n", encoding="utf-8")
+            sync.run([sys.executable, str(producer / "sync.py"), "manifest"])
+            head = commit(core, "Change actual tooling")
+            sync.sync_checkout(consumer, core)
+            self.assertEqual(json.loads(manifest.read_bytes())["source"]["revision"], head)
+            self.assertEqual(simulator_manifest.read_bytes(), simulator_original)
+            vendored = manifest.with_name("module.py")
+            self.assertEqual(vendored.read_text(), "value = 1\n")
+
+            updated = manifest.read_bytes()
+            (core / "CHANGELOG.md").write_text("Updated release notes\n", encoding="utf-8")
+            latest = commit(core, "Update release notes again")
+            vendored.write_text("value = 0\n", encoding="utf-8")
+            sync.sync_checkout(consumer, core)
+            self.assertEqual(vendored.read_text(), "value = 1\n")
+            self.assertEqual(manifest.read_bytes(), updated)
+
+            pull_head = commit(consumer, sync.TITLE)
+            sync.git(consumer, "switch", "--detach", main)
+            with (
+                mock.patch.object(sync, "clone", return_value=consumer),
+                mock.patch.object(sync, "open_sync_prs", return_value=[{}]),
+                mock.patch.object(sync, "fetch_branch", return_value=pull_head),
+                mock.patch.object(sync, "sync_branch_state", return_value=(False, [])),
+                mock.patch.object(sync, "api") as api,
+            ):
+                result = sync.sync_consumer(consumer.name, core, root, latest)
+            self.assertEqual(result.status, "up to date")
+            self.assertEqual(sync.git(consumer, "rev-parse", "HEAD").stdout.strip(), pull_head)
+            self.assertEqual(manifest.read_bytes(), updated)
+            api.assert_not_called()
+
 
 class PinTest(unittest.TestCase):
     """The ForeverCore pin each consumer checks its specs and CI against."""
