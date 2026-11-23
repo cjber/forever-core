@@ -10,13 +10,11 @@ local _, ns = ...
 ---@field GetContextMenuParent fun(self: ForeverTrackerModule): Frame
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
 ---@field IsTruncated fun(self: ForeverTrackerModule): boolean
----@field AddHeaderMenuEntries? fun(self: ForeverTrackerModule, root: any) a section's own entries, after the column's
 ---@field trackerMenu? fun(target: ForeverTrackerTarget, menu: ForeverTrackerMenuBuilder) the declarative menu contract
 ---@field trackerClick? fun(target: ForeverTrackerTarget, button: string) the declarative click contract
 ---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized click action
 ---@field trackerClickHint? fun(target: ForeverTrackerTarget): string? the localized action name shown in the block
 -- tooltip
----@field trackerBlockMenuWrapped? boolean
 ---@field OnBlockHeaderClick? fun(self: ForeverTrackerModule, block: any, button: string)
 
 ---@class ForeverTrackerSettings
@@ -1801,7 +1799,7 @@ local function NewTrackerMenu(root, module, target)
 	return menu, Finish
 end
 
--- Consumers with a block implementation that has no legacy OnBlockHeaderClick can forward the title event here.
+-- A consumer can forward a block title click to its tracker menu contract here.
 function api.HandleBlockHeaderClick(module, block, button)
 	if type(module) ~= "table" or type(module.trackerMenu) ~= "function" then
 		return false
@@ -1909,10 +1907,6 @@ local function AddHeaderMenu(module)
 					tooltip:AddLine(show.where, nil, nil, nil, true)
 				end)
 			end
-			-- A section may add its own entries after the column's, without the host learning what the section is.
-			if type(module.AddHeaderMenuEntries) == "function" then
-				RunSafe(module.safeCall, "tracker section menu", module.AddHeaderMenuEntries, module, root)
-			end
 		end)
 	end)
 end
@@ -1942,12 +1936,6 @@ function api.Attach(module, show, contract)
 		pendingAttachments[module] = { show = show, contract = contract }
 		return
 	end
-	if type(contract) == "table" and contract.menu and type(module.AddHeaderMenuEntries) == "function" then
-		RunSafe(module.safeCall, "tracker menu contract", function()
-			error("tracker menu contract cannot be combined with deprecated AddHeaderMenuEntries")
-		end)
-		return
-	end
 	if show ~= nil then
 		module.show = show
 	end
@@ -1955,20 +1943,6 @@ function api.Attach(module, show, contract)
 		module.trackerMenu = contract.menu
 		module.trackerClick = contract.click
 		module.trackerClickHint = contract.clickHint
-		if
-			module.trackerMenu
-			and type(module.OnBlockHeaderClick) == "function"
-			and not module.trackerBlockMenuWrapped
-		then
-			---@type fun(self: ForeverTrackerModule, block: any, button: string)
-			local oldBlockClick = module.OnBlockHeaderClick
-			module.trackerBlockMenuWrapped = true
-			module.OnBlockHeaderClick = function(self, block, button)
-				if not api.HandleBlockHeaderClick(module, block, button) then
-					return oldBlockClick(self, block, button)
-				end
-			end
-		end
 	end
 	if OfferLegacy(module) then
 		Migrate()

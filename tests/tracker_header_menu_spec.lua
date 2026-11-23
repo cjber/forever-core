@@ -129,15 +129,6 @@ local safeModule = t.module(5, nil, {
 local safeMenu = Menu(safeModule)
 Entry(safeMenu, "Hide this section").callback()
 check(safeCalls[1] == "tracker section show", "a section's show switch runs in its own SafeCall")
-local ownEntries = 0
-safeModule.safeCall = safe
-safeModule.AddHeaderMenuEntries = function(_, root)
-	ownEntries = ownEntries + 1
-	root:CreateButton("Own entry", function() end)
-end
-local ownMenu = Menu(safeModule)
-check(ownEntries == 1 and Entry(ownMenu, "Own entry") ~= nil, "a section's own menu entries are added")
-check(safeCalls[#safeCalls] == "tracker section menu", "and they run in its SafeCall")
 
 -- The declarative contract keeps the addon's rows ahead of the shared Tracker submenu and makes combat refusal visible.
 local contractModule = t.module(6)
@@ -268,22 +259,6 @@ contractModule.trackerClick = function(target, button)
 end
 host.HandleBlockHeaderClick(contractModule, { id = "journey" }, "LeftButton")
 check(clicks == 1, "left block action runs once")
-
--- Both contracts are rejected through the addon's safe call rather than silently producing two menus.
-local rejected = false
-contractModule.AddHeaderMenuEntries = function() end
-contractModule.safeCall = function(_, fn, ...)
-	local ok = pcall(fn, ...)
-	rejected = not ok
-	return ok
-end
-local previousMenu, previousClick, previousShow =
-	contractModule.trackerMenu, contractModule.trackerClick, contractModule.show
-host.Attach(contractModule, { where = "Rejected show setting" }, { menu = function() end, click = function() end })
-check(rejected, "the old and declarative menu hooks are rejected together")
-check(contractModule.trackerMenu == previousMenu, "rejection preserves the previous menu")
-check(contractModule.trackerClick == previousClick, "rejection preserves the previous click handler")
-check(contractModule.show == previousShow, "rejection preserves the previous show setting")
 
 print("tracker_header_menu_spec: " .. t.checks() .. " checks passed")
 
