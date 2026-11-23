@@ -6,6 +6,7 @@
 
 - The Tracker menu shows where to turn a section back on when you point at **Hide this section**, if that section provides directions. (#1066)
 - In automatic Under placement, the Forever column tries the left and then the right when it cannot fit below the quest tracker. If neither side fits, the column fits its sections below the tracker’s last line. (#1085)
+- A Forever column section that lays out nothing of its own no longer leaves its old rows drawn over the section below it after a relayout, which happened with the column pinned left of the quest tracker.
 
 ### For addon authors
 
