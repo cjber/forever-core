@@ -1184,7 +1184,11 @@ def sync_consumer(
             return Result(repo, "up to date", detail=", ".join(f"closed #{n}" for n in closed) or None)
         files = tuple(sorted([item["path"] for item in additions] + [item["path"] for item in deletions]))
         pin_bump = (bumped, latest) if bumped and latest else None
-        body = pr_body(sha, files, pin_bump, embeds_core(root))
+        pr_files = files
+        if in_place:
+            diff = git(root, "diff", "--cached", "--name-only", "--no-renames", "-z", main).stdout
+            pr_files = tuple(sorted(path for path in diff.split("\0") if path))
+        body = pr_body(sha, pr_files, pin_bump, embeds_core(root))
         if in_place:
             try:
                 oid = create_commit(repo, BRANCH, base, sha, additions, deletions, workspace)

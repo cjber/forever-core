@@ -740,6 +740,8 @@ class InPlaceSyncTest(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, "mainoid\n", "")
             if args[:2] == ("rev-parse", "FETCH_HEAD"):
                 return subprocess.CompletedProcess(args, 0, "proid\n", "")
+            if args == ("diff", "--cached", "--name-only", "--no-renames", "-z", "mainoid"):
+                return subprocess.CompletedProcess(args, 0, "tools/uv.lock\0UI/TrackerHost.lua\0", "")
             return subprocess.CompletedProcess(args, 0, "", "")
 
         def fake_api(path, *args, check=True):
@@ -763,6 +765,10 @@ class InPlaceSyncTest(unittest.TestCase):
         given = requests[0]["variables"]["input"]
         self.assertEqual(given["branch"]["branchName"], sync.BRANCH)
         self.assertEqual(given["expectedHeadOid"], "proid")
+        self.assertEqual([item["path"] for item in given["fileChanges"]["additions"]], ["UI/TrackerHost.lua"])
+        body = next(arg for _, args, _ in calls for arg in args if arg.startswith("body="))
+        self.assertIn("- `tools/uv.lock`", body)
+        self.assertIn("- `UI/TrackerHost.lua`", body)
         # The sync ran on the PR's head rather than on main, so the commits already pushed to it are its parents.
         self.assertIn(("checkout", "-B", sync.BRANCH, "proid"), git_calls)
         # The branch moves only through the signed commit, never through a ref update that could drop a commit.
