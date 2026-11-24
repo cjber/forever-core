@@ -1,10 +1,7 @@
-ForeverCore is a library for my own addons only: Adventure Guide, Shortest Path, SkillUp, Tweaks, Legacy,
-Commissions, Macro Assist and Field Guide. CurseForge installed it because you have one of those. No other addon
-needs it, so if you remove all of mine you can remove ForeverCore too. There is nothing to set up.
+ForeverCore is the shared library included with Adventure Guide, Shortest Path, SkillUp, Tweaks, Legacy,
+Commissions, Macro Assist and Field Guide. It needs no setup.
 
-My addons use it for:
-
-- **One tracker column.** Each of my addons adds its section to the same column, a frame of its own that sits to
+- **One tracker column.** Addons with a tracker section add it to the same column, a frame of its own that sits to
   the left of the game's quest tracker, top edges level, and follows it when you move that tracker in Edit Mode. Drag
   any section's header to put it anywhere; Lock in the header's right-click menu keeps it there. Scale it once, and
   every addon follows. It never changes the game's quest tracker.
@@ -13,10 +10,9 @@ My addons use it for:
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **The common chrome.** The quest log side tabs, the settings page drawing, the error journal and
-  the debug log are shared once.
+- **Shared settings and logs.** Addons use the same settings layout, error journal and debug log.
 
-Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help and each day's release notes, [join me on Discord](https://discord.gg/FpHugGxRJY).
+Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help, [join me on Discord](https://discord.gg/FpHugGxRJY).
 
 [![Join me on Discord](https://raw.githubusercontent.com/cjber/forever-core/main/docs/discord-button.png)](https://discord.gg/FpHugGxRJY) [![Sponsor me on GitHub](https://raw.githubusercontent.com/cjber/forever-core/main/docs/github-sponsors-button.png)](https://github.com/sponsors/cjber) [![Support me on Ko-fi](https://raw.githubusercontent.com/cjber/forever-core/main/docs/kofi-button.png)](https://ko-fi.com/cjber)
 

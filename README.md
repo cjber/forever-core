@@ -2,7 +2,7 @@
 
 <h1 align="center">ForeverCore</h1>
 
-<p align="center">A library for my own addons only (Adventure Guide, Shortest Path, SkillUp and the rest). CurseForge installs it alongside them, and there is nothing to set up.</p>
+<p align="center">A library for my own addons only (Adventure Guide, Shortest Path, SkillUp and the rest). It comes with those addons and needs no setup.</p>
 
 <p align="center">
   <a href="https://github.com/cjber/forever-core/actions/workflows/ci.yml"><img src="https://github.com/cjber/forever-core/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -14,11 +14,10 @@
 ## What it is
 
 ForeverCore is a library, not a feature addon. Every Forever addon declares it with `## OptionalDeps: ForeverCore`,
-so the game loads it first when it is installed and exactly one copy of each shared file runs. A Forever addon still
-loads when core is missing, and then says on screen how to install it. It has no settings page of its own. Your
+so the game loads the standalone library first when installed. Each addon also ships with an embedded copy. It has no settings page of its own. Your
 Forever addons use it for:
 
-- **One tracker column.** Every Forever addon adds its section to the same column, a frame of its own that sits to
+- **One tracker column.** Forever addons with a tracker section add it to the same column, a frame of its own that sits to
   the left of the game's quest tracker, top edges level, and follows it when you move that tracker in Edit Mode. Drag
   any section's header to put it anywhere; Lock in the header's right-click menu keeps it there. Scale it once, and
   every addon follows. It never changes the game's quest tracker.
@@ -27,18 +26,16 @@ Forever addons use it for:
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **The common chrome.** The quest log side tabs, the settings page drawing, the error journal and
-  the debug log are shared once.
+- **Shared settings and logs.** Addons use the same settings layout, error journal and debug log.
 
 The column can wear an optional dark background from any section's right-click menu, drawn with the game's own tooltip
 background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker fine over dark
 terrain keeps the stock look.
 
-## What it does not do
+## Addon integration
 
-It draws no sections of its own and no quest list, and it leaves the game's quest tracker alone: your quests show in
-the game's own tracker or your quest addon's. Every section belongs to the addon that owns the feature: see the suite's
-ownership boundaries in `docs/handoff/boundaries.md`. Its shared code is added to an addon through `ForeverCore.Register` and the
+Each section belongs to the addon that provides the feature. See the suite's
+[ownership boundaries](docs/handoff/boundaries.md). Addons use the shared code through `ForeverCore.Register` and the
 modules on the `ForeverCore` table; see
 [`docs/adoption.md`](docs/adoption.md). The shape every addon's own public API follows is in
 [`docs/api-conventions.md`](docs/api-conventions.md).
@@ -46,7 +43,7 @@ A third-party addon reads the members it may rely on, and the suite's published 
 
 ## Install
 
-Players never install it by hand: CurseForge installs it as a required dependency of every Forever addon. For a manual install, drop the
+The library comes with each Forever addon. To install the standalone library, drop the
 `ForeverCore` folder in `Interface/AddOns`. `/fcore tracker` prints the column's anchors, heights and combat state, which is
 the same diagnostic the addons print from their own slash commands.
 
