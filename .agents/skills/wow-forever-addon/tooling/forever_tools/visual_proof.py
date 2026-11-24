@@ -1342,6 +1342,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     root = Path(".")
+    if args.not_required:
+        print("visual proof: not required (waived by the 'visual-proof: not-required' label)")
+        return 0
     if args.compare_package:
         try:
             package_comparison = compare_package(root, Path(args.compare_package), core=args.core)
@@ -1365,9 +1368,6 @@ def main() -> int:
             print(error, file=sys.stderr)
             return 1
         print(json.dumps({"input_digest": input_digest(root), "candidate": candidate}, indent=2))
-        return 0
-    if args.not_required:
-        print("visual proof: not required (waived by the 'visual-proof: not-required' label)")
         return 0
     problems = verify(root, changed_files(args.base))
     if problems:

@@ -24,9 +24,18 @@ PLAIN_PKGMETA = (
 
 
 class VisualProofTest(unittest.TestCase):
-    def test_not_required_reports_a_waiver_and_passes_without_a_proof(self):
+    def test_not_required_reports_a_waiver_and_passes_before_the_tree_is_read(self):
         """--not-required (the workflow sets it from the owner's 'visual-proof: not-required' label) reports and
-        passes before any tree is read, so a waived run needs neither proof nor checkout."""
+        passes before any tree is read, so a waived run needs neither proof nor checkout: a tree that raises on
+        any read still passes."""
+        raising = mock.patch.object(visual_proof, "verify", mock.MagicMock(side_effect=OSError("the tree was read")))
+        raising.start()
+        self.addCleanup(raising.stop)
+        raising_files = mock.patch.object(
+            visual_proof, "changed_files", mock.MagicMock(side_effect=OSError("the tree was read"))
+        )
+        raising_files.start()
+        self.addCleanup(raising_files.stop)
         with mock.patch.object(sys, "argv", ["visual_proof", "--base", "origin/main", "--not-required"]):
             with contextlib.redirect_stdout(io.StringIO()) as printed:
                 self.assertEqual(visual_proof.main(), 0)

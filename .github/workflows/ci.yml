@@ -126,7 +126,15 @@ jobs:
         env:
           PYTHONPATH: .agents/skills/wow-forever-addon/tooling
           VISUAL_BASE: ${{ github.event.pull_request.base.sha || (github.ref == 'refs/heads/main' && github.event.before) || 'origin/main' }}
-        run: python3 tools/check_visual_proof.py --base "$VISUAL_BASE"
+          # The same person-applied waiver the consumers' vendored job reads (tools/visual-proof.yml); an agent
+          # never applies it.
+          VISUAL_NOT_REQUIRED: "${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'visual-proof: not-required') }}"
+        run: |
+          if [ "$VISUAL_NOT_REQUIRED" = "true" ]; then
+            python3 tools/check_visual_proof.py --base "$VISUAL_BASE" --not-required
+            exit 0
+          fi
+          python3 tools/check_visual_proof.py --base "$VISUAL_BASE"
 
   # A core release reaches players before the addons that depend on it are re-released, so a candidate core has to
   # load with the addon releases already on the stores. suite_load.py --released downloads each consumer's latest

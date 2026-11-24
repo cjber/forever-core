@@ -6,7 +6,9 @@ name: Visual proof
 # documentation-only changes report not required, while runtime UI changes without matching evidence fail.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # labeled and unlabeled, so the owner's waiver on an open pull request re-runs the required check, and
+    # removing it restores the full checker without waiting for a push.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   push:
     branches: [main]
 
