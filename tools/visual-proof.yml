@@ -31,9 +31,16 @@ jobs:
         env:
           # The pull request's exact base commit, or the commit main held before this push. No moving branch.
           VISUAL_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A person applies 'visual-proof: not-required' on purpose to waive a run the checker would demand
+          # for a change that carries no visible UI (a data or tooling refresh); an agent never applies it.
+          VISUAL_NOT_REQUIRED: "${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'visual-proof: not-required') }}"
         run: |
           if [ -z "$VISUAL_BASE" ]; then
             echo "::error::visual-proof has no event base SHA; refusing to fall back to a moving branch"
             exit 1
+          fi
+          if [ "$VISUAL_NOT_REQUIRED" = "true" ]; then
+            python3 -m tools.forever_tools.visual_proof --base "$VISUAL_BASE" --not-required
+            exit 0
           fi
           python3 -m tools.forever_tools.visual_proof --base "$VISUAL_BASE"

@@ -1315,6 +1315,12 @@ def proof_problems(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument(
+        "--not-required",
+        action="store_true",
+        help="report 'not required' and pass without a proof; the workflow sets it from the "
+        "'visual-proof: not-required' label, which a person applies on purpose, never an agent",
+    )
     parser.add_argument("--digests", action="store_true", help="print the source and packaged runtime digests")
     parser.add_argument(
         "--compare",
@@ -1359,6 +1365,9 @@ def main() -> int:
             print(error, file=sys.stderr)
             return 1
         print(json.dumps({"input_digest": input_digest(root), "candidate": candidate}, indent=2))
+        return 0
+    if args.not_required:
+        print("visual proof: not required (waived by the 'visual-proof: not-required' label)")
         return 0
     problems = verify(root, changed_files(args.base))
     if problems:

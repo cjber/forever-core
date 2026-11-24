@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -22,6 +24,14 @@ PLAIN_PKGMETA = (
 
 
 class VisualProofTest(unittest.TestCase):
+    def test_not_required_reports_a_waiver_and_passes_without_a_proof(self):
+        """--not-required (the workflow sets it from the owner's 'visual-proof: not-required' label) reports and
+        passes before any tree is read, so a waived run needs neither proof nor checkout."""
+        with mock.patch.object(sys, "argv", ["visual_proof", "--base", "origin/main", "--not-required"]):
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(visual_proof.main(), 0)
+        self.assertIn("not required (waived by", printed.getvalue())
+
     def root(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
