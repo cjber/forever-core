@@ -57,7 +57,7 @@ With the gamepad interface on, you open and turn the world map; Shortest Path wo
 - The shared Forever column sits left of the game's quest tracker. Drag a heading to move it; right-click a heading for **Lock the tracker** to stop dragging. **Resume guide** returns to RestedXP, Guidelime or Dugi Guides; your journey survives a reload.
 - `/way [zone] x y [title]` plans a journey, or `/path way` when another addon owns `/way`. **Follow TomTom's arrow** in Guidance follows TomTom.
 
-For a bug report, paste `/path report`. It includes errors from earlier sessions, and `/forever debug` keeps a detailed log for the session. `/path issue` shows a filled-in GitHub issue link, selected for copying, for a bug or feature request.
+For a bug report, use `/path report`. For a GitHub issue link, use `/path issue`.
 
 Translated into German, French, Spanish, Brazilian Portuguese, Russian, Korean and Chinese (machine translated; corrections welcome through the [translation form](https://github.com/cjber/shortest-path-forever/issues/new?template=translation.yml)).
 

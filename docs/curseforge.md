@@ -10,7 +10,7 @@ Commissions, Macro Assist and Field Guide. It needs no setup.
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **Shared settings and logs.** Addons use the same settings layout, error journal and debug log.
+- **Shared tabs, settings and logs.** Addons share the world map quest log tabs, settings layout, error journal and debug log.
 
 Free, with nothing locked behind it. If it saves you time, you can [sponsor me on GitHub](https://github.com/sponsors/cjber), which takes no fees, or [buy me a coffee on Ko-fi](https://ko-fi.com/cjber). For help, [join me on Discord](https://discord.gg/FpHugGxRJY).
 

@@ -26,7 +26,7 @@ Forever addons use it for:
 - **Debug capture.** `/forever debug on` turns on the client's own chat, combat and taint logs for a report and
   `/forever debug off` puts the client's settings back, so a player can attach what the report needs without a
   developer's addon.
-- **Shared settings and logs.** Addons use the same settings layout, error journal and debug log.
+- **Shared tabs, settings and logs.** Addons share the world map quest log tabs, settings layout, error journal and debug log.
 
 The column can wear an optional dark background from any section's right-click menu, drawn with the game's own tooltip
 background art. It offers off, 25%, 50%, 75% or 100%, and starts off, so a player who reads the tracker fine over dark
