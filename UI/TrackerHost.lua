@@ -305,6 +305,65 @@ local modules, queued = {}, false
 local pendingAttachments = {}
 local pools
 
+-- Edit Mode sizes the shared tracker fonts, and a tracker replacement can shrink them and their stock sources to 1 px
+-- (EllesmereUI does, and strips their shadow), so every section's text turned unreadable at once (#1099). The text
+-- core builds keeps its own fallback fonts at the game's minimum sizes, in the chat font's locale-aware face with a
+-- shadow, and follows the shared font again once that is readable. The game's own tracker is never touched.
+local LINE_FONT, LINE_FALLBACK, LINE_MINIMUM = "ObjectiveTrackerLineFont", "ForeverCoreTrackerLineFont", 12
+local HEADER_FONT, HEADER_FALLBACK, HEADER_MINIMUM = "ObjectiveTrackerHeaderFont", "ForeverCoreTrackerHeaderFont", 14
+
+---@type table<FontString, boolean>
+local usingFallback = setmetatable({}, { __mode = "k" })
+
+---@param text FontString?
+---@param shared string the font object the game gives this text
+---@param fallback string core's fallback font name
+---@param minimum number
+---@return boolean changed whether the text's size may have moved
+local function ReadableFont(text, shared, fallback, minimum)
+	if not text or not text.GetFont then
+		return false
+	end
+	if usingFallback[text] then
+		local face = rawget(_G, shared) --[[@as Font?]]
+		local size = face and select(2, face:GetFont())
+		if type(size) ~= "number" or size < minimum then
+			return false
+		end
+		text:SetFontObject(shared)
+		usingFallback[text] = nil
+		return true
+	end
+	local size = select(2, text:GetFont())
+	if type(size) ~= "number" or size >= minimum then
+		return false
+	end
+	if not rawget(_G, fallback) then
+		local file, _, flags = ChatFontNormal:GetFont()
+		local font = CreateFont(fallback)
+		font:SetFont(file, minimum, flags)
+		font:SetShadowColor(0, 0, 0, 1)
+		font:SetShadowOffset(1, -1)
+	end
+	text:SetFontObject(fallback)
+	-- The fallback carries no alignment: the shared object gives text its left and top edge.
+	text:SetJustifyH("LEFT")
+	text:SetJustifyV("TOP")
+	usingFallback[text] = true
+	return true
+end
+
+---@param block any
+---@return boolean changed
+local function ReadableBlockFonts(block)
+	local changed = ReadableFont(block.HeaderText, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM)
+	for _, line in pairs(block.usedLines or {}) do
+		changed = ReadableFont(line.Text, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM) or changed
+		changed = ReadableFont(line.Dash, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM) or changed
+	end
+	return changed
+end
+
 local function Acquire(parent, template)
 	local info = C_XMLUtil.GetTemplateInfo(template)
 	local pool = pools:GetOrCreatePool(info and info.type or "Frame", parent, template)
@@ -331,6 +390,8 @@ local function GetLine(block, key, template)
 	end
 	block.usedLines[key] = line
 	line.objectiveKey, line.parentBlock, line.used = key, block, true
+	ReadableFont(line.Text, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM)
+	ReadableFont(line.Dash, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM)
 	return line
 end
 
@@ -401,6 +462,7 @@ end
 function Module:AcquireFrame(template)
 	local frame, isNew = Acquire(self, template)
 	frame:SetParent(self.ContentsFrame)
+	ReadableFont(frame.HeaderText, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM)
 	if frame.GetLine then
 		frame.GetLine, frame.FreeLine = GetLine, FreeLine
 		if frame.OnAnimFinished then
@@ -882,6 +944,17 @@ function Module:Update(availableHeight, dirtyUpdate)
 	self.trackerCap = availableHeight
 	if type(self.baseUpdate) ~= "function" then
 		return
+	end
+	-- Blocks kept from an earlier pass are measured as they are, so their fonts settle before the build, and a change
+	-- builds them again.
+	local changed = ReadableFont(self.Header and self.Header.Text, HEADER_FONT, HEADER_FALLBACK, HEADER_MINIMUM)
+	for _, blocks in pairs(self.usedBlocks or {}) do
+		for _, block in pairs(blocks) do
+			changed = ReadableBlockFonts(block) or changed
+		end
+	end
+	if changed and type(self.MarkDirty) == "function" then
+		self:MarkDirty()
 	end
 	if not self.trackerScrollable then
 		return self.baseUpdate(self, availableHeight, dirtyUpdate)
