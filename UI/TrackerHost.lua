@@ -18,6 +18,9 @@ local _, ns = ...
 ---@field Header? ForeverTrackerHeaderFrame
 ---@field usedBlocks? table<string, table<any, ForeverTrackerBlockFrame>> Blizzard's module model keeps its blocks here
 ---@field headerMenu? boolean
+---@field trackerBuiltWidth? number the width the section's blocks were last built at
+---@field SetTrackerContentsWidth fun(self: ForeverTrackerModule): number the contents width at the column's
+---@field IsDirty? fun(self: ForeverTrackerModule): boolean whether the section's own data changed since its last build
 ---@field show? ForeverTrackerShowSetting the section's own show switch, when it has one
 ---@field GetContextMenuParent fun(self: ForeverTrackerModule): Frame
 ---@field SetContainer fun(self: ForeverTrackerModule, container: Frame)
