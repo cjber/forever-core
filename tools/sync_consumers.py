@@ -34,6 +34,7 @@ from pathlib import Path
 
 from check_consumers import (
     CI_WORKFLOW,
+    FLEET_COMMAND,
     PR_PIN_GATE,
     PR_PIN_GATE_COMMAND,
     TAG_STEP,
@@ -46,6 +47,7 @@ from check_consumers import (
     workflow_step,
 )
 from check_core_shared import CONSUMER_ROOT, VENDORED, source
+from forever_tools import fleet
 
 CORE_ROOT = Path(__file__).resolve().parent.parent
 WARNING_MODULE = "Core/ForeverRequire.lua"
@@ -255,6 +257,57 @@ def sync_pr_pin_gate(root, repo, dry_run):
     return 1
 
 
+FLEET_HOLD_NAME = "Hold until every Forever addon embeds ForeverCore"
+
+
+def fleet_hold_step(indent="      "):
+    """The release-workflow step that holds an embedding addon's release until every addon embeds core."""
+    return (
+        f"{indent}# While any published addon still ships the shared top-level ForeverCore folder, removing that\n"
+        f"{indent}# addon would take core away from this one (cjber/forever-core#448), so an embedded release waits\n"
+        f"{indent}# until every addon embeds.\n"
+        f"{indent}- name: {FLEET_HOLD_NAME}\n"
+        f"{indent}  env:\n"
+        f"{indent}    GH_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}\n"
+        f"{indent}  run: python3 -m {FLEET_COMMAND}\n"
+    )
+
+
+def fleet_hold_edit(root):
+    """The release workflow text with the fleet hold added directly below the pin gate, or None to leave it alone.
+
+    Only a consumer whose root TOC opts in to the embedded core needs it (`check_embed_steps` asks for exactly those),
+    and only once the pin gate is there to anchor it, so a full sync inserts the gate first, the hold in the same run.
+    """
+    path = root / RELEASE_WORKFLOW
+    if not path.is_file() or not fleet.opted_in(*fleet.local(root)):
+        return None
+    text = path.read_text(encoding="utf-8")
+    if FLEET_COMMAND in text:
+        return None
+    gate = re.search(
+        rf"^(?P<indent>[ \t]*)- name: {re.escape(RELEASE_GATE_NAME)}\n(?:(?P=indent) .*\n)+", text, re.MULTILINE
+    )
+    if gate is None:
+        return None
+    return text[: gate.end()] + fleet_hold_step(gate["indent"]) + text[gate.end() :]
+
+
+def sync_fleet_hold(root, repo, dry_run):
+    """Insert the fleet hold into an embedding `repo`'s release workflow, returning whether it changed."""
+    try:
+        updated = fleet_hold_edit(root)
+    except fleet.FleetUnreadable as error:
+        print(f"{repo}: no fleet hold inserted: {error}")
+        return 0
+    if updated is None:
+        return 0
+    print(f"{repo}: {RELEASE_WORKFLOW}: the fleet hold")
+    if not dry_run:
+        (root / RELEASE_WORKFLOW).write_text(updated, encoding="utf-8")
+    return 1
+
+
 def sync_release_gate(root, repo, dry_run):
     """Insert the release gate into `repo`'s release workflow, returning whether it changed."""
     path, updated, notice = release_gate_edit(root, repo)
@@ -394,6 +447,7 @@ def main(argv=None):
             try:
                 changed += sync_store_channels(root, repo, arguments.dry_run)
                 changed += sync_release_gate(root, repo, arguments.dry_run)
+                changed += sync_fleet_hold(root, repo, arguments.dry_run)
                 changed += sync_pr_pin_gate(root, repo, arguments.dry_run)
                 changed += sync_tag_step(root, repo, arguments.dry_run)
                 changed += sync_version_step(root, repo, arguments.dry_run)

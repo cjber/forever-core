@@ -329,6 +329,33 @@ jobs:
 """
 
 
+class FleetHoldTest(unittest.TestCase):
+    """The fleet hold the sync inserts below the pin gate of an addon that embeds ForeverCore."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / ".github/workflows").mkdir(parents=True)
+        (self.root / "Addon.toc").write_text("## Title: Addon\n## X-Forever-Core-Embed: 1\n", encoding="utf-8")
+        self.workflow = self.root / sync.RELEASE_WORKFLOW
+        packager = "      - uses: BigWigsMods/packager@"
+        self.workflow.write_text(
+            RELEASE_WORKFLOW.replace(packager, sync.release_gate_step() + packager), encoding="utf-8"
+        )
+
+    def test_an_embedding_addon_gets_the_hold_right_below_the_pin_gate(self):
+        updated = sync.fleet_hold_edit(self.root)
+        self.assertIn(sync.release_gate_step() + sync.fleet_hold_step(), updated)
+        self.assertEqual(sync.sync_fleet_hold(self.root, "addon", False), 1)
+        self.assertEqual(self.workflow.read_text(encoding="utf-8"), updated)
+        self.assertEqual(sync.sync_fleet_hold(self.root, "addon", False), 0)
+
+    def test_an_addon_that_does_not_embed_is_left_alone(self):
+        (self.root / "Addon.toc").write_text("## Title: Addon\n", encoding="utf-8")
+        self.assertIsNone(sync.fleet_hold_edit(self.root))
+
+
 class ReleaseGateTest(unittest.TestCase):
     """The ForeverCore pin gate the sync inserts directly above the packager in an addon's own release workflow."""
 
