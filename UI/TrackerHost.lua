@@ -364,6 +364,23 @@ local function ReadableBlockFonts(block)
 	return changed
 end
 
+-- Settles every font of a section's header and kept blocks, and marks the section dirty when one moved, so it builds
+-- again at the new size.
+---@param module ForeverTrackerModule
+---@return boolean changed
+local function SettleFonts(module)
+	local changed = ReadableFont(module.Header and module.Header.Text, HEADER_FONT, HEADER_FALLBACK, HEADER_MINIMUM)
+	for _, blocks in pairs(module.usedBlocks or {}) do
+		for _, block in pairs(blocks) do
+			changed = ReadableBlockFonts(block) or changed
+		end
+	end
+	if changed and type(module.MarkDirty) == "function" then
+		module:MarkDirty()
+	end
+	return changed
+end
+
 local function Acquire(parent, template)
 	local info = C_XMLUtil.GetTemplateInfo(template)
 	local pool = pools:GetOrCreatePool(info and info.type or "Frame", parent, template)
@@ -947,15 +964,7 @@ function Module:Update(availableHeight, dirtyUpdate)
 	end
 	-- Blocks kept from an earlier pass are measured as they are, so their fonts settle before the build, and a change
 	-- builds them again.
-	local changed = ReadableFont(self.Header and self.Header.Text, HEADER_FONT, HEADER_FALLBACK, HEADER_MINIMUM)
-	for _, blocks in pairs(self.usedBlocks or {}) do
-		for _, block in pairs(blocks) do
-			changed = ReadableBlockFonts(block) or changed
-		end
-	end
-	if changed and type(self.MarkDirty) == "function" then
-		self:MarkDirty()
-	end
+	SettleFonts(self)
 	if not self.trackerScrollable then
 		return self.baseUpdate(self, availableHeight, dirtyUpdate)
 	end
@@ -2187,6 +2196,13 @@ local function Listen()
 			quiet = quiet + 1
 		end
 
+		-- A tracker replacement can shrink the shared fonts after the first layout: that needs a layout whatever the
+		-- placement does, since a manually placed column never lays out for a placement alone.
+		for _, module in ipairs(modules) do
+			if SettleFonts(module) then
+				needsLayout, needsPlacement = true, true
+			end
+		end
 		if needsPlacement and (frames >= 2 or elapsed >= 1) and not ObjectiveTrackerFrame.isDragging then
 			if not queued then
 				if needsLayout then

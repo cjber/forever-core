@@ -3,7 +3,7 @@
 -- it is readable (#1099).
 local harness = dofile("tests/tracker_host_harness.lua")
 
-local t = harness.new()
+local t = harness.new({ hostSettings = { x = 30, y = -40 } })
 local check = t.check
 local env = t.env
 
@@ -72,5 +72,13 @@ t.host:MarkDirty()
 t.drain()
 check(line.Text.font == env.ObjectiveTrackerLineFont, "text returns to the shared line font once it is readable")
 check(module.Header.Text.font == env.ObjectiveTrackerHeaderFont, "the header returns to the shared font")
+
+-- A replacement that shrinks the shared fonts after the first layout reaches a manually placed column, which lays out
+-- for no placement change: the next quest log update still rebuilds the text.
+env.ObjectiveTrackerLineFont.size = 1
+local before = module.updates
+t.recheck("QUEST_LOG_UPDATE")
+check(line.Text.font == lineFallback, "a font shrunk after the first layout falls back without a placement change")
+check(module.updates > before, "the shrunk font lays the section out again")
 
 print("tracker_fonts_spec: " .. t.checks() .. " checks passed")
