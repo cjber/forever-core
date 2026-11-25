@@ -1,10 +1,22 @@
 ---@type string, ForeverTrackerNamespace
 local _, ns = ...
 
+---@class ForeverTrackerHeaderFrame : Frame
+---@field Text? FontString
+
+---@class ForeverTrackerLineFrame : Frame
+---@field Text? FontString
+---@field Dash? FontString
+
+---@class ForeverTrackerBlockFrame : Frame
+---@field HeaderText? FontString
+---@field usedLines? table<any, ForeverTrackerLineFrame>
+
 ---@class ForeverTrackerModule : Frame
 ---@field uiOrder? number
 ---@field parentContainer? Frame
----@field Header? Frame
+---@field Header? ForeverTrackerHeaderFrame
+---@field usedBlocks? table<string, table<any, ForeverTrackerBlockFrame>> Blizzard's module model keeps its blocks here
 ---@field headerMenu? boolean
 ---@field show? ForeverTrackerShowSetting the section's own show switch, when it has one
 ---@field GetContextMenuParent fun(self: ForeverTrackerModule): Frame
@@ -353,7 +365,7 @@ local function ReadableFont(text, shared, fallback, minimum)
 	return true
 end
 
----@param block any
+---@param block ForeverTrackerBlockFrame
 ---@return boolean changed
 local function ReadableBlockFonts(block)
 	local changed = ReadableFont(block.HeaderText, LINE_FONT, LINE_FALLBACK, LINE_MINIMUM)
@@ -385,6 +397,7 @@ local function Acquire(parent, template)
 	local info = C_XMLUtil.GetTemplateInfo(template)
 	local pool = pools:GetOrCreatePool(info and info.type or "Frame", parent, template)
 	---@class ForeverTrackerPooledFrame : Frame
+	---@field HeaderText? FontString
 	---@field GetLine? function
 	---@field FreeLine? function
 	---@field OnAnimFinished? function
@@ -957,6 +970,7 @@ end
 -- every other section's blocks and header alone (#795). A section with no room keeps its blocks and stays dirty until
 -- it has some, since Blizzard's Update with no room would free them. A frame without IsDirty cannot say what changed,
 -- so it rebuilds on every pass.
+---@param self ForeverTrackerModule
 function Module:Update(availableHeight, dirtyUpdate)
 	self.trackerCap = availableHeight
 	if type(self.baseUpdate) ~= "function" then
