@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.17.3] - 2026-11-25
+
+### Fixed
+
+- Every addon's tracker text stays readable and shadowed when EllesmereUI shrinks the shared tracker fonts: sections in the shared column keep their own 12 and 14 px fonts (#1099).
+
 ## [1.17.2] - 2026-11-23
 
 ### Fixed
