@@ -79,6 +79,7 @@ env.ObjectiveTrackerLineFont.size = 1
 local before = module.updates
 t.recheck("QUEST_LOG_UPDATE")
 check(line.Text.font == lineFallback, "a font shrunk after the first layout falls back without a placement change")
+t.drain()
 check(module.updates > before, "the shrunk font lays the section out again")
 
 print("tracker_fonts_spec: " .. t.checks() .. " checks passed")
