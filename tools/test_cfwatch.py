@@ -730,6 +730,31 @@ class SettleTest(unittest.TestCase):
             self.assertEqual(sorted(self.heads(output)), [1, 2])
             self.assertIn("2 unanswered, 0 waiting on an issue, 0 settled", output)
 
+    def test_an_edited_top_comment_keeps_its_thread_id(self):
+        fetch = fake_fetch([comment(1, "edited question", posted=1020, replies=[owner_reply(10, 1)])])
+        with tempfile.TemporaryDirectory() as tmp:
+            output = run(["--unanswered"], fetch, state=tmp)
+            self.assertEqual(self.heads(output), [1])
+            links = {"1": [{"repo": "skillup-forever", "number": 7, "state": "open"}]}
+            output = run(["--unanswered"], fetch, state=tmp, links=links)
+            self.assertEqual(self.heads(output), [1])
+            self.assertIn("waiting on cjber/skillup-forever#7", output)
+            run(["--settle", "1", "already answered"], fetch, state=tmp)
+            output = run(["--unanswered"], fetch, state=tmp)
+            self.assertEqual(self.heads(output), [])
+            self.assertIn("0 unanswered, 0 waiting on an issue, 1 settled", output)
+
+    def test_a_batch_with_an_unknown_id_reports_and_saves_no_settlements(self):
+        output = io.StringIO()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            unittest.mock.patch.object(io, "StringIO", return_value=output),
+        ):
+            with self.assertRaisesRegex(SystemExit, "no thread #99"):
+                run(["--settle", "1", "thanks", "--settle", "99", "unknown"], fake_fetch(self.rows()), state=tmp)
+            self.assertFalse((Path(tmp) / "forever-core" / "cfwatch-settled.json").exists())
+        self.assertNotIn("settled [", output.getvalue())
+
     def test_an_unknown_thread_or_missing_reason_is_refused(self):
         with self.assertRaises(SystemExit):
             run(["--settle", "99", "thanks only"], fake_fetch(self.rows()))

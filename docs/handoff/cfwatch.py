@@ -546,33 +546,36 @@ def main(argv=None, fetch=None):
 
     if requests:
         found = {str(top["id"]): (slug, rows) for slug, items in raw.items() for top, rows in threads(items)}
-        for thread, reason in requests:
+        for thread, _ in requests:
             if thread not in found:
                 raise SystemExit(f"no thread #{thread} on the watched projects")
+        for thread, reason in requests:
             slug, rows = found[thread]
             settled[thread] = {"slug": slug, "latest": rows[-1]["id"], "reason": reason, "when": when(rows[-1])}
-            print(f"settled [{slug}] thread #{thread}: {reason}")
         save(settled_path, settled)
+        for thread, reason in requests:
+            print(f"settled [{found[thread][0]}] thread #{thread}: {reason}")
 
     if show_unanswered:
         links = linked_issues()
         waiting, quiet, on_issue = [], 0, 0
         for slug, items in raw.items():
-            for _, rows in unanswered(items):
-                entry = settled.get(str(rows[0]["id"]))
+            for top, rows in unanswered(items):
+                thread = str(top["id"])
+                entry = settled.get(thread)
                 if entry and entry.get("latest") == rows[-1]["id"]:
                     quiet += 1
                     continue
-                issues = links.get(str(rows[0]["id"]))
+                issues = links.get(thread)
                 if issues:
                     on_issue += 1
-                    print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
+                    print(f"\n=== [{slug}] thread #{thread}, {len(rows)} posts, latest {when(rows[-1])}")
                     for issue in issues:
                         print(f"waiting on cjber/{issue['repo']}#{issue['number']} ({issue['state']})")
                     continue
-                waiting.append((rows[-1]["datePosted"], slug, rows))
-        for _, slug, rows in sorted(waiting, key=lambda row: row[0]):
-            print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
+                waiting.append((rows[-1]["datePosted"], slug, thread, rows))
+        for _, slug, thread, rows in sorted(waiting, key=lambda row: row[0]):
+            print(f"\n=== [{slug}] thread #{thread}, {len(rows)} posts, latest {when(rows[-1])}")
             for comment in rows:
                 print(format_comment(slug, comment))
         print(f"\n{len(waiting)} unanswered, {on_issue} waiting on an issue, {quiet} settled")
