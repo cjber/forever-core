@@ -1761,8 +1761,8 @@ function M.build(sim)
 		s.text = text
 		s.cursor = Secret.is(text) and 0 or #text
 		s.highlightStart, s.highlightEnd = nil, nil
-		-- Live client probes 2026-11-17: OnTextSet is synchronous; OnTextChanged is next-frame, once per box however
-		-- many changed sets that frame made, reading the final text.
+		-- The 2026-11-17 probe found synchronous OnTextSet and next-frame OnTextChanged.
+		-- The 2026-11-22 probe found one OnTextChanged per box for changed sets in a frame, reading the final text.
 		if not pendingSetText[self] then
 			pendingSetText[self] = true
 			pendingEditText[#pendingEditText + 1] = { self, false }
