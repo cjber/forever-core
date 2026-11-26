@@ -1736,15 +1736,21 @@ function M.build(sim)
 	end
 
 	-- EditBox.
-	local pendingEditText = {}
-	local pendingSetText = {}
+	local pendingEdits, pendingInput = {}, {}
 	function W.flushEditText()
-		local pending = pendingEditText
-		pendingEditText = {}
-		pendingSetText = {}
-		for _, entry in ipairs(pending) do
-			W.dispatch(entry[1], "OnTextChanged", entry[2])
+		local edits, input = pendingEdits, pendingInput
+		pendingEdits, pendingInput = {}, {}
+		for _, edit in ipairs(edits) do
+			W.dispatch(edit, "OnTextChanged", input[edit])
 		end
+	end
+	-- Live client probes (2026-11-22 and #1111): SetText and Insert calls in one frame give each box one next-frame
+	-- OnTextChanged, which reads the final text; userInput follows the last call.
+	local function queueTextChanged(edit, userInput)
+		if pendingInput[edit] == nil then
+			pendingEdits[#pendingEdits + 1] = edit
+		end
+		pendingInput[edit] = userInput
 	end
 	local function setEditText(self, text)
 		local s = st(self)
@@ -1761,12 +1767,8 @@ function M.build(sim)
 		s.text = text
 		s.cursor = Secret.is(text) and 0 or #text
 		s.highlightStart, s.highlightEnd = nil, nil
-		-- The 2026-11-17 probe found synchronous OnTextSet and next-frame OnTextChanged.
-		-- The 2026-11-22 probe found one OnTextChanged per box for changed sets in a frame, reading the final text.
-		if not pendingSetText[self] then
-			pendingSetText[self] = true
-			pendingEditText[#pendingEditText + 1] = { self, false }
-		end
+		queueTextChanged(self, false)
+		-- The 2026-11-17 probe found synchronous OnTextSet.
 		fire(self, "OnTextSet")
 	end
 	impl.EditBox.SetText = function(self, text)
@@ -1787,8 +1789,8 @@ function M.build(sim)
 		s.text = value:sub(1, first) .. text .. value:sub(last + 1)
 		s.cursor = first + #text
 		s.highlightStart, s.highlightEnd = nil, nil
-		-- Live client probe (#755): the text and caret change at once, OnTextChanged(self, true) fires once next frame.
-		pendingEditText[#pendingEditText + 1] = { self, true }
+		-- Live client probe (#755): the text and caret change at once.
+		queueTextChanged(self, true)
 	end
 	impl.EditBox.SetCursorPosition = function(self, position)
 		local s = st(self)
