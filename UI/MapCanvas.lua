@@ -81,13 +81,12 @@ function MapCanvas.Gamepad()
 	return styles ~= nil and api ~= nil and api.GetCurrentStyle ~= nil and api.GetCurrentStyle() == styles.Gamepad
 end
 
--- The frame level the map gives a pin of this type, read from its levels manager.
+-- The frame level the map gives a pin of this type, read from its levels manager. A pin without a type is a point of
+-- interest: the map's own default level lies under the explored-area art, as does one level above the canvas.
 ---@param levelType? string
 ---@return number
 function View:Level(levelType)
-	local levels = self.map.GetPinFrameLevelsManager and self.map:GetPinFrameLevelsManager()
-	local level = levelType and levels and levels:GetValidFrameLevel(levelType)
-	return level or self.canvas:GetFrameLevel() + 1
+	return self.map:GetPinFrameLevelsManager():GetValidFrameLevel(levelType or "PIN_FRAME_LEVEL_AREA_POI")
 end
 
 ---@param view ForeverCanvasView
