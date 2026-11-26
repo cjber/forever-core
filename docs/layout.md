@@ -68,7 +68,8 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
   and on a Forever realm, which has no name.
 - `UI/SettingsPage.lua`: the settings canvas; `Register(name, build, L)` reads every label and tooltip through the
   calling addon's L, and carries the debug-capture notice while `/forever debug on` is active.
-- `UI/MapCanvas.lua`: read-only drawings on the world map, with each addon's markers keyed on its name.
+- `UI/MapCanvas.lua`: read-only drawings on the world map, with each addon's markers keyed on its name, and the
+  grouping of pins that would overlap at the current zoom.
 - `Locales/`: core's own phrases in enUS and the nine shipped locales. A consumer keeps its own locale file for its own
   copy; the phrases here are the only ones core owns.
 - The suite's ownership boundaries live in `docs/handoff/boundaries.md`, with the rest of the suite notes in

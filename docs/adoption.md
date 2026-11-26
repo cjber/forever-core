@@ -55,6 +55,7 @@ core.Report.Command("report")
 core.Report.Show(text)
 core.Report.Compose("bug")
 core.MapCanvas.Pool(map, mixin, { marker = "route" })
+core.MapCanvas.OverlapGroups(map, points, size) -- points whose pins would overlap at this zoom
 ```
 
 `Register` is idempotent: the same addon name returns the same context. Saved variables load after the files, so
