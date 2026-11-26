@@ -95,5 +95,27 @@ assert(#reentrant == 2, "no further reentrant notifications")
 for _, case in ipairs(cases) do
 	assert(#case.notifications == 1, case.name .. " has no later notifications")
 end
+-- Live client probe (client 1.60.1.71139, forever-core#1111), all calls in one timer callback:
+-- insert_insert    1 'ab' user=true
+-- settext_insert   1 'ab' user=true
+-- insert_settext   1 'b'  user=false
+local mixed = {
+	{ name = "insert-insert", calls = { "Insert", "Insert" }, text = "ab", userInput = true },
+	{ name = "settext-insert", calls = { "SetText", "Insert" }, text = "ab", userInput = true },
+	{ name = "insert-settext", calls = { "Insert", "SetText" }, text = "b", userInput = false },
+}
+for _, case in ipairs(mixed) do
+	local box, notifications = sim.G.CreateFrame("EditBox"), {}
+	box:SetScript("OnTextChanged", function(self, input)
+		table.insert(notifications, { text = self:GetText(), userInput = input })
+	end)
+	box[case.calls[1]](box, "a")
+	box[case.calls[2]](box, "b")
+	assert(#notifications == 0, case.name .. " OnTextChanged is deferred")
+	sim:advance(0)
+	local first = notifications[1]
+	assert(#notifications == 1, case.name .. " OnTextChanged count: " .. #notifications)
+	assert(first.text == case.text and first.userInput == case.userInput, case.name .. " OnTextChanged payload")
+end
 sim:expectNoErrors()
 print("editbox_text_spec: passed")
