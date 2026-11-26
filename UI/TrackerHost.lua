@@ -1416,18 +1416,19 @@ local function TrackerEdge(shows)
 	return left * trackerScale / hostScale, bottom * scale / hostScale, right and right * trackerScale / hostScale
 end
 local AddPlacementMenu
--- The bars the column keeps clear of: the main bar and the extra bars parked at the bottom of the screen, then the two
--- parked on its right. A bar the player has not got, has hidden, or has parked elsewhere takes no room, so this reads
--- whatever the player's own layout put on screen rather than assuming the default one.
+-- Action bar obstacles, keyed by frame name. End caps are children of MainActionBar.EndCaps and can sit outside
+-- the main bar's rectangle. Their visibility depends on the whole parent chain.
 local ACTION_BARS = {
-	"MainMenuBar",
-	"MultiBarBottomLeft",
-	"MultiBarBottomRight",
-	"MultiBar5",
-	"MultiBar6",
-	"MultiBar7",
-	"MultiBarRight",
-	"MultiBarLeft",
+	MainActionBar = false,
+	MultiBarBottomLeft = false,
+	MultiBarBottomRight = false,
+	MultiBar5 = false,
+	MultiBar6 = false,
+	MultiBar7 = false,
+	MultiBarRight = false,
+	MultiBarLeft = false,
+	LeftEndCap = true,
+	RightEndCap = true,
 }
 -- How far down and how far right the column may reach from `top` without covering an action bar, both in the host's own
 -- units: `floor` is the top of the highest bar under the column's width, so the column stops above the bars the way
@@ -1449,9 +1450,18 @@ local function BarRoom(left, width, top, height)
 		return floor, right
 	end
 	local low = top - height
-	for _, name in ipairs(ACTION_BARS) do
-		local bar = rawget(_G, name)
-		if type(bar) == "table" and bar.IsShown and bar:IsShown() then
+	local mainBar = rawget(_G, "MainActionBar")
+	local endCaps = mainBar and mainBar.EndCaps
+	for name, isEndCap in pairs(ACTION_BARS) do
+		local bar, visible
+		if isEndCap then
+			bar = endCaps and endCaps[name]
+			visible = type(bar) == "table" and bar.IsVisible and bar:IsVisible()
+		else
+			bar = rawget(_G, name)
+			visible = type(bar) == "table" and bar.IsShown and bar:IsShown()
+		end
+		if visible then
 			local barLeft, barTop = bar:GetLeft(), bar:GetTop()
 			local barWidth, barHeight = bar:GetWidth(), bar:GetHeight()
 			if barLeft and barTop and barWidth and barHeight and barWidth > 0 and barHeight > 0 then
