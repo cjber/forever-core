@@ -7,10 +7,10 @@
 ---@field GetCanvasScale fun(self: WorldMapFrame): number?
 ---@field GetCanvasZoomPercent fun(self: WorldMapFrame): number?
 ---@field GetGlobalPinScale fun(self: WorldMapFrame): number?
----@field GetPinFrameLevelsManager? fun(self: WorldMapFrame): ForeverCanvasLevels
+---@field GetPinFrameLevelsManager fun(self: WorldMapFrame): ForeverCanvasLevels
 ---@field SetQuestLogPanelShown fun(self: WorldMapFrame, shown: boolean)
 ---@class ForeverCanvasLevels
----@field GetValidFrameLevel fun(self: ForeverCanvasLevels, levelType: string): number?
+---@field GetValidFrameLevel fun(self: ForeverCanvasLevels, levelType: string): number
 
 ---@type {GetCurrentStyle: fun(): number}?
 C_InputInterfaceStyle = nil

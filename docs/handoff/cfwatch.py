@@ -315,32 +315,47 @@ def unanswered(items):
     return sorted(waiting, key=lambda thread: thread[1][-1]["datePosted"])
 
 
-def search_issues():
-    """Every Forever issue that may carry a CurseForge thread line, open and closed.
+def search_issues(*, sleep=time.sleep):
+    """Find open and closed issues that may carry a CurseForge thread line.
 
-    Asked of each watched repository on its own, because `gh search issues --owner` is one listing
-    across an owner and a token scoped to a single repository owner cannot make it: the lookup then
-    fails before a single thread is matched, and every thread reads as never filed.
+    Search each repository separately so the lookup works with a repository-scoped token.
     """
     issues = []
+    page_size = 100
+    requested = False
     for slug in slug_list():
-        rows = gh_json(
-            "issue",
-            "list",
-            "-R",
-            f"{OWNER}/{slug}",
-            "--state",
-            "all",
-            "--search",
-            "CurseForge thread",
-            "--limit",
-            "1000",
-            "--json",
-            "number,state,body,closedAt",
-        )
-        for row in rows:
-            row["repository"] = {"name": slug}
-            issues.append(row)
+        page = 1
+        while True:
+            if requested:
+                # Each REST page counts toward GitHub's 30 search requests per minute.
+                sleep(2.1)
+            response = gh_json(
+                "api",
+                "search/issues",
+                "--method",
+                "GET",
+                "-f",
+                f"q=CurseForge thread repo:{OWNER}/{slug} is:issue",
+                "-F",
+                f"per_page={page_size}",
+                "-F",
+                f"page={page}",
+            )
+            requested = True
+            items = response["items"]
+            for row in items:
+                issues.append(
+                    {
+                        "number": row["number"],
+                        "state": row["state"].upper(),
+                        "body": row["body"],
+                        "closedAt": row["closed_at"],
+                        "repository": {"name": slug},
+                    }
+                )
+            if len(items) < page_size or page * page_size >= response["total_count"]:
+                break
+            page += 1
     return issues
 
 

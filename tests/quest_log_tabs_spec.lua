@@ -101,10 +101,37 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 	map.MapLegendTab = newFrame("MapLegendTab", map)
 	local worldMap = newFrame("WorldMapFrame")
 	worldMap.QuestLog = map
+	local world = { map = map, worldMap = worldMap, created = {}, callbacks = {}, hooks = {}, timers = {} }
+
 	function worldMap:SetQuestLogPanelShown(shown)
-		self.QuestLog:SetShown(shown)
+		if self.QuestLog:IsShown() ~= shown then
+			-- The stock method changes width before it shows or hides the quest log.
+			for _, hook in ipairs(self.scriptHooks.OnSizeChanged or {}) do
+				hook(self)
+			end
+			self.QuestLog:SetShown(shown)
+		end
 	end
-	local world = { map = map, worldMap = worldMap, created = {}, callbacks = {}, hooks = {} }
+
+	function world:RunTimers()
+		local timers = self.timers
+		self.timers = {}
+		for _, callback in ipairs(timers) do
+			callback()
+		end
+	end
+
+	function world:SetQuestLogPanelShown(shown)
+		self.worldMap:SetQuestLogPanelShown(shown)
+		self:RunTimers()
+	end
+
+	_G.C_Timer = {
+		After = function(delay, callback)
+			assert(delay == 0, "quest log refresh must run next frame")
+			world.timers[#world.timers + 1] = callback
+		end,
+	}
 
 	_G.GetCursorPosition = function()
 		return 0, world.cursorY or 0
@@ -148,18 +175,10 @@ local function newWorld(questTabHidden, offsetX, offsetY)
 			end
 		end,
 	}
-	_G.hooksecurefunc = function(target, nameOrCallback, callback)
-		if type(target) == "table" then
-			local original = target[nameOrCallback]
-			target[nameOrCallback] = function(...)
-				local results = { original(...) }
-				callback(...)
-				return unpack(results)
-			end
-			return
-		end
+	_G.hooksecurefunc = function(target, callback)
+		assert(type(target) == "string", "WFA-38 forbids hooking Blizzard object methods")
 		world.hooks[target] = world.hooks[target] or {}
-		world.hooks[target][#world.hooks[target] + 1] = nameOrCallback
+		world.hooks[target][#world.hooks[target] + 1] = callback
 	end
 	return world
 end
@@ -445,12 +464,12 @@ assert(#calls == 14, "a hide with no panel selected reported")
 -- SetQuestLogPanelShown on the map.
 events.Select("e")
 assert(#calls == 15 and calls[15].key == "e" and calls[15].visible, "Select did not report the panel visible again")
-eventWorld.worldMap:SetQuestLogPanelShown(false)
+eventWorld:SetQuestLogPanelShown(false)
 assert(
 	#calls == 16 and calls[16].key == "e" and not calls[16].visible,
 	"collapsing the side panel did not report the panel hidden"
 )
-eventWorld.worldMap:SetQuestLogPanelShown(true)
+eventWorld:SetQuestLogPanelShown(true)
 assert(
 	#calls == 17 and calls[17].key == "e" and calls[17].visible,
 	"expanding the side panel did not report the panel visible"
@@ -459,30 +478,30 @@ assert(
 -- With the stock pages back, collapsing or expanding says nothing about a Forever panel.
 events.ShowQuests()
 assert(#calls == 18 and calls[18].key == "e" and not calls[18].visible, "ShowQuests did not report the panel hidden")
-eventWorld.worldMap:SetQuestLogPanelShown(false)
+eventWorld:SetQuestLogPanelShown(false)
 assert(#calls == 18, "collapsing the side panel with Quests selected reported")
-eventWorld.worldMap:SetQuestLogPanelShown(true)
+eventWorld:SetQuestLogPanelShown(true)
 assert(#calls == 18, "expanding the side panel with Quests selected reported")
 
 -- Selecting while the side panel is collapsed waits for it to expand before reporting.
-eventWorld.worldMap:SetQuestLogPanelShown(false)
+eventWorld:SetQuestLogPanelShown(false)
 events.Select("e")
 assert(#calls == 18, "Select reported a panel the collapsed side panel hides")
-eventWorld.worldMap:SetQuestLogPanelShown(true)
+eventWorld:SetQuestLogPanelShown(true)
 assert(
 	#calls == 19 and calls[19].key == "e" and calls[19].visible,
 	"expanding the side panel did not report the selected panel visible"
 )
 
 -- The map opening through the panel manager still says nothing while the side panel is collapsed.
-eventWorld.worldMap:SetQuestLogPanelShown(false)
+eventWorld:SetQuestLogPanelShown(false)
 assert(
 	#calls == 20 and calls[20].key == "e" and not calls[20].visible,
 	"collapsing the side panel did not report the panel hidden"
 )
 _G.EventRegistry:TriggerEvent("UIParentPanelManager.ShowUIPanel", eventWorld.worldMap, false, nil)
 assert(#calls == 20, "ShowUIPanel reported a panel the collapsed side panel hides")
-eventWorld.worldMap:SetQuestLogPanelShown(true)
+eventWorld:SetQuestLogPanelShown(true)
 assert(
 	#calls == 21 and calls[21].key == "e" and calls[21].visible,
 	"expanding the side panel did not report the panel visible"
@@ -658,12 +677,22 @@ dragQuests.scripts.OnDragStart(dragQuests)
 dragWorld.cursorY = -2000
 dragQuests.scripts.OnDragStop(dragQuests)
 assert(dragQuests.points[5] == -254 and saved.questLogTabOffsetY == -247, "bottom drag was not saved")
+_G.EventRegistry:TriggerEvent("WorldMapMaximized")
+assert(#dragWorld.timers == 1, "maximize did not queue a refresh on its own")
+dragWorld:RunTimers()
+dragWorld.worldMap:SetQuestLogPanelShown(false)
+_G.EventRegistry:TriggerEvent("WorldMapMaximized")
 dragWorld.map.height = 200
-dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(#dragWorld.timers == 1, "maximize and resize queued duplicate refreshes")
+dragWorld:RunTimers()
 assert(dragQuests.points[5] == -104, "a smaller map did not clamp the column again")
 assert(saved.questLogTabOffsetY == -247, "clamping to a smaller map changed the saved position")
+_G.EventRegistry:TriggerEvent("WorldMapMinimized")
+assert(#dragWorld.timers == 1, "minimize did not queue a refresh on its own")
 dragWorld.map.height = 350
 dragWorld.worldMap:SetQuestLogPanelShown(true)
+assert(#dragWorld.timers == 1, "minimize and resize queued duplicate refreshes")
+dragWorld:RunTimers()
 assert(dragQuests.points[5] == -254, "the larger map did not restore the saved position")
 
 -- The map closes with the button held, so OnDragStop never arrives: the next update ends the drag in place.

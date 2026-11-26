@@ -183,13 +183,19 @@ local function Anchor(dragOffset)
 	end
 end
 
--- The client's own Show/Hide of the side panel, whether the toggle, a minimize or a maximize asked for it.
--- Maximising or minimising the map changes its height, so a moved column is clamped again; the saved offset stays.
-local function QuestLogPanelShown()
-	if appliedOffset ~= 0 or SavedOffset() ~= 0 then
-		Anchor()
+local panelRefreshPending = false
+local function QueueQuestLogPanelRefresh()
+	if panelRefreshPending then
+		return
 	end
-	Sync()
+	panelRefreshPending = true
+	C_Timer.After(0, function()
+		panelRefreshPending = false
+		if appliedOffset ~= 0 or SavedOffset() ~= 0 then
+			Anchor()
+		end
+		Sync()
+	end)
 end
 
 local function InCombat()
@@ -324,8 +330,11 @@ local function Install()
 	EventRegistry:RegisterCallback("UIParentPanelManager.ShowUIPanel", PanelShown, api)
 	EventRegistry:RegisterCallback("UIParentPanelManager.HideUIPanel", PanelHidden, api)
 	EventRegistry:RegisterCallback("UIParentPanelManager.ForcePanelHide", PanelHidden, api)
-	-- A secure post-hook: the client's own method has returned and this adds no script to any frame.
-	hooksecurefunc(WorldMapFrame, "SetQuestLogPanelShown", QuestLogPanelShown)
+	-- The side panel changes the map width before changing visibility. Maximize and minimize also
+	-- signal before layout finishes. Refresh once on the next frame using the final size and visibility.
+	WorldMapFrame:HookScript("OnSizeChanged", QueueQuestLogPanelRefresh)
+	EventRegistry:RegisterCallback("WorldMapMaximized", QueueQuestLogPanelRefresh, api)
+	EventRegistry:RegisterCallback("WorldMapMinimized", QueueQuestLogPanelRefresh, api)
 end
 
 ---@param key string

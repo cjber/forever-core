@@ -93,6 +93,9 @@ pool:ReleaseAll()
 check(#pool:Active() == 0, "released pool is empty")
 check(pool:Acquire(0.5, 0.25) == pin, "released pins are reused")
 pool:ReleaseAll()
+local untyped = canvas.Pool(Kit.map, CreateFromMixins(canvas.PinMixin, {}), { marker = "route" })
+check(untyped:Acquire(0.5, 0.5).level == 30, "a pin without a level type draws above the explored-area art")
+untyped:ReleaseAll()
 mixin.ShouldMouseButtonBePassthrough = function()
 	return false
 end
