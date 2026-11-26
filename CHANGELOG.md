@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.17.4] - 2026-11-26
+
+### Changed
+
+- **The store-page check accepts a real-capture caption.** A page whose images are captures from the live client can say `These images are captures from the game client.` instead of the generated-previews line. (#1103)
+
+### Fixed
+
+- **The Forever tracker follows EllesmereUI's custom quest tracker again.** With EllesmereUI's Custom Quest Tracker on, the column sits under the filtered list you actually read and moves with it as quests come in, are finished or are filtered out, instead of under the game's hidden tracker and its unfiltered quests. It keeps the place that list had while EllesmereUI hides it in arenas, in raids or on an empty log, and goes back to the game's tracker when the custom tracker is off. `UI/TrackerEllesmere.lua` was removed in 1.15.0, which also took the placement half of this with it. (#332)
+
 ## [1.17.3] - 2026-11-25
 
 ### Fixed
