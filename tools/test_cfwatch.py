@@ -224,6 +224,30 @@ class LinkedTest(unittest.TestCase):
         self.assertIn("thread #2,", output)
         self.assertIn("1 unanswered, 1 waiting on an issue, 0 settled", output)
 
+    def test_links_on_replies_merge_under_the_original_thread_id_after_an_edit(self):
+        reply = owner_reply(20, 11)
+        reply["replies"] = [comment(21, "still broken", parent=20)]
+        # The feed can give an edited top post a later datePosted than its replies.
+        top = comment(11, "edited report", replies=[reply], posted=2_000)
+        links = {"21": [self.link(7), self.link(8)], "20": [self.link(8)]}
+        output = run(["--unanswered"], fake_fetch([top]), links=links)
+        self.assertIn("=== [test-mod] thread #11, 3 posts", output)
+        self.assertIn("waiting on cjber/skillup-forever#7 (open)", output)
+        self.assertEqual(output.count("waiting on cjber/skillup-forever#8 (open)"), 1)
+        self.assertIn("0 unanswered, 1 waiting on an issue, 0 settled", output)
+
+    def test_due_waits_for_issues_linked_on_different_posts_of_one_thread(self):
+        rows = [comment(11, "needs a fix", replies=[comment(21, "still broken", parent=11)])]
+        links = {"11": [self.link(7)], "21": [self.link(7), self.link(8)]}
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z") if number == 7 else None
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            output = run(["--due"], fake_fetch(rows), links=links)
+        self.assertNotIn("thread #11:", output)
+        self.assertIn("0 due, 0 answered, 1 still waiting", output)
+
     def test_due_lists_a_released_link_and_keeps_unreleased_ones_waiting(self):
         links = {
             "11": [self.link(number=7)],
