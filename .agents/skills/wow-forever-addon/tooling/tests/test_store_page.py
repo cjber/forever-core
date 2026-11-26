@@ -8,11 +8,11 @@ REPO = "demo-forever"
 RAW = f"https://raw.githubusercontent.com/cjber/{REPO}/main"
 
 
-def page(shots=3, features=3, extra_heading=False):
+def page(shots=3, features=3, extra_heading=False, caption="These images are generated previews of the Demo UI."):
     parts = ["Demo Forever shows things in the stock UI.", store_page.SPONSOR, store_page.buttons(REPO)]
     for n in range(shots):
         parts += [f"![Shot {n}]({RAW}/docs/screenshots/s{n}.png)", f"Caption {n}."]
-    parts += ["These images are generated previews of the Demo UI.", "## Features"]
+    parts += [caption, "## Features"]
     parts.append("\n".join(f"- **Thing {n}.** It does thing {n}." for n in range(features)))
     if extra_heading:
         parts += ["## Prices", "How prices work."]
@@ -54,6 +54,11 @@ class StorePageTest(unittest.TestCase):
     def test_template_page_passes(self):
         self.assertEqual(self.check(page()), [])
         self.assertEqual(self.check(page(shots=6, features=8, extra_heading=True)), [])
+
+    def test_capture_caption_passes_and_others_fail(self):
+        self.assertEqual(self.check(page(caption="These images are captures from the game client.")), [])
+        for caption in ("These images are screenshots.", "These images are captures from the game client"):
+            self.assertTrue(any("images line" in p for p in self.check(page(caption=caption))))
 
     def test_image_count_bounds(self):
         self.assertTrue(any("2 screenshots" in p for p in self.check(page(shots=2))))

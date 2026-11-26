@@ -28,6 +28,10 @@ SPONSOR = (
     f" For help and each day's release notes, [join me on Discord]({DISCORD})."
 )
 AI_LINE = "Built with AI assistance."
+# The line under the gallery says what the images are: generated previews, or real client captures.
+CAPTION_LINE = re.compile(
+    r"These images are generated previews of the .+ UI\.|These images are captures from the game client\."
+)
 FAMILY = re.compile(r"<!-- forever-family:start -->.*?<!-- forever-family:end -->", re.DOTALL)
 FAMILY_TOKEN = "<!-- forever-family -->"
 CREDITS = re.compile(rf"{re.escape(CREDITS_START)}.*?{re.escape(CREDITS_END)}", re.DOTALL)
@@ -136,8 +140,7 @@ def check(root: Path) -> list[str]:
     sponsor = where(lambda b: b == SPONSOR, "the sponsor sentence")
     features = where(lambda b: b == "## Features", "`## Features`")
     usage = where(lambda b: b == "## Usage", "`## Usage`")
-    previews_line = re.compile(r"These images are generated previews of the .+ UI\.")
-    previews = where(previews_line.fullmatch, "the previews line")
+    previews = where(CAPTION_LINE.fullmatch, "the images line (generated previews, or captures from the game client)")
     family = where(lambda b: b == FAMILY_TOKEN, "the forever-family block")
 
     image = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")

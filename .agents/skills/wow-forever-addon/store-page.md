@@ -68,7 +68,7 @@ Built with AI assistance.
 - **Images.** Three to six, the first above `## Features`, every one under `docs/screenshots/` at a `main` raw URL,
   every file present in the repo, each followed by its caption (WFA-25). The lead image shows the main feature
   in the stock UI (WFA-23).
-- **Fixed lines.** The sponsor sentence, the "generated previews" line, the report line, the translation line (required when the addon ships a locale other than enUS), the
+- **Fixed lines.** The sponsor sentence, the images line (the "generated previews" line, or the "captures from the game client" line when every image is a real client capture; never the previews line next to real captures), the report line, the translation line (required when the addon ships a locale other than enUS), the
   source line, the AI line and the button row (Discord, GitHub Sponsors, Ko-fi, in that order, directly under the
   sponsor sentence, each image present in the repo), each exactly as above with only the placeholders filled.
 - **Credits.** The sentence between `<!-- forever-credits:start -->` and `<!-- forever-credits:end -->` is generated
