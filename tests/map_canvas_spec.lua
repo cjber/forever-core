@@ -146,4 +146,25 @@ check(math.abs(pin.point[4] - 200 / 0.6) < 1e-9, "resize repositions pins")
 CheckNoVisibilityScripts("the watch's frames")
 Kit.Close()
 check(changes[#changes] == "hide", "hide notification")
+-- Grouping: the canvas is 800 by 600 at scale 2, so a 10 unit pin reaches 10 * 0.8 / 2 = 4 canvas units, 0.005
+-- across and 0.0067 down.
+Kit.visible = true
+local points = {
+	{ x = 0.5, y = 0.5 },
+	{ x = 0.9, y = 0.9 },
+	{ x = 0.508, y = 0.5 },
+	{ x = 0.504, y = 0.5 },
+	{ x = 0.9, y = 0.906 },
+	{ x = 0.9, y = 0.92 },
+}
+local groups = canvas.OverlapGroups(Kit.map, points, 10)
+check(#groups == 3, "overlapping pins share a group")
+check(
+	#groups[1] == 3 and groups[1][1] == points[1] and groups[1][2] == points[3] and groups[1][3] == points[4],
+	"overlap chains, and a group keeps the given order"
+)
+check(#groups[2] == 2 and groups[2][2] == points[5], "the vertical reach uses the canvas height")
+check(groups[3][1] == points[6], "groups are ordered by their first point")
+Kit.scale = 8
+check(#canvas.OverlapGroups(Kit.map, points, 10) == 6, "zooming in splits the groups")
 print(("map_canvas_spec: %d checks passed"):format(checks))
