@@ -37,9 +37,11 @@ Every runtime file and tool in ForeverCore, with what it owns. `AGENTS.md` holds
 - `UI/TrackerHost.lua`: the private tracker column, one frame on `UIParent` the player drags and locks, its optional
   tooltip-art backdrop and opacity, its layout and combat handling, the one-time move of an old attached or beside
   placement to the pin, and the one-time migration from a consumer's old tracker settings. Its sections' text keeps core's own fallback fonts (12 px lines, 14 px headers, with a shadow) while a tracker replacement shrinks the shared ones. The column is anchored
-  only to `UIParent`, at coordinates read from the quest tracker on screen (`ObjectiveTrackerFrame`, or Questie's
-  `Questie_BaseFrame` when shown): left of its top left corner, or under its last line. Edit Mode, drag-end, quest
-  and scale events read it again, out of combat only; a header drag saves a free position and releases the pin.
+  only to `UIParent`, at coordinates read from the quest tracker on screen (`ObjectiveTrackerFrame`, or the list
+  another addon draws in its place: Questie's `Questie_BaseFrame` while shown, or EllesmereUI's
+  `EUI_CustomQuestTracker` while its Custom Quest Tracker is on, read first and remembered while EllesmereUI's own
+  rules hide it): left of its top left corner, or under its last line. Edit Mode, drag-end, quest and scale events
+  read it again, out of combat only; a header drag saves a free position and releases the pin.
   Core only reads those trackers' edges, scale and shown or collapsed state: no frame of ours is anchored or
   parented to them, and nothing writes to them (no alpha, state driver, hook, Show, Hide or SetPoint). `tests/tracker_host_harness.lua`'s native tracker fails any read or write, and `tests/tracker_host_spec.lua`
   scans the TOC's files for one. There is no Forever quest list: quests show in the game's tracker or a quest

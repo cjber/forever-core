@@ -288,6 +288,11 @@ function harness.new(options)
 	local function ReadOnly(name, reads)
 		return setmetatable({}, {
 			__index = function(_, key)
+				-- A hook is the one method that reads nothing and still leaves something on the frame for the session, so
+				-- it is refused by name rather than left to the reads list.
+				if key == "HookScript" or key == "SetScript" then
+					error("the host hooked the " .. name .. ": " .. tostring(key))
+				end
 				local value = reads[key]
 				if value == nil then
 					error("the host read the native " .. name .. ": " .. tostring(key))

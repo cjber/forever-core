@@ -245,6 +245,91 @@ grown.check(Under(grown), "a locked column goes under a list it fits under")
 local heldAt = grown.nativeRect.line
 grown.moveLine(650)
 grown.check(Under(grown, heldAt), "and holds there while the list moves")
+
+-- Lock is generic: the column only ever moves DOWN with the game's list, never up, so a list shrinking above it does
+-- not drag it around. The one-way rule is pinned here for the game's tracker and for Questie.
+local function HoldsPlace(ctx, name, lines)
+	local placed = ctx.host.point[5]
+	-- Each of these raises the list's last line above where the column already sits.
+	for _, line in ipairs(lines) do
+		ctx.moveLine(line)
+		ctx.drain()
+		ctx.check(
+			ctx.host.point[5] <= placed,
+			name .. ": a locked column does not move up with a shorter list (line " .. line .. ")"
+		)
+	end
+	ctx.check(ctx.host.point[5] == placed, name .. ": and it ends where it started")
+end
+local nativeLocked = harness.new({ hostSettings = { attached = true, placement = "under", locked = true } })
+nativeLocked.first.contentHeight = 40
+nativeLocked.host:MarkDirty()
+nativeLocked.drain()
+nativeLocked.check(Under(nativeLocked), "a locked column starts under the game's tracker")
+HoldsPlace(nativeLocked, "native tracker", { 800, 820, 840 })
+
+local questieLocked =
+	harness.new({ hostSettings = { attached = true, placement = "under", locked = true }, deferReady = true })
+local questieList = questieLocked.env.CreateFrame("Frame", nil, questieLocked.parent)
+questieList.left, questieList.top, questieList.height = 900, 860, 60
+questieLocked.showTracker(false)
+questieLocked.env.Questie_BaseFrame = questieList
+questieLocked.first.contentHeight = 40
+questieLocked.ready()
+questieLocked.drain()
+questieLocked.check(
+	questieLocked.host.point[1] == "TOPLEFT"
+		and questieLocked.host.point[4] == questieList.left
+		and questieLocked.host.point[5] == questieList.top - questieList.height,
+	"a locked column starts under Questie's list"
+)
+HoldsPlace(questieLocked, "Questie", { 800, 820, 840 })
+
+-- EllesmereUI is the one exception, because its list resizes in place on its own timer: folding a quest or a zone must
+-- raise a locked column, or it hangs below where the list ends and the player has to unlock and re-place it.
+local euiLocked =
+	harness.new({ hostSettings = { attached = true, placement = "under", locked = true }, deferReady = true })
+local euiList = euiLocked.env.CreateFrame("Frame", "EUI_CustomQuestTracker", euiLocked.parent)
+euiList.left, euiList.top, euiList.height = 900, 860, 260
+euiLocked.showTracker(false)
+euiLocked.env.EUI_CustomQuestTracker = euiList
+euiLocked.first.contentHeight = 40
+euiLocked.ready()
+euiLocked.drain()
+euiLocked.check(
+	euiLocked.host.point[5] == euiList.top - euiList.height,
+	"a locked column starts under EllesmereUI's list"
+)
+local function Settle(ctx)
+	-- The list resizes after QUEST_LOG_UPDATE has returned, so the column samples it from its own frame.
+	for _ = 1, 20 do
+		ctx.stepUpdates()
+		ctx.drain()
+	end
+end
+local placedAt = euiLocked.host.point[5]
+euiList.height = 160
+Settle(euiLocked)
+euiLocked.check(
+	euiLocked.host.point[5] > placedAt and euiLocked.host.point[5] == euiList.top - euiList.height,
+	"a locked column rises when EllesmereUI folds its list"
+)
+euiList.height = 240
+Settle(euiLocked)
+-- The way back down is the whole point: a fold that rises but cannot fall leaves the column beside the list with no
+-- way home, which is what a single fold and unfold used to do.
+euiLocked.check(
+	euiLocked.host.point[1] == "TOPLEFT"
+		and euiLocked.host.point[3] == "BOTTOMLEFT"
+		and euiLocked.host.point[5] == euiList.top - euiList.height,
+	"and goes back under it when the list unfolds"
+)
+euiList.height = 120
+Settle(euiLocked)
+euiLocked.check(
+	euiLocked.host.point[1] == "TOPLEFT" and euiLocked.host.point[5] == euiList.top - euiList.height,
+	"a second fold still rises under the list, not beside it"
+)
 -- #851's in-game check: a locked column placed under the list as it loaded after a reload sat over the list once the
 -- list grew in under it. A list that leaves the column no room under it puts it left, Lock on or off.
 local longList = harness.new({ hostSettings = { attached = true, placement = "under", locked = true } })

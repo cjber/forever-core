@@ -288,11 +288,17 @@ relog.recheck("QUEST_LOG_UPDATE")
 relog.check(Under(relog), "and goes under once the tracker's real edges arrive, without a toggle")
 relog.nativeRect.left, relog.nativeRect.top, relog.nativeRect.line = 1200 - 260, 880, 760
 
--- No runtime file writes to the game's quest tracker: every mention of ObjectiveTrackerFrame in a file the TOC loads is
--- a presence check or one of the reads that place the column under it (#850, #883), never another
--- field, a method call or an assignment. Its NineSlice and Header are read the same way: only their bottom and scale.
+-- No runtime file writes to the game's quest tracker, or to a replacement list the column follows: every mention of
+-- either frame in a file the TOC loads is a presence check or one of the reads that place the column by it (#850,
+-- #883, #332), never another field, a method call or an assignment. NineSlice and Header are read the same way: only
+-- their bottom and scale. EllesmereUI's list is named here too, so the first write to it fails the build rather than
+-- passing quietly.
 local reads =
 	{ ".isDragging", ":GetTop()", ":GetLeft()", ":GetRight()", ":GetEffectiveScale()", ":IsShown()", ":IsCollapsed()" }
+local TRACKER_FRAMES = { "ObjectiveTrackerFrame", "EUI_CustomQuestTracker" }
+-- A hook is a write in everything but name: it stays on the frame for the session and cannot be taken off, so the scan
+-- rejects it even though it reads nothing.
+local HOOKS = { ":HookScript(", ":SetScript(" }
 local function Starts(text, list)
 	for _, read in ipairs(list) do
 		if text:sub(1, #read) == read then
@@ -326,29 +332,56 @@ for line in io.lines("ForeverCore.toc") do
 	local path = line:match("^([%w_\\/]+%.lua)%s*$")
 	if path then
 		path = path:gsub("\\", "/")
-		local number = 0
+		-- The file's lines, so a mention can be judged with the lines that follow it.
+		local sources = {}
 		for source in io.lines(path) do
-			number = number + 1
+			sources[#sources + 1] = source
+		end
+		-- The frame named on one line is often called through a local on the next: `local f = rawget(_G, "...")`
+		-- then `f:HookScript(...)`. Joining the rest of this line with the next two catches that without pretending a
+		-- text scan can follow a name through the whole file; the harness's tracker frame refuses the two methods at
+		-- run time, which is what actually stops an alias a scan cannot read.
+		local WINDOW = 2
+		for number, source in ipairs(sources) do
 			local code = source:gsub("%-%-.*$", "")
-			local init = 1
-			while true do
-				local _, finish = code:find("ObjectiveTrackerFrame", init, true)
-				if not finish then
-					break
+			for _, frame in ipairs(TRACKER_FRAMES) do
+				local init = 1
+				while true do
+					local _, finish = code:find(frame, init, true)
+					if not finish then
+						break
+					end
+					local after = code:sub(finish + 1)
+					local ahead = { after }
+					for offset = 1, WINDOW do
+						local following = sources[number + offset]
+						if following then
+							ahead[#ahead + 1] = following:gsub("%-%-.*$", "")
+						end
+					end
+					local reached = table.concat(ahead, "\n")
+					local hooked = false
+					for _, hook in ipairs(HOOKS) do
+						if reached:find(hook, 1, true) then
+							hooked = true
+						end
+					end
+					if
+						hooked
+						or (
+							not Read(after)
+							and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
+						)
+					then
+						writes[#writes + 1] = path .. ":" .. number .. " (" .. frame .. ")"
+					end
+					init = finish + 1
 				end
-				local after = code:sub(finish + 1)
-				if
-					not Read(after)
-					and (after:match("^%s*[%.:%[]") or (after:match("^%s*=") and not after:match("^%s*==")))
-				then
-					writes[#writes + 1] = path .. ":" .. number
-				end
-				init = finish + 1
 			end
 		end
 	end
 end
-check(#writes == 0, "nothing in core writes, hooks or calls ObjectiveTrackerFrame: " .. table.concat(writes, ", "))
+check(#writes == 0, "nothing in core writes, hooks or calls a tracker frame: " .. table.concat(writes, ", "))
 
 -- A repeated layout must not be a probe: Blizzard's EndLayout hides a section that fits nothing and FreeUnusedBlocks
 -- releases every block, so a second layout would replay each header's add animation and rebuild every block. Issue
