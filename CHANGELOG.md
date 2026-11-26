@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.6] - 2026-11-26
+
+### Fixed
+
+- **Quest log tabs follow the world map's size and side panel without hooking its method.** Selected addon panels still pause when the side panel closes and resume when it opens. (#1112)
+- **Map pins show over explored ground.** A pin that named no frame level was drawn under the world map's explored-area art, so it appeared only over unexplored areas. (#1122)
+
 ## [1.17.5] - 2026-11-26
 
 ### Fixed
