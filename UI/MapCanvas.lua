@@ -39,6 +39,8 @@ local MapCanvas = {}
 
 -- How near the gamepad's map cursor comes to a pin to point at it, in UI units (the map's MIN_PIN_DISTANCE_SQUARED).
 local CURSOR_REACH = 12
+-- Two pins closer than this share of their size overlap.
+local OVERLAP = 0.8
 
 ---@class ForeverCanvasView
 ---@field map ForeverCanvasMap
@@ -547,6 +549,48 @@ function MapCanvas.Pool(map, mixin, options)
 	return pool
 end
 
+--[[ Grouping ]]
+
+-- Groups the points whose pins, `size` screen units across, would overlap on `map` at its current zoom, so each group
+-- can share one pin. Overlap chains: a point joins a group by overlapping any of its members. Each group lists its
+-- points in their given order, and the groups are ordered by their first point. Ask for a map that is showing.
+---@param map ForeverCanvasMap
+---@param points { x: number, y: number }[] map fractions
+---@param size number
+---@return table[][]
+function MapCanvas.OverlapGroups(map, points, size)
+	local canvas = map:GetCanvas()
+	local reach = size * OVERLAP / map:GetCanvasScale()
+	local reachX, reachY = reach / canvas:GetWidth(), reach / canvas:GetHeight()
+	local root = {}
+	local function Find(index)
+		while root[index] ~= index do
+			index = root[index]
+		end
+		return index
+	end
+	for index in ipairs(points) do
+		root[index] = index
+	end
+	for i = 1, #points do
+		for j = i + 1, #points do
+			if math.abs(points[i].x - points[j].x) < reachX and math.abs(points[i].y - points[j].y) < reachY then
+				root[Find(j)] = Find(i)
+			end
+		end
+	end
+	local byRoot, groups = {}, {}
+	for index, point in ipairs(points) do
+		local top = Find(index)
+		if not byRoot[top] then
+			byRoot[top] = {}
+			groups[#groups + 1] = byRoot[top]
+		end
+		table.insert(byRoot[top], point)
+	end
+	return groups
+end
+
 --[[ Clicks ]]
 
 ---@param pin ForeverCanvasPin
@@ -616,6 +660,7 @@ end
 ---@field SetShown fun(map: ForeverCanvasMap, shown: boolean)
 ---@field FrameUnder fun(frameType: string, parent: Frame, template?: string): Frame
 ---@field Gamepad fun(): boolean
+---@field OverlapGroups fun(map: ForeverCanvasMap, points: { x: number, y: number }[], size: number): table[][]
 
 ---@param owner string
 ---@return ForeverCanvasAPI
@@ -640,5 +685,6 @@ function ns.MapCanvasFor(owner)
 		end,
 		FrameUnder = MapCanvas.FrameUnder,
 		Gamepad = MapCanvas.Gamepad,
+		OverlapGroups = MapCanvas.OverlapGroups,
 	}
 end
