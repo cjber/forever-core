@@ -475,7 +475,7 @@ class ReleasedInTest(unittest.TestCase):
             if "/issues/" in url:
                 return issue
             if "/pulls/" in url:
-                return {"merge_commit_sha": sha}
+                return {"merge_commit_sha": sha if isinstance(sha, str) else sha[int(url.rsplit("/", 1)[1])]}
             if "/releases" in url:
                 return [
                     {"tag_name": tag, "published_at": f"2026-11-{index + 1:02d}", "draft": False}
@@ -616,7 +616,12 @@ class ReleasedInTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(
             cache["skillup-forever#9"],
-            {"tag": "v1.5.1", "published": "2026-11-02", "closed_at": "2026-11-11T02:16:31Z"},
+            {
+                "tag": "v1.5.1",
+                "published": "2026-11-02",
+                "closed_at": "2026-11-11T02:16:31Z",
+                "version": cfwatch.RELEASE_CACHE_VERSION,
+            },
         )
         self.assertEqual(len(api_calls), 4)
         self.assertEqual(
@@ -679,6 +684,30 @@ class ReleasedInTest(unittest.TestCase):
             found = self.released("skillup-forever", 9)
 
         self.assertEqual(found, cfwatch.Release("v1.6.0", "2026-11-02"))
+
+    def test_only_prs_merged_after_the_latest_reopen_count(self):
+        closed_at = "2026-12-01T00:00:00Z"
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": closed_at}
+        events = [
+            {"event": "reopened", "created_at": "2026-11-05T00:00:00Z"},
+            *self.merged(number=1),
+            {"event": "closed", "created_at": "2026-11-12T00:00:00Z"},
+            {"event": "reopened", "created_at": "2026-11-20T00:00:00Z"},
+            *self.merged("2026-11-25T00:00:00Z", number=2),
+            {"event": "closed", "created_at": closed_at},
+        ]
+        for shipped in (False, True):
+            with self.subTest(shipped=shipped):
+                cache = {"skillup-forever#9": {"tag": "v1.5.0", "published": "2026-11-01", "closed_at": closed_at}}
+                with self.release(
+                    issue,
+                    events,
+                    contained_by_sha={"abc": ("v1.5.0",), "def": ("v1.5.1",) if shipped else ()},
+                    sha={1: "abc", 2: "def"},
+                ):
+                    found = self.released("skillup-forever", 9, cache=cache)
+                self.assertEqual(found, cfwatch.Release("v1.5.1", "2026-11-02") if shipped else None)
+                self.assertEqual("skillup-forever#9" in cache, shipped)
 
     def test_a_failed_tag_fetch_fails_closed_without_using_stale_tags(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}

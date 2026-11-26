@@ -45,6 +45,7 @@ PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.MULTILINE)
 LINK = re.compile(r"^CurseForge thread (\d+) \(([a-z0-9-]+)\)\s*$", re.MULTILINE)
 OWNER = "cjber"
 RELEASED = "cfwatch-released.json"
+RELEASE_CACHE_VERSION = 2
 
 
 def state_path(name="cfwatch-seen.json"):
@@ -388,6 +389,7 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     remembered = (cache or {}).get(key)
     if (
         isinstance(remembered, dict)
+        and remembered.get("version") == RELEASE_CACHE_VERSION
         and remembered.get("tag")
         and closed_at
         and remembered.get("closed_at") == closed_at
@@ -396,16 +398,23 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     if cache is not None:
         cache.pop(key, None)
     events = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}/timeline", "--paginate")
-    # Only a pull request in the issue's own repository can carry the fix into that repository's tags; a cross-repo
-    # reference's number means a different pull request here. Every merged pull request that closed the issue is a
-    # candidate, not just the last one: an issue fixed by an early PR and closed again by a later one names the release
-    # that first carried any of them, which is the release that first shipped the fix.
+    reopened_at = max(
+        (event["created_at"] for event in events if event.get("event") == "reopened" and event.get("created_at")),
+        default="",
+    )
+    # Only merges during the current open period can supply the fix, and only in this repository: a cross-repo
+    # reference's number means a different pull request here.
     closing = []
     for event in events:
         source = (event.get("source") or {}).get("issue") or {}
         merged_at = (source.get("pull_request") or {}).get("merged_at")
         same_repo = (source.get("repository") or {}).get("full_name") == f"{OWNER}/{repo}"
-        if event.get("event") == "cross-referenced" and same_repo and merged_at and merged_at <= closed_at:
+        if (
+            event.get("event") == "cross-referenced"
+            and same_repo
+            and merged_at
+            and reopened_at < merged_at <= closed_at
+        ):
             closing.append((merged_at, source.get("number")))
     shas = []
     close_sha = close_commit(events, closed_at)
@@ -452,7 +461,12 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     if found is None:
         return None
     if cache is not None:
-        cache[key] = {"tag": found.tag, "published": found.published, "closed_at": closed_at}
+        cache[key] = {
+            "tag": found.tag,
+            "published": found.published,
+            "closed_at": closed_at,
+            "version": RELEASE_CACHE_VERSION,
+        }
     return found
 
 
