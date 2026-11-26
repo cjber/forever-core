@@ -28,4 +28,72 @@ for _, method in ipairs({ "SetNumber", "SetText" }) do
 	assert(changed == 1 and set == 1, "unchanged text does not notify")
 	sim:expectNoErrors()
 end
+-- Live client probe (2026-11-22, ForeverCore 1.17.0), with all sets in one timer callback:
+-- two-diff       ("a","b")      sync=0 set=2 changed=1 ["b"@f0/false]
+-- three-diff     ("a","b","c")  sync=0 set=3 changed=1 ["c"@f0/false]
+-- set-and-back   ("a","")       sync=0 set=2 changed=1 [""@f0/false]
+-- same-twice     ("a","a")      sync=0 set=1 changed=1 ["a"@f0/false]
+-- diff-then-same ("a","b","b")  sync=0 set=2 changed=1 ["b"@f0/false]
+local sim = Sim.new({ addon = false })
+local cases = {
+	{ name = "two-diff", texts = { "a", "b" }, expectedSets = 2 },
+	{ name = "three-diff", texts = { "a", "b", "c" }, expectedSets = 3 },
+	{ name = "set-and-back", texts = { "a", "" }, expectedSets = 2 },
+	{ name = "same-twice", texts = { "a", "a" }, expectedSets = 1 },
+	{ name = "diff-then-same", texts = { "a", "b", "b" }, expectedSets = 2 },
+}
+local function checkNotification(notifications, index, text, label)
+	local entry = notifications[index]
+	assert(entry and entry.text == text and entry.userInput == false, label .. " OnTextChanged payload")
+end
+
+for _, case in ipairs(cases) do
+	local edit = sim.G.CreateFrame("EditBox")
+	case.edit, case.sets, case.notifications = edit, 0, {}
+	edit:SetScript("OnTextSet", function()
+		case.sets = case.sets + 1
+	end)
+	edit:SetScript("OnTextChanged", function(self, input)
+		table.insert(case.notifications, { text = self:GetText(), userInput = input })
+	end)
+	edit:SetText(case.texts[1])
+end
+-- Interleave the sets so each box already has a change pending when another is changed.
+for i = #cases, 1, -1 do
+	local case = cases[i]
+	for j = 2, #case.texts do
+		case.edit:SetText(case.texts[j])
+	end
+	assert(case.sets == case.expectedSets, case.name .. " synchronous OnTextSet count: " .. case.sets)
+	assert(#case.notifications == 0, case.name .. " OnTextChanged is deferred")
+end
+sim:advance(0)
+for _, case in ipairs(cases) do
+	assert(#case.notifications == 1, case.name .. " OnTextChanged count: " .. #case.notifications)
+	checkNotification(case.notifications, 1, case.texts[#case.texts], case.name)
+end
+
+local reentrant = {}
+local edit = sim.G.CreateFrame("EditBox")
+edit:SetScript("OnTextChanged", function(self, input)
+	local value = self:GetText()
+	table.insert(reentrant, { text = value, userInput = input })
+	if value == "outer" then
+		self:SetText("nested")
+		self:SetText("next frame")
+	end
+end)
+edit:SetText("outer")
+sim:advance(0)
+assert(#reentrant == 1, "reentrant changes are deferred")
+checkNotification(reentrant, 1, "outer", "reentrant")
+sim:advance(0)
+assert(#reentrant == 2, "reentrant changes coalesce on the next frame")
+checkNotification(reentrant, 2, "next frame", "reentrant")
+sim:advance(0)
+assert(#reentrant == 2, "no further reentrant notifications")
+for _, case in ipairs(cases) do
+	assert(#case.notifications == 1, case.name .. " has no later notifications")
+end
+sim:expectNoErrors()
 print("editbox_text_spec: passed")

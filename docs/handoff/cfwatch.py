@@ -45,6 +45,7 @@ PROJECT_ID = re.compile(r"^## X-Curse-Project-ID:\s*(\d+)\s*$", re.MULTILINE)
 LINK = re.compile(r"^CurseForge thread (\d+) \(([a-z0-9-]+)\)\s*$", re.MULTILINE)
 OWNER = "cjber"
 RELEASED = "cfwatch-released.json"
+RELEASE_CACHE_VERSION = 2
 
 
 def state_path(name="cfwatch-seen.json"):
@@ -344,7 +345,7 @@ def search_issues():
 
 
 def linked_issues(search=None):
-    """Thread id -> the issues that name it, from the exact line `CurseForge thread <id> (<addon>)`."""
+    """Comment id -> the issues that name it, from the exact line `CurseForge thread <id> (<addon>)`."""
     search = search_issues if search is None else search
     linked = {}
     for issue in search():
@@ -360,6 +361,19 @@ def linked_issues(search=None):
                 }
             )
     return linked
+
+
+def issues_by_thread(links, comment_threads):
+    """Group issues by top comment id, keeping every source comment id for each issue."""
+    grouped = {}
+    for comment_id, issues in links.items():
+        thread, _ = comment_threads.get(comment_id, (comment_id, []))
+        thread_issues = grouped.setdefault(thread, {})
+        for issue in issues:
+            key = (issue["repo"], issue["number"])
+            _, sources = thread_issues.setdefault(key, (issue, set()))
+            sources.add(comment_id)
+    return grouped
 
 
 class Release(NamedTuple):
@@ -388,6 +402,7 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     remembered = (cache or {}).get(key)
     if (
         isinstance(remembered, dict)
+        and remembered.get("version") == RELEASE_CACHE_VERSION
         and remembered.get("tag")
         and closed_at
         and remembered.get("closed_at") == closed_at
@@ -396,16 +411,23 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     if cache is not None:
         cache.pop(key, None)
     events = gh_json("api", f"repos/{OWNER}/{repo}/issues/{number}/timeline", "--paginate")
-    # Only a pull request in the issue's own repository can carry the fix into that repository's tags; a cross-repo
-    # reference's number means a different pull request here. Every merged pull request that closed the issue is a
-    # candidate, not just the last one: an issue fixed by an early PR and closed again by a later one names the release
-    # that first carried any of them, which is the release that first shipped the fix.
+    reopened_at = max(
+        (event["created_at"] for event in events if event.get("event") == "reopened" and event.get("created_at")),
+        default="",
+    )
+    # Only merges during the current open period can supply the fix, and only in this repository: a cross-repo
+    # reference's number means a different pull request here.
     closing = []
     for event in events:
         source = (event.get("source") or {}).get("issue") or {}
         merged_at = (source.get("pull_request") or {}).get("merged_at")
         same_repo = (source.get("repository") or {}).get("full_name") == f"{OWNER}/{repo}"
-        if event.get("event") == "cross-referenced" and same_repo and merged_at and merged_at <= closed_at:
+        if (
+            event.get("event") == "cross-referenced"
+            and same_repo
+            and merged_at
+            and reopened_at < merged_at <= closed_at
+        ):
             closing.append((merged_at, source.get("number")))
     shas = []
     close_sha = close_commit(events, closed_at)
@@ -452,7 +474,12 @@ def released_in(repo, number, root=None, cache=None, releases=None) -> Release |
     if found is None:
         return None
     if cache is not None:
-        cache[key] = {"tag": found.tag, "published": found.published, "closed_at": closed_at}
+        cache[key] = {
+            "tag": found.tag,
+            "published": found.published,
+            "closed_at": closed_at,
+            "version": RELEASE_CACHE_VERSION,
+        }
     return found
 
 
@@ -546,75 +573,78 @@ def main(argv=None, fetch=None):
 
     if requests:
         found = {str(top["id"]): (slug, rows) for slug, items in raw.items() for top, rows in threads(items)}
-        for thread, reason in requests:
+        for thread, _ in requests:
             if thread not in found:
                 raise SystemExit(f"no thread #{thread} on the watched projects")
+        for thread, reason in requests:
             slug, rows = found[thread]
             settled[thread] = {"slug": slug, "latest": rows[-1]["id"], "reason": reason, "when": when(rows[-1])}
-            print(f"settled [{slug}] thread #{thread}: {reason}")
         save(settled_path, settled)
+        for thread, reason in requests:
+            print(f"settled [{found[thread][0]}] thread #{thread}: {reason}")
+
+    if show_unanswered or show_due:
+        comment_threads = {}
+        for items in raw.values():
+            comment_threads.update(thread_of(items))
+        links = issues_by_thread(linked_issues(), comment_threads)
 
     if show_unanswered:
-        links = linked_issues()
         waiting, quiet, on_issue = [], 0, 0
         for slug, items in raw.items():
-            for _, rows in unanswered(items):
-                entry = settled.get(str(rows[0]["id"]))
+            for top, rows in unanswered(items):
+                thread = str(top["id"])
+                entry = settled.get(thread)
                 if entry and entry.get("latest") == rows[-1]["id"]:
                     quiet += 1
                     continue
-                issues = links.get(str(rows[0]["id"]))
+                issues = links.get(thread)
                 if issues:
                     on_issue += 1
-                    print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
-                    for issue in issues:
+                    print(f"\n=== [{slug}] thread #{thread}, {len(rows)} posts, latest {when(rows[-1])}")
+                    for issue, _ in issues.values():
                         print(f"waiting on cjber/{issue['repo']}#{issue['number']} ({issue['state']})")
                     continue
-                waiting.append((rows[-1]["datePosted"], slug, rows))
-        for _, slug, rows in sorted(waiting, key=lambda row: row[0]):
-            print(f"\n=== [{slug}] thread #{rows[0]['id']}, {len(rows)} posts, latest {when(rows[-1])}")
+                waiting.append((rows[-1]["datePosted"], slug, thread, rows))
+        for _, slug, thread, rows in sorted(waiting, key=lambda row: row[0]):
+            print(f"\n=== [{slug}] thread #{thread}, {len(rows)} posts, latest {when(rows[-1])}")
             for comment in rows:
                 print(format_comment(slug, comment))
         print(f"\n{len(waiting)} unanswered, {on_issue} waiting on an issue, {quiet} settled")
     elif show_due:
-        links = linked_issues()
-        by_thread = {}
-        for items in raw.values():
-            by_thread.update(thread_of(items))
         root = suite_root() if links else None
         repositories = {}
         released = {}
         due = []
         answered = 0
-        answered_threads = set()
         for thread, issues in links.items():
-            versions = []
-            for issue in issues:
-                key = (issue["repo"], issue["number"])
+            for key in issues:
                 if key not in released:
                     released[key] = released_in(*key, root=root, cache=released_cache, releases=repositories)
-                versions.append(released[key])
-            if not all(versions):
+            if not all(released[key] for key in issues):
                 continue
             # An owner post after the release already answered the thread, so it is not due again, even when
             # the player has posted since (a thank-you belongs to --unanswered, not here).
-            entry = by_thread.get(thread)
-            shown, rows = entry if entry else (thread, [])
-            # The issue was filed from the owner's own reply in the thread, so the player's post was already answered.
-            linked = next((row for row in rows if str(row["id"]) == thread), None)
-            shipped = max((version.published for version in versions if version.published), default="")
-            if linked is not None and is_owner(linked) or answered_since(rows, shipped):
+            _, rows = comment_threads.get(thread, (thread, []))
+            shipped = max(released[key].published for key in issues)
+            if answered_since(rows, shipped):
                 answered += 1
-                answered_threads.add(shown)
                 continue
-            for issue, version in zip(issues, versions, strict=True):
-                due.append((shown, issue, version))
+            # Issues filed only from the owner's own replies have already been answered.
+            owner_posts = {str(row["id"]) for row in rows if is_owner(row)}
+            thread_due = [
+                (thread, issue, released[key]) for key, (issue, sources) in issues.items() if not sources <= owner_posts
+            ]
+            if thread_due:
+                due.extend(thread_due)
+            else:
+                answered += 1
         for thread, issue, version in sorted(due, key=lambda row: (row[1]["slug"], int(row[0]))):
             print(
                 f"[{issue['slug']}] thread #{thread}: cjber/{issue['repo']}#{issue['number']} released in {version.tag}"
             )
         due_threads = {thread for thread, _, _ in due}
-        waiting = len(links) - len(due_threads | answered_threads)
+        waiting = len(links) - len(due_threads) - answered
         print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting")
         save(released_path, released_cache)
     else:

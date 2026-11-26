@@ -224,6 +224,30 @@ class LinkedTest(unittest.TestCase):
         self.assertIn("thread #2,", output)
         self.assertIn("1 unanswered, 1 waiting on an issue, 0 settled", output)
 
+    def test_links_on_replies_merge_under_the_original_thread_id_after_an_edit(self):
+        reply = owner_reply(20, 11)
+        reply["replies"] = [comment(21, "still broken", parent=20)]
+        # The feed can give an edited top post a later datePosted than its replies.
+        top = comment(11, "edited report", replies=[reply], posted=2_000)
+        links = {"21": [self.link(7), self.link(8)], "20": [self.link(8)]}
+        output = run(["--unanswered"], fake_fetch([top]), links=links)
+        self.assertIn("=== [test-mod] thread #11, 3 posts", output)
+        self.assertIn("waiting on cjber/skillup-forever#7 (open)", output)
+        self.assertEqual(output.count("waiting on cjber/skillup-forever#8 (open)"), 1)
+        self.assertIn("0 unanswered, 1 waiting on an issue, 0 settled", output)
+
+    def test_due_waits_for_issues_linked_on_different_posts_of_one_thread(self):
+        rows = [comment(11, "needs a fix", replies=[comment(21, "still broken", parent=11)])]
+        links = {"11": [self.link(7)], "21": [self.link(7), self.link(8)]}
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2026-11-11T00:00:00Z") if number == 7 else None
+
+        with unittest.mock.patch.object(cfwatch, "released_in", released):
+            output = run(["--due"], fake_fetch(rows), links=links)
+        self.assertNotIn("thread #11:", output)
+        self.assertIn("0 due, 0 answered, 1 still waiting", output)
+
     def test_due_lists_a_released_link_and_keeps_unreleased_ones_waiting(self):
         links = {
             "11": [self.link(number=7)],
@@ -475,7 +499,7 @@ class ReleasedInTest(unittest.TestCase):
             if "/issues/" in url:
                 return issue
             if "/pulls/" in url:
-                return {"merge_commit_sha": sha}
+                return {"merge_commit_sha": sha if isinstance(sha, str) else sha[int(url.rsplit("/", 1)[1])]}
             if "/releases" in url:
                 return [
                     {"tag_name": tag, "published_at": f"2026-11-{index + 1:02d}", "draft": False}
@@ -616,7 +640,12 @@ class ReleasedInTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(
             cache["skillup-forever#9"],
-            {"tag": "v1.5.1", "published": "2026-11-02", "closed_at": "2026-11-11T02:16:31Z"},
+            {
+                "tag": "v1.5.1",
+                "published": "2026-11-02",
+                "closed_at": "2026-11-11T02:16:31Z",
+                "version": cfwatch.RELEASE_CACHE_VERSION,
+            },
         )
         self.assertEqual(len(api_calls), 4)
         self.assertEqual(
@@ -680,6 +709,30 @@ class ReleasedInTest(unittest.TestCase):
 
         self.assertEqual(found, cfwatch.Release("v1.6.0", "2026-11-02"))
 
+    def test_only_prs_merged_after_the_latest_reopen_count(self):
+        closed_at = "2026-12-01T00:00:00Z"
+        issue = {"state": "closed", "state_reason": "completed", "closed_at": closed_at}
+        events = [
+            {"event": "reopened", "created_at": "2026-11-05T00:00:00Z"},
+            *self.merged(number=1),
+            {"event": "closed", "created_at": "2026-11-12T00:00:00Z"},
+            {"event": "reopened", "created_at": "2026-11-20T00:00:00Z"},
+            *self.merged("2026-11-25T00:00:00Z", number=2),
+            {"event": "closed", "created_at": closed_at},
+        ]
+        for shipped in (False, True):
+            with self.subTest(shipped=shipped):
+                cache = {"skillup-forever#9": {"tag": "v1.5.0", "published": "2026-11-01", "closed_at": closed_at}}
+                with self.release(
+                    issue,
+                    events,
+                    contained_by_sha={"abc": ("v1.5.0",), "def": ("v1.5.1",) if shipped else ()},
+                    sha={1: "abc", 2: "def"},
+                ):
+                    found = self.released("skillup-forever", 9, cache=cache)
+                self.assertEqual(found, cfwatch.Release("v1.5.1", "2026-11-02") if shipped else None)
+                self.assertEqual("skillup-forever#9" in cache, shipped)
+
     def test_a_failed_tag_fetch_fails_closed_without_using_stale_tags(self):
         issue = {"state": "closed", "state_reason": "completed", "closed_at": "2026-11-11T02:16:31Z"}
         repositories, api_calls, git_calls = {}, [], []
@@ -729,6 +782,31 @@ class SettleTest(unittest.TestCase):
             output = run(["--unanswered"], fake_fetch(self.rows(follow_up=True)), state=tmp)
             self.assertEqual(sorted(self.heads(output)), [1, 2])
             self.assertIn("2 unanswered, 0 waiting on an issue, 0 settled", output)
+
+    def test_an_edited_top_comment_keeps_its_thread_id(self):
+        fetch = fake_fetch([comment(1, "edited question", posted=1020, replies=[owner_reply(10, 1)])])
+        with tempfile.TemporaryDirectory() as tmp:
+            output = run(["--unanswered"], fetch, state=tmp)
+            self.assertEqual(self.heads(output), [1])
+            links = {"1": [{"repo": "skillup-forever", "number": 7, "state": "open"}]}
+            output = run(["--unanswered"], fetch, state=tmp, links=links)
+            self.assertEqual(self.heads(output), [1])
+            self.assertIn("waiting on cjber/skillup-forever#7", output)
+            run(["--settle", "1", "already answered"], fetch, state=tmp)
+            output = run(["--unanswered"], fetch, state=tmp)
+            self.assertEqual(self.heads(output), [])
+            self.assertIn("0 unanswered, 0 waiting on an issue, 1 settled", output)
+
+    def test_a_batch_with_an_unknown_id_reports_and_saves_no_settlements(self):
+        output = io.StringIO()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            unittest.mock.patch.object(io, "StringIO", return_value=output),
+        ):
+            with self.assertRaisesRegex(SystemExit, "no thread #99"):
+                run(["--settle", "1", "thanks", "--settle", "99", "unknown"], fake_fetch(self.rows()), state=tmp)
+            self.assertFalse((Path(tmp) / "forever-core" / "cfwatch-settled.json").exists())
+        self.assertNotIn("settled [", output.getvalue())
 
     def test_an_unknown_thread_or_missing_reason_is_refused(self):
         with self.assertRaises(SystemExit):

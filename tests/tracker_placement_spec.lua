@@ -399,27 +399,71 @@ local function Bar(name, barLeft, barTop, barWidth, barHeight, shown, ctx)
 		end,
 	}
 end
+-- #1110: at 1920x804 the right gryphon reaches into the column past the main bar's right edge.
+local gryphon = harness.new({ hostSettings = { placement = "under", stayUnder = true } })
+gryphon.parent.width, gryphon.parent.height = 1920, 804
+gryphon.nativeRect.left, gryphon.nativeRect.top, gryphon.nativeRect.line = 1590, 780, 450
+gryphon.first.contentHeight = 750
+Bar("MainActionBar", 350, 50, 1200, 45, true, gryphon)
+local endCaps = gryphon.env.CreateFrame("Frame")
+local cap = gryphon.env.CreateFrame("Frame")
+cap:SetParent(endCaps)
+cap.left, cap.top, cap.width, cap.height = 1515, 90, 154, 95
+endCaps.RightEndCap = cap
+gryphon.env.MainActionBar.EndCaps = endCaps
+gryphon.host:MarkDirty()
+gryphon.drain()
+gryphon.check(
+	Under(gryphon) and gryphon.first.available == 450 - 90 - 10,
+	"the visible right gryphon caps the room below the tracker without shifting the column sideways"
+)
+
+endCaps:Hide()
+gryphon.host:MarkDirty()
+gryphon.drain()
+gryphon.check(
+	cap:IsShown() and gryphon.first.available == 450 - 10,
+	"a locally shown gryphon under hidden EndCaps takes no room"
+)
+
+endCaps:Show()
+cap.left, cap.top, cap.effectiveScale = 3030, 200, 0.5
+gryphon.host:MarkDirty()
+gryphon.drain()
+gryphon.check(
+	Under(gryphon) and gryphon.first.available == 450 - 100 - 10,
+	"the gryphon uses its own effective scale for both its overlap and its top edge"
+)
+
+gryphon.nativeRect.left = 1850
+gryphon.ns.TrackerHost.SetPlacement("left")
+gryphon.drain()
+gryphon.check(
+	Pinned(gryphon) and gryphon.first.available == 780 - 100 - 10,
+	"the gryphon also caps the room below a column beside the tracker"
+)
+
 local room = bars.first.available
 -- A bar across the bottom of the screen, under the column.
-Bar("MainMenuBar", 0, 100, 1200, 60)
+Bar("MainActionBar", 0, 100, 1200, 60)
 bars.host:MarkDirty()
 bars.drain()
 bars.check(bars.first.available == room - 100, "a bar under the column takes its room off the layout")
-Bar("MainMenuBar", 0, 100, 1200, 60, false)
+Bar("MainActionBar", 0, 100, 1200, 60, false)
 bars.host:MarkDirty()
 bars.drain()
 bars.check(bars.first.available == room, "a hidden bar takes none")
 -- The same bar parked at the far left, where the column is not: it is in nobody's way.
-Bar("MainMenuBar", 0, 100, 300, 60)
+Bar("MainActionBar", 0, 100, 300, 60)
 bars.host:MarkDirty()
 bars.drain()
 bars.check(bars.first.available == room, "a bar the column never reaches takes none")
 -- A bar that leaves less room than the column is tall moves it left, as a short list does.
-Bar("MainMenuBar", 0, 750, 1200, 60)
+Bar("MainActionBar", 0, 750, 1200, 60)
 bars.host:MarkDirty()
 bars.drain()
 bars.check(Pinned(bars), "a bar leaving no room under it moves the column left")
-bars.env.MainMenuBar = nil
+bars.env.MainActionBar = nil
 -- A bar standing at the right of the screen, beside the column, moves it left of that bar.
 Bar("MultiBarRight", 1150, 880, 40, 800)
 bars.host:MarkDirty()
@@ -441,7 +485,7 @@ floorBar.nativeRect.left = 24
 floorBar.first.contentHeight = 750
 floorBar.host:MarkDirty()
 floorBar.drain()
-Bar("MainMenuBar", 284, 500, 300, 50, true, floorBar)
+Bar("MainActionBar", 284, 500, 300, 50, true, floorBar)
 floorBar.moveLine(300)
 floorBar.check(
 	floorBar.host.point[1] == "TOPLEFT" and floorBar.host.point[4] == 284 and floorBar.host:GetBottom() >= 500,
@@ -473,7 +517,7 @@ intruding.check(
 local unusedSide = harness.new({ hostSettings = { placement = "under" } })
 unusedSide.nativeRect.left = 24
 unusedSide.first.contentHeight = 450
-Bar("MainMenuBar", 284, 500, 300, 50, true, unusedSide)
+Bar("MainActionBar", 284, 500, 300, 50, true, unusedSide)
 unusedSide.host:MarkDirty()
 unusedSide.drain()
 unusedSide.check(
@@ -502,5 +546,6 @@ print(
 			+ pinnedDrag.checks()
 			+ longList.checks()
 			+ bars.checks()
+			+ gryphon.checks()
 	)
 )
