@@ -315,32 +315,40 @@ def unanswered(items):
     return sorted(waiting, key=lambda thread: thread[1][-1]["datePosted"])
 
 
-def search_issues():
-    """Every Forever issue that may carry a CurseForge thread line, open and closed.
+def search_issues(*, sleep=time.sleep):
+    """Find open and closed issues that may carry a CurseForge thread line.
 
-    Asked of each watched repository on its own, because `gh search issues --owner` is one listing
-    across an owner and a token scoped to a single repository owner cannot make it: the lookup then
-    fails before a single thread is matched, and every thread reads as never filed.
+    Search each repository separately so the lookup works with a repository-scoped token.
     """
     issues = []
+    pages = []
     for slug in slug_list():
-        rows = gh_json(
-            "issue",
-            "list",
-            "-R",
-            f"{OWNER}/{slug}",
-            "--state",
-            "all",
-            "--search",
-            "CurseForge thread",
-            "--limit",
-            "1000",
-            "--json",
-            "number,state,body,closedAt",
+        if pages:
+            # Each REST page counts toward GitHub's 30 search requests per minute.
+            sleep(2.1 * len(pages))
+        pages = gh_json(
+            "api",
+            "search/issues",
+            "--method",
+            "GET",
+            "--paginate",
+            "--slurp",
+            "-f",
+            f"q=CurseForge thread repo:{OWNER}/{slug} is:issue",
+            "-F",
+            "per_page=100",
         )
-        for row in rows:
-            row["repository"] = {"name": slug}
-            issues.append(row)
+        for page in pages:
+            for row in page["items"]:
+                issues.append(
+                    {
+                        "number": row["number"],
+                        "state": row["state"].upper(),
+                        "body": row["body"],
+                        "closedAt": row["closed_at"],
+                        "repository": {"name": slug},
+                    }
+                )
     return issues
 
 

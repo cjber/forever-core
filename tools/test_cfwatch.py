@@ -373,55 +373,60 @@ class LinkedTest(unittest.TestCase):
 
 
 class SearchIssuesTest(unittest.TestCase):
-    def search(self, rows_by_repo):
-        """Run search_issues() over two watched repos and return the gh_json args it tried."""
-        calls = []
-
-        def api(*args):
-            calls.append(args)
-            return list(rows_by_repo.get(args[args.index("-R") + 1], []))
-
-        patches = [
-            unittest.mock.patch.object(cfwatch, "slug_list", lambda: ["skillup-forever", "forever-core"]),
-            unittest.mock.patch.object(cfwatch, "gh_json", api),
+    def test_paginated_rest_search_preserves_issue_rows_and_spaces_repositories(self):
+        body = "A player reported this.\nCurseForge thread 8684993 (skillup-forever)\n"
+        closed_at = "2026-11-11T02:16:31Z"
+        events = unittest.mock.Mock()
+        events.api.side_effect = [
+            [
+                {"items": [{"number": 7, "state": "open", "body": body, "closed_at": None}]},
+                {"items": [{"number": 8, "state": "closed", "body": None, "closed_at": closed_at}]},
+            ],
+            [{"items": []}],
         ]
-        with contextlib.ExitStack() as stack:
-            for patch in patches:
-                stack.enter_context(patch)
-            return calls, cfwatch.search_issues()
+        with (
+            unittest.mock.patch.object(cfwatch, "slug_list", return_value=["skillup-forever", "forever-core"]),
+            unittest.mock.patch.object(cfwatch, "gh_json", events.api),
+        ):
+            issues = cfwatch.search_issues(sleep=events.sleep)
 
-    def test_each_watched_repo_is_asked_for_its_own_issues(self):
-        calls, issues = self.search({})
+        def search_call(repo):
+            return unittest.mock.call.api(
+                "api",
+                "search/issues",
+                "--method",
+                "GET",
+                "--paginate",
+                "--slurp",
+                "-f",
+                f"q=CurseForge thread repo:cjber/{repo} is:issue",
+                "-F",
+                "per_page=100",
+            )
 
         self.assertEqual(
-            [args[args.index("-R") + 1] for args in calls],
-            ["cjber/skillup-forever", "cjber/forever-core"],
+            events.mock_calls,
+            [search_call("skillup-forever"), unittest.mock.call.sleep(4.2), search_call("forever-core")],
         )
-        self.assertEqual(issues, [])
-
-    def test_the_listing_is_every_issue_open_and_closed(self):
-        calls, _ = self.search({})
-
-        for args in calls:
-            self.assertNotIn("search", args)
-            self.assertEqual(args[args.index("--state") + 1], "all")
-            self.assertIn("closedAt", args[args.index("--json") + 1])
-
-    def test_a_row_keeps_its_repo_so_links_still_group(self):
-        _, issues = self.search(
-            {
-                "cjber/skillup-forever": [
-                    {
-                        "number": 7,
-                        "state": "open",
-                        "closedAt": None,
-                        "body": "A player reported this.\nCurseForge thread 8684993 (skillup-forever)\n",
-                    }
-                ]
-            }
+        self.assertEqual(
+            issues,
+            [
+                {
+                    "number": 7,
+                    "state": "OPEN",
+                    "body": body,
+                    "closedAt": None,
+                    "repository": {"name": "skillup-forever"},
+                },
+                {
+                    "number": 8,
+                    "state": "CLOSED",
+                    "body": None,
+                    "closedAt": closed_at,
+                    "repository": {"name": "skillup-forever"},
+                },
+            ],
         )
-
-        self.assertEqual([issue["repository"]["name"] for issue in issues], ["skillup-forever"])
         linked = cfwatch.linked_issues(lambda: issues)
         self.assertEqual(list(linked), ["8684993"])
         self.assertEqual(linked["8684993"][0]["repo"], "skillup-forever")
