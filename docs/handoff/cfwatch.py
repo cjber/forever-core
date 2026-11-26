@@ -321,25 +321,29 @@ def search_issues(*, sleep=time.sleep):
     Search each repository separately so the lookup works with a repository-scoped token.
     """
     issues = []
-    pages = []
+    page_size = 100
+    requested = False
     for slug in slug_list():
-        if pages:
-            # Each REST page counts toward GitHub's 30 search requests per minute.
-            sleep(2.1 * len(pages))
-        pages = gh_json(
-            "api",
-            "search/issues",
-            "--method",
-            "GET",
-            "--paginate",
-            "--slurp",
-            "-f",
-            f"q=CurseForge thread repo:{OWNER}/{slug} is:issue",
-            "-F",
-            "per_page=100",
-        )
-        for page in pages:
-            for row in page["items"]:
+        page = 1
+        while True:
+            if requested:
+                # Each REST page counts toward GitHub's 30 search requests per minute.
+                sleep(2.1)
+            response = gh_json(
+                "api",
+                "search/issues",
+                "--method",
+                "GET",
+                "-f",
+                f"q=CurseForge thread repo:{OWNER}/{slug} is:issue",
+                "-F",
+                f"per_page={page_size}",
+                "-F",
+                f"page={page}",
+            )
+            requested = True
+            items = response["items"]
+            for row in items:
                 issues.append(
                     {
                         "number": row["number"],
@@ -349,6 +353,9 @@ def search_issues(*, sleep=time.sleep):
                         "repository": {"name": slug},
                     }
                 )
+            if len(items) < page_size or page * page_size >= response["total_count"]:
+                break
+            page += 1
     return issues
 
 

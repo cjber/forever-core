@@ -373,43 +373,60 @@ class LinkedTest(unittest.TestCase):
 
 
 class SearchIssuesTest(unittest.TestCase):
-    def test_paginated_rest_search_preserves_issue_rows_and_spaces_repositories(self):
+    def test_paginated_rest_search_preserves_issue_rows_and_spaces_requests(self):
         body = "A player reported this.\nCurseForge thread 8684993 (skillup-forever)\n"
         closed_at = "2026-11-11T02:16:31Z"
         events = unittest.mock.Mock()
-        events.api.side_effect = [
-            [
-                {"items": [{"number": 7, "state": "open", "body": body, "closed_at": None}]},
-                {"items": [{"number": 8, "state": "closed", "body": None, "closed_at": closed_at}]},
-            ],
-            [{"items": []}],
-        ]
+        first_page = {
+            "total_count": 101,
+            "items": [{"number": 7, "state": "open", "body": body, "closed_at": None}]
+            + [{"number": number, "state": "open", "body": None, "closed_at": None} for number in range(100, 199)],
+        }
+        last_page = {
+            "total_count": 101,
+            "items": [{"number": 8, "state": "closed", "body": None, "closed_at": closed_at}],
+        }
+        empty_page = {"total_count": 0, "items": []}
+
+        def api(*args):
+            if "repo:cjber/forever-core " in args[args.index("-f") + 1]:
+                return empty_page
+            return {"page=1": first_page, "page=2": last_page}[args[-1]]
+
+        events.api.side_effect = api
         with (
             unittest.mock.patch.object(cfwatch, "slug_list", return_value=["skillup-forever", "forever-core"]),
             unittest.mock.patch.object(cfwatch, "gh_json", events.api),
         ):
             issues = cfwatch.search_issues(sleep=events.sleep)
 
-        def search_call(repo):
+        def search_call(repo, page):
             return unittest.mock.call.api(
                 "api",
                 "search/issues",
                 "--method",
                 "GET",
-                "--paginate",
-                "--slurp",
                 "-f",
                 f"q=CurseForge thread repo:cjber/{repo} is:issue",
                 "-F",
                 "per_page=100",
+                "-F",
+                f"page={page}",
             )
 
         self.assertEqual(
             events.mock_calls,
-            [search_call("skillup-forever"), unittest.mock.call.sleep(4.2), search_call("forever-core")],
+            [
+                search_call("skillup-forever", 1),
+                unittest.mock.call.sleep(2.1),
+                search_call("skillup-forever", 2),
+                unittest.mock.call.sleep(2.1),
+                search_call("forever-core", 1),
+            ],
         )
+        self.assertEqual(len(issues), 101)
         self.assertEqual(
-            issues,
+            [issues[0], issues[-1]],
             [
                 {
                     "number": 7,
