@@ -26,7 +26,7 @@ Free, with nothing locked behind it. If it saves you time, you can [sponsor me o
 
 <More images, each with its caption: three to six images in all.>
 
-These images are generated previews of the <short name> UI.
+These images are generated previews of the <short name> UI.   (or, when every image is a real client capture: These images are captures from the game client.)
 
 ## Features
 

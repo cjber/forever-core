@@ -140,7 +140,7 @@ def check(root: Path) -> list[str]:
     sponsor = where(lambda b: b == SPONSOR, "the sponsor sentence")
     features = where(lambda b: b == "## Features", "`## Features`")
     usage = where(lambda b: b == "## Usage", "`## Usage`")
-    previews = where(CAPTION_LINE.fullmatch, "the images line (generated previews, or captures from the game client)")
+    images_line = where(CAPTION_LINE.fullmatch, "the images line (generated previews or game-client captures)")
     family = where(lambda b: b == FAMILY_TOKEN, "the forever-family block")
 
     image = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
@@ -194,10 +194,10 @@ def check(root: Path) -> list[str]:
         if not (root / "docs" / image_name).is_file():
             problems.append(f"docs/{image_name}: missing; run forever-core's tools/sync_consumers.py")
 
-    order = [sponsor, shots[0][0] if shots else None, previews, features, usage, family]
+    order = [sponsor, shots[0][0] if shots else None, images_line, features, usage, family]
     known = [i for i in order if i is not None]
     if known != sorted(known):
-        want = "pitch, sponsor, screenshots, previews, Features, Usage, family"
+        want = "pitch, sponsor, screenshots, images line, Features, Usage, family"
         problems.append(f"{FILE}: parts out of order; want {want}")
 
     count = words(text)
