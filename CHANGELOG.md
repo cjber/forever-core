@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.17.5] - 2026-11-26
+
+### Fixed
+
+- **The tracker column stays clear of the main action bar and its visible gryphons.** You can read the bottom of your route or gathering list even when the tracker column reaches the action bars. (#1110)
+
+### For addon authors
+
+- **`MapCanvas.OverlapGroups` groups map pins that would overlap at the current zoom**, so a crowded map can draw one pin per group and split it again on zooming in. (#1115)
+- **ForeverSim combines same-frame `SetText` changes into one `OnTextChanged` per edit box.** Your tests see each box's final text on the next frame, as in the game client. (#725)
+
 ## [1.17.4] - 2026-11-26
 
 ### Changed
