@@ -77,6 +77,15 @@ One row per shipped contribution: a player with five shipped items has five rows
 | Raynfeathyr | The quest tracker moves freely with the Forever column | CurseForge; thread 8755423; #926 |
 | I3igAl | The Forever column finds Questie's tracker after login | CurseForge; thread 8748495; #928 |
 | Wavebreaker90 | /fcore quests explains the quest tracker | CurseForge; thread 8763283; #926 |
+| Zerkuleez | Moving Questie's tracker no longer hides it | CurseForge; thread 8765248; #1039 |
+| user_h1s2g8ruvulbm6909075 | Always stay under the quest tracker | CurseForge; thread 8769059; #1050 |
+| KiraAkashiya | A locked column stays under the quest tracker after a reload | CurseForge; thread 8771273; #1061 |
+| [itanne99](https://github.com/itanne99) | The column fits beside the quest tracker when there is no room below | GitHub; #850; #1083 |
+| existenzial | Tracker text stays readable under EllesmereUI | Discord; #1099 |
+| zobark | Tracker text stays readable under EllesmereUI | Discord; #1099 |
+| Naxorl | Tracker text stays readable under EllesmereUI | CurseForge; #1099 |
+| wesslan | Tracker text keeps its shadow under EllesmereUI | CurseForge; #1099 |
+| [ZiiMs](https://github.com/ZiiMs) | Tracker column follows EllesmereUI's custom quest tracker again | GitHub; #1092; #332 |
 
 ## Inspired by
 
