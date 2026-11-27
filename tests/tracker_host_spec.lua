@@ -422,7 +422,10 @@ scroll.check(
 	capped.scrollBar.kind == "EventFrame" and capped.scrollBar.template == "MinimalScrollBar",
 	"the bar is the client's EventFrame template, not a Slider"
 )
-scroll.check(capped.scrollBar:GetVisibleExtentPercentage() == 175 / (175 + capped.scrollRange), "the bar shows the viewport's fraction")
+scroll.check(
+	capped.scrollBar:GetVisibleExtentPercentage() == 175 / (175 + capped.scrollRange),
+	"the bar shows the viewport's fraction"
+)
 scroll.check(capped.ContentsFrame:GetWidth() == capped:GetWidth() - 18, "the bar takes its 18-unit gutter")
 scroll.check(
 	capped.firstContentsWidth == capped:GetWidth() - 18,
