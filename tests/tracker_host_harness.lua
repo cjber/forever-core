@@ -745,6 +745,7 @@ function harness.new(options)
 		m.fromHeaderOffsetY = -10
 		m.fromBlockOffsetY = -10
 		m.bottomSpacing = 0
+		m.lineSpacing = 4
 		m.heightModifiers = {}
 		m.trackerMaxHeight = maxHeight
 		m.Header = frame()

@@ -826,6 +826,11 @@ function Module:LayoutTrackerScroll()
 	end
 	self.scrollFrame:SetShown(viewport > 0)
 	local range = viewport > 0 and math.max(0, body - viewport) or 0
+	-- A scrolled section ends one line gap above the viewport's bottom edge, so the last line's descenders and shadow
+	-- draw inside the clip. The gap is Blizzard's own `lineSpacing`, the room it leaves between lines.
+	if range > 0 then
+		range = range + (self.lineSpacing or 0)
+	end
 	self.trackerBody, self.trackerViewport, self.scrollRange = body, viewport, range
 	self.trackerOverflow = range > 0
 
@@ -849,6 +854,9 @@ function Module:LayoutTrackerScroll()
 	BindTrackerWheel(contents, handler, seen)
 	contents:SetHeight(body)
 	self.scrollFrame:SetHeight(viewport)
+	-- Only a section with something to scroll clips: the native tracker never clips a section that shows whole, and
+	-- a clip edge at the contents' bottom cuts the last line's descenders.
+	self.scrollFrame:SetClipsChildren(range > 0)
 	local clipLeft, clipRight = HorizontalOverflow(contents, width)
 	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
 	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + clipRight, 0)
