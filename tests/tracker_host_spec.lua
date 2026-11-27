@@ -411,7 +411,10 @@ scroll.host:MarkDirty()
 scroll.drain()
 scroll.check(scroll.pending() == 0, "the first layout settles in one frame")
 scroll.check(capped.available == 200, "a section other than Quests caps at 200 units")
-scroll.check(capped.trackerOverflow == true and capped.scrollRange == 329, "the capped section scrolls its overflow and one line gap of tail room")
+scroll.check(
+	capped.trackerOverflow == true and capped.scrollRange == 329,
+	"the capped section scrolls its overflow and one line gap of tail room"
+)
 scroll.check(capped:GetContentsHeight() == 200, "the capped section reports its visible height")
 scroll.check(capped:GetMinimumHeight() == 75, "the minimum height uses the measured header, offset and first block")
 scroll.check(capped.scrollBar:IsShown(), "an overflowing section shows the minimal scrollbar")
