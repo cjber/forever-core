@@ -805,6 +805,19 @@ class SettleTest(unittest.TestCase):
             self.assertEqual(sorted(self.heads(output)), [1, 2])
             self.assertIn("2 unanswered, 0 waiting on an issue, 0 settled", output)
 
+    def test_a_settled_thread_stays_off_the_due_list_until_a_new_post(self):
+        links = {"1": [{"repo": "skillup-forever", "slug": "skillup-forever", "number": 7, "state": "closed"}]}
+
+        def released(repo, number, **kwargs):
+            return cfwatch.Release("v1.5.1", "2027-01-01T00:00:00Z")
+
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.object(cfwatch, "released_in", released):
+            run(["--settle", "1", "thanks only"], fake_fetch(self.rows()), state=tmp)
+            output = run(["--due"], fake_fetch(self.rows()), state=tmp, links=links)
+            self.assertIn("0 due, 0 answered, 0 still waiting, 1 settled", output)
+            output = run(["--due"], fake_fetch(self.rows(follow_up=True)), state=tmp, links=links)
+            self.assertIn("thread #1: cjber/skillup-forever#7 released in v1.5.1", output)
+
     def test_an_edited_top_comment_keeps_its_thread_id(self):
         fetch = fake_fetch([comment(1, "edited question", posted=1020, replies=[owner_reply(10, 1)])])
         with tempfile.TemporaryDirectory() as tmp:
