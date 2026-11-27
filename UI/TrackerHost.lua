@@ -556,8 +556,8 @@ function Module:TopBlockIndex(starts)
 	return index
 end
 
--- Remember the quest at the top before a layout rebuilds the list, so a quest finishing or a distance changing cannot
--- jump the view. The index is the fallback for a block whose quest left the list entirely.
+-- Remember the quest at the top, and how far into it the view is, before a layout rebuilds the list, so a quest
+-- finishing or a distance changing cannot jump the view. The index is the fallback for a quest that left the list.
 function Module:CaptureScrollAnchor()
 	if not self.trackerScrollable then
 		return
@@ -573,18 +573,19 @@ function Module:CaptureScrollAnchor()
 	local entry = starts[index]
 	self.scrollAnchorID = entry and entry.block.id
 	self.scrollAnchorIndex = entry and index
+	self.scrollAnchorDepth = (self.scrollOffset or 0) - (index > 1 and entry.start or 0)
 end
 
--- The offset the remembered quest has after the layout. The first block keeps the module's own gap under the header,
--- so its offset is zero; a later block starts at its own top edge.
+-- The offset that shows the remembered quest where it was. The first block keeps the module's own gap under the header,
+-- so it starts at zero; a later block starts at its own top edge. A quest that left gives its place to the block there.
 ---@param starts { block: any, start: number }[]
 ---@return number
 function Module:ApplyScrollAnchor(starts)
-	local index
+	local index, depth
 	if self.scrollAnchorID ~= nil then
 		for position, entry in ipairs(starts) do
 			if entry.block.id == self.scrollAnchorID then
-				index = position
+				index, depth = position, self.scrollAnchorDepth
 				break
 			end
 		end
@@ -594,10 +595,7 @@ function Module:ApplyScrollAnchor(starts)
 		return 0
 	end
 	index = math.max(1, math.min(#starts, index))
-	if index == 1 then
-		return 0
-	end
-	return starts[index].start
+	return (index > 1 and starts[index].start or 0) + (depth or 0)
 end
 
 -- The contents hang from the header at the scroll offset, not from the viewport: a viewport with no room has a height
@@ -826,6 +824,11 @@ function Module:LayoutTrackerScroll()
 	end
 	self.scrollFrame:SetShown(viewport > 0)
 	local range = viewport > 0 and math.max(0, body - viewport) or 0
+	-- A scrolled section ends one line gap above the viewport's bottom edge, so the last line's descenders and shadow
+	-- draw inside the clip. The gap is Blizzard's own `lineSpacing`, the room it leaves between lines.
+	if range > 0 then
+		range = range + (self.lineSpacing or 0)
+	end
 	self.trackerBody, self.trackerViewport, self.scrollRange = body, viewport, range
 	self.trackerOverflow = range > 0
 
@@ -849,6 +852,9 @@ function Module:LayoutTrackerScroll()
 	BindTrackerWheel(contents, handler, seen)
 	contents:SetHeight(body)
 	self.scrollFrame:SetHeight(viewport)
+	-- Only a section with something to scroll clips: the native tracker never clips a section that shows whole, and
+	-- a clip edge at the contents' bottom cuts the last line's descenders.
+	self.scrollFrame:SetClipsChildren(range > 0)
 	local clipLeft, clipRight = HorizontalOverflow(contents, width)
 	self.scrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", -clipLeft, 0)
 	self.scrollFrame:SetPoint("TOPRIGHT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + clipRight, 0)
@@ -857,8 +863,9 @@ function Module:LayoutTrackerScroll()
 	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
 	self.scrollBar:SetPoint("BOTTOMLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -viewport)
 
-	-- The bar's thumb is its visible fraction of the whole body; the scroll percentage below positions it.
-	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / body or 0)
+	-- The bar's thumb is its visible fraction of the whole scrolled extent, tail room included; the scroll percentage
+	-- below positions it.
+	self.scrollBar:SetVisibleExtentPercentage(viewport > 0 and viewport / (viewport + range) or 0)
 	if range > 0 then
 		self.scrollBar:Show()
 		self.scrollBar:SetAlpha(self.scrollFrozen and 0.5 or 1)

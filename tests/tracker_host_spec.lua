@@ -411,7 +411,10 @@ scroll.host:MarkDirty()
 scroll.drain()
 scroll.check(scroll.pending() == 0, "the first layout settles in one frame")
 scroll.check(capped.available == 200, "a section other than Quests caps at 200 units")
-scroll.check(capped.trackerOverflow == true and capped.scrollRange == 325, "the capped section scrolls its overflow")
+scroll.check(
+	capped.trackerOverflow == true and capped.scrollRange == 329,
+	"the capped section scrolls its overflow and one line gap of tail room"
+)
 scroll.check(capped:GetContentsHeight() == 200, "the capped section reports its visible height")
 scroll.check(capped:GetMinimumHeight() == 75, "the minimum height uses the measured header, offset and first block")
 scroll.check(capped.scrollBar:IsShown(), "an overflowing section shows the minimal scrollbar")
@@ -419,7 +422,10 @@ scroll.check(
 	capped.scrollBar.kind == "EventFrame" and capped.scrollBar.template == "MinimalScrollBar",
 	"the bar is the client's EventFrame template, not a Slider"
 )
-scroll.check(capped.scrollBar:GetVisibleExtentPercentage() == 175 / 500, "the bar shows the viewport's fraction")
+scroll.check(
+	capped.scrollBar:GetVisibleExtentPercentage() == 175 / (175 + capped.scrollRange),
+	"the bar shows the viewport's fraction"
+)
 scroll.check(capped.ContentsFrame:GetWidth() == capped:GetWidth() - 18, "the bar takes its 18-unit gutter")
 scroll.check(
 	capped.firstContentsWidth == capped:GetWidth() - 18,
@@ -429,7 +435,12 @@ scroll.check(
 -- line draws over it (#795). A ScrollFrame places its child only when it next draws, and a frame of height 0 has no
 -- rect, so the viewport is a clipping frame and the contents hang from the header with the cap as their height.
 scroll.check(capped.firstContentsLeft ~= false, "the first build has placed contents to wrap its lines in")
-scroll.check(capped.scrollFrame.clipsChildren == true, "the viewport clips the contents")
+scroll.check(capped.scrollFrame.clipsChildren == true, "a section with something to scroll clips its contents")
+scroll.check(rest.scrollFrame.clipsChildren == false, "a section that shows whole does not clip its last line")
+scroll.check(
+	capped.scrollFrame:GetHeight() + capped.scrollRange == capped.trackerBody + capped.lineSpacing,
+	"the bottom of the range leaves the module's line spacing under the last line"
+)
 scroll.check(select(2, capped.ContentsFrame:GetPoint()) == capped.Header, "the contents hang from the header")
 scroll.check(rest.available > 200 and rest:GetContentsHeight() == 125, "the remaining section takes the room left")
 scroll.check(rest.trackerOverflow == false and rest.scrollBar:IsShown() == false, "a short section has no bar")
@@ -469,13 +480,13 @@ scroll.check(capped.available == 200, "the default cap is restored")
 
 capped:OnTrackerWheel(-1)
 scroll.check(capped.scrollOffset == 60, "the wheel moves one block, not a fixed step")
-scroll.check(math.abs(capped.scrollBar:GetScrollPercentage() - 60 / 325) < 1e-9, "the bar follows the view")
+scroll.check(math.abs(capped.scrollBar:GetScrollPercentage() - 60 / 329) < 1e-9, "the bar follows the view")
 capped.scrollBar:SetScrollPercentage(0.5)
-scroll.check(math.abs(capped.scrollOffset - 162.5) < 1e-9, "dragging the bar moves the view")
+scroll.check(math.abs(capped.scrollOffset - 164.5) < 1e-9, "dragging the bar moves the view")
 scroll.check(select(5, capped.ContentsFrame:GetPoint()) == capped.scrollOffset, "the contents follow the bar")
 scroll.host:MarkDirty()
 scroll.drain()
-scroll.check(capped.scrollOffset == 160, "a layout keeps the same block at the top of the view")
+scroll.check(math.abs(capped.scrollOffset - 164.5) < 1e-9, "a layout keeps the view the same way into its top block")
 
 scroll.setCombat(true)
 scroll.fire("PLAYER_REGEN_DISABLED")
@@ -541,6 +552,17 @@ scroll.check(capped.trackerOverflow == false and capped.scrollRange == 0, "a shr
 scroll.check(capped.scrollOffset == 0, "a shrunken list returns to the top")
 scroll.check(select(5, capped.ContentsFrame:GetPoint()) == 0, "the contents return to the top")
 scroll.check(capped.scrollBar:IsShown() == false, "the shrunken list hides the bar")
+scroll.check(capped.scrollFrame.clipsChildren == false, "a shrunken list stops clipping")
+capped.count = 10
+scroll.host:MarkDirty()
+scroll.drain()
+scroll.check(
+	capped.trackerOverflow and capped.scrollFrame.clipsChildren == true,
+	"a section that grows past its cap clips again"
+)
+capped.count = 2
+scroll.host:MarkDirty()
+scroll.drain()
 scroll.check(capped.scrollChanges > scrollChanges, "the shrunken list redraws its item buttons")
 
 -- Two visible sections with little room reserve their measured floors without allowing the column to overrun it.
@@ -590,6 +612,10 @@ for _, room in ipairs({ 166, 120, 105, 220 }) do
 		if viewport == 0 then
 			cramped.check(not section.scrollFrame:IsShown(), "header-only section hides its content")
 			cramped.check(not section.scrollBar:IsShown(), "header-only section hides its arrows")
+			cramped.check(
+				section.scrollBar:GetVisibleExtentPercentage() == 0,
+				"header-only section has no thumb extent"
+			)
 		end
 		used = used + section:GetContentsHeight() + 10
 	end
@@ -659,6 +685,9 @@ for _ = 1, 20 do
 	)
 end
 paging.check(oversized.scrollOffset == oversized.scrollRange, "repeated wheels reach the end of one tall block")
+paging.host:MarkDirty()
+paging.drain()
+paging.check(oversized.scrollOffset == oversized.scrollRange, "a layout leaves a view at the end of its list there")
 for _ = 1, 20 do
 	local before = oversized.scrollOffset
 	ContentWheel(1)
