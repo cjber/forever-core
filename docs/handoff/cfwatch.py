@@ -7,7 +7,7 @@ thread whose latest post is not the owner's: one never answered, or one followed
 
 `--settle THREAD REASON` records that a thread needs no answer (a thank-you, a question another player answered).
 Settled threads live beside the seen IDs in cfwatch-settled.json with the thread's latest post, so `--unanswered`
-skips one only until somebody posts in it again.
+and `--due` skip one only until somebody posts in it again.
 
 An issue filed from a comment carries the line `CurseForge thread <id> (<addon>)`. `--unanswered` reads those lines
 from every Forever issue and prints a linked thread as waiting on its issue and the issue's state. `--due` lists the
@@ -631,8 +631,13 @@ def main(argv=None, fetch=None):
         repositories = {}
         released = {}
         due = []
-        answered = 0
+        answered = quiet = 0
         for thread, issues in links.items():
+            _, rows = comment_threads.get(thread, (thread, []))
+            entry = settled.get(thread)
+            if entry and rows and entry.get("latest") == rows[-1]["id"]:
+                quiet += 1
+                continue
             for key in issues:
                 if key not in released:
                     released[key] = released_in(*key, root=root, cache=released_cache, releases=repositories)
@@ -640,7 +645,6 @@ def main(argv=None, fetch=None):
                 continue
             # An owner post after the release already answered the thread, so it is not due again, even when
             # the player has posted since (a thank-you belongs to --unanswered, not here).
-            _, rows = comment_threads.get(thread, (thread, []))
             shipped = max(released[key].published for key in issues)
             if answered_since(rows, shipped):
                 answered += 1
@@ -659,8 +663,8 @@ def main(argv=None, fetch=None):
                 f"[{issue['slug']}] thread #{thread}: cjber/{issue['repo']}#{issue['number']} released in {version.tag}"
             )
         due_threads = {thread for thread, _, _ in due}
-        waiting = len(links) - len(due_threads) - answered
-        print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting")
+        waiting = len(links) - len(due_threads) - answered - quiet
+        print(f"\n{len(due_threads)} due, {answered} answered, {waiting} still waiting, {quiet} settled")
         save(released_path, released_cache)
     else:
         for _, slug, comment in sorted(new, key=lambda row: row[0]):
