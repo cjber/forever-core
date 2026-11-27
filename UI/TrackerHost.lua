@@ -865,8 +865,8 @@ function Module:LayoutTrackerScroll()
 	self.scrollBar:SetPoint("TOPLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -SCROLL_HEADER_GAP)
 	self.scrollBar:SetPoint("BOTTOMLEFT", self.Header, "BOTTOMRIGHT", -SCROLL_GUTTER + SCROLL_BAR_GAP, -viewport)
 
-	-- The bar's thumb is its visible fraction of the whole body; the scroll percentage below positions it.
-	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / body or 0)
+	-- The bar's thumb is its visible fraction of the whole scrolled extent, tail room included; the scroll percentage below positions it.
+	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / (viewport + range) or 0)
 	if range > 0 then
 		self.scrollBar:Show()
 		self.scrollBar:SetAlpha(self.scrollFrozen and 0.5 or 1)
