@@ -556,8 +556,8 @@ function Module:TopBlockIndex(starts)
 	return index
 end
 
--- Remember the quest at the top before a layout rebuilds the list, so a quest finishing or a distance changing cannot
--- jump the view. The index is the fallback for a block whose quest left the list entirely.
+-- Remember the quest at the top, and how far into it the view is, before a layout rebuilds the list, so a quest
+-- finishing or a distance changing cannot jump the view. The index is the fallback for a quest that left the list.
 function Module:CaptureScrollAnchor()
 	if not self.trackerScrollable then
 		return
@@ -573,18 +573,19 @@ function Module:CaptureScrollAnchor()
 	local entry = starts[index]
 	self.scrollAnchorID = entry and entry.block.id
 	self.scrollAnchorIndex = entry and index
+	self.scrollAnchorDepth = (self.scrollOffset or 0) - (index > 1 and entry.start or 0)
 end
 
--- The offset the remembered quest has after the layout. The first block keeps the module's own gap under the header,
--- so its offset is zero; a later block starts at its own top edge.
+-- The offset that shows the remembered quest where it was. The first block keeps the module's own gap under the header,
+-- so it starts at zero; a later block starts at its own top edge. A quest that left gives its place to the block there.
 ---@param starts { block: any, start: number }[]
 ---@return number
 function Module:ApplyScrollAnchor(starts)
-	local index
+	local index, depth
 	if self.scrollAnchorID ~= nil then
 		for position, entry in ipairs(starts) do
 			if entry.block.id == self.scrollAnchorID then
-				index = position
+				index, depth = position, self.scrollAnchorDepth
 				break
 			end
 		end
@@ -594,10 +595,7 @@ function Module:ApplyScrollAnchor(starts)
 		return 0
 	end
 	index = math.max(1, math.min(#starts, index))
-	if index == 1 then
-		return 0
-	end
-	return starts[index].start
+	return (index > 1 and starts[index].start or 0) + (depth or 0)
 end
 
 -- The contents hang from the header at the scroll offset, not from the viewport: a viewport with no room has a height
@@ -867,7 +865,7 @@ function Module:LayoutTrackerScroll()
 
 	-- The bar's thumb is its visible fraction of the whole scrolled extent, tail room included; the scroll percentage
 	-- below positions it.
-	self.scrollBar:SetVisibleExtentPercentage(body > 0 and viewport / (viewport + range) or 0)
+	self.scrollBar:SetVisibleExtentPercentage(viewport > 0 and viewport / (viewport + range) or 0)
 	if range > 0 then
 		self.scrollBar:Show()
 		self.scrollBar:SetAlpha(self.scrollFrozen and 0.5 or 1)

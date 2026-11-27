@@ -486,7 +486,7 @@ scroll.check(math.abs(capped.scrollOffset - 164.5) < 1e-9, "dragging the bar mov
 scroll.check(select(5, capped.ContentsFrame:GetPoint()) == capped.scrollOffset, "the contents follow the bar")
 scroll.host:MarkDirty()
 scroll.drain()
-scroll.check(capped.scrollOffset == 160, "a layout keeps the same block at the top of the view")
+scroll.check(math.abs(capped.scrollOffset - 164.5) < 1e-9, "a layout keeps the view the same way into its top block")
 
 scroll.setCombat(true)
 scroll.fire("PLAYER_REGEN_DISABLED")
@@ -612,6 +612,10 @@ for _, room in ipairs({ 166, 120, 105, 220 }) do
 		if viewport == 0 then
 			cramped.check(not section.scrollFrame:IsShown(), "header-only section hides its content")
 			cramped.check(not section.scrollBar:IsShown(), "header-only section hides its arrows")
+			cramped.check(
+				section.scrollBar:GetVisibleExtentPercentage() == 0,
+				"header-only section has no thumb extent"
+			)
 		end
 		used = used + section:GetContentsHeight() + 10
 	end
@@ -681,6 +685,9 @@ for _ = 1, 20 do
 	)
 end
 paging.check(oversized.scrollOffset == oversized.scrollRange, "repeated wheels reach the end of one tall block")
+paging.host:MarkDirty()
+paging.drain()
+paging.check(oversized.scrollOffset == oversized.scrollRange, "a layout leaves a view at the end of its list there")
 for _ = 1, 20 do
 	local before = oversized.scrollOffset
 	ContentWheel(1)
